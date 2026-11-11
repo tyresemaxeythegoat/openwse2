@@ -9,7 +9,7 @@ them. Lifted code is generated locally from a copy of the retail executable.
 
 ## What is proven
 
-Two real engine functions have been lifted from x86-64 to portable C and
+Three real engine functions have been lifted from x86-64 to portable C and
 executed natively, with differential validation against the original machine
 code under Unicorn:
 
@@ -17,17 +17,22 @@ code under Unicorn:
 |---|---|---|---|---|---|
 | CRT `memcmp` | `0x485390` | 199 B | 69 | 495 | 0 |
 | `btConvexInternalShape::setLocalScaling` | `0x43E640` | 75 B | 17 | 464 | 0 |
+| `std::string::compare` (calls `memcmp`) | `0x124A0` | 122 B | 39 | 636 | 0 |
 
-Both reach the same result on the x86-64 host build and cross-compile to real
-AArch64 machine code (verified by disassembling the ARM64 object: 660 and 175
-AArch64 instructions, `stp/ldp/eor/csel/b.lo`, no interpreter).
+All three reach the same result on the x86-64 host build and cross-compile to
+real AArch64 machine code (verified by disassembling the ARM64 objects: 660,
+175, and 304 AArch64 instructions, `stp/ldp/eor/csel/b.lo`, no interpreter).
 
-The second proof explicitly covers the two hardest "easy" features:
+The proofs deliberately cover the hardest "easy" features:
 
 - RIP-relative data access resolved at lift time (`0x4EFB10`, the `0x7FFFFFFF`
   abs mask in `.rdata`)
 - SSE state: `movss`, `movaps`, `movdqa`, `andps`, `xorps`, including the
   zero-upper-bits rule for `movss` loads
+- direct calls: guest-stack return address, full MSVC frame with spills,
+  `cmovb` / `setne` on the flag model
+- a lifted function calling another lifted function with the real
+  `std::string` layout (SSO and heap buffers)
 
 ## Binary under analysis
 
@@ -77,17 +82,20 @@ thunks, and indirect dispatch through a resolved target table.
 Requires Python 3 with `pefile`, `capstone`, `unicorn`, plus Zig 0.17.1.
 
 ```powershell
-# host harness
+# host harnesses
 zig cc -target x86_64-windows-gnu -O1 -o harness.exe harness.c lifted_memcmp.c
 zig cc -target x86_64-windows-gnu -O1 -o harness_sse.exe harness_sse.c lifted_scaling.c
+zig cc -target x86_64-windows-gnu -O1 -o harness_call.exe harness_call.c lifted_compare.c lifted_memcmp.c
 
-# lift two functions from your own copy
+# lift three functions from your own copy
 python lift.py <path-to>mb_warband_wse2_x64.exe 0x485390 lifted_memcmp.c
 python lift.py <path-to>mb_warband_wse2_x64.exe 0x43E640 lifted_scaling.c
+python lift.py <path-to>mb_warband_wse2_x64.exe 0x124A0 lifted_compare.c
 
 # differential vs the original machine code
 python diff.py <exe> ./harness.exe ./work
 python diff_sse.py <exe> ./harness_sse.exe ./work_sse
+python diff_call.py <exe> ./harness_call.exe ./work_call
 ```
 
 ## References

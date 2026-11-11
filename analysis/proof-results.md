@@ -1,7 +1,7 @@
 # Proof results
 
-Two real WSE2 x64 functions were lifted to C and validated against the original
-machine code in Unicorn. Both were then cross-compiled to AArch64.
+Three real WSE2 x64 functions were lifted to C and validated against the
+original machine code in Unicorn. All were then cross-compiled to AArch64.
 
 Environment: Windows x64 host, Python 3.12, `pefile`, `capstone` 5.0.7,
 `unicorn` 2.1.4, Zig 0.17.1.
@@ -75,24 +75,73 @@ The XMM comparison is what makes this meaningful: `movss` loads must zero bits
 XMM register with a distinct byte pattern (`0xA0+i`) before the call, so any
 failure to clear or preserve is visible.
 
+## Proof 3: `std::string::compare` calling `memcmp`
+
+Symbol: `?compare@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBAHAEBV1@@Z`
+- RVA `0x124A0`, extent `0x124A0..0x1251A`
+- 122 bytes, 39 instructions
+- Direct `call 0x485390` - the proof 1 function
+- Full MSVC stack frame: `mov [rsp+8],rbx`, `mov [rsp+0x10],rsi`,
+  `push rdi`, `sub rsp,0x20`, and the matching epilogue
+- `cmovb`, `setne`, `cdqe`, `jmp`, two returns
+
+Lift:
+
+```
+python lift.py <exe> 0x124A0 lifted_compare.c
+lifted 0x124A0..0x1251A (122 bytes, 39 instructions)
+```
+
+The lifter lowers the direct call as:
+
+```c
+{ c->r[RSP] -= 8; st64(c->r[RSP], 0x124E5ull); f_485390(c); }
+```
+
+That is, the return address is pushed on the *guest* stack and the callee is a
+plain C call. `memcmp` returns by popping the guest return address into
+`c->rip`; control then continues at `L_124E5`.
+
+Differential: 636 vectors. Both `std::string` objects are built with the real
+x64 layout (16-byte inline buffer, size at `+0x10`, capacity at `+0x18`),
+covering SSO and heap strings, equal prefixes, divergent bytes at every
+position, differing lengths, and 200 random pairs. Compared: return value and
+the arithmetic flags.
+
+```
+vectors: 636  mismatches: 0
+```
+
+Return value distribution across the vectors: `-1` x260, `0` x69, `+1` x307.
+All three exit paths are exercised.
+
+One honest caveat: every path ends in the same epilogue `add rsp, 0x20`, so the
+final flag word is constant across all 636 vectors. The `cmovb`/`setne` logic
+is validated through the return value, and integer flag semantics were already
+validated by proof 1. The harness sets the guest stack to the same low 32 bits
+as the Unicorn stack so the epilogue's flag effects are identical.
+
 ## ARM64 code generation
 
-Both generated C files cross-compile for `aarch64-linux-gnu` and disassemble to
-ordinary AArch64:
+All three generated C files cross-compile for `aarch64-linux-gnu` and
+disassemble to ordinary AArch64:
 
 ```
 lifted_memcmp_arm64.o : .text 2640 B, 660 AArch64 instructions
 lifted_scaling_arm64.o: .text  700 B, 175 AArch64 instructions
+lifted_compare_arm64.o: .text 1216 B, 304 AArch64 instructions
 ```
 
 Representative instructions:
 
 ```
-stp  x29, x30, [sp, #-0x20]!
+stp  x29, x30, [sp, #-0x30]!
+str  x21, [sp, #0x10]
 ldp  x10, x9, [x0, #8]
 sub  x11, x9, x10
 cmp  x12, #8
 b.lo #0x568
+b.hi #0x468
 eor  w12, w12, w12, lsr #1
 csel w9, w9, wzr, eq
 ```
@@ -104,13 +153,16 @@ the engine's logic compiled into native ARM64.
 
 - The guest CPU/flags model matches hardware on integer and SSE operations.
 - RIP-relative accesses can be resolved at lift time to flat guest addresses.
+- Direct calls lower to C calls with a faithful guest stack frame, including
+  callee-saved register spill slots and the return-address protocol.
+- `cmovcc` and `setcc` lower correctly on top of the flag model.
 - The generated C shape (`uint32_t f_<rva>(CPU *c)`) is ABI-neutral and
   compiles for both host x64 and target AArch64.
 - Differential testing catches real semantic bugs at function granularity.
 
 ## What it does not establish
 
-- Exception/unwind behavior. Neither proof throws.
+- Exception/unwind behavior. None of the proofs throw.
 - Vector code beyond the SSE subset above.
 - Indirect calls, imports, TLS, or any OS interaction.
 - Anything about D3D9, D3DX, FMOD, or Lua.

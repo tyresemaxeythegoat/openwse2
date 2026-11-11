@@ -91,7 +91,7 @@ Design rules:
 
 1. Guest pointers are host pointers. The guest image is mapped at its preferred
    base on 64-bit Android; if that fails, one contiguous reservation is used and
-   all absolute operands are rebased at lift time. The two proofs already treat
+   all absolute operands are rebased at lift time. The three proofs already treat
    addresses as flat.
 
 2. One `CPU *` per guest thread. The Windows TEB is a guest structure at a fixed
@@ -167,9 +167,10 @@ The lift is not the long pole; the shims are. A realistic split:
 - Audio/input/net: weeks each.
 - Bring-up: unknown until a device is in the loop.
 
-The two proofs establish that the core claim is sound: real WSE2 x86-64 code
-becomes native AArch64 with identical observable behavior. The remaining work
-is breadth, not a missing mechanism.
+The three proofs establish that the core claim is sound: real WSE2 x86-64 code
+becomes native AArch64 with identical observable behavior, including a direct
+call from one lifted function into another. The remaining work is breadth, not
+a missing mechanism.
 
 ## 8. Rejected approaches
 

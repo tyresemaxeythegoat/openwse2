@@ -136,7 +136,7 @@ def main():
             if fl == 0:
                 flag_counts["none"] += 1
         b = 16
-        for edge in (16, 32, 64, 128, 256, 512, 1024, 4096):
+        for edge in (16, 32, 64, 128, 256, 512, 1024, 4096, 65536):
             b = edge
             if size < edge:
                 break
