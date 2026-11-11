@@ -20,14 +20,21 @@ The engine is a single PE32+ image with complete function metadata:
 | Entry | `0x140481CE0` |
 | `.text` virtual size | 5,125,605 B |
 | `.pdata` extents | 14,461 usable (`14,464` raw, 3 degenerate) |
-| Code coverage by `.pdata` | 94.07% |
+| Primary functions | 9,202 |
+| CHAININFO fragments | 5,259 |
+| Code coverage, all extents | 94.07% |
+| Code coverage, primary extents | 73.52% |
+| `.text` with no `.pdata` | 5.93% (303,711 B) |
 | Public symbols | 22,600 |
 | Instructions in extents | 1,151,840 |
 
-`.pdata` gives exact start and end for every function. That removes the two
-classic blockers of static lifting: function boundary discovery and jump-table
-membership. The shipped PDB supplies names for 7,086 of the 14,461 starts;
-the rest are anonymous but bounded.
+`.pdata` gives exact start and end for 9,202 primary functions and 5,259 cold
+fragments. That removes function boundary discovery for most of the image, but
+not all of it: 5.93% of `.text` is leaf code and thunks with no `.pdata`
+record, and a heuristic scan finds 1,164 unique direct-call targets in those
+gaps. The lifter must discover those ranges before it can resolve every
+callee. The shipped PDB supplies names for 7,086 of the 14,461 starts; the
+rest are anonymous but bounded.
 
 Static recompilation produces C, then native AArch64. There is no instruction
 fetch, no decode, and no interpreter loop at runtime. The differentials in
@@ -65,8 +72,11 @@ Consequences for the lifter:
 - `gs` appears twice. TLS access is a small, enumerable shim.
 - Indirect calls are the main dispatch cost: 14,771 sites, all resolved through
   a target table at runtime.
-- Locked operations are rare, which keeps the memory model simple: a guest lock
-  can be a host mutex/atomic pair without a full memory-ordering engine.
+- Locked operations are rare (327), but that does not make the memory model
+  free. x86-64 gives strong ordering; ARM64 does not. The current lift uses
+  plain C loads and stores, so a host mutex around each guest lock is not
+  enough to preserve publication/refcount ordering. This is an explicit
+  runtime gap, described in section 3.
 
 ## 3. Runtime architecture
 
@@ -86,6 +96,78 @@ Consequences for the lifter:
 |  import thunks -> Win32 / D3D9 / DInput / FMOD / Lua shims   |
 +--------------------------------------------------------------+
 ```
+
+### Memory ordering (explicit gap)
+
+The lifted C model is x86-shaped: plain `ld*`/`st*` accesses with no fences.
+That is correct for the single-threaded differential rigs, but x86-64 is
+strongly ordered (TSO) and ARM64 is weakly ordered. Once engine threads share
+state, plain accesses can be observed out of order on the phone even though
+the same sequence is correct on the x64 host.
+
+Consequences:
+
+- Guest `lock` operations must lower to C11 `atomic_*` operations or
+  `__atomic_*` builtins with at least acquire/release semantics, not to a
+  plain read-modify-write plus a host mutex.
+- Refcounts, work queues, input state, and resource publication need
+  acquire/release at the handoff points. A mutex only protects the critical
+  section; it does not order non-atomic accesses outside it.
+- The runtime should expose `wse2_load_acquire` / `wse2_store_release`
+  helpers (or a per-access annotation in the lifter) so generated code can be
+  audited. A conservative `__atomic_thread_fence(__ATOMIC_SEQ_CST)` at shim
+  and thread boundaries is the first bring-up step, not the final model.
+- Single-thread differential tests cannot catch this class of bug. It needs a
+  multi-threaded stress mode on a device or an emulator with a weak memory
+  model.
+
+This is deliberately deferred until the bulk lift and threading shims exist;
+it is tracked here so the x64-only proofs are not mistaken for a complete
+memory model.
+
+### Code size and performance
+
+The current emitter is correctness-first and does not optimize. Measured
+AArch64 text sizes for the proof functions:
+
+| Function | x86-64 | AArch64 | Ratio |
+|---|---:|---:|---:|
+| `memcmp` | 199 B | 2,640 B | 13.3x |
+| `setLocalScaling` | 75 B | 700 B | 9.3x |
+| `std::string::compare` | 122 B | 1,216 B | 10.0x |
+| `QueryInterface` | 20 B | 460 B | 23.0x (small absolute size) |
+
+Extrapolated naively, 5.1 MB of `.text` becomes roughly 50 MB of native code,
+which is a real instruction-cache risk on a phone. The samples are tiny, so
+treat the ratio as a starting point, not a prediction. Planned work, in order
+of expected payoff:
+
+1. **Flag liveness and comparison fusion.** Flags are dead across calls and
+   returns and are usually overwritten before use. Fuse `cmp`/`test` with the
+   consuming `jcc`/`setcc`/`cmovcc` into direct C comparisons instead of
+   materializing the six x86 flags.
+2. **Register-typed function signatures.** Emit
+   `uint64_t f_X(uint64_t rcx, uint64_t rdx, uint64_t r8, uint64_t r9)` so
+   arguments stay in `x0`-`x3` instead of being loaded from the `CPU` struct
+   on every access. Keep `CPU *` only for functions that need the full state.
+3. **Identity-map the guest.** The production runtime already maps at
+   `0x140000000`; dropping `MEM_BIAS` and per-access bounds checks in favor of
+   guard pages plus a fault handler removes work from every load/store.
+4. **XMM in NEON/vector locals.** 16% of instructions touch XMM. Preserve
+   x86-specific semantics (`min`/`max` NaN, `cvtt` overflow, approximate
+   `rcp`/`rsqrt`) and compile with `-ffp-contract=off`.
+5. **Smaller wins.** Table-indexed indirect dispatch, `musttail` for tail
+   jumps, `noreturn`/cold attributes on fatal paths, and splitting the output
+   into many translation units.
+6. **Build target.** Use the NDK `aarch64-linux-android` target for the app,
+   not `aarch64-linux-gnu` (which links glibc). The proofs use the GNU target
+   only for static codegen inspection.
+
+Alternative lifters remain an option if the hand-written emitter becomes the
+bottleneck: remill/anvill (LLVM IR) or rev.ng would supply x86-64/SSE
+semantics and dead-flag elimination, at the cost of less control over the
+output. Box64/FEX are excluded as execution models, but they are useful as
+performance baselines for the flag-naive static output.
 
 Design rules:
 
@@ -147,7 +229,8 @@ bytecode, not API calls. Two options, in order of preference:
 
 | Risk | Size | Mitigation |
 |---|---|---|
-| Full catalog lift | 14,461 functions, 1.15M instructions | Machine lift + differential per function; prioritize reachable set from entry |
+| Full catalog lift | 9,202 primary functions + 5,259 fragments, 1.15M instructions | Machine lift + differential per function; prioritize reachable set from entry |
+| No-`.pdata` code | 5.93% of `.text`, 1,164 heuristic call targets | Symbol/prologue discovery, call-target iteration, loud unknown target |
 | Vector code | 15.99% of instructions | SSE2/SSE3 subset in the lifter; ARM64 NEON lowering; per-function diff |
 | Exception handling | 876 EH / 2,559 UH / 5,259 chain | C++ exceptions at thunk boundary first; unwind interpreter second |
 | Indirect calls | 14,771 sites | Target table; loud failure on unknown target |

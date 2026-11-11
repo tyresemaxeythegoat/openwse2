@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """Build a function catalog for a PE32+ image from .pdata and public symbols.
 
-The catalog is the input to the lifter: every row is one function with an exact
-extent, an optional name, and its UNWIND_INFO flags.
+The catalog is the input to the lifter: every row is one code extent with an
+exact range, an optional name, and its UNWIND_INFO flags. `CHAININFO` rows are
+cold fragments of another function, not separate functions: they carry a
+`parent` RVA and are grouped under the owning primary row's `fragments` list.
+Use `--functions-only` to emit one row per primary function.
 
 Usage:
     python pe_catalog.py mb_warband_wse2_x64.exe \
         --symbols wse2_x64_pub.txt \
         --jsonl catalog.jsonl
+
+    python pe_catalog.py mb_warband_wse2_x64.exe \
+        --symbols wse2_x64_pub.txt \
+        --functions-only --jsonl catalog-functions.jsonl
 
 Symbol file format: one entry per line, either
 
@@ -76,7 +83,13 @@ def pdata_rows(pe):
     return rows
 
 
-def unwind_flags(pe, rows):
+def unwind_info(pe, rows):
+    """Decode UNWIND_INFO for every .pdata row.
+
+    CHAININFO rows are cold fragments of another function. Their UNWIND_INFO
+    ends with a RUNTIME_FUNCTION triple that points at the parent (or at
+    another fragment), so we keep that triple for parent resolution.
+    """
     rdata = next((s for s in pe.sections if s.Name.rstrip(b"\0") == b".rdata"), None)
     if rdata is None:
         return {}
@@ -86,11 +99,43 @@ def unwind_flags(pe, rows):
     for beg, end, unwind in rows:
         off = unwind - base
         if off < 0 or off + 4 > len(img):
-            out[beg] = {"version": None, "flags": None}
+            out[beg] = {"version": None, "flags": None, "chain": None}
             continue
         b0 = img[off]
-        out[beg] = {"version": b0 & 7, "flags": (b0 >> 3) & 0x1F}
+        flags = (b0 >> 3) & 0x1F
+        count = img[off + 2]
+        pos = off + 4 + count * 2
+        if flags & (UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER):
+            pos += 4  # exception/termination handler RVA
+        chain = None
+        if flags & UNW_FLAG_CHAININFO and pos + 12 <= len(img):
+            chain = struct.unpack_from("<III", img, pos)
+        out[beg] = {
+            "version": b0 & 7,
+            "flags": flags,
+            "chain": chain,
+        }
     return out
+
+
+def primary_parent(beg, info):
+    """Follow CHAININFO links to the owning primary function, if possible."""
+    seen = set()
+    cur = beg
+    while cur not in seen:
+        seen.add(cur)
+        u = info.get(cur, {})
+        chain = u.get("chain")
+        if not chain:
+            return None
+        parent = chain[0]
+        pu = info.get(parent)
+        if pu is None:
+            return parent
+        if not ((pu.get("flags") or 0) & UNW_FLAG_CHAININFO):
+            return parent
+        cur = parent
+    return None
 
 
 def main():
@@ -98,6 +143,8 @@ def main():
     ap.add_argument("exe")
     ap.add_argument("--symbols")
     ap.add_argument("--jsonl")
+    ap.add_argument("--functions-only", action="store_true",
+                    help="write only primary functions; exclude CHAININFO fragments")
     ap.add_argument("--summary", action="store_true")
     args = ap.parse_args()
 
@@ -106,17 +153,37 @@ def main():
     secs = section_map(pe)
     rows = pdata_rows(pe)
     syms = load_symbols(args.symbols)
-    flags = unwind_flags(pe, rows)
+    info = unwind_info(pe, rows)
 
     text = secs.get(".text")
     in_text = 0
     covered = 0
+    primary_bytes = 0
+    functions = 0
+    fragments = 0
     named = 0
     buckets = collections.Counter()
     flag_counts = collections.Counter()
+
+    classified = []
+    fragments_by_parent = collections.defaultdict(list)
+    for beg, end, unwind in rows:
+        u = info.get(beg, {})
+        fl = u.get("flags")
+        is_fragment = fl is not None and (fl & UNW_FLAG_CHAININFO)
+        parent = primary_parent(beg, info) if is_fragment else None
+        classified.append((beg, end, u, fl, is_fragment, parent))
+        if is_fragment:
+            fragments_by_parent[parent].append((beg, end - beg))
+
+    primary_begs = {beg for beg, _end, _u, _fl, is_fragment, _parent in classified
+                    if not is_fragment}
+    unresolved = sum(1 for _beg, _end, _u, _fl, is_fragment, parent in classified
+                     if is_fragment and parent not in primary_begs)
+
     out = open(args.jsonl, "w", encoding="utf-8", newline="\n") if args.jsonl else None
 
-    for beg, end, unwind in rows:
+    for beg, end, u, fl, is_fragment, parent in classified:
         size = end - beg
         if text and text["rva"] <= beg and end <= text["rva"] + text["vsize"]:
             in_text += 1
@@ -124,8 +191,11 @@ def main():
         name = syms.get(beg)
         if name:
             named += 1
-        u = flags.get(beg, {})
-        fl = u.get("flags")
+        if is_fragment:
+            fragments += 1
+        else:
+            functions += 1
+            primary_bytes += size
         if fl is not None:
             if fl & UNW_FLAG_EHANDLER:
                 flag_counts["ehandler"] += 1
@@ -142,14 +212,23 @@ def main():
                 break
         buckets[str(b)] += 1
 
-        if out:
-            out.write(json.dumps({
+        if out and not (args.functions_only and is_fragment):
+            row = {
                 "rva": beg,
                 "va": base + beg,
                 "size": size,
                 "name": name,
+                "kind": "fragment" if is_fragment else "function",
                 "unwind": u,
-            }, ensure_ascii=False) + "\n")
+            }
+            if is_fragment:
+                row["parent"] = parent
+            else:
+                row["fragments"] = [
+                    {"rva": frag_beg, "size": frag_size}
+                    for frag_beg, frag_size in sorted(fragments_by_parent.get(beg, []))
+                ]
+            out.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     if out:
         out.close()
@@ -157,11 +236,16 @@ def main():
     print("image base       0x%X" % base)
     print("entry            0x%X" % (base + pe.OPTIONAL_HEADER.AddressOfEntryPoint))
     print("pdata entries    %d" % len(rows))
+    print("  primary funcs  %d" % functions)
+    print("  CHAININFO      %d fragments" % fragments)
+    if unresolved:
+        print("  unresolved     %d fragments" % unresolved)
     print("in .text         %d" % in_text)
     print("covered bytes    %d" % covered)
     if text:
         print("text vsize       %d" % text["vsize"])
-        print("coverage         %.2f%%" % (100.0 * covered / text["vsize"]))
+        print("coverage         %.2f%% (all extents)" % (100.0 * covered / text["vsize"]))
+        print("primary coverage %.2f%%" % (100.0 * primary_bytes / text["vsize"]))
     print("named starts     %d" % named)
     print("unnamed starts   %d" % (len(rows) - named))
     print("unwind           " + ", ".join("%s=%d" % (k, v) for k, v in sorted(flag_counts.items())))

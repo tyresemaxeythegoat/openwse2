@@ -55,7 +55,11 @@ The proofs deliberately cover the hardest "easy" features:
 - PE32+ x86-64, image base `0x140000000`, entry `0x140481CE0`
 - 6,735,360 bytes
 - `.text`: 5,125,605 bytes
-- `.pdata`: 14,461 usable function extents covering **94.07%** of `.text`
+- `.pdata`: 14,461 usable extents = 9,202 primary functions + 5,259
+  `CHAININFO` cold fragments
+- extent coverage **94.07%** of `.text`; primary coverage **73.52%**
+- the remaining **5.93%** (303,711 B) is leaf code/thunks with no `.pdata`
+  record, including 1,164 heuristic direct-call targets
 - 22,600 public symbols available from the shipped PDB
 - 1,151,840 instructions across the `.pdata` extents
 
@@ -66,7 +70,7 @@ mb_warband_wse2_x64.exe
         |
         |  tools/pe_catalog.py        (.pdata extents + PDB publics)
         v
-  function catalog (RVA, size, name, unwind flags)
+  function catalog (RVA, size, name, kind, parent/fragments, unwind flags)
         |
         |  proof/lift.py               (Capstone -> C, strict subset)
         v
@@ -96,14 +100,23 @@ also proves the image-base lift option and the guest VA mapping agree.
 ## What is not done
 
 - Wiring the full lifted catalog into the runtime; two functions execute today,
-  the remaining 14,459 are not lifted yet.
-- Full catalog lift: 14,461 functions, 1.15M instructions.
-- Exception model: 876 `EHANDLER`, 2,559 `UHANDLER`, 5,259 `CHAININFO`.
+  the other 9,200 primary functions are not lifted yet.
+- Full catalog lift: 9,202 primary functions plus 5,259 fragments, 1.15M
+  instructions. The 5.93% of `.text` without `.pdata` still needs a discovery
+  pass before every callee can be resolved.
+- Exception model: 876 `EHANDLER`, 2,559 `UHANDLER`, 5,259 `CHAININFO`
+  fragments.
 - Graphics: D3D9 + 15 `d3dx9_43` entry points over Vulkan/dxvk-native.
 - Audio: FMOD Ex loaded dynamically (`fmodex64.dll`).
 - Input: `dinput8` + `xinput1_3`.
 - No device or emulator is available in this workspace, so validation is
   static and differential only.
+- Memory ordering: lifted code uses plain C loads/stores and assumes x86
+  ordering. ARM64 needs atomics/acquire-release at shared handoff points; this
+  is not implemented yet and single-thread differentials cannot catch it.
+- Code-size optimization: the correctness-first emitter expands x86 text
+  roughly 10x in the proof samples. Flag fusion, register-typed signatures,
+  identity mapping, and NEON locals are planned before the bulk lift.
 
 ## Reproduce the proofs
 

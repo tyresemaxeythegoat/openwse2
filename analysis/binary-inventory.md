@@ -38,13 +38,50 @@ mapping: reserve the full virtual size.
 `.pdata` holds 14,464 `RUNTIME_FUNCTION` records; 3 are degenerate. Usable
 extents: **14,461**, covering **4,821,894 B** of `.text` (**94.07%**).
 
+Those extents are not 14,461 functions. 5,259 carry `UNW_FLAG_CHAININFO` and
+are cold fragments of another function; the owning primary is named by the
+chained `RUNTIME_FUNCTION`. The catalog therefore reports:
+
+- **9,202 primary functions**, covering **73.52%** of `.text`
+- **5,259 CHAININFO fragments**, covering another **20.55%**
+- **1,700** primary functions have at least one fragment; the maximum is 22
+- **5.93%** of `.text` (**303,711 B** in 8,285 ranges) has no `.pdata` entry
+  at all, so it is neither a primary extent nor a fragment
+
+`tools/pe_catalog.py` emits `kind` (`function`/`fragment`), `parent` for
+fragments, and a `fragments` list on each primary. `--functions-only` writes
+one row per primary function.
+
 - 7,086 starts have a public symbol.
 - 7,375 are anonymous but bounded.
 - No unwind pointer falls outside `.rdata`.
 
+### Coverage gaps
+
+The no-`.pdata` 5.93% is not just data: leaf functions and thunks live there
+and are still call targets. A conservative byte scan for `E8 rel32` finds
+**1,164 unique call targets inside `.text` but outside every `.pdata` extent**
+(the scan is heuristic because data bytes can look like calls). The
+most-referenced targets are CRT-style thunks:
+
+| Target | `E8` sites |
+|---|---:|
+| `0x47B8D4` | 6,854 |
+| `0x47A0F0` | 1,862 |
+| `0x28C90` | 1,795 |
+| `0x3E46B4` | 1,199 |
+| `0x46FA00` | 524 |
+
+The largest contiguous gap is `0x4D60E3..0x4DD280` (29,085 B). Bulk lifting
+needs a discovery pass for these ranges (public symbols, prologue patterns,
+call-target iteration) before the lifter can treat every direct callee as
+defined.
+
 ### Size distribution
 
-| Upper bound (B) | Functions |
+Extent sizes, including fragments:
+
+| Upper bound (B) | Extents |
 |---|---|
 | 16 | 1,128 |
 | 32 | 1,491 |

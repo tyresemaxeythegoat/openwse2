@@ -131,8 +131,14 @@ foreach ($f in "runtime","guest","pe","dispatch","imports","shim","teb","selftes
 
 - Thread creation and a TEB per guest thread; only the main thread layout is
   built.
+- Memory ordering: `ld*`/`st*` are plain C accesses. x86-64 is strongly
+  ordered; ARM64 is not. Guest `lock` operations, refcounts, and shared
+  publication need C11 atomics/acquire-release before threaded engine code
+  runs. Single-thread differentials do not exercise this.
 - TLS callbacks and dynamic `GetProcAddress` resolution.
 - Full KERNEL32/WS2_32/D3D9/D3DX9/FMOD/Lua shims.
 - Exception/unwind bridge.
+- Discovery of the 5.93% of `.text` that has no `.pdata` extent, so every
+  direct callee can be resolved.
 - Wiring the lifted catalog into dispatch and running the first guest
   instruction.
