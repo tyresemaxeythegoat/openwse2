@@ -99,20 +99,29 @@ def unwind_info(pe, rows):
     for beg, end, unwind in rows:
         off = unwind - base
         if off < 0 or off + 4 > len(img):
-            out[beg] = {"version": None, "flags": None, "chain": None}
+            out[beg] = {"version": None, "flags": None, "handler": None, "chain": None}
             continue
         b0 = img[off]
         flags = (b0 >> 3) & 0x1F
         count = img[off + 2]
+        # UNWIND_CODE entries are 2 bytes and the handler / chain field that
+        # follows is 4-byte aligned, so an odd CountOfCodes has 2 bytes of
+        # padding. Ignoring it shifts every handler RVA into nonsense.
         pos = off + 4 + count * 2
+        if count & 1:
+            pos += 2
+        handler = None
         if flags & (UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER):
-            pos += 4  # exception/termination handler RVA
+            if pos + 4 <= len(img):
+                handler = struct.unpack_from("<I", img, pos)[0]
+            pos += 4
         chain = None
         if flags & UNW_FLAG_CHAININFO and pos + 12 <= len(img):
             chain = struct.unpack_from("<III", img, pos)
         out[beg] = {
             "version": b0 & 7,
             "flags": flags,
+            "handler": handler,
             "chain": chain,
         }
     return out
