@@ -67,8 +67,16 @@ Runtime shape follows the proven Android static-recomp pattern: fixed guest
 address space, explicit CPU state, direct calls lowered to C calls, import
 thunks, and indirect dispatch through a resolved target table.
 
+The runtime skeleton lives in `runtime/`: guest reservation, PE32+ mapping with
+relocations, import thunk arena, indirect dispatch, TEB/PEB/TLS at the real x64
+offsets, and a small Win32 shim registry. `runtime/selftest.exe` validates it
+offline against a synthetic PE (one import, one relocation, TLS slot, stack
+limit), and every unit cross-compiles for AArch64.
+
 ## What is not done
 
+- Wiring the lifted catalog into the runtime; no guest instruction has executed
+  under the runtime yet.
 - Full catalog lift: 14,461 functions, 1.15M instructions.
 - Exception model: 876 `EHANDLER`, 2,559 `UHANDLER`, 5,259 `CHAININFO`.
 - Graphics: D3D9 + 15 `d3dx9_43` entry points over Vulkan/dxvk-native.

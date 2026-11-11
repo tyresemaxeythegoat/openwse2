@@ -8,6 +8,8 @@ lifted_*.c
 *.dll
 work/
 work_sse/
+work_call/
+runtime/build_arm64/
 
 # local analysis inputs
 WSE2.zip
