@@ -4,8 +4,8 @@ Static recompilation of the **WSE2** (Warband Script Enhancer 2) x64 engine to
 native **Android ARM64**. No MNBTool mod, no emulator, no Wine/Box64/Dynarmic.
 
 This repository holds the toolchain, analysis, and validation rigs. It does not
-contain game files, and it does not contain lifted engine code derived from
-them. Lifted code is generated locally from a copy of the retail executable.
+contain game files, it does not contain lifted engine code derived from
+them, and this project is not affiliated with TaleWorlds Entertainment. Lifted code is generated locally from a copy of the retail executable.
 
 ## What is proven
 
