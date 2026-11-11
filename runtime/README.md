@@ -17,6 +17,11 @@ tested without the retail executable.
 | `cpu.h` | CPU/flags/SSE model, identical semantics to `proof/cpu.h` |
 | `selftest.c` | offline end-to-end test with a synthetic PE |
 
+Android graphics lives in `runtime/android/`: a direct loader for the
+FristOneRR PanVK ICD (Mali kbase), a `libhardware` stub, and a host-tested
+probe. See `runtime/android/README.md`. It bypasses the platform
+`libvulkan.so` because retail Android ignores `VK_ICD_FILENAMES`.
+
 ## Address model
 
 Guest addresses are full VAs. The image is mapped at `0x140000000`; if that

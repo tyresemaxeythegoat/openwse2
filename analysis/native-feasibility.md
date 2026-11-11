@@ -214,6 +214,36 @@ bytecode, not API calls. Two options, in order of preference:
 2. Pre-translate known effect files to SPIR-V at build time. Faster runtime,
    but couples the build to shipped content.
 
+### 4.1 Native Vulkan device path (Android)
+
+The D3D9 -> Vulkan contract is necessary but not sufficient on Android: the
+platform `libvulkan.so` discovers drivers through `hw_get_module("vulkan")` and
+ignores `VK_ICD_FILENAMES` on retail devices. A custom ICD therefore cannot be
+registered with the system loader. The runtime instead loads the ICD directly
+through the documented interface and dispatches through
+`vk_icdGetInstanceProcAddr`; this is still native execution, since the ICD
+submits jobs to the Mali kbase kernel driver.
+
+Target: FristOneRR PanVK 3.7.0 (Mesa 27 base, kbase Job Manager backend), which
+supports Mali-G68/Valhall v9. It exports only the three ICD entry points
+(`vk_icdGetInstanceProcAddr`, `vk_icdNegotiateLoaderICDInterfaceVersion`,
+`vk_icdGetPhysicalDeviceProcAddr`), so the shim negotiates interface version 5
+and forwards global, instance, physical-device and device commands.
+
+The ICD's `DT_NEEDED libhardware.so` is a VNDK-SP dependency used only for
+optional gralloc/video buffers. `runtime/android/src/hardware_stub.c` provides
+a freestanding `libpanvk_hw.so` that returns `-ENOENT` from `hw_get_module`,
+which selects PanVK's supported no-gralloc fallback. The remaining dependencies
+are public NDK libraries.
+
+The host differential (`runtime/android/build_host.ps1`) validates negotiation,
+dispatch forwarding, instance and device creation against a mock ICD. Real
+device validation and the swapchain path are still open; the main integration
+risk is the WSI handoff, because dxvk-native otherwise creates surfaces through
+SDL2 and the platform loader. The runtime must give DXVK a surface created by
+the direct loader (`ANativeWindow` -> `vkCreateAndroidSurfaceKHR`), or patch the
+WSI to call it explicitly.
+
 ## 5. Audio, input, networking
 
 - Audio: `fmodex64.dll` is loaded dynamically. Provide a host `fmodex64` shim
@@ -235,6 +265,7 @@ bytecode, not API calls. Two options, in order of preference:
 | Exception handling | 876 EH / 2,559 UH / 5,259 chain | C++ exceptions at thunk boundary first; unwind interpreter second |
 | Indirect calls | 14,771 sites | Target table; loud failure on unknown target |
 | D3DX effect VM | 15 entry points, unknown bytecode volume | Offline effect parser + SPIR-V translation |
+| Native Vulkan bring-up | Direct ICD load, gralloc stub, WSI handoff | Host differential now; on-device probe; explicit `ANativeWindow` surface path |
 | FMOD Ex ABI | Dynamic load, mangled C++ | Binary-interface shim, symbol-by-symbol |
 | No device/emulator | - | Static + differential validation; add QEMU/device when available |
 | Anti-tamper / self-checks | Unknown | Locate and neutralize only checks that block non-Windows hosts |

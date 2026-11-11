@@ -14,6 +14,7 @@ work_flagdiff/
 work_seg/
 __pycache__/
 runtime/build_arm64/
+runtime/android/build/
 
 # local analysis inputs
 WSE2.zip
