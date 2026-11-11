@@ -1,7 +1,7 @@
 ﻿import os, struct, collections
 import capstone
 
-PROOF=os.path.join(os.environ["TEMP"],"opencode","wse2_pc","proof")
+PROOF=os.path.dirname(os.path.abspath(__file__))
 
 def elf_text(path):
     data=open(path,"rb").read()
@@ -28,7 +28,7 @@ def elf_text(path):
     return out
 
 md=capstone.Cs(capstone.CS_ARCH_ARM64,capstone.CS_MODE_ARM)
-for fn in ("lifted_memcmp_arm64.o","lifted_scaling_arm64.o","lifted_compare_arm64.o"):
+for fn in ("lifted_memcmp_arm64.o","lifted_scaling_arm64.o","lifted_compare_arm64.o","lifted_queryinterface_arm64.o"):
     p=os.path.join(PROOF,fn)
     for code,addr,size in elf_text(p):
         ins=list(md.disasm(code,addr))

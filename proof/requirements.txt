@@ -1,0 +1,6 @@
+# Hardware differential and proof rig dependencies.
+# Capstone 5 is required: the lifter uses the v5 operand/segment API.
+capstone==5.0.7
+pefile==2024.8.26
+unicorn==2.1.4
+ziglang==0.17.1

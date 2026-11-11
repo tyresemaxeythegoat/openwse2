@@ -9,7 +9,7 @@ them, and this project is not affiliated with TaleWorlds Entertainment. Lifted c
 
 ## What is proven
 
-Three real engine functions have been lifted from x86-64 to portable C and
+Four real engine functions have been lifted from x86-64 to portable C and
 executed natively, with differential validation against the original machine
 code under Unicorn:
 
@@ -18,10 +18,20 @@ code under Unicorn:
 | CRT `memcmp` | `0x485390` | 199 B | 69 | 495 | 0 |
 | `btConvexInternalShape::setLocalScaling` | `0x43E640` | 75 B | 17 | 464 | 0 |
 | `std::string::compare` (calls `memcmp`) | `0x124A0` | 122 B | 39 | 636 | 0 |
+| `rglEffectStateManager::QueryInterface` (vtable call) | `0x281B50` | 20 B | 7 | 464 | 0 |
 
-All three reach the same result on the x86-64 host build and cross-compile to
+All four reach the same result on the x86-64 host build and cross-compile to
 real AArch64 machine code (verified by disassembling the ARM64 objects: 660,
-175, and 304 AArch64 instructions, `stp/ldp/eor/csel/b.lo`, no interpreter).
+175, 304, and 115 AArch64 instructions, `stp/ldp/eor/csel/b.lo`, no
+interpreter).
+
+The operand-width and flag model is also validated against the real x86-64
+host CPU, not only Unicorn: `flagdiff.py` synthesizes instruction streams,
+runs them through a Win64 trampoline, and compares registers, flags, and XMM
+state against the lifted C. The final run passes **14,200 vectors with 0
+mismatches** across 8/16/32/64-bit shifts, 16/32-bit `imul`, 32-bit `cmovcc`,
+and `movd`/`movq` GPR/XMM/memory forms. Before the fixes, the same rig
+reported **6,079 mismatches in 14,000 vectors**.
 
 The proofs deliberately cover the hardest "easy" features:
 
@@ -33,6 +43,10 @@ The proofs deliberately cover the hardest "easy" features:
   `cmovb` / `setne` on the flag model
 - a lifted function calling another lifted function with the real
   `std::string` layout (SSO and heap buffers)
+- indirect calls: a vtable slot loaded from guest memory, target evaluated
+  before the return-address push, resolved through `wse2_dispatch_call`
+- GS-relative (TEB) addressing lowered through `c->teb`; FS and other segment
+  overrides abort the lift instead of being silently dropped
 
 ## Binary under analysis
 
@@ -93,23 +107,33 @@ also proves the image-base lift option and the guest VA mapping agree.
 
 ## Reproduce the proofs
 
-Requires Python 3 with `pefile`, `capstone`, `unicorn`, plus Zig 0.17.1.
+Requires Python 3 with the versions pinned in `proof/requirements.txt`
+(`capstone==5.0.7`, `pefile==2024.8.26`, `unicorn==2.1.4`) and Zig 0.17.1.
 
 ```powershell
 # host harnesses
 zig cc -target x86_64-windows-gnu -O1 -o harness.exe harness.c lifted_memcmp.c
 zig cc -target x86_64-windows-gnu -O1 -o harness_sse.exe harness_sse.c lifted_scaling.c
 zig cc -target x86_64-windows-gnu -O1 -o harness_call.exe harness_call.c lifted_compare.c lifted_memcmp.c
+zig cc -target x86_64-windows-gnu -O1 -o harness_indirect.exe harness_indirect.c lifted_queryinterface.c lifted_scaling.c
 
-# lift three functions from your own copy
+# lift four functions from your own copy
 python lift.py <path-to>mb_warband_wse2_x64.exe 0x485390 lifted_memcmp.c
 python lift.py <path-to>mb_warband_wse2_x64.exe 0x43E640 lifted_scaling.c
 python lift.py <path-to>mb_warband_wse2_x64.exe 0x124A0 lifted_compare.c
+python lift.py <path-to>mb_warband_wse2_x64.exe 0x281B50 lifted_queryinterface.c
 
 # differential vs the original machine code
 python diff.py <exe> ./harness.exe ./work
 python diff_sse.py <exe> ./harness_sse.exe ./work_sse
 python diff_call.py <exe> ./harness_call.exe ./work_call
+python diff_indirect.py <exe> ./harness_indirect.exe ./work_indirect
+
+# operand-width/flag differential vs the real host CPU (Windows x64)
+python flagdiff.py --zig <zig.exe>
+
+# GS/TLS addressing and segment-override rejection
+python seg_test.py --zig <zig.exe>
 
 # runtime integration: production addressing, real image
 python lift.py <exe> 0x485390 lifted_memcmp_va.c --image-base 0x140000000

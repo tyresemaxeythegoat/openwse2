@@ -9,6 +9,10 @@ lifted_*.c
 work/
 work_sse/
 work_call/
+work_indirect/
+work_flagdiff/
+work_seg/
+__pycache__/
 runtime/build_arm64/
 
 # local analysis inputs

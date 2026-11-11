@@ -20,6 +20,7 @@ static void sleep_ms(uint32_t ms) { Sleep(ms); }
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <sys/syscall.h>
 
 static uint64_t mono_ns(void) {
     struct timespec ts;
@@ -28,7 +29,7 @@ static uint64_t mono_ns(void) {
 }
 static uint64_t mono_ms(void) { return mono_ns() / 1000000ull; }
 static uint64_t mono_ticks(void) { return mono_ns() / 100ull; } /* 10 MHz */
-static uint32_t current_tid(void) { return (uint32_t)(uintptr_t)pthread_self(); }
+static uint32_t current_tid(void) { return (uint32_t)syscall(SYS_gettid); }
 static uint32_t current_pid(void) { return (uint32_t)getpid(); }
 static void sleep_ms(uint32_t ms) {
     struct timespec ts;

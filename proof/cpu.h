@@ -14,6 +14,8 @@ typedef struct {
     uint64_t r[16];
     uint32_t flags;
     uint64_t rip;
+    /* Linear address of the Win64 TEB, used as the GS segment base. */
+    uint64_t teb;
     struct { uint64_t q[2]; } xmm[16];
 } CPU;
 
@@ -78,6 +80,21 @@ static inline uint64_t maskbits(int bits) {
     return bits == 64 ? ~0ull : ((1ull << bits) - 1);
 }
 
+/* Sign-extend the low `bits` of v to 64 bits. */
+static inline int64_t sext_bits(uint64_t v, int bits) {
+    uint64_t m = maskbits(bits);
+    v &= m;
+    if (bits < 64 && (v & (1ull << (bits - 1)))) {
+        v |= ~m;
+    }
+    return (int64_t)v;
+}
+
+/* Arithmetic right shift with x86 operand-width semantics. */
+static inline uint64_t sar_bits(uint64_t a, unsigned cnt, int bits) {
+    return (uint64_t)(sext_bits(a, bits) >> cnt) & maskbits(bits);
+}
+
 static inline uint32_t parity64(uint64_t v) {
     v &= 0xFF;
     v ^= v >> 4;
@@ -139,13 +156,14 @@ static inline void flags_shift(CPU *c, uint64_t a, uint64_t r, unsigned cnt, int
     uint32_t f = 0;
     if (cnt == 0) return;
     if (kind == 0) { /* shl */
-        if ((a >> (bits - cnt)) & 1) f |= FLAG_CF;
+        if (cnt < (unsigned)bits && ((a >> (bits - cnt)) & 1)) f |= FLAG_CF;
         if (cnt == 1 && (((r >> (bits - 1)) & 1) ^ (f & FLAG_CF ? 1 : 0))) f |= FLAG_OF;
     } else if (kind == 1) { /* shr */
-        if ((a >> (cnt - 1)) & 1) f |= FLAG_CF;
+        if (cnt < (unsigned)bits && ((a >> (cnt - 1)) & 1)) f |= FLAG_CF;
         if (cnt == 1 && ((a >> (bits - 1)) & 1)) f |= FLAG_OF;
     } else { /* sar */
-        if ((a >> (cnt - 1)) & 1) f |= FLAG_CF;
+        if (cnt < (unsigned)bits && ((a >> (cnt - 1)) & 1)) f |= FLAG_CF;
+        /* OF is cleared for sar by 1; undefined otherwise. */
     }
     f |= parity64(r);
     if (r == 0) f |= FLAG_ZF;
@@ -153,10 +171,13 @@ static inline void flags_shift(CPU *c, uint64_t a, uint64_t r, unsigned cnt, int
     c->flags = f;
 }
 
-static inline void flags_imul(CPU *c, uint64_t a, uint64_t b, uint64_t r) {
-    __int128 p = (__int128)(int64_t)a * (__int128)(int64_t)b;
-    if (p != (__int128)(int64_t)r) c->flags = (c->flags & ~(FLAG_CF | FLAG_OF)) | FLAG_CF | FLAG_OF;
-    else c->flags &= ~(FLAG_CF | FLAG_OF);
+static inline void flags_imul(CPU *c, uint64_t a, uint64_t b, uint64_t r, int bits) {
+    __int128 p = (__int128)sext_bits(a, bits) * (__int128)sext_bits(b, bits);
+    if (p != (__int128)sext_bits(r, bits)) {
+        c->flags = (c->flags & ~(FLAG_CF | FLAG_OF)) | FLAG_CF | FLAG_OF;
+    } else {
+        c->flags &= ~(FLAG_CF | FLAG_OF);
+    }
 }
 
 static inline void flags_bt(CPU *c, uint64_t a, uint64_t b, int bits) {

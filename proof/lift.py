@@ -96,24 +96,34 @@ def xmm_idx(insn, op):
 
 def addr_expr(insn, op):
     m = op.mem
+    # x86-64 keeps the FS/GS bases outside the GPR file. The WSE2 engine only
+    # uses GS (the Win64 TEB); refuse anything else instead of silently
+    # dropping the override and reading the wrong address.
+    seg = insn.reg_name(m.segment) if m.segment else ""
+    if seg and seg != "gs":
+        raise SystemExit("segment override %s: unsupported at 0x%X" % (seg, insn.address))
     if m.base == x86.X86_REG_RIP:
         target = IMAGE_BASE + insn.address + insn.size + m.disp
-        return "0x%Xull" % (target & 0xFFFFFFFFFFFFFFFF)
-    parts = []
-    if m.base:
-        name = insn.reg_name(m.base)
-        idx, _, _ = reg_info(name)
-        parts.append("c->r[%d]" % idx)
-    if m.index:
-        name = insn.reg_name(m.index)
-        idx, _, _ = reg_info(name)
-        parts.append("c->r[%d] * %d" % (idx, m.scale))
-    if m.disp or not parts:
-        if m.disp < 0:
-            parts.append("-0x%Xull" % (-m.disp))
-        else:
-            parts.append("0x%Xull" % m.disp)
-    return "(" + " + ".join(parts) + ")"
+        expr = "0x%Xull" % (target & 0xFFFFFFFFFFFFFFFF)
+    else:
+        parts = []
+        if m.base:
+            name = insn.reg_name(m.base)
+            idx, _, _ = reg_info(name)
+            parts.append("c->r[%d]" % idx)
+        if m.index:
+            name = insn.reg_name(m.index)
+            idx, _, _ = reg_info(name)
+            parts.append("c->r[%d] * %d" % (idx, m.scale))
+        if m.disp or not parts:
+            if m.disp < 0:
+                parts.append("-0x%Xull" % (-m.disp))
+            else:
+                parts.append("0x%Xull" % m.disp)
+        expr = "(" + " + ".join(parts) + ")"
+    if seg == "gs":
+        expr = "(c->teb + %s)" % expr
+    return expr
 
 
 def read_op(insn, op, size=None):
@@ -213,20 +223,22 @@ class Lifter:
         })
         for target in callees:
             self.emit("uint32_t f_%X(CPU *c);" % target)
-        if callees:
+        indirect = any(
+            i.mnemonic == "call" and i.operands and i.operands[0].type != x86.X86_OP_IMM
+            for i in self.insns
+        )
+        if indirect:
+            self.emit("uint32_t wse2_dispatch_call(CPU *c, uint64_t guest_va);")
+        if callees or indirect:
             self.emit("")
         self.emit("uint32_t f_%X(CPU *c)" % self.start)
         self.emit("{")
         for insn in self.insns:
             self.emit("L_%X: ;" % insn.address)
-            try:
-                self.one(insn)
-            except SystemExit:
-                raise
-            except Exception as e:
-                self.unsupported.append((insn, str(e)))
-                self.emit("    /* UNSUPPORTED 0x%X %s %s: %s */" % (
-                    insn.address, insn.mnemonic, insn.op_str, e))
+            # Never drop an instruction silently. A missing opcode must fail
+            # the lift, otherwise the generated code looks valid but computes
+            # the wrong thing.
+            self.one(insn)
         self.emit("    return 0;")
         self.emit("}")
         return "\n".join(self.out) + "\n"
@@ -310,25 +322,32 @@ class Lifter:
             mask = mask_for(bits)
             cnt = read_op(i, src, src.size)
             kind = 0 if m in ("shl", "sal") else (1 if m == "shr" else 2)
-            self.emit("    { unsigned cnt_ = (unsigned)(%s) & %d; if (cnt_) { uint64_t a_ = %s; uint64_t r_ = %s; flags_shift(c, a_, r_, cnt_, %d, %d); %s } }" % (
-                cnt, bits - 1, read_op(i, dst, size),
-                ("(a_ << cnt_) & %s" % mask) if kind == 0 else
-                ("(a_ >> cnt_) & %s" % mask) if kind == 1 else
-                ("(uint64_t)(((int64_t)a_ >> cnt_)) & %s" % mask),
-                bits, kind, write_op(i, dst, size, "r_")))
+            cnt_mask = 63 if bits == 64 else 31
+            if kind == 0:
+                rexpr = "(a_ << cnt_) & %s" % mask
+            elif kind == 1:
+                rexpr = "(a_ >> cnt_) & %s" % mask
+            else:
+                rexpr = "sar_bits(a_, cnt_, %d)" % bits
+            self.emit("    { unsigned cnt_ = (unsigned)(%s) & %d; uint64_t a_ = %s; "
+                      "uint64_t r_ = %s; if (cnt_) flags_shift(c, a_, r_, cnt_, %d, %d); %s }" % (
+                          cnt, cnt_mask, read_op(i, dst, size), rexpr,
+                          bits, kind, write_op(i, dst, size, "r_")))
             return
         if m == "imul":
             if len(ops) == 1:
                 raise SystemExit("one-operand imul unsupported at 0x%X" % i.address)
             dst = ops[0]
             size = dst.size
-            mask = mask_for(size * 8)
+            bits = size * 8
+            mask = mask_for(bits)
             if len(ops) == 2:
                 a, b = read_op(i, dst, size), read_op(i, ops[1], size)
             else:
                 a, b = read_op(i, ops[1], size), read_op(i, ops[2], size)
-            self.emit("    { uint64_t a_ = %s, b_ = %s; uint64_t r_ = (a_ * b_) & %s; flags_imul(c, a_, b_, r_); %s }" % (
-                a, b, mask, write_op(i, dst, size, "r_")))
+            self.emit("    { uint64_t a_ = %s, b_ = %s; uint64_t r_ = (a_ * b_) & %s; "
+                      "flags_imul(c, a_, b_, r_, %d); %s }" % (
+                          a, b, mask, bits, write_op(i, dst, size, "r_")))
             return
         if m == "bswap":
             dst = ops[0]
@@ -341,7 +360,15 @@ class Lifter:
             return
         if m in CMOV:
             dst, src = ops[0], ops[1]
-            self.emit("    if (%s) { %s }" % (CMOV[m], write_op(i, dst, dst.size, read_op(i, src, dst.size))))
+            if dst.size == 4:
+                # A 32-bit cmov writes EAX even when the condition is false,
+                # which clears bits 32..63 of the full register.
+                self.emit("    c->r[%d] = %s ? (uint32_t)(%s) : (uint32_t)c->r[%d];" % (
+                    reg_info(i.reg_name(dst.reg))[0], CMOV[m],
+                    read_op(i, src, 4), reg_info(i.reg_name(dst.reg))[0]))
+            else:
+                self.emit("    if (%s) { %s }" % (
+                    CMOV[m], write_op(i, dst, dst.size, read_op(i, src, dst.size))))
             return
         if m in COND:
             target = ops[0].imm
@@ -388,10 +415,14 @@ class Lifter:
             return
         if m == "call":
             dst = ops[0]
-            if dst.type != x86.X86_OP_IMM:
-                raise SystemExit("indirect call unsupported at 0x%X %s" % (i.address, i.op_str))
             retaddr = i.address + i.size
-            self.emit("    { c->r[RSP] -= 8; st64(c->r[RSP], 0x%Xull); f_%X(c); }" % (IMAGE_BASE + retaddr, dst.imm))
+            if dst.type == x86.X86_OP_IMM:
+                self.emit("    { c->r[RSP] -= 8; st64(c->r[RSP], 0x%Xull); f_%X(c); }" % (
+                    IMAGE_BASE + retaddr, dst.imm))
+            else:
+                target = read_op(i, dst, 8)
+                self.emit("    { uint64_t t_ = %s; c->r[RSP] -= 8; st64(c->r[RSP], 0x%Xull); "
+                          "wse2_dispatch_call(c, t_); }" % (target, IMAGE_BASE + retaddr))
             return
         if m in ("bt", "btc", "btr", "bts"):
             dst, src = ops[0], ops[1]
@@ -470,19 +501,34 @@ class Lifter:
             d = xmm_idx(i, dst)
             s = xmm_idx(i, src)
             if d is not None:
-                if s is None:
+                # Moves into XMM clear the rest of the 128-bit register.
+                if s is not None:
+                    src_v = ("xmm32(c, %d)" % s) if n == 4 else ("xmm64(c, %d)" % s)
+                    setter = "xmm_set32" if n == 4 else "xmm_set64"
+                    self.emit("    %s(c, %d, %s);" % (setter, d, src_v))
+                elif src.type == x86.X86_OP_REG:
+                    src_v = rreg(i.reg_name(src.reg))
+                    if n == 8:
+                        self.emit("    xmm_set64(c, %d, %s);" % (d, src_v))
+                    else:
+                        self.emit("    xmm_set32(c, %d, (uint32_t)%s);" % (d, src_v))
+                elif src.type == x86.X86_OP_MEM:
                     if n == 4:
-                        self.emit("    xmm_set32(c, %d, (uint32_t)ld32(%s));" % (d, addr_expr(i, src)))
+                        self.emit("    xmm_set32(c, %d, ld32(%s));" % (d, addr_expr(i, src)))
                     else:
                         self.emit("    xmm_set64(c, %d, ld64(%s));" % (d, addr_expr(i, src)))
                 else:
-                    src_v = ("xmm32(c, %d)" % s) if n == 4 else ("xmm64(c, %d)" % s)
-                    self.emit("    " + write_op(i, dst, n, src_v))
+                    raise SystemExit("movd/movq unsupported source at 0x%X" % i.address)
             else:
                 if s is None:
-                    raise SystemExit("movd/movq needs an xmm operand at 0x%X" % i.address)
+                    raise SystemExit("movd/movq needs an xmm source at 0x%X" % i.address)
                 src_v = ("xmm32(c, %d)" % s) if n == 4 else ("xmm64(c, %d)" % s)
-                self.emit("    " + write_op(i, dst, n, src_v))
+                if dst.type == x86.X86_OP_REG:
+                    self.emit("    " + wreg(i.reg_name(dst.reg), src_v))
+                elif dst.type == x86.X86_OP_MEM:
+                    self.emit("    st%d(%s, %s);" % (n * 8, addr_expr(i, dst), src_v))
+                else:
+                    raise SystemExit("movd/movq unsupported destination at 0x%X" % i.address)
             return
         raise SystemExit("unsupported instruction 0x%X %s %s" % (i.address, m, i.op_str))
 
@@ -523,8 +569,6 @@ def main():
         raise SystemExit("disassembly did not consume the whole function")
     lifter = Lifter(insns, beg, end)
     text = lifter.lift()
-    if lifter.unsupported:
-        sys.stderr.write("unsupported instructions present; see comments in output\n")
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     print("lifted 0x%X..0x%X (%d bytes, %d instructions) -> %s" % (beg, end, end - beg, len(insns), args.out))
