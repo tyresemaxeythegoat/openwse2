@@ -89,6 +89,36 @@ through dispatch, verifies the TEB/TLS access pattern and the stack-limit
 probe, then maps the same image at a second base and checks that the
 relocation was applied.
 
+### Integration with the real image
+
+With a retail executable available, generate production-mode lifts (absolute
+VAs, not RVAs) and map the real PE:
+
+```powershell
+python ..\proof\lift.py <exe> 0x485390 lifted_memcmp_va.c --image-base 0x140000000
+python ..\proof\lift.py <exe> 0x43E640 lifted_scaling_va.c --image-base 0x140000000
+
+& $zig cc -target x86_64-windows-gnu -O1 -I. -o integration.exe `
+    runtime.c guest.c pe.c dispatch.c integration.c `
+    lifted_memcmp_va.c lifted_scaling_va.c
+.\integration.exe <exe>
+```
+
+Expected:
+
+```
+wse2 runtime integration: PASS
+  image           0x140000000, 6735360 bytes, 7 sections, 8875 relocs
+  lifted calls    memcmp 5 cases, setLocalScaling 3 cases
+  dispatch        indirect calls through guest VAs
+```
+
+This maps the actual 6.7 MB executable at `0x140000000`, applies its 8,875 base
+relocations, and executes two lifted functions through `wse2_dispatch_call`
+using the production memory model. `setLocalScaling` reads its RIP-relative
+mask at `0x1404EFB10`, so a correct result also proves the image-base lift
+option and the guest VA mapping agree.
+
 Cross-compile every unit for the Android target:
 
 ```powershell

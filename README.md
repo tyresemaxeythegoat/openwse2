@@ -73,10 +73,16 @@ offsets, and a small Win32 shim registry. `runtime/selftest.exe` validates it
 offline against a synthetic PE (one import, one relocation, TLS slot, stack
 limit), and every unit cross-compiles for AArch64.
 
+`runtime/integration.exe` exercises the real image: it maps the retail 6.7 MB
+executable at its preferred base `0x140000000`, applies all 8,875 base
+relocations, and calls two production-mode lifts through `wse2_dispatch_call`.
+`setLocalScaling` reads its RIP-relative mask at `0x1404EFB10`, so a passing run
+also proves the image-base lift option and the guest VA mapping agree.
+
 ## What is not done
 
-- Wiring the lifted catalog into the runtime; no guest instruction has executed
-  under the runtime yet.
+- Wiring the full lifted catalog into the runtime; two functions execute today,
+  the remaining 14,459 are not lifted yet.
 - Full catalog lift: 14,461 functions, 1.15M instructions.
 - Exception model: 876 `EHANDLER`, 2,559 `UHANDLER`, 5,259 `CHAININFO`.
 - Graphics: D3D9 + 15 `d3dx9_43` entry points over Vulkan/dxvk-native.
@@ -104,6 +110,14 @@ python lift.py <path-to>mb_warband_wse2_x64.exe 0x124A0 lifted_compare.c
 python diff.py <exe> ./harness.exe ./work
 python diff_sse.py <exe> ./harness_sse.exe ./work_sse
 python diff_call.py <exe> ./harness_call.exe ./work_call
+
+# runtime integration: production addressing, real image
+python lift.py <exe> 0x485390 lifted_memcmp_va.c --image-base 0x140000000
+python lift.py <exe> 0x43E640 lifted_scaling_va.c --image-base 0x140000000
+zig cc -target x86_64-windows-gnu -O1 -I ..\runtime -o integration.exe `
+    ..\runtime\runtime.c ..\runtime\guest.c ..\runtime\pe.c ..\runtime\dispatch.c `
+    ..\runtime\integration.c lifted_memcmp_va.c lifted_scaling_va.c
+./integration.exe <exe>
 ```
 
 ## References

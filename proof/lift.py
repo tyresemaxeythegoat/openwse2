@@ -18,6 +18,11 @@ import capstone
 import pefile
 from capstone import x86
 
+# Absolute addresses emitted for RIP-relative data and pushed return addresses.
+# 0 keeps the proof rig's flat-at-zero image layout. Set to 0x140000000 for the
+# production runtime, which maps the image at its preferred base.
+IMAGE_BASE = 0
+
 # ---------------------------------------------------------------- registers
 
 REGS = {
@@ -92,7 +97,7 @@ def xmm_idx(insn, op):
 def addr_expr(insn, op):
     m = op.mem
     if m.base == x86.X86_REG_RIP:
-        target = insn.address + insn.size + m.disp
+        target = IMAGE_BASE + insn.address + insn.size + m.disp
         return "0x%Xull" % (target & 0xFFFFFFFFFFFFFFFF)
     parts = []
     if m.base:
@@ -386,7 +391,7 @@ class Lifter:
             if dst.type != x86.X86_OP_IMM:
                 raise SystemExit("indirect call unsupported at 0x%X %s" % (i.address, i.op_str))
             retaddr = i.address + i.size
-            self.emit("    { c->r[RSP] -= 8; st64(c->r[RSP], 0x%Xull); f_%X(c); }" % (retaddr, dst.imm))
+            self.emit("    { c->r[RSP] -= 8; st64(c->r[RSP], 0x%Xull); f_%X(c); }" % (IMAGE_BASE + retaddr, dst.imm))
             return
         if m in ("bt", "btc", "btr", "bts"):
             dst, src = ops[0], ops[1]
@@ -493,11 +498,15 @@ def find_function(pe, rva):
 
 
 def main():
+    global IMAGE_BASE
     ap = argparse.ArgumentParser()
     ap.add_argument("exe")
     ap.add_argument("rva", type=lambda s: int(s, 0))
     ap.add_argument("out")
+    ap.add_argument("--image-base", type=lambda s: int(s, 0), default=0,
+                    help="base added to RIP-relative targets and pushed return addresses")
     args = ap.parse_args()
+    IMAGE_BASE = args.image_base
 
     pe = pefile.PE(args.exe, fast_load=True)
     beg, end = find_function(pe, args.rva)
