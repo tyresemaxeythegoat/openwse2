@@ -15,6 +15,7 @@ work_seg/
 __pycache__/
 runtime/build_arm64/
 runtime/android/build/
+engine/build/
 
 # local analysis inputs
 WSE2.zip

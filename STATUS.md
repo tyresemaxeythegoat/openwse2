@@ -18,6 +18,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statemen
 | `decompile-all --name mbStatement` | PASS | 14 procedures written, 0 failed, 0 skipped; entry `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` |
 | `decompile-all` operand helpers | PASS | 3 procedures written, 0 failed (`parseOperand`, `returnValue`, ctor); entry `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
+| Portable operand/statement host tests | PASS | `operand tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
 ## In progress
@@ -97,6 +98,6 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statemen
    `mbSimpleTriggerManager` equivalents; compare against the proven statement encoding.
 2. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
    `header_operations_addon.py`.
-3. Add the first portable C++20 headers for `rglString`, `rglStream`, `mbStatement`,
-   `mbStatementBlock`, and `mbScript`, with host unit tests covering the tagged operand decoder.
+3. Extend the portable core: `mbSlots`, `mbScript`, and the block/statement reader with the
+   `rglStream` adapter; keep `engine/build_host.ps1` green. The NDK half of the gate remains blocked.
 4. Update `ROADMAP.md` and this file at the next milestone.
