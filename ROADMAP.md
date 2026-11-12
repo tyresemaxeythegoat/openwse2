@@ -46,9 +46,9 @@ Maintain and update these after every milestone:
 - [ ] **Sensor & performance hooks:** optional gyro aiming when bows/crossbows are drawn, pinch-to-zoom on the campaign map, Android thermal-throttling awareness, and configurable frame-rate caps (60/90/120 Hz).
 
 ## Immediate First Action
-Phase 1, Step 2 is complete: the 433-operation `executeWSE` map is extracted and the first handler
-group (2800–2809) is host-tested. Continue Phase 2 by transcribing the remaining `executeWSE` handler
-groups and wiring reconstructed statement blocks into the trigger runtime.
+Phase 1, Step 2 is complete: the 433-operation `executeWSE` map is extracted and the first two handler
+groups (2800–2809 and the floating-point group) are host-tested. Continue Phase 2 by transcribing the
+remaining `executeWSE` handler groups and wiring reconstructed statement blocks into the trigger runtime.
 
 ## Current Position
 - Phase 1, Step 1 is complete. Ghidra 12.1.4 + JDK 25.0.5 + Node 26.12.1 are installed under `C:\rea-tools` (the `%TEMP%` copies are wiped by server restarts). `rea doctor` reports the Ghidra provider healthy; REA still runs via CLI because it is not registered with OpenCode.
@@ -64,7 +64,7 @@ groups and wiring reconstructed statement blocks into the trigger runtime.
 - `decompile-all --name rglBinaryStream` completed: 9 procedures, 0 failures, plus a 2-procedure address-range export for the readers. Savegame values are raw little-endian 8/4/1-byte copies with no header; strings are `int32` length + bytes. Trigger savegame order is reconstructed, including the count-exceeded message-box path that still consumes surplus entries.
 - Portable `engine/` now covers the token reader (including booleans), tagged operands, `mbSlots`, statements, script managers, triggers, the event-key trigger/simple-trigger state machines, the binary savegame stream, and trigger savegame read/write; `engine/build_host.ps1` reports `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse tests: PASS`, `engine host tests: PASS`.
 - `executeWSE` opcode map complete: `tools/extract_wse_opcodes.py` regenerates `docs/wse_opcodes.json`, `docs/WSE_OPCODES.md`, and `engine/include/wse/vm/wse_opcodes.h` from the 9,245-line pseudocode dump plus `header_operations_addon.py`. All 433 SDK operations in 2800–5202 have handlers; there are no unknown or unhandled in-range opcodes.
-- Portable `engine/include/wse/vm/execute_wse.h` applies the `0x0FFFFFFF` opcode mask and implements the first proven group, 2800–2809 (arithmetic/logical right shifts, left shift, xor, complement; shift counts masked with `& 0x3F`). The other 423 mapped opcodes report `WseDispatch::unimplemented` until transcribed.
+- Portable `engine/include/wse/vm/execute_wse.h` applies the `0x0FFFFFFF` opcode mask and implements 25 opcodes: the 2800–2809 group (arithmetic/logical right shifts, left shift, xor, complement; shift counts masked with `& 0x3F`) and the floating-point group 4400/4405–4417/4438 (128-register bank, fixed-point scale 100, `rglRound64`, comparisons, arithmetic, min/max/clamp). The other 408 mapped opcodes report `WseDispatch::unimplemented` until transcribed.
 - The script reader parsed the full retail 3,467,512-byte `scripts.txt` sample: 1,755 scripts, every token consumed, 52 of 64 static names mapped (the rest are WSE-only scripts absent from that module). All 64 names are transcribed from the table at `0x1405c7ad0`; duplicate ids resolve to the first script in file order.
 - Host PanVK loader/surface tests pass; no Android NDK/SDK/device is available, so arm64 compilation remains blocked.
 - Next: transcribe the remaining `executeWSE` handler groups and wire statement-block execution into triggers.

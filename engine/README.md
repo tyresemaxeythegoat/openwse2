@@ -15,7 +15,7 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x14023ea20`, `0x14023e750`, `0x14020b9d0`, `0x14020b620`, `0x1400cca30`, `0x1400ccde0`, `0x14023eb80`, `0x14023ed70`, `0x14020bb10`, `0x14023eee0`, `0x14020b6f0`, `0x14020bd10` |
 | `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 64-entry name table, and script mapping | `0x14020b210`, `0x14020b330`, `0x14020b510`; globals `0x1406506c0`/`0x1406506c8`/`0x1406506cc`; table `0x1405c7ad0`; formats `0x1405142c0`/`0x1405142d0` |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 433 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e0cf0`; names from `header_operations_addon.py` |
-| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and the 2800–2809 handlers | `executeWSE` `0x1401e0cf0` cases at pseudocode lines 2165–2192 and 2390; `mbStatement::execute` `0x1401c21e0` |
+| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and the 2800–2809 plus floating-point handlers | `executeWSE` `0x1401e0cf0` cases at pseudocode lines 2165–2192, 2390, and 5369–8846; `mbStatement::execute` `0x1401c21e0` |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
@@ -90,12 +90,23 @@ pseudocode line and the handler's call extent. `tools/extract_wse_opcodes.py` re
 `include/wse/vm/wse_opcodes.h` from the 9,245-line pseudocode dump and the public
 `header_operations_addon.py` names.
 
-`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements the arithmetic/bitwise group
-2800–2809: arithmetic right shift (`val_shr`/`store_shr`), logical right shift
-(`val_lshr`/`store_lshr`), left shift (`val_shl`/`store_shl`), xor (`val_xor`/`store_xor`), and
-complement (`val_not`/`store_not`). Shift counts are masked with `& 0x3F`; `store_*` reads the value
-from operand 1 and leaves operand 0 as the destination lvalue. Every other mapped opcode returns
-`WseDispatch::unimplemented` until its handler is transcribed.
+`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements two groups. The
+arithmetic/bitwise group 2800–2809 covers arithmetic right shift (`val_shr`/`store_shr`), logical
+right shift (`val_lshr`/`store_lshr`), left shift (`val_shl`/`store_shl`), xor (`val_xor`/`store_xor`),
+and complement (`val_not`/`store_not`); shift counts are masked with `& 0x3F`, and `store_*` reads
+the value from operand 1 and leaves operand 0 as the destination lvalue.
+
+The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`, `fle`, `fsub`,
+`fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, and `fadd` (4400, 4405–4417, 4438). Registers are the
+128-entry float array `DAT_140649318`; `mbCheckRegister` (`0x1401c0ef0`) accepts indices 0–127.
+`fld` divides the fixed-point operand by 100 (`DAT_1406137b8`, set to `0x64` at `0x140070f3a`);
+`fst` multiplies by 100 and rounds with `rglRound64` (`0x1402950d0`): `floorf(x)` plus one when the
+fraction is greater than 0.5. Float comparisons use `rglAbs` and `FLT_EPSILON`. Handlers that do not
+write operand 0 return `WseDispatch::handled_no_store`; a failed comparison returns
+`WseDispatch::condition_false`; an invalid register is a successful no-op (`WseDispatch::ignored`),
+matching the retail `return true` fall-through.
+
+Every other mapped opcode returns `WseDispatch::unimplemented` until its handler is transcribed.
 
 ## Safety deviations
 

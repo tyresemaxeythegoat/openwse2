@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, and the 433-operation WSE extended opcode map recovered.
+Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 433-operation WSE extended opcode map, and the first two handler groups recovered.
 Last updated: 2026-11-12.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -169,8 +169,18 @@ The first portable handler group covers 2800–2809: `val_shr`/`store_shr` use a
 shift, `val_lshr`/`store_lshr` a logical right shift, `val_shl`/`store_shl` a left shift,
 `val_xor`/`store_xor` a bitwise xor, and `val_not`/`store_not` a complement. Shift counts are
 `(byte)count & 0x3F`; `store_*` reads the source from operand 1 (shift count from operand 2) and
-leaves operand 0 as the destination lvalue. All other mapped opcodes report
-`WseDispatch::unimplemented` until transcribed.
+leaves operand 0 as the destination lvalue.
+
+The second group covers floating-point registers: `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
+`fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, and `fadd` (4400, 4405–4417, 4438). The
+register bank is the 128-entry float array `DAT_140649318`; `mbCheckRegister` (`0x1401c0ef0`)
+accepts indices 0–127 with an unsigned comparison. `fld` divides the fixed-point operand by the
+scale `DAT_1406137b8` (set to 100 at `0x140070f3a`); `fst` multiplies by 100 and rounds with
+`rglRound64` (`0x1402950d0`), which is `floorf(x)` plus one when the fraction is greater than 0.5.
+Comparisons go through `rglAbs` (`0x140295010`) and `FLT_EPSILON`. Handlers that do not write
+operand 0 report `handled_no_store`; failed comparisons report `condition_false`; invalid registers
+are successful no-ops (`ignored`), matching the retail `return true` fall-through. All other mapped
+opcodes report `WseDispatch::unimplemented` until transcribed.
 
 ### `mbScript` — 176 bytes, type 0x1f6c4
 

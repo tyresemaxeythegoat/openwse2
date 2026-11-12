@@ -36,7 +36,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | Portable trigger runtime | Event-key state machine reconstructed and host-tested; statement conditions/consequences are callbacks until the VM executes blocks |
 | Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
 | `executeWSE` case mapping | Complete: 433/433 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode |
-| Portable `executeWSE` handlers | Opcode mask and the 2800–2809 shift/xor/complement group transcribed and host-tested; the other 423 mapped opcodes report `WseDispatch::unimplemented` |
+| Portable `executeWSE` handlers | 25 of 433 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement and 4400/4405–4417/4438 floating-point load/store/compare/arithmetic; the other 408 report `WseDispatch::unimplemented` |
 
 ## Confirmed by pseudocode
 
@@ -97,6 +97,16 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   cast to signed before `>>` (arithmetic); `val_lshr`/`store_lshr` shift the `ulonglong` operand
   directly (logical); `val_shl`/`store_shl` shift left; `val_xor`/`store_xor` combine operands 0/1 or
   1/2; `val_not`/`store_not` complement operand 0 or 1. Every shift masks the count with `& 0x3F`.
+- The floating-point cases at lines 5369–8846 index the 128-float array `DAT_140649318`.
+  `mbCheckRegister` (`0x1401c0ef0`) is `cmp ecx,0x7f; ja` (unsigned 0–127); a failed check returns
+  true without doing anything. `DAT_1406137b8` is the fixed-point scale and is set to `0x64` (100) at
+  `0x140070f3a`; `fld` divides by it, `fst` multiplies by it.
+- `rglRound64` (`0x1402950d0`) calls `floorf` (`0x1404bd5f8`), subtracts to get the fraction, and adds
+  one only when the fraction is greater than `0.5f` (constant at `0x14052c17c`). `rglAbs`
+  (`0x140295010`) clears the sign bit; `feq`/`fge`/`fle` compare through it with `FLT_EPSILON`.
+- `fclamp` orders its two bounds first (`min`/`max` of operands 2 and 3), then returns the lower bound,
+  the value, or the upper bound. `fdiv`/`fmod` report `"Division by zero"`/`"Modulo by zero"` and
+  leave the destination unchanged.
 - `mbStatementBlock::execute` (`0x1401f2530`): interpreter loop with a `0x1C08`-byte frame,
   128 × `0x38` loop frames, locals zeroing, block-level Lua hook, `call_script` recursion into
   `m_scripts[index] + 0x50` (stride `0xB0`, max depth 255), and special handling for opcodes
