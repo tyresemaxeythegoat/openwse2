@@ -1,7 +1,7 @@
 # STATUS
 
 Last updated: 2026-11-12.
-Phase: **1 — Binary Triage & SDK Alignment** (triage complete, focused decompilation in progress).
+Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statement VM recovered).
 
 ## Passing
 
@@ -14,7 +14,8 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, focused decompi
 | PDB symbol map | PASS | 47,947 symbols: 22,600 public, 1,167 global, 14,701 constant, 8,595 UDT, 884 local |
 | Vtable scan | PASS | 281 pointer runs; 209 class-identified; 75 `rgl*`/`mb*`/`WSE*` |
 | Tracking documents | PASS | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (19 classes, 1,673 symbols, 75 vtables) |
-| `decompile-all --name mbScript` | PASS | 5 procedures written, 0 failed (`pseudo/decompile-index.json`); entry `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` |
+| `decompile-all --name mbScript` | PASS | 5 procedures written, 0 failed; entry `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` |
+| `decompile-all --name mbStatement` | PASS | 14 procedures written, 0 failed, 0 skipped; entry `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
@@ -22,9 +23,9 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, focused decompi
 
 | Task | State |
 | --- | --- |
-| `decompile-all --name mbStatement` | Ghidra headless analysis running; output `pseudo_stmt/` |
-| Trigger manager pseudocode | Layouts and entry points verified; decompilation queued after `mbStatement` |
-| Opcode dispatcher identification | String anchors located (`Unrecognized opcode %d` @ `0x1405134d0`, `opcode %d out of range` @ `0x1405230d0`); `mbStatement::execute` / `executeWSE` pseudocode pending |
+| `mbStatement::parseOperand` / `returnValue` export | Not in `seeds.tsv`, so Ghidra named them `FUN_1401c2100` / `FUN_1401c2190` and the name filter skipped them; needs an address-range export |
+| Trigger manager pseudocode | Layouts and entry points verified; `mbTriggerManager` export queued |
+| `executeWSE` case mapping | 381 KB pseudocode captured (430 cases); individual WSE opcode → handler mapping not yet extracted |
 
 ## Confirmed by pseudocode
 
@@ -37,6 +38,27 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, focused decompi
 - `mbScriptManager::mapScripts` (`0x14020b510`): 64-entry static name table at `0x1405c7ad0`
   (`game_start`, …), linear match on `m_id`, writes index or `-1` into `m_mappedScripts`
   (`0x1406506cc`), logs `"Unable to map script %s"` on failure.
+- `mbStatementBlock::readStream` (`0x1401f2160`): reads `int32` count, allocates `count * 0x110`,
+  then per statement reads `uint32` opcode, `int32` operand count, and that many `int64` operands;
+  sets every `m_endStatement` (`+0x108`) to `-1`. **No bounds check** on either count.
+- `mbStatementBlock` layout: `m_statements` `+0x0`, `m_numStatements` `+0x8`, `m_analyzed` `+0xc`,
+  `m_numLocalVariablesUsed` `+0x10`, `m_luaHookRef` `+0x14`, `m_id` `+0x18` (96 bytes total).
+- `analyze` (`0x1401f22a0`): matches opcodes `3/4/5` and loop starters `6,7,0xb,0xc,0x10,0x11,0x12`
+  with two 128-entry stacks, writes `m_endStatement` jump targets, caps nesting at 128, and computes
+  `m_numLocalVariablesUsed` from operand tag `0x11`, clamped to `[0x20, 0x400]`.
+- Operand encoding: 7-bit tag in bits 56–62, 56-bit payload. Tags `0` immediate, `1` global array,
+  `2` global vector, `0x11` local variable. Negative 64-bit values are untagged immediates.
+- `mbStatement::execute` (`0x1401c21e0`): parses operands, masks opcode with `0x0FFFFFFF`, calls
+  `WSELuaManager::OnOperationExecute` when `operationHookTable[opcode] != -2`, then dispatches
+  opcodes `30..2767` through the 2,738-entry RVA jump table at `0x1401de220` and opcodes `>= 2768`
+  to `executeWSE`. Bit 31 inverts the result; bit 30 arms the stop latch (`DAT_1405d0d9c`).
+- `mbStatementBlock::execute` (`0x1401f2530`): interpreter loop with a `0x1C08`-byte frame,
+  128 × `0x38` loop frames, locals zeroing, block-level Lua hook, `call_script` recursion into
+  `m_scripts[index] + 0x50` (stride `0xB0`, max depth 255), and special handling for opcodes
+  `3/4/5/8/9`, `0x15/0x16/0x17`.
+- `WSELuaManager::OnOperationMgrExecute` (`0x140322760`): fetches the hook from the Lua registry,
+  pushes operands as integers, `lua_pcall(L, nargs, LUA_MULTRET, 0)`, and interprets the boolean
+  result as an override or handled flag.
 
 ## Blocked
 
@@ -52,17 +74,23 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, focused decompi
 - Required environment for CLI runs:
   `JAVA_HOME=C:\rea-tools\jdk-25.0.5+8`,
   `GHIDRA_INSTALL_DIR=C:\rea-tools\ghidra_12.1.4\ghidra_12.1.4_PUBLIC`.
+- `msdia140.dll` is now COM-registered system-wide (`regsvr32`, elevated) from
+  `C:\rea-tools\ghidra_12.1.4\ghidra_12.1.4_PUBLIC\Ghidra\Features\PDB\os\win_x86_64\`. Ghidra can
+  load the retail PDB directly; the earlier hanging `RegSvr32` dialogs were orphaned manual
+  registration attempts and are resolved.
 - `decompile-all` refuses a pre-created output directory; let the tool create it. Use `--resume`
   only when a previous export manifest exists.
+- Each export re-runs full Ghidra auto-analysis (~15–20 min). Do not run two exports concurrently
+  on this 8 GB machine; a second OpenCode session using Ghidra drives free RAM below 1 GB.
 
 ## Next concrete task
 
-1. When the `mbStatement` export finishes, read `mbStatement::readStream` / `parseOperand` /
-   `execute` / `executeWSE` and `mbStatementBlock::readStream` / `analyze` / `execute`.
-2. Confirm the 32-operand encoding and the `executeWSE` dispatch path against the WSESDK opcode
-   table; locate the opcode dispatcher via the two diagnostic strings.
-3. Decompile `mbTriggerManager::readStream` (`0x14023ea20`) and `execute` (`0x14023eee0`), then
-   `mbSimpleTriggerManager` equivalents.
+1. Export `mbStatement::parseOperand` (`0x1401c2100`) and `returnValue` (`0x1401c2190`) by address
+   range, or add them to `seeds.tsv` first.
+2. Decompile `mbTriggerManager::readStream` (`0x14023ea20`) / `execute` (`0x14023eee0`) and the
+   `mbSimpleTriggerManager` equivalents; compare against the proven statement encoding.
+3. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
+   `header_operations_addon.py`.
 4. Add the first portable C++20 headers for `rglString`, `rglStream`, `mbStatement`,
-   `mbStatementBlock`, and `mbScript`, with host unit tests.
+   `mbStatementBlock`, and `mbScript`, with host unit tests covering the tagged operand decoder.
 5. Update `ROADMAP.md` and this file at the next milestone.

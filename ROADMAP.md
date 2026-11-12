@@ -46,7 +46,7 @@ Maintain and update these after every milestone:
 - [ ] **Sensor & performance hooks:** optional gyro aiming when bows/crossbows are drawn, pinch-to-zoom on the campaign map, Android thermal-throttling awareness, and configurable frame-rate caps (60/90/120 Hz).
 
 ## Immediate First Action
-Finish Phase 1, Step 2: read the pending `mbScript` pseudocode, confirm the script/trigger parse order against the PDB layouts, and locate the opcode dispatcher via the two opcode-diagnostic strings.
+Finish Phase 1, Step 2: export `mbStatement::parseOperand` / `returnValue` by address range or add them to `seeds.tsv`, then reconstruct the tagged operand decoder and the trigger loaders as portable C++20 with host tests.
 
 ## Current Position
 - Phase 1, Step 1 is complete. Ghidra 12.1.4 + JDK 25.0.5 + Node 26.12.1 are installed under `C:\rea-tools` (the `%TEMP%` copies are wiped by server restarts). `rea doctor` reports the Ghidra provider healthy; REA still runs via CLI because it is not registered with OpenCode.
@@ -54,6 +54,6 @@ Finish Phase 1, Step 2: read the pending `mbScript` pseudocode, confirm the scri
 - Dependency corrections: Bullet Physics (393 types), FMOD Ex (`fmodex64.dll`, 53 delay imports), TinyXML, muParser, JSON, and stock Lua 5.1 (`lua5164.dll`, 103 imports). No Havok or LuaJIT evidence.
 - `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (19 classes), and `STATUS.md` are written.
 - `decompile-all --name mbScript` completed: 5 procedures, 0 failures. Pseudocode confirms `mbScriptManager::readStream`, `mbScript::readStream`, and `mapScripts` (64-entry name table at `0x1405c7ad0`).
-- `decompile-all --name mbStatement` is running in Ghidra headless to recover the opcode VM.
+- `decompile-all --name mbStatement` completed: 14 procedures, 0 failures. Confirmed the statement encoding (`uint32` opcode, `int32` count, `int64` operands, `m_endStatement`), the 7-bit operand tag scheme (`0` immediate, `1` global, `2` global vector, `0x11` local), `analyze` control-flow resolution, the 2,738-entry native jump table at `0x1401de220` for opcodes 30–2767, and `executeWSE` for opcodes ≥ 2768.
 - Host PanVK loader/surface tests pass; no Android NDK/SDK/device is available, so arm64 compilation remains blocked.
-- Next: read the statement/VM pseudocode, confirm the 32-operand encoding and dispatcher, then start portable C++20 headers for the script/trigger subsystem.
+- Next: export the two unseeded helpers, then decompile the trigger managers and start portable C++20 headers with host tests for the operand decoder.

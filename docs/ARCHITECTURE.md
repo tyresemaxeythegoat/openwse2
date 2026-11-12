@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; `mbScript` pseudocode captured; statement/VM export in progress.
+Status: Phase 1 — binary triage complete; script statement VM parse and dispatch recovered; trigger exports pending.
 Last updated: 2026-11-12.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -302,8 +302,92 @@ the script index into `m_mappedScripts` (`0x1406506cc`, 64 × `int32_t`), or `-1
 | `0x140322760` | `WSELuaManager::OnOperationMgrExecute` | `bool(mbStatementBlock*, int&, int64_t*, bool&)` |
 
 `WSELuaManager::OnOperationMgrExecute` is the bridge between the native statement VM and the WSE
-operation manager; it is the primary candidate for the WSE-extended opcode dispatch. Its pseudocode
-and the `mbStatement`/`mbStatementBlock` export are the remaining open evidence.
+operation manager. Its pseudocode confirms that it reads a function from the Lua registry
+(`lua_rawgeti(L, LUA_REGISTRYINDEX, hookRef)`), pushes the parsed operands as integers, calls it with
+`lua_pcall(L, operandCount, LUA_MULTRET, 0)`, and interprets the returned boolean as either an
+override value or a "handled" flag.
+
+### Statement encoding (pseudocode-confirmed)
+
+`mbStatementBlock::readStream` (`0x1401f2160`) reads the binary form:
+
+1. `int32_t` statement count (`m_numStatements` at `+0x8`).
+2. `count` records of `0x110` bytes (272), each:
+   - `uint32_t` opcode at `+0x0`
+   - `int32_t` operand count at `+0x4`
+   - `operandCount` × `int64_t` operands at `+0x8` (the array holds 32)
+   - `m_endStatement` at `+0x108` is initialized to `-1`
+3. The original performs **no bounds check** on the operand count or statement count. The Android
+   port must clamp operands to 32 and validate the allocation size before reading.
+
+Operand words use a tagged 64-bit encoding (proven in `mbStatementBlock::execute`):
+
+| Bits | Meaning |
+| --- | --- |
+| 0–55 | payload |
+| 56–62 | 7-bit tag (`(value >> 56) & 0x7f`) |
+
+A negative `int64_t` is treated as an untagged immediate (the full 64-bit value is used). Observed
+tags:
+
+| Tag | Meaning | Source |
+| ---: | --- | --- |
+| `0` | immediate value | `0x1401f2530` |
+| `1` | global value array `DAT_140613830[index]` | `0x1401f2530` |
+| `2` | global value vector `DAT_140613818[index]`, bounds-checked against `DAT_140613820` | `0x1401f2530` |
+| `0x11` | local variable `m_locals[index]` | `0x1401f22a0`, `0x1401f2530` |
+
+`analyze` (`0x1401f22a0`) computes the local-variable count by scanning operands (clamped to 32) for
+tag `0x11` and storing `maxIndex + 1`, clamped to `[0x20, 0x400]`, in `m_numLocalVariablesUsed`.
+It also resolves control flow: opcode `3` (`try_end`), `4` (`try_begin`), `5` (`else_try`), and the
+loop starters `6, 7, 0xb, 0xc, 0x10, 0x11, 0x12` maintain two 128-entry stacks, and every covered
+statement gets `m_endStatement` set to the matching exit index (unmatched entries get the statement
+count). Nesting beyond 128 is a hard error.
+
+### Opcode word and dispatch
+
+`mbStatement::execute` (`0x1401c21e0`) masks the opcode word with `0x0FFFFFFF`; the top bits are
+modifiers:
+
+| Bit | Effect |
+| --- | --- |
+| `0x40000000` (30) | arms the global "stop/return" latch (`DAT_1405d0d9c`) after execution |
+| `0x80000000` (31) | inverts the boolean result |
+
+Dispatch order:
+
+1. Parse every operand with `mbStatement::parseOperand` into parallel `int64_t[]` and `int32_t[]`
+   arrays.
+2. If the statement is not WSE-disabled and `operationHookTable[opcode] != -2`, call
+   `WSELuaManager::OnOperationExecute`; a hook may supply the return value.
+3. Opcodes `30..2767` (`0x1e..0xACF`) dispatch through a 2,738-entry jump table of 32-bit RVAs at
+   `0x1401de220` (VA base `0x140000000`). The decompiled call passes the second parsed operand;
+   the full native handler signature still needs confirmation.
+4. Opcodes `>= 2768` (`0xAD0`) go to `mbStatement::executeWSE` (`0x1401e0cf0`), a 381 KB / 9,245-line
+   pseudocode function with 430 `case` labels and four nested switch sites. This is the WSE2
+   extended opcode implementation and the largest single reconstruction target.
+
+### Block execution
+
+`mbStatementBlock::execute` (`0x1401f2530`) is the interpreter loop:
+
+- Pushes a frame on the global call stack (`DAT_1405d0da0`); frame storage is `0x1C08` bytes with a
+  128-entry loop stack of `0x38`-byte frames and a depth field at `+0x1C00`.
+- Calls `analyze()` on entry, then optionally zeroes `clamp(m_numLocalVariablesUsed, 0x20, 0x400)`
+  qwords of locals.
+- If `m_luaHookRef` (`+0x14`) is not `-2`, calls `WSELuaManager::OnOperationMgrExecute` for a
+  block-level Lua hook; a `false` return aborts the block.
+- Special opcodes handled in the loop:
+  - `1` `call_script`: resolves operand 0 through the tag decoder, bounds-checks the script index
+    against `m_numScripts`, and recursively executes `g_scriptManager.m_scripts[index] + 0x50`
+    (`mbScript` stride `0xB0`, statement block at `+0x50`). Call depth is capped at `0xFF`.
+  - `3` `try_end` → `endLoop`; `4` `try_begin` pushes a loop frame; `5` `else_try` jumps to
+    `m_endStatement` when the previous condition was true; `8` `break_loop` and `9` `continue_loop`
+    scan the loop stack for the enclosing loop frame.
+  - `0x15`, `0x16`, `0x17` are script-parameter access/store operations using `parseOperand` and
+    `returnValue`; invalid parameter IDs log `"Invalid Script Parameter ID: %d"`.
+  - All other opcodes `<= 0x14` route to `startLoop`.
+  - Opcodes `>= 0x1E` go to `mbStatement::execute`.
 
 ## 6. External dependencies (import evidence)
 
@@ -347,14 +431,18 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
 ## 8. Evidence gaps / next measurements
 
-1. Pseudocode for `mbStatement::readStream` / `parseOperand` / `execute`, `mbStatementBlock::execute`,
-   `mbTriggerManager::readStream`, `mbSimpleTriggerManager::readStream`, and `mbGame::readTriggers`
-   to confirm token order and the 32-operand encoding against WSESDK.
-2. Locate `gameOperation` table construction in `WSELuaManager` and map opcode IDs to handlers.
-3. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
-4. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
+1. `mbStatement::parseOperand` (`0x1401c2100`) and `returnValue` (`0x1401c2190`): these were named
+   `FUN_*` by Ghidra because they are absent from `seeds.tsv`, so the `--name mbStatement` filter
+   skipped them. Export by address range (`--address-start 0x1401c20f0 --address-end 0x1401c21c0`)
+   or add them to the seed file first.
+2. `mbTriggerManager::readStream` / `execute` and `mbSimpleTriggerManager` equivalents; confirm the
+   trigger text/binary token order against the proven statement format.
+3. Locate `gameOperation` table construction in `WSELuaManager` and map opcode IDs to the native jump
+   table and `executeWSE` cases.
+4. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
+5. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
    writing asset code.
-5. Validate every reconstructed offset against decompiled member accesses before committing C++.
+6. Validate every reconstructed offset against decompiled member accesses before committing C++.
 
 ## 9. Evidence index
 
@@ -365,6 +453,7 @@ REA evidence records:
 | `ev_1665f9ad51202515ef1aacbb7bf7b387cca77cbc8d89b9f1aafe2a938dd5db43` | `binary_overview` | 19,759 procedures, 7,157 strings |
 | `ev_db4cc10aa916c9f0b08683c292a14a086adf2d721408cc587a76f6e98879fd70` | `inspect_pe_imports` | 23 DLLs, 542 functions |
 | `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` | `decompile_all --name mbScript` | 5 procedures, 0 failures |
+| `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` | `decompile_all --name mbStatement` | 14 procedures written, 0 failures, 0 skipped |
 
 Derived PDB/PE artifacts (retained outside the repository; hashes pin the exact inputs):
 
