@@ -200,6 +200,11 @@ Same three-member shape as `mbTriggerManager` with `mbSimpleTrigger*` elements.
 The `operationHookLuaRefs[5300]` array proves the extended opcode space has at least 5,300 slots.
 Global instance `g_luaManager` at `0x14064b2c0`.
 
+WSESDK cross-reference: `header_operations.py` declares 1,535 operation names (1,489 unique numeric
+IDs, 0–5,202), and `header_operations_addon.py` adds 477 declarations (472 unique). The maximum SDK
+opcode (5,202) fits inside the 5,300-slot hook array, corroborating that the array is indexed by
+opcode ID.
+
 ### `mbGame` — 94,536 bytes, type 0x1b936 (selected members)
 
 | Offset | Member | Type |
