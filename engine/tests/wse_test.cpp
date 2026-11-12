@@ -24,6 +24,10 @@ void expect(bool condition, const char* what) {
     }
 }
 
+bool close(float lhs, float rhs, float tolerance = 1e-5f) {
+    return std::fabs(lhs - rhs) <= tolerance;
+}
+
 using wse::vm::WseDispatch;
 using wse::vm::WseEffect;
 using wse::vm::WseOpcode;
@@ -52,6 +56,8 @@ void test_enum_values() {
     expect(opcode(WseOpcode::store_not) == 2809, "store_not opcode value");
     expect(opcode(WseOpcode::register_get) == 3000, "register_get opcode value");
     expect(opcode(WseOpcode::fld) == 4400, "fld opcode value");
+    expect(opcode(WseOpcode::fsqrt) == 4418, "fsqrt opcode value");
+    expect(opcode(WseOpcode::fatan2) == 4436, "fatan2 opcode value");
     expect(opcode(WseOpcode::fadd) == 4438, "fadd opcode value");
     expect(opcode(WseOpcode::array_create) == 5000, "array_create opcode value");
     expect(opcode(WseOpcode::skeleton_model_clean_body_sections) == 5202,
@@ -305,6 +311,145 @@ void test_fp_arithmetic() {
            "fclamp accepts the bounds in either order");
 }
 
+void test_fp_math() {
+    std::array<float, wse::vm::kFpRegisterCount> fp{};
+    WseEffect effect;
+
+    fp[1] = 9.0f;
+    expect(run(opcode(WseOpcode::fsqrt), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 3.0f),
+           "fsqrt takes the square root");
+
+    fp[1] = -2.5f;
+    expect(run(opcode(WseOpcode::fabs), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 2.5f),
+           "fabs clears the sign");
+
+    fp[1] = 1.2f;
+    expect(run(opcode(WseOpcode::fceil), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 2.0f),
+           "fceil rounds up");
+
+    fp[1] = -1.2f;
+    expect(run(opcode(WseOpcode::ffloor), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], -2.0f),
+           "ffloor rounds down");
+
+    fp[1] = 0.0f;
+    expect(run(opcode(WseOpcode::fexp), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 1.0f),
+           "fexp(0) is one");
+
+    fp[1] = 2.0f;
+    fp[2] = 10.0f;
+    expect(run(opcode(WseOpcode::fpow), {}, {0, 1, 2}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 1024.0f),
+           "fpow raises operand 1 to operand 2");
+
+    fp[1] = static_cast<float>(std::exp(1.0));
+    expect(run(opcode(WseOpcode::fln), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 1.0f),
+           "fln is the natural logarithm");
+
+    fp[1] = 1000.0f;
+    expect(run(opcode(WseOpcode::flog), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 3.0f),
+           "flog defaults to base 10");
+
+    fp[0] = 42.0f;
+    fp[1] = 512.0f;
+    expect(run(opcode(WseOpcode::flog), {}, {0, 1, 8}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 3.0f),
+           "flog divides log10(value) by log10(base)");
+
+    fp[0] = 42.0f;
+    expect(run(opcode(WseOpcode::flog), {}, {0, 1, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               fp[0] == 42.0f,
+           "flog rejects a base below two without storing");
+
+    fp[1] = 7.5f;
+    fp[2] = 2.0f;
+    expect(run(opcode(WseOpcode::fmod), {}, {0, 1, 2}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 1.5f),
+           "fmod divides operand 1 by operand 2");
+
+    fp[0] = 42.0f;
+    fp[2] = 0.0f;
+    expect(run(opcode(WseOpcode::fmod), {}, {0, 1, 2}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               fp[0] == 42.0f,
+           "fmod by zero leaves the destination unchanged");
+
+    fp[0] = 0.0f;
+    fp[1] = 0.5f;
+    expect(run(opcode(WseOpcode::fsin), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], std::sin(0.5f)),
+           "fsin calls sin");
+    expect(run(opcode(WseOpcode::fcos), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], std::cos(0.5f)),
+           "fcos calls cos");
+    expect(run(opcode(WseOpcode::ftan), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], std::tan(0.5f)),
+           "ftan calls tan");
+    expect(run(opcode(WseOpcode::fsinh), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], std::sinh(0.5f)),
+           "fsinh calls sinh");
+    expect(run(opcode(WseOpcode::fcosh), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], std::cosh(0.5f)),
+           "fcosh calls cosh");
+    expect(run(opcode(WseOpcode::ftanh), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], std::tanh(0.5f)),
+           "ftanh calls tanh");
+
+    fp[1] = 0.5f;
+    expect(run(opcode(WseOpcode::fasin), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], std::asin(0.5f)),
+           "fasin calls asin");
+    expect(run(opcode(WseOpcode::facos), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], std::acos(0.5f)),
+           "facos calls acos");
+    expect(run(opcode(WseOpcode::fatan), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], std::atan(0.5f)),
+           "fatan calls atan");
+
+    fp[1] = 1.0f;
+    fp[2] = 1.0f;
+    expect(run(opcode(WseOpcode::fatan2), {}, {0, 1, 2}, effect, fp) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 0.78539816f),
+           "fatan2 passes operand 2 as x");
+
+    fp[0] = 42.0f;
+    expect(run(opcode(WseOpcode::fsqrt), {}, {0, 128}, effect, fp) ==
+                   WseDispatch::ignored &&
+               fp[0] == 42.0f,
+           "fsqrt rejects register 128");
+
+    expect(run(opcode(WseOpcode::fpow), {}, {0, 1}, effect, fp) ==
+                   WseDispatch::operand_count_out_of_range,
+           "fpow rejects a missing exponent register");
+}
+
 void test_fp_errors() {
     std::array<float, wse::vm::kFpRegisterCount> fp{};
     WseEffect effect;
@@ -356,6 +501,7 @@ int main() {
     test_fp_load_store();
     test_fp_compare();
     test_fp_arithmetic();
+    test_fp_math();
     test_fp_errors();
     test_descriptions();
 

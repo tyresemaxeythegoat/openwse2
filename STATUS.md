@@ -1,6 +1,6 @@
 # STATUS
 
-Last updated: 2026-11-12.
+Last updated: 2026-11-13.
 Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary streams, trigger loaders/runtime/savegames recovered).
 
 ## Passing
@@ -27,6 +27,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
 | WSE extended opcode map | PASS | 433/433 SDK operations 2800–5202 mapped to `executeWSE` handlers (424 switch + 9 equality cases); `docs/WSE_OPCODES.md`, `docs/wse_opcodes.json`, generated `engine/include/wse/vm/wse_opcodes.h` |
 | Retail `scripts.txt` parse | PASS | Full 3,467,512-byte sample: 1,755 scripts, every token consumed, 52/64 mapped names (the rest are WSE-only scripts absent from that module) |
+| WSE2 v1.1.5.5 release delta | PASS (inventory) | Official `WSE2.zip` SHA-256 `c45197e8…276e28b1`; x64 exe 7,060,992 B with file version 1.1.5.5; SDK adds 7 operations (3911, 4517–4522), no renumbering; 440 in-range ops |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
 ## In progress
@@ -36,7 +37,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | Portable trigger runtime | Event-key state machine reconstructed and host-tested; statement conditions/consequences are callbacks until the VM executes blocks |
 | Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
 | `executeWSE` case mapping | Complete: 433/433 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode |
-| Portable `executeWSE` handlers | 25 of 433 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement and 4400/4405–4417/4438 floating-point load/store/compare/arithmetic; the other 408 report `WseDispatch::unimplemented` |
+| Portable `executeWSE` handlers | 44 of 433 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement and 4400/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 389 report `WseDispatch::unimplemented` (against the analyzed 2026-10-14 build) |
 
 ## Confirmed by pseudocode
 
@@ -107,6 +108,20 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 - `fclamp` orders its two bounds first (`min`/`max` of operands 2 and 3), then returns the lower bound,
   the value, or the upper bound. `fdiv`/`fmod` report `"Division by zero"`/`"Modulo by zero"` and
   leave the destination unchanged.
+- The math call sites prove the argument order: `fpow` loads operand 2 into `xmm1` and operand 1 into
+  `xmm0` at `0x1401ec7bb`/`0x1401ec7cf` (`pow(base, exponent)`); `fatan2` does the same at
+  `0x1401ecb88`/`0x1401ecb9c` (`atan2(y, x)`); `fmod` loads operand 2 as the divisor and operand 1 as
+  the dividend at `0x1401ec8d5`/`0x1401ec908`. The one-operand helpers read `fp[operand 1]` and the
+  shared tail at `0x1401ec50e` stores `xmm0` through operand 0.
+- `flog` (`0x1401ec818`): fewer than three operands selects base 10 (`mov ebx,0xa`); otherwise the
+  base is the int32 literal in operand 2. A base below 2 jumps to the logger with
+  `"invalid logarithm base %d"` and returns true without storing. The result is
+  `log10(fp[operand 1]) / log10((float)base)`.
+- WSE2 v1.1.5.5 (2026-11-12) keeps every existing opcode number and adds seven SDK operations:
+  `party_get_current_terrain_variant` 3911, `scene_set_region_variant` 4517,
+  `scene_set_height_fog` 4518, `scene_set_water_waves` 4519, `scene_set_flora_wind` 4520,
+  `scene_rebake_sky_cube` 4521, and `scene_set_weather_direction` 4522. The analyzed baseline
+  (2026-10-14 x64 build, no version resource) does not implement them.
 - `mbStatementBlock::execute` (`0x1401f2530`): interpreter loop with a `0x1C08`-byte frame,
   128 × `0x38` loop frames, locals zeroing, block-level Lua hook, `call_script` recursion into
   `m_scripts[index] + 0x50` (stride `0xB0`, max depth 255), and special handling for opcodes

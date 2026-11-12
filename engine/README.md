@@ -90,21 +90,24 @@ pseudocode line and the handler's call extent. `tools/extract_wse_opcodes.py` re
 `include/wse/vm/wse_opcodes.h` from the 9,245-line pseudocode dump and the public
 `header_operations_addon.py` names.
 
-`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements two groups. The
+`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements three groups. The
 arithmetic/bitwise group 2800–2809 covers arithmetic right shift (`val_shr`/`store_shr`), logical
 right shift (`val_lshr`/`store_lshr`), left shift (`val_shl`/`store_shl`), xor (`val_xor`/`store_xor`),
 and complement (`val_not`/`store_not`); shift counts are masked with `& 0x3F`, and `store_*` reads
 the value from operand 1 and leaves operand 0 as the destination lvalue.
 
 The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`, `fle`, `fsub`,
-`fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, and `fadd` (4400, 4405–4417, 4438). Registers are the
-128-entry float array `DAT_140649318`; `mbCheckRegister` (`0x1401c0ef0`) accepts indices 0–127.
+`fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, and the transcendental/rounding helpers
+`fsqrt`, `fabs`, `fceil`, `ffloor`, `fexp`, `fpow`, `fln`, `flog`, `fmod`, `fsin`, `fcos`, `ftan`,
+`fsinh`, `fcosh`, `ftanh`, `fasin`, `facos`, `fatan`, and `fatan2` (4400, 4405–4438). Registers are
+the 128-entry float array `DAT_140649318`; `mbCheckRegister` (`0x1401c0ef0`) accepts indices 0–127.
 `fld` divides the fixed-point operand by 100 (`DAT_1406137b8`, set to `0x64` at `0x140070f3a`);
 `fst` multiplies by 100 and rounds with `rglRound64` (`0x1402950d0`): `floorf(x)` plus one when the
-fraction is greater than 0.5. Float comparisons use `rglAbs` and `FLT_EPSILON`. Handlers that do not
-write operand 0 return `WseDispatch::handled_no_store`; a failed comparison returns
-`WseDispatch::condition_false`; an invalid register is a successful no-op (`WseDispatch::ignored`),
-matching the retail `return true` fall-through.
+fraction is greater than 0.5. Float comparisons use `rglAbs` and `FLT_EPSILON`. `fpow`, `fmod`, and
+`fatan2` take operand 1 in `xmm0` and operand 2 in `xmm1`; `flog` reads a literal base from operand 2
+(default 10, minimum 2). Handlers that do not write operand 0 return `WseDispatch::handled_no_store`;
+a failed comparison returns `WseDispatch::condition_false`; an invalid register is a successful no-op
+(`WseDispatch::ignored`), matching the retail `return true` fall-through.
 
 Every other mapped opcode returns `WseDispatch::unimplemented` until its handler is transcribed.
 

@@ -161,9 +161,10 @@ dispatch-table entry type, and `gameConstTable` (56 bytes) holds a named `std::v
 `mbStatement::executeWSE` (`0x1401e0cf0`) receives the three decoded operand arrays and handles every
 opcode above the native jump table. The SDK's extended operation range is 2800–5202.
 `docs/wse_opcodes.json`, `docs/WSE_OPCODES.md`, and the generated
-`engine/include/wse/vm/wse_opcodes.h` map 433/433 in-range SDK operations to their handlers (424
-switch cases plus 9 equality-tested cases), recording the pseudocode line and handler extent for each.
-No in-range SDK opcode is unknown or unhandled.
+`engine/include/wse/vm/wse_opcodes.h` map 433/433 in-range SDK operations in the analyzed
+2026-10-14 build to their handlers (424 switch cases plus 9 equality-tested cases), recording the
+pseudocode line and handler extent for each. No in-range SDK opcode is unknown or unhandled.
+WSE2 v1.1.5.5 adds seven operations without renumbering the existing ones: 3911 and 4517–4522.
 
 The first portable handler group covers 2800–2809: `val_shr`/`store_shr` use an arithmetic right
 shift, `val_lshr`/`store_lshr` a logical right shift, `val_shl`/`store_shl` a left shift,
@@ -172,15 +173,22 @@ shift, `val_lshr`/`store_lshr` a logical right shift, `val_shl`/`store_shl` a le
 leaves operand 0 as the destination lvalue.
 
 The second group covers floating-point registers: `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
-`fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, and `fadd` (4400, 4405–4417, 4438). The
-register bank is the 128-entry float array `DAT_140649318`; `mbCheckRegister` (`0x1401c0ef0`)
-accepts indices 0–127 with an unsigned comparison. `fld` divides the fixed-point operand by the
-scale `DAT_1406137b8` (set to 100 at `0x140070f3a`); `fst` multiplies by 100 and rounds with
-`rglRound64` (`0x1402950d0`), which is `floorf(x)` plus one when the fraction is greater than 0.5.
-Comparisons go through `rglAbs` (`0x140295010`) and `FLT_EPSILON`. Handlers that do not write
-operand 0 report `handled_no_store`; failed comparisons report `condition_false`; invalid registers
-are successful no-ops (`ignored`), matching the retail `return true` fall-through. All other mapped
-opcodes report `WseDispatch::unimplemented` until transcribed.
+`fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, `fsqrt`, `fabs`, `fceil`, `ffloor`,
+`fexp`, `fpow`, `fln`, `flog`, `fmod`, `fsin`, `fcos`, `ftan`, `fsinh`, `fcosh`, `ftanh`, `fasin`,
+`facos`, `fatan`, and `fatan2` (4400, 4405–4438). The register bank is the 128-entry float array
+`DAT_140649318`; `mbCheckRegister` (`0x1401c0ef0`) accepts indices 0–127 with an unsigned comparison.
+`fld` divides the fixed-point operand by the scale `DAT_1406137b8` (set to 100 at `0x140070f3a`);
+`fst` multiplies by 100 and rounds with `rglRound64` (`0x1402950d0`), which is `floorf(x)` plus one
+when the fraction is greater than 0.5. Comparisons go through `rglAbs` (`0x140295010`) and
+`FLT_EPSILON`. The call sites at `0x1401ec7bb`/`0x1401ec7cf`, `0x1401ecb88`/`0x1401ecb9c`, and
+`0x1401ec8d5`/`0x1401ec908` pass operand 1 in `xmm0` and operand 2 in `xmm1`, proving
+`pow(base, exponent)`, `atan2(y, x)`, and `fmod(dividend, divisor)`. `flog` at `0x1401ec838` reads the
+literal base from the int32 operand array, defaults to 10 when there are fewer than three operands,
+rejects bases below 2 with "invalid logarithm base %d", and returns true without storing.
+Division/modulo by zero log and return true. Handlers that do not write operand 0 report
+`handled_no_store`; failed comparisons report `condition_false`; invalid registers are successful
+no-ops (`ignored`), matching the retail `return true` fall-through. All other mapped opcodes report
+`WseDispatch::unimplemented` until transcribed.
 
 ### `mbScript` — 176 bytes, type 0x1f6c4
 

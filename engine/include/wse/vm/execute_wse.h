@@ -23,8 +23,17 @@
 // The complete 433-opcode structure is in docs/WSE_OPCODES.md and
 // docs/wse_opcodes.json; wse_opcodes.h is generated from that map. This file
 // implements the arithmetic/bitwise group 2800..2809 and the self-contained
-// floating-point register group 4400, 4405..4417, and 4438. Every other known
+// floating-point register group 4400, 4405..4436, and 4438. Every other known
 // opcode reports WseDispatch::unimplemented instead of guessing.
+//
+// Transcendental helpers (case addresses in executeWSE):
+//   pow 0x1400b01e0, log 0x1400a6a00, log10 0x1400a69f0, fmod 0x14006aa00,
+//   atan2 0x14006f8f0. The call sites pass xmm0 = fp[operand 1] and
+//   xmm1 = fp[operand 2], so fpow is pow(base, exponent), atan2 is
+//   atan2(y, x), and fmod is fmod(dividend, divisor). flog reads its base from
+//   the int32 operand 2 (a literal): fewer than 3 operands default to 10, and
+//   a base below 2 logs "invalid logarithm base %d" and returns true without
+//   storing. Division and modulo by zero also log and return true.
 
 #pragma once
 
@@ -429,6 +438,155 @@ enum class WseDispatch : std::uint8_t {
         fp[destination] = v < low ? low : (v <= high ? v : high);
         return WseDispatch::handled_no_store;
     }
+
+    // Transcendental unary register operations: operand 0 is the destination,
+    // operand 1 the source. All register checks happen before evaluation, and
+    // a failed check is the retail `return true` no-op.
+    case WseOpcode::fsqrt:
+    case WseOpcode::fabs:
+    case WseOpcode::fceil:
+    case WseOpcode::ffloor:
+    case WseOpcode::fexp:
+    case WseOpcode::fln:
+    case WseOpcode::fsin:
+    case WseOpcode::fcos:
+    case WseOpcode::ftan:
+    case WseOpcode::fsinh:
+    case WseOpcode::fcosh:
+    case WseOpcode::ftanh:
+    case WseOpcode::fasin:
+    case WseOpcode::facos:
+    case WseOpcode::fatan: {
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) || !wse_register_ok(narrow[1]) || fp.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto destination = static_cast<std::size_t>(narrow[0]);
+        const auto source = static_cast<std::size_t>(narrow[1]);
+        if (destination >= fp.size() || source >= fp.size()) {
+            return WseDispatch::ignored;
+        }
+        const float value = fp[source];
+        switch (static_cast<WseOpcode>(opcode)) {
+        case WseOpcode::fsqrt:
+            fp[destination] = std::sqrt(value);
+            break;
+        case WseOpcode::fabs:
+            fp[destination] = std::fabs(value);
+            break;
+        case WseOpcode::fceil:
+            fp[destination] = std::ceil(value);
+            break;
+        case WseOpcode::ffloor:
+            fp[destination] = std::floor(value);
+            break;
+        case WseOpcode::fexp:
+            fp[destination] = std::exp(value);
+            break;
+        case WseOpcode::fln:
+            fp[destination] = std::log(value);
+            break;
+        case WseOpcode::fsin:
+            fp[destination] = std::sin(value);
+            break;
+        case WseOpcode::fcos:
+            fp[destination] = std::cos(value);
+            break;
+        case WseOpcode::ftan:
+            fp[destination] = std::tan(value);
+            break;
+        case WseOpcode::fsinh:
+            fp[destination] = std::sinh(value);
+            break;
+        case WseOpcode::fcosh:
+            fp[destination] = std::cosh(value);
+            break;
+        case WseOpcode::ftanh:
+            fp[destination] = std::tanh(value);
+            break;
+        case WseOpcode::fasin:
+            fp[destination] = std::asin(value);
+            break;
+        case WseOpcode::facos:
+            fp[destination] = std::acos(value);
+            break;
+        case WseOpcode::fatan:
+            fp[destination] = std::atan(value);
+            break;
+        default:
+            break;
+        }
+        return WseDispatch::handled_no_store;
+    }
+
+    // Binary register operations. xmm0 carries operand 1, xmm1 operand 2:
+    // pow(base, exponent), atan2(y, x), and fmod(dividend, divisor).
+    case WseOpcode::fpow:
+    case WseOpcode::fmod:
+    case WseOpcode::fatan2: {
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) || !wse_register_ok(narrow[1]) ||
+            !wse_register_ok(narrow[2]) || fp.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto destination = static_cast<std::size_t>(narrow[0]);
+        const auto lhs_index = static_cast<std::size_t>(narrow[1]);
+        const auto rhs_index = static_cast<std::size_t>(narrow[2]);
+        if (destination >= fp.size() || lhs_index >= fp.size() ||
+            rhs_index >= fp.size()) {
+            return WseDispatch::ignored;
+        }
+        const float lhs = fp[lhs_index];
+        const float rhs = fp[rhs_index];
+        switch (static_cast<WseOpcode>(opcode)) {
+        case WseOpcode::fpow:
+            fp[destination] = std::pow(lhs, rhs);
+            break;
+        case WseOpcode::fmod:
+            if (rhs == 0.0f) {
+                return WseDispatch::handled_no_store;
+            }
+            fp[destination] = std::fmod(lhs, rhs);
+            break;
+        case WseOpcode::fatan2:
+            fp[destination] = std::atan2(lhs, rhs);
+            break;
+        default:
+            break;
+        }
+        return WseDispatch::handled_no_store;
+    }
+
+    // flog: log10(fp[operand 1]) / log10(base). The base is the int32 literal
+    // in operand 2; with fewer than three operands the retail default is 10.
+    case WseOpcode::flog: {
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) || !wse_register_ok(narrow[1]) || fp.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto destination = static_cast<std::size_t>(narrow[0]);
+        const auto source = static_cast<std::size_t>(narrow[1]);
+        if (destination >= fp.size() || source >= fp.size()) {
+            return WseDispatch::ignored;
+        }
+        std::int32_t base = 10;
+        if (narrow.size() >= 3) {
+            base = narrow[2];
+        }
+        if (base < 2) {
+            return WseDispatch::handled_no_store;  // "invalid logarithm base %d"
+        }
+        fp[destination] =
+            std::log10(fp[source]) / std::log10(static_cast<float>(base));
+        return WseDispatch::handled_no_store;
+    }
+
     default:
         break;
     }
