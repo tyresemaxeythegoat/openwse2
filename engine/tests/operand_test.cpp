@@ -142,6 +142,22 @@ void test_text_stream() {
     }
 
     {
+        TokenReader reader("true FALSE 1 0 2");
+        bool value = false;
+        expect(reader.read_bool(value) && value, "true parses");
+        expect(reader.read_bool(value) && !value, "FALSE parses case-insensitively");
+        expect(reader.read_bool(value) && value, "1 parses as true");
+        expect(reader.read_bool(value) && !value, "0 parses as false");
+        expect(reader.read_bool(value) && value, "nonzero integer parses as true");
+    }
+
+    {
+        TokenReader reader("yes");
+        bool value = true;
+        expect(!reader.read_bool(value), "non-boolean token is rejected");
+    }
+
+    {
         TokenReader reader("   ");
         expect(reader.at_end(), "whitespace-only input is empty");
         expect(!reader.skip_tokens(1), "skipping a token past EOF fails");

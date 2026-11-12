@@ -2,10 +2,12 @@
 //
 // Evidence:
 //   rglInputTextFileStream vftable 0x14051c0b0  -> rglTextStream readers
-//     +0x58 rglTextStream::readFloat
-//     +0x70 rglTextStream::readInt64
-//     +0x78 rglTextStream::readUInt32
-//     +0x80 rglTextStream::readUInt32
+//     +0x50 readStream, +0x58 readFloat, +0x60 readBool
+//     +0x68 readUInt64, +0x70 readInt64
+//     +0x78 readUInt32 / +0x80 readInt32 (same 32-bit parser)
+//     +0x88 readByte, +0x90 readString
+//   rglTextStream has no standalone vftable; the concrete input and output
+//   file streams instantiate its readers and writers in their vtables.
 //   rglStream layout (PDB type 0x1b18a): m_contents rglString at +0x58,
 //     m_cursor at +0x54; the whole file is buffered and readers advance the
 //     cursor.
@@ -14,6 +16,20 @@
 //
 // Module files are therefore whitespace-delimited decimal text, not binary
 // records. A "token" is a maximal run of bytes > 0x20.
+//
+// Retail parser behaviour (rglTextStream, evidence ev_cebc7ae0...e8c8d3):
+//   readFloat  0x1402a2ba0  strtod(token, nullptr), cast to float
+//   readBool   0x1402a2c30  _stricmp "true"/"false", else strtol(token) != 0
+//   readInt32  0x1402a2e00  manual 15-char decimal loop, leading '-'
+//   readInt64  0x1402a2d80  rglString::toInt64Stream (same decimal grammar)
+//   readString 0x1402a2f80  raw token, no quote stripping
+// Writers emit the value, then a single 0x20 separator.
+//
+// The retail readers are deliberately lenient: strtod accepts a numeric
+// prefix, readBool treats anything strtol cannot parse as false, and the
+// integer loops never validate a digit. This port parses strictly and reports
+// failure instead, so malformed module data cannot be silently misread. Valid
+// retail module files contain plain decimal tokens and parse identically.
 
 #pragma once
 
@@ -64,6 +80,33 @@ public:
     [[nodiscard]] bool read_f32(float& out) noexcept { return read_real(out); }
     [[nodiscard]] bool read_f64(double& out) noexcept { return read_real(out); }
 
+    // "true"/"false" compared case-insensitively (retail uses _stricmp),
+    // otherwise a decimal integer where nonzero is true. Retail falls back to
+    // strtol() and yields false for unparseable tokens; this reader rejects
+    // them instead.
+    [[nodiscard]] bool read_bool(bool& out) noexcept {
+        const std::string_view token = next_token();
+        if (token.empty()) {
+            return false;
+        }
+        if (equals_ascii_case_insensitive(token, "true")) {
+            out = true;
+            return true;
+        }
+        if (equals_ascii_case_insensitive(token, "false")) {
+            out = false;
+            return true;
+        }
+        std::int64_t value = 0;
+        const auto result =
+            std::from_chars(token.data(), token.data() + token.size(), value, 10);
+        if (result.ec != std::errc{} || result.ptr != token.data() + token.size()) {
+            return false;
+        }
+        out = value != 0;
+        return true;
+    }
+
     [[nodiscard]] bool read_string(std::string& out) {
         const std::string_view token = next_token();
         if (token.empty()) {
@@ -81,6 +124,27 @@ private:
                static_cast<unsigned char>(contents[position]) <= 0x20) {
             ++position;
         }
+    }
+
+    [[nodiscard]] static bool equals_ascii_case_insensitive(std::string_view lhs,
+                                                            std::string_view rhs) noexcept {
+        if (lhs.size() != rhs.size()) {
+            return false;
+        }
+        for (std::size_t index = 0; index < lhs.size(); ++index) {
+            char left = lhs[index];
+            char right = rhs[index];
+            if (left >= 'A' && left <= 'Z') {
+                left = static_cast<char>(left - 'A' + 'a');
+            }
+            if (right >= 'A' && right <= 'Z') {
+                right = static_cast<char>(right - 'A' + 'a');
+            }
+            if (left != right) {
+                return false;
+            }
+        }
+        return true;
     }
 
     void skip_whitespace(std::size_t& position) const noexcept {

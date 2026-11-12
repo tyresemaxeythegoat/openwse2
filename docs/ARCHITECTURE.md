@@ -97,14 +97,34 @@ Two concrete subclasses matter:
 
 | Class | Size | vftable | Adds |
 | --- | ---: | --- | --- |
-| `rglTextStream` | 160 | `0x14051c2b0` | token readers (`readFloat/readInt64/readUInt32/readString`) over `m_contents` |
-| `rglInputTextFileStream` | 176 | `0x14051c0b0` | `m_file` `FILE*` at `+0xA0`, `m_closed` `bool` at `+0xA8` |
+| `rglTextStream` | 160 | inherited | token reader implementations (`readFloat/readInt64/readUInt32/readString`); no standalone vftable is emitted |
+| `rglInputTextFileStream` | 176 | `0x14051c0b0` | `m_file` `FILE*` at `+0xA0`, `m_closed` `bool` at `+0xA8`; vtable `+0x50..+0x90` are the `rglTextStream` readers |
+| `rglOutputTextFileStream` | 176 | `0x14051c2b0` | `m_file`/`m_closed`/`m_fileOpen` at `+0xA0/+0xA8/+0xA9`; vtable `+0x00..+0x48` are the `rglTextStream` writers; read slots are stubs |
 
 `rglInputTextFileStream::tryOpen` reads the file into `m_contents`; every reader then skips bytes
 `<= 0x20`, takes the next token, and parses it. Module files (`scripts.txt`, `triggers.txt`,
 `simple_triggers.txt`, `mission_templates.txt`, …) are whitespace-delimited decimal text. The
 separate `rglBinaryStream` (vftable `0x1405143d0`, 30 slots) is used for savegames, not module
 files.
+
+Exact reader behaviour (`ev_cebc7ae0…e8c8d3`, 18/18 functions):
+
+| Slot | Method | Behaviour |
+| --- | --- | --- |
+| `+0x58` | `readFloat` | `strtod(token, nullptr)` (0x1404808d8), cast to float |
+| `+0x60` | `readBool` | `_stricmp("true"/"false")`, otherwise `strtol(token,10) != 0` |
+| `+0x68` | `readUInt64` | `rglString::toUInt64Stream` decimal parser |
+| `+0x70` | `readInt64` | `rglString::toInt64Stream` decimal parser |
+| `+0x78` | `readUInt32` | 32-bit decimal loop (same code as `readInt32`) |
+| `+0x80` | `readInt32` | 15-character manual loop with a leading `-` |
+| `+0x88` | `readByte` | same manual decimal loop, 8-bit |
+| `+0x90` | `readString` | copies the raw token, no quote stripping |
+
+Every reader first skips bytes `<= 0x20` and calls `rglString::getNextToken`; reading past EOF
+raises `"Unexpected End of File while reading file: %s"` with `m_path`. Writers append the decimal
+text and a single `0x20` separator; `writeBool` emits `0`/`1`. The retail parsers are lenient
+(`strtod` accepts a numeric prefix, the integer loops accept non-digits), so the portable reader
+parses strictly and rejects malformed tokens instead.
 
 ### `mbStatementBlock` — 96 bytes, type 0x19048
 
@@ -229,6 +249,63 @@ statement block at `+0x8`, then sets the id `"%s Trigger [%d]"`.
 Safety: both managers index `g_timersTotal` with an unchecked `m_defaultTimerNo`. The Android port
 rejects an out-of-range index instead of reading past the array.
 
+### Trigger runtime (pseudocode-confirmed)
+
+`mbTriggerManager::execute(int)` (`0x14023eee0`) iterates `m_triggers` with stride `0x100` and
+**inlines** the `mbTrigger` state machine. The PDB declares `mbTrigger::execute`, but no separate
+public symbol is emitted.
+
+The integer argument is a trigger event key, not a clock:
+
+- `key >= 0` enables interval triggers. `mbGame::frameMove` passes `1`, `mbMission::frameMove`
+  passes `0x10`, and the slow-motion branch passes `0x10001`; the value itself is only tested for
+  sign.
+- `key < 0` matches an event trigger. Confirmed call sites: `mbAgent::updateExitStatus` `-112`,
+  `updateRangedAttackAction` `-105`/`-106`, `die` `-26`/`-56`, `knockDown` `-27`,
+  `updateBlow` `-28`, `fillMovementCapsule` `-110`, `fillCollisionCapsule` `-109`, `turn` `-102`,
+  `playActionSound` `-113`.
+
+Timers advance in `g_timersTotal` units of 100000 per second:
+`elapsed = (float)(now - stored) / 100000.0`.
+
+Per trigger:
+
+1. status 2 (rearm): if `rearmInterval <= elapsed(rearmTimer)`, set status 0 and
+   `checkTimer.value = now[checkTimer.timerNo]`.
+2. status 0 (idle):
+   - If `checkInterval <= -0.1`, compare `interval_key(checkInterval)` with the key. When they match
+     and the conditions block returns true, set status 2, `rearmTimer.value = now`, and execute the
+     consequences immediately.
+   - Otherwise, when `key >= 0` and `checkInterval <= elapsed(checkTimer)`, set
+     `checkTimer.value = now`; on conditions success set status 1 and `delayTimer.value = now`.
+3. status 1 (delay): if `delayInterval <= elapsed(delayTimer)`, set status 2,
+   `rearmTimer.value = now`, and execute the consequences.
+
+`interval_key` is `floor(x)` plus one only when `x - floor(x) > 0.5`; exact halves round toward
+negative infinity.
+
+`mbSimpleTrigger::execute` (`0x14020b6f0`): if `interval < -1.0`, require
+`interval_key(interval) == key`; otherwise require `key >= 0` and `interval <= elapsed(timer)`, then
+latch `timer.value = now`. Execute the single block; the return value is ignored.
+`mbSimpleTriggerManager::execute` (`0x14020bd10`) aborts its loop when the key is odd and positive
+and a game-event queue transition is detected (`DAT_1405d0f28 + 0x4a0` vs `+0x4a8`, tail int
+`0x12`); that check needs `mbGame` state and is not reconstructed yet.
+
+### Trigger savegames
+
+`rglBinaryStream` (vtable `0x1405143d0`):
+
+- `mbTriggerManager::writeSavegameStream` (`0x14023ed70`): `writeInt32(count)`; per trigger
+  `writeInt32(status)`, `writeInt64(checkTimer.value)`, `writeInt64(delayTimer.value)`,
+  `writeInt64(rearmTimer.value)`.
+- `mbTriggerManager::readSavegameStream` (`0x14023eb80`): `readInt32(count)`; if the file count
+  exceeds the manager count, log `"Load error: Number of triggers in file: %d, exceeds %d"`. Read
+  status and the three 64-bit values, discarding any extra file entries. Timer numbers are not
+  saved.
+- `mbSimpleTriggerManager::readSavegameStream` (`0x14020bb10`): `readInt32(count)`, error
+  `"Load error: Number of simple triggers in file: %d, exceeds %d"`, then one `int64` timer value
+  per trigger. No write counterpart appears in the binary.
+
 ### `WSELuaManager` — 21,504 bytes, type 0xadaf
 
 | Offset | Member | Type |
@@ -308,7 +385,7 @@ String evidence in `.rdata`:
 `mbScriptManager::readStream` (`0x14020b330`, pseudocode `decompile-index.json` entry):
 
 1. Calls stream vtable `+0x90` twice into a temporary `rglString` (the values are consumed but not
-   stored by the manager). In the text stream (`0x14051c2b0`), `+0x90` is `readString`, so the
+   stored by the manager). In the input text stream (`0x14051c0b0`), `+0x90` is `readString`, so the
    discarded values are the `scriptsfile`/`version` header words.
 2. Calls stream vtable `+0x80` twice into 4-byte integers; the second destination is
    `g_scriptManager.m_numScripts` (`0x1406506c8`). Both are read as 32-bit integers.
@@ -365,7 +442,7 @@ discard three header tokens (`triggersfile version 1` in the retail files) with
 
 `rglInputTextFileStream` derives from `rglTextStream`; both keep the 160-byte `rglStream` base and
 the file stream adds `FILE* m_file` at `+0xA0` and `bool m_closed` at `+0xA8`. The readers are token
-parsers, proven from vtable `0x14051c2b0`:
+parsers, proven from the `rglInputTextFileStream` vtable `0x14051c0b0`:
 
 | Vtable slot | Method | Statement use |
 | --- | --- | --- |
@@ -517,10 +594,10 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
 ## 8. Evidence gaps / next measurements
 
-1. `mbTrigger::execute` (`0x14023e...`) and `mbSimpleTrigger::execute` runtime state machine, plus the
-   savegame read/write order for both managers.
-2. `rglTextStream::readFloat/readInt64/readUInt32/readString` parse details (accepted syntax,
-   quote handling) from the pending `--name rglTextStream` export.
+1. Portable savegame support: the binary `rglBinaryStream` slot semantics and savegame file framing
+   (header/version) are documented only at the trigger-record level.
+2. `mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state
+   (`DAT_1405d0f28 + 0x4a0/0x4a8`, tail int `0x12`); the queue lifecycle is not reconstructed.
 3. Locate `gameOperation` table construction in `WSELuaManager` and map opcode IDs to the native jump
    table and `executeWSE` cases.
 4. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
@@ -539,7 +616,8 @@ REA evidence records:
 | `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` | `decompile_all --name mbScript` | 5 procedures, 0 failures |
 | `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` | `decompile_all --name mbStatement` | 14 procedures written, 0 failures, 0 skipped |
 | `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` | `decompile_all --address-start 0x1401c20f0 --address-end 0x1401c21c0` | `parseOperand`, `returnValue`, `mbStatement` ctor; 3 written, 0 failures |
-| `ev_e3530f99c32b3f59ecc82debcfff9db29d8641fd14d5f7576ccf12eb4cbe8d05` | `decompile_all --name Trigger` | 52 procedures written, 0 failures; trigger layouts and loaders |
+| `ev_e3530f99c32b3f59ecc82debcfff9db29d8641fd14d5f7576ccf12eb4cbe8d05` | `decompile_all --name Trigger` | 52 procedures written, 0 failures; trigger layouts, loaders, runtime, and savegames |
+| `ev_cebc7ae0bef7bccaddbcbb53c560d5d2020a5acf60c5bc03a77c496077e8c8d3` | `decompile_all --name rglTextStream` | 18 procedures written, 0 failures; exact token reader/writer semantics |
 
 Derived PDB/PE artifacts (retained outside the repository; hashes pin the exact inputs):
 

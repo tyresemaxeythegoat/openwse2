@@ -46,18 +46,19 @@ Maintain and update these after every milestone:
 - [ ] **Sensor & performance hooks:** optional gyro aiming when bows/crossbows are drawn, pinch-to-zoom on the campaign map, Android thermal-throttling awareness, and configurable frame-rate caps (60/90/120 Hz).
 
 ## Immediate First Action
-Finish Phase 1, Step 2: encode the `rglTextStream` token syntax from the running export, add the trigger runtime state machine to `seeds.tsv`, and extend the portable core with `scripts.txt`/`triggers.txt` readers and host tests.
+Finish Phase 1, Step 2: add a portable binary savegame stream and trigger savegame read/write, extend the portable core with `mbScript`/`mbScriptManager` token readers and a `scripts.txt` fixture, and map `executeWSE` cases.
 
 ## Current Position
 - Phase 1, Step 1 is complete. Ghidra 12.1.4 + JDK 25.0.5 + Node 26.12.1 are installed under `C:\rea-tools` (the `%TEMP%` copies are wiped by server restarts). `rea doctor` reports the Ghidra provider healthy; REA still runs via CLI because it is not registered with OpenCode.
 - Evidence: x64 image `c25b51a4…acdd2b`, 19,759 procedures, 7,157 strings; 23 DLLs / 542 imports; 14,877 PDB layouts, 47,947 symbols, 281 vtable runs (209 named, 75 `rgl*`/`mb*`/`WSE*`).
 - Dependency corrections: Bullet Physics (393 types), FMOD Ex (`fmodex64.dll`, 53 delay imports), TinyXML, muParser, JSON, and stock Lua 5.1 (`lua5164.dll`, 103 imports). No Havok or LuaJIT evidence.
-- `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (23 classes), and `STATUS.md` are written.
+- `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (24 classes), and `STATUS.md` are written.
 - `decompile-all --name mbScript` completed: 5 procedures, 0 failures. Pseudocode confirms `mbScriptManager::readStream`, `mbScript::readStream`, and `mapScripts` (64-entry name table at `0x1405c7ad0`).
 - `decompile-all --name mbStatement` completed: 14 procedures, 0 failures. Confirmed the statement record (`uint32` opcode, `int32` count, 32 `int64` operands, `m_endStatement`), the 7-bit operand tag scheme (`0` immediate, `1` global, `2` global vector, `0x11` local), `analyze` control-flow resolution, the 2,738-entry native jump table at `0x1401de220` for opcodes 30–2767, and `executeWSE` for opcodes ≥ 2768.
 - Address-range export completed: `mbStatement::parseOperand` and `returnValue` recovered (3/3 written). Operand 0 is the destination lvalue; `returnValue` writes through `g_globalVariables`, `mbSlots::set`, or `m_locals`, and rejects other tags with `"Illegal lvalue in statement"`.
-- `decompile-all --name Trigger` completed: 52 procedures, 0 failures. Confirmed both trigger manager loaders, all trigger layouts, the three-token header, the `"Game"`/`"Simple"` id prefixes, and the `g_timersTotal` timer seeding.
-- Stream identification: vtable `0x14051c0b0` is `rglInputTextFileStream`; module files are whitespace-delimited decimal text read through `rglTextStream` slots (`+0x58` float, `+0x70` int64, `+0x78`/`+0x80` int32, `+0x90` string). The earlier binary-record assumption is corrected in all tracking files.
-- Portable `engine/` now covers the token reader, tagged operands, `mbSlots`, statements, and triggers; `engine/build_host.ps1` reports `operand tests: PASS`, `trigger tests: PASS`, `engine host tests: PASS`.
+- `decompile-all --name Trigger` completed: 52 procedures, 0 failures. Confirmed both trigger manager loaders, all trigger layouts, the three-token header, the `"Game"`/`"Simple"` id prefixes, `g_timersTotal` timer seeding, and the savegame order.
+- `decompile-all --name rglTextStream` completed: 18 procedures, 0 failures. Vtable `0x14051c0b0` is `rglInputTextFileStream`; `0x14051c2b0` is `rglOutputTextFileStream`. Module files are whitespace-delimited decimal text read through the inherited `rglTextStream` slots (`+0x58` float, `+0x60` bool, `+0x70` int64, `+0x78`/`+0x80` 32-bit, `+0x90` raw string).
+- Trigger runtime: `mbTriggerManager::execute` inlines the state machine; the integer argument is an event key. Non-negative keys run interval triggers; negative keys match the rounded check interval (confirmed `-112`, `-105`/`-106`, `-26`/`-56`, `-27`, `-28`, `-110`/`-109`, `-102`, `-113`).
+- Portable `engine/` now covers the token reader (including booleans), tagged operands, `mbSlots`, statements, triggers, and the event-key trigger/simple-trigger state machines; `engine/build_host.ps1` reports `operand tests: PASS`, `trigger tests: PASS`, `engine host tests: PASS`.
 - Host PanVK loader/surface tests pass; no Android NDK/SDK/device is available, so arm64 compilation remains blocked.
-- Next: finish the `rglTextStream` export, then add the trigger runtime state machine and script-manager readers.
+- Next: portable binary savegames, script-manager readers, and the `executeWSE` case map.

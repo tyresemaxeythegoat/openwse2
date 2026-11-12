@@ -11,7 +11,7 @@
   "pdb_age": 3
  },
  "inputs": {
-  "layouts": 23,
+  "layouts": 24,
   "globals_scanned": 47947,
   "symbols_curated": 1673,
   "game_vtables": 75
@@ -301,7 +301,8 @@
     "operator=",
     "__vecDelDtor"
    ],
-   "vtable": "0x14051c2b0"
+   "vtable": null,
+   "vtable_note": "rglTextStream emits no standalone vftable; its readers are instantiated in the rglInputTextFileStream vtable 0x14051c0b0. 0x14051c2b0 is the rglOutputTextFileStream vtable."
   },
   "rglInputTextFileStream": {
    "size": 176,
@@ -344,6 +345,55 @@
     "__vecDelDtor"
    ],
    "vtable": "0x14051c0b0"
+  },
+  "rglOutputTextFileStream": {
+   "size": 176,
+   "type_index": "0x4351",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "base": "rglTextStream",
+   "base_offset": "0x0",
+   "members": [
+    {
+     "name": "m_file",
+     "offset": "0xa0",
+     "type": "_iobuf*",
+     "storage": "instance"
+    },
+    {
+     "name": "m_closed",
+     "offset": "0xa8",
+     "type": "bool",
+     "storage": "instance"
+    },
+    {
+     "name": "m_fileOpen",
+     "offset": "0xa9",
+     "type": "bool",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "rglOutputTextFileStream",
+    "~rglOutputTextFileStream",
+    "writeStream",
+    "writeFloat",
+    "writeBool",
+    "writeUInt64",
+    "writeInt64",
+    "writeUInt32",
+    "writeInt32",
+    "writeByte",
+    "writeCString",
+    "writeString",
+    "tryOpen",
+    "close",
+    "flush",
+    "isOpen",
+    "operator=",
+    "__vecDelDtor"
+   ],
+   "vtable": "0x14051c2b0"
   },
   "mbStatementBlock": {
    "size": 96,

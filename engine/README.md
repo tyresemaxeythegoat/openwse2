@@ -7,13 +7,13 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 
 | File | Reconstructs | Evidence |
 | --- | --- | --- |
-| `include/wse/io/text_stream.h` | whitespace token reader and typed decimal parsers | `rglInputTextFileStream` vftable `0x14051c0b0`, `rglTextStream` vftable `0x14051c2b0`, `mbGame::readTriggers` `0x1400cca30` |
+| `include/wse/io/text_stream.h` | whitespace token reader and typed decimal parsers | `rglInputTextFileStream` vftable `0x14051c0b0`, `rglTextStream` readers `0x1402a2ba0`–`0x1402a2f80`, `mbGame::readTriggers` `0x1400cca30` |
 | `include/wse/vm/operand.h` | tagged operand decode and lvalue write-back | `mbStatement::parseOperand` `0x1401c2100`, `mbStatement::returnValue` `0x1401c2190`, `mbStatementBlock::execute` `0x1401f2530`, `analyze` `0x1401f22a0` |
 | `include/wse/vm/slots.h` | `mbSlots` (`std::vector<int64_t>`) get/set semantics | PDB type `0x1b004`; `parseOperand` bounds check; `returnValue` write path |
 | `include/wse/vm/statement.h` | statement record and text reader | `mbStatementBlock::readStream` `0x1401f2160`, PDB type `0xb82a` |
-| `include/wse/game/trigger.h` | trigger/simple-trigger records and loaders | `0x14023ea20`, `0x14023e750`, `0x14020b9d0`, `0x14020b620`, `0x1400cca30`, `0x1400ccde0` |
+| `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, and event-key runtime state machines | `0x14023ea20`, `0x14023e750`, `0x14020b9d0`, `0x14020b620`, `0x1400cca30`, `0x1400ccde0`, `0x14023eee0`, `0x14020b6f0`, `0x14020bd10` |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
-| `tests/trigger_test.cpp` | host tests for trigger and manager readers | local test doubles only |
+| `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 
 ## Module text format
 
@@ -37,6 +37,23 @@ the constructor and filled by `analyze`.
 A trigger is three floats, the conditions block, and the consequences block. A simple trigger is
 one float followed by its statement block. Manager records seed every `rglAppTimer` from
 `m_defaultTimerNo` and `g_timersTotal[m_defaultTimerNo]`.
+
+Booleans accept `true`/`false` case-insensitively, otherwise a nonzero decimal integer. The retail
+float reader uses `strtod`; this port uses `std::from_chars` and rejects trailing garbage. Valid
+retail module files parse identically.
+
+## Runtime
+
+`execute_trigger` / `execute_trigger_manager` and their simple-trigger counterparts reproduce the
+inlined retail state machines. The `int` argument is an **event key**, not a clock: non-negative
+keys run interval triggers from `g_timersTotal`, while negative keys match the rounded negative
+check interval (`-112` = agent exit status, `-105`/`-106` = ranged attack, `-26`/`-56` = death, …).
+Conditions and consequences are supplied as callbacks because `mbStatementBlock::execute` is not
+reconstructed yet; the timer, status, and event-key transitions are exact.
+
+Savegame order is documented in `trigger.h`: `int32` count, then per manager trigger `int32` status
+plus three `int64` timer values. Savegame streams are binary and not yet decoded in the portable
+engine.
 
 ## Safety deviations
 

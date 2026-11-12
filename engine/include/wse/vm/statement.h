@@ -3,7 +3,7 @@
 // Evidence:
 //   mbStatementBlock::readStream (0x1401f2160)  Ghidra 12.1.4 pseudocode
 //   mbStatement layout            PDB TPI type 0xb82a, size 272
-//   rglTextStream reader slots    vtable 0x14051c2b0
+//   rglTextStream reader slots    rglInputTextFileStream vtable 0x14051c0b0
 //
 // Module text form per statement:
 //   <opcode> <operandCount> <operand>...

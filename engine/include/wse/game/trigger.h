@@ -22,6 +22,28 @@
 // every timer with m_defaultTimerNo and g_timersTotal[m_defaultTimerNo]
 // (0x1405d0ef0, public symbol ?g_timersTotal@@3PA_KA).
 //
+// Runtime (mbTriggerManager::execute 0x14023eee0, mbSimpleTrigger::execute
+// 0x14020b6f0, mbSimpleTriggerManager::execute 0x14020bd10):
+//   status 0 idle, 1 waiting for the delay, 2 waiting for the rearm.
+//   Intervals are seconds; timers advance in units of 100000 per second.
+//   The int argument is a trigger event key, not a clock. Interval triggers
+//   run for any non-negative key (mbGame::frameMove passes 1, mbMission::
+//   frameMove passes 0x10). A check interval <= -0.1 (manager) or < -1.0
+//   (simple trigger) instead matches that rounded interval against the key:
+//   call sites pass -112 (updateExitStatus), -105/-106 (ranged attack),
+//   -28 (die), -26 (knockdown), -30 (dropItem), etc. The float is rounded
+//   with floor() and a strictly-greater-than-0.5 fraction bump.
+//   mbTriggerManager::execute inlines the whole mbTrigger state machine; the
+//   PDB declares mbTrigger::execute but no separate public symbol is emitted.
+//
+// Savegames (rglBinaryStream, vtable 0x1405143d0):
+//   mbTriggerManager::readSavegameStream  0x14023eb80
+//   mbTriggerManager::writeSavegameStream 0x14023ed70
+//   mbSimpleTriggerManager::readSavegameStream 0x14020bb10
+//   int32 trigger count, then per trigger int32 status and three int64 timer
+//   values (check/delay/rearm); a simple trigger stores one int64 timer value.
+//   Timer numbers are not saved. Extra file entries are read and discarded.
+//
 // mbGame::readTriggers opens "triggers.txt", discards a three-token header
 // ("triggersfile version 1" in the retail files), then calls the manager
 // reader with the prefix "Game". readSimpleTriggers does the same with
@@ -31,6 +53,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -210,6 +233,183 @@ struct SimpleTriggerManager {
         }
     }
     return vm::ReadError::none;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime state machines
+// ---------------------------------------------------------------------------
+
+inline constexpr float kManagerEventThreshold = -0.1F;
+inline constexpr float kSimpleEventThreshold = -1.0F;
+inline constexpr double kTimerTicksPerSecond = 100000.0;
+
+// The retail loops take floor(interval), then add one only when the fraction
+// is strictly above 0.5. Exact halves therefore round toward minus infinity.
+// The result is compared with a negative trigger event key.
+[[nodiscard]] inline int interval_key(float interval) noexcept {
+    const float base = std::floor(interval);
+    int key = static_cast<int>(base);
+    if (interval - base > 0.5F) {
+        ++key;
+    }
+    return key;
+}
+
+// (float)(now - saved) / 100000.0, preserving the retail cast order.
+[[nodiscard]] inline double timer_elapsed(std::int64_t now, std::int64_t saved) noexcept {
+    return static_cast<double>(static_cast<float>(now - saved)) / kTimerTicksPerSecond;
+}
+
+[[nodiscard]] inline bool timer_now(std::span<const std::int64_t> timersTotal,
+                                    const AppTimer& timer,
+                                    std::int64_t& out) noexcept {
+    if (timer.timerNo < 0 || static_cast<std::size_t>(timer.timerNo) >= timersTotal.size()) {
+        return false;
+    }
+    out = timersTotal[static_cast<std::size_t>(timer.timerNo)];
+    return true;
+}
+
+struct TriggerCallbacks {
+    bool (*checkConditions)(void* context, const vm::StatementBlock& block) = nullptr;
+    void (*runConsequences)(void* context, const vm::StatementBlock& block) = nullptr;
+    void* context = nullptr;
+};
+
+struct SimpleTriggerCallbacks {
+    void (*runBlock)(void* context, const vm::StatementBlock& block) = nullptr;
+    void* context = nullptr;
+};
+
+// One iteration of the inlined mbTrigger state machine. Returns false when a
+// timer number is out of range; the retail code reads past g_timersTotal.
+[[nodiscard]] inline bool execute_trigger(Trigger& trigger,
+                                          std::int32_t eventKey,
+                                          std::span<const std::int64_t> timersTotal,
+                                          const TriggerCallbacks& callbacks) {
+    if (callbacks.checkConditions == nullptr || callbacks.runConsequences == nullptr) {
+        return false;
+    }
+
+    std::int64_t now = 0;
+
+    if (trigger.status == 2) {
+        if (!timer_now(timersTotal, trigger.rearmTimer, now)) {
+            return false;
+        }
+        if (trigger.rearmInterval <= timer_elapsed(now, trigger.rearmTimer.value)) {
+            trigger.status = 0;
+            if (!timer_now(timersTotal, trigger.checkTimer, now)) {
+                return false;
+            }
+            trigger.checkTimer.value = now;
+        }
+    }
+
+    if (trigger.status == 0) {
+        if (trigger.checkInterval <= kManagerEventThreshold) {
+            if (interval_key(trigger.checkInterval) == eventKey &&
+                callbacks.checkConditions(callbacks.context, trigger.conditions)) {
+                trigger.status = 2;
+                if (!timer_now(timersTotal, trigger.rearmTimer, now)) {
+                    return false;
+                }
+                trigger.rearmTimer.value = now;
+                callbacks.runConsequences(callbacks.context, trigger.consequences);
+            }
+        } else if (eventKey >= 0) {
+            if (!timer_now(timersTotal, trigger.checkTimer, now)) {
+                return false;
+            }
+            if (trigger.checkInterval <= timer_elapsed(now, trigger.checkTimer.value)) {
+                trigger.checkTimer.value = now;
+                if (callbacks.checkConditions(callbacks.context, trigger.conditions)) {
+                    trigger.status = 1;
+                    if (!timer_now(timersTotal, trigger.delayTimer, now)) {
+                        return false;
+                    }
+                    trigger.delayTimer.value = now;
+                }
+            }
+        }
+    }
+
+    if (trigger.status == 1) {
+        if (!timer_now(timersTotal, trigger.delayTimer, now)) {
+            return false;
+        }
+        if (trigger.delayInterval <= timer_elapsed(now, trigger.delayTimer.value)) {
+            trigger.status = 2;
+            if (!timer_now(timersTotal, trigger.rearmTimer, now)) {
+                return false;
+            }
+            trigger.rearmTimer.value = now;
+            callbacks.runConsequences(callbacks.context, trigger.consequences);
+        }
+    }
+
+    return true;
+}
+
+[[nodiscard]] inline bool execute_trigger_manager(
+    TriggerManager& manager,
+    std::int32_t eventKey,
+    std::span<const std::int64_t> timersTotal,
+    const TriggerCallbacks& callbacks) {
+    for (auto& trigger : manager.triggers) {
+        if (!execute_trigger(trigger, eventKey, timersTotal, callbacks)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// A simple trigger has one block, executed when its interval elapses. The
+// retail execute ignores the block result. mbSimpleTriggerManager::execute
+// additionally aborts its loop after an odd event key when a game event
+// queue transitions; that check needs mbGame state and is not modelled here.
+[[nodiscard]] inline bool execute_simple_trigger(
+    SimpleTrigger& trigger,
+    std::int32_t eventKey,
+    std::span<const std::int64_t> timersTotal,
+    const SimpleTriggerCallbacks& callbacks) {
+    if (callbacks.runBlock == nullptr) {
+        return false;
+    }
+
+    if (trigger.interval < kSimpleEventThreshold) {
+        if (interval_key(trigger.interval) != eventKey) {
+            return true;
+        }
+    } else {
+        if (eventKey < 0) {
+            return true;
+        }
+        std::int64_t now = 0;
+        if (!timer_now(timersTotal, trigger.timer, now)) {
+            return false;
+        }
+        if (timer_elapsed(now, trigger.timer.value) < trigger.interval) {
+            return true;
+        }
+        trigger.timer.value = now;
+    }
+
+    callbacks.runBlock(callbacks.context, trigger.block);
+    return true;
+}
+
+[[nodiscard]] inline bool execute_simple_trigger_manager(
+    SimpleTriggerManager& manager,
+    std::int32_t eventKey,
+    std::span<const std::int64_t> timersTotal,
+    const SimpleTriggerCallbacks& callbacks) {
+    for (auto& trigger : manager.triggers) {
+        if (!execute_simple_trigger(trigger, eventKey, timersTotal, callbacks)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace wse::game
