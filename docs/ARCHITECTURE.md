@@ -279,8 +279,26 @@ against every script's `m_id` (`m_id.m_buffer` at `+0x8`, `m_id.m_strLength` at 
 the script index into `m_mappedScripts` (`0x1406506cc`, 64 × `int32_t`), or `-1` when absent, and logs
 `"Unable to map script %s"` on failure.
 
-The remaining open item is the opcode dispatcher (`mbStatement::execute` / `executeWSE`), which
-requires the `mbStatement` and `mbStatementBlock` pseudocode export.
+### Statement VM entry points
+
+| Address | Symbol | Signature (mangled-name evidence) |
+| --- | --- | --- |
+| `0x1401c2100` | `mbStatement::parseOperand` | `int64_t(int64_t*, int, int&)` |
+| `0x1401c2190` | `mbStatement::returnValue` | `void(int64_t*, int64_t const&)` |
+| `0x1401c21e0` | `mbStatement::execute` | `bool(int64_t*, int, bool)` |
+| `0x1401e0cf0` | `mbStatement::executeWSE` | `bool(int64_t*, int64_t*, int*, int*, int)` |
+| `0x1401f1400` | `mbStatement::arrayCompare` | `bool(int*, int*, cmp_operation)` |
+| `0x1401f2160` | `mbStatementBlock::readStream` | `void(rglStream&)` |
+| `0x1401f22a0` | `mbStatementBlock::analyze` | `void()` |
+| `0x1401f2530` | `mbStatementBlock::execute` | `bool(int,int,int,int64_t*, mbCallStack*)` |
+| `0x1401f2df0` | `mbStatementBlock::startLoop` | `void(int64_t*, mbLoopManager&, int&)` |
+| `0x1401f3470` | `mbStatementBlock::endLoop` | `void(int64_t*, mbLoopManager&, int&)` |
+| `0x1401f3a60` | `mbStatementBlock::canLoop` | `bool(int64_t*, mbLoopManager&)` |
+| `0x140322760` | `WSELuaManager::OnOperationMgrExecute` | `bool(mbStatementBlock*, int&, int64_t*, bool&)` |
+
+`WSELuaManager::OnOperationMgrExecute` is the bridge between the native statement VM and the WSE
+operation manager; it is the primary candidate for the WSE-extended opcode dispatch. Its pseudocode
+and the `mbStatement`/`mbStatementBlock` export are the remaining open evidence.
 
 ## 6. External dependencies (import evidence)
 
@@ -324,9 +342,9 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
 ## 8. Evidence gaps / next measurements
 
-1. Pseudocode for `mbScriptManager::readStream`, `mbTriggerManager::readStream`,
-   `mbSimpleTriggerManager::readStream`, and `mbGame::readTriggers` to confirm token order and
-   opcode encoding against WSESDK.
+1. Pseudocode for `mbStatement::readStream` / `parseOperand` / `execute`, `mbStatementBlock::execute`,
+   `mbTriggerManager::readStream`, `mbSimpleTriggerManager::readStream`, and `mbGame::readTriggers`
+   to confirm token order and the 32-operand encoding against WSESDK.
 2. Locate `gameOperation` table construction in `WSELuaManager` and map opcode IDs to handlers.
 3. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
 4. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
