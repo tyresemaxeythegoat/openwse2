@@ -69,7 +69,14 @@
     "game_event_party_encounter",
     "game_event_simulate_battle",
     "game_get_item_buy_price_factor"
-   ]
+   ],
+   "last_entries": [
+    "wse_savegame_loaded",
+    "wse_get_server_info",
+    "wse_initial_window_start"
+   ],
+   "usage": "mbScriptManager::mapScripts 0x14020b510 scans this table in order; the first exact m_id match wins; a missing name stores -1 and reports through rglInfo(\"Unable to map script %s\")",
+   "portable": "engine/include/wse/game/script.h"
   }
  ],
  "classes": {

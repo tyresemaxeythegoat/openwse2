@@ -1,0 +1,14 @@
+scriptsfile version 1
+4
+game_start -1
+ 2
+ 2133 2 1224979098644774912 5
+ 2105 2 1224979098644774912 1
+unmapped_custom_script 0.5
+ 1
+ 1 1 7
+game_start 2.25
+ 1
+ 2320 2 1224979098644774913 1
+last_script -1
+ 0

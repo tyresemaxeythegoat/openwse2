@@ -46,7 +46,9 @@ $include = Join-Path $here "include"
 $tests = @(
     @{ Name = "operand"; Source = Join-Path $here "tests\operand_test.cpp" },
     @{ Name = "trigger"; Source = Join-Path $here "tests\trigger_test.cpp" },
-    @{ Name = "savegame"; Source = Join-Path $here "tests\savegame_test.cpp" }
+    @{ Name = "savegame"; Source = Join-Path $here "tests\savegame_test.cpp" },
+    @{ Name = "script"; Source = Join-Path $here "tests\script_test.cpp";
+       Args = @(Join-Path $here "fixtures\scripts.txt") }
 )
 
 Write-Host "zig          $zig"
@@ -61,7 +63,11 @@ foreach ($test in $tests) {
         throw ("{0} test build failed" -f $test.Name)
     }
 
-    & $binary
+    if ($test.ContainsKey("Args")) {
+        & $binary @($test.Args)
+    } else {
+        & $binary
+    }
     if ($LASTEXITCODE -ne 0) {
         throw ("{0} tests failed" -f $test.Name)
     }

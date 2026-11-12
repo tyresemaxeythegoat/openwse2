@@ -46,7 +46,7 @@ Maintain and update these after every milestone:
 - [ ] **Sensor & performance hooks:** optional gyro aiming when bows/crossbows are drawn, pinch-to-zoom on the campaign map, Android thermal-throttling awareness, and configurable frame-rate caps (60/90/120 Hz).
 
 ## Immediate First Action
-Finish Phase 1, Step 2: extend the portable core with `mbScript`/`mbScriptManager` token readers and a `scripts.txt` fixture, map `executeWSE` cases, and then wire reconstructed statement blocks into the trigger runtime.
+Finish Phase 1, Step 2: map `executeWSE` cases and then wire reconstructed statement blocks into the trigger runtime.
 
 ## Current Position
 - Phase 1, Step 1 is complete. Ghidra 12.1.4 + JDK 25.0.5 + Node 26.12.1 are installed under `C:\rea-tools` (the `%TEMP%` copies are wiped by server restarts). `rea doctor` reports the Ghidra provider healthy; REA still runs via CLI because it is not registered with OpenCode.
@@ -60,6 +60,7 @@ Finish Phase 1, Step 2: extend the portable core with `mbScript`/`mbScriptManage
 - `decompile-all --name rglTextStream` completed: 18 procedures, 0 failures. Vtable `0x14051c0b0` is `rglInputTextFileStream`; `0x14051c2b0` is `rglOutputTextFileStream`. Module files are whitespace-delimited decimal text read through the inherited `rglTextStream` slots (`+0x58` float, `+0x60` bool, `+0x70` int64, `+0x78`/`+0x80` 32-bit, `+0x90` raw string).
 - Trigger runtime: `mbTriggerManager::execute` inlines the state machine; the integer argument is an event key. Non-negative keys run interval triggers; negative keys match the rounded check interval (confirmed `-112`, `-105`/`-106`, `-26`/`-56`, `-27`, `-28`, `-110`/`-109`, `-102`, `-113`).
 - `decompile-all --name rglBinaryStream` completed: 9 procedures, 0 failures, plus a 2-procedure address-range export for the readers. Savegame values are raw little-endian 8/4/1-byte copies with no header; strings are `int32` length + bytes. Trigger savegame order is reconstructed, including the count-exceeded message-box path that still consumes surplus entries.
-- Portable `engine/` now covers the token reader (including booleans), tagged operands, `mbSlots`, statements, triggers, the event-key trigger/simple-trigger state machines, the binary savegame stream, and trigger savegame read/write; `engine/build_host.ps1` reports `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `engine host tests: PASS`.
+- Portable `engine/` now covers the token reader (including booleans), tagged operands, `mbSlots`, statements, script managers, triggers, the event-key trigger/simple-trigger state machines, the binary savegame stream, and trigger savegame read/write; `engine/build_host.ps1` reports `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `engine host tests: PASS`.
+- The script reader parsed the full retail 3,467,512-byte `scripts.txt` sample: 1,755 scripts, every token consumed, 52 of 64 static names mapped (the rest are WSE-only scripts absent from that module). All 64 names are transcribed from the table at `0x1405c7ad0`; duplicate ids resolve to the first script in file order.
 - Host PanVK loader/surface tests pass; no Android NDK/SDK/device is available, so arm64 compilation remains blocked.
-- Next: script-manager readers, the `executeWSE` case map, and statement-block execution inside triggers.
+- Next: the `executeWSE` case map and statement-block execution inside triggers.

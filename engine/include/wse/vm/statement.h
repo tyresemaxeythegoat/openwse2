@@ -56,10 +56,12 @@ struct StatementBlock {
 enum class ReadError : std::uint8_t {
     none = 0,
     malformed_number,
+    malformed_string,
     negative_count,
     operand_count_out_of_range,
     statement_count_out_of_range,
     trigger_count_out_of_range,
+    script_count_out_of_range,
     timer_index_out_of_range,
 };
 
@@ -69,6 +71,8 @@ enum class ReadError : std::uint8_t {
         return "ok";
     case ReadError::malformed_number:
         return "missing or malformed number token";
+    case ReadError::malformed_string:
+        return "missing or malformed string token";
     case ReadError::negative_count:
         return "negative record count";
     case ReadError::operand_count_out_of_range:
@@ -77,6 +81,8 @@ enum class ReadError : std::uint8_t {
         return "statement count out of range";
     case ReadError::trigger_count_out_of_range:
         return "trigger count out of range";
+    case ReadError::script_count_out_of_range:
+        return "script count out of range";
     case ReadError::timer_index_out_of_range:
         return "timer index out of range";
     }

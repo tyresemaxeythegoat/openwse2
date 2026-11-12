@@ -24,7 +24,8 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | Binary savegame format | PASS | `rglBinaryStream` raw little-endian 8/4/1-byte values; strings are `int32` length + bytes; no header or checksum |
 | Module stream identification | PASS | `0x14051c0b0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x14051c2b0` = `rglOutputTextFileStream` writers; module files are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
-| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
+| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
+| Retail `scripts.txt` parse | PASS | Full 3,467,512-byte sample: 1,755 scripts, every token consumed, 52/64 mapped names (the rest are WSE-only scripts absent from that module) |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
 ## In progress
@@ -44,8 +45,9 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   (`readFloat` @ `+0x48`), `mbStatementBlock::readStream` (@ `+0x50`), then sets
   `m_statementBlock.m_id` to `rglFormat("Script [%d] %s", index, m_id)`.
 - `mbScriptManager::mapScripts` (`0x14020b510`): 64-entry static name table at `0x1405c7ad0`
-  (`game_start`, …), linear match on `m_id`, writes index or `-1` into `m_mappedScripts`
-  (`0x1406506cc`), logs `"Unable to map script %s"` on failure.
+  (`game_start` … `wse_initial_window_start`), linear match on `m_id` with the first script in file
+  order winning, writes the index or `-1` into `m_mappedScripts` (`0x1406506cc`), and calls `rglInfo`
+  with `"Unable to map script %s"` on failure. All 64 names are transcribed in `script.h`.
 - Module files are whitespace-delimited decimal text, not binary. `mbGame::readTriggers`
   (`0x1400cca30`) and `readSimpleTriggers` (`0x1400ccde0`) build `rglInputTextFileStream`
   (vftable `0x14051c0b0`), open `triggers.txt`/`simple_triggers.txt`, discard three header tokens
@@ -150,10 +152,8 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 
 ## Next concrete task
 
-1. Extend the portable core with `mbScript`/`mbScriptManager` token readers and a `scripts.txt`
-   fixture; keep `engine/build_host.ps1` green. The NDK half of the gate remains blocked.
-2. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
+1. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
    `header_operations_addon.py`.
-3. Feed reconstructed statement blocks into `execute_trigger` so conditions/consequences stop being
+2. Feed reconstructed statement blocks into `execute_trigger` so conditions/consequences stop being
    test callbacks once `mbStatementBlock::execute` is portable.
-4. Update `ROADMAP.md` and this file at the next milestone.
+3. Update `ROADMAP.md` and this file at the next milestone.

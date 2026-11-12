@@ -13,9 +13,11 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 | `include/wse/vm/slots.h` | `mbSlots` (`std::vector<int64_t>`) get/set semantics | PDB type `0x1b004`; `parseOperand` bounds check; `returnValue` write path |
 | `include/wse/vm/statement.h` | statement record and text reader | `mbStatementBlock::readStream` `0x1401f2160`, PDB type `0xb82a` |
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x14023ea20`, `0x14023e750`, `0x14020b9d0`, `0x14020b620`, `0x1400cca30`, `0x1400ccde0`, `0x14023eb80`, `0x14023ed70`, `0x14020bb10`, `0x14023eee0`, `0x14020b6f0`, `0x14020bd10` |
+| `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 64-entry name table, and script mapping | `0x14020b210`, `0x14020b330`, `0x14020b510`; globals `0x1406506c0`/`0x1406506c8`/`0x1406506cc`; table `0x1405c7ad0`; formats `0x1405142c0`/`0x1405142d0` |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
+| `tests/script_test.cpp` + `fixtures/scripts.txt` | host tests for script records, header errors, duplicate mapping, and missing-name reporting | local fixture mirroring the retail grammar |
 
 ## Module text format
 
@@ -63,9 +65,22 @@ and rearm timer values; simple triggers store one `int64` timer value. The porta
 entry, and `negative_count`/`truncated` reject malformed input. Retail performs no bounds checks on
 binary reads, so truncated files would read past the buffer there.
 
+## Scripts
+
+`scripts.txt` is `scriptsfile version <int32>` followed by the script count and that many
+`<id> <interval-seconds> <statement block>` records. `mbScriptManager::readStream` discards both
+header strings and the version, replaces the script array, parses every record, then maps the 64
+static names. Mapping uses exact string equality and the first script in file order wins, so
+duplicate ids resolve to the earliest record. A missing name maps to `-1` and reports through
+`ScriptMapCallbacks::reportMissing` (retail logs `"Unable to map script %s"`). Each statement block
+id becomes `"Script [<index>] <id>"`.
+
+The portable reader was also run against the retail 3,467,512-byte `scripts.txt` sample: 1,755
+scripts, every token consumed, 52 of 64 names mapped.
+
 ## Safety deviations
 
-The retail code trusts operand/statement/trigger counts and timer indices. This port rejects
+The retail code trusts operand/statement/script/trigger counts and timer indices. This port rejects
 negative counts, operands above 32, oversized arrays, out-of-range timer indices, and truncated
 binary savegames; none of these checks changes valid module behaviour.
 
@@ -81,6 +96,7 @@ Expected tail:
 operand tests: PASS
 trigger tests: PASS
 savegame tests: PASS
+script tests: PASS
 engine host tests: PASS
 ```
 

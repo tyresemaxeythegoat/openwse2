@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; script statement VM parse, module text readers, trigger runtime, and binary savegames recovered.
+Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, and binary savegames recovered.
 Last updated: 2026-11-12.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -427,11 +427,19 @@ String evidence in `.rdata`:
    `m_statementBlock.m_id` at `+0x68` (`mbScript + 0x50 + 0x18`).
 
 `mbScriptManager::mapScripts` (`0x14020b510`) walks a static 64-entry name table at
-`0x1405c7ad0` (first entries verified as `game_start`, `game_quick_start`,
-`game_set_multiplayer_mission_end`, `game_get_console_command`, …) and linearly matches each name
-against every script's `m_id` (`m_id.m_buffer` at `+0x8`, `m_id.m_strLength` at `+0x14`). It writes
-the script index into `m_mappedScripts` (`0x1406506cc`, 64 × `int32_t`), or `-1` when absent, and logs
-`"Unable to map script %s"` on failure.
+`0x1405c7ad0` and linearly matches each name against every script's `m_id`
+(`m_id.m_buffer` at `+0x8`, `m_id.m_strLength` at `+0x14`). It writes the first matching script
+index into `m_mappedScripts` (`0x1406506cc`, 64 × `int32_t`), or `-1` when absent, and calls
+`rglInfo` with `"Unable to map script %s"` on failure. All 64 names are transcribed in retail order
+in `engine/include/wse/game/script.h`; the table starts `game_start`, `game_quick_start`,
+`game_set_multiplayer_mission_end`, `game_get_console_command` and ends `wse_get_server_info`,
+`wse_initial_window_start`.
+
+Portable reconstruction: `engine/include/wse/game/script.h`. `read_script_manager` discards the two
+header strings and the version int32, rejects negative/oversized counts, parses every record, and
+calls `map_scripts`. Validated against the 3,467,512-byte retail `scripts.txt` sample: 1,755 scripts
+parsed, every token consumed, 52 of the 64 names mapped (the 12 absent names are WSE-only scripts
+not defined by that module).
 
 ### Statement VM entry points
 
