@@ -24,8 +24,8 @@ Maintain and update these after every milestone:
 ### Phase 1: Binary Triage & SDK Alignment
 - [x] Load the target binary through REA/Ghidra and extract imports, strings, RTTI descriptors, and global tables.
   - 19,759 procedures, 7,157 strings, 23 DLLs / 542 imports; 14,877 PDB layouts, 47,947 symbols, 209 named vtables.
-- [ ] Cross-reference public `WSESDK` header/operation files (`header_operations.py` / Lua bindings) against binary string references to locate the main opcode dispatcher, trigger manager, and RGL resource loaders.
-  - Managers and script loaders located; opcode dispatcher anchors found at `0x1405134d0` and `0x1405230d0`; dispatcher pseudocode pending.
+- [x] Cross-reference public `WSESDK` header/operation files (`header_operations.py` / Lua bindings) against binary string references to locate the main opcode dispatcher, trigger manager, and RGL resource loaders.
+  - Managers and script loaders located; `mbStatement::executeWSE` (`0x1401e0cf0`) mapped to all 433 SDK operations in the extended range 2800–5202 (424 switch cases, 9 equality-tested cases).
 - [x] Write `docs/ARCHITECTURE.md` and `docs/SYMBOL_MAP.json` before writing engine code.
   - Additional `STATUS.md` tracks phase, gates, and blockers.
 
@@ -46,7 +46,9 @@ Maintain and update these after every milestone:
 - [ ] **Sensor & performance hooks:** optional gyro aiming when bows/crossbows are drawn, pinch-to-zoom on the campaign map, Android thermal-throttling awareness, and configurable frame-rate caps (60/90/120 Hz).
 
 ## Immediate First Action
-Finish Phase 1, Step 2: map `executeWSE` cases and then wire reconstructed statement blocks into the trigger runtime.
+Phase 1, Step 2 is complete: the 433-operation `executeWSE` map is extracted and the first handler
+group (2800–2809) is host-tested. Continue Phase 2 by transcribing the remaining `executeWSE` handler
+groups and wiring reconstructed statement blocks into the trigger runtime.
 
 ## Current Position
 - Phase 1, Step 1 is complete. Ghidra 12.1.4 + JDK 25.0.5 + Node 26.12.1 are installed under `C:\rea-tools` (the `%TEMP%` copies are wiped by server restarts). `rea doctor` reports the Ghidra provider healthy; REA still runs via CLI because it is not registered with OpenCode.
@@ -60,7 +62,9 @@ Finish Phase 1, Step 2: map `executeWSE` cases and then wire reconstructed state
 - `decompile-all --name rglTextStream` completed: 18 procedures, 0 failures. Vtable `0x14051c0b0` is `rglInputTextFileStream`; `0x14051c2b0` is `rglOutputTextFileStream`. Module files are whitespace-delimited decimal text read through the inherited `rglTextStream` slots (`+0x58` float, `+0x60` bool, `+0x70` int64, `+0x78`/`+0x80` 32-bit, `+0x90` raw string).
 - Trigger runtime: `mbTriggerManager::execute` inlines the state machine; the integer argument is an event key. Non-negative keys run interval triggers; negative keys match the rounded check interval (confirmed `-112`, `-105`/`-106`, `-26`/`-56`, `-27`, `-28`, `-110`/`-109`, `-102`, `-113`).
 - `decompile-all --name rglBinaryStream` completed: 9 procedures, 0 failures, plus a 2-procedure address-range export for the readers. Savegame values are raw little-endian 8/4/1-byte copies with no header; strings are `int32` length + bytes. Trigger savegame order is reconstructed, including the count-exceeded message-box path that still consumes surplus entries.
-- Portable `engine/` now covers the token reader (including booleans), tagged operands, `mbSlots`, statements, script managers, triggers, the event-key trigger/simple-trigger state machines, the binary savegame stream, and trigger savegame read/write; `engine/build_host.ps1` reports `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `engine host tests: PASS`.
+- Portable `engine/` now covers the token reader (including booleans), tagged operands, `mbSlots`, statements, script managers, triggers, the event-key trigger/simple-trigger state machines, the binary savegame stream, and trigger savegame read/write; `engine/build_host.ps1` reports `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse tests: PASS`, `engine host tests: PASS`.
+- `executeWSE` opcode map complete: `tools/extract_wse_opcodes.py` regenerates `docs/wse_opcodes.json`, `docs/WSE_OPCODES.md`, and `engine/include/wse/vm/wse_opcodes.h` from the 9,245-line pseudocode dump plus `header_operations_addon.py`. All 433 SDK operations in 2800–5202 have handlers; there are no unknown or unhandled in-range opcodes.
+- Portable `engine/include/wse/vm/execute_wse.h` applies the `0x0FFFFFFF` opcode mask and implements the first proven group, 2800–2809 (arithmetic/logical right shifts, left shift, xor, complement; shift counts masked with `& 0x3F`). The other 423 mapped opcodes report `WseDispatch::unimplemented` until transcribed.
 - The script reader parsed the full retail 3,467,512-byte `scripts.txt` sample: 1,755 scripts, every token consumed, 52 of 64 static names mapped (the rest are WSE-only scripts absent from that module). All 64 names are transcribed from the table at `0x1405c7ad0`; duplicate ids resolve to the first script in file order.
 - Host PanVK loader/surface tests pass; no Android NDK/SDK/device is available, so arm64 compilation remains blocked.
-- Next: the `executeWSE` case map and statement-block execution inside triggers.
+- Next: transcribe the remaining `executeWSE` handler groups and wire statement-block execution into triggers.

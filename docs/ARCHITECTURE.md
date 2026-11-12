@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, and binary savegames recovered.
+Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, and the 433-operation WSE extended opcode map recovered.
 Last updated: 2026-11-12.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -155,6 +155,22 @@ Methods: `readStream`, `parseOperand`, `returnValue`, `execute`, `executeWSE`, `
 This is the decoded instruction record inside `mbStatementBlock::m_statements`; `executeWSE` is the
 entry point for WSE2-extended opcodes. `gameOperation` (8 bytes: `opcode` at 0, `flags` at 4) is the
 dispatch-table entry type, and `gameConstTable` (56 bytes) holds a named `std::vector<gameConst>`.
+
+### WSE extended opcode map
+
+`mbStatement::executeWSE` (`0x1401e0cf0`) receives the three decoded operand arrays and handles every
+opcode above the native jump table. The SDK's extended operation range is 2800–5202.
+`docs/wse_opcodes.json`, `docs/WSE_OPCODES.md`, and the generated
+`engine/include/wse/vm/wse_opcodes.h` map 433/433 in-range SDK operations to their handlers (424
+switch cases plus 9 equality-tested cases), recording the pseudocode line and handler extent for each.
+No in-range SDK opcode is unknown or unhandled.
+
+The first portable handler group covers 2800–2809: `val_shr`/`store_shr` use an arithmetic right
+shift, `val_lshr`/`store_lshr` a logical right shift, `val_shl`/`store_shl` a left shift,
+`val_xor`/`store_xor` a bitwise xor, and `val_not`/`store_not` a complement. Shift counts are
+`(byte)count & 0x3F`; `store_*` reads the source from operand 1 (shift count from operand 2) and
+leaves operand 0 as the destination lvalue. All other mapped opcodes report
+`WseDispatch::unimplemented` until transcribed.
 
 ### `mbScript` — 176 bytes, type 0x1f6c4
 

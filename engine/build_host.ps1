@@ -48,7 +48,8 @@ $tests = @(
     @{ Name = "trigger"; Source = Join-Path $here "tests\trigger_test.cpp" },
     @{ Name = "savegame"; Source = Join-Path $here "tests\savegame_test.cpp" },
     @{ Name = "script"; Source = Join-Path $here "tests\script_test.cpp";
-       Args = @(Join-Path $here "fixtures\scripts.txt") }
+       Args = @(Join-Path $here "fixtures\scripts.txt") },
+    @{ Name = "wse"; Source = Join-Path $here "tests\wse_test.cpp" }
 )
 
 Write-Host "zig          $zig"

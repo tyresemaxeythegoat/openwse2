@@ -24,7 +24,8 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | Binary savegame format | PASS | `rglBinaryStream` raw little-endian 8/4/1-byte values; strings are `int32` length + bytes; no header or checksum |
 | Module stream identification | PASS | `0x14051c0b0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x14051c2b0` = `rglOutputTextFileStream` writers; module files are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
-| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
+| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
+| WSE extended opcode map | PASS | 433/433 SDK operations 2800–5202 mapped to `executeWSE` handlers (424 switch + 9 equality cases); `docs/WSE_OPCODES.md`, `docs/wse_opcodes.json`, generated `engine/include/wse/vm/wse_opcodes.h` |
 | Retail `scripts.txt` parse | PASS | Full 3,467,512-byte sample: 1,755 scripts, every token consumed, 52/64 mapped names (the rest are WSE-only scripts absent from that module) |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
@@ -34,7 +35,8 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | --- | --- |
 | Portable trigger runtime | Event-key state machine reconstructed and host-tested; statement conditions/consequences are callbacks until the VM executes blocks |
 | Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
-| `executeWSE` case mapping | 381 KB pseudocode captured (430 cases); individual WSE opcode → handler mapping not yet extracted |
+| `executeWSE` case mapping | Complete: 433/433 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode |
+| Portable `executeWSE` handlers | Opcode mask and the 2800–2809 shift/xor/complement group transcribed and host-tested; the other 423 mapped opcodes report `WseDispatch::unimplemented` |
 
 ## Confirmed by pseudocode
 
@@ -87,6 +89,14 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   `WSELuaManager::OnOperationExecute` when `operationHookTable[opcode] != -2`, then dispatches
   opcodes `30..2767` through the 2,738-entry RVA jump table at `0x1401de220` and opcodes `>= 2768`
   to `executeWSE`. Bit 31 inverts the result; bit 30 arms the stop latch (`DAT_1405d0d9c`).
+- `docs/wse_opcodes.json` / `docs/WSE_OPCODES.md` / generated `wse_opcodes.h` now cover all 433 SDK
+  operations in the extended range 2800–5202. 424 are switch cases in `executeWSE`; the other 9 are
+  equality-tested handlers at 2800, 3000, 3300, 3600, 3900, 4200, 4400, 4700, and 5000. No in-range
+  SDK operation lacks a handler.
+- The 2800–2809 group is proven by the pseudocode at lines 2165–2192 and 2390: `val_shr`/`store_shr`
+  cast to signed before `>>` (arithmetic); `val_lshr`/`store_lshr` shift the `ulonglong` operand
+  directly (logical); `val_shl`/`store_shl` shift left; `val_xor`/`store_xor` combine operands 0/1 or
+  1/2; `val_not`/`store_not` complement operand 0 or 1. Every shift masks the count with `& 0x3F`.
 - `mbStatementBlock::execute` (`0x1401f2530`): interpreter loop with a `0x1C08`-byte frame,
   128 × `0x38` loop frames, locals zeroing, block-level Lua hook, `call_script` recursion into
   `m_scripts[index] + 0x50` (stride `0xB0`, max depth 255), and special handling for opcodes
@@ -152,8 +162,8 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 
 ## Next concrete task
 
-1. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
-   `header_operations_addon.py`.
+1. Transcribe the next `executeWSE` handler groups from `docs/WSE_OPCODES.md`, extending the host
+   gate as each group lands until all 433 mapped opcodes are implemented.
 2. Feed reconstructed statement blocks into `execute_trigger` so conditions/consequences stop being
    test callbacks once `mbStatementBlock::execute` is portable.
 3. Update `ROADMAP.md` and this file at the next milestone.
