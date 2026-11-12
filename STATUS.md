@@ -13,7 +13,8 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, focused decompi
 | PDB parse (MSF 7.0/TPI/DBI) | PASS | 154,753 TPI records, 14,877 sized layouts |
 | PDB symbol map | PASS | 47,947 symbols: 22,600 public, 1,167 global, 14,701 constant, 8,595 UDT, 884 local |
 | Vtable scan | PASS | 281 pointer runs; 209 class-identified; 75 `rgl*`/`mb*`/`WSE*` |
-| Tracking documents | PASS | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (15 classes, 1,644 symbols, 75 vtables) |
+| Tracking documents | PASS | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (19 classes, 1,673 symbols, 75 vtables) |
+| `decompile-all --name mbScript` | PASS | 5 procedures written, 0 failed (`pseudo/decompile-index.json`); entry `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
@@ -21,9 +22,21 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, focused decompi
 
 | Task | State |
 | --- | --- |
-| `decompile-all --name mbScript` | Ghidra headless analysis running (`pseudo_mbScript.log5` empty; output dir not yet materialised) |
-| Pseudocode confirmation of script/trigger parse order | Blocked on the export above |
-| Opcode dispatcher identification | String anchors located (`Unrecognized opcode %d` @ `0x1405134d0`, `opcode %d out of range` @ `0x1405230d0`); function not yet proven |
+| `decompile-all --name mbStatement` | Ghidra headless analysis running; output `pseudo_stmt/` |
+| Trigger manager pseudocode | Layouts and entry points verified; decompilation queued after `mbStatement` |
+| Opcode dispatcher identification | String anchors located (`Unrecognized opcode %d` @ `0x1405134d0`, `opcode %d out of range` @ `0x1405230d0`); `mbStatement::execute` / `executeWSE` pseudocode pending |
+
+## Confirmed by pseudocode
+
+- `mbScriptManager::readStream` (`0x14020b330`): two `readString` calls (discarded), two 32-bit reads,
+  the second into `m_numScripts`; frees the old array, allocates `8 + count*176`, constructs
+  `mbScript[]`, calls `mbScript::readStream(index)` per entry, then `mapScripts()`.
+- `mbScript::readStream` (`0x14020b210`) order: `m_id` (`readString`), `m_interval`
+  (`readFloat` @ `+0x48`), `mbStatementBlock::readStream` (@ `+0x50`), then sets
+  `m_statementBlock.m_id` to `rglFormat("Script [%d] %s", index, m_id)`.
+- `mbScriptManager::mapScripts` (`0x14020b510`): 64-entry static name table at `0x1405c7ad0`
+  (`game_start`, …), linear match on `m_id`, writes index or `-1` into `m_mappedScripts`
+  (`0x1406506cc`), logs `"Unable to map script %s"` on failure.
 
 ## Blocked
 
@@ -44,12 +57,12 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, focused decompi
 
 ## Next concrete task
 
-1. When the `mbScript` export finishes, read `mbScriptManager::readStream` (`0x14020b330`),
-   `mbScript::readStream` (`0x14020b210`), `mbTriggerManager::readStream` (`0x14023ea20`), and
-   `mbTriggerManager::execute` (`0x14023eee0`).
-2. Cross-check every member access against the PDB offsets in `docs/SYMBOL_MAP.json`.
-3. Locate the opcode dispatcher via xrefs to the two opcode diagnostics and map it to
-   `WSELuaManager::operationMap`.
-4. Add the first portable C++20 headers for `rglString`, `rglStream`, `mbStatementBlock`,
-   `mbScript`, and the trigger managers, with host unit tests.
+1. When the `mbStatement` export finishes, read `mbStatement::readStream` / `parseOperand` /
+   `execute` / `executeWSE` and `mbStatementBlock::readStream` / `analyze` / `execute`.
+2. Confirm the 32-operand encoding and the `executeWSE` dispatch path against the WSESDK opcode
+   table; locate the opcode dispatcher via the two diagnostic strings.
+3. Decompile `mbTriggerManager::readStream` (`0x14023ea20`) and `execute` (`0x14023eee0`), then
+   `mbSimpleTriggerManager` equivalents.
+4. Add the first portable C++20 headers for `rglString`, `rglStream`, `mbStatement`,
+   `mbStatementBlock`, and `mbScript`, with host unit tests.
 5. Update `ROADMAP.md` and this file at the next milestone.

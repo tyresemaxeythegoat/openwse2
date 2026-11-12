@@ -21,6 +21,7 @@ CLASSES = [
     "rglString",
     "rglStream",
     "mbStatementBlock",
+    "mbStatement",
     "mbScript",
     "mbScriptManager",
     "mbTrigger",
@@ -33,6 +34,9 @@ CLASSES = [
     "mbAgent",
     "rglRenderer",
     "mbMissionTemplate",
+    "gameOperation",
+    "gameConstTable",
+    "rglAppTimer",
 ]
 
 GLOBAL_NAMES = {
@@ -54,6 +58,27 @@ STRINGS = [
     ("module.ini", 0x140515649),
     ("Unrecognized opcode %d", 0x1405134D0),
     ("opcode %d out of range", 0x1405230D0),
+    ("Script [%d] %s", 0x1405142C0),
+    ("Unable to map script %s", 0x1405142D0),
+]
+
+TABLES = [
+    {
+        "name": "mapped_script_names",
+        "va": "0x1405c7ad0",
+        "entries": 64,
+        "element": "const char*",
+        "first_entries": [
+            "game_start",
+            "game_quick_start",
+            "game_set_multiplayer_mission_end",
+            "game_get_console_command",
+            "game_enable_cheat_menu",
+            "game_event_party_encounter",
+            "game_event_simulate_battle",
+            "game_get_item_buy_price_factor",
+        ],
+    },
 ]
 
 TARGET = {
@@ -159,6 +184,7 @@ def main():
             "game_vtables": len(vtables),
         },
         "strings": [{"text": text, "va": "0x%x" % va} for text, va in STRINGS],
+        "tables": TABLES,
         "classes": classes,
         "symbols": symbols,
         "vtables": vtables,

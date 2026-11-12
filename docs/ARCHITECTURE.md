@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; decompilation of the script/trigger subsystem in progress.
+Status: Phase 1 — binary triage complete; `mbScript` pseudocode captured; statement/VM export in progress.
 Last updated: 2026-11-12.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -105,6 +105,20 @@ the matching writers and `open/tryOpen/close/isOpen/clear/freeMemory/reset/atEnd
 | 0x18 | `m_id` | `rglString` |
 
 Methods: `readStream`, `analyze`, `execute`, `startLoop`, `endLoop`, `canLoop`.
+
+### `mbStatement` — 272 bytes, type 0xb82a
+
+| Offset | Member | Type |
+| ---: | --- | --- |
+| 0x000 | `m_opcode` | `uint32_t` |
+| 0x004 | `m_numOperands` | `int32_t` |
+| 0x008 | `m_operands` | `__int64[32]` |
+| 0x108 | `m_endStatement` | `int32_t` |
+
+Methods: `readStream`, `parseOperand`, `returnValue`, `execute`, `executeWSE`, `arrayCompare`.
+This is the decoded instruction record inside `mbStatementBlock::m_statements`; `executeWSE` is the
+entry point for WSE2-extended opcodes. `gameOperation` (8 bytes: `opcode` at 0, `flags` at 4) is the
+dispatch-table entry type, and `gameConstTable` (56 bytes) holds a named `std::vector<gameConst>`.
 
 ### `mbScript` — 176 bytes, type 0x1f6c4
 
@@ -234,11 +248,39 @@ String evidence in `.rdata`:
 | `0x1405042a8`, `0x140515649` | `module.ini` |
 | `0x1405134d0` | `Unrecognized opcode %d` |
 | `0x1405230d0` | `opcode %d out of range` |
+| `0x1405142c0` | `Script [%d] %s` |
+| `0x1405142d0` | `Unable to map script %s` |
 
-The two opcode diagnostics are the anchors for locating the dispatcher; the exact dispatch function
-is **open** until the current `decompile-all --name mbScript` export completes. The manager flow above
-is proven by symbol names, layouts, and global instances; byte-level parse order still needs
-pseudocode confirmation.
+### Pseudocode-confirmed parse flow (Ghidra 12.1.4)
+
+`mbScriptManager::readStream` (`0x14020b330`, pseudocode `decompile-index.json` entry):
+
+1. Calls stream vtable `+0x90` twice into a temporary `rglString` (the values are consumed but not
+   stored by the manager). From the `rglBinaryStream` vtable, `+0x90` is `readString`.
+2. Calls stream vtable `+0x80` twice into 4-byte integers; the second destination is
+   `g_scriptManager.m_numScripts` (`0x1406506c8`). Both are read as 32-bit integers.
+3. Deletes the old `m_scripts` array with destructors and `operator delete[]`.
+4. Allocates `8 + m_numScripts * 176` bytes (array cookie + `mbScript[]`), constructs the array, and
+   calls `mbScript::readStream(&m_scripts[i], stream, i)` for every index.
+5. Calls `mbScriptManager::mapScripts()`.
+
+`mbScript::readStream` (`0x14020b210`) reads, in order:
+
+1. `readString` into `m_id` (stream vtable `+0x90`).
+2. `readFloat` into `m_interval` at `+0x48` (stream vtable `+0x58`).
+3. `mbStatementBlock::readStream` into `m_statementBlock` at `+0x50`.
+4. Formats `"Script [%d] %s"` with the script index and `m_id`, then stores it in
+   `m_statementBlock.m_id` at `+0x68` (`mbScript + 0x50 + 0x18`).
+
+`mbScriptManager::mapScripts` (`0x14020b510`) walks a static 64-entry name table at
+`0x1405c7ad0` (first entries verified as `game_start`, `game_quick_start`,
+`game_set_multiplayer_mission_end`, `game_get_console_command`, …) and linearly matches each name
+against every script's `m_id` (`m_id.m_buffer` at `+0x8`, `m_id.m_strLength` at `+0x14`). It writes
+the script index into `m_mappedScripts` (`0x1406506cc`, 64 × `int32_t`), or `-1` when absent, and logs
+`"Unable to map script %s"` on failure.
+
+The remaining open item is the opcode dispatcher (`mbStatement::execute` / `executeWSE`), which
+requires the `mbStatement` and `mbStatementBlock` pseudocode export.
 
 ## 6. External dependencies (import evidence)
 
@@ -291,7 +333,27 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    writing asset code.
 5. Validate every reconstructed offset against decompiled member accesses before committing C++.
 
-## 9. Legal guardrail
+## 9. Evidence index
+
+REA evidence records:
+
+| ID | Operation | Notes |
+| --- | --- | --- |
+| `ev_1665f9ad51202515ef1aacbb7bf7b387cca77cbc8d89b9f1aafe2a938dd5db43` | `binary_overview` | 19,759 procedures, 7,157 strings |
+| `ev_db4cc10aa916c9f0b08683c292a14a086adf2d721408cc587a76f6e98879fd70` | `inspect_pe_imports` | 23 DLLs, 542 functions |
+| `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` | `decompile_all --name mbScript` | 5 procedures, 0 failures |
+
+Derived PDB/PE artifacts (retained outside the repository; hashes pin the exact inputs):
+
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `types_x64.json` | 2,965,950 | `4ce032f331547a231dd15e52a400e0e277a38214dceb15b7de72d89aa5fbe078` |
+| `globals_x64.json` | 6,778,279 | `4af47515edab25de63e36a1a77b364a011c5e15a93d77d2660c4a970794d446b` |
+| `vtables_x64.json` | 483,710 | `f9b531cf244bd382ca2b59f3afb80638b1a46251062792cc5da80f700a54c964` |
+| `imports_x64.json` | 69,259 | `8dd4b0747bc0a1a5ff930e8f99ccb073cf861e8ec21de3281d5492762ce2a646` |
+| `analysis_x64.json` | 8,200 | `891bceb598a01a0a9d490f926ac6bddf8cf37ba8c4e21a6f4568015beed5344d` |
+
+## 10. Legal guardrail
 
 No game assets, retail binaries, PDBs, or derived disassembly are checked into the repository.
 The Android app is BYOA: it asks the user to select a legally owned Warband installation and reads

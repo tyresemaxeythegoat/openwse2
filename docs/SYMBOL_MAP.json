@@ -11,9 +11,9 @@
   "pdb_age": 3
  },
  "inputs": {
-  "layouts": 15,
+  "layouts": 19,
   "globals_scanned": 47947,
-  "symbols_curated": 1644,
+  "symbols_curated": 1673,
   "game_vtables": 75
  },
  "strings": [
@@ -44,6 +44,32 @@
   {
    "text": "opcode %d out of range",
    "va": "0x1405230d0"
+  },
+  {
+   "text": "Script [%d] %s",
+   "va": "0x1405142c0"
+  },
+  {
+   "text": "Unable to map script %s",
+   "va": "0x1405142d0"
+  }
+ ],
+ "tables": [
+  {
+   "name": "mapped_script_names",
+   "va": "0x1405c7ad0",
+   "entries": 64,
+   "element": "const char*",
+   "first_entries": [
+    "game_start",
+    "game_quick_start",
+    "game_set_multiplayer_mission_end",
+    "game_get_console_command",
+    "game_enable_cheat_menu",
+    "game_event_party_encounter",
+    "game_event_simulate_battle",
+    "game_get_item_buy_price_factor"
+   ]
   }
  ],
  "classes": {
@@ -302,6 +328,51 @@
     "endLoop",
     "canLoop",
     "__vecDelDtor"
+   ]
+  },
+  "mbStatement": {
+   "size": 272,
+   "type_index": "0xb82a",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_opcode",
+     "offset": "0x0",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numOperands",
+     "offset": "0x4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_operands",
+     "offset": "0x8",
+     "type": "__int64[32]",
+     "type_index": "0x505c",
+     "storage": "instance"
+    },
+    {
+     "name": "m_endStatement",
+     "offset": "0x108",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbStatement",
+    "readStream",
+    "parseOperand",
+    "returnValue",
+    "execute",
+    "executeWSE",
+    "arrayCompare"
    ]
   },
   "mbScript": {
@@ -5593,6 +5664,74 @@
     "removeTrigger",
     "operator=",
     "__vecDelDtor"
+   ]
+  },
+  "gameOperation": {
+   "size": 8,
+   "type_index": "0x1f169",
+   "kind": "struct",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "opcode",
+     "offset": "0x0",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "flags",
+     "offset": "0x4",
+     "type": "unsigned short",
+     "type_index": "0x21",
+     "storage": "instance"
+    }
+   ],
+   "methods": []
+  },
+  "gameConstTable": {
+   "size": 56,
+   "type_index": "0x1da0b",
+   "kind": "struct",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "name",
+     "offset": "0x0",
+     "type": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >",
+     "type_index": "0x1057",
+     "storage": "instance"
+    },
+    {
+     "name": "constants",
+     "offset": "0x20",
+     "type": "std::vector<gameConst,std::allocator<gameConst> >",
+     "type_index": "0x1179f",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "gameConstTable",
+    "~gameConstTable",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "rglAppTimer": {
+   "size": 16,
+   "type_index": "0x1bd94",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "rglTimer",
+     "offset": "0x0",
+     "type": "rglTimer",
+     "relation": "base"
+    }
+   ],
+   "methods": [
+    "rglAppTimer"
    ]
   }
  },
@@ -11724,6 +11863,42 @@
    "va": "0x1401f1d70"
   },
   {
+   "name": "?arrayCompare@mbStatement@@QEAA_NPEAH0W4cmp_operation@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401f1400"
+  },
+  {
+   "name": "?executeWSE@mbStatement@@QEAA_NPEA_J0PEAH1H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401e0cf0"
+  },
+  {
+   "name": "?execute@mbStatement@@QEAA_NPEA_JH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c21e0"
+  },
+  {
+   "name": "?returnValue@mbStatement@@QEAAXPEA_JAEB_J@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2190"
+  },
+  {
+   "name": "?parseOperand@mbStatement@@QEAA_JPEA_JHAEAH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2100"
+  },
+  {
+   "name": "??0mbStatement@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c20f0"
+  },
+  {
    "name": "?mbCheckPath@@YA_NAEAVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -15030,6 +15205,138 @@
    "va": "0x1403211c0"
   },
   {
+   "name": "??$_Buynode@U?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@?$_List_buy@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@@std@@QEAAPEAU?$_List_node@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@PEAX@1@PEAU21@0$$QEAU?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403334b0"
+  },
+  {
+   "name": "??$_Uninit_move@PEAV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@PEAV12@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@@std@@@2@V12@@std@@YAPEAV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@0@PEAV10@00AEAU?$_Wrap_alloc@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@@std@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14009b8c0"
+  },
+  {
+   "name": "??$_Uninit_move@PEAUgameConstTable@@PEAU1@V?$allocator@UgameConstTable@@@std@@U1@@std@@YAPEAUgameConstTable@@PEAU1@00AEAU?$_Wrap_alloc@V?$allocator@UgameConstTable@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140333370"
+  },
+  {
+   "name": "??$destroy@UgameConstTable@@@?$_Wrap_alloc@V?$allocator@UgameConstTable@@@std@@@std@@QEAAXPEAUgameConstTable@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140333310"
+  },
+  {
+   "name": "?_Check_size@?$_Hash@V?$_Umap_traits@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@V?$_Uhash_compare@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@U?$hash@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@U?$equal_to@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@$0A@@std@@@std@@IEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140316e50"
+  },
+  {
+   "name": "?_Destroy_if_not_nil@?$_Hash@V?$_Umap_traits@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@V?$_Uhash_compare@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@U?$hash@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@U?$equal_to@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@$0A@@std@@@std@@IEAAXV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@2@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140316de0"
+  },
+  {
+   "name": "??$_Uninit_fill_n@PEAV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@_KV12@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@@std@@@2@V12@@std@@YAXPEAV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@0@_KPEBV10@AEAU?$_Wrap_alloc@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@@std@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14009b2c0"
+  },
+  {
+   "name": "??$_Destroy_range@U?$_Wrap_alloc@V?$allocator@UgameConstTable@@@std@@@std@@@std@@YAXPEAUgameConstTable@@0AEAU?$_Wrap_alloc@V?$allocator@UgameConstTable@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403331b0"
+  },
+  {
+   "name": "??$_Insert@AEAU?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@2@@?$_Hash@V?$_Umap_traits@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@V?$_Uhash_compare@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@U?$hash@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@U?$equal_to@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@$0A@@std@@@std@@IEAA?AU?$pair@V?$_List_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@_N@1@AEAU?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@1@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140316c30"
+  },
+  {
+   "name": "?_Insert_n@?$vector@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@@std@@@2@@std@@IEAA?AV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@@std@@@std@@@2@V?$_Vector_const_iterator@V?$_Vector_val@U?$_Simple_types@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@@std@@@std@@@2@_KAEBV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@2@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14009a920"
+  },
+  {
+   "name": "?_Buynode0@?$_List_alloc@$0A@U?$_List_base_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@@std@@@std@@QEAAPEAU?$_List_node@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@PEAX@2@PEAU32@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403169f0"
+  },
+  {
+   "name": "?clear@?$list@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@@std@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140316970"
+  },
+  {
+   "name": "?_Reallocate@?$vector@UgameConstTable@@V?$allocator@UgameConstTable@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140332c00"
+  },
+  {
+   "name": "?_Hashval@?$_Hash@V?$_Umap_traits@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@V?$_Uhash_compare@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@U?$hash@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@U?$equal_to@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@$0A@@std@@@std@@IEBA_KAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@2@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140316900"
+  },
+  {
+   "name": "?_Reserve@?$vector@UgameConstTable@@V?$allocator@UgameConstTable@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140332980"
+  },
+  {
+   "name": "??1?$vector@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@std@@@std@@@2@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$list@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403167c0"
+  },
+  {
+   "name": "?lower_bound@?$_Hash@V?$_Umap_traits@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@V?$_Uhash_compare@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@U?$hash@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@U?$equal_to@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@$0A@@std@@@std@@QEAA?AV?$_List_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@std@@@std@@@2@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@2@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403167e0"
+  },
+  {
+   "name": "??1?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140014b30"
+  },
+  {
+   "name": "??1?$vector@UgameConstTable@@V?$allocator@UgameConstTable@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140332630"
+  },
+  {
+   "name": "??A?$unordered_map@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@U?$hash@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@U?$equal_to@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@@std@@QEAAAEAPEAUgameOperation@@$$QEAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140332530"
+  },
+  {
+   "name": "??0?$unordered_map@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@U?$hash@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@U?$equal_to@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140316600"
+  },
+  {
    "name": "?lPushIterator@WSELuaManager@@QEAAHPEAUlua_State@@AEBUgameIterator@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -15196,6 +15503,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1403231e0"
+  },
+  {
+   "name": "??1?$unordered_map@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@U?$hash@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@U?$equal_to@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140321f90"
   },
   {
    "name": "??1WSELuaManager@@QEAA@XZ",

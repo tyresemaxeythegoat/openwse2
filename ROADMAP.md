@@ -52,6 +52,8 @@ Finish Phase 1, Step 2: read the pending `mbScript` pseudocode, confirm the scri
 - Phase 1, Step 1 is complete. Ghidra 12.1.4 + JDK 25.0.5 + Node 26.12.1 are installed under `C:\rea-tools` (the `%TEMP%` copies are wiped by server restarts). `rea doctor` reports the Ghidra provider healthy; REA still runs via CLI because it is not registered with OpenCode.
 - Evidence: x64 image `c25b51a4…acdd2b`, 19,759 procedures, 7,157 strings; 23 DLLs / 542 imports; 14,877 PDB layouts, 47,947 symbols, 281 vtable runs (209 named, 75 `rgl*`/`mb*`/`WSE*`).
 - Dependency corrections: Bullet Physics (393 types), FMOD Ex (`fmodex64.dll`, 53 delay imports), TinyXML, muParser, JSON, and stock Lua 5.1 (`lua5164.dll`, 103 imports). No Havok or LuaJIT evidence.
-- `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json`, and `STATUS.md` are written; `decompile-all --name mbScript` is running in Ghidra headless.
+- `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (19 classes), and `STATUS.md` are written.
+- `decompile-all --name mbScript` completed: 5 procedures, 0 failures. Pseudocode confirms `mbScriptManager::readStream`, `mbScript::readStream`, and `mapScripts` (64-entry name table at `0x1405c7ad0`).
+- `decompile-all --name mbStatement` is running in Ghidra headless to recover the opcode VM.
 - Host PanVK loader/surface tests pass; no Android NDK/SDK/device is available, so arm64 compilation remains blocked.
-- Next: finish the focused decompilation, verify member offsets against pseudocode, then start portable C++20 headers for the script/trigger subsystem.
+- Next: read the statement/VM pseudocode, confirm the 32-operand encoding and dispatcher, then start portable C++20 headers for the script/trigger subsystem.
