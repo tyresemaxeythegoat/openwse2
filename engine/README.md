@@ -8,12 +8,14 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 | File | Reconstructs | Evidence |
 | --- | --- | --- |
 | `include/wse/io/text_stream.h` | whitespace token reader and typed decimal parsers | `rglInputTextFileStream` vftable `0x14051c0b0`, `rglTextStream` readers `0x1402a2ba0`–`0x1402a2f80`, `mbGame::readTriggers` `0x1400cca30` |
+| `include/wse/io/binary_stream.h` | little-endian savegame reader/writer | `rglBinaryStream` vftable `0x1405143d0`; writers `0x1402a1aa0/0x1402a1af0/0x1402a1b50`; readers `0x1402a1d00/0x1402a1d20/0x1402a1d40` |
 | `include/wse/vm/operand.h` | tagged operand decode and lvalue write-back | `mbStatement::parseOperand` `0x1401c2100`, `mbStatement::returnValue` `0x1401c2190`, `mbStatementBlock::execute` `0x1401f2530`, `analyze` `0x1401f22a0` |
 | `include/wse/vm/slots.h` | `mbSlots` (`std::vector<int64_t>`) get/set semantics | PDB type `0x1b004`; `parseOperand` bounds check; `returnValue` write path |
 | `include/wse/vm/statement.h` | statement record and text reader | `mbStatementBlock::readStream` `0x1401f2160`, PDB type `0xb82a` |
-| `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, and event-key runtime state machines | `0x14023ea20`, `0x14023e750`, `0x14020b9d0`, `0x14020b620`, `0x1400cca30`, `0x1400ccde0`, `0x14023eee0`, `0x14020b6f0`, `0x14020bd10` |
+| `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x14023ea20`, `0x14023e750`, `0x14020b9d0`, `0x14020b620`, `0x1400cca30`, `0x1400ccde0`, `0x14023eb80`, `0x14023ed70`, `0x14020bb10`, `0x14023eee0`, `0x14020b6f0`, `0x14020bd10` |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
+| `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
 
 ## Module text format
 
@@ -51,15 +53,21 @@ check interval (`-112` = agent exit status, `-105`/`-106` = ranged attack, `-26`
 Conditions and consequences are supplied as callbacks because `mbStatementBlock::execute` is not
 reconstructed yet; the timer, status, and event-key transitions are exact.
 
-Savegame order is documented in `trigger.h`: `int32` count, then per manager trigger `int32` status
-plus three `int64` timer values. Savegame streams are binary and not yet decoded in the portable
-engine.
+## Savegames
+
+`rglBinaryStream` stores raw little-endian values with no header or per-value metadata. Trigger
+savegames are an `int32` count, then per manager trigger `int32` status plus `int64` check, delay,
+and rearm timer values; simple triggers store one `int64` timer value. The portable
+`read_trigger_savegame`/`write_trigger_savegame`/`read_simple_trigger_savegame` use
+`SavegameResult`: `count_exceeded` reproduces the retail message-box path while consuming every
+entry, and `negative_count`/`truncated` reject malformed input. Retail performs no bounds checks on
+binary reads, so truncated files would read past the buffer there.
 
 ## Safety deviations
 
 The retail code trusts operand/statement/trigger counts and timer indices. This port rejects
-negative counts, operands above 32, oversized arrays, and out-of-range timer indices; none of these
-checks changes valid module behaviour.
+negative counts, operands above 32, oversized arrays, out-of-range timer indices, and truncated
+binary savegames; none of these checks changes valid module behaviour.
 
 ## Build and test
 
@@ -72,6 +80,7 @@ Expected tail:
 ```
 operand tests: PASS
 trigger tests: PASS
+savegame tests: PASS
 engine host tests: PASS
 ```
 

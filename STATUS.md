@@ -1,7 +1,7 @@
 # STATUS
 
 Last updated: 2026-11-12.
-Phase: **1 — Binary Triage & SDK Alignment** (script VM, module token streams, trigger loaders/runtime recovered).
+Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary streams, trigger loaders/runtime/savegames recovered).
 
 ## Passing
 
@@ -13,15 +13,18 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module token streams,
 | PDB parse (MSF 7.0/TPI/DBI) | PASS | 154,753 TPI records, 14,877 sized layouts |
 | PDB symbol map | PASS | 47,947 symbols: 22,600 public, 1,167 global, 14,701 constant, 8,595 UDT, 884 local |
 | Vtable scan | PASS | 281 pointer runs; 209 class-identified; 75 `rgl*`/`mb*`/`WSE*` |
-| Tracking documents | PASS | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (24 classes, 1,673 symbols, 75 vtables) |
+| Tracking documents | PASS | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (25 classes, 1,673 symbols, 75 vtables) |
 | `decompile-all --name mbScript` | PASS | 5 procedures written, 0 failed; entry `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` |
 | `decompile-all --name mbStatement` | PASS | 14 procedures written, 0 failed, 0 skipped; entry `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` |
 | `decompile-all` operand helpers | PASS | 3 procedures written, 0 failed (`parseOperand`, `returnValue`, ctor); entry `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` |
 | `decompile-all --name Trigger` | PASS | 52 procedures written, 0 failed, 0 skipped; entry `ev_e3530f99c32b3f59ecc82debcfff9db29d8641fd14d5f7576ccf12eb4cbe8d05` |
 | `decompile-all --name rglTextStream` | PASS | 18 procedures written, 0 failed, 0 skipped; entry `ev_cebc7ae0bef7bccaddbcbb53c560d5d2020a5acf60c5bc03a77c496077e8c8d3` |
+| `decompile-all --name rglBinaryStream` | PASS | 9 procedures written, 0 failed; entry `ev_24eecfa4fc91587dd7b5b29ca767a78c8747a538e953f37b295746c67f18c0b6` |
+| `decompile-all` binary readers | PASS | 2 procedures written, 0 failed; entry `ev_130d8023206760c8a441e940113e7a231d384634f4a73d4813a3ae6b412c62e6` |
+| Binary savegame format | PASS | `rglBinaryStream` raw little-endian 8/4/1-byte values; strings are `int32` length + bytes; no header or checksum |
 | Module stream identification | PASS | `0x14051c0b0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x14051c2b0` = `rglOutputTextFileStream` writers; module files are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
-| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
+| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
 ## In progress
@@ -29,7 +32,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module token streams,
 | Task | State |
 | --- | --- |
 | Portable trigger runtime | Event-key state machine reconstructed and host-tested; statement conditions/consequences are callbacks until the VM executes blocks |
-| Portable savegame reader | Binary savegame order documented; `rglBinaryStream` equivalent not yet written |
+| Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
 | `executeWSE` case mapping | 381 KB pseudocode captured (430 cases); individual WSE opcode → handler mapping not yet extracted |
 
 ## Confirmed by pseudocode
@@ -110,12 +113,17 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module token streams,
   `g_timersTotal` units of 100000/second and elapsed is `(float)(now - value) / 100000.0`. Rearm
   expiry resets the check timer; idle conditions success starts the delay; delay expiry runs the
   consequences; a matching negative event key runs the consequences immediately.
-- Savegames use `rglBinaryStream`: `mbTriggerManager::writeSavegameStream` (`0x14023ed70`) writes an
+- Savegames use `rglBinaryStream` (vtable `0x1405143d0`, 30 slots). Writers store raw
+  little-endian values (8 bytes for `writeInt64`, 4 for `writeInt32`/`writeFloat`, 1 for
+  `writeBool`/`writeByte`); strings are an `int32` byte count followed by the bytes. There is no
+  header, version, or checksum. `mbTriggerManager::writeSavegameStream` (`0x14023ed70`) writes an
   `int32` count, then `int32` status and the `int64` check/delay/rearm timer values per trigger.
-  `readSavegameStream` (`0x14023eb80`) reads the same order, raises
-  `"Load error: Number of triggers in file: %d, exceeds %d"` when the file count is larger, and
-  discards extra entries. `mbSimpleTriggerManager::readSavegameStream` (`0x14020bb10`) reads one
-  `int64` timer value per record.
+  `readSavegameStream` (`0x14023eb80`) reads the same order; when the file count is larger it calls
+  `rglError` (`0x140314e30`) with `"Load error: Number of triggers in file: %d, exceeds %d"` (a
+  message box that returns) and still reads and discards the surplus entries.
+  `mbSimpleTriggerManager::readSavegameStream` (`0x14020bb10`) reads one `int64` timer value per
+  record with the analogous `"Load error: Number of simple triggers in file: %d, exceeds %d"`.
+  The retail readers do not bounds-check; the portable reader rejects truncation.
 
 ## Blocked
 
@@ -142,12 +150,10 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module token streams,
 
 ## Next concrete task
 
-1. Add a binary `rglBinaryStream` equivalent and trigger savegame read/write to the portable engine,
-   with host tests covering count rejection, extra entries, and timer values.
-2. Extend the portable core with `mbScript`/`mbScriptManager` token readers and a `scripts.txt`
+1. Extend the portable core with `mbScript`/`mbScriptManager` token readers and a `scripts.txt`
    fixture; keep `engine/build_host.ps1` green. The NDK half of the gate remains blocked.
-3. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
+2. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
    `header_operations_addon.py`.
-4. Feed reconstructed statement blocks into `execute_trigger` so conditions/consequences stop being
+3. Feed reconstructed statement blocks into `execute_trigger` so conditions/consequences stop being
    test callbacks once `mbStatementBlock::execute` is portable.
-5. Update `ROADMAP.md` and this file at the next milestone.
+4. Update `ROADMAP.md` and this file at the next milestone.

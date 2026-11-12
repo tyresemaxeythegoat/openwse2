@@ -11,7 +11,7 @@
   "pdb_age": 3
  },
  "inputs": {
-  "layouts": 24,
+  "layouts": 25,
   "globals_scanned": 47947,
   "symbols_curated": 1673,
   "game_vtables": 75
@@ -303,6 +303,42 @@
    ],
    "vtable": null,
    "vtable_note": "rglTextStream emits no standalone vftable; its readers are instantiated in the rglInputTextFileStream vtable 0x14051c0b0. 0x14051c2b0 is the rglOutputTextFileStream vtable."
+  },
+  "rglBinaryStream": {
+   "size": 160,
+   "type_index": "0x17565",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "base": "rglStream",
+   "base_offset": "0x0",
+   "members": [],
+   "methods": [
+    "writeStream",
+    "writeFloat",
+    "writeBool",
+    "writeUInt64",
+    "writeInt64",
+    "writeUInt32",
+    "writeInt32",
+    "writeByte",
+    "writeCString",
+    "writeString",
+    "readStream",
+    "readFloat",
+    "readBool",
+    "readUInt64",
+    "readInt64",
+    "readUInt32",
+    "readInt32",
+    "readByte",
+    "readString",
+    "rglBinaryStream",
+    "~rglBinaryStream",
+    "operator=",
+    "__vecDelDtor"
+   ],
+   "vtable": "0x1405143d0",
+   "vtable_note": "30 slots. PDB aliases share addresses: +0x20 writeInt64/writeUInt64, +0x30 writeInt32/writeUInt32/writeFloat, +0x38 writeBool/writeByte, +0x68/+0x70 readUInt64/readInt64, +0x80 readInt32/readUInt32/readFloat, +0x88 readBool/readByte. Writes store raw 8/4/1 little-endian bytes; readString and writeString prefix the bytes with an int32 length."
   },
   "rglInputTextFileStream": {
    "size": 176,

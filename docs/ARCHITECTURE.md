@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; script statement VM parse and dispatch recovered; trigger exports pending.
+Status: Phase 1 — binary triage complete; script statement VM parse, module text readers, trigger runtime, and binary savegames recovered.
 Last updated: 2026-11-12.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -93,19 +93,22 @@ This is a small-string-optimized string: 48 inline bytes, heap buffer at 0x08 on
 `readStream/readString/readInt32/readUInt32/readInt64/readUInt64/readByte/readBool/readFloat` plus
 the matching writers and `open/tryOpen/close/isOpen/clear/freeMemory/reset/atEnd/flush`.
 
-Two concrete subclasses matter:
+These concrete subclasses matter:
 
 | Class | Size | vftable | Adds |
 | --- | ---: | --- | --- |
 | `rglTextStream` | 160 | inherited | token reader implementations (`readFloat/readInt64/readUInt32/readString`); no standalone vftable is emitted |
 | `rglInputTextFileStream` | 176 | `0x14051c0b0` | `m_file` `FILE*` at `+0xA0`, `m_closed` `bool` at `+0xA8`; vtable `+0x50..+0x90` are the `rglTextStream` readers |
 | `rglOutputTextFileStream` | 176 | `0x14051c2b0` | `m_file`/`m_closed`/`m_fileOpen` at `+0xA0/+0xA8/+0xA9`; vtable `+0x00..+0x48` are the `rglTextStream` writers; read slots are stubs |
+| `rglBinaryStream` | 160 | `0x1405143d0` | 30-slot raw savegame stream; no text parsing, no per-value header |
 
 `rglInputTextFileStream::tryOpen` reads the file into `m_contents`; every reader then skips bytes
 `<= 0x20`, takes the next token, and parses it. Module files (`scripts.txt`, `triggers.txt`,
 `simple_triggers.txt`, `mission_templates.txt`, …) are whitespace-delimited decimal text. The
 separate `rglBinaryStream` (vftable `0x1405143d0`, 30 slots) is used for savegames, not module
-files.
+files. The binary readers use the embedded `m_contents.m_cursor` at `+0x58` and buffer at `+0x60`;
+`rglStream::m_cursor` at `+0x54` is the text-stream cursor. Ghidra names the 4-byte reader
+`FUN_1402a1d00` rather than `readInt32` because it did not split the adjacent 20-byte entries.
 
 Exact reader behaviour (`ev_cebc7ae0…e8c8d3`, 18/18 functions):
 
@@ -293,18 +296,39 @@ and a game-event queue transition is detected (`DAT_1405d0f28 + 0x4a0` vs `+0x4a
 
 ### Trigger savegames
 
-`rglBinaryStream` (vtable `0x1405143d0`):
+`rglBinaryStream` (vtable `0x1405143d0`, 30 slots; writer evidence `ev_24eecfa4…f18c0b6`,
+reader evidence `ev_130d8023…2c62e6`):
 
+- The stream stores raw values with no header, version, length, or checksum. PDB aliases share
+  addresses: `+0x20` `writeInt64/writeUInt64`, `+0x30` `writeInt32/writeUInt32/writeFloat`,
+  `+0x38` `writeBool/writeByte`, `+0x68/+0x70` `readUInt64/readInt64`, `+0x80`
+  `readInt32/readUInt32/readFloat`, `+0x88` `readBool/readByte`, `+0x90` `readString`.
+- `writeFloat` (`0x1402a1aa0`) copies four raw bytes into `m_contents`, `writeInt64`
+  (`0x1402a1af0`) eight, and `writeBool` (`0x1402a1b50`) one. `readInt32` (`0x1402a1d00`) loads
+  four raw bytes from `m_contents.m_buffer` (`+0x60`) at the embedded `m_contents.m_cursor`
+  (`+0x58`) and advances by four; `readByte` (`0x1402a1d20`) and `readInt64` (`0x1402a1d40`) are
+  the same pattern with widths one and eight. The x86-64 copies are little-endian.
+- Strings are an `int32` byte length followed by the bytes with no terminator: `writeString`
+  (`0x1402a1c30`), `writeCString` (`0x1402a1ba0`), and `readString` (`0x1402a1d60`, which reads
+  the length through slot `+0x80`). Trigger savegames do not use strings.
+- The retail readers perform no bounds check. The portable reader rejects truncated input.
 - `mbTriggerManager::writeSavegameStream` (`0x14023ed70`): `writeInt32(count)`; per trigger
   `writeInt32(status)`, `writeInt64(checkTimer.value)`, `writeInt64(delayTimer.value)`,
   `writeInt64(rearmTimer.value)`.
 - `mbTriggerManager::readSavegameStream` (`0x14023eb80`): `readInt32(count)`; if the file count
-  exceeds the manager count, log `"Load error: Number of triggers in file: %d, exceeds %d"`. Read
-  status and the three 64-bit values, discarding any extra file entries. Timer numbers are not
-  saved.
+  exceeds the manager count, call `rglError` (`0x140314e30`) with
+  `"Load error: Number of triggers in file: %d, exceeds %d"`. `rglError` formats the message,
+  shows a message box, and returns, so the loop still reads status and the three 64-bit values for
+  every file entry and discards surplus entries. Timer numbers are not saved.
 - `mbSimpleTriggerManager::readSavegameStream` (`0x14020bb10`): `readInt32(count)`, error
   `"Load error: Number of simple triggers in file: %d, exceeds %d"`, then one `int64` timer value
   per trigger. No write counterpart appears in the binary.
+
+Portable reconstruction: `engine/include/wse/io/binary_stream.h` plus
+`read_trigger_savegame`/`write_trigger_savegame`/`read_simple_trigger_savegame` in
+`engine/include/wse/game/trigger.h`. `SavegameResult::count_exceeded` corresponds to the retail
+message-box path while still consuming every entry; `negative_count` and `truncated` are safety
+deviations for malformed input.
 
 ### `WSELuaManager` — 21,504 bytes, type 0xadaf
 
@@ -618,6 +642,8 @@ REA evidence records:
 | `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` | `decompile_all --address-start 0x1401c20f0 --address-end 0x1401c21c0` | `parseOperand`, `returnValue`, `mbStatement` ctor; 3 written, 0 failures |
 | `ev_e3530f99c32b3f59ecc82debcfff9db29d8641fd14d5f7576ccf12eb4cbe8d05` | `decompile_all --name Trigger` | 52 procedures written, 0 failures; trigger layouts, loaders, runtime, and savegames |
 | `ev_cebc7ae0bef7bccaddbcbb53c560d5d2020a5acf60c5bc03a77c496077e8c8d3` | `decompile_all --name rglTextStream` | 18 procedures written, 0 failures; exact token reader/writer semantics |
+| `ev_24eecfa4fc91587dd7b5b29ca767a78c8747a538e953f37b295746c67f18c0b6` | `decompile_all --name rglBinaryStream` | 9 procedures written, 0 failures; raw 8/4/1-byte writers and length-prefixed strings |
+| `ev_130d8023206760c8a441e940113e7a231d384634f4a73d4813a3ae6b412c62e6` | `decompile_all --address-start 0x1402a1d00 --address-end 0x1402a1d7f` | 2 procedures written, 0 failures; 4-byte raw reader (`FUN_1402a1d00`); adjacent 1/8-byte entries confirmed by PDB aliases and disassembly |
 
 Derived PDB/PE artifacts (retained outside the repository; hashes pin the exact inputs):
 

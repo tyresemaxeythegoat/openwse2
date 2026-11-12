@@ -42,7 +42,10 @@
 //   mbSimpleTriggerManager::readSavegameStream 0x14020bb10
 //   int32 trigger count, then per trigger int32 status and three int64 timer
 //   values (check/delay/rearm); a simple trigger stores one int64 timer value.
-//   Timer numbers are not saved. Extra file entries are read and discarded.
+//   Timer numbers are not saved. Extra file entries are read and discarded;
+//   the retail reader shows a message box through rglError (0x140314e30) and
+//   then continues. rglBinaryStream stores raw little-endian values with no
+//   per-value header (see wse/io/binary_stream.h).
 //
 // mbGame::readTriggers opens "triggers.txt", discards a three-token header
 // ("triggersfile version 1" in the retail files), then calls the manager
@@ -60,6 +63,7 @@
 #include <string_view>
 #include <vector>
 
+#include "wse/io/binary_stream.h"
 #include "wse/io/text_stream.h"
 #include "wse/vm/statement.h"
 
@@ -233,6 +237,117 @@ struct SimpleTriggerManager {
         }
     }
     return vm::ReadError::none;
+}
+
+// ---------------------------------------------------------------------------
+// Savegames (rglBinaryStream)
+// ---------------------------------------------------------------------------
+//
+// mbTriggerManager::writeSavegameStream 0x14023ed70 writes:
+//   int32 count
+//   per trigger: int32 status, int64 check, delay, rearm timer values
+// mbTriggerManager::readSavegameStream 0x14023eb80 reads the same order. When
+// the file count exceeds the manager count it reports the retail error
+// "Load error: Number of triggers in file: %d, exceeds %d" and still consumes
+// every file entry, discarding the surplus.
+// mbSimpleTriggerManager::readSavegameStream 0x14020bb10 reads an int32 count
+// and one int64 timer value per entry, with the analogous
+// "Load error: Number of simple triggers in file: %d, exceeds %d" error. No
+// simple-trigger write counterpart appears in the binary.
+
+enum class SavegameResult : std::uint8_t {
+    ok = 0,
+    count_exceeded,
+    negative_count,
+    truncated,
+};
+
+[[nodiscard]] constexpr std::string_view describe(SavegameResult result) noexcept {
+    switch (result) {
+    case SavegameResult::ok:
+        return "ok";
+    case SavegameResult::count_exceeded:
+        return "file record count exceeds the loaded manager";
+    case SavegameResult::negative_count:
+        return "negative record count";
+    case SavegameResult::truncated:
+        return "truncated binary savegame record";
+    }
+    return "unknown savegame result";
+}
+
+inline void write_trigger_savegame(const TriggerManager& manager, io::BinaryWriter& writer) {
+    writer.write_i32(static_cast<std::int32_t>(manager.triggers.size()));
+    for (const Trigger& trigger : manager.triggers) {
+        writer.write_i32(trigger.status);
+        writer.write_i64(trigger.checkTimer.value);
+        writer.write_i64(trigger.delayTimer.value);
+        writer.write_i64(trigger.rearmTimer.value);
+    }
+}
+
+// Applies status and timer values to the existing manager entries; timer
+// numbers and statement blocks are not part of the savegame.
+[[nodiscard]] inline SavegameResult read_trigger_savegame(TriggerManager& manager,
+                                                          io::BinaryReader& reader) {
+    std::int32_t fileCount = 0;
+    if (!reader.read_i32(fileCount)) {
+        return SavegameResult::truncated;
+    }
+    if (fileCount < 0) {
+        return SavegameResult::negative_count;
+    }
+
+    const std::uint32_t count = static_cast<std::uint32_t>(fileCount);
+    const std::size_t available = manager.triggers.size();
+    const bool exceeded = count > available;
+
+    for (std::uint32_t index = 0; index < count; ++index) {
+        std::int32_t status = 0;
+        std::int64_t check = 0;
+        std::int64_t delay = 0;
+        std::int64_t rearm = 0;
+        if (!reader.read_i32(status) || !reader.read_i64(check) || !reader.read_i64(delay) ||
+            !reader.read_i64(rearm)) {
+            return SavegameResult::truncated;
+        }
+        if (index < available) {
+            Trigger& trigger = manager.triggers[index];
+            trigger.status = status;
+            trigger.checkTimer.value = check;
+            trigger.delayTimer.value = delay;
+            trigger.rearmTimer.value = rearm;
+        }
+    }
+
+    return exceeded ? SavegameResult::count_exceeded : SavegameResult::ok;
+}
+
+[[nodiscard]] inline SavegameResult read_simple_trigger_savegame(SimpleTriggerManager& manager,
+                                                                 io::BinaryReader& reader) {
+    std::int32_t fileCount = 0;
+    if (!reader.read_i32(fileCount)) {
+        return SavegameResult::truncated;
+    }
+    if (fileCount < 0) {
+        return SavegameResult::negative_count;
+    }
+
+    const std::uint32_t count = static_cast<std::uint32_t>(fileCount);
+    const std::size_t available = manager.triggers.size();
+    const bool exceeded = count > available;
+
+    for (std::uint32_t index = 0; index < count; ++index) {
+        std::int64_t value = 0;
+        if (!reader.read_i64(value)) {
+            return SavegameResult::truncated;
+        }
+        if (index < available) {
+            manager.triggers[index].timer.value = value;
+        }
+    }
+
+    return exceeded ? SavegameResult::count_exceeded : SavegameResult::ok;
 }
 
 // ---------------------------------------------------------------------------

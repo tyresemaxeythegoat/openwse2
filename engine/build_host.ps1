@@ -45,7 +45,8 @@ $include = Join-Path $here "include"
 
 $tests = @(
     @{ Name = "operand"; Source = Join-Path $here "tests\operand_test.cpp" },
-    @{ Name = "trigger"; Source = Join-Path $here "tests\trigger_test.cpp" }
+    @{ Name = "trigger"; Source = Join-Path $here "tests\trigger_test.cpp" },
+    @{ Name = "savegame"; Source = Join-Path $here "tests\savegame_test.cpp" }
 )
 
 Write-Host "zig          $zig"
