@@ -1,5 +1,11 @@
 # wse2-android
 
+> **Active plan (2026-11):** the project has moved from static recompilation to an
+> evidence-backed clean-room decompile/recompile to portable C++20. See
+> [`ROADMAP.md`](ROADMAP.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
+> [`docs/SYMBOL_MAP.json`](docs/SYMBOL_MAP.json), and [`STATUS.md`](STATUS.md).
+> The static-recompilation material below is retained as CPU/ABI reference only.
+
 Static recompilation of the **WSE2** (Warband Script Enhancer 2) x64 engine to
 native **Android ARM64**. No MNBTool mod, no emulator, no Wine/Box64/Dynarmic.
 

@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Build the curated WSE2 symbol map from PDB-derived artifacts.
+
+Inputs are generated outside the repository (retail PDB data is never committed):
+
+  layouts/<Class>.json   from: python tools/pdb_symbols.py <pdb> --layout <Class> --json ...
+  globals_x64.json       from: python tools/pdb_symbols.py <pdb> --globals --exe <exe> --json ...
+  vtables_x64.json       from: python tools/vtables.py
+
+Usage:
+  python tools/build_symbol_map.py --layouts <dir> --globals <json> --vtables <json> \
+      --out docs/SYMBOL_MAP.json
+"""
+
+import argparse
+import json
+import os
+import re
+
+CLASSES = [
+    "rglString",
+    "rglStream",
+    "mbStatementBlock",
+    "mbScript",
+    "mbScriptManager",
+    "mbTrigger",
+    "mbTriggerManager",
+    "mbSimpleTrigger",
+    "mbSimpleTriggerManager",
+    "WSELuaManager",
+    "mbGame",
+    "mbMission",
+    "mbAgent",
+    "rglRenderer",
+    "mbMissionTemplate",
+]
+
+GLOBAL_NAMES = {
+    "g_scriptManager",
+    "g_luaManager",
+    "g_game",
+    "g_mission",
+    "g_missionTemplates",
+    "g_renderer",
+    "g_gameScreen",
+}
+
+# .rdata string literals located with tools/pe_evidence.py-style scans.
+STRINGS = [
+    ("scripts.txt", 0x1405068B8),
+    ("triggers.txt", 0x14050A948),
+    ("simple_triggers.txt", 0x14050A960),
+    ("module.ini", 0x1405042A8),
+    ("module.ini", 0x140515649),
+    ("Unrecognized opcode %d", 0x1405134D0),
+    ("opcode %d out of range", 0x1405230D0),
+]
+
+TARGET = {
+    "binary": "mb_warband_wse2_x64.exe",
+    "sha256": "c25b51a42d1b504e2291b66c581c79ca613802d0674618b6d1d7bb7441acdd2b",
+    "format": "PE32+",
+    "architecture": "x86_64",
+    "image_base": "0x140000000",
+    "pdb_guid": "4029ca80-41b6-484a-bfa3-e26525c7efc7",
+    "pdb_age": 3,
+}
+
+
+def class_members(layout):
+    members, methods = [], []
+    for field in layout["fields"]:
+        if field["kind"] in ("member", "static"):
+            members.append({
+                "name": field["name"],
+                "offset": "0x%x" % field.get("offset", 0),
+                "type": field["type"],
+                "type_index": "0x%x" % field["type_index"],
+                "storage": "static" if field["kind"] == "static" else "instance",
+            })
+        elif field["kind"] == "base":
+            members.append({
+                "name": field["name"],
+                "offset": "0x%x" % field.get("offset", 0),
+                "type": field["name"],
+                "relation": "base",
+            })
+        elif field["kind"] == "method":
+            methods.append(field["name"])
+    return members, methods
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--layouts", required=True)
+    ap.add_argument("--types", required=True)
+    ap.add_argument("--globals", required=True)
+    ap.add_argument("--vtables", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--generated", default="2026-11-12")
+    args = ap.parse_args()
+
+    type_index = {}
+    for row in json.load(open(args.types, encoding="utf-8"))["classes"]:
+        type_index.setdefault(row["name"], row["type_index"])
+
+    classes = {}
+    for name in CLASSES:
+        path = os.path.join(args.layouts, name + ".json")
+        if not os.path.exists(path):
+            continue
+        layout = json.load(open(path, encoding="utf-8"))["layout"]
+        members, methods = class_members(layout)
+        classes[name] = {
+            "size": layout["size"],
+            "type_index": "0x%x" % type_index.get(name, layout.get("field", 0) + 1),
+            "kind": layout["kind"],
+            "source": "pdb-tpi",
+            "members": members,
+            "methods": methods,
+        }
+
+    globals_rows = json.load(open(args.globals, encoding="utf-8"))["globals"]
+    symbols = []
+    for row in globals_rows:
+        if row.get("kind") not in ("public", "global"):
+            continue
+        name = row["name"]
+        if not any(cls in name for cls in CLASSES) and name not in GLOBAL_NAMES:
+            continue
+        entry = {"name": name, "kind": row["kind"], "source": "pdb-" + row["kind"]}
+        if row.get("va"):
+            entry["va"] = "0x%x" % row["va"]
+        if row.get("type_index"):
+            entry["type_index"] = "0x%x" % row["type_index"]
+        symbols.append(entry)
+
+    vtables = []
+    for row in json.load(open(args.vtables, encoding="utf-8"))["vtables"]:
+        cls = row.get("class_guess")
+        if not cls or not re.match(r"^(rgl|mb|WSE)", cls):
+            continue
+        vtables.append({
+            "va": "0x%x" % row["va"],
+            "entries": row["entries"],
+            "class": cls,
+            "first_symbol": row.get("first", ""),
+            "source": "pe-pointer-run+pdb-destructor" if row.get("first") else "pe-pointer-run",
+        })
+
+    payload = {
+        "schema": "wse2-symbol-map/1",
+        "generated": args.generated,
+        "target": TARGET,
+        "inputs": {
+            "layouts": len(classes),
+            "globals_scanned": len(globals_rows),
+            "symbols_curated": len(symbols),
+            "game_vtables": len(vtables),
+        },
+        "strings": [{"text": text, "va": "0x%x" % va} for text, va in STRINGS],
+        "classes": classes,
+        "symbols": symbols,
+        "vtables": vtables,
+    }
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    with open(args.out, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(payload, f, indent=1)
+        f.write("\n")
+    print("classes=%d symbols=%d vtables=%d -> %s" % (
+        len(classes), len(symbols), len(vtables), args.out))
+
+
+if __name__ == "__main__":
+    main()
