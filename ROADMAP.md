@@ -55,5 +55,6 @@ Finish Phase 1, Step 2: export `mbStatement::parseOperand` / `returnValue` by ad
 - `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (19 classes), and `STATUS.md` are written.
 - `decompile-all --name mbScript` completed: 5 procedures, 0 failures. Pseudocode confirms `mbScriptManager::readStream`, `mbScript::readStream`, and `mapScripts` (64-entry name table at `0x1405c7ad0`).
 - `decompile-all --name mbStatement` completed: 14 procedures, 0 failures. Confirmed the statement encoding (`uint32` opcode, `int32` count, `int64` operands, `m_endStatement`), the 7-bit operand tag scheme (`0` immediate, `1` global, `2` global vector, `0x11` local), `analyze` control-flow resolution, the 2,738-entry native jump table at `0x1401de220` for opcodes 30–2767, and `executeWSE` for opcodes ≥ 2768.
+- Address-range export completed: `mbStatement::parseOperand` and `returnValue` recovered (3/3 written). Operand 0 is the destination lvalue; `returnValue` writes through `g_globalVariables`, `mbSlots::set`, or `m_locals`, and rejects other tags with `"Illegal lvalue in statement"`.
 - Host PanVK loader/surface tests pass; no Android NDK/SDK/device is available, so arm64 compilation remains blocked.
-- Next: export the two unseeded helpers, then decompile the trigger managers and start portable C++20 headers with host tests for the operand decoder.
+- Next: decompile the trigger managers, then start portable C++20 headers with host tests for the operand decoder and statement reader.

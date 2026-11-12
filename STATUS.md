@@ -16,6 +16,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statemen
 | Tracking documents | PASS | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (19 classes, 1,673 symbols, 75 vtables) |
 | `decompile-all --name mbScript` | PASS | 5 procedures written, 0 failed; entry `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` |
 | `decompile-all --name mbStatement` | PASS | 14 procedures written, 0 failed, 0 skipped; entry `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` |
+| `decompile-all` operand helpers | PASS | 3 procedures written, 0 failed (`parseOperand`, `returnValue`, ctor); entry `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
@@ -23,7 +24,6 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statemen
 
 | Task | State |
 | --- | --- |
-| `mbStatement::parseOperand` / `returnValue` export | Not in `seeds.tsv`, so Ghidra named them `FUN_1401c2100` / `FUN_1401c2190` and the name filter skipped them; needs an address-range export |
 | Trigger manager pseudocode | Layouts and entry points verified; `mbTriggerManager` export queued |
 | `executeWSE` case mapping | 381 KB pseudocode captured (430 cases); individual WSE opcode → handler mapping not yet extracted |
 
@@ -46,8 +46,16 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statemen
 - `analyze` (`0x1401f22a0`): matches opcodes `3/4/5` and loop starters `6,7,0xb,0xc,0x10,0x11,0x12`
   with two 128-entry stacks, writes `m_endStatement` jump targets, caps nesting at 128, and computes
   `m_numLocalVariablesUsed` from operand tag `0x11`, clamped to `[0x20, 0x400]`.
-- Operand encoding: 7-bit tag in bits 56–62, 56-bit payload. Tags `0` immediate, `1` global array,
-  `2` global vector, `0x11` local variable. Negative 64-bit values are untagged immediates.
+- Operand encoding: 7-bit tag in bits 56–62, 56-bit payload. Tags `0` immediate, `1` global variable
+  array `g_globalVariables` (`0x140613830`, unchecked), `2` global `mbSlots` (`0x140613818`,
+  read bounds-checked), `0x11` local variable. Negative 64-bit values are untagged immediates.
+- `mbStatement::parseOperand` (`0x1401c2100`) implements the decoder: `<= 0` is an immediate,
+  otherwise tag = `(value >> 56) & 0x7f` and payload = `value & 0x00FFFFFFFFFFFFFF`.
+- `mbStatement::returnValue` (`0x1401c2190`) treats operand 0 as the destination lvalue and writes
+  the result to the global array (tag 1), `mbSlots::set` (tag 2), or the local array (tag `0x11`);
+  other tags raise `"Illegal lvalue in statement"`.
+- `mbStatement` constructor (`0x1401c20f0`) only initializes `m_endStatement` to `-1`; `readStream`
+  fills the opcode and operands.
 - `mbStatement::execute` (`0x1401c21e0`): parses operands, masks opcode with `0x0FFFFFFF`, calls
   `WSELuaManager::OnOperationExecute` when `operationHookTable[opcode] != -2`, then dispatches
   opcodes `30..2767` through the 2,738-entry RVA jump table at `0x1401de220` and opcodes `>= 2768`
@@ -85,12 +93,10 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statemen
 
 ## Next concrete task
 
-1. Export `mbStatement::parseOperand` (`0x1401c2100`) and `returnValue` (`0x1401c2190`) by address
-   range, or add them to `seeds.tsv` first.
-2. Decompile `mbTriggerManager::readStream` (`0x14023ea20`) / `execute` (`0x14023eee0`) and the
+1. Decompile `mbTriggerManager::readStream` (`0x14023ea20`) / `execute` (`0x14023eee0`) and the
    `mbSimpleTriggerManager` equivalents; compare against the proven statement encoding.
-3. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
+2. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
    `header_operations_addon.py`.
-4. Add the first portable C++20 headers for `rglString`, `rglStream`, `mbStatement`,
+3. Add the first portable C++20 headers for `rglString`, `rglStream`, `mbStatement`,
    `mbStatementBlock`, and `mbScript`, with host unit tests covering the tagged operand decoder.
-5. Update `ROADMAP.md` and this file at the next milestone.
+4. Update `ROADMAP.md` and this file at the next milestone.

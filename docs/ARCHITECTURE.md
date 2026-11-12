@@ -330,12 +330,30 @@ Operand words use a tagged 64-bit encoding (proven in `mbStatementBlock::execute
 A negative `int64_t` is treated as an untagged immediate (the full 64-bit value is used). Observed
 tags:
 
-| Tag | Meaning | Source |
+| Tag | Meaning | Bounds behaviour |
 | ---: | --- | --- |
-| `0` | immediate value | `0x1401f2530` |
-| `1` | global value array `DAT_140613830[index]` | `0x1401f2530` |
-| `2` | global value vector `DAT_140613818[index]`, bounds-checked against `DAT_140613820` | `0x1401f2530` |
-| `0x11` | local variable `m_locals[index]` | `0x1401f22a0`, `0x1401f2530` |
+| `0` | immediate value (also all values `<= 0`) | none needed |
+| `1` | global variable array `g_globalVariables` at `0x140613830`, 8-byte elements | **not checked** in the original |
+| `2` | global slot vector `g_slots` (`mbSlots`, 24 bytes at `0x140613818`) | read checks `m_values` size, out-of-range yields `0`; write goes through `mbSlots::set` |
+| `0x11` | local variable `m_locals[index]` | **not checked** on read; `analyze` sizes the array from the maximum index |
+
+`mbStatement::parseOperand` (`0x1401c2100`) implements the decoder exactly:
+
+1. Load `m_operands[index]`.
+2. If the value is `<= 0` (signed), leave it as an immediate and report tag `0`.
+3. Otherwise tag is `(value >> 56) & 0x7f`, payload is `value & 0x00FFFFFFFFFFFFFF`.
+4. Resolve tag `1` from the global array, tag `2` from `mbSlots` (bounds-checked), or tag `0x11` from
+   the local array; return the payload unchanged for tag `0`.
+
+`mbStatement::returnValue` (`0x1401c2190`) is the matching write-back path. It treats **operand 0**
+as the destination lvalue (tag byte at `this+0xf`, index at `this+8`):
+
+- tag `1` → write `g_globalVariables[index]`
+- tag `2` → `mbSlots::set(index, value)` (grows the vector as needed)
+- tag `0x11` → write `m_locals[index]`
+- anything else → `rglError("Illegal lvalue in statement")`
+
+This is how operation results become the input of a following statement.
 
 `analyze` (`0x1401f22a0`) computes the local-variable count by scanning operands (clamped to 32) for
 tag `0x11` and storing `maxIndex + 1`, clamped to `[0x20, 0x400]`, in `m_numLocalVariablesUsed`.
@@ -431,18 +449,14 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
 ## 8. Evidence gaps / next measurements
 
-1. `mbStatement::parseOperand` (`0x1401c2100`) and `returnValue` (`0x1401c2190`): these were named
-   `FUN_*` by Ghidra because they are absent from `seeds.tsv`, so the `--name mbStatement` filter
-   skipped them. Export by address range (`--address-start 0x1401c20f0 --address-end 0x1401c21c0`)
-   or add them to the seed file first.
-2. `mbTriggerManager::readStream` / `execute` and `mbSimpleTriggerManager` equivalents; confirm the
+1. `mbTriggerManager::readStream` / `execute` and `mbSimpleTriggerManager` equivalents; confirm the
    trigger text/binary token order against the proven statement format.
-3. Locate `gameOperation` table construction in `WSELuaManager` and map opcode IDs to the native jump
+2. Locate `gameOperation` table construction in `WSELuaManager` and map opcode IDs to the native jump
    table and `executeWSE` cases.
-4. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
-5. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
+3. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
+4. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
    writing asset code.
-6. Validate every reconstructed offset against decompiled member accesses before committing C++.
+5. Validate every reconstructed offset against decompiled member accesses before committing C++.
 
 ## 9. Evidence index
 
@@ -454,6 +468,7 @@ REA evidence records:
 | `ev_db4cc10aa916c9f0b08683c292a14a086adf2d721408cc587a76f6e98879fd70` | `inspect_pe_imports` | 23 DLLs, 542 functions |
 | `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` | `decompile_all --name mbScript` | 5 procedures, 0 failures |
 | `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` | `decompile_all --name mbStatement` | 14 procedures written, 0 failures, 0 skipped |
+| `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` | `decompile_all --address-start 0x1401c20f0 --address-end 0x1401c21c0` | `parseOperand`, `returnValue`, `mbStatement` ctor; 3 written, 0 failures |
 
 Derived PDB/PE artifacts (retained outside the repository; hashes pin the exact inputs):
 
