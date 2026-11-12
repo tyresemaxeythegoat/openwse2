@@ -1,90 +1,102 @@
-// Decoded script-VM statement record and binary reader.
+// Decoded script-VM statement record and module-file reader.
 //
 // Evidence:
 //   mbStatementBlock::readStream (0x1401f2160)  Ghidra 12.1.4 pseudocode
 //   mbStatement layout            PDB TPI type 0xb82a, size 272
+//   rglTextStream reader slots    vtable 0x14051c2b0
 //
-// Binary form per statement:
-//   uint32  opcode
-//   int32   operandCount
-//   int64   operands[operandCount]
-// and m_endStatement is initialized to -1 before analyze() computes jumps.
+// Module text form per statement:
+//   <opcode> <operandCount> <operand>...
+// all whitespace-delimited decimal tokens. The operand count is read with the
+// int32 slot (+0x80), the opcode with the uint32 slot (+0x78), and every
+// operand with the int64 slot (+0x70).
 //
-// Safety deviation: the original passes an unchecked operand count to the
-// allocator and later reads that many int64 values into the fixed 32-element
-// array. This reader rejects counts outside [0, 32] instead.
+// In memory the record stays 272 bytes: uint32 opcode, int32 operandCount,
+// 32 int64 operands, int32 endStatement initialized to -1 by the constructor
+// (0x1401c20f0) and filled by analyze() (0x1401f22a0).
+//
+// Safety deviation: the original passes the count straight to the allocator
+// and reads that many operands into the fixed 32-element array. This reader
+// rejects negative counts, counts above 32, and statement arrays above
+// kMaxStatements.
 
 #pragma once
 
-#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
+#include <string>
 #include <string_view>
+#include <vector>
 
+#include "wse/io/text_stream.h"
 #include "wse/vm/operand.h"
 
 namespace wse::vm {
 
 inline constexpr std::size_t kStatementSize = 0x110;
+inline constexpr std::size_t kMaxStatements = 1u << 20;
+inline constexpr std::int32_t kDefaultLocalVariables = 0x400;
+inline constexpr std::int32_t kNoLuaHook = -2;
 
 struct Statement {
-    std::uint32_t opcode;
-    std::int32_t numOperands;
-    std::int64_t operands[kMaxOperands];
-    std::int32_t endStatement;
+    std::uint32_t opcode = 0;
+    std::int32_t numOperands = 0;
+    std::int64_t operands[kMaxOperands]{};
+    std::int32_t endStatement = -1;
 };
 
-static_assert(std::endian::native == std::endian::little,
-              "the module binary format is little-endian");
-static_assert(offsetof(Statement, opcode) == 0x000);
-static_assert(offsetof(Statement, numOperands) == 0x004);
-static_assert(offsetof(Statement, operands) == 0x008);
-static_assert(offsetof(Statement, endStatement) == 0x108);
-static_assert(sizeof(Statement) == kStatementSize);
-
-class ByteSource {
-public:
-    virtual ~ByteSource() = default;
-
-    // Reads exactly `bytes` bytes or returns false.
-    virtual bool read(void* destination, std::size_t bytes) = 0;
+struct StatementBlock {
+    std::vector<Statement> statements;
+    bool analyzed = false;
+    std::int32_t numLocalVariablesUsed = kDefaultLocalVariables;
+    std::int32_t luaHookRef = kNoLuaHook;
+    std::string id;
 };
 
 enum class ReadError : std::uint8_t {
     none = 0,
-    io,
-    negative_operand_count,
+    malformed_number,
+    negative_count,
     operand_count_out_of_range,
+    statement_count_out_of_range,
+    trigger_count_out_of_range,
+    timer_index_out_of_range,
 };
 
 [[nodiscard]] constexpr std::string_view describe(ReadError error) noexcept {
     switch (error) {
     case ReadError::none:
         return "ok";
-    case ReadError::io:
-        return "truncated statement";
-    case ReadError::negative_operand_count:
-        return "negative operand count";
+    case ReadError::malformed_number:
+        return "missing or malformed number token";
+    case ReadError::negative_count:
+        return "negative record count";
     case ReadError::operand_count_out_of_range:
         return "operand count exceeds 32";
+    case ReadError::statement_count_out_of_range:
+        return "statement count out of range";
+    case ReadError::trigger_count_out_of_range:
+        return "trigger count out of range";
+    case ReadError::timer_index_out_of_range:
+        return "timer index out of range";
     }
     return "unknown error";
 }
 
-// Reads one statement. On failure `out` may be partially updated.
-[[nodiscard]] inline ReadError read_statement(ByteSource& source,
-                                              Statement& out) noexcept {
+// Reads one `<opcode> <count> <operand>...` record. On failure `out` may be
+// partially updated.
+[[nodiscard]] inline ReadError read_statement(io::TokenReader& reader, Statement& out) {
     std::uint32_t opcode = 0;
-    std::int32_t count = 0;
-    if (!source.read(&opcode, sizeof(opcode))) {
-        return ReadError::io;
+    if (!reader.read_u32(opcode)) {
+        return ReadError::malformed_number;
     }
-    if (!source.read(&count, sizeof(count))) {
-        return ReadError::io;
+
+    std::int32_t count = 0;
+    if (!reader.read_i32(count)) {
+        return ReadError::malformed_number;
     }
     if (count < 0) {
-        return ReadError::negative_operand_count;
+        return ReadError::negative_count;
     }
     if (static_cast<std::uint32_t>(count) > kMaxOperands) {
         return ReadError::operand_count_out_of_range;
@@ -92,11 +104,39 @@ enum class ReadError : std::uint8_t {
 
     out.opcode = opcode;
     out.numOperands = count;
-    if (count > 0 &&
-        !source.read(out.operands, static_cast<std::size_t>(count) * sizeof(std::int64_t))) {
-        return ReadError::io;
+    for (std::int32_t index = 0; index < count; ++index) {
+        if (!reader.read_i64(out.operands[index])) {
+            return ReadError::malformed_number;
+        }
     }
     out.endStatement = -1;
+    return ReadError::none;
+}
+
+// Reads the leading statement count and then that many statements.
+[[nodiscard]] inline ReadError read_statement_block(io::TokenReader& reader,
+                                                    StatementBlock& block) {
+    block.analyzed = false;
+    block.numLocalVariablesUsed = kDefaultLocalVariables;
+
+    std::int32_t count = 0;
+    if (!reader.read_i32(count)) {
+        return ReadError::malformed_number;
+    }
+    if (count < 0) {
+        return ReadError::negative_count;
+    }
+    if (static_cast<std::uint64_t>(count) > kMaxStatements) {
+        return ReadError::statement_count_out_of_range;
+    }
+
+    block.statements.assign(static_cast<std::size_t>(count), Statement{});
+    for (auto& statement : block.statements) {
+        const ReadError error = read_statement(reader, statement);
+        if (error != ReadError::none) {
+            return error;
+        }
+    }
     return ReadError::none;
 }
 

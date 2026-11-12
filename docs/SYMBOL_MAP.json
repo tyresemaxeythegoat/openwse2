@@ -11,7 +11,7 @@
   "pdb_age": 3
  },
  "inputs": {
-  "layouts": 19,
+  "layouts": 23,
   "globals_scanned": 47947,
   "symbols_curated": 1673,
   "game_vtables": 75
@@ -268,6 +268,83 @@
     "__vecDelDtor"
    ]
   },
+  "rglTextStream": {
+   "size": 160,
+   "type_index": "0x1e2ea",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "base": "rglStream",
+   "base_offset": "0x0",
+   "members": [],
+   "methods": [
+    "writeStream",
+    "writeFloat",
+    "writeBool",
+    "writeUInt64",
+    "writeInt64",
+    "writeUInt32",
+    "writeInt32",
+    "writeByte",
+    "writeCString",
+    "writeString",
+    "readStream",
+    "readFloat",
+    "readBool",
+    "readUInt64",
+    "readInt64",
+    "readUInt32",
+    "readInt32",
+    "readByte",
+    "readString",
+    "rglTextStream",
+    "~rglTextStream",
+    "operator=",
+    "__vecDelDtor"
+   ],
+   "vtable": "0x14051c2b0"
+  },
+  "rglInputTextFileStream": {
+   "size": 176,
+   "type_index": "0x4195",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "base": "rglTextStream",
+   "base_offset": "0x0",
+   "members": [
+    {
+     "name": "m_file",
+     "offset": "0xa0",
+     "type": "_iobuf*",
+     "storage": "instance"
+    },
+    {
+     "name": "m_closed",
+     "offset": "0xa8",
+     "type": "bool",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "rglInputTextFileStream",
+    "~rglInputTextFileStream",
+    "writeStream",
+    "writeFloat",
+    "writeBool",
+    "writeUInt64",
+    "writeInt64",
+    "writeUInt32",
+    "writeInt32",
+    "writeByte",
+    "writeCString",
+    "writeString",
+    "tryOpen",
+    "close",
+    "isOpen",
+    "operator=",
+    "__vecDelDtor"
+   ],
+   "vtable": "0x14051c0b0"
+  },
   "mbStatementBlock": {
    "size": 96,
    "type_index": "0x19048",
@@ -327,6 +404,33 @@
     "startLoop",
     "endLoop",
     "canLoop",
+    "__vecDelDtor"
+   ]
+  },
+  "mbSlots": {
+   "size": 24,
+   "type_index": "0x1b004",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_values",
+     "offset": "0x0",
+     "type": "rglVector<__int64>",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "readStream",
+    "writeStream",
+    "clear",
+    "size",
+    "resize",
+    "get",
+    "set",
+    "mbSlots",
+    "~mbSlots",
+    "operator=",
     "__vecDelDtor"
    ]
   },
@@ -5732,6 +5836,39 @@
    ],
    "methods": [
     "rglAppTimer"
+   ]
+  },
+  "rglTimer": {
+   "size": 16,
+   "type_index": "0x164d9",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_timerNo",
+     "offset": "0x0",
+     "type": "int32_t",
+     "storage": "instance"
+    },
+    {
+     "name": "m_value",
+     "offset": "0x8",
+     "type": "__int64",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "rglTimer",
+    "reset",
+    "increaseRaw",
+    "increase",
+    "decreaseRaw",
+    "decrease",
+    "getElapsedTime",
+    "getRawElapsedTime",
+    "isElapsed",
+    "setTimer",
+    "readStream"
    ]
   }
  },

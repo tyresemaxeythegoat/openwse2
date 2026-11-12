@@ -93,6 +93,19 @@ This is a small-string-optimized string: 48 inline bytes, heap buffer at 0x08 on
 `readStream/readString/readInt32/readUInt32/readInt64/readUInt64/readByte/readBool/readFloat` plus
 the matching writers and `open/tryOpen/close/isOpen/clear/freeMemory/reset/atEnd/flush`.
 
+Two concrete subclasses matter:
+
+| Class | Size | vftable | Adds |
+| --- | ---: | --- | --- |
+| `rglTextStream` | 160 | `0x14051c2b0` | token readers (`readFloat/readInt64/readUInt32/readString`) over `m_contents` |
+| `rglInputTextFileStream` | 176 | `0x14051c0b0` | `m_file` `FILE*` at `+0xA0`, `m_closed` `bool` at `+0xA8` |
+
+`rglInputTextFileStream::tryOpen` reads the file into `m_contents`; every reader then skips bytes
+`<= 0x20`, takes the next token, and parses it. Module files (`scripts.txt`, `triggers.txt`,
+`simple_triggers.txt`, `mission_templates.txt`, …) are whitespace-delimited decimal text. The
+separate `rglBinaryStream` (vftable `0x1405143d0`, 30 slots) is used for savegames, not module
+files.
+
 ### `mbStatementBlock` — 96 bytes, type 0x19048
 
 | Offset | Member | Type |
@@ -182,6 +195,40 @@ Methods: `readStream(rglStream&, char const*)`, `readSavegameStream`, `writeSave
 
 Same three-member shape as `mbTriggerManager` with `mbSimpleTrigger*` elements.
 
+### Trigger load flow (pseudocode-confirmed)
+
+`mbGame::readTriggers` (`0x1400cca30`) and `mbGame::readSimpleTriggers` (`0x1400ccde0`) both:
+
+1. Build an `rglInputTextFileStream` (vftable `0x14051c0b0`).
+2. Resolve `getModuleFilePath("triggers.txt")` / `"simple_triggers.txt"` and call `tryOpen` (slot
+   `+0xA0`). Failure logs `"Unable to open file %s"`.
+3. Discard exactly three whitespace-delimited header tokens; EOF logs
+   `"Unexpected End of File while reading file: %s"`.
+4. Call the manager reader with the literal `"Game"` (`0x14050a958`) or `"Simple"` (`0x14050a974`).
+
+`mbTriggerManager::readStream` (`0x14023ea20`):
+
+1. Read `int32_t m_numTriggers` (slot `+0x80`).
+2. Replace `m_triggers` with a `count * 0x100` array of `mbTrigger` (array cookie + constructor).
+3. For each index, seed all three `rglAppTimer`s with `m_defaultTimerNo` and
+   `g_timersTotal[m_defaultTimerNo]` (`0x1405d0ef0`, `uint64[]`), then call
+   `mbTrigger::readStream(trigger, stream, prefix, index)`.
+
+`mbTrigger::readStream` (`0x14023e750`) order:
+
+1. `readFloat` ×3 → `m_checkInterval`/`m_delayInterval`/`m_rearmInterval`.
+2. `mbStatementBlock::readStream` → conditions at `+0x10`.
+3. `mbStatementBlock::readStream` → consequences at `+0x70`.
+4. Ids via `rglFormat("%s Trigger [%d] Conditions")` into the conditions `m_id` and
+   `"%s Trigger [%d] Consequences"` into the consequences `m_id`.
+
+`mbSimpleTriggerManager::readStream` (`0x14020b9d0`) is the same with `count * 0x78` records and one
+timer per record. `mbSimpleTrigger::readStream` (`0x14020b620`) reads one float at `+0x0`, the
+statement block at `+0x8`, then sets the id `"%s Trigger [%d]"`.
+
+Safety: both managers index `g_timersTotal` with an unchecked `m_defaultTimerNo`. The Android port
+rejects an out-of-range index instead of reading past the array.
+
 ### `WSELuaManager` — 21,504 bytes, type 0xadaf
 
 | Offset | Member | Type |
@@ -261,7 +308,8 @@ String evidence in `.rdata`:
 `mbScriptManager::readStream` (`0x14020b330`, pseudocode `decompile-index.json` entry):
 
 1. Calls stream vtable `+0x90` twice into a temporary `rglString` (the values are consumed but not
-   stored by the manager). From the `rglBinaryStream` vtable, `+0x90` is `readString`.
+   stored by the manager). In the text stream (`0x14051c2b0`), `+0x90` is `readString`, so the
+   discarded values are the `scriptsfile`/`version` header words.
 2. Calls stream vtable `+0x80` twice into 4-byte integers; the second destination is
    `g_scriptManager.m_numScripts` (`0x1406506c8`). Both are read as 32-bit integers.
 3. Deletes the old `m_scripts` array with destructors and `operator delete[]`.
@@ -309,16 +357,36 @@ override value or a "handled" flag.
 
 ### Statement encoding (pseudocode-confirmed)
 
-`mbStatementBlock::readStream` (`0x1401f2160`) reads the binary form:
+Module files are **whitespace-delimited decimal text**, not binary records. `mbGame::readTriggers`
+(`0x1400cca30`) and `mbGame::readSimpleTriggers` (`0x1400ccde0`) construct an
+`rglInputTextFileStream` (vftable `0x14051c0b0`), open `triggers.txt`/`simple_triggers.txt`,
+discard three header tokens (`triggersfile version 1` in the retail files) with
+`rglString::getNextToken`, then hand the stream to the manager reader.
+
+`rglInputTextFileStream` derives from `rglTextStream`; both keep the 160-byte `rglStream` base and
+the file stream adds `FILE* m_file` at `+0xA0` and `bool m_closed` at `+0xA8`. The readers are token
+parsers, proven from vtable `0x14051c2b0`:
+
+| Vtable slot | Method | Statement use |
+| --- | --- | --- |
+| `+0x58` | `readFloat` | trigger/script intervals |
+| `+0x70` | `readInt64` | one operand |
+| `+0x78` | `readUInt32` | opcode word |
+| `+0x80` | `readUInt32` (folded `readInt32`) | operand/statement count |
+| `+0x90` | `readString` | script id |
+
+`mbStatementBlock::readStream` (`0x1401f2160`) therefore reads:
 
 1. `int32_t` statement count (`m_numStatements` at `+0x8`).
-2. `count` records of `0x110` bytes (272), each:
-   - `uint32_t` opcode at `+0x0`
-   - `int32_t` operand count at `+0x4`
-   - `operandCount` × `int64_t` operands at `+0x8` (the array holds 32)
-   - `m_endStatement` at `+0x108` is initialized to `-1`
-3. The original performs **no bounds check** on the operand count or statement count. The Android
-   port must clamp operands to 32 and validate the allocation size before reading.
+2. For each statement: `uint32_t` opcode, `int32_t` operand count, then that many `int64_t` decimal
+   operands.
+3. `m_endStatement` at `+0x108` is initialized to `-1` by the constructor (`0x1401c20f0`) and filled
+   by `analyze`; `m_analyzed` is cleared and `m_numLocalVariablesUsed` is seeded to `0x400`.
+
+The in-memory record remains 272 bytes (`uint32` opcode, `int32` count, 32 × `int64` operands,
+`int32` end). The original performs **no bounds check** on either count, so a malformed file
+overruns the 32-operand array or requests an unbounded allocation. The Android port rejects negative
+counts, operand counts above 32, and statement arrays above its cap.
 
 Operand words use a tagged 64-bit encoding (proven in `mbStatementBlock::execute`):
 
@@ -449,14 +517,16 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
 ## 8. Evidence gaps / next measurements
 
-1. `mbTriggerManager::readStream` / `execute` and `mbSimpleTriggerManager` equivalents; confirm the
-   trigger text/binary token order against the proven statement format.
-2. Locate `gameOperation` table construction in `WSELuaManager` and map opcode IDs to the native jump
+1. `mbTrigger::execute` (`0x14023e...`) and `mbSimpleTrigger::execute` runtime state machine, plus the
+   savegame read/write order for both managers.
+2. `rglTextStream::readFloat/readInt64/readUInt32/readString` parse details (accepted syntax,
+   quote handling) from the pending `--name rglTextStream` export.
+3. Locate `gameOperation` table construction in `WSELuaManager` and map opcode IDs to the native jump
    table and `executeWSE` cases.
-3. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
-4. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
+4. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
+5. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
    writing asset code.
-5. Validate every reconstructed offset against decompiled member accesses before committing C++.
+6. Validate every reconstructed offset against decompiled member accesses before committing C++.
 
 ## 9. Evidence index
 
@@ -469,6 +539,7 @@ REA evidence records:
 | `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` | `decompile_all --name mbScript` | 5 procedures, 0 failures |
 | `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` | `decompile_all --name mbStatement` | 14 procedures written, 0 failures, 0 skipped |
 | `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` | `decompile_all --address-start 0x1401c20f0 --address-end 0x1401c21c0` | `parseOperand`, `returnValue`, `mbStatement` ctor; 3 written, 0 failures |
+| `ev_e3530f99c32b3f59ecc82debcfff9db29d8641fd14d5f7576ccf12eb4cbe8d05` | `decompile_all --name Trigger` | 52 procedures written, 0 failures; trigger layouts and loaders |
 
 Derived PDB/PE artifacts (retained outside the repository; hashes pin the exact inputs):
 

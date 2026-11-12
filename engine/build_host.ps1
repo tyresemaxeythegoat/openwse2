@@ -1,9 +1,9 @@
 #!/usr/bin/env pwsh
 # Host tests for the portable engine sources.
 #
-# Builds the statement/operand tests with Zig's clang++ for the host and runs
-# them. The Android cross-compile gate still needs an NDK; this script is the
-# host half of the gate.
+# Builds every test with Zig's clang++ for the host and runs it. The Android
+# cross-compile gate still needs an NDK; this script is the host half of the
+# gate.
 #
 # Usage:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1 [-Zig C:\path\to\zig.exe]
@@ -42,20 +42,28 @@ function Resolve-Zig([string]$explicit) {
 
 $zig = Resolve-Zig $Zig
 $include = Join-Path $here "include"
-$test = Join-Path $out "operand_test.exe"
+
+$tests = @(
+    @{ Name = "operand"; Source = Join-Path $here "tests\operand_test.cpp" },
+    @{ Name = "trigger"; Source = Join-Path $here "tests\trigger_test.cpp" }
+)
 
 Write-Host "zig          $zig"
 Write-Host "output       $out"
 
-& $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
-    -I $include -o $test (Join-Path $here "tests\operand_test.cpp")
-if ($LASTEXITCODE -ne 0) {
-    throw "operand test build failed"
-}
+foreach ($test in $tests) {
+    $binary = Join-Path $out ("{0}_test.exe" -f $test.Name)
+    Write-Host ("building     {0}" -f $test.Name)
+    & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
+        -I $include -o $binary $test.Source
+    if ($LASTEXITCODE -ne 0) {
+        throw ("{0} test build failed" -f $test.Name)
+    }
 
-& $test
-if ($LASTEXITCODE -ne 0) {
-    throw "operand tests failed"
+    & $binary
+    if ($LASTEXITCODE -ne 0) {
+        throw ("{0} tests failed" -f $test.Name)
+    }
 }
 
 Write-Host "engine host tests: PASS"

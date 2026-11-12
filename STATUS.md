@@ -1,7 +1,7 @@
 # STATUS
 
 Last updated: 2026-11-12.
-Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statement VM recovered).
+Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script VM and trigger loaders recovered).
 
 ## Passing
 
@@ -13,19 +13,22 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statemen
 | PDB parse (MSF 7.0/TPI/DBI) | PASS | 154,753 TPI records, 14,877 sized layouts |
 | PDB symbol map | PASS | 47,947 symbols: 22,600 public, 1,167 global, 14,701 constant, 8,595 UDT, 884 local |
 | Vtable scan | PASS | 281 pointer runs; 209 class-identified; 75 `rgl*`/`mb*`/`WSE*` |
-| Tracking documents | PASS | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (19 classes, 1,673 symbols, 75 vtables) |
+| Tracking documents | PASS | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (23 classes, 1,673 symbols, 75 vtables) |
 | `decompile-all --name mbScript` | PASS | 5 procedures written, 0 failed; entry `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` |
 | `decompile-all --name mbStatement` | PASS | 14 procedures written, 0 failed, 0 skipped; entry `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` |
 | `decompile-all` operand helpers | PASS | 3 procedures written, 0 failed (`parseOperand`, `returnValue`, ctor); entry `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` |
+| `decompile-all --name Trigger` | PASS | 52 procedures written, 0 failed, 0 skipped; entry `ev_e3530f99c32b3f59ecc82debcfff9db29d8641fd14d5f7576ccf12eb4cbe8d05` |
+| Module stream identification | PASS | `0x14051c0b0` = `rglInputTextFileStream`; text readers at `+0x58/+0x70/+0x78/+0x80`; `scripts.txt`/`triggers.txt` are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
-| Portable operand/statement host tests | PASS | `operand tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
+| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
 ## In progress
 
 | Task | State |
 | --- | --- |
-| Trigger manager pseudocode | Layouts and entry points verified; `mbTriggerManager` export queued |
+| Trigger runtime state machine | Loaders recovered; `mbTrigger::execute` / `setTimer` / `reset` and both savegame readers still unseeded (`FUN_*`) |
+| `rglTextStream` parse details | `--name rglTextStream` export running for the 18 token reader/writer functions |
 | `executeWSE` case mapping | 381 KB pseudocode captured (430 cases); individual WSE opcode → handler mapping not yet extracted |
 
 ## Confirmed by pseudocode
@@ -39,9 +42,19 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statemen
 - `mbScriptManager::mapScripts` (`0x14020b510`): 64-entry static name table at `0x1405c7ad0`
   (`game_start`, …), linear match on `m_id`, writes index or `-1` into `m_mappedScripts`
   (`0x1406506cc`), logs `"Unable to map script %s"` on failure.
-- `mbStatementBlock::readStream` (`0x1401f2160`): reads `int32` count, allocates `count * 0x110`,
-  then per statement reads `uint32` opcode, `int32` operand count, and that many `int64` operands;
-  sets every `m_endStatement` (`+0x108`) to `-1`. **No bounds check** on either count.
+- Module files are whitespace-delimited decimal text, not binary. `mbGame::readTriggers`
+  (`0x1400cca30`) and `readSimpleTriggers` (`0x1400ccde0`) build `rglInputTextFileStream`
+  (vftable `0x14051c0b0`), open `triggers.txt`/`simple_triggers.txt`, discard three header tokens
+  (`triggersfile version 1`), and pass the stream to the manager.
+- `rglStream` (160 B) holds `m_path` at `+0x8`, `m_cursor` at `+0x54`, and the whole file as
+  `m_contents` at `+0x58`. `rglTextStream` (160 B, vftable `0x14051c2b0`) parses tokens;
+  `rglInputTextFileStream` (176 B, vftable `0x14051c0b0`) adds `FILE* m_file` at `+0xA0` and
+  `bool m_closed` at `+0xA8`. Reader slots: `+0x58 readFloat`, `+0x70 readInt64`,
+  `+0x78 readUInt32`, `+0x80 readUInt32` (folded `readInt32`), `+0x90 readString`.
+- `mbStatementBlock::readStream` (`0x1401f2160`): reads `int32` statement count, allocates
+  `count * 0x110`, then per statement reads `uint32` opcode, `int32` operand count, and that many
+  `int64` operand tokens; sets every `m_endStatement` (`+0x108`) to `-1`, clears `m_analyzed`, and
+  seeds `m_numLocalVariablesUsed` to `0x400`. **No bounds check** on either count.
 - `mbStatementBlock` layout: `m_statements` `+0x0`, `m_numStatements` `+0x8`, `m_analyzed` `+0xc`,
   `m_numLocalVariablesUsed` `+0x10`, `m_luaHookRef` `+0x14`, `m_id` `+0x18` (96 bytes total).
 - `analyze` (`0x1401f22a0`): matches opcodes `3/4/5` and loop starters `6,7,0xb,0xc,0x10,0x11,0x12`
@@ -68,6 +81,17 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statemen
 - `WSELuaManager::OnOperationMgrExecute` (`0x140322760`): fetches the hook from the Lua registry,
   pushes operands as integers, `lua_pcall(L, nargs, LUA_MULTRET, 0)`, and interprets the boolean
   result as an override or handled flag.
+- `mbTriggerManager::readStream` (`0x14023ea20`): reads `m_numTriggers`, allocates
+  `count * 0x100`, seeds all three `rglAppTimer`s per trigger with `m_defaultTimerNo` and
+  `g_timersTotal[m_defaultTimerNo]` (`0x1405d0ef0`), then calls `mbTrigger::readStream`.
+- `mbTrigger::readStream` (`0x14023e750`): three `readFloat` intervals (`+0x0/+0x4/+0x8`), the
+  conditions block (`+0x10`), the consequences block (`+0x70`), then ids
+  `"%s Trigger [%d] Conditions"` / `"%s Trigger [%d] Consequences"`.
+- `mbSimpleTriggerManager::readStream` (`0x14020b9d0`): the same shape with `count * 0x78` records
+  and one timer each; `mbSimpleTrigger::readStream` (`0x14020b620`) reads one float, the statement
+  block, and formats `"%s Trigger [%d]"`.
+- `mbGame::readTriggers` passes the prefix `"Game"` (`0x14050a958`); `readSimpleTriggers` passes
+  `"Simple"` (`0x14050a974`).
 
 ## Blocked
 
@@ -94,10 +118,12 @@ Phase: **1 — Binary Triage & SDK Alignment** (triage complete, script statemen
 
 ## Next concrete task
 
-1. Decompile `mbTriggerManager::readStream` (`0x14023ea20`) / `execute` (`0x14023eee0`) and the
-   `mbSimpleTriggerManager` equivalents; compare against the proven statement encoding.
-2. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
+1. Finish the `--name rglTextStream` export and encode its exact token syntax (quotes, exponent,
+   sign) in `engine/include/wse/io/text_stream.h`; adjust `read_string` if quoted ids are supported.
+2. Add `mbTrigger::execute`/`setTimer`/`reset`, `mbTriggerManager::readSavegameStream`, and the
+   simple-trigger equivalents to `seeds.tsv`, then export by address range.
+3. Extract the WSE opcode → case mapping from `executeWSE` and correlate it with
    `header_operations_addon.py`.
-3. Extend the portable core: `mbSlots`, `mbScript`, and the block/statement reader with the
-   `rglStream` adapter; keep `engine/build_host.ps1` green. The NDK half of the gate remains blocked.
-4. Update `ROADMAP.md` and this file at the next milestone.
+4. Extend the portable core with `mbScript`/`mbScriptManager` token readers and a `scripts.txt`
+   fixture; keep `engine/build_host.ps1` green. The NDK half of the gate remains blocked.
+5. Update `ROADMAP.md` and this file at the next milestone.

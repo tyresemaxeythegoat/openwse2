@@ -4,11 +4,12 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 #include <span>
-#include <vector>
+#include <string_view>
 
+#include "wse/io/text_stream.h"
 #include "wse/vm/operand.h"
+#include "wse/vm/slots.h"
 #include "wse/vm/statement.h"
 
 namespace {
@@ -24,66 +25,6 @@ void expect(bool condition, const char* what) {
 
 constexpr std::uint64_t tagged(std::uint8_t tag, std::uint64_t payload) {
     return (static_cast<std::uint64_t>(tag) << 56) | (payload & wse::vm::kPayloadMask);
-}
-
-struct TestSlots {
-    std::vector<std::int64_t> values;
-
-    [[nodiscard]] std::int64_t get(std::int32_t index) const {
-        if (index < 0 || static_cast<std::size_t>(index) >= values.size()) {
-            return 0;
-        }
-        return values[static_cast<std::size_t>(index)];
-    }
-
-    bool set(std::int32_t index, std::int64_t value) {
-        if (index < 0) {
-            return false;
-        }
-        const auto slot = static_cast<std::size_t>(index);
-        if (slot >= values.size()) {
-            values.resize(slot + 1, 0);
-        }
-        values[slot] = value;
-        return true;
-    }
-};
-
-class MemorySource final : public wse::vm::ByteSource {
-public:
-    MemorySource(const std::uint8_t* data, std::size_t size) : data_(data), size_(size) {}
-
-    bool read(void* destination, std::size_t bytes) override {
-        if (bytes > size_ - offset_) {
-            return false;
-        }
-        std::memcpy(destination, data_ + offset_, bytes);
-        offset_ += bytes;
-        return true;
-    }
-
-private:
-    const std::uint8_t* data_;
-    std::size_t size_;
-    std::size_t offset_ = 0;
-};
-
-void append_u32(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
-    std::uint8_t raw[sizeof(value)];
-    std::memcpy(raw, &value, sizeof(value));
-    bytes.insert(bytes.end(), raw, raw + sizeof(value));
-}
-
-void append_i32(std::vector<std::uint8_t>& bytes, std::int32_t value) {
-    std::uint8_t raw[sizeof(value)];
-    std::memcpy(raw, &value, sizeof(value));
-    bytes.insert(bytes.end(), raw, raw + sizeof(value));
-}
-
-void append_i64(std::vector<std::uint8_t>& bytes, std::int64_t value) {
-    std::uint8_t raw[sizeof(value)];
-    std::memcpy(raw, &value, sizeof(value));
-    bytes.insert(bytes.end(), raw, raw + sizeof(value));
 }
 
 void test_tags() {
@@ -109,8 +50,8 @@ void test_decode() {
 
     std::int64_t globals[4] = {10, 20, 30, 40};
     std::int64_t locals[8] = {0, 0, 9, 0};
-    TestSlots slots;
-    slots.values = {100, 200};
+    Slots slots;
+    expect(slots.set(0, 100) && slots.set(1, 200), "slots initialize");
 
     bool ok = false;
     expect(decode(123, globals, slots, locals, ok) == 123 && ok, "immediate decodes");
@@ -138,7 +79,7 @@ void test_store() {
 
     std::int64_t globals[3] = {0, 0, 0};
     std::int64_t locals[3] = {0, 0, 0};
-    TestSlots slots;
+    Slots slots;
 
     expect(store(tagged(0x01, 1), 55, globals, slots, locals), "global store succeeds");
     expect(globals[1] == 55, "global store writes the value");
@@ -155,53 +96,144 @@ void test_store() {
     expect(!store(tagged(0x05, 1), 1, globals, slots, locals), "unknown tag is not an lvalue");
 }
 
-void test_statement() {
+void test_slots() {
     using namespace wse::vm;
 
-    std::vector<std::uint8_t> bytes;
-    append_u32(bytes, 0xCE5);
-    append_i32(bytes, 2);
-    append_i64(bytes, 7);
-    append_i64(bytes, -3);
+    Slots slots;
+    expect(slots.get(0) == 0, "empty slots read as zero");
+    expect(slots.set(3, 42), "slot write grows the vector");
+    expect(slots.size() == 4, "slot write sizes to index + 1");
+    expect(slots.get(3) == 42, "slot write stores the value");
+    expect(slots.get(2) == 0, "grown slots are zero-filled");
+    expect(!slots.set(-1, 1), "negative slot index is rejected");
+    slots.clear();
+    expect(slots.empty(), "slots clear");
+}
 
-    MemorySource source(bytes.data(), bytes.size());
-    Statement statement{};
-    const ReadError error = read_statement(source, statement);
-    expect(error == ReadError::none, "statement reads");
-    expect(statement.opcode == 0xCE5, "opcode is preserved");
-    expect(statement.numOperands == 2, "operand count is preserved");
-    expect(statement.operands[0] == 7 && statement.operands[1] == -3, "operands are preserved");
-    expect(statement.endStatement == -1, "endStatement starts at -1");
+void test_text_stream() {
+    using namespace wse::io;
 
-    std::vector<std::uint8_t> too_many;
-    append_u32(too_many, 1);
-    append_i32(too_many, 33);
-    MemorySource wide(too_many.data(), too_many.size());
-    Statement rejected{};
-    expect(read_statement(wide, rejected) == ReadError::operand_count_out_of_range,
-           "operand count above 32 is rejected");
+    {
+        TokenReader reader("  \r\n\t42 -7 1.5 name");
+        std::int32_t signedValue = 0;
+        std::uint32_t unsignedValue = 0;
+        float real = 0.0F;
+        std::string name;
+        expect(reader.read_i32(signedValue) && signedValue == 42, "i32 token parses");
+        expect(reader.read_i32(signedValue) && signedValue == -7, "negative i32 token parses");
+        expect(reader.read_f32(real) && real == 1.5F, "float token parses");
+        expect(reader.read_string(name) && name == "name", "string token parses");
+        expect(reader.at_end(), "reader reaches end");
+        expect(!reader.read_u32(unsignedValue), "read past end fails");
+    }
 
-    std::vector<std::uint8_t> negative;
-    append_u32(negative, 1);
-    append_i32(negative, -1);
-    MemorySource neg(negative.data(), negative.size());
-    expect(read_statement(neg, rejected) == ReadError::negative_operand_count,
-           "negative operand count is rejected");
+    {
+        TokenReader reader("triggersfile version 1 2");
+        expect(reader.skip_tokens(3), "three header tokens are skipped");
+        std::int32_t count = 0;
+        expect(reader.read_i32(count) && count == 2, "body follows the header");
+    }
 
-    std::vector<std::uint8_t> truncated;
-    append_u32(truncated, 1);
-    append_i32(truncated, 2);
-    append_i64(truncated, 7);
-    MemorySource short_source(truncated.data(), truncated.size());
-    expect(read_statement(short_source, rejected) == ReadError::io,
-           "truncated operands are rejected");
+    {
+        TokenReader reader("12x 7");
+        std::int32_t value = 0;
+        expect(!reader.read_i32(value), "trailing garbage is rejected");
+        expect(reader.read_i32(value) && value == 7, "cursor advances past the bad token");
+    }
 
-    std::vector<std::uint8_t> empty;
-    append_u32(empty, 0);
-    append_i32(empty, 0);
-    MemorySource empty_source(empty.data(), empty.size());
-    expect(read_statement(empty_source, rejected) == ReadError::none && rejected.endStatement == -1,
-           "zero-operand statement reads");
+    {
+        TokenReader reader("   ");
+        expect(reader.at_end(), "whitespace-only input is empty");
+        expect(!reader.skip_tokens(1), "skipping a token past EOF fails");
+    }
+}
+
+void test_statement() {
+    using namespace wse::vm;
+    using namespace wse::io;
+
+    {
+        TokenReader reader("2767 2 7 -3");
+        Statement statement{};
+        expect(read_statement(reader, statement) == ReadError::none, "statement reads");
+        expect(statement.opcode == 2767, "opcode is preserved");
+        expect(statement.numOperands == 2, "operand count is preserved");
+        expect(statement.operands[0] == 7 && statement.operands[1] == -3,
+               "operands are preserved");
+        expect(statement.endStatement == -1, "endStatement starts at -1");
+    }
+
+    {
+        TokenReader reader("2147483648 0");
+        Statement statement{};
+        expect(read_statement(reader, statement) == ReadError::none &&
+                   statement.opcode == 0x80000000U,
+               "flagged opcode keeps the high bit");
+    }
+
+    {
+        TokenReader reader("1 33");
+        Statement statement{};
+        expect(read_statement(reader, statement) == ReadError::operand_count_out_of_range,
+               "operand count above 32 is rejected");
+    }
+
+    {
+        TokenReader reader("1 -1");
+        Statement statement{};
+        expect(read_statement(reader, statement) == ReadError::negative_count,
+               "negative operand count is rejected");
+    }
+
+    {
+        TokenReader reader("1 2 7");
+        Statement statement{};
+        expect(read_statement(reader, statement) == ReadError::malformed_number,
+               "truncated operands are rejected");
+    }
+
+    {
+        TokenReader reader("opcode 1");
+        Statement statement{};
+        expect(read_statement(reader, statement) == ReadError::malformed_number,
+               "non-numeric opcode is rejected");
+    }
+
+    {
+        TokenReader reader("2 2767 2 7 -3 3 0");
+        StatementBlock block;
+        expect(read_statement_block(reader, block) == ReadError::none, "block reads");
+        expect(block.statements.size() == 2, "statement count is preserved");
+        expect(block.statements[0].opcode == 2767, "first statement opcode");
+        expect(block.statements[1].opcode == 3 && block.statements[1].numOperands == 0,
+               "zero-operand statement reads");
+        expect(!block.analyzed, "readStream leaves analyzed false");
+        expect(block.numLocalVariablesUsed == 0x400, "readStream seeds local count to 0x400");
+        expect(block.luaHookRef == kNoLuaHook, "block keeps the no-hook sentinel");
+        expect(block.statements[1].endStatement == -1, "every endStatement starts at -1");
+    }
+
+    {
+        TokenReader reader("-1");
+        StatementBlock block;
+        expect(read_statement_block(reader, block) == ReadError::negative_count,
+               "negative statement count is rejected");
+    }
+
+    {
+        TokenReader reader("1048577");
+        StatementBlock block;
+        expect(read_statement_block(reader, block) == ReadError::statement_count_out_of_range,
+               "statement count above the cap is rejected");
+    }
+
+    {
+        TokenReader reader("1 1 1 5");
+        StatementBlock block;
+        expect(read_statement_block(reader, block) == ReadError::none &&
+                   block.statements.size() == 1,
+               "one-statement block reads");
+    }
 }
 
 }  // namespace
@@ -210,6 +242,8 @@ int main() {
     test_tags();
     test_decode();
     test_store();
+    test_slots();
+    test_text_stream();
     test_statement();
 
     if (failures != 0) {
