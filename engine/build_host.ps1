@@ -49,7 +49,12 @@ $tests = @(
     @{ Name = "savegame"; Source = Join-Path $here "tests\savegame_test.cpp" },
     @{ Name = "script"; Source = Join-Path $here "tests\script_test.cpp";
        Args = @(Join-Path $here "fixtures\scripts.txt") },
-    @{ Name = "wse"; Source = Join-Path $here "tests\wse_test.cpp" },
+    @{ Name = "wse_bitwise_fp"; Source = Join-Path $here "tests\wse_bitwise_fp_test.cpp" },
+    @{ Name = "wse_system"; Source = Join-Path $here "tests\wse_system_test.cpp" },
+    @{ Name = "wse_string"; Source = Join-Path $here "tests\wse_string_test.cpp" },
+    @{ Name = "wse_dict"; Source = Join-Path $here "tests\wse_dict_test.cpp" },
+    @{ Name = "wse_array"; Source = Join-Path $here "tests\wse_array_test.cpp" },
+    @{ Name = "wse_world"; Source = Join-Path $here "tests\wse_world_test.cpp" },
     @{ Name = "block_vm"; Source = Join-Path $here "tests\block_vm_test.cpp" }
 )
 

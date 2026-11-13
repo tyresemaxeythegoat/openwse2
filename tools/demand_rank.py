@@ -5,7 +5,7 @@ Parses user-supplied `scripts.txt`, `triggers.txt`, and/or `simple_triggers.txt`
 using the token grammar verified against mbScriptManager / mbTriggerManager /
 mbSimpleTriggerManager, joins against `docs/native_opcodes.json` and
 `docs/wse_opcodes.json`, checks live implementation coverage in `block_vm.h`
-and `execute_wse.h`, and prints aggregate counts only (never module names or
+and `engine/include/wse/vm/**/*.h`, and prints aggregate counts only (never module names or
 content).
 """
 
@@ -141,12 +141,15 @@ def scan_implemented_native(block_vm_path: Path) -> set[int]:
 
 def scan_implemented_wse(wse_header: Path, execute_wse: Path) -> set[int]:
     wh = wse_header.read_text(encoding="utf-8", errors="replace")
-    eh = execute_wse.read_text(encoding="utf-8", errors="replace")
     enums = {
         m.group(1): int(m.group(2))
-        for m in re.finditer(r"^\s*([a-z0-9_]+)\s*=\s*(\d+)\s*,?", wh, re.M)
+        for m in re.finditer(r"^\s*([A-Za-z0-9_]+)\s*=\s*(\d+)\s*,?", wh, re.M)
     }
-    cases = re.findall(r"case\s+WseOpcode::([a-z0-9_]+)\s*:", eh)
+    vm_root = execute_wse.parent if execute_wse.is_file() else execute_wse
+    cases: set[str] = set()
+    for hdr in sorted(vm_root.rglob("*.h")):
+        eh = hdr.read_text(encoding="utf-8", errors="replace")
+        cases.update(re.findall(r"case\s+WseOpcode::([A-Za-z0-9_]+)\s*:", eh))
     return {enums[c] for c in cases if c in enums}
 
 
@@ -435,7 +438,7 @@ def main() -> int:
     ap.add_argument("--wse-map", type=Path, default=repo_root / "docs" / "wse_opcodes.json")
     ap.add_argument("--block-vm", type=Path, default=repo_root / "engine" / "include" / "wse" / "vm" / "block_vm.h")
     ap.add_argument("--wse-header", type=Path, default=repo_root / "engine" / "include" / "wse" / "vm" / "wse_opcodes.h")
-    ap.add_argument("--execute-wse", type=Path, default=repo_root / "engine" / "include" / "wse" / "vm" / "execute_wse.h")
+    ap.add_argument("--execute-wse", type=Path, default=repo_root / "engine" / "include" / "wse" / "vm")
     ap.add_argument("--top", type=int, default=30)
     ap.add_argument("--json", type=Path, help="Optional output JSON path")
     ap.add_argument("--md", type=Path, help="Optional output Markdown path")

@@ -27,6 +27,9 @@ jobs:
         run: |
           ctest --test-dir build-host --output-on-failure --no-tests=error
 
+      - name: Check WSE opcode status
+        run: python3 tools/extract_wse_opcodes.py --check
+
   android-arm64:
     name: Android NDK (aarch64-linux-android29)
     runs-on: ubuntu-24.04

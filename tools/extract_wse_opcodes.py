@@ -27,6 +27,35 @@ MANGLED_RE = re.compile(r'\b_([A-Za-z][A-Za-z0-9_]*?)__[A-Za-z0-9_]+')
 MB_CHECK_RE = re.compile(r'\b(?:_)?(mbCheck[A-Za-z0-9_]*?)__')
 VTABLE_RE = re.compile(r'\(\*plVar\w*\s*\+\s*(0x[0-9a-fA-F]+)\)')
 SDK_OP_RE = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*(#.*)?$')
+WSE_ENUM_RE = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*,?', re.M)
+WSE_CASE_RE = re.compile(r'case\s+WseOpcode::([A-Za-z_][A-Za-z0-9_]*)\s*:')
+
+BLOCK_FAMILIES = {
+    2800: 'shifts / xor / not',
+    2900: 'player',
+    3000: 'registers, script context, slots, timers, misc',
+    3100: 'input keys',
+    3200: 'dictionaries',
+    3300: 'agent',
+    3400: 'multiplayer messaging',
+    3500: 'server admin',
+    3600: 'mission / props / particles',
+    3700: 'troop',
+    3800: 'item / cur_item',
+    3900: 'party',
+    4100: 'position vectors',
+    4200: 'strings',
+    4300: 'options',
+    4400: 'floating point',
+    4500: 'scene',
+    4600: 'edit mode',
+    4700: 'reload / material',
+    4800: 'menus',
+    4900: 'overlays / presentations',
+    5000: 'dynamic arrays',
+    5100: 'Lua bridge',
+    5200: 'skins / skeletons',
+}
 
 
 def strip_code(line: str) -> str:
@@ -238,12 +267,23 @@ def write_markdown(document, path):
     lines.append('| Metric | Value |')
     lines.append('| --- | ---: |')
     lines.append('| Handler opcodes | %d |' % document['summary']['handled_opcodes'])
+    lines.append('| Implemented in VM headers | %d/%d |' % (
+        document['summary']['implemented_opcodes'], document['summary']['handled_opcodes']))
     lines.append('| Opcode range | %d–%d |' % tuple(document['summary']['range']))
     lines.append('| Switch-block handlers | %d |' % document['summary']['switch_handlers'])
     lines.append('| Equality-test handlers | %d |' % document['summary']['if_equality_handlers'])
     lines.append('| SDK operations in range | %d |' % document['summary']['sdk_ops_in_range'])
     lines.append('| SDK operations without handler | %d |' %
                  document['summary']['sdk_ops_without_handler'])
+    lines.append('')
+    lines.append('## Family coverage')
+    lines.append('')
+    lines.append('| Block | Family | Done | Remaining examples |')
+    lines.append('| ---: | --- | ---: | --- |')
+    for blk in document['summary']['implemented_blocks']:
+        examples = ', '.join('`%s`' % name for name in blk['remaining_examples']) or '—'
+        lines.append('| %d | %s | %d/%d | %s |' % (
+            blk['block'], blk['family'], blk['done'], blk['total'], examples))
     lines.append('')
     lines.append('## Switch blocks')
     lines.append('')
@@ -254,8 +294,8 @@ def write_markdown(document, path):
     lines.append('')
     lines.append('## Handlers')
     lines.append('')
-    lines.append('| Opcode | Hex | Operation | Dispatch | Line | Checks | Symbols |')
-    lines.append('| ---: | --- | --- | --- | ---: | --- | --- |')
+    lines.append('| Opcode | Hex | Operation | Done | Dispatch | Line | Checks | Symbols |')
+    lines.append('| ---: | --- | --- | :---: | --- | ---: | --- | --- |')
     for entry in entries:
         checks = ', '.join(entry['checks'][:2])
         if len(entry['checks']) > 2:
@@ -264,14 +304,123 @@ def write_markdown(document, path):
         if len(entry['symbols']) > 2:
             symbols += ', …'
         shared = ' (shared)' if len(entry['group']) > 1 else ''
-        lines.append('| %d | `%s` | `%s`%s | %s | %d | %s | %s |' % (
-            entry['opcode'], entry['hex'], entry['name'], shared, entry['handler'],
-            entry['line'], checks, symbols))
+        done_mark = 'yes' if entry.get('implemented') else 'no'
+        lines.append('| %d | `%s` | `%s`%s | %s | %s | %d | %s | %s |' % (
+            entry['opcode'], entry['hex'], entry['name'], shared, done_mark,
+            entry['handler'], entry['line'], checks, symbols))
     lines.append('')
     text = '\n'.join(lines)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding='utf-8')
     print('wrote', path)
+
+
+def scan_implemented_wse_opcodes(header_path: Path, vm_dir: Path) -> set[int]:
+    """Scan wse_opcodes.h and all headers under vm_dir for implemented WseOpcode cases."""
+    enum_text = header_path.read_text(encoding='utf-8', errors='replace')
+    name_to_id = {m.group(1): int(m.group(2)) for m in WSE_ENUM_RE.finditer(enum_text)}
+    if not name_to_id:
+        raise SystemExit(f'no WseOpcode enum members parsed from {header_path}')
+
+    implemented_names = set()
+    for hdr in sorted(vm_dir.rglob('*.h')):
+        txt = hdr.read_text(encoding='utf-8', errors='replace')
+        for m in WSE_CASE_RE.finditer(txt):
+            implemented_names.add(m.group(1))
+
+    unknown = sorted(implemented_names - set(name_to_id))
+    if unknown:
+        raise SystemExit('unknown WseOpcode case label(s): ' + ', '.join(unknown))
+
+    return {name_to_id[name] for name in implemented_names}
+
+
+def annotate_implemented(document: dict, header_path: Path, vm_dir: Path) -> None:
+    """Populate per-entry `implemented` flags and summary block tallies."""
+    impl_ids = scan_implemented_wse_opcodes(header_path, vm_dir)
+    entries = document['entries']
+    by_block = {}
+    for entry in entries:
+        op = int(entry['opcode'])
+        done = op in impl_ids
+        entry['implemented'] = done
+        block_id = (op // 100) * 100
+        bucket = by_block.setdefault(block_id, [])
+        bucket.append(entry)
+
+    blocks_summary = []
+    for block_id in sorted(by_block):
+        items = by_block[block_id]
+        done_count = sum(1 for item in items if item['implemented'])
+        remaining = [item['name'] for item in items if not item['implemented'] and item.get('name')]
+        blocks_summary.append({
+            'block': block_id,
+            'family': BLOCK_FAMILIES.get(block_id, f'block {block_id}'),
+            'done': done_count,
+            'total': len(items),
+            'remaining_examples': remaining[:2],
+        })
+
+    document['summary']['implemented_opcodes'] = sum(1 for e in entries if e['implemented'])
+    document['summary']['implemented_blocks'] = blocks_summary
+
+
+def render_status_wse_section(document: dict) -> str:
+    s = document['summary']
+    done = s['implemented_opcodes']
+    total = s['handled_opcodes']
+    lines = [
+        f'### WSE extended opcodes ({done}/{total})',
+        '',
+        'Counted automatically by `tools/extract_wse_opcodes.py --sync-status` from distinct',
+        '`case WseOpcode::…` labels under `engine/include/wse/vm/` against `docs/wse_opcodes.json`.',
+        'Per-opcode handler notes live in `engine/README.md`; this generated table is the sole tally.',
+        '',
+        '| Block | Family | Done | Remaining examples |',
+        '| ---: | --- | ---: | --- |',
+    ]
+    for blk in s['implemented_blocks']:
+        examples = ', '.join(f'`{name}`' for name in blk['remaining_examples']) or '—'
+        lines.append(f"| {blk['block']} | {blk['family']} | {blk['done']}/{blk['total']} | {examples} |")
+    lines.append('')
+    lines.append('The pure-computation families are finished. Every remaining family needs engine state that does')
+    lines.append('not exist yet (agents, parties, mission, network, UI, Lua), so the count will not move much until')
+    lines.append('those containers are reconstructed.')
+    return '\n'.join(lines)
+
+
+def update_status_markdown(document: dict, status_path: Path, check_only: bool = False) -> bool:
+    """Update §1 count row and §3 WSE coverage table in STATUS.md cleanly. Returns True if changed."""
+    original = status_path.read_text(encoding='utf-8')
+    done = document['summary']['implemented_opcodes']
+    total = document['summary']['handled_opcodes']
+
+    updated = re.sub(
+        r'(\|\s*WSE extended opcodes\s*\|\s*)\d+/\d+\s+mapped,\s*\*\*\d+/\d+\s+implemented\*\*(\s*\|)',
+        rf'\g<1>{total}/{total} mapped, **{done}/{total} implemented**\g<2>',
+        original,
+        count=1,
+    )
+
+    section_re = re.compile(
+        r'### WSE extended opcodes \([^\r\n]+\).*?those containers are reconstructed\.',
+        re.S,
+    )
+    if not section_re.search(updated):
+        raise SystemExit(f'Could not locate WSE extended opcodes section in {status_path}')
+    replacement = render_status_wse_section(document)
+    # Normalize CRLF vs LF to match original file style
+    if '\r\n' in original:
+        replacement_norm = replacement.replace('\n', '\r\n')
+    else:
+        replacement_norm = replacement
+    updated = section_re.sub(lambda _m: replacement_norm, updated, count=1)
+
+    changed = updated != original
+    if not check_only and changed:
+        status_path.write_text(updated, encoding='utf-8')
+        print('updated', status_path)
+    return changed
 
 
 def write_header(document, path):
@@ -326,10 +475,18 @@ def main():
     here = Path(__file__).resolve().parent
     default_root = here.parent
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pseudocode', required=True,
+    parser.add_argument('--pseudocode',
                         help='Ghidra pseudocode for mbStatement::executeWSE')
-    parser.add_argument('--sdk', required=True,
+    parser.add_argument('--sdk',
                         help='public header_operations_addon.py')
+    parser.add_argument('--sync-status', action='store_true',
+                        help='Update implemented flags and coverage docs from existing JSON + VM headers')
+    parser.add_argument('--check', action='store_true',
+                        help='Verify docs/wse_opcodes.json and STATUS.md match current VM headers without writing')
+    parser.add_argument('--vm-dir',
+                        default=str(default_root / 'engine' / 'include' / 'wse' / 'vm'))
+    parser.add_argument('--status',
+                        default=str(default_root / 'STATUS.md'))
     parser.add_argument('--json', default=str(default_root / 'docs' / 'wse_opcodes.json'))
     parser.add_argument('--markdown',
                         default=str(default_root / 'docs' / 'WSE_OPCODES.md'))
@@ -337,6 +494,38 @@ def main():
                         default=str(default_root / 'engine' / 'include' / 'wse' / 'vm' /
                                     'wse_opcodes.h'))
     args = parser.parse_args()
+
+    json_path = Path(args.json)
+    header_path = Path(args.header)
+    vm_dir = Path(args.vm_dir)
+    status_path = Path(args.status)
+
+    if args.check:
+        document = json.loads(json_path.read_text(encoding='utf-8'))
+        expected = json.loads(json.dumps(document))
+        annotate_implemented(expected, header_path, vm_dir)
+        json_drift = expected != document
+        status_drift = update_status_markdown(expected, status_path, check_only=True) if status_path.exists() else False
+        if json_drift or status_drift:
+            raise SystemExit(
+                f'WSE opcode status drift detected (json_drift={json_drift}, status_drift={status_drift}); '
+                'run python tools/extract_wse_opcodes.py --sync-status'
+            )
+        print(f"wse opcode status check PASS ({expected['summary']['implemented_opcodes']}/{expected['summary']['handled_opcodes']})")
+        return
+
+    if args.sync_status or not (args.pseudocode and args.sdk):
+        if not json_path.exists():
+            raise SystemExit('--pseudocode and --sdk are required when docs/wse_opcodes.json does not exist')
+        document = json.loads(json_path.read_text(encoding='utf-8'))
+        annotate_implemented(document, header_path, vm_dir)
+        json_path.write_text(json.dumps(document, indent=1) + '\n', encoding='utf-8')
+        print('wrote', json_path)
+        write_markdown(document, Path(args.markdown))
+        if status_path.exists():
+            update_status_markdown(document, status_path, check_only=False)
+        print(f"synced {document['summary']['implemented_opcodes']}/{document['summary']['handled_opcodes']} implemented")
+        return
 
     sdk = parse_sdk(Path(args.sdk))
     pseudo_path = Path(args.pseudocode)
@@ -385,12 +574,16 @@ def main():
         ],
     }
 
+    write_header(document, header_path)
+    annotate_implemented(document, header_path, vm_dir)
+
     output = Path(args.json)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(document, indent=1) + '\n', encoding='utf-8')
     print('wrote', output)
     write_markdown(document, Path(args.markdown))
-    write_header(document, Path(args.header))
+    if status_path.exists():
+        update_status_markdown(document, status_path, check_only=False)
     print(json.dumps(document['summary'], indent=1))
 
 
