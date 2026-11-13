@@ -11,7 +11,7 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows (Zig clang++) and Linux CI (`clang++ 18.1.3` CMake/CTest) — 12 suites, 70 test functions on Linux; the Windows script last ran before the `platform` suite was added (11 suites) |
+| Host gate | **PASS** on Windows (Zig clang++) and Linux CI (`clang++ 18.1.3` CMake/CTest) — 12 suites, 72 test functions |
 | Android arm64 gate | **PASS (CI)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all 27 headers standalone + CMake build; on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **222/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` unnamed live handlers `53, 2180, 2749`); **49/1,053 implemented** (`16` control-flow incl. 4 zero-iteration stubs + `33` switch) |
@@ -24,11 +24,11 @@ documents link here instead of repeating them — see the ownership table in `AG
 
 | Gate | Result | Detail |
 | --- | --- | --- |
-| Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: `operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm` |
-| Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 27 standalone header checks, 12/12 test suites, and `extract_wse_opcodes.py --check` |
+| Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: 12/12 suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `platform`), 27/27 standalone header checks (`windows-gnu` and `linux-musl` arm64) |
+| Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 27 standalone header checks, 12/12 test suites, `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
 | Android NDK `aarch64-linux-android29` | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all 27 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
-| CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` and `android-arm64` on push and PR |
+| CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` (including `extract_wse_opcodes.py --check` and `check_citations.py --self-test`) and `android-arm64` on push and PR |
 
 ## 3. Coverage
 
@@ -139,13 +139,14 @@ Top categories by unimplemented native calls (`scripts.txt`): `entity_slots` (**
 | `savegame_test.cpp` | 8 |
 | `script_test.cpp` | 5 |
 | `wse_bitwise_fp_test.cpp` | 11 |
-| `wse_system_test.cpp` | 7 |
-| `wse_string_test.cpp` | 2 |
+| `wse_system_test.cpp` | 8 |
+| `wse_string_test.cpp` | 3 |
 | `wse_dict_test.cpp` | 1 |
 | `wse_array_test.cpp` | 1 |
 | `wse_world_test.cpp` | 3 |
 | `block_vm_test.cpp` | 10 |
 | `platform_test.cpp` | 6 |
+| **Total (12 suites)** | **72** |
 
 ## 4. Blocked
 
@@ -153,18 +154,14 @@ Top categories by unimplemented native calls (`scripts.txt`): `entity_slots` (**
 | --- | --- | --- |
 | No local Android NDK/SDK, `adb`, or device | CI runs the NDK arm64 compile gate on Linux; on-device Android runtime tests remain unrun | Keep `.github/workflows/ci.yml` enforcing the arm64 build; add `adb`/device validation later in Phase 3/4 |
 | REA not registered with OpenCode | REA/Ghidra tools are not exposed through MCP; the CLI works from `%TEMP%\opencode\tools\rea\node_modules\rea-agents` | Keep using the CLI |
-| `tools/vtables.py` is not in the repository | `tools/build_symbol_map.py` names it as the source of `vtables_x64.json`, so `docs/SYMBOL_MAP.json` cannot be regenerated from a clean checkout | Commit the script or fold it into `tools/pe_evidence.py` (backlog B7) |
 
 ## 5. Next concrete tasks (ordered)
 
-1. **Evidence & platform audit (`ROADMAP.md` backlog B7–B8):** add automated `0x14…` citation
-   verification in CI, commit/fold `tools/vtables.py` so `docs/SYMBOL_MAP.json` is reproducible,
-   and audit `noexcept`/locale/`sleep_ms` edge cases.
-2. **Demand-driven native opcodes & world loaders:** reconstruct the `entity_slots` (`500–599`) and
+1. **Demand-driven native opcodes & world loaders:** reconstruct the `entity_slots` (`500–599`) and
    top `strings` (`2319–2322`) / `store_random_in_range` (`2136`) / `position_set_{x,y}` (`729–730`)
    handlers along with `troops.txt`/`item_kinds1.txt`/`factions.txt`/`parties.txt`/`strings.txt`
    loaders feeding `WseWorldState` (unlocking >62% of unimplemented calls in `scripts.txt`).
-3. Continue remaining `executeWSE` handlers and entity containers (`agent`, `party`, `mission`) in
+2. Continue remaining `executeWSE` handlers and entity containers (`agent`, `party`, `mission`) in
    demand order rather than numeric order.
 
 Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
@@ -178,17 +175,7 @@ Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
 
 ## 6. Open documentation questions
 
-These were found during the 2026-11-13 review and need the original evidence files to settle:
-
-- `docs/ARCHITECTURE.md` §1 calls the derived artifacts `types_new.json` / `globals_new.json` /
-  `vtables_new.json`; §9 and `tools/build_symbol_map.py` call them `*_x64.json`. It is unclear
-  whether the §9 hashes are for the v1.1.5.5 or the superseded build.
-- Vtable counts disagree: 73 game-class vtables (ARCHITECTURE §1), 75 (§3), 76 in
-  `docs/SYMBOL_MAP.json`.
-- `docs/ARCHITECTURE.md` §2 (type inventory) still holds the superseded 2026-10-14 prefix counts.
-- 274 distinct image addresses are cited in `engine/include`; 98 of them appear in
-  `docs/SYMBOL_MAP.json` and 85 appear in neither the symbol map nor `docs/ARCHITECTURE.md`
-  (mostly mid-function handler sites under `wse/vm/`). Nothing checks citations automatically.
+None open — the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vtables_x64` naming and SHA-256 hashes, 73/75/76 vtable tally, `docs/ARCHITECTURE.md` §2 v1.1.5.5 type counts, and automated `0x14…` citation checking) were resolved in B7 (`docs/ARCHITECTURE.md` §1–§3, §8–§9; `tools/check_citations.py`).
 
 ## 7. Evidence & analysis ledger
 
@@ -199,14 +186,15 @@ These were found during the 2026-11-13 review and need the original evidence fil
 | PE import inventory | PASS (v1.1.5.5) | `ev_a4af0bca5d107b626454d91f4c69c2aef5d4f21b466cbb174333d7c8cd687fc6`: 23 DLLs (21 static + 2 delay), 482 + 64 = 546 functions |
 | PDB parse (MSF 7.0/TPI/DBI) | PASS | 156,846 TPI records, 15,363 sized layouts |
 | PDB symbol map | PASS | 48,658 symbols with VAs (`globals_new.json`) |
-| Vtable scan | PASS | 279 pointer runs; 207 class-identified; 73 `rgl*`/`mb*`/`WSE*` |
-| Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (58 classes, 2,804 symbols, 76 vtables; adds `WSEObjectContainer`, `WSEObjectType`, `WSEArraySortOptions`, `WSEBasicDynMultiArray`, `WSEDynMultiArray<int/rglString/rglTransform>`, `mu::Parser`, `mu::ParserBase`, plus `mbTroop`, `mbItemKind`, `mbItemKindVariation`, `mbSkill`, `mbPartyTemplate`, `mbFaction`, `mbQuest`, `mbSite`, `mbParty`, `mbnetPlayer`, `mbAgent`, `mbMissionObject`, `mbSceneProp`, `rglMesh`, `rglMetaMesh`), v1.1.5.5 target |
+| Vtable scan | PASS | `tools/vtables.py`: 279 pointer runs `>= 4`; 207 class-identified; 73 `rgl*`/`mb*`/`WSE*` (byte-identical to `vtables_new.json`) |
+| Citation check (B7) | PASS | `tools/check_citations.py --self-test` validates every `0x14…` address and rejects superseded `ev_*` / synthetic addresses across all 27 headers under `engine/include/` (validated in CI and against `v1155/` PDB/globals/PE ranges) |
+| Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (58 classes, 2,909 symbols, 76 vtables, 4,152 function ranges, 18 global objects, 2,503 curated superseded VAs), v1.1.5.5 target |
 | v1.1.5.5 REA VM/stream batches | PASS | 75 procedures across 9 `decompile_all` exports (`stmt_core` `ev_3ebcea85…` 4/4, `stmt_block` `ev_ffc38aa5…` 10/10, `script` `ev_8d37a0c8…` 4/4, `simple_trigger` `ev_3157906d…` 12/12, `trigger` `ev_f62843ac…` 12/12, `game_scripts` `ev_fc9bd1a4…` 4/4, `game_triggers` `ev_052f2d86…` 2/2, `streams_bin` `ev_8cc48986…` 9/9, `streams_txt` `ev_1e3c2566…` 18/18), plus `read_bytes`/`0x140615ad0` (`ev_f09662c6…`/`ev_2ddf7a62…`) and 6 single-procedure exports |
 | Superseded 2026-10-14 REA runs | PASS (superseded) | Historical 2026-10-14 entries kept for provenance only: `ev_7cd99ccc…157d7a` (`mbScript` 5), `ev_8d91b175…99b11` (`mbStatement` 14), `ev_25469ff4…84af8` (3), `ev_e3530f99…e8d05` (`Trigger` 52), `ev_cebc7ae0…e8c8d3` (`rglTextStream` 18), `ev_24eecfa4…f18c0b6` (`rglBinaryStream` 9), `ev_130d8023…2c62e6` (2) |
 | Binary savegame format | PASS | `rglBinaryStream` raw little-endian 8/4/1-byte values; strings are `int32` length + bytes; no header or checksum |
 | Module stream identification | PASS | `0x1405651e0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x1405653e0` = `rglOutputTextFileStream` writers; module files are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
-| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse_bitwise_fp tests: PASS`, `wse_system tests: PASS`, `wse_string tests: PASS`, `wse_dict tests: PASS`, `wse_array tests: PASS`, `wse_world tests: PASS`, `block_vm tests: PASS`, `engine host tests: PASS` (Zig clang++ `-std=c++20 -O2 -Wall -Wextra -Werror`) |
+| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse_bitwise_fp tests: PASS`, `wse_system tests: PASS`, `wse_string tests: PASS`, `wse_dict tests: PASS`, `wse_array tests: PASS`, `wse_world tests: PASS`, `block_vm tests: PASS`, `platform tests: PASS`, `engine host tests: PASS` (Zig clang++ `-std=c++20 -O2 -Wall -Wextra -Werror`) |
 | Statement-block VM & trigger/script bridge | PASS | `engine/include/wse/vm/block_vm.h` reconstructed and host-tested (`analyze`, `execute`, `startLoop`/`endLoop`/`canLoop`, `try_for_dict_keys` `0x12`, core native ops `30–33`/`2100–2133`, `call_script` up to depth 255, `store_script_param*`, `this_or_next`/`neg`, script & trigger execution) |
 | Game-world runtime state | PASS | `engine/include/wse/game/world_state.h` models PDB-verified entity/slot, troop, skill, item/mesh, mission, config, and edit-mode containers (`WseWorldState` wired into `VmContext::world` and `WseVmState::world`) |
 | WSE extended opcode map | PASS | v1.1.5.5 `executeWSE` (`0x1401e4dc0`) pseudocode `ev_2aaa96a8…5cf0f9`: 440/440 in-range operations 2800–5202 (431 switch + 9 equality), no unknown or unhandled opcode; 8,844-line dump |

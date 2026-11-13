@@ -773,7 +773,7 @@ Dispatch order:
   - All other opcodes `<= 0x14` route to `startLoop`.
   - Opcodes `>= 0x1E` go to `mbStatement::execute`.
 
-Verified supporting layouts added to `docs/SYMBOL_MAP.json` (58 classes, 2,804 symbols, 76 vtables):
+Verified supporting layouts added to `docs/SYMBOL_MAP.json` (58 classes, 2,909 symbols, 76 vtables, 4,152 function ranges):
 
 - `mbBasicGame` (221,616 B, type `0xadd3`): `m_globalVariables` (`mbSlots`) at `+0x258`,
   `m_registers` (`__int64[128]`) at `+0x270` (`0x140662c30`). Operand tag `1`, `store_lvalue`,

@@ -241,19 +241,25 @@ binary savegames; none of these checks changes valid module behaviour. In `str_s
 empty delimiter cannot advance in retail and would loop indefinitely; the port stores the source as
 a single piece (respecting `skip_empty`) and terminates.
 
-## Known limits of the current handlers
+## Handler design decisions and limits
 
-- `execute_wse()` is declared `noexcept`, but many handlers allocate, touch the filesystem, or run
-  `std::regex`. Only the regex paths catch exceptions; an allocation or filesystem failure
-  elsewhere terminates the process.
-- `str_is_alpha` / `str_is_digit` / `str_is_whitespace` and the trim helpers use the C library's
-  wide character classes, which differ between MSVCRT, glibc, and Android's Bionic for non-ASCII
-  input.
-- `sleep_ms` (3026) blocks the calling thread for the requested time.
-- The dictionary/array file tests write fixed-name files under the system temp directory; two
-  concurrent runs of the `wse_dict` or `wse_array` suite can collide (`CMakeLists.txt` marks both `RUN_SERIAL`).
-
-These are recorded as `ROADMAP.md` backlog B8.
+- **Exceptions (`execute_wse` / `DispatchFn`):** `execute_wse()` and all eight `execute_wse_*`
+  family dispatchers are **not** `noexcept`. Handlers perform dynamic allocation, file/stream I/O,
+  and `std::regex` evaluation; while regex syntax/execution errors are caught at the opcode sites,
+  removing `noexcept` lets genuine `std::bad_alloc` or `std::filesystem::filesystem_error`
+  failures unwind instead of calling `std::terminate` across platforms.
+- **Character classes and case folding (`str_is_alpha`, `str_is_digit`, `str_is_whitespace`, trims, case folds):**
+  `wse/core/encoding.h`, `wse/vm/wse_state.h`, `wse/vm/ops/string.h`, and `wse/vm/ops/fp_expr.h`
+  avoid `<cctype>`/`<cwctype>` completely and use fixed ASCII `"C"`-locale `constexpr` helpers
+  (`wse_fold_case`, `wse_upper_case`, `wse_is_ascii_alpha`, `wse_is_ascii_digit`,
+  `wse_is_ascii_space`, `wse_is_space`, `wse_trim_ascii`), ensuring identical results across
+  MSVCRT, glibc, and Android Bionic regardless of host locale.
+- **`sleep_ms` (`3026`):** routes through optional `WseVmState::sleep_ms_fn(sleep_ms_user, ms)`
+  (`WseSleepMsFn`) when registered by the embedder/platform layer, falling back to
+  `std::this_thread::sleep_for` when `nullptr` so headless/event-loop callers never stall unless
+  intended.
+- **Serial file tests:** the `wse_dict`, `wse_array`, and `platform` tests write to temp-directory
+  paths and are marked `RUN_SERIAL` in `CMakeLists.txt` so parallel `ctest` runs cannot collide.
 
 ## Build and test
 
@@ -263,7 +269,7 @@ Windows:
 powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
 ```
 
-Cross-platform (CMake + CTest, matching `.github/workflows/ci.yml`):
+Cross-platform (CMake + CTest + `tools/check_citations.py --self-test`, matching `.github/workflows/ci.yml`):
 
 ```sh
 cmake -S . -B build -DCMAKE_CXX_COMPILER=clang++ -DWSE_BUILD_HEADER_CHECKS=ON
@@ -285,6 +291,7 @@ wse_dict tests: PASS
 wse_array tests: PASS
 wse_world tests: PASS
 block_vm tests: PASS
+platform tests: PASS
 ```
 
 The Android NDK (`aarch64-linux-android29`) header checks and cross-compile build also run in
