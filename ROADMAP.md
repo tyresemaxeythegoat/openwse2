@@ -47,11 +47,13 @@ Maintain and update these after every milestone:
 
 ## Immediate First Action
 Phase 1, Step 2 is complete: the 440-operation `executeWSE` map is extracted from WSE2 v1.1.5.5 and
-76 of 440 opcodes across six handler groups
-(2800–2809, 3000–3002, 3014/3016/3017/3035/3600, 4200–4218 and 4220–4224, the floating-point
-load/store/compare/arithmetic group, and the transcendental/rounding group) are host-tested.
-Continue Phase 2 by transcribing the remaining `executeWSE` handler groups (starting with 4219 MD5
-and 4225+) and wiring reconstructed statement blocks into the trigger runtime.
+93 of 440 opcodes across seven handler groups
+(2800–2809, 3000–3002, 3014/3016/3017/3035/3600, string ops 4200–4224/4233–4234/4236/4238/4240–4244,
+options flags 4300–4305, `fld_str` 4401, the floating-point load/store/compare/arithmetic group, and
+the transcendental/rounding group) are host-tested.
+Continue Phase 2 by transcribing the remaining `executeWSE` handler groups (game-state string/pos
+queries such as 4225–4239, 4402–4404, 4100+, etc.) and wiring reconstructed statement blocks into
+the trigger runtime.
 
 ## Current Position
 - Phase 1, Step 1 is complete. Ghidra 12.1.4 + JDK 25.0.5 + Node 26.12.1 are installed under `C:\rea-tools` (the `%TEMP%` copies are wiped by server restarts). `rea doctor` reports the Ghidra provider healthy; REA still runs via CLI because it is not registered with OpenCode.
@@ -67,7 +69,7 @@ and 4225+) and wiring reconstructed statement blocks into the trigger runtime.
 - `decompile-all --name rglBinaryStream` completed: 9 procedures, 0 failures, plus a 2-procedure address-range export for the readers. Savegame values are raw little-endian 8/4/1-byte copies with no header; strings are `int32` length + bytes. Trigger savegame order is reconstructed, including the count-exceeded message-box path that still consumes surplus entries.
 - Portable `engine/` now covers the token reader (including booleans), tagged operands, `mbSlots`, statements, script managers, triggers, the event-key trigger/simple-trigger state machines, the binary savegame stream, and trigger savegame read/write; `engine/build_host.ps1` reports `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse tests: PASS`, `engine host tests: PASS`.
 - `executeWSE` opcode map: `tools/extract_wse_opcodes.py` regenerates `docs/wse_opcodes.json`, `docs/WSE_OPCODES.md`, and `engine/include/wse/vm/wse_opcodes.h` from the Ghidra pseudocode plus `header_operations_addon.py`; the VA is read from the pseudocode header, so a retarget cannot leave stale citations. The v1.1.5.5 SDK has 440 in-range operations (2800–5202).
-- Portable `engine/include/wse/vm/execute_wse.h` applies the `0x0FFFFFFF` opcode mask and implements 76 of 440 opcodes: 2800–2809 (arithmetic/logical right shifts, left shift, xor, complement; shift counts masked with `& 0x3F`), 3000–3002 (`register_get`/`register_set`/`store_wse_version`), 3014/3016/3017/3035/3600 (script-context queries), string operations 4200–4218 and 4220–4224 (writable `WseStringBanks::registers` tag-0 bank, comparisons/predicates/search/num/split/sort/store ops, with 4219 MD5 deferred), and the floating-point group 4400/4405–4438 (128-register bank, fixed-point scale 100, `rglRound64`, comparisons, arithmetic, min/max/clamp, sqrt/abs/ceil/floor/exp/pow/log/trig/atan2). The other 364 mapped opcodes report `WseDispatch::unimplemented` until transcribed.
+- Portable `engine/include/wse/vm/execute_wse.h` applies the `0x0FFFFFFF` opcode mask and implements 93 of 440 opcodes: 2800–2809 (arithmetic/logical right shifts, left shift, xor, complement; shift counts masked with `& 0x3F`), 3000–3002 (`register_get`/`register_set`/`store_wse_version`), 3014/3016/3017/3035/3600 (script-context queries), string operations 4200–4224, 4233–4234, 4236, 4238, and 4240–4244 (writable `WseStringBanks::registers` tag-0 bank, comparisons/predicates/search/num/split/sort/store ops, RFC 1321 MD5, float formatting, sanitize, integer predicate, RCON no-op, ECMAScript `std::regex` match/search/get_matches/replace, URL unescape), options flags 4300–4305 (`WseVmState::options`), and the floating-point group 4400–4401/4405–4438 (128-register bank, fixed-point scale 100, `fld_str`, `rglRound64`, comparisons, arithmetic, min/max/clamp, sqrt/abs/ceil/floor/exp/pow/log/trig/atan2). The other 347 mapped opcodes report `WseDispatch::unimplemented` until transcribed.
 - WSE2 v1.1.5.5 (2026-11-12) is now the evidence baseline (official `WSE2.zip` SHA-256 `c45197e8…276e28b1`). It keeps every existing opcode number and adds seven operations (3911 and 4517–4522) plus one mapped script callback, `wse_camp_button_clicked` (table entry 64, `m_mappedScripts[65]`).
 - The script reader parsed the full retail 3,467,512-byte `scripts.txt` sample: 1,755 scripts, every token consumed, 52 of 64 static names mapped (the rest are WSE-only scripts absent from that module). All 65 v1.1.5.5 names are transcribed from the table at `0x140615ad0`; duplicate ids resolve to the first script in file order.
 - Host PanVK loader/surface tests pass; no Android NDK/SDK/device is available, so arm64 compilation remains blocked.

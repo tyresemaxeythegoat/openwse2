@@ -15,7 +15,7 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x140244810`, `0x140244540`, `0x14020fe60`, `0x14020fab0`, `0x1400ccf20`, `0x1400cd2d0`, `0x140244970`, `0x140244b60`, `0x14020ffa0`, `0x140244cd0`, `0x14020fb80`, `0x1402101a0` |
 | `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 65-entry name table, and script mapping | `0x14020f6a0`, `0x14020f7c0`, `0x14020f9a0`; globals `0x14069fac0`/`0x14069fac8`/`0x14069facc`; table `0x140615ad0`; formats `0x14055c680`/`0x14055c690` |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
-| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and 76/440 handlers (2800–2809, 3000–3002, 3014–3600, string 4200–4218/4220–4224, floating-point 4400/4405–4438) | `executeWSE` `0x1401e4dc0` (lines 628, 638–665, 859, 870–877, 4670, 5192, 5202–5990, 7881–8380); `mbStatement::execute` `0x1401c6150` |
+| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and 93/440 handlers (2800–2809, 3000–3002, 3014–3600, string 4200–4224/4233–4234/4236/4238/4240–4244, options 4300–4305, floating-point 4400–4401/4405–4438) | `executeWSE` `0x1401e4dc0` (lines 628, 638–665, 859, 870–877, 4670, 5192, 5202–6420, 7881–8380); `mbStatement::execute` `0x1401c6150` |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
@@ -122,10 +122,13 @@ The string group covers `str_equals` (4200), `str_contains` (4201), `str_starts_
 `str_length` (4207), `str_index_of` (4208), `str_last_index_of` (4209), `str_get_char` (4210),
 `str_to_num` (4211), `str_compare` (4212), `str_split` (4213), `str_sort` (4214),
 `str_store_lower` (4215), `str_store_upper` (4216), `str_store_trim` (4217),
-`str_store_replace` (4218), `str_store_substring` (4220), `str_store_reverse` (4221),
-`str_store_join` (4222), `str_store_replace_spaces_with_underscores` (4223), and
-`str_store_replace_underscores_with_spaces` (4224). `4219` (`str_store_md5`) remains deferred to
-`WseDispatch::unimplemented`. Operands resolve through `0x140219c70`: tag 0 (`WseStringBanks::registers`)
+`str_store_replace` (4218), `str_store_md5` (4219), `str_store_substring` (4220),
+`str_store_reverse` (4221), `str_store_join` (4222),
+`str_store_replace_spaces_with_underscores` (4223),
+`str_store_replace_underscores_with_spaces` (4224), `str_store_float` (4233),
+`str_sanitize` (4234), `str_is_integer` (4236), `str_store_server_password_rcon` (4238),
+`str_regex_match` (4240), `str_regex_search` (4241), `str_regex_get_matches` (4242),
+`str_store_regex_replace` (4243), and `str_decode_url` (4244). Operands resolve through `0x140219c70`: tag 0 (`WseStringBanks::registers`)
 is the writable 128-entry string register table at `0x140665030` (assigned by `0x14030fd60` and
 copied out by `0x140310970`), tag 0x16 the local string registers (`[0x140621778]`, count
 `[0x140621784]`), and tag 3 or an unknown tag the global registers (`[0x140621770]`, count
@@ -144,17 +147,26 @@ are supplied, skips empty pieces when operand 4 is nonzero, and avoids the retai
 empty delimiter by storing the whole source once. `str_sort` sorts a range of tag-0 registers
 (case-insensitive on operand 2, reversed copy-back on operand 3). The `str_store_*` handlers write
 into tag-0 operand 0: lower/upper case, trim (`0` both, `1` left, `2` right via `iswspace`),
-non-overlapping replace-all, bounded substring (defaults `start = 0`, `length = end`; out-of-bounds
-leaves destination unchanged), UTF-16 code-unit reverse, range join (with optional valid separator),
-and `" "`/`"_"` conversions.
+non-overlapping replace-all, lowercase RFC 1321 MD5 (`4219`), `"%.*f"` float formatting (`4233`,
+default precision 5), sanitize (`4234`, removes `{`, `}`, `<`, `>`), bounded substring (defaults
+`start = 0`, `length = end`; out-of-bounds leaves destination unchanged), UTF-16 code-unit reverse,
+range join (with optional valid separator), `" "`/`"_"` conversions, and percent-decoding (`4244`,
+matching `UrlUnescapeA(..., 0)`). `str_is_integer` (`4236`) trims both ends and checks `iswdigit`
+with an optional leading `'-'`. `str_store_server_password_rcon` (`4238`) is a no-op in v1.1.5.5.
+`str_regex_*` (`4240`–`4243`) evaluate ECMAScript `std::regex` over UTF-8 text; invalid patterns
+evaluate false or leave stores untouched.
 
-The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`, `fle`, `fsub`,
+The options flags group (`4300`–`4305`, `0x10cc`–`0x10d1`) exposes `verbose_casualties`,
+`cheat_mode`, and `realistic_headshots` via `WseVmState::options`.
+
+The floating-point group covers `fld`, `fld_str`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`, `fle`, `fsub`,
 `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, and the transcendental/rounding helpers
 `fsqrt`, `fabs`, `fceil`, `ffloor`, `fexp`, `fpow`, `fln`, `flog`, `fmod`, `fsin`, `fcos`, `ftan`,
-`fsinh`, `fcosh`, `ftanh`, `fasin`, `facos`, `fatan`, and `fatan2` (4400, 4405–4438). Registers are
+`fsinh`, `fcosh`, `ftanh`, `fasin`, `facos`, `fatan`, and `fatan2` (4400–4401, 4405–4438). Registers are
 the 128-entry float array `DAT_140698718` (`g_basicGame+0x35d58`); `mbCheckRegister` (`0x1401c4e60`) accepts indices 0–127.
 `fld` divides the fixed-point operand by 100 (`g_basicGame+0x1f8` = `0x140662bb8`, set to `0x64` at
-`0x140070ffa` in `mbBasicGame::initialize`);
+`0x140070ffa` in `mbBasicGame::initialize`); `fld_str` (`4401`) parses operand 1 with `atof`
+(`0x1404989cc`);
 `fst` multiplies by 100 and rounds with `rglRound64` (`0x1402a1910`): `floorf(x)` plus one when the
 fraction is greater than 0.5. Float comparisons use `rglAbs` and `FLT_EPSILON`. `fpow`, `fmod`, and
 `fatan2` take operand 1 in `xmm0` and operand 2 in `xmm1`; `flog` reads a literal base from operand 2
@@ -162,7 +174,7 @@ fraction is greater than 0.5. Float comparisons use `rglAbs` and `FLT_EPSILON`. 
 a failed comparison returns `WseDispatch::condition_false`; an invalid register is a successful no-op
 (`WseDispatch::ignored`), matching the retail `return true` fall-through.
 
-Currently 76 of 440 mapped opcodes are implemented; every other mapped opcode returns
+Currently 93 of 440 mapped opcodes are implemented; every other mapped opcode returns
 `WseDispatch::unimplemented` until its handler is transcribed.
 
 ## Safety deviations

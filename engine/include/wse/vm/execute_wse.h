@@ -25,10 +25,10 @@
 // docs/wse_opcodes.json; wse_opcodes.h is generated from that map. This file
 // implements the arithmetic/bitwise group 2800..2809, the register group
 // 3000..3002, the script-context query group 3014/3016/3017/3035/3600, the
-// string group 4200..4218 and 4220..4224, and the self-contained
-// floating-point register group 4400, 4405..4436, and 4438. Every other known
-// opcode reports WseDispatch::unimplemented instead of guessing; 4219
-// (str_store_md5) is deferred until a portable MD5 is available.
+// string group 4200..4224, 4233..4234, 4236, 4238, and 4240..4244, the options
+// flags group 4300..4305, and the self-contained floating-point register group
+// 4400..4401, 4405..4436, and 4438. Every other known opcode reports
+// WseDispatch::unimplemented instead of guessing.
 //
 // Register group evidence:
 //   3000 register_get (line 628): mbCheckRegister(param_4[1]), then
@@ -113,7 +113,10 @@
 //   4218 str_store_replace (0x107a): replace-all (0x1401f8710) of operand 2
 //     with operand 3, resuming after the replacement; an empty needle leaves
 //     the string unchanged.
-//   4219 str_store_md5 (0x107b): CryptAcquireContextA + 0x140330510; deferred.
+//   4219 str_store_md5 (0x107b, 0x1401ee956): converts UTF-16 registers to
+//     UTF-8 (0xfde9) and hashes via CryptCreateHash(0x8003 = CALG_MD5) in
+//     0x140330510, formatting 16 bytes with "%02x" (0x14056bca8). Ported with
+//     a self-contained RFC 1321 MD5 implementation.
 //   4220 str_store_substring (0x107c, 0x1401eea5a): start operand 2 defaults
 //     to 0 and length operand 3 to the end; a negative or out-of-bounds range
 //     logs and leaves the destination unchanged.
@@ -124,10 +127,37 @@
 //   4223/4224 str_store_replace_spaces_with_underscores and the reverse
 //     (0x107f/0x1080): replace u" " (0x14055b3e0) with u"_" (0x14055b3dc)
 //     or the reverse.
+//   4233 str_store_float (0x1089, 0x1401ef3a8): formats (double)fp[operand 1]
+//     with "%.*f" (0x14055b3e4) via 0x140200c40; defaults precision to 5 when
+//     operand 2 is absent or < 0.
+//   4234 str_sanitize (0x108a, 0x1401ef436): reads tag-0 operand 0 via
+//     MultiByteToWideChar(0xfde9) (0x1403100d0), strips "{", "}", "<", ">"
+//     (0x14055b3ec..0x14055b3f8 -> 0x14055ba68), and stores back.
+//   4236 str_is_integer (0x108c, 0x1401ef55f): trims operand 0 (0x1401f8e20),
+//     rejects empty string or bare '-', and tests digits with iswdigit
+//     (0x140498860) after an optional leading '-'.
+//   4238 str_store_server_password_rcon (0x108e -> 0x1401f49c1): retail jump
+//     table maps directly to `return true` (no-op in v1.1.5.5).
+//   4240..4243 str_regex_* (0x1090..0x1093, 0x1401ef741..0x1401efbc0):
+//     std::regex (ECMAScript, 0x1400163b0) over UTF-8 text via 0x140200c70
+//     (match), 0x140200db0 (search), 0x1401f92f0 (iterator, op 0 = start tag-0
+//     register, op 1 = source, op 2 = regex, optional op 3 = max matches), and
+//     0x140200df0 (replace). Catch blocks return false for predicates and
+//     leave stores unaffected for action ops.
+//   4244 str_decode_url (0x1094, 0x1401efd4d): calls SHLWAPI!UrlUnescapeA
+//     (0x140501818) with dwFlags=0 in 0x1403108b0 (%XX -> byte, '+' unchanged,
+//     malformed '%' literal, stops on NUL).
 //   The tag-0 table at 0x140665030 is writable: 0x14030fd60 assigns a
 //     register, while 0x140310970 copies a register into a temporary handle.
 //
-// Transcendental helpers (case addresses in executeWSE):
+// Options flags evidence (0x10cc..0x10d1, 0x1401efff9..0x1401f003b):
+//   4300/4301 options_{get,set}_verbose_casualties: bool byte at 0x1406173b7.
+//   4302/4303 options_{get,set}_cheat_mode: bool byte at 0x14061ef50.
+//   4304/4305 options_{get,set}_realistic_headshots: bool byte at 0x14061ef39.
+//
+// Floating-point additions & transcendental helpers:
+//   4401 fld_str (0x1131, 0x1401f00c7): resolves operand 1 string, converts via
+//     atof (0x1404989cc), and stores (float)value in fp[operand 0].
 //   pow 0x1400b0400, log 0x1400a6c20, log10 0x1400a6c10, fmod 0x14006aac0,
 //   atan2 0x14006f9b0. The call sites (0x1401f08ef, 0x1401f0cbc, 0x1401f0a28)
 //   pass xmm0 = fp[operand 1] and
@@ -140,16 +170,20 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cwctype>
 #include <limits>
+#include <regex>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "wse/vm/wse_opcodes.h"
 
@@ -177,6 +211,13 @@ struct WseStringBanks {
     std::span<const std::u16string_view> local{};
 };
 
+// Runtime option booleans queried and mutated by opcodes 4300..4305.
+struct WseOptionsState {
+    bool verbose_casualties = false;   // 0x1406173b7
+    bool cheat_mode = false;           // 0x14061ef50
+    bool realistic_headshots = false;  // 0x14061ef39
+};
+
 // Runtime state read by the script-context query handlers. The defaults model
 // a statement executed outside any trigger, with no return values, zero
 // application time, and no active mission.
@@ -194,8 +235,10 @@ struct WseVmState {
     // [0x14061f078] + 0x9ae8: cur_mission->cur_mission_template_no. A null
     // pointer means there is no current mission, which yields -1.
     const std::int32_t* current_mission_template_no = nullptr;
-    // String registers used by the string group (4200-4218, 4220-4224).
+    // String registers used by the string group (4200-4224, 4233-4244).
     WseStringBanks strings{};
+    // Runtime option flags used by options_{get,set}_* (4300-4305).
+    WseOptionsState* options = nullptr;
 };
 
 // Decoded operands, matching the arrays built by mbStatement::execute.
@@ -521,6 +564,344 @@ inline void wse_trim_right(std::u16string& text) {
 inline void wse_trim(std::u16string& text) {
     wse_trim_right(text);
     wse_trim_left(text);
+}
+
+// Encodes UTF-16 into UTF-8 (matching 0x14030fd60 / CP_UTF8 0xfde9), replacing
+// lone surrogates with U+FFFD.
+[[nodiscard]] inline std::string wse_utf16_to_utf8(std::u16string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        std::uint32_t cp = static_cast<std::uint16_t>(text[i]);
+        if (cp >= 0xD800u && cp <= 0xDBFFu) {
+            if (i + 1 < text.size()) {
+                const std::uint32_t low =
+                    static_cast<std::uint16_t>(text[i + 1]);
+                if (low >= 0xDC00u && low <= 0xDFFFu) {
+                    cp = 0x10000u + (((cp - 0xD800u) << 10) | (low - 0xDC00u));
+                    ++i;
+                } else {
+                    cp = 0xFFFDu;
+                }
+            } else {
+                cp = 0xFFFDu;
+            }
+        } else if (cp >= 0xDC00u && cp <= 0xDFFFu) {
+            cp = 0xFFFDu;
+        }
+        if (cp <= 0x7Fu) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp <= 0x7FFu) {
+            out.push_back(static_cast<char>(0xC0u | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        } else if (cp <= 0xFFFFu) {
+            out.push_back(static_cast<char>(0xE0u | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        } else {
+            out.push_back(static_cast<char>(0xF0u | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        }
+    }
+    return out;
+}
+
+// Decodes UTF-8 into UTF-16 (matching MultiByteToWideChar CP_UTF8 0xfde9 in
+// 0x140310970 / 0x1403100d0), replacing malformed sequences with U+FFFD.
+[[nodiscard]] inline std::u16string wse_utf8_to_utf16(std::string_view text) {
+    std::u16string out;
+    out.reserve(text.size());
+    std::size_t i = 0;
+    while (i < text.size()) {
+        const auto b0 = static_cast<std::uint8_t>(text[i]);
+        if (b0 < 0x80u) {
+            out.push_back(static_cast<char16_t>(b0));
+            ++i;
+            continue;
+        }
+        std::uint32_t cp = 0xFFFDu;
+        std::size_t len = 1;
+        if ((b0 & 0xE0u) == 0xC0u && i + 1 < text.size()) {
+            const auto b1 = static_cast<std::uint8_t>(text[i + 1]);
+            if ((b1 & 0xC0u) == 0x80u) {
+                const std::uint32_t decoded =
+                    ((static_cast<std::uint32_t>(b0) & 0x1Fu) << 6) |
+                    (static_cast<std::uint32_t>(b1) & 0x3Fu);
+                if (decoded >= 0x80u) {
+                    cp = decoded;
+                    len = 2;
+                }
+            }
+        } else if ((b0 & 0xF0u) == 0xE0u && i + 2 < text.size()) {
+            const auto b1 = static_cast<std::uint8_t>(text[i + 1]);
+            const auto b2 = static_cast<std::uint8_t>(text[i + 2]);
+            if ((b1 & 0xC0u) == 0x80u && (b2 & 0xC0u) == 0x80u) {
+                const std::uint32_t decoded =
+                    ((static_cast<std::uint32_t>(b0) & 0x0Fu) << 12) |
+                    ((static_cast<std::uint32_t>(b1) & 0x3Fu) << 6) |
+                    (static_cast<std::uint32_t>(b2) & 0x3Fu);
+                if (decoded >= 0x800u &&
+                    (decoded < 0xD800u || decoded > 0xDFFFu)) {
+                    cp = decoded;
+                    len = 3;
+                }
+            }
+        } else if ((b0 & 0xF8u) == 0xF0u && i + 3 < text.size()) {
+            const auto b1 = static_cast<std::uint8_t>(text[i + 1]);
+            const auto b2 = static_cast<std::uint8_t>(text[i + 2]);
+            const auto b3 = static_cast<std::uint8_t>(text[i + 3]);
+            if ((b1 & 0xC0u) == 0x80u && (b2 & 0xC0u) == 0x80u &&
+                (b3 & 0xC0u) == 0x80u) {
+                const std::uint32_t decoded =
+                    ((static_cast<std::uint32_t>(b0) & 0x07u) << 18) |
+                    ((static_cast<std::uint32_t>(b1) & 0x3Fu) << 12) |
+                    ((static_cast<std::uint32_t>(b2) & 0x3Fu) << 6) |
+                    (static_cast<std::uint32_t>(b3) & 0x3Fu);
+                if (decoded >= 0x10000u && decoded <= 0x10FFFFu) {
+                    cp = decoded;
+                    len = 4;
+                }
+            }
+        }
+        i += len;
+        if (cp <= 0xFFFFu) {
+            out.push_back(static_cast<char16_t>(cp));
+        } else {
+            const std::uint32_t adjusted = cp - 0x10000u;
+            out.push_back(
+                static_cast<char16_t>(0xD800u + (adjusted >> 10)));
+            out.push_back(
+                static_cast<char16_t>(0xDC00u + (adjusted & 0x3FFu)));
+        }
+    }
+    return out;
+}
+
+// RFC 1321 MD5 returning 32 lowercase hex digits ("%.2x" / 0x14056bca8).
+[[nodiscard]] inline std::u16string wse_md5_hex(std::string_view input) {
+    static constexpr std::array<std::uint32_t, 64> kShifts = {
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+        5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20,
+        4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    };
+    static constexpr std::array<std::uint32_t, 64> kConstants = {
+        0xd76aa478u, 0xe8c7b756u, 0x242070dbu, 0xc1bdceeeu, 0xf57c0fafu,
+        0x4787c62au, 0xa8304613u, 0xfd469501u, 0x698098d8u, 0x8b44f7afu,
+        0xffff5bb1u, 0x895cd7beu, 0x6b901122u, 0xfd987193u, 0xa679438eu,
+        0x49b40821u, 0xf61e2562u, 0xc040b340u, 0x265e5a51u, 0xe9b6c7aau,
+        0xd62f105du, 0x02441453u, 0xd8a1e681u, 0xe7d3fbc8u, 0x21e1cde6u,
+        0xc33707d6u, 0xf4d50d87u, 0x455a14edu, 0xa9e3e905u, 0xfcefa3f8u,
+        0x676f02d9u, 0x8d2a4c8au, 0xfffa3942u, 0x8771f681u, 0x6d9d6122u,
+        0xfde5380cu, 0xa4beea44u, 0x4bdecfa9u, 0xf6bb4b60u, 0xbebfbc70u,
+        0x289b7ec6u, 0xeaa127fau, 0xd4ef3085u, 0x04881d05u, 0xd9d4d039u,
+        0xe6db99e5u, 0x1fa27cf8u, 0xc4ac5665u, 0xf4292244u, 0x432aff97u,
+        0xab9423a7u, 0xfc93a039u, 0x655b59c3u, 0x8f0ccc92u, 0xffeff47du,
+        0x85845dd1u, 0x6fa87e4fu, 0xfe2ce6e0u, 0xa3014314u, 0x4e0811a1u,
+        0xf7537e82u, 0xbd3af235u, 0x2ad7d2bbu, 0xeb86d391u,
+    };
+
+    std::uint32_t a0 = 0x67452301u;
+    std::uint32_t b0 = 0xefcdab89u;
+    std::uint32_t c0 = 0x98badcfeu;
+    std::uint32_t d0 = 0x10325476u;
+
+    auto process_block = [&](const std::uint8_t* block) {
+        std::array<std::uint32_t, 16> m{};
+        for (std::size_t i = 0; i < 16; ++i) {
+            m[i] = static_cast<std::uint32_t>(block[i * 4]) |
+                   (static_cast<std::uint32_t>(block[i * 4 + 1]) << 8) |
+                   (static_cast<std::uint32_t>(block[i * 4 + 2]) << 16) |
+                   (static_cast<std::uint32_t>(block[i * 4 + 3]) << 24);
+        }
+        std::uint32_t a = a0;
+        std::uint32_t b = b0;
+        std::uint32_t c = c0;
+        std::uint32_t d = d0;
+        for (std::size_t i = 0; i < 64; ++i) {
+            std::uint32_t f = 0;
+            std::size_t g = 0;
+            if (i < 16) {
+                f = (b & c) | ((~b) & d);
+                g = i;
+            } else if (i < 32) {
+                f = (d & b) | ((~d) & c);
+                g = (5u * i + 1u) & 15u;
+            } else if (i < 48) {
+                f = b ^ c ^ d;
+                g = (3u * i + 5u) & 15u;
+            } else {
+                f = c ^ (b | (~d));
+                g = (7u * i) & 15u;
+            }
+            const std::uint32_t temp = d;
+            d = c;
+            c = b;
+            const std::uint32_t sum = a + f + kConstants[i] + m[g];
+            const std::uint32_t s = kShifts[i];
+            b = b + ((sum << s) | (sum >> (32u - s)));
+            a = temp;
+        }
+        a0 += a;
+        b0 += b;
+        c0 += c;
+        d0 += d;
+    };
+
+    const std::size_t full_blocks = input.size() / 64u;
+    for (std::size_t block_index = 0; block_index < full_blocks; ++block_index) {
+        process_block(reinterpret_cast<const std::uint8_t*>(input.data()) +
+                      block_index * 64u);
+    }
+
+    std::array<std::uint8_t, 128> tail{};
+    const std::size_t remainder = input.size() - full_blocks * 64u;
+    for (std::size_t i = 0; i < remainder; ++i) {
+        tail[i] = static_cast<std::uint8_t>(input[full_blocks * 64u + i]);
+    }
+    tail[remainder] = 0x80u;
+    const std::size_t padded_bytes = remainder < 56u ? 64u : 128u;
+    const std::uint64_t bit_length = static_cast<std::uint64_t>(input.size()) * 8u;
+    for (std::size_t i = 0; i < 8u; ++i) {
+        tail[padded_bytes - 8u + i] =
+            static_cast<std::uint8_t>((bit_length >> (i * 8u)) & 0xFFu);
+    }
+    process_block(tail.data());
+    if (padded_bytes == 128u) {
+        process_block(tail.data() + 64u);
+    }
+
+    static constexpr std::u16string_view kHexDigits = u"0123456789abcdef";
+    std::u16string hex;
+    hex.reserve(32);
+    for (const std::uint32_t word : {a0, b0, c0, d0}) {
+        for (std::size_t byte_index = 0; byte_index < 4; ++byte_index) {
+            const auto byte =
+                static_cast<std::uint8_t>((word >> (byte_index * 8u)) & 0xFFu);
+            hex.push_back(kHexDigits[byte >> 4u]);
+            hex.push_back(kHexDigits[byte & 0x0Fu]);
+        }
+    }
+    return hex;
+}
+
+// 0x1401ef436: strips "{", "}", "<", ">" from a tag-0 string register.
+[[nodiscard]] inline std::u16string wse_sanitize_string(std::u16string_view text) {
+    std::u16string cleaned;
+    cleaned.reserve(text.size());
+    for (const char16_t ch : text) {
+        if (ch != u'{' && ch != u'}' && ch != u'<' && ch != u'>') {
+            cleaned.push_back(ch);
+        }
+    }
+    return cleaned;
+}
+
+[[nodiscard]] inline int wse_hex_nibble(char ch) noexcept {
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return 10 + (ch - 'a');
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return 10 + (ch - 'A');
+    }
+    return -1;
+}
+
+// Models SHLWAPI.dll!UrlUnescapeA(..., dwFlags=0) in 0x1403108b0: decodes %XX
+// hex bytes, preserves '+' and malformed '%' sequences, and terminates on NUL.
+[[nodiscard]] inline std::string wse_url_unescape(std::string_view input) {
+    std::string out;
+    out.reserve(input.size());
+    for (std::size_t i = 0; i < input.size(); ++i) {
+        const char ch = input[i];
+        if (ch == '\0') {
+            break;
+        }
+        if (ch == '%' && i + 2 < input.size()) {
+            const int hi = wse_hex_nibble(input[i + 1]);
+            const int lo = wse_hex_nibble(input[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                const auto decoded = static_cast<std::uint8_t>((hi << 4) | lo);
+                if (decoded == 0) {
+                    break;
+                }
+                out.push_back(static_cast<char>(decoded));
+                i += 2;
+                continue;
+            }
+        }
+        out.push_back(ch);
+    }
+    return out;
+}
+
+// 0x140200c40: formats (double)value with "%.*f" (0x14055b3e4).
+[[nodiscard]] inline std::u16string wse_format_float(
+    float value, std::int32_t precision) {
+    const int prec = precision < 0 ? 5 : static_cast<int>(precision);
+    std::array<char, 512> stack_buf{};
+    const int needed =
+        std::snprintf(stack_buf.data(), stack_buf.size(), "%.*f", prec,
+                      static_cast<double>(value));
+    if (needed < 0) {
+        return {};
+    }
+    if (static_cast<std::size_t>(needed) < stack_buf.size()) {
+        return wse_utf8_to_utf16(
+            std::string_view(stack_buf.data(), static_cast<std::size_t>(needed)));
+    }
+    std::string dynamic_buf(static_cast<std::size_t>(needed) + 1u, '\0');
+    const int written =
+        std::snprintf(dynamic_buf.data(), dynamic_buf.size(), "%.*f", prec,
+                      static_cast<double>(value));
+    if (written < 0) {
+        return {};
+    }
+    return wse_utf8_to_utf16(
+        std::string_view(dynamic_buf.data(), static_cast<std::size_t>(written)));
+}
+
+// Shared ECMAScript std::regex predicate for str_regex_match (4240) and
+// str_regex_search (4241). Invalid patterns throw std::regex_error, caught to
+// match the retail SEH result false.
+[[nodiscard]] inline WseDispatch wse_regex_predicate(
+    std::u16string_view text, std::u16string_view pattern,
+    bool full_match) noexcept {
+    try {
+        const std::string text_utf8 = wse_utf16_to_utf8(text);
+        const std::regex re(wse_utf16_to_utf8(pattern));
+        const bool matched = full_match ? std::regex_match(text_utf8, re)
+                                        : std::regex_search(text_utf8, re);
+        return matched ? WseDispatch::handled_no_store
+                       : WseDispatch::condition_false;
+    } catch (...) {
+        return WseDispatch::condition_false;
+    }
+}
+
+[[nodiscard]] inline bool* wse_option_flag(WseOptionsState* options,
+                                           std::uint32_t opcode) noexcept {
+    if (!options) {
+        return nullptr;
+    }
+    switch (static_cast<WseOpcode>(opcode)) {
+    case WseOpcode::options_get_verbose_casualties:
+    case WseOpcode::options_set_verbose_casualties:
+        return &options->verbose_casualties;
+    case WseOpcode::options_get_cheat_mode:
+    case WseOpcode::options_set_cheat_mode:
+        return &options->cheat_mode;
+    case WseOpcode::options_get_realistic_headshots:
+    case WseOpcode::options_set_realistic_headshots:
+        return &options->realistic_headshots;
+    default:
+        return nullptr;
+    }
 }
 
 // Shared body of str_is_alpha/digit/whitespace. `has_index == false` or
@@ -1244,6 +1625,25 @@ template <typename Predicate>
                    ? WseDispatch::handled_no_store
                    : WseDispatch::ignored;
     }
+    case WseOpcode::str_store_md5: {
+        // 4219 (0x107b, 0x1401ee956): UTF-8 MD5 digest formatted as 32
+        // lowercase hex digits in tag-0 operand 0.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const auto digest = wse_md5_hex(
+            wse_utf16_to_utf8(wse_resolve_string(narrow[1], tag, strings)));
+        return wse_store_string(strings, narrow[0], digest)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
     case WseOpcode::str_store_substring: {
         // 4220 (0x107c): substring of operand 1 from operand 2 (default 0)
         // with operand 3 characters (default to the end). An out-of-bounds
@@ -1377,8 +1777,210 @@ template <typename Predicate>
                    ? WseDispatch::handled_no_store
                    : WseDispatch::ignored;
     }
+    case WseOpcode::str_store_float: {
+        // 4233 (0x1089, 0x1401ef3a8): format fp[operand 1] with "%.*f"
+        // (0x14055b3e4) into tag-0 operand 0; precision defaults to 5 when
+        // fewer than 3 operands or negative.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) || !wse_register_ok(narrow[1]) ||
+            fp.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto fp_index = static_cast<std::size_t>(narrow[1]);
+        if (fp_index >= fp.size()) {
+            return WseDispatch::ignored;
+        }
+        const std::int32_t precision =
+            (narrow.size() < 3 || narrow[2] < 0) ? 5 : narrow[2];
+        return wse_store_string(strings, narrow[0],
+                                wse_format_float(fp[fp_index], precision))
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
+    case WseOpcode::str_sanitize: {
+        // 4234 (0x108a, 0x1401ef436): strip '{', '}', '<', '>' from tag-0
+        // register operand 0 in place.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) ||
+            static_cast<std::size_t>(narrow[0]) >= strings.registers.size()) {
+            return WseDispatch::ignored;
+        }
+        const auto index = static_cast<std::size_t>(narrow[0]);
+        strings.registers[index] = wse_sanitize_string(strings.registers[index]);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::str_is_integer: {
+        // 4236 (0x108c, 0x1401ef55f): trim both ends, reject empty or bare
+        // '-', and check remaining code units with iswdigit (0x140498860).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 0);
+        if (!wse_string_register_ok(narrow[0], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        std::u16string text(wse_resolve_string(narrow[0], tag, strings));
+        wse_trim(text);
+        if (text.empty()) {
+            return WseDispatch::condition_false;
+        }
+        std::size_t index = text[0] == u'-' ? 1 : 0;
+        if (index >= text.size()) {
+            return WseDispatch::condition_false;
+        }
+        for (; index < text.size(); ++index) {
+            if (std::iswdigit(static_cast<std::wint_t>(text[index])) == 0) {
+                return WseDispatch::condition_false;
+            }
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::str_store_server_password_rcon: {
+        // 4238 (0x108e -> 0x1401f49c1): retail jump table exits immediately
+        // returning true with no side effects.
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::str_regex_match:
+    case WseOpcode::str_regex_search: {
+        // 4240/4241 (0x1090/0x1091, 0x1401ef741/0x1401ef84d): ECMAScript regex
+        // match/search over UTF-8 operand 0 with pattern operand 1.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t text_tag = wse_tag_at(tags, 0);
+        const std::uint8_t pattern_tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[0], text_tag, strings) ||
+            !wse_string_register_ok(narrow[1], pattern_tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const bool full_match =
+            static_cast<WseOpcode>(opcode) == WseOpcode::str_regex_match;
+        return wse_regex_predicate(
+            wse_resolve_string(narrow[0], text_tag, strings),
+            wse_resolve_string(narrow[1], pattern_tag, strings), full_match);
+    }
+    case WseOpcode::str_regex_get_matches: {
+        // 4242 (0x1092, 0x1401ef959): write full regex matches of operand 2
+        // against operand 1 into tag-0 registers starting at operand 0,
+        // stopping after optional operand 3 matches when nonzero or at s127.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t text_tag = wse_tag_at(tags, 1);
+        const std::uint8_t pattern_tag = wse_tag_at(tags, 2);
+        if (!wse_string_register_ok(narrow[1], text_tag, strings) ||
+            !wse_string_register_ok(narrow[2], pattern_tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const std::string text_utf8 = wse_utf16_to_utf8(
+            wse_resolve_string(narrow[1], text_tag, strings));
+        const std::string pattern_utf8 = wse_utf16_to_utf8(
+            wse_resolve_string(narrow[2], pattern_tag, strings));
+        const std::int32_t max_matches = narrow.size() >= 4 ? narrow[3] : 0;
+        std::int32_t dest = narrow[0];
+        std::int32_t count = 0;
+        try {
+            const std::regex re(pattern_utf8);
+            std::sregex_iterator it(text_utf8.begin(), text_utf8.end(), re);
+            const std::sregex_iterator end;
+            for (; it != end; ++it) {
+                if ((max_matches != 0 && count == max_matches) || dest >= 0x80 ||
+                    static_cast<std::size_t>(dest) >= strings.registers.size()) {
+                    break;
+                }
+                strings.registers[static_cast<std::size_t>(dest)] =
+                    wse_utf8_to_utf16(it->str(0));
+                ++dest;
+                ++count;
+            }
+        } catch (...) {
+            return WseDispatch::handled_no_store;
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::str_store_regex_replace: {
+        // 4243 (0x1093, 0x1401efbc0): regex_replace(operand 1, operand 2,
+        // operand 3) stored in tag-0 operand 0.
+        if (narrow.size() < 4) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t text_tag = wse_tag_at(tags, 1);
+        const std::uint8_t pattern_tag = wse_tag_at(tags, 2);
+        const std::uint8_t replacement_tag = wse_tag_at(tags, 3);
+        if (!wse_string_register_ok(narrow[1], text_tag, strings) ||
+            !wse_string_register_ok(narrow[2], pattern_tag, strings) ||
+            !wse_string_register_ok(narrow[3], replacement_tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        try {
+            const std::string text_utf8 = wse_utf16_to_utf8(
+                wse_resolve_string(narrow[1], text_tag, strings));
+            const std::regex re(wse_utf16_to_utf8(
+                wse_resolve_string(narrow[2], pattern_tag, strings)));
+            const std::string replacement_utf8 = wse_utf16_to_utf8(
+                wse_resolve_string(narrow[3], replacement_tag, strings));
+            const std::string replaced =
+                std::regex_replace(text_utf8, re, replacement_utf8);
+            return wse_store_string(strings, narrow[0],
+                                    wse_utf8_to_utf16(replaced))
+                       ? WseDispatch::handled_no_store
+                       : WseDispatch::ignored;
+        } catch (...) {
+            return WseDispatch::handled_no_store;
+        }
+    }
+    case WseOpcode::str_decode_url: {
+        // 4244 (0x1094, 0x1401efd4d): UrlUnescapeA (0x1403108b0) on UTF-8
+        // operand 1 stored into tag-0 operand 0.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const auto decoded = wse_utf8_to_utf16(wse_url_unescape(
+            wse_utf16_to_utf8(wse_resolve_string(narrow[1], tag, strings))));
+        return wse_store_string(strings, narrow[0], decoded)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
 
-    // Floating-point registers. The retail cases check every register before
+    // Options flags (0x10cc..0x10d1, 0x1401efff9..0x1401f003b).
+    case WseOpcode::options_get_verbose_casualties:
+    case WseOpcode::options_get_cheat_mode:
+    case WseOpcode::options_get_realistic_headshots: {
+        const bool* flag = wse_option_flag(operands.state.options, opcode);
+        effect.value = (flag && *flag) ? 1 : 0;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::options_set_verbose_casualties:
+    case WseOpcode::options_set_cheat_mode:
+    case WseOpcode::options_set_realistic_headshots: {
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        bool* flag = wse_option_flag(operands.state.options, opcode);
+        if (!flag) {
+            return WseDispatch::ignored;
+        }
+        *flag = narrow[0] != 0;
+        return WseDispatch::handled_no_store;
+    }
     // doing anything; a failed check falls through to `return true`, which is
     // a successful no-op.
     case WseOpcode::fld: {
@@ -1393,6 +1995,27 @@ template <typename Predicate>
             return WseDispatch::ignored;
         }
         fp[index] = static_cast<float>(wide[1]) / kWseFixedPointScale;
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::fld_str: {
+        // 4401 (0x1131, 0x1401f00c7): atof (0x1404989cc) of operand 1 stored as
+        // float in fp[operand 0].
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) || fp.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto index = static_cast<std::size_t>(narrow[0]);
+        if (index >= fp.size()) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        fp[index] = static_cast<float>(
+            wse_wtof(wse_resolve_string(narrow[1], tag, strings)));
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::fst: {

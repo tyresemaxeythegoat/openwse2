@@ -37,7 +37,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | Portable trigger runtime | Event-key state machine reconstructed and host-tested; statement conditions/consequences are callbacks until the VM executes blocks |
 | Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
 | `executeWSE` case mapping | Complete: 440/440 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode (v1.1.5.5) |
-| Portable `executeWSE` handlers | 76 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, 3014/3016/3017/3035/3600 script-context queries, 4200–4218 and 4220–4224 string compare/predicate/index/num and string-register handlers, and 4400/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 364 report `WseDispatch::unimplemented` (4219 MD5 is deferred) |
+| Portable `executeWSE` handlers | 93 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, 3014/3016/3017/3035/3600 script-context queries, string group 4200–4224 (including portable RFC 1321 MD5 for 4219), 4233–4234, 4236, 4238, and 4240–4244 (`str_regex_*`/`str_decode_url`), 4300–4305 options flags, and 4400–4401/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 347 report `WseDispatch::unimplemented` |
 
 ## Confirmed by pseudocode
 
@@ -121,8 +121,9 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   `FUN_1400b9690(5)` (QPC seconds since the app-time baseline), converts to float, multiplies by
   `1000.0f` (`0x140576b90`), and rounds through `rglRound64`. `store_cur_mission_template_no`
   (`0x1401ea6b2`) reads `[0x14061f078]+0x9ae8` or yields -1 when the pointer is null.
-- The string group 4200–4218 and 4220–4224 is proven by the equality branch at `0x1068` (`0x1401ed1bd`)
-  and the switch cases at `0x1069`–`0x1080` (`4219` `0x107b` `str_store_md5` is deferred). String
+- The string group covers `4200`–`4224`, `4233`–`4234`, `4236`, `4238`, and `4240`–`4244`, proven by
+  the equality branch at `0x1068` (`0x1401ed1bd`) and the switch cases decoded from the jump
+  table at `0x1401ed2ef` (`0x1069`–`0x1094`). String
   operands resolve through `0x140219c70`: tag 0 is the writable 128-entry string register table at
   `0x140665030` (stride 0x48, assigned by `0x14030fd60` and copied by `0x140310970`), tag 0x16 is
   the local register bank (`[0x140621778]`, count `[0x140621784]`, stride 0x90), and tag 3 or an
@@ -134,7 +135,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   (`0x1401f8b40`) and treats an empty needle as not contained. `str_is_alpha/digit/whitespace`
   call `iswalpha`/`iswdigit`/`iswspace` (`0x140498854`/`0x140498860`/`0x14049886c`), scan the whole
   string when the index is absent or -1, and leave the initial true result on an out-of-bounds
-  index. `str_index_of`/`str_last_index_of` use operand 3 as the start (default 0) and operand 4
+  index. `str_index_of`/`str_last_index_of` take operand 3 as the start (default 0) and operand 4
   as the end (default length-1); `str_last_index_of` mirrors the retail loop, which searches again
   before testing `end <= start`. `str_get_char` returns a UTF-16 code unit or stores nothing when
   the index is out of bounds. `str_to_num` calls `_wtof` (`0x140498878`), scales by
@@ -147,9 +148,25 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   `0x140200c00` and reverses copy-back when operand 3 is nonzero. `str_store_lower`/`upper`/`trim`/
   `replace`/`substring`/`reverse`/`join` and `4223`/`4224` call `0x1401f8b40`/`0x1401f8ac0`/
   `0x1401f8e20`/`0x1401f8d00`/`0x1401f8c40`/`0x1401f8710`/`0x1401f8e40`/`0x1404992b0`/`0x1401f90b0`
-  and use `DAT_14055b3e0` (`u" "`) and `DAT_14055b3dc` (`u"_"`).
+  and use `DAT_14055b3e0` (`u" "`) and `DAT_14055b3dc` (`u"_"`). `str_store_md5` (`0x1401ee956`)
+  hashes UTF-8 (`0xfde9`) bytes via `CryptCreateHash(0x8003)` (`0x140330510`) and formats 16 digest
+  bytes with `"%02x"` (`0x14056bca8`). `str_store_float` (`0x1401ef3a8`) formats `(double)fp[op1]`
+  with `"%.*f"` (`0x14055b3e4`) via `0x140200c40`, defaulting negative or missing precision to `5`.
+  `str_sanitize` (`0x1401ef436`) converts tag-0 operand 0 via `MultiByteToWideChar(0xfde9)`
+  (`0x1403100d0`) and strips `u"{"`, `u"}"`, `u"<"`, `u">"` (`0x14055b3ec`..`0x14055b3f8`).
+  `str_is_integer` (`0x1401ef55f`) trims via `0x1401f8e20`, rejects empty or bare `'-'`, and checks
+  digits with `iswdigit` (`0x140498860`). `str_store_server_password_rcon` (`4238`, `0x108e`) maps in
+  the jump table directly to the shared no-op exit `0x1401f49c1`. `str_regex_*` (`4240`–`4243`,
+  `0x1401ef741`–`0x1401efbc0`) use ECMAScript `std::regex` over UTF-8 (`0x1400163b0`, `0x140200c70`,
+  `0x140200db0`, `0x1401f92f0`, `0x140200df0`), taking `<start_string_register>` as operand 0 in
+  `str_regex_get_matches` (`4242`); exceptions evaluate false/no-store. `str_decode_url` (`4244`,
+  `0x1401efd4d`) calls `SHLWAPI.dll!UrlUnescapeA` (`0x140501818`, `dwFlags=0`) in `0x1403108b0`.
+- Options flags `4300`–`4305` (`0x10cc`–`0x10d1`, `0x1401efff9`–`0x1401f003b`) get/set the booleans
+  `verbose_casualties` (`0x1406173b7`), `cheat_mode` (`0x14061ef50`), and `realistic_headshots`
+  (`0x14061ef39`) via `WseVmState::options`.
 - The floating-point cases at lines 5192 and 7881–8380 index the 128-float array `DAT_140698718`
-  (`g_basicGame+0x35d58`).
+  (`g_basicGame+0x35d58`), adding `4401` `fld_str` (`0x1401f00c7`), which parses operand 1 with
+  `atof` (`0x1404989cc`).
   `mbCheckRegister` (`0x1401c4e60`) is `cmp ecx,0x7f; ja` (unsigned 0–127); a failed check returns
   true without doing anything. The fixed-point scale (`g_basicGame+0x1f8`, `0x140662bb8`) is set to
   `0x64` (100) at `0x140070ffa` inside `mbBasicGame::initialize` (`0x140070f90`); `fld` divides by

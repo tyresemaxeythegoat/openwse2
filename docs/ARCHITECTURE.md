@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and 76 of 440 handlers recovered.
+Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and 93 of 440 handlers recovered.
 Last updated: 2026-11-13.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -204,10 +204,13 @@ The string group covers `str_equals` (4200), `str_contains` (4201), `str_starts_
 `str_length` (4207), `str_index_of` (4208), `str_last_index_of` (4209), `str_get_char` (4210),
 `str_to_num` (4211), `str_compare` (4212), `str_split` (4213), `str_sort` (4214),
 `str_store_lower` (4215), `str_store_upper` (4216), `str_store_trim` (4217),
-`str_store_replace` (4218), `str_store_substring` (4220), `str_store_reverse` (4221),
-`str_store_join` (4222), `str_store_replace_spaces_with_underscores` (4223), and
-`str_store_replace_underscores_with_spaces` (4224); `4219` (`str_store_md5`) is deferred until a
-portable MD5 implementation is added. The resolver at `0x140219c70` maps tag 0 to the writable
+`str_store_replace` (4218), `str_store_md5` (4219), `str_store_substring` (4220),
+`str_store_reverse` (4221), `str_store_join` (4222),
+`str_store_replace_spaces_with_underscores` (4223),
+`str_store_replace_underscores_with_spaces` (4224), `str_store_float` (4233),
+`str_sanitize` (4234), `str_is_integer` (4236), `str_store_server_password_rcon` (4238),
+`str_regex_match` (4240), `str_regex_search` (4241), `str_regex_get_matches` (4242),
+`str_store_regex_replace` (4243), and `str_decode_url` (4244). The resolver at `0x140219c70` maps tag 0 to the writable
 128-entry string register table at `0x140665030` (stride 0x48; modeled as `WseStringBanks::registers`,
 assigned via `0x14030fd60` and copied out via `0x140310970`), tag 0x16 to the local string
 registers (`[0x140621778]`, count `[0x140621784]`, stride 0x90), and tag 3 or an unknown tag to the
@@ -234,16 +237,33 @@ of tag-0 registers, sorts via `0x140200c20` or case-insensitive `0x140200c00` (o
 reverses on copy-back when operand 3 is nonzero. `str_store_lower`/`upper` call
 `MakeLower`/`MakeUpper` (`0x1401f8b40`/`0x1401f8ac0`); `str_store_trim` dispatches mode 0/1/2 to
 `0x1401f8e20`/`0x1401f8d00`/`0x1401f8c40` (`iswspace`); `str_store_replace` calls `0x1401f8710`
-(advancing past the replacement); `str_store_substring` (`0x1401eea5a`) uses `0x1401f8e40` with
+(advancing past the replacement); `str_store_md5` (`0x1401ee956`) hashes UTF-8 (`0xfde9`) bytes via
+`CryptCreateHash(0x8003)` (`0x140330510`) and formats 16 bytes with `"%02x"` (`0x14056bca8`) using
+a portable RFC 1321 implementation; `str_store_substring` (`0x1401eea5a`) uses `0x1401f8e40` with
 defaults `start = 0` and `length = end` (leaving destination unchanged if negative or out of bounds);
 `str_store_reverse` calls `std::reverse` (`0x1404992b0`); `str_store_join` appends tag-0 registers
-(`0x1401f90b0`) with an optional valid separator; and `4223`/`4224` (`0x1401eeece`/`0x1401eee00`)
-replace `u" "` (`0x14055b3e0`) with `u"_"` (`0x14055b3dc`) or the reverse.
+(`0x1401f90b0`) with an optional valid separator; `4223`/`4224` (`0x1401eeece`/`0x1401eee00`)
+replace `u" "` (`0x14055b3e0`) with `u"_"` (`0x14055b3dc`) or the reverse; `str_store_float`
+(`0x1401ef3a8`) formats `(double)fp[op1]` with `"%.*f"` (`0x14055b3e4`) via `0x140200c40`, defaulting
+precision to 5 when absent or negative; `str_sanitize` (`0x1401ef436`) converts tag-0 operand 0 via
+`MultiByteToWideChar(0xfde9)` (`0x1403100d0`) and removes `u"{"`, `u"}"`, `u"<"`, `u">"`
+(`0x14055b3ec`..`0x14055b3f8`); `str_is_integer` (`0x1401ef55f`) trims (`0x1401f8e20`), rejects empty
+or bare `'-'`, and verifies `iswdigit` (`0x140498860`); `str_store_server_password_rcon` (`4238`,
+`0x108e`) branches directly to `0x1401f49c1` (`return true`, no-op); `str_regex_*` (`4240`–`4243`,
+`0x1401ef741`–`0x1401efbc0`) run ECMAScript `std::regex` over UTF-8 (`0x1400163b0`, `0x140200c70`,
+`0x140200db0`, `0x1401f92f0`, `0x140200df0`), with `str_regex_get_matches` taking `<start_string_register>`
+in operand 0 and returning false/no-op on exception; and `str_decode_url` (`4244`, `0x1401efd4d`)
+models `SHLWAPI.dll!UrlUnescapeA` (`0x140501818`, `dwFlags=0`) in `0x1403108b0`.
 
-The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
+The options flags group (`4300`–`4305`, `0x10cc`–`0x10d1`, `0x1401efff9`–`0x1401f003b`) reads and
+writes the booleans `verbose_casualties` (`0x1406173b7`), `cheat_mode` (`0x14061ef50`), and
+`realistic_headshots` (`0x14061ef39`) via `WseVmState::options`.
+
+The floating-point group covers `fld`, `fld_str`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
 `fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, `fsqrt`, `fabs`, `fceil`, `ffloor`,
 `fexp`, `fpow`, `fln`, `flog`, `fmod`, `fsin`, `fcos`, `ftan`, `fsinh`, `fcosh`, `ftanh`, `fasin`,
-`facos`, `fatan`, and `fatan2` (4400, 4405–4438). The register bank is the 128-entry float array
+`facos`, `fatan`, and `fatan2` (4400–4401, 4405–4438). `fld_str` (`4401`, `0x1401f00c7`) resolves
+operand 1, calls `atof` (`0x1404989cc`), and stores `(float)` into `fp[operand 0]`. The register bank is the 128-entry float array
 `DAT_140698718` (`g_basicGame+0x35d58`); `mbCheckRegister` (`0x1401c4e60`) accepts indices 0–127 with
 an unsigned comparison.
 `fld` divides the fixed-point operand by the scale at `g_basicGame+0x1f8` (`0x140662bb8`, set to 100 at
@@ -258,8 +278,8 @@ literal base from the int32 operand array, defaults to 10 when there are fewer t
 rejects bases below 2 with "invalid logarithm base %d", and returns true without storing.
 Division/modulo by zero log and return true. Handlers that do not write operand 0 report
 `handled_no_store`; failed comparisons report `condition_false`; invalid registers are successful
-no-ops (`ignored`), matching the retail `return true` fall-through. The other 364 mapped opcodes report
-`WseDispatch::unimplemented` until transcribed (76 of 440 implemented; `4219` MD5 is deferred).
+no-ops (`ignored`), matching the retail `return true` fall-through. The other 347 mapped opcodes report
+`WseDispatch::unimplemented` until transcribed (93 of 440 implemented).
 
 ### `mbScript` — 176 bytes, type 0x1f6c4
 

@@ -1305,6 +1305,326 @@ void test_string_group() {
            "str_store_replace_spaces_with_underscores rejects a missing source");
 }
 
+void test_string_extended_group() {
+    std::u16string registers[128] = {};
+    const std::u16string_view global[] = {
+        u"message digest",  // 0
+        u"xxab12yy",        // 1
+        u"[0-9]+",          // 2
+        u"42.5",            // 3
+    };
+    const std::u16string_view local[] = {
+        u"ab12",    // 0
+        u" -0 ",    // 1
+        u"[",       // 2 (invalid regex)
+    };
+    std::array<float, wse::vm::kFpRegisterCount> fp{};
+    fp[0] = 3.25f;
+    fp[1] = -1.5f;
+
+    WseVmState state;
+    state.strings.registers = std::span<std::u16string>(registers);
+    state.strings.global = std::span<const std::u16string_view>(global);
+    state.strings.local = std::span<const std::u16string_view>(local);
+
+    WseEffect effect;
+    WseDispatch dispatch = WseDispatch::unimplemented;
+    const auto call = [&](WseOpcode op, std::initializer_list<std::int32_t> operands,
+                          std::initializer_list<std::uint8_t> tags) {
+        return run(opcode(op), {}, operands, effect, fp, {}, state, tags);
+    };
+
+    // str_store_md5 (4219).
+    registers[0] = u"";
+    registers[1] = u"abc";
+    registers[2] =
+        u"1234567890123456789012345678901234567890123456789012345678901234567890"
+        u"1234567890";
+    registers[3] = u"\u00e9";
+    registers[4] = u"\U0001F600";
+    dispatch = call(WseOpcode::str_store_md5, {10, 0}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[10] == u"d41d8cd98f00b204e9800998ecf8427e",
+           "str_store_md5 computes RFC 1321 empty vector");
+    dispatch = call(WseOpcode::str_store_md5, {10, 1}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[10] == u"900150983cd24fb0d6963f7d28e17f72",
+           "str_store_md5 computes RFC 1321 abc vector");
+    dispatch = call(WseOpcode::str_store_md5, {10, 0}, {0, 3});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[10] == u"f96b697d7cb7938d525a2f31aaf161d0",
+           "str_store_md5 reads global bank and computes message digest");
+    dispatch = call(WseOpcode::str_store_md5, {10, 2}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[10] == u"57edf4a22be3c955ac49da2e2107b67a",
+           "str_store_md5 handles multi-block messages");
+    dispatch = call(WseOpcode::str_store_md5, {10, 3}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[10] == u"66ddcd97cfdeabb2f6fb8a999b4bc76f",
+           "str_store_md5 encodes BMP code points as UTF-8");
+    dispatch = call(WseOpcode::str_store_md5, {10, 4}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[10] == u"2a02eac39d716a70ecf37579185927b6",
+           "str_store_md5 encodes UTF-16 surrogate pairs as UTF-8");
+    dispatch = call(WseOpcode::str_store_md5, {128, 1}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_store_md5 ignores an invalid destination");
+    dispatch = call(WseOpcode::str_store_md5, {10}, {0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_store_md5 rejects a missing source");
+
+    // str_store_float (4233).
+    dispatch = call(WseOpcode::str_store_float, {11, 0}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[11] == u"3.25000",
+           "str_store_float defaults precision to 5");
+    dispatch = call(WseOpcode::str_store_float, {11, 1, -1}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[11] == u"-1.50000",
+           "str_store_float defaults negative precision to 5");
+    dispatch = call(WseOpcode::str_store_float, {11, 0, 2}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[11] == u"3.25",
+           "str_store_float formats explicit precision");
+    dispatch = call(WseOpcode::str_store_float, {11, 0, 0}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[11] == u"3",
+           "str_store_float accepts zero precision");
+    dispatch = call(WseOpcode::str_store_float, {11, 128}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_store_float ignores an invalid fp register");
+    dispatch = call(WseOpcode::str_store_float, {11}, {0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_store_float rejects a missing fp register");
+
+    // str_sanitize (4234).
+    registers[12] = u"{hello}<world>{a<b>c}";
+    dispatch = call(WseOpcode::str_sanitize, {12}, {0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[12] == u"helloworldabc",
+           "str_sanitize strips braces and angle brackets");
+    dispatch = call(WseOpcode::str_sanitize, {128}, {0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_sanitize ignores an invalid register");
+    dispatch = call(WseOpcode::str_sanitize, {}, {});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_sanitize rejects a missing operand");
+
+    // str_is_integer (4236).
+    registers[13] = u" 123\t";
+    registers[14] = u"-42";
+    registers[15] = u"-";
+    registers[16] = u"+12";
+    registers[17] = u"12a";
+    registers[18] = u"   ";
+    expect(call(WseOpcode::str_is_integer, {13}, {0}) ==
+               WseDispatch::handled_no_store,
+           "str_is_integer trims whitespace");
+    expect(call(WseOpcode::str_is_integer, {14}, {0}) ==
+               WseDispatch::handled_no_store,
+           "str_is_integer accepts negative integers");
+    expect(call(WseOpcode::str_is_integer, {1}, {0x16}) ==
+               WseDispatch::handled_no_store,
+           "str_is_integer reads local bank strings");
+    expect(call(WseOpcode::str_is_integer, {15}, {0}) ==
+               WseDispatch::condition_false,
+           "str_is_integer rejects bare minus");
+    expect(call(WseOpcode::str_is_integer, {16}, {0}) ==
+               WseDispatch::condition_false,
+           "str_is_integer rejects leading plus");
+    expect(call(WseOpcode::str_is_integer, {17}, {0}) ==
+               WseDispatch::condition_false,
+           "str_is_integer rejects trailing letters");
+    expect(call(WseOpcode::str_is_integer, {18}, {0}) ==
+               WseDispatch::condition_false,
+           "str_is_integer rejects whitespace-only string");
+    expect(call(WseOpcode::str_is_integer, {99}, {0x16}) ==
+               WseDispatch::ignored,
+           "str_is_integer ignores an invalid local string");
+    expect(call(WseOpcode::str_is_integer, {}, {}) ==
+               WseDispatch::operand_count_out_of_range,
+           "str_is_integer rejects a missing operand");
+
+    // str_store_server_password_rcon (4238).
+    registers[19] = u"keep";
+    dispatch = call(WseOpcode::str_store_server_password_rcon, {19}, {0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[19] == u"keep",
+           "str_store_server_password_rcon is a v1.1.5.5 no-op");
+
+    // str_regex_match (4240) and str_regex_search (4241).
+    registers[20] = u"ab[0-9]+";
+    expect(call(WseOpcode::str_regex_match, {1, 20}, {3, 0}) ==
+               WseDispatch::condition_false,
+           "str_regex_match requires a full-string match");
+    expect(call(WseOpcode::str_regex_search, {1, 20}, {3, 0}) ==
+               WseDispatch::handled_no_store,
+           "str_regex_search finds a substring match");
+    expect(call(WseOpcode::str_regex_match, {0, 20}, {0x16, 0}) ==
+               WseDispatch::handled_no_store,
+           "str_regex_match matches the full string");
+    expect(call(WseOpcode::str_regex_match, {1, 2}, {3, 0x16}) ==
+               WseDispatch::condition_false,
+           "str_regex_match catches invalid regex syntax");
+    expect(call(WseOpcode::str_regex_search, {1, 2}, {3, 0x16}) ==
+               WseDispatch::condition_false,
+           "str_regex_search catches invalid regex syntax");
+    expect(call(WseOpcode::str_regex_match, {99, 20}, {3, 0}) ==
+               WseDispatch::ignored,
+           "str_regex_match ignores invalid source register");
+    expect(call(WseOpcode::str_regex_match, {0}, {0}) ==
+               WseDispatch::operand_count_out_of_range,
+           "str_regex_match rejects missing pattern");
+
+    // str_regex_get_matches (4242).
+    registers[21] = u"a10 b20 c30";
+    registers[33] = u"sentinel";
+    dispatch = call(WseOpcode::str_regex_get_matches, {30, 21, 2}, {0, 0, 3});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[30] == u"10" && registers[31] == u"20" &&
+               registers[32] == u"30" && registers[33] == u"sentinel",
+           "str_regex_get_matches stores consecutive matches");
+    registers[36] = u"sentinel";
+    dispatch = call(WseOpcode::str_regex_get_matches, {34, 21, 2, 2},
+                    {0, 0, 3, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[34] == u"10" && registers[35] == u"20" &&
+               registers[36] == u"sentinel",
+           "str_regex_get_matches respects optional max_matches");
+    dispatch = call(WseOpcode::str_regex_get_matches, {127, 21, 2}, {0, 0, 3});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[127] == u"10",
+           "str_regex_get_matches stops at register 127");
+    registers[37] = u"unchanged";
+    dispatch =
+        call(WseOpcode::str_regex_get_matches, {37, 21, 2}, {0, 0, 0x16});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[37] == u"unchanged",
+           "str_regex_get_matches catches invalid regex syntax");
+    expect(call(WseOpcode::str_regex_get_matches, {128, 21, 2}, {0, 0, 3}) ==
+               WseDispatch::ignored,
+           "str_regex_get_matches ignores invalid destination register");
+    expect(call(WseOpcode::str_regex_get_matches, {30, 21}, {0, 0}) ==
+               WseDispatch::operand_count_out_of_range,
+           "str_regex_get_matches rejects missing pattern");
+
+    // str_store_regex_replace (4243).
+    registers[22] = u"id=10, n=20";
+    registers[23] = u"#";
+    registers[24] = u"(\\w+)=(\\d+)";
+    registers[25] = u"$2:$1";
+    dispatch = call(WseOpcode::str_store_regex_replace, {40, 22, 2, 23},
+                    {0, 0, 3, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[40] == u"id=#, n=#",
+           "str_store_regex_replace replaces all matches");
+    dispatch = call(WseOpcode::str_store_regex_replace, {41, 22, 24, 25},
+                    {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[41] == u"10:id, 20:n",
+           "str_store_regex_replace supports backreferences");
+    registers[42] = u"untouched";
+    dispatch = call(WseOpcode::str_store_regex_replace, {42, 22, 2, 23},
+                    {0, 0, 0x16, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[42] == u"untouched",
+           "str_store_regex_replace catches invalid regex syntax");
+    expect(call(WseOpcode::str_store_regex_replace, {128, 22, 2, 23},
+                {0, 0, 3, 0}) == WseDispatch::ignored,
+           "str_store_regex_replace ignores invalid destination");
+    expect(call(WseOpcode::str_store_regex_replace, {40, 22, 2}, {0, 0, 3}) ==
+               WseDispatch::operand_count_out_of_range,
+           "str_store_regex_replace rejects missing replacement");
+
+    // str_decode_url (4244).
+    registers[26] = u"hello%20world+a%2Fb%3F%c3%a9%GG%2";
+    registers[27] = u"ab%00cd";
+    dispatch = call(WseOpcode::str_decode_url, {50, 26}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[50] == u"hello world+a/b?\u00e9%GG%2",
+           "str_decode_url decodes percent bytes and UTF-8 while keeping +");
+    dispatch = call(WseOpcode::str_decode_url, {51, 27}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store && registers[51] == u"ab",
+           "str_decode_url terminates at percent-encoded NUL");
+    expect(call(WseOpcode::str_decode_url, {128, 26}, {0, 0}) ==
+               WseDispatch::ignored,
+           "str_decode_url ignores invalid destination");
+    expect(call(WseOpcode::str_decode_url, {50}, {0}) ==
+               WseDispatch::operand_count_out_of_range,
+           "str_decode_url rejects missing source");
+
+    // fld_str (4401) using state.strings.
+    dispatch = call(WseOpcode::fld_str, {2, 3}, {0, 3});
+    expect(dispatch == WseDispatch::handled_no_store && close(fp[2], 42.5f),
+           "fld_str parses a global string into an fp register");
+    registers[28] = u"-12.25";
+    dispatch = call(WseOpcode::fld_str, {3, 28}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store && close(fp[3], -12.25f),
+           "fld_str parses signed floats from tag-0 registers");
+    registers[29] = u"not_a_number";
+    fp[4] = 99.0f;
+    dispatch = call(WseOpcode::fld_str, {4, 29}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store && fp[4] == 0.0f,
+           "fld_str matches atof by storing 0 on non-numeric input");
+    expect(call(WseOpcode::fld_str, {128, 28}, {0, 0}) == WseDispatch::ignored,
+           "fld_str ignores invalid fp register");
+    expect(call(WseOpcode::fld_str, {2}, {0}) ==
+               WseDispatch::operand_count_out_of_range,
+           "fld_str rejects missing source string");
+}
+
+void test_options_group() {
+    WseEffect effect;
+    wse::vm::WseOptionsState options;
+    WseVmState state;
+    state.options = &options;
+
+    expect(run(opcode(WseOpcode::options_get_verbose_casualties), {}, {},
+               effect) == WseDispatch::handled &&
+               effect.value == 0,
+           "options_get_verbose_casualties defaults false with null options");
+    expect(run(opcode(WseOpcode::options_set_verbose_casualties), {}, {1},
+               effect) == WseDispatch::ignored,
+           "options_set_verbose_casualties ignores null options state");
+
+    const struct {
+        WseOpcode get;
+        WseOpcode set;
+        const char* label;
+    } kCases[] = {
+        {WseOpcode::options_get_verbose_casualties,
+         WseOpcode::options_set_verbose_casualties, "verbose_casualties"},
+        {WseOpcode::options_get_cheat_mode, WseOpcode::options_set_cheat_mode,
+         "cheat_mode"},
+        {WseOpcode::options_get_realistic_headshots,
+         WseOpcode::options_set_realistic_headshots, "realistic_headshots"},
+    };
+    for (const auto& entry : kCases) {
+        expect(run(opcode(entry.get), {}, {}, effect, {}, {}, state) ==
+                   WseDispatch::handled &&
+                   effect.value == 0,
+               entry.label);
+        expect(run(opcode(entry.set), {}, {7}, effect, {}, {}, state) ==
+                   WseDispatch::handled_no_store &&
+                   !effect.store_value,
+               entry.label);
+        expect(run(opcode(entry.get), {}, {}, effect, {}, {}, state) ==
+                   WseDispatch::handled &&
+                   effect.value == 1,
+               entry.label);
+        expect(run(opcode(entry.set), {}, {0}, effect, {}, {}, state) ==
+                   WseDispatch::handled_no_store,
+               entry.label);
+        expect(run(opcode(entry.get), {}, {}, effect, {}, {}, state) ==
+                   WseDispatch::handled &&
+                   effect.value == 0,
+               entry.label);
+        expect(run(opcode(entry.set), {}, {}, effect, {}, {}, state) ==
+                   WseDispatch::operand_count_out_of_range,
+               entry.label);
+    }
+}
+
 void test_descriptions() {
     using wse::vm::describe;
     expect(!describe(WseDispatch::handled).empty(), "handled description");
@@ -1327,6 +1647,8 @@ int main() {
     test_register_group();
     test_script_context_group();
     test_string_group();
+    test_string_extended_group();
+    test_options_group();
     test_operand_counts();
     test_unimplemented_and_mask();
     test_fp_load_store();
