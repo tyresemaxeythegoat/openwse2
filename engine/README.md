@@ -15,7 +15,7 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x140244810`, `0x140244540`, `0x14020fe60`, `0x14020fab0`, `0x1400ccf20`, `0x1400cd2d0`, `0x140244970`, `0x140244b60`, `0x14020ffa0`, `0x140244cd0`, `0x14020fb80`, `0x1402101a0` |
 | `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 65-entry name table, and script mapping | `0x14020f6a0`, `0x14020f7c0`, `0x14020f9a0`; globals `0x14069fac0`/`0x14069fac8`/`0x14069facc`; table `0x140615ad0`; formats `0x14055c680`/`0x14055c690` |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
-| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and the 2800–2809 plus floating-point handlers | `executeWSE` `0x1401e4dc0` cases at pseudocode lines 638–665, 859, and 5192/7881–8380; `mbStatement::execute` `0x1401c6150` |
+| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and 76/440 handlers (2800–2809, 3000–3002, 3014–3600, string 4200–4218/4220–4224, floating-point 4400/4405–4438) | `executeWSE` `0x1401e4dc0` (lines 628, 638–665, 859, 870–877, 4670, 5192, 5202–5990, 7881–8380); `mbStatement::execute` `0x1401c6150` |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
@@ -119,17 +119,34 @@ when there is no current mission.
 
 The string group covers `str_equals` (4200), `str_contains` (4201), `str_starts_with` (4202),
 `str_ends_with` (4203), `str_is_alpha` (4204), `str_is_digit` (4205), `str_is_whitespace` (4206),
-`str_length` (4207), `str_index_of` (4208), `str_last_index_of` (4209), `str_get_char` (4210), and
-`str_to_num` (4211). Operands resolve through `0x140219c70`: tag 0 is the 128-entry literal table at
-`0x140665030`, tag 0x16 the local string registers (`[0x140621778]`, count `[0x140621784]`), and
-tag 3 or an unknown tag the global registers (`[0x140621770]`, count `[0x140621780]`).
-`mbCheckStringRegister` (`0x1401c51f0`) validates the index and logs on failure. Comparisons use
-`wcscmp`/`_wcsicmp`; `str_contains` lower-cases both strings when operand 2 is nonzero and treats an
+`str_length` (4207), `str_index_of` (4208), `str_last_index_of` (4209), `str_get_char` (4210),
+`str_to_num` (4211), `str_compare` (4212), `str_split` (4213), `str_sort` (4214),
+`str_store_lower` (4215), `str_store_upper` (4216), `str_store_trim` (4217),
+`str_store_replace` (4218), `str_store_substring` (4220), `str_store_reverse` (4221),
+`str_store_join` (4222), `str_store_replace_spaces_with_underscores` (4223), and
+`str_store_replace_underscores_with_spaces` (4224). `4219` (`str_store_md5`) remains deferred to
+`WseDispatch::unimplemented`. Operands resolve through `0x140219c70`: tag 0 (`WseStringBanks::registers`)
+is the writable 128-entry string register table at `0x140665030` (assigned by `0x14030fd60` and
+copied out by `0x140310970`), tag 0x16 the local string registers (`[0x140621778]`, count
+`[0x140621784]`), and tag 3 or an unknown tag the global registers (`[0x140621770]`, count
+`[0x140621780]`). `mbCheckStringRegister` (`0x1401c51f0`) validates operand indices and logs on
+failure (`WseDispatch::ignored`), while destination tag-0 registers use `mbCheckRegister` (`0..127`).
+Comparisons use `wcscmp`/`_wcsicmp`; `str_compare` normalizes the case-sensitive path to `-1/0/1`
+(`0x1401f86b0`) and returns the raw folded code-unit difference from `_wcsicmp` (`0x1404989d4`) when
+operand 3 is nonzero. `str_contains` lower-cases both strings when operand 2 is nonzero and treats an
 empty needle as not contained. The predicates scan the whole string when the index is absent or -1;
 an out-of-bounds index logs and leaves the true result. `str_index_of`/`str_last_index_of` take an
 optional start (operand 3) and end (operand 4); the last-index handler mirrors the retail loop's
 search-before-bound-check order. `str_to_num` uses `_wtof` and truncates after applying the
-fixed-point scale when operand 2 is nonzero.
+fixed-point scale when operand 2 is nonzero. `str_split` writes into consecutive tag-0 registers
+starting at operand 1 (capped at 127), honors `max` (operand 5) only when more than five operands
+are supplied, skips empty pieces when operand 4 is nonzero, and avoids the retail infinite loop on an
+empty delimiter by storing the whole source once. `str_sort` sorts a range of tag-0 registers
+(case-insensitive on operand 2, reversed copy-back on operand 3). The `str_store_*` handlers write
+into tag-0 operand 0: lower/upper case, trim (`0` both, `1` left, `2` right via `iswspace`),
+non-overlapping replace-all, bounded substring (defaults `start = 0`, `length = end`; out-of-bounds
+leaves destination unchanged), UTF-16 code-unit reverse, range join (with optional valid separator),
+and `" "`/`"_"` conversions.
 
 The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`, `fle`, `fsub`,
 `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, and the transcendental/rounding helpers
@@ -145,13 +162,16 @@ fraction is greater than 0.5. Float comparisons use `rglAbs` and `FLT_EPSILON`. 
 a failed comparison returns `WseDispatch::condition_false`; an invalid register is a successful no-op
 (`WseDispatch::ignored`), matching the retail `return true` fall-through.
 
-Every other mapped opcode returns `WseDispatch::unimplemented` until its handler is transcribed.
+Currently 76 of 440 mapped opcodes are implemented; every other mapped opcode returns
+`WseDispatch::unimplemented` until its handler is transcribed.
 
 ## Safety deviations
 
 The retail code trusts operand/statement/script/trigger counts and timer indices. This port rejects
 negative counts, operands above 32, oversized arrays, out-of-range timer indices, and truncated
-binary savegames; none of these checks changes valid module behaviour.
+binary savegames; none of these checks changes valid module behaviour. In `str_split` (4213), an
+empty delimiter cannot advance in retail and would loop indefinitely; the port stores the source as
+a single piece (respecting `skip_empty`) and terminates.
 
 ## Build and test
 

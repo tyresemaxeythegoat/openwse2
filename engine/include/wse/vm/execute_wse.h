@@ -25,9 +25,10 @@
 // docs/wse_opcodes.json; wse_opcodes.h is generated from that map. This file
 // implements the arithmetic/bitwise group 2800..2809, the register group
 // 3000..3002, the script-context query group 3014/3016/3017/3035/3600, the
-// string group 4200..4211, and the self-contained floating-point register
-// group 4400, 4405..4436, and 4438. Every other known opcode reports
-// WseDispatch::unimplemented instead of guessing.
+// string group 4200..4218 and 4220..4224, and the self-contained
+// floating-point register group 4400, 4405..4436, and 4438. Every other known
+// opcode reports WseDispatch::unimplemented instead of guessing; 4219
+// (str_store_md5) is deferred until a portable MD5 is available.
 //
 // Register group evidence:
 //   3000 register_get (line 628): mbCheckRegister(param_4[1]), then
@@ -90,6 +91,41 @@
 //   4211 str_to_num (0x1073): _wtof (0x140498878) of operand 1, multiplied by
 //     DAT_140662bb8 (100.0) when operand 2 is nonzero, then truncated to
 //     int64 (cvttsd2si).
+//   4212 str_compare (0x1074, 0x1401ee042): operands 1/2 are strings, operand
+//     3 selects the case-insensitive path. The case-sensitive wrapper
+//     0x1401f86b0 normalises to -1/0/1; the case-insensitive path tail-jumps
+//     to _wcsicmp (0x1404989d4), which returns the folded code-unit
+//     difference. The result is written through operand 0.
+//   4213 str_split (0x1075, 0x1401ee178): operand 1 is the destination tag-0
+//     register (mbCheckRegister), operand 2 the source, operand 3 the
+//     delimiter, operand 4 skip-empty, operand 5 max pieces (honoured only
+//     when the statement has more than five operands). Operand 0 receives the
+//     count. An empty delimiter cannot advance the retail loop; the port
+//     stores the whole source once and terminates.
+//   4214 str_sort (0x1076, 0x1401ee3eb): sorts operand 1 tag-0 registers from
+//     operand 0; operand 2 selects _wcsicmp ordering and operand 3 reverses
+//     the copy back into the table.
+//   4215/4216 str_store_lower/upper (0x1077/0x1078): MakeLower
+//     (0x1401f8b40) / MakeUpper (0x1401f8ac0) into tag-0 operand 0.
+//   4217 str_store_trim (0x1079): operand 2 selects Trim (0x1401f8e20 =
+//     right then left), TrimLeft (0x1401f8d00), or TrimRight (0x1401f8c40);
+//     whitespace is iswspace (0x14049886c).
+//   4218 str_store_replace (0x107a): replace-all (0x1401f8710) of operand 2
+//     with operand 3, resuming after the replacement; an empty needle leaves
+//     the string unchanged.
+//   4219 str_store_md5 (0x107b): CryptAcquireContextA + 0x140330510; deferred.
+//   4220 str_store_substring (0x107c, 0x1401eea5a): start operand 2 defaults
+//     to 0 and length operand 3 to the end; a negative or out-of-bounds range
+//     logs and leaves the destination unchanged.
+//   4221 str_store_reverse (0x107d): std::reverse (0x1404992b0).
+//   4222 str_store_join (0x107e): join operand 2 tag-0 registers from operand
+//     1 with operand 3 when it is present and valid; an invalid separator is
+//     ignored rather than failing the handler.
+//   4223/4224 str_store_replace_spaces_with_underscores and the reverse
+//     (0x107f/0x1080): replace u" " (0x14055b3e0) with u"_" (0x14055b3dc)
+//     or the reverse.
+//   The tag-0 table at 0x140665030 is writable: 0x14030fd60 assigns a
+//     register, while 0x140310970 copies a register into a temporary handle.
 //
 // Transcendental helpers (case addresses in executeWSE):
 //   pow 0x1400b0400, log 0x1400a6c20, log10 0x1400a6c10, fmod 0x14006aac0,
@@ -103,6 +139,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <cstddef>
@@ -128,10 +165,12 @@ inline constexpr float kWseFixedPointScale = 100.0f;
 
 // String banks addressed by the str_* handlers. The spans hold views into the
 // runtime's string registers; a missing entry resolves to the empty string,
-// matching the static empty rgl::string returned by 0x140219c70.
+// matching the static empty rgl::string returned by 0x140219c70. Tag 0 is
+// writable because str_store_* and str_split/str_sort assign into it.
 struct WseStringBanks {
-    // Tag 0: the fixed 128-entry literal table at 0x140665030 (stride 0x48).
-    std::span<const std::u16string_view> literals{};
+    // Tag 0: the 128-entry string register table at 0x140665030 (stride 0x48).
+    // Script literals live here too; str_store_* overwrite entries.
+    std::span<std::u16string> registers{};
     // Tag 3 (and unknown tags): [0x140621770], count [0x140621780].
     std::span<const std::u16string_view> global{};
     // Tag 0x16: [0x140621778], count [0x140621784].
@@ -155,7 +194,7 @@ struct WseVmState {
     // [0x14061f078] + 0x9ae8: cur_mission->cur_mission_template_no. A null
     // pointer means there is no current mission, which yields -1.
     const std::int32_t* current_mission_template_no = nullptr;
-    // String registers used by the string group (4200-4211).
+    // String registers used by the string group (4200-4218, 4220-4224).
     WseStringBanks strings{};
 };
 
@@ -264,15 +303,15 @@ enum class WseDispatch : std::uint8_t {
     }
 }
 
-// 0x140219c70: tag 0 reads the literal table, tag 0x16 the local bank, and
-// tag 3 or an unknown tag the global bank. Out-of-range reads resolve to the
-// static empty rgl::string (0x140621818 / 0x140621788).
+// 0x140219c70: tag 0 reads the string register table, tag 0x16 the local
+// bank, and tag 3 or an unknown tag the global bank. Out-of-range reads
+// resolve to the static empty rgl::string (0x140621818 / 0x140621788).
 [[nodiscard]] inline std::u16string_view wse_resolve_string(
     std::int32_t index, std::uint8_t tag, const WseStringBanks& banks) noexcept {
     if (tag == 0) {
         if (static_cast<std::uint32_t>(index) <= 0x7Fu &&
-            static_cast<std::size_t>(index) < banks.literals.size()) {
-            return banks.literals[static_cast<std::size_t>(index)];
+            static_cast<std::size_t>(index) < banks.registers.size()) {
+            return banks.registers[static_cast<std::size_t>(index)];
         }
         return {};
     }
@@ -281,6 +320,19 @@ enum class WseDispatch : std::uint8_t {
         return bank[static_cast<std::size_t>(index)];
     }
     return {};
+}
+
+// 0x14030fd60 assigns a tag-0 string register. A missing table entry cannot
+// be written, so the handler reports the retail invalid-register no-op.
+[[nodiscard]] inline bool wse_store_string(WseStringBanks& banks,
+                                           std::int32_t index,
+                                           std::u16string_view value) {
+    if (index < 0 || static_cast<std::uint32_t>(index) > 0x7Fu ||
+        static_cast<std::size_t>(index) >= banks.registers.size()) {
+        return false;
+    }
+    banks.registers[static_cast<std::size_t>(index)].assign(value);
+    return true;
 }
 
 // Missing tags and operands read as zero: mbStatement::execute zeroes the
@@ -378,6 +430,99 @@ enum class WseDispatch : std::uint8_t {
     return std::strtod(narrow.c_str(), nullptr);
 }
 
+// towupper counterpart of wse_fold_case for str_store_upper (0x1401f8ac0).
+[[nodiscard]] inline char16_t wse_upper_case(char16_t value) noexcept {
+    if (value >= u'a' && value <= u'z') {
+        return static_cast<char16_t>(value - (u'a' - u'A'));
+    }
+    if (value < 0x80) {
+        return value;
+    }
+    const long folded =
+        static_cast<long>(std::towupper(static_cast<std::wint_t>(value)));
+    if (folded >= 0 && folded <= 0xFFFF) {
+        return static_cast<char16_t>(folded);
+    }
+    return value;
+}
+
+// mbString comparison behind str_compare (0x1074). The case-sensitive wrapper
+// 0x1401f86b0 normalises to -1/0/1; the case-insensitive path tail-jumps to
+// _wcsicmp (0x1404989d4), which returns the folded code-unit difference.
+[[nodiscard]] inline int wse_string_compare(std::u16string_view lhs,
+                                            std::u16string_view rhs,
+                                            bool case_insensitive) noexcept {
+    const std::size_t common = std::min(lhs.size(), rhs.size());
+    for (std::size_t i = 0; i < common; ++i) {
+        const char16_t left =
+            case_insensitive ? wse_fold_case(lhs[i]) : lhs[i];
+        const char16_t right =
+            case_insensitive ? wse_fold_case(rhs[i]) : rhs[i];
+        if (left != right) {
+            if (case_insensitive) {
+                return static_cast<int>(left) - static_cast<int>(right);
+            }
+            return left < right ? -1 : 1;
+        }
+    }
+    if (lhs.size() == rhs.size()) {
+        return 0;
+    }
+    if (!case_insensitive) {
+        return lhs.size() < rhs.size() ? -1 : 1;
+    }
+    const char16_t left =
+        lhs.size() > common ? wse_fold_case(lhs[common]) : char16_t{0};
+    const char16_t right =
+        rhs.size() > common ? wse_fold_case(rhs[common]) : char16_t{0};
+    return static_cast<int>(left) - static_cast<int>(right);
+}
+
+// 0x1401f8710: replace every non-overlapping occurrence of `needle`, resuming
+// after the inserted replacement. A null/empty needle returns the input
+// unchanged (the retail function returns before touching the string).
+[[nodiscard]] inline std::u16string wse_replace_all(
+    std::u16string text, std::u16string_view needle,
+    std::u16string_view replacement) {
+    if (needle.empty()) {
+        return text;
+    }
+    std::size_t position = 0;
+    while ((position = text.find(needle, position)) != std::u16string::npos) {
+        text.replace(position, needle.size(), replacement);
+        position += replacement.size();
+    }
+    return text;
+}
+
+[[nodiscard]] inline bool wse_is_space(char16_t value) noexcept {
+    return std::iswspace(static_cast<std::wint_t>(value)) != 0;
+}
+
+// 0x1401f8d00 removes leading whitespace.
+inline void wse_trim_left(std::u16string& text) {
+    std::size_t first = 0;
+    while (first < text.size() && wse_is_space(text[first])) {
+        ++first;
+    }
+    text.erase(0, first);
+}
+
+// 0x1401f8c40 removes trailing whitespace.
+inline void wse_trim_right(std::u16string& text) {
+    std::size_t last = text.size();
+    while (last > 0 && wse_is_space(text[last - 1])) {
+        --last;
+    }
+    text.erase(last);
+}
+
+// 0x1401f8e20 trims both ends (right first, then left).
+inline void wse_trim(std::u16string& text) {
+    wse_trim_right(text);
+    wse_trim_left(text);
+}
+
 // Shared body of str_is_alpha/digit/whitespace. `has_index == false` or
 // index -1 scans the whole string; an out-of-bounds index logs and returns
 // the initial true result.
@@ -414,7 +559,7 @@ template <typename Predicate>
     const auto tags = operands.tags;
     const auto fp = operands.fp;
     const auto registers = operands.registers;
-    const auto strings = operands.state.strings;
+    auto strings = operands.state.strings;
 
     switch (static_cast<WseOpcode>(opcode)) {
     case WseOpcode::val_shr: {
@@ -875,6 +1020,362 @@ template <typename Predicate>
         effect.value = wse_trunc64(value);
         effect.store_value = true;
         return WseDispatch::handled;
+    }
+    case WseOpcode::str_compare: {
+        // 4212 (0x1074): operand 1 and 2 are strings, operand 3 selects
+        // _wcsicmp (0x1401f86f0) instead of the normalised compare
+        // (0x1401f86b0). The result is written through operand 0.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag1 = wse_tag_at(tags, 1);
+        const std::uint8_t tag2 = wse_tag_at(tags, 2);
+        if (!wse_string_register_ok(narrow[1], tag1, strings) ||
+            !wse_string_register_ok(narrow[2], tag2, strings)) {
+            return WseDispatch::ignored;
+        }
+        const bool case_insensitive = narrow.size() >= 4 && narrow[3] != 0;
+        effect.value = wse_string_compare(
+            wse_resolve_string(narrow[1], tag1, strings),
+            wse_resolve_string(narrow[2], tag2, strings), case_insensitive);
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::str_split: {
+        // 4213 (0x1075): split operand 2 by operand 3 into tag-0 registers
+        // starting at operand 1, at most operand 5 pieces, skipping empty
+        // pieces when operand 4 is nonzero. Operand 0 receives the count.
+        if (narrow.size() < 4) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t source_tag = wse_tag_at(tags, 2);
+        const std::uint8_t delimiter_tag = wse_tag_at(tags, 3);
+        if (!wse_string_register_ok(narrow[2], source_tag, strings) ||
+            !wse_string_register_ok(narrow[3], delimiter_tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const std::u16string source(
+            wse_resolve_string(narrow[2], source_tag, strings));
+        const std::u16string delimiter(
+            wse_resolve_string(narrow[3], delimiter_tag, strings));
+        const bool skip_empty = narrow.size() >= 5 && narrow[4] != 0;
+        const std::int32_t max_pieces =
+            narrow.size() >= 6 ? narrow[5] : 0;
+        std::int32_t destination = narrow[1];
+        std::int32_t count = 0;
+
+        if (delimiter.empty()) {
+            // The retail loop cannot advance when the delimiter is empty and
+            // would spin (forever when skip_empty is set). Treat the input as
+            // a single piece so the port always terminates.
+            const bool keep = !skip_empty || !source.empty();
+            if (keep && !wse_store_string(strings, destination, source)) {
+                return WseDispatch::ignored;
+            }
+            effect.value = keep ? 1 : 0;
+            effect.store_value = true;
+            return WseDispatch::handled;
+        }
+
+        std::int32_t position = 0;
+        while (position <= static_cast<std::int32_t>(source.size())) {
+            const auto at =
+                source.find(delimiter, static_cast<std::size_t>(position));
+            const std::int32_t found =
+                at == std::u16string::npos
+                    ? static_cast<std::int32_t>(source.size())
+                    : static_cast<std::int32_t>(at);
+            if (narrow.size() >= 6 && max_pieces != 0 &&
+                count >= max_pieces) {
+                break;
+            }
+            if (destination > 0x7F) {
+                break;
+            }
+            const auto piece = std::u16string_view(source).substr(
+                static_cast<std::size_t>(position),
+                static_cast<std::size_t>(found - position));
+            if (!skip_empty || !piece.empty()) {
+                if (!wse_store_string(strings, destination, piece)) {
+                    break;
+                }
+                ++destination;
+                ++count;
+            }
+            position = found + static_cast<std::int32_t>(delimiter.size());
+        }
+        effect.value = count;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::str_sort: {
+        // 4214 (0x1076): sort operand 1 tag-0 registers starting at operand 0.
+        // Operand 2 selects the case-insensitive comparator; operand 3 copies
+        // the sorted range back in reverse order (descending).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        std::int32_t count = narrow.size() >= 2 ? narrow[1] : 0;
+        if (count < 1) {
+            return WseDispatch::handled_no_store;
+        }
+        const std::int32_t first = narrow[0];
+        if (first + count > 0x80) {
+            count = 0x80 - first;
+        }
+        if (static_cast<std::size_t>(first + count) > strings.registers.size()) {
+            count = static_cast<std::int32_t>(strings.registers.size()) - first;
+        }
+        if (count < 1) {
+            return WseDispatch::ignored;
+        }
+        const bool case_insensitive = narrow.size() >= 3 && narrow[2] != 0;
+        const bool descending = narrow.size() >= 4 && narrow[3] != 0;
+        auto* begin = strings.registers.data() + first;
+        auto* end = begin + count;
+        std::sort(begin, end,
+                  [case_insensitive](const std::u16string& left,
+                                     const std::u16string& right) {
+                      return wse_string_compare(left, right, case_insensitive) <
+                             0;
+                  });
+        if (descending) {
+            std::reverse(begin, end);
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::str_store_lower: {
+        // 4215 (0x1077): MakeLower (0x1401f8b40) of operand 1 into tag-0
+        // register operand 0.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        std::u16string text(wse_resolve_string(narrow[1], tag, strings));
+        for (char16_t& value : text) {
+            value = wse_fold_case(value);
+        }
+        return wse_store_string(strings, narrow[0], text)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
+    case WseOpcode::str_store_upper: {
+        // 4216 (0x1078): MakeUpper (0x1401f8ac0) of operand 1 into tag-0
+        // register operand 0.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        std::u16string text(wse_resolve_string(narrow[1], tag, strings));
+        for (char16_t& value : text) {
+            value = wse_upper_case(value);
+        }
+        return wse_store_string(strings, narrow[0], text)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
+    case WseOpcode::str_store_trim: {
+        // 4217 (0x1079): operand 2 selects Trim (0x1401f8e20), TrimLeft
+        // (0x1401f8d00), or TrimRight (0x1401f8c40); other values copy the
+        // source unchanged.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        std::u16string text(wse_resolve_string(narrow[1], tag, strings));
+        const std::int32_t mode = narrow.size() >= 3 ? narrow[2] : 0;
+        if (mode == 0) {
+            wse_trim(text);
+        } else if (mode == 1) {
+            wse_trim_left(text);
+        } else if (mode == 2) {
+            wse_trim_right(text);
+        }
+        return wse_store_string(strings, narrow[0], text)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
+    case WseOpcode::str_store_replace: {
+        // 4218 (0x107a): replace occurrences of operand 2 in operand 1 with
+        // operand 3 (0x1401f8710) and store the result in tag-0 operand 0.
+        if (narrow.size() < 4) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t source_tag = wse_tag_at(tags, 1);
+        const std::uint8_t needle_tag = wse_tag_at(tags, 2);
+        const std::uint8_t replacement_tag = wse_tag_at(tags, 3);
+        if (!wse_string_register_ok(narrow[1], source_tag, strings) ||
+            !wse_string_register_ok(narrow[2], needle_tag, strings) ||
+            !wse_string_register_ok(narrow[3], replacement_tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const auto text = wse_replace_all(
+            std::u16string(wse_resolve_string(narrow[1], source_tag, strings)),
+            wse_resolve_string(narrow[2], needle_tag, strings),
+            wse_resolve_string(narrow[3], replacement_tag, strings));
+        return wse_store_string(strings, narrow[0], text)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
+    case WseOpcode::str_store_substring: {
+        // 4220 (0x107c): substring of operand 1 from operand 2 (default 0)
+        // with operand 3 characters (default to the end). An out-of-bounds
+        // range logs and leaves the destination unchanged.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const std::u16string source(
+            wse_resolve_string(narrow[1], tag, strings));
+        const std::int32_t start = narrow.size() >= 3 ? narrow[2] : 0;
+        const std::int32_t length =
+            narrow.size() >= 4
+                ? narrow[3]
+                : static_cast<std::int32_t>(source.size()) - start;
+        if (start < 0 || length < 0 ||
+            static_cast<std::int64_t>(start) + length >
+                static_cast<std::int64_t>(source.size())) {
+            return WseDispatch::ignored;
+        }
+        const auto piece = std::u16string_view(source).substr(
+            static_cast<std::size_t>(start),
+            static_cast<std::size_t>(length));
+        return wse_store_string(strings, narrow[0], piece)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
+    case WseOpcode::str_store_reverse: {
+        // 4221 (0x107d): reverse the UTF-16 code units of operand 1 into
+        // tag-0 operand 0 (std::reverse at 0x1404992b0).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        std::u16string text(wse_resolve_string(narrow[1], tag, strings));
+        std::reverse(text.begin(), text.end());
+        return wse_store_string(strings, narrow[0], text)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
+    case WseOpcode::str_store_join: {
+        // 4222 (0x107e): join operand 2 tag-0 registers starting at operand 1
+        // with operand 3 (only when the statement supplies it and the
+        // separator register is valid) into operand 0.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) || !wse_register_ok(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        const std::int32_t count = narrow[2];
+        if (count < 1) {
+            return WseDispatch::handled_no_store;
+        }
+        std::u16string separator;
+        bool has_separator = false;
+        if (narrow.size() >= 4) {
+            const std::uint8_t separator_tag = wse_tag_at(tags, 3);
+            if (wse_string_register_ok(narrow[3], separator_tag, strings)) {
+                separator.assign(
+                    wse_resolve_string(narrow[3], separator_tag, strings));
+                has_separator = true;
+            }
+        }
+        std::int32_t end = narrow[1] + count;
+        if (end > 0x80) {
+            end = 0x80;
+        }
+        if (static_cast<std::size_t>(end) > strings.registers.size()) {
+            end = static_cast<std::int32_t>(strings.registers.size());
+        }
+        std::u16string joined;
+        for (std::int32_t index = narrow[1]; index < end; ++index) {
+            joined.append(strings.registers[static_cast<std::size_t>(index)]);
+            if (has_separator && index < end - 1) {
+                joined.append(separator);
+            }
+        }
+        return wse_store_string(strings, narrow[0], joined)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
+    case WseOpcode::str_store_replace_spaces_with_underscores: {
+        // 4223 (0x107f): replace u" " (0x14055b3e0) with u"_"
+        // (0x14055b3dc) in operand 1 and store the result in operand 0.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const auto text = wse_replace_all(
+            std::u16string(wse_resolve_string(narrow[1], tag, strings)), u" ",
+            u"_");
+        return wse_store_string(strings, narrow[0], text)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
+    }
+    case WseOpcode::str_store_replace_underscores_with_spaces: {
+        // 4224 (0x1080): the reverse of 4223, replacing u"_" with u" ".
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const auto text = wse_replace_all(
+            std::u16string(wse_resolve_string(narrow[1], tag, strings)), u"_",
+            u" ");
+        return wse_store_string(strings, narrow[0], text)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::ignored;
     }
 
     // Floating-point registers. The retail cases check every register before

@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the first six handler groups recovered.
+Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and 76 of 440 handlers recovered.
 Last updated: 2026-11-13.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -201,14 +201,23 @@ mission pointer is null.
 
 The string group covers `str_equals` (4200), `str_contains` (4201), `str_starts_with` (4202),
 `str_ends_with` (4203), `str_is_alpha` (4204), `str_is_digit` (4205), `str_is_whitespace` (4206),
-`str_length` (4207), `str_index_of` (4208), `str_last_index_of` (4209), `str_get_char` (4210), and
-`str_to_num` (4211). The resolver at `0x140219c70` maps tag 0 to the 128-entry literal table at
-`0x140665030` (stride 0x48), tag 0x16 to the local string registers (`[0x140621778]`, count
-`[0x140621784]`, stride 0x90), and tag 3 or an unknown tag to the global registers
-(`[0x140621770]`, count `[0x140621780]`, stride 0x90). `mbCheckStringRegister` (`0x1401c51f0`)
-bounds tags 3/0x16 by their counts, tag 0 by `0x7f`, and accepts unknown tags; a failed check logs
-and returns true without an effect. Comparisons use `wcscmp` (`0x1401f86b0`) or `_wcsicmp`
-(`0x1401f86f0`) when operand 2 is nonzero. `str_contains` lower-cases both strings
+`str_length` (4207), `str_index_of` (4208), `str_last_index_of` (4209), `str_get_char` (4210),
+`str_to_num` (4211), `str_compare` (4212), `str_split` (4213), `str_sort` (4214),
+`str_store_lower` (4215), `str_store_upper` (4216), `str_store_trim` (4217),
+`str_store_replace` (4218), `str_store_substring` (4220), `str_store_reverse` (4221),
+`str_store_join` (4222), `str_store_replace_spaces_with_underscores` (4223), and
+`str_store_replace_underscores_with_spaces` (4224); `4219` (`str_store_md5`) is deferred until a
+portable MD5 implementation is added. The resolver at `0x140219c70` maps tag 0 to the writable
+128-entry string register table at `0x140665030` (stride 0x48; modeled as `WseStringBanks::registers`,
+assigned via `0x14030fd60` and copied out via `0x140310970`), tag 0x16 to the local string
+registers (`[0x140621778]`, count `[0x140621784]`, stride 0x90), and tag 3 or an unknown tag to the
+global registers (`[0x140621770]`, count `[0x140621780]`, stride 0x90). `mbCheckStringRegister`
+(`0x1401c51f0`) bounds tags 3/0x16 by their counts, tag 0 by `0x7f`, and accepts unknown tags; a
+failed check logs and returns true without an effect. Destination tag-0 registers validate through
+`mbCheckRegister` (`0..127`). Comparisons use `wcscmp` (`0x1401f86b0`) or `_wcsicmp`
+(`0x1401f86f0`) when operand 2 is nonzero; `str_compare` (`0x1401ee042`) returns `-1/0/1` from
+`0x1401f86b0` on the case-sensitive path and tail-jumps to `_wcsicmp` (`0x1404989d4`) to return the
+raw folded code-unit difference when operand 3 is nonzero. `str_contains` lower-cases both strings
 (`0x1401f8b40`) and treats an empty needle as not contained. The `str_is_*` predicates call
 `iswalpha`/`iswdigit`/`iswspace` (`0x140498854`/`0x140498860`/`0x14049886c`), scan the whole string
 when the index is absent or -1, and leave the initial true result on an out-of-bounds index.
@@ -216,7 +225,20 @@ when the index is absent or -1, and leave the initial true result on an out-of-b
 (default length-1); the last-index handler mirrors the retail loop, which searches again before
 testing `end <= start`. `str_get_char` stores a UTF-16 code unit and stores nothing on an
 out-of-bounds index. `str_to_num` calls `_wtof` (`0x140498878`), multiplies by the fixed-point
-scale (`DAT_140662bb8` = 100) when operand 2 is nonzero, and truncates to int64.
+scale (`DAT_140662bb8` = 100) when operand 2 is nonzero, and truncates to int64. `str_split`
+(`0x1401ee178`) writes pieces into consecutive tag-0 registers from operand 1 (capped at `0x7f`),
+skips empty pieces when operand 4 is nonzero, honors `max` (operand 5) only when more than five
+operands are present, and returns the count via operand 0; as a safety deviation, an empty delimiter
+stores the whole source once rather than spinning forever. `str_sort` (`0x1401ee3eb`) copies a range
+of tag-0 registers, sorts via `0x140200c20` or case-insensitive `0x140200c00` (operand 2), and
+reverses on copy-back when operand 3 is nonzero. `str_store_lower`/`upper` call
+`MakeLower`/`MakeUpper` (`0x1401f8b40`/`0x1401f8ac0`); `str_store_trim` dispatches mode 0/1/2 to
+`0x1401f8e20`/`0x1401f8d00`/`0x1401f8c40` (`iswspace`); `str_store_replace` calls `0x1401f8710`
+(advancing past the replacement); `str_store_substring` (`0x1401eea5a`) uses `0x1401f8e40` with
+defaults `start = 0` and `length = end` (leaving destination unchanged if negative or out of bounds);
+`str_store_reverse` calls `std::reverse` (`0x1404992b0`); `str_store_join` appends tag-0 registers
+(`0x1401f90b0`) with an optional valid separator; and `4223`/`4224` (`0x1401eeece`/`0x1401eee00`)
+replace `u" "` (`0x14055b3e0`) with `u"_"` (`0x14055b3dc`) or the reverse.
 
 The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
 `fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, `fsqrt`, `fabs`, `fceil`, `ffloor`,
@@ -236,8 +258,8 @@ literal base from the int32 operand array, defaults to 10 when there are fewer t
 rejects bases below 2 with "invalid logarithm base %d", and returns true without storing.
 Division/modulo by zero log and return true. Handlers that do not write operand 0 report
 `handled_no_store`; failed comparisons report `condition_false`; invalid registers are successful
-no-ops (`ignored`), matching the retail `return true` fall-through. All other mapped opcodes report
-`WseDispatch::unimplemented` until transcribed.
+no-ops (`ignored`), matching the retail `return true` fall-through. The other 364 mapped opcodes report
+`WseDispatch::unimplemented` until transcribed (76 of 440 implemented; `4219` MD5 is deferred).
 
 ### `mbScript` — 176 bytes, type 0x1f6c4
 

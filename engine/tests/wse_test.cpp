@@ -625,7 +625,7 @@ void test_script_context_group() {
 }
 
 void test_string_group() {
-    const std::u16string_view literals[] = {
+    std::u16string registers[128] = {
         u"alpha",  // 0
         u"ALPHA",  // 1
         u"beta",   // 2
@@ -656,7 +656,7 @@ void test_string_group() {
     const std::u16string_view local[] = {u"local0", u"xyz"};
 
     WseVmState state;
-    state.strings.literals = std::span<const std::u16string_view>(literals);
+    state.strings.registers = std::span<std::u16string>(registers);
     state.strings.global = std::span<const std::u16string_view>(global);
     state.strings.local = std::span<const std::u16string_view>(local);
 
@@ -1016,6 +1016,293 @@ void test_string_group() {
     dispatch = call(WseOpcode::str_to_num, {0}, {0});
     expect(dispatch == WseDispatch::operand_count_out_of_range,
            "str_to_num rejects a missing source operand");
+
+    // str_compare.
+    dispatch = call(WseOpcode::str_compare, {0, 0, 2}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_compare normalises a smaller left operand to -1");
+    dispatch = call(WseOpcode::str_compare, {0, 2, 0}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 1,
+           "str_compare normalises a larger left operand to 1");
+    dispatch = call(WseOpcode::str_compare, {0, 0, 0}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "str_compare reports equal strings as zero");
+    dispatch = call(WseOpcode::str_compare, {0, 0, 1}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 1,
+           "str_compare is case-sensitive by default");
+    dispatch = call(WseOpcode::str_compare, {0, 0, 1, 1}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "str_compare folds case when operand 3 is nonzero");
+    dispatch = call(WseOpcode::str_compare, {0, 14, 9}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_compare orders a prefix before the longer string");
+    dispatch = call(WseOpcode::str_compare, {0, 9, 14}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 1,
+           "str_compare orders the longer string after its prefix");
+    registers[25] = u"a";
+    registers[26] = u"c";
+    dispatch = call(WseOpcode::str_compare, {0, 25, 26, 1}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -2,
+           "str_compare keeps the _wcsicmp code-unit difference");
+    dispatch = call(WseOpcode::str_compare, {0, 128, 0}, {0, 0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_compare ignores an invalid string operand");
+    dispatch = call(WseOpcode::str_compare, {0, 0}, {0, 0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_compare rejects a missing second string");
+
+    // str_split.
+    registers[27] = u"a,b,c";
+    registers[28] = u",";
+    dispatch = call(WseOpcode::str_split, {0, 70, 27, 28}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 3 &&
+               registers[70] == u"a" && registers[71] == u"b" &&
+               registers[72] == u"c",
+           "str_split stores all pieces into consecutive tag-0 registers");
+
+    registers[27] = u",a,,b,";
+    dispatch = call(WseOpcode::str_split, {0, 70, 27, 28, 0}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 5 &&
+               registers[70].empty() && registers[71] == u"a" &&
+               registers[72].empty() && registers[73] == u"b" &&
+               registers[74].empty(),
+           "str_split preserves empty pieces when skip_empty is zero");
+    dispatch = call(WseOpcode::str_split, {0, 70, 27, 28, 1}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 2 &&
+               registers[70] == u"a" && registers[71] == u"b",
+           "str_split skips empty pieces when operand 4 is nonzero");
+    dispatch =
+        call(WseOpcode::str_split, {0, 70, 27, 28, 1, 1}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 1 &&
+               registers[70] == u"a",
+           "str_split caps output at max_pieces when 6 operands are present");
+    dispatch =
+        call(WseOpcode::str_split, {0, 70, 27, 28, 1, 0}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 2 &&
+               registers[70] == u"a" && registers[71] == u"b",
+           "str_split treats max_pieces == 0 as unlimited");
+
+    registers[27] = u"x,y,z";
+    dispatch = call(WseOpcode::str_split, {0, 126, 27, 28}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 2 &&
+               registers[126] == u"x" && registers[127] == u"y",
+           "str_split clips at tag-0 register 127");
+
+    dispatch = call(WseOpcode::str_split, {0, 80, 1, 23}, {0, 0, 3, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 2 &&
+               registers[80] == u"hello" && registers[81] == u"world",
+           "str_split reads source from the global string bank");
+
+    registers[27] = u"abc";
+    dispatch = call(WseOpcode::str_split, {0, 82, 27, 15, 0}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 1 &&
+               registers[82] == u"abc",
+           "str_split stores the whole string once on an empty delimiter");
+    dispatch = call(WseOpcode::str_split, {0, 83, 15, 15, 1}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "str_split skips an empty string on an empty delimiter with "
+           "skip_empty");
+
+    dispatch = call(WseOpcode::str_split, {0, 128, 27, 28}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_split ignores an invalid destination register");
+    dispatch = call(WseOpcode::str_split, {0, 70, 128, 28}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_split ignores an invalid source string");
+    dispatch = call(WseOpcode::str_split, {0, 70, 27}, {0, 0, 0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_split rejects a missing delimiter operand");
+
+    // str_sort.
+    registers[30] = u"delta";
+    registers[31] = u"Alpha";
+    registers[32] = u"charlie";
+    registers[33] = u"bravo";
+    registers[34] = u"echo";
+    dispatch = call(WseOpcode::str_sort, {30, 5}, {});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[30] == u"Alpha" && registers[31] == u"bravo" &&
+               registers[32] == u"charlie" && registers[33] == u"delta" &&
+               registers[34] == u"echo",
+           "str_sort orders a register range");
+    registers[30] = u"delta";
+    registers[31] = u"Alpha";
+    registers[32] = u"charlie";
+    registers[33] = u"bravo";
+    registers[34] = u"echo";
+    dispatch = call(WseOpcode::str_sort, {30, 5, 0, 1}, {});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[30] == u"echo" && registers[31] == u"delta" &&
+               registers[32] == u"charlie" && registers[33] == u"bravo" &&
+               registers[34] == u"Alpha",
+           "str_sort reverses the range when operand 3 is nonzero");
+    registers[30] = u"b";
+    registers[31] = u"A";
+    registers[32] = u"c";
+    dispatch = call(WseOpcode::str_sort, {30, 3, 1}, {});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[30] == u"A" && registers[31] == u"b" &&
+               registers[32] == u"c",
+           "str_sort folds case when operand 2 is nonzero");
+    registers[30] = u"z";
+    dispatch = call(WseOpcode::str_sort, {30, 0}, {});
+    expect(dispatch == WseDispatch::handled_no_store && registers[30] == u"z",
+           "str_sort ignores a non-positive count");
+    dispatch = call(WseOpcode::str_sort, {128, 1}, {});
+    expect(dispatch == WseDispatch::ignored,
+           "str_sort ignores an invalid first register");
+    registers[126] = u"b";
+    registers[127] = u"a";
+    dispatch = call(WseOpcode::str_sort, {126, 5}, {});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[126] == u"a" && registers[127] == u"b",
+           "str_sort clips the range to the register table");
+
+    // str_store_lower / str_store_upper.
+    dispatch = call(WseOpcode::str_store_lower, {40, 1}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[40] == u"alpha",
+           "str_store_lower lower-cases a string register");
+    dispatch = call(WseOpcode::str_store_upper, {41, 0}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[41] == u"ALPHA",
+           "str_store_upper upper-cases a string register");
+    dispatch = call(WseOpcode::str_store_lower, {128, 0}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_store_lower ignores an invalid destination register");
+    dispatch = call(WseOpcode::str_store_lower, {40, 128}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_store_lower ignores an invalid source register");
+    dispatch = call(WseOpcode::str_store_lower, {40}, {0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_store_lower rejects a missing source operand");
+
+    // str_store_trim.
+    registers[42] = u"  hi  ";
+    dispatch = call(WseOpcode::str_store_trim, {43, 42}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[43] == u"hi",
+           "str_store_trim trims both ends by default");
+    dispatch = call(WseOpcode::str_store_trim, {43, 42, 1}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[43] == u"hi  ",
+           "str_store_trim trims leading whitespace for mode 1");
+    dispatch = call(WseOpcode::str_store_trim, {43, 42, 2}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[43] == u"  hi",
+           "str_store_trim trims trailing whitespace for mode 2");
+    dispatch = call(WseOpcode::str_store_trim, {43, 42, 9}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[43] == u"  hi  ",
+           "str_store_trim copies the source for an unknown mode");
+    registers[42] = u"\thi\t";
+    dispatch = call(WseOpcode::str_store_trim, {43, 42}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[43] == u"hi",
+           "str_store_trim treats tabs as whitespace");
+
+    // str_store_replace.
+    dispatch = call(WseOpcode::str_store_replace, {44, 9, 10, 14}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[44] == u"aabcaabc",
+           "str_store_replace replaces every occurrence");
+    dispatch = call(WseOpcode::str_store_replace, {44, 9, 15, 14}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[44] == u"abcabc",
+           "str_store_replace leaves the source unchanged for an empty needle");
+    dispatch = call(WseOpcode::str_store_replace, {44, 9, 128, 14}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_store_replace ignores an invalid needle register");
+    dispatch = call(WseOpcode::str_store_replace, {44, 9, 10}, {0, 0, 0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_store_replace rejects a missing replacement operand");
+
+    // str_store_substring.
+    dispatch = call(WseOpcode::str_store_substring, {45, 9, 2, 3}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[45] == u"cab",
+           "str_store_substring extracts a bounded substring");
+    dispatch = call(WseOpcode::str_store_substring, {45, 9, 2}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[45] == u"cabc",
+           "str_store_substring defaults the length to the end");
+    dispatch = call(WseOpcode::str_store_substring, {45, 9}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[45] == u"abcabc",
+           "str_store_substring defaults the start to zero");
+    registers[45] = u"keep";
+    dispatch = call(WseOpcode::str_store_substring, {45, 9, -1, 2}, {0, 0});
+    expect(dispatch == WseDispatch::ignored && registers[45] == u"keep",
+           "str_store_substring ignores a negative start");
+    dispatch = call(WseOpcode::str_store_substring, {45, 9, 2, 99}, {0, 0});
+    expect(dispatch == WseDispatch::ignored && registers[45] == u"keep",
+           "str_store_substring ignores a range past the end");
+    dispatch = call(WseOpcode::str_store_substring, {45, 9, 6, 0}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store && registers[45].empty(),
+           "str_store_substring accepts an empty range at the end");
+
+    // str_store_reverse.
+    dispatch = call(WseOpcode::str_store_reverse, {46, 9}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[46] == u"cbacba",
+           "str_store_reverse reverses the string");
+    dispatch = call(WseOpcode::str_store_reverse, {46, 128}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_store_reverse ignores an invalid source register");
+
+    // str_store_join.
+    registers[50] = u"a";
+    registers[51] = u"b";
+    registers[52] = u"c";
+    registers[54] = u"-";
+    dispatch = call(WseOpcode::str_store_join, {53, 50, 3, 54}, {0, 0, 0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[53] == u"a-b-c",
+           "str_store_join inserts the separator between registers");
+    dispatch = call(WseOpcode::str_store_join, {53, 50, 3}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[53] == u"abc",
+           "str_store_join defaults to an empty separator");
+    dispatch = call(WseOpcode::str_store_join, {53, 50, 1}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[53] == u"a",
+           "str_store_join joins a single register");
+    registers[53] = u"keep";
+    dispatch = call(WseOpcode::str_store_join, {53, 50, 0}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[53] == u"keep",
+           "str_store_join ignores a non-positive count");
+    dispatch = call(WseOpcode::str_store_join, {53, 50, 3, 99}, {0, 0, 0, 3});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[53] == u"abc",
+           "str_store_join ignores an invalid separator register");
+    dispatch = call(WseOpcode::str_store_join, {53, 128, 1}, {0, 0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_store_join ignores an invalid start register");
+    dispatch = call(WseOpcode::str_store_join, {53, 50}, {0, 0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_store_join rejects a missing count operand");
+
+    // str_store_replace_spaces_with_underscores and the reverse.
+    dispatch = call(WseOpcode::str_store_replace_spaces_with_underscores,
+                    {60, 5}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[60] == u"a_b",
+           "str_store_replace_spaces_with_underscores replaces spaces");
+    dispatch = call(WseOpcode::str_store_replace_underscores_with_spaces,
+                    {61, 60}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store &&
+               registers[61] == u"a b",
+           "str_store_replace_underscores_with_spaces restores spaces");
+    dispatch = call(WseOpcode::str_store_replace_spaces_with_underscores,
+                    {128, 5}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_store_replace_spaces_with_underscores ignores an invalid "
+           "destination");
+    dispatch = call(WseOpcode::str_store_replace_spaces_with_underscores,
+                    {60}, {0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_store_replace_spaces_with_underscores rejects a missing source");
 }
 
 void test_descriptions() {

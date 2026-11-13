@@ -37,7 +37,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | Portable trigger runtime | Event-key state machine reconstructed and host-tested; statement conditions/consequences are callbacks until the VM executes blocks |
 | Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
 | `executeWSE` case mapping | Complete: 440/440 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode (v1.1.5.5) |
-| Portable `executeWSE` handlers | 64 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, 3014/3016/3017/3035/3600 script-context queries, 4200–4211 string compare/predicate/length/index/char/num handlers, and 4400/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 376 report `WseDispatch::unimplemented` |
+| Portable `executeWSE` handlers | 76 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, 3014/3016/3017/3035/3600 script-context queries, 4200–4218 and 4220–4224 string compare/predicate/index/num and string-register handlers, and 4400/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 364 report `WseDispatch::unimplemented` (4219 MD5 is deferred) |
 
 ## Confirmed by pseudocode
 
@@ -121,12 +121,14 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   `FUN_1400b9690(5)` (QPC seconds since the app-time baseline), converts to float, multiplies by
   `1000.0f` (`0x140576b90`), and rounds through `rglRound64`. `store_cur_mission_template_no`
   (`0x1401ea6b2`) reads `[0x14061f078]+0x9ae8` or yields -1 when the pointer is null.
-- The string group 4200–4211 is proven by the equality branch at `0x1068` (`0x1401ed1bd`) and the
-  switch cases at `0x1069`–`0x1073`. String operands resolve through `0x140219c70`: tag 0 is the
-  128-entry literal table at `0x140665030` (stride 0x48), tag 0x16 is the local register bank
-  (`[0x140621778]`, count `[0x140621784]`, stride 0x90), and tag 3 or an unknown tag is the global
-  bank (`[0x140621770]`, count `[0x140621780]`, stride 0x90). `mbCheckStringRegister`
-  (`0x1401c51f0`) bounds tags 3/0x16 by their counts, tag 0 by `0x7f`, and accepts unknown tags.
+- The string group 4200–4218 and 4220–4224 is proven by the equality branch at `0x1068` (`0x1401ed1bd`)
+  and the switch cases at `0x1069`–`0x1080` (`4219` `0x107b` `str_store_md5` is deferred). String
+  operands resolve through `0x140219c70`: tag 0 is the writable 128-entry string register table at
+  `0x140665030` (stride 0x48, assigned by `0x14030fd60` and copied by `0x140310970`), tag 0x16 is
+  the local register bank (`[0x140621778]`, count `[0x140621784]`, stride 0x90), and tag 3 or an
+  unknown tag is the global bank (`[0x140621770]`, count `[0x140621780]`, stride 0x90).
+  `mbCheckStringRegister` (`0x1401c51f0`) bounds tags 3/0x16 by their counts, tag 0 by `0x7f`, and
+  accepts unknown tags; tag-0 destination registers use `mbCheckRegister` (`0x1401c4e60`).
   `str_equals`/`contains`/`starts_with`/`ends_with` use `wcscmp` (`0x1401f86b0`) or `_wcsicmp`
   (`0x1401f86f0`) when operand 2 is nonzero; `str_contains` lower-cases both strings
   (`0x1401f8b40`) and treats an empty needle as not contained. `str_is_alpha/digit/whitespace`
@@ -137,6 +139,15 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   before testing `end <= start`. `str_get_char` returns a UTF-16 code unit or stores nothing when
   the index is out of bounds. `str_to_num` calls `_wtof` (`0x140498878`), scales by
   `DAT_140662bb8` (100) when operand 2 is nonzero, and truncates with `cvttsd2si`.
+  `str_compare` (`0x1401ee042`) normalizes to `-1/0/1` via `0x1401f86b0` or tail-jumps to `_wcsicmp`
+  (`0x1404989d4`) for the raw folded code-unit difference when operand 3 is nonzero. `str_split`
+  (`0x1401ee178`) writes pieces into tag-0 registers (capped at `0x7f`), skips empty pieces on
+  operand 4, honors `max` (operand 5) only when >5 operands are present, and avoids the retail
+  infinite loop on an empty delimiter. `str_sort` (`0x1401ee3eb`) sorts via `0x140200c20`/
+  `0x140200c00` and reverses copy-back when operand 3 is nonzero. `str_store_lower`/`upper`/`trim`/
+  `replace`/`substring`/`reverse`/`join` and `4223`/`4224` call `0x1401f8b40`/`0x1401f8ac0`/
+  `0x1401f8e20`/`0x1401f8d00`/`0x1401f8c40`/`0x1401f8710`/`0x1401f8e40`/`0x1404992b0`/`0x1401f90b0`
+  and use `DAT_14055b3e0` (`u" "`) and `DAT_14055b3dc` (`u"_"`).
 - The floating-point cases at lines 5192 and 7881–8380 index the 128-float array `DAT_140698718`
   (`g_basicGame+0x35d58`).
   `mbCheckRegister` (`0x1401c4e60`) is `cmp ecx,0x7f; ja` (unsigned 0–127); a failed check returns
