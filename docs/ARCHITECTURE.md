@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; statement-block VM (`block_vm.h`, including `try_for_dict_keys` and `array_sort_custom` callback), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and 158 of 440 handlers recovered.
+Status: Phase 1 — binary triage complete; statement-block VM (`block_vm.h`, including `try_for_dict_keys` and `array_sort_custom` callback), world/entity/skill/item/edit-mode runtime state (`wse/game/world_state.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and 222 of 440 handlers recovered.
 Last updated: 2026-11-13.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -302,11 +302,13 @@ Additional reconstructed handler groups:
   and `array_eq..array_le` (`0x1401f58a0`, `0x1401f5d30`–`0x1401f606b`) compare elements lexicographically (normalizing position copies and comparing all 12 floats `s, f, u, o`).
 - **Position vector group** (`4100`, `4102`–`4104` at `0x1401ecd5a`, `0x1401ed0c1`, `0x1401ed10f`, `0x1401ed158`):
   operates on `rglTransform[128]` (`0x140663030`, 64 B, `0x34ac`, four `rglVector4` `0x32d9`: `s, f, u, o`), computing fixed-point length/dot/cross products and `position_get_vector_to_position` orientation (`rotateZ`/`rotateX`).
+- **World entity slot predicates, scalars, config/skills/savegame MD5, troop, item, and edit-mode groups** (`3003`–`3013`, `3026`/`3030`–`3031`/`3036`–`3038`/`3045`, `3601`/`3608`/`3610`/`3619`/`3622`, `3700`–`3709`, `3800`–`3813`, `4226`/`4231`–`4232`/`4235`/`4239`/`4245`–`4246`, `4600`–`4609`):
+  backed by `WseWorldState` (`engine/include/wse/game/world_state.h`), wired into `VmContext::world` and `WseVmState::world`. Covers all 11 `*_slot_gt` validators (`0..0xfffff` slots, active party/agent/mission-object, `player.status == 2`, `team 0..7`); `mbTroop` point getters/setters, `m_flags` mask, packed 4-bit `m_skills[6]` + shared Ironflesh/Strength HP cap (`0x140246010`/`0x1402460b0`), and clamped `[0, 999]` proficiencies (`0x1400a61c0`); `mbItemKind` damage/type nibbles, armors/speeds, particle/blood color, `rglMetaMesh` `caller == -50` `cur_item_*` mesh/material helpers with `spacesToUnderscores` (`0x14030f270`), and horse skeleton validation; case-sensitive module settings/game variables (`0x1402a7da0`/`0x1402aa400`), skill `_desc` translations (`0x1401103d0`/`0x140213520`), `"sg%d%d.sav"` MD5 (`0x14024f4c0`); and `mbGame` edit-mode selection/highlight/mode/dialog queries + option flags (`0x14061ef1a`, `0x14061781a` default `true`, `0x14061efb8`).
 
 Handlers that do not write operand 0 report
 `handled_no_store`; failed comparisons report `condition_false`; invalid registers are successful
-no-ops (`ignored`), matching the retail `return true` fall-through. The other 282 mapped opcodes report
-`WseDispatch::unimplemented` until transcribed (158 of 440 implemented).
+no-ops (`ignored`), matching the retail `return true` fall-through. The other 218 mapped opcodes report
+`WseDispatch::unimplemented` until transcribed (222 of 440 implemented).
 
 ### `mbScript` — 176 bytes, type `0x1f7b8`
 
@@ -505,7 +507,7 @@ IDs, 0–5,202), and `header_operations_addon.py` adds 477 declarations (472 uni
 opcode (5,202) fits inside the 5,300-slot hook array, corroborating that the array is indexed by
 opcode ID.
 
-### `mbGame` — 94,560 bytes, type `0x1ba2a` (selected members)
+### `mbGame` — 94,560 bytes (`0x17160`, selected members)
 
 | Offset | Member | Type |
 | ---: | --- | --- |
@@ -513,11 +515,41 @@ opcode ID.
 | 0x0058 | `m_moduleName` | `rglString` |
 | 0x00a0 | `m_modulePath` | `rglString` |
 | 0x0188 | `m_classNames` | `rglString[648]` |
+| 0x0420 | `m_mainPartyNo` | `int32_t` |
+| 0x043c | `m_paused` | `bool` |
 | 0x13df8 | `m_triggers` | `mbTriggerManager` |
 | 0x13e10 | `m_simpleTriggers` | `mbSimpleTriggerManager` |
+| 0x16ed0 | `m_editModeActive` | `bool` |
+| 0x16ed4 | `m_editModeMode` | `int32_t` |
+| 0x16f30 | `m_editModeDialogOpen` | `bool` |
+| 0x16f34 | `m_editModeHighlightedMissionObjectNo` | `int32_t` |
+| 0x16f38 | `m_editModeSelectedMissionObjectNos` | `rglVector<int>` |
+| 0x16f50 | `m_editModeSelectionChanged` | `bool` |
 
-Global instance `g_game` at `0x14061f070`; `g_mission` at `0x14061f078`; `g_missionTemplates` at
-`0x14061f068`.
+Global instance `g_game` at `0x14061f070` (with `+8` pointer interior offset for `mbGame` globals); `g_mission` at `0x14061f078`; `g_missionTemplates` at `0x14061f068`.
+
+### World/entity, skill, item, mesh, and mission PDB layouts (v1.1.5.5)
+
+Verified in [SYMBOL_MAP.json](SYMBOL_MAP.json) and modeled in [world_state.h](../engine/include/wse/game/world_state.h):
+
+| Class | Size (bytes / hex) | Key Verified Members (`offset member : type`) |
+| --- | ---: | --- |
+| `mbSkill` | 224 (`0x00e0`) | `0x0 m_description : rglString`, `0x48 m_name : rglString`, `0x90 m_id : rglString`, `0xd8 m_maxLevel : int32_t`, `0xdc m_flags : uint32_t` |
+| `mbTroop` | 2,600 (`0x0a28`) | `0x128 m_flags : unsigned __int64`, `0x140 m_attributes : int32_t[4]`, `0x150 m_skills : uint32_t[6]`, `0x168 m_proficiencies : float[7]`, `0x188 m_hitPoints : float`, `0x18c m_skillPoints : int32_t`, `0x190 m_attributePoints : int32_t`, `0x194 m_proficiencyPoints : int32_t`, `0xa08 m_slots : mbSlots` |
+| `mbItemKind` | 1,872 (`0x0750`) | `0x90 m_id : rglString`, `0x120 m_slots : mbSlots`, `0x1c0 m_variations : mbItemKindVariation[1280]`, `0x6e8 m_speedRating` ([world_state.h](../engine/include/wse/game/world_state.h)), `0x6ec m_missileSpeed : int32_t`, `0x6f0..0x6f8 m_{head,body,leg}Armor : int32_t`, `0x708 m_thrustDamage : int32_t`, `0x70c m_swingDamage : int32_t`, `0x738 m_bloodParticleSystemNos : int32_t[2]`, `0x740 m_bloodColor : uint32_t`, `0x748 m_skeletonModel : rglSkeletonModel*` |
+| `mbItemKindVariation` | 80 (`0x0050`) | `0x0 m_meshName : rglString`, `0x48 m_flags : unsigned __int64` |
+| `mbPartyTemplate` | 296 (`0x0128`) | `0x0 m_name : rglString`, `0x48 m_id : rglString`, `0x110 m_slots : mbSlots` |
+| `mbFaction` | 1,472 (`0x05c0`) | `0x0 m_name : rglString`, `0x50 m_id : rglString`, `0xe0 m_slots : mbSlots` |
+| `mbQuest` | 1,720 (`0x06b8`) | `0x170 m_id : rglString`, `0x6a0 m_slots : mbSlots` |
+| `mbSite` | 11,232 (`0x2be0`) | `0x10 m_id : rglString`, `0x58 m_name : rglString`, `0x190 m_waterLevel : float`, `0x2b80 m_slots : mbSlots` |
+| `mbParty` | 22,544 (`0x5810`) | `0x10 m_name : rglString`, `0x60 m_id : rglString`, `0x52d0 m_slots : mbSlots` |
+| `mbnetPlayer` | 1,032 (`0x0408`) | `0x0 m_status : int32_t`, `0xe0 m_name : rglString`, `0x268 m_slots : mbSlots` |
+| `mbAgent` | 38,432 (`0x9620`) | `0x30 m_status : int32_t`, `0xf8 m_slots : mbSlots` |
+| `mbMissionObject` | 544 (`0x0220`) | `0x170 m_id : rglString`, `0x1f8 m_slots : mbSlots` |
+| `mbSceneProp` | 152 (`0x0098`) | `0x0 m_id : rglString`, `0x48 m_flags : unsigned __int64`, `0x50 m_hitPoints : int32_t` |
+| `rglMesh` | 872 (`0x0368`) | `0x68 m_materialName : rglString`, `0xc0 m_materialColor : uint32_t` |
+| `rglMetaMesh` | 344 (`0x0158`) | `0x48 m_lods : rglMetaMeshLod[120]`, `0xc0 m_numLods : int32_t`, `0x110 m_meshName : rglString` |
+| `mbMission` | 346,704 (`0x54a50`) | `0x98d8 m_teams : mbTeam[512]` (opcodes validate teams `0..7`), `0xa4f4 m_waterLevel : float`, `0x54a40` use-objects tooltip flags ([world_state.h](../engine/include/wse/game/world_state.h)) |
 
 ## 5. Module/script entry points
 
@@ -737,7 +769,7 @@ Dispatch order:
   - All other opcodes `<= 0x14` route to `startLoop`.
   - Opcodes `>= 0x1E` go to `mbStatement::execute`.
 
-Verified supporting layouts added to `docs/SYMBOL_MAP.json` (44 classes, 2,267 symbols, 76 vtables):
+Verified supporting layouts added to `docs/SYMBOL_MAP.json` (58 classes, 2,804 symbols, 76 vtables):
 
 - `mbBasicGame` (221,616 B, type `0xadd3`): `m_globalVariables` (`mbSlots`) at `+0x258`,
   `m_registers` (`__int64[128]`) at `+0x270` (`0x140662c30`). Operand tag `1`, `store_lvalue`,

@@ -13,9 +13,9 @@
   "pdb_age": 449
  },
  "inputs": {
-  "layouts": 44,
+  "layouts": 58,
   "globals_scanned": 48658,
-  "symbols_curated": 2267,
+  "symbols_curated": 2804,
   "game_vtables": 76
  },
  "strings": [
@@ -5762,6 +5762,3390 @@
     "__vecDelDtor"
    ]
   },
+  "mbTroop": {
+   "size": 2600,
+   "type_index": "0xbac7",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_renamed",
+     "offset": "0x0",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_name",
+     "offset": "0x8",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pluralName",
+     "offset": "0x50",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_imageMeshName",
+     "offset": "0x98",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_id",
+     "offset": "0xe0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_flags",
+     "offset": "0x128",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_type",
+     "offset": "0x130",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_factionNo",
+     "offset": "0x134",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_upgradeTroopNos",
+     "offset": "0x138",
+     "type": "int32_t[2]",
+     "type_index": "0x3009",
+     "storage": "instance"
+    },
+    {
+     "name": "m_attributes",
+     "offset": "0x140",
+     "type": "int32_t[4]",
+     "type_index": "0x2fba",
+     "storage": "instance"
+    },
+    {
+     "name": "m_skills",
+     "offset": "0x150",
+     "type": "uint32_t[6]",
+     "type_index": "0xadd9",
+     "storage": "instance"
+    },
+    {
+     "name": "m_proficiencies",
+     "offset": "0x168",
+     "type": "float[7]",
+     "type_index": "0xbaba",
+     "storage": "instance"
+    },
+    {
+     "name": "m_experience",
+     "offset": "0x184",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_hitPoints",
+     "offset": "0x188",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_skillPoints",
+     "offset": "0x18c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_attributePoints",
+     "offset": "0x190",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_proficiencyPoints",
+     "offset": "0x194",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_level",
+     "offset": "0x198",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_classNo",
+     "offset": "0x19c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_inventory",
+     "offset": "0x1a0",
+     "type": "mbTroopInventory",
+     "type_index": "0x792c",
+     "storage": "instance"
+    },
+    {
+     "name": "m_gold",
+     "offset": "0x4a0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_siteNo",
+     "offset": "0x4a4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_entryNo",
+     "offset": "0x4a8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_spawned",
+     "offset": "0x4ac",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_faceKeys1",
+     "offset": "0x4b0",
+     "type": "mbFaceKeys",
+     "type_index": "0x4d10",
+     "storage": "instance"
+    },
+    {
+     "name": "m_faceKeys2",
+     "offset": "0x4d0",
+     "type": "mbFaceKeys",
+     "type_index": "0x4d10",
+     "storage": "instance"
+    },
+    {
+     "name": "m_notes",
+     "offset": "0x4f0",
+     "type": "mbNotes",
+     "type_index": "0x54b2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_equipment",
+     "offset": "0x9b8",
+     "type": "mbTroopEquipment",
+     "type_index": "0x7929",
+     "storage": "instance"
+    },
+    {
+     "name": "m_slots",
+     "offset": "0xa08",
+     "type": "mbSlots",
+     "type_index": "0x3927",
+     "storage": "instance"
+    },
+    {
+     "name": "m_skinNo",
+     "offset": "0xa20",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbTroop",
+    "readStream",
+    "readSavegameStream",
+    "writeSavegameStream",
+    "getSkinNo",
+    "getAttribute",
+    "getSkill",
+    "getProficiency",
+    "getMaxHitPoints",
+    "canEquipItem",
+    "canEquipItemInSlot",
+    "getName",
+    "getPluralName",
+    "setName",
+    "rename",
+    "renamePlural",
+    "setSkinNo",
+    "isHero",
+    "isMerchant",
+    "isUnmoveableInPartyWindow",
+    "setAttribute",
+    "setAttributeWithoutLimit",
+    "setSkill",
+    "raiseAttribute",
+    "raiseSkill",
+    "raiseProficiency",
+    "raiseProficiencyLinear",
+    "computeNewProficiency",
+    "getProficiencyIncrease",
+    "getNumInventorySlots",
+    "getFirstFreeInventorySlot",
+    "addGold",
+    "removeGold",
+    "setItem",
+    "addItem",
+    "unequipItem",
+    "unequipItems",
+    "equipItems",
+    "equipItemSlot",
+    "findSuitableItem",
+    "isInventoryItemSuitable",
+    "sortInventoryByValue",
+    "distributePoints",
+    "spendAttributePoints",
+    "spendSkillPoints",
+    "refillItems",
+    "dischargeItems",
+    "getKillExperience",
+    "setAge",
+    "getMapSpeed",
+    "setHome",
+    "clearHome",
+    "~mbTroop",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mbItemKind": {
+   "size": 1872,
+   "type_index": "0x1ff32",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_pluralName",
+     "offset": "0x0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_name",
+     "offset": "0x48",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_id",
+     "offset": "0x90",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_factionNos",
+     "offset": "0xd8",
+     "type": "int32_t[16]",
+     "type_index": "0x343d",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numFactions",
+     "offset": "0x118",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_slots",
+     "offset": "0x120",
+     "type": "mbSlots",
+     "type_index": "0x3927",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numVariations",
+     "offset": "0x138",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_variationMetaMeshes",
+     "offset": "0x140",
+     "type": "rglMetaMesh*[16]",
+     "type_index": "0x1ff24",
+     "storage": "instance"
+    },
+    {
+     "name": "m_variations",
+     "offset": "0x1c0",
+     "type": "mbItemKindVariation[1280]",
+     "type_index": "0x1ff25",
+     "storage": "instance"
+    },
+    {
+     "name": "m_properties",
+     "offset": "0x6c0",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_capabilities",
+     "offset": "0x6c8",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_value",
+     "offset": "0x6d0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_modifiers",
+     "offset": "0x6d8",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_hitPoints",
+     "offset": "0x6e0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_difficulty",
+     "offset": "0x6e4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_speedRating",
+     "offset": "0x6e8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_missileSpeed",
+     "offset": "0x6ec",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_headArmor",
+     "offset": "0x6f0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bodyArmor",
+     "offset": "0x6f4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_legArmor",
+     "offset": "0x6f8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_weight",
+     "offset": "0x6fc",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_weaponLength",
+     "offset": "0x700",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_maxAmmo",
+     "offset": "0x704",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_thrustDamage",
+     "offset": "0x708",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_swingDamage",
+     "offset": "0x70c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_priceRate",
+     "offset": "0x710",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_abundance",
+     "offset": "0x714",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_probability",
+     "offset": "0x718",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_simpleTriggers",
+     "offset": "0x720",
+     "type": "mbSimpleTriggerManager",
+     "type_index": "0x7280",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bloodParticleSystemNos",
+     "offset": "0x738",
+     "type": "int32_t[2]",
+     "type_index": "0x3009",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bloodColor",
+     "offset": "0x740",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_skeletonModel",
+     "offset": "0x748",
+     "type": "rglSkeletonModel*",
+     "type_index": "0x9aea",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbItemKind",
+    "~mbItemKind",
+    "readStream",
+    "readSavegameStream",
+    "writeSavegameStream",
+    "isHorse",
+    "isGoods",
+    "providesAmmo",
+    "isAmmo",
+    "isSticky",
+    "hasVisibleAmmoQuantity",
+    "chargesAmmo",
+    "usesAmmo",
+    "isFirearm",
+    "isShield",
+    "isWeapon",
+    "isRangedWeapon",
+    "isMeleeWeapon",
+    "isArmor",
+    "isRefillableOnStartForPlayer",
+    "getType",
+    "getDifficulty",
+    "getRequirement",
+    "getHeadArmor",
+    "getBodyArmor",
+    "getLegArmor",
+    "getHorseManeuver",
+    "getHorseSpeed",
+    "getHorseCharge",
+    "getHitPoints",
+    "getSpeedRating",
+    "getMissileSpeed",
+    "getAccuracy",
+    "getRangedDamageType",
+    "getDamage",
+    "getDamageType",
+    "getShieldWidth",
+    "getShieldHeight",
+    "getWeaponLength",
+    "getHorseScale",
+    "getAttachmentBone",
+    "getProficiency",
+    "getAttachTransform",
+    "getName",
+    "getPluralName",
+    "hasVariation",
+    "getVariationMeshName",
+    "getVariationMetaMesh",
+    "getVariationMeshes",
+    "getExtraVariationMeshName",
+    "getExtraVariationMetaMesh",
+    "getExtraVariationMesh",
+    "getCarryValues",
+    "getDefaultAmmo",
+    "isUnique",
+    "isMerchandise",
+    "cantReloadWhileMoving",
+    "isAvailableForFaction",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mbItemKindVariation": {
+   "size": 80,
+   "type_index": "0xb3f2",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_meshName",
+     "offset": "0x0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_flags",
+     "offset": "0x48",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "readStream",
+    "mbItemKindVariation",
+    "~mbItemKindVariation",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mbSkill": {
+   "size": 224,
+   "type_index": "0x1f94a",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_description",
+     "offset": "0x0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_name",
+     "offset": "0x48",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_id",
+     "offset": "0x90",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_maxLevel",
+     "offset": "0xd8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_flags",
+     "offset": "0xdc",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "readStream",
+    "readSavegameStream",
+    "writeSavegameStream",
+    "getName",
+    "getDescription",
+    "getAttribute",
+    "mbSkill",
+    "~mbSkill",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mbParty": {
+   "size": 22544,
+   "type_index": "0x54e8",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "rglGameObject",
+     "offset": "0x0",
+     "type": "rglGameObject",
+     "relation": "base"
+    },
+    {
+     "name": "m_name",
+     "offset": "0x10",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_renamed",
+     "offset": "0x58",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_id",
+     "offset": "0x60",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_position",
+     "offset": "0xa8",
+     "type": "rglVector4",
+     "type_index": "0x32a2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_direction",
+     "offset": "0xb8",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bearing",
+     "offset": "0xc0",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_extraText",
+     "offset": "0xc8",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_radius",
+     "offset": "0x110",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_visibility",
+     "offset": "0x114",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_spotted",
+     "offset": "0x118",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_factionNo",
+     "offset": "0x11c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_personality",
+     "offset": "0x120",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_ignoreWithPlayerParty",
+     "offset": "0x124",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_banditAttraction",
+     "offset": "0x128",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_morale",
+     "offset": "0x12c",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_eventNo",
+     "offset": "0x130",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_partyTemplateNo",
+     "offset": "0x134",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_menuNo",
+     "offset": "0x138",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bannerMapIconNo",
+     "offset": "0x13c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_extraMapIconNo",
+     "offset": "0x140",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_extraMapIconUpDownDistance",
+     "offset": "0x144",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_extraMapIconUpDownFrequency",
+     "offset": "0x148",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_extraMapIconRotateFrequency",
+     "offset": "0x14c",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_extraMapIconFadeFrequency",
+     "offset": "0x150",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_flags",
+     "offset": "0x158",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_stacks",
+     "offset": "0x160",
+     "type": "rglVector<mbPartyStack>",
+     "type_index": "0x50a0",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numStacks",
+     "offset": "0x178",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_marshall",
+     "offset": "0x17c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_speed",
+     "offset": "0x180",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_speedMultiplier",
+     "offset": "0x184",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_updateSpeed",
+     "offset": "0x188",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_updateLabel",
+     "offset": "0x189",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_attachedPartyNos",
+     "offset": "0x190",
+     "type": "rglVector<int>",
+     "type_index": "0x33c4",
+     "storage": "instance"
+    },
+    {
+     "name": "m_parentPartyNo",
+     "offset": "0x1a8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_isAttached",
+     "offset": "0x1ac",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_behaviorSelectTimer",
+     "offset": "0x1b0",
+     "type": "mbGameTimer",
+     "type_index": "0x519d",
+     "storage": "instance"
+    },
+    {
+     "name": "m_behaviorSelectTime",
+     "offset": "0x1c0",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_defaultBehavior",
+     "offset": "0x1c4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_defaultBehaviorObject",
+     "offset": "0x1c8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_defaultBehaviorPosition",
+     "offset": "0x1cc",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_patrolRadius",
+     "offset": "0x1d4",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_patrolling",
+     "offset": "0x1d8",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_patrolTimer",
+     "offset": "0x1e0",
+     "type": "mbGameTimer",
+     "type_index": "0x519d",
+     "storage": "instance"
+    },
+    {
+     "name": "m_walkSoundTimer",
+     "offset": "0x1f0",
+     "type": "rglAppTimer",
+     "type_index": "0x54af",
+     "storage": "instance"
+    },
+    {
+     "name": "m_behavior",
+     "offset": "0x200",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_behaviorObject",
+     "offset": "0x204",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_behaviorPosition",
+     "offset": "0x208",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_positionRandomness",
+     "offset": "0x210",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_behaviorUpdateTime",
+     "offset": "0x218",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_behaviorUpdateTimer",
+     "offset": "0x220",
+     "type": "mbGameTimer",
+     "type_index": "0x519d",
+     "storage": "instance"
+    },
+    {
+     "name": "m_movementUpdateTimer",
+     "offset": "0x230",
+     "type": "mbGameTimer",
+     "type_index": "0x519d",
+     "storage": "instance"
+    },
+    {
+     "name": "m_initiative",
+     "offset": "0x240",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_helpfulness",
+     "offset": "0x244",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_targetPosition",
+     "offset": "0x248",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_destination",
+     "offset": "0x250",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pathManifoldFaceNos",
+     "offset": "0x258",
+     "type": "int32_t[1024]",
+     "type_index": "0x54b0",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pathPositions",
+     "offset": "0x1258",
+     "type": "rglVector4[16384]",
+     "type_index": "0x54b1",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pathBegin",
+     "offset": "0x5258",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pathEnd",
+     "offset": "0x525c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_quad",
+     "offset": "0x5260",
+     "type": "rglQuad*",
+     "type_index": "0x3610",
+     "storage": "instance"
+    },
+    {
+     "name": "m_regionType",
+     "offset": "0x5268",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pathValidity",
+     "offset": "0x526c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_targetManifoldFaceNo",
+     "offset": "0x5270",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_computePath",
+     "offset": "0x5274",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_computePathFailed",
+     "offset": "0x5278",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_escortedPartyPosition",
+     "offset": "0x527c",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_moveMode",
+     "offset": "0x5284",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_moveTargetPosition",
+     "offset": "0x5288",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_moveTargetQuad",
+     "offset": "0x5290",
+     "type": "rglQuad*",
+     "type_index": "0x3610",
+     "storage": "instance"
+    },
+    {
+     "name": "m_moveTargetPartyNo",
+     "offset": "0x5298",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_hideTimer",
+     "offset": "0x52a0",
+     "type": "mbGameTimer",
+     "type_index": "0x519d",
+     "storage": "instance"
+    },
+    {
+     "name": "m_entity",
+     "offset": "0x52b0",
+     "type": "rglEntity*",
+     "type_index": "0x3472",
+     "storage": "instance"
+    },
+    {
+     "name": "m_trackInterval",
+     "offset": "0x52b8",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_trackPosition",
+     "offset": "0x52bc",
+     "type": "rglVector4",
+     "type_index": "0x32a2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_slots",
+     "offset": "0x52d0",
+     "type": "mbSlots",
+     "type_index": "0x3927",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapLegendMesh",
+     "offset": "0x52e8",
+     "type": "rglMesh*",
+     "type_index": "0x33d6",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapIconMesh",
+     "offset": "0x52f0",
+     "type": "rglMesh*",
+     "type_index": "0x33d6",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bannerMapIconMesh",
+     "offset": "0x52f8",
+     "type": "rglMesh*",
+     "type_index": "0x33d6",
+     "storage": "instance"
+    },
+    {
+     "name": "m_extraMapIconMesh",
+     "offset": "0x5300",
+     "type": "rglMesh*",
+     "type_index": "0x33d6",
+     "storage": "instance"
+    },
+    {
+     "name": "m_particleSystemNos",
+     "offset": "0x5308",
+     "type": "rglVector<int>",
+     "type_index": "0x33c4",
+     "storage": "instance"
+    },
+    {
+     "name": "m_updateParticleSystems",
+     "offset": "0x5320",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_notes",
+     "offset": "0x5328",
+     "type": "mbNotes",
+     "type_index": "0x54b2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_ignorePlayerTimer",
+     "offset": "0x57f0",
+     "type": "mbGameTimer",
+     "type_index": "0x519d",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pathLength",
+     "offset": "0x5800",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_playerNo",
+     "offset": "0x5804",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_controller",
+     "offset": "0x5808",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbParty",
+    "onCreation",
+    "initialize",
+    "readStream",
+    "writeStream",
+    "getStack",
+    "getSkill",
+    "updateMapMeshes",
+    "getName",
+    "rename",
+    "getLabelSize",
+    "getMovementSpeed",
+    "calculateSpeed",
+    "frameMove",
+    "update",
+    "updatePosition",
+    "updateSpeedMultiplier",
+    "updateMovementBehavior",
+    "updateHour",
+    "aiSelectBehavior",
+    "aiUpdateBehavior",
+    "aiUpdateMovement",
+    "aiComputePath",
+    "aiNavigatePath",
+    "aiStop",
+    "aiGoToQuad",
+    "aiGoToPosition",
+    "aiGoToParty",
+    "aiEscortParty",
+    "aiCollectPossibleTargets",
+    "getNumCompanions",
+    "getNumPrisoners",
+    "getMaxNumCompanions",
+    "getMaxNumPrisoners",
+    "getNumCompanionStacks",
+    "getNumPrisonerStacks",
+    "setNumStacks",
+    "moveStackUp",
+    "reorderHeroStacks",
+    "addTroops",
+    "getStackForTroop",
+    "reorderCompanionStack",
+    "setMapIcon",
+    "setBannerMapIcon",
+    "setExtraMapIcon",
+    "addParticleSystem",
+    "clearParticleSystems",
+    "updateUpgradeableStacks",
+    "updateDeadStacks",
+    "updateWoundedStacks",
+    "removeStack",
+    "countFilteredMembers",
+    "countFilteredStackMembers",
+    "getFilteredStackNo",
+    "addExperienceToStack",
+    "removeStackMembers",
+    "disable",
+    "isAtDestination",
+    "isStatic",
+    "isCivilian",
+    "isNotAttackingCivilians",
+    "isDisabled",
+    "isShip",
+    "isHidden",
+    "isTargetable",
+    "isVisible",
+    "isClickable",
+    "isPlayer",
+    "isBot",
+    "getTrackSpottingRange",
+    "getSeeingRange",
+    "getDetectability",
+    "getFaction",
+    "getTemplate",
+    "getEvent",
+    "getMenu",
+    "isInEvent",
+    "getPosition",
+    "getAggressiveness",
+    "getCourage",
+    "getBanditness",
+    "setAggressiveness",
+    "setCourage",
+    "getMapIconNo",
+    "getRegionVariant",
+    "leaveBattle",
+    "getSize",
+    "setExtraText",
+    "forceAddMembers",
+    "addLeader",
+    "replicatePosition",
+    "replicateDestination",
+    "replicateBehavior",
+    "replicateBehaviorObject",
+    "isNotSendToClients",
+    "~mbParty",
+    "operator=",
+    "__local_vftable_ctor_closure",
+    "__vecDelDtor"
+   ]
+  },
+  "mbPartyTemplate": {
+   "size": 296,
+   "type_index": "0x1f700",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_name",
+     "offset": "0x0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_id",
+     "offset": "0x48",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_flags",
+     "offset": "0x90",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_menuNo",
+     "offset": "0x98",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_factionNo",
+     "offset": "0x9c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_personality",
+     "offset": "0xa0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numCreated",
+     "offset": "0xa4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numDestroyed",
+     "offset": "0xa8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numDestroyedByPlayer",
+     "offset": "0xac",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_stacks",
+     "offset": "0xb0",
+     "type": "mbPartyStackTemplate[96]",
+     "type_index": "0x1f6f7",
+     "storage": "instance"
+    },
+    {
+     "name": "m_slots",
+     "offset": "0x110",
+     "type": "mbSlots",
+     "type_index": "0x3927",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "readStream",
+    "readSavegameStream",
+    "writeSavegameStream",
+    "getName",
+    "mbPartyTemplate",
+    "~mbPartyTemplate",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mbFaction": {
+   "size": 1472,
+   "type_index": "0x1b87f",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_name",
+     "offset": "0x0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_renamed",
+     "offset": "0x48",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_id",
+     "offset": "0x50",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_flags",
+     "offset": "0x98",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_color",
+     "offset": "0x9c",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_relations",
+     "offset": "0xa0",
+     "type": "rglVector<float>",
+     "type_index": "0x33d2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numRanks",
+     "offset": "0xb8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_ranks",
+     "offset": "0xc0",
+     "type": "rglVector<rglString>",
+     "type_index": "0x3594",
+     "storage": "instance"
+    },
+    {
+     "name": "m_maxPlayerRelation",
+     "offset": "0xd8",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_slots",
+     "offset": "0xe0",
+     "type": "mbSlots",
+     "type_index": "0x3927",
+     "storage": "instance"
+    },
+    {
+     "name": "m_notes",
+     "offset": "0xf8",
+     "type": "mbNotes",
+     "type_index": "0x54b2",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbFaction",
+    "readStream",
+    "readSavegameStream",
+    "writeSavegameStream",
+    "getName",
+    "getColor",
+    "setColor",
+    "rename",
+    "~mbFaction",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mbQuest": {
+   "size": 1720,
+   "type_index": "0x1fc96",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_baseTitle",
+     "offset": "0x0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_baseText",
+     "offset": "0x48",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_giverName",
+     "offset": "0x90",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_text",
+     "offset": "0xd8",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_title",
+     "offset": "0x120",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_flags",
+     "offset": "0x168",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_id",
+     "offset": "0x170",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_progression",
+     "offset": "0x1b8",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_notes",
+     "offset": "0x1c0",
+     "type": "mbNotes",
+     "type_index": "0x54b2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_troopNo",
+     "offset": "0x688",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_itemNo",
+     "offset": "0x68c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_value",
+     "offset": "0x690",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_giverTroopNo",
+     "offset": "0x694",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_startDate",
+     "offset": "0x698",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_slots",
+     "offset": "0x6a0",
+     "type": "mbSlots",
+     "type_index": "0x3927",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbQuest",
+    "readStream",
+    "readSavegameStream",
+    "writeSavegameStream",
+    "getText",
+    "getTitle",
+    "isActive",
+    "isCompleted",
+    "isSucceeded",
+    "isFailed",
+    "isConcluded",
+    "showProgression",
+    "isRandom",
+    "setGiverName",
+    "setProgression",
+    "~mbQuest",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mbSite": {
+   "size": 11232,
+   "type_index": "0xb9b9",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_textDescriptorChecksum",
+     "offset": "0x0",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_sceneObjFileChecksum",
+     "offset": "0x8",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_id",
+     "offset": "0x10",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_name",
+     "offset": "0x58",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_path",
+     "offset": "0xa0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_flags",
+     "offset": "0xe8",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_meshName",
+     "offset": "0xf0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bodyName",
+     "offset": "0x138",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_min",
+     "offset": "0x180",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_max",
+     "offset": "0x188",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_waterLevel",
+     "offset": "0x190",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_terrainCode",
+     "offset": "0x198",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_sceneObjFileLoaded",
+     "offset": "0x1e0",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_chestTroopNos",
+     "offset": "0x1e4",
+     "type": "int32_t[16]",
+     "type_index": "0x343d",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numChests",
+     "offset": "0x224",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_missionObjects",
+     "offset": "0x228",
+     "type": "rglVector<mbMissionObject>",
+     "type_index": "0x509d",
+     "storage": "instance"
+    },
+    {
+     "name": "m_aiMeshStream",
+     "offset": "0x240",
+     "type": "rglBinaryStream",
+     "type_index": "0x50bd",
+     "storage": "instance"
+    },
+    {
+     "name": "m_groundPaintStream",
+     "offset": "0x2e0",
+     "type": "rglBinaryStream",
+     "type_index": "0x50bd",
+     "storage": "instance"
+    },
+    {
+     "name": "m_visitors",
+     "offset": "0x380",
+     "type": "mbSiteVisitor[10240]",
+     "type_index": "0xb9af",
+     "storage": "instance"
+    },
+    {
+     "name": "m_slots",
+     "offset": "0x2b80",
+     "type": "mbSlots",
+     "type_index": "0x3927",
+     "storage": "instance"
+    },
+    {
+     "name": "m_outerTerrainMeshName",
+     "offset": "0x2b98",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbSite",
+    "readStream",
+    "readSavegameStream",
+    "writeSavegameStream",
+    "clearVisitors",
+    "resetVisitors",
+    "loadSceneObjFile",
+    "readSceneObjFile",
+    "getSceneObjFileChecksum",
+    "getTextDescriptorChecksum",
+    "getTextDescriptor",
+    "unloadSceneObj",
+    "~mbSite",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mbMissionObject": {
+   "size": 544,
+   "type_index": "0x17642",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "rglGameObject",
+     "offset": "0x0",
+     "type": "rglGameObject",
+     "relation": "base"
+    },
+    {
+     "name": "m_transform",
+     "offset": "0x10",
+     "type": "rglTransform",
+     "type_index": "0x3482",
+     "storage": "instance"
+    },
+    {
+     "name": "m_startingTransform",
+     "offset": "0x50",
+     "type": "rglTransform",
+     "type_index": "0x3482",
+     "storage": "instance"
+    },
+    {
+     "name": "m_animateTargetTransform",
+     "offset": "0x90",
+     "type": "rglTransform",
+     "type_index": "0x3482",
+     "storage": "instance"
+    },
+    {
+     "name": "m_animateStartingTransform",
+     "offset": "0xd0",
+     "type": "rglTransform",
+     "type_index": "0x3482",
+     "storage": "instance"
+    },
+    {
+     "name": "m_scale",
+     "offset": "0x110",
+     "type": "rglVector4",
+     "type_index": "0x32a2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_animateState",
+     "offset": "0x120",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_animateDuration",
+     "offset": "0x124",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_animateTimer",
+     "offset": "0x128",
+     "type": "mbMissionTimer",
+     "type_index": "0x16ee0",
+     "storage": "instance"
+    },
+    {
+     "name": "m_animateProgress",
+     "offset": "0x138",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_totalRotationAngle",
+     "offset": "0x13c",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_rotationAngle",
+     "offset": "0x140",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_isRotating",
+     "offset": "0x144",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_totalRotation",
+     "offset": "0x148",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_rotation",
+     "offset": "0x14c",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_enableTimer",
+     "offset": "0x150",
+     "type": "mbMissionTimer",
+     "type_index": "0x16ee0",
+     "storage": "instance"
+    },
+    {
+     "name": "m_metaType",
+     "offset": "0x160",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_subKindNo",
+     "offset": "0x164",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_sourceIndex",
+     "offset": "0x168",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_id",
+     "offset": "0x170",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_variationNo",
+     "offset": "0x1b8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_variationNo2",
+     "offset": "0x1bc",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_entity",
+     "offset": "0x1c0",
+     "type": "rglEntity*",
+     "type_index": "0x3472",
+     "storage": "instance"
+    },
+    {
+     "name": "m_maxHitPoints",
+     "offset": "0x1c8",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_hitPoints",
+     "offset": "0x1cc",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_teamNo",
+     "offset": "0x1d0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_spawned",
+     "offset": "0x1d4",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_enablePruning",
+     "offset": "0x1d5",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pruneTimer",
+     "offset": "0x1d8",
+     "type": "mbMissionTimer",
+     "type_index": "0x16ee0",
+     "storage": "instance"
+    },
+    {
+     "name": "m_destructibleDamageTimer",
+     "offset": "0x1e8",
+     "type": "mbMissionTimer",
+     "type_index": "0x16ee0",
+     "storage": "instance"
+    },
+    {
+     "name": "m_slots",
+     "offset": "0x1f8",
+     "type": "mbSlots",
+     "type_index": "0x3927",
+     "storage": "instance"
+    },
+    {
+     "name": "m_soundChannel",
+     "offset": "0x210",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_soundBody",
+     "offset": "0x218",
+     "type": "FMOD::Geometry*",
+     "type_index": "0x9cc6",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbMissionObject",
+    "readStream",
+    "writeStream",
+    "initialize",
+    "setValues",
+    "create",
+    "frameMove",
+    "setTransform",
+    "setScale",
+    "setPruneTime",
+    "animate",
+    "stopAnimating",
+    "isProp",
+    "getPropKind",
+    "isItem",
+    "isSpawnedItem",
+    "isLootableItem",
+    "isGroundItem",
+    "getItemKind",
+    "updateTransform",
+    "updateScale",
+    "setCollisionEnabled",
+    "playSound",
+    "~mbMissionObject",
+    "operator=",
+    "__local_vftable_ctor_closure",
+    "__vecDelDtor"
+   ]
+  },
+  "mbnetPlayer": {
+   "size": 1032,
+   "type_index": "0x19b7f",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_status",
+     "offset": "0x0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_connectDelayTimer",
+     "offset": "0x8",
+     "type": "rglAppTimer",
+     "type_index": "0x54af",
+     "storage": "instance"
+    },
+    {
+     "name": "m_connectTime",
+     "offset": "0x18",
+     "type": "double",
+     "type_index": "0x41",
+     "storage": "instance"
+    },
+    {
+     "name": "m_disconnecting",
+     "offset": "0x20",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_disconnectTimer",
+     "offset": "0x28",
+     "type": "rglAppTimer",
+     "type_index": "0x54af",
+     "storage": "instance"
+    },
+    {
+     "name": "m_sessionId",
+     "offset": "0x38",
+     "type": "__int64",
+     "type_index": "0x13",
+     "storage": "instance"
+    },
+    {
+     "name": "m_authTime",
+     "offset": "0x40",
+     "type": "double",
+     "type_index": "0x41",
+     "storage": "instance"
+    },
+    {
+     "name": "m_authPassed",
+     "offset": "0x48",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_peer",
+     "offset": "0x50",
+     "type": "mbnetPeer",
+     "type_index": "0x5b80",
+     "storage": "instance"
+    },
+    {
+     "name": "m_privilege",
+     "offset": "0x90",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_anonymous",
+     "offset": "0x94",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_anonymousName",
+     "offset": "0x98",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_name",
+     "offset": "0xe0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_nameLower",
+     "offset": "0x128",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_gender",
+     "offset": "0x170",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bannerNo",
+     "offset": "0x174",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_faceKeys",
+     "offset": "0x178",
+     "type": "mbFaceKeys",
+     "type_index": "0x4d10",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bloodStains",
+     "offset": "0x198",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_particlesEnabled",
+     "offset": "0x19c",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_replication",
+     "offset": "0x1a0",
+     "type": "mbnetReplication<mbnetPlayerReplicationRow>",
+     "type_index": "0x5b8c",
+     "storage": "instance"
+    },
+    {
+     "name": "m_highestReceivedPacketNo",
+     "offset": "0x1e8",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_highestConfirmedSentPacketNo",
+     "offset": "0x1ec",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_useDynamicPacketSendPeriod",
+     "offset": "0x1f0",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_readyToSpawn",
+     "offset": "0x1f1",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_agentNo",
+     "offset": "0x1f4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_agentIsControlled",
+     "offset": "0x1f8",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_teamNo",
+     "offset": "0x1fc",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_troopNo",
+     "offset": "0x200",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_gold",
+     "offset": "0x204",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_ready",
+     "offset": "0x208",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_entryGroupNo",
+     "offset": "0x20c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_isMuted",
+     "offset": "0x210",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_isMutedGlobally",
+     "offset": "0x211",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_items",
+     "offset": "0x214",
+     "type": "int32_t[10]",
+     "type_index": "0x4d28",
+     "storage": "instance"
+    },
+    {
+     "name": "m_itemsPickedUp",
+     "offset": "0x23c",
+     "type": "int32_t[10]",
+     "type_index": "0x4d28",
+     "storage": "instance"
+    },
+    {
+     "name": "m_slots",
+     "offset": "0x268",
+     "type": "mbSlots",
+     "type_index": "0x3927",
+     "storage": "instance"
+    },
+    {
+     "name": "m_events",
+     "offset": "0x280",
+     "type": "rglVector<mbnetEvent>",
+     "type_index": "0x5b9f",
+     "storage": "instance"
+    },
+    {
+     "name": "m_oneTimeEvents",
+     "offset": "0x298",
+     "type": "rglVector<mbnetEvent>",
+     "type_index": "0x5b9f",
+     "storage": "instance"
+    },
+    {
+     "name": "m_oneTimeEventSendTime",
+     "offset": "0x2b0",
+     "type": "double",
+     "type_index": "0x41",
+     "storage": "instance"
+    },
+    {
+     "name": "m_packetDeliveryControl",
+     "offset": "0x2b8",
+     "type": "rglRecycledVector<mbnetPacketDeliveryControlInfo>",
+     "type_index": "0x5b92",
+     "storage": "instance"
+    },
+    {
+     "name": "m_unconfirmedReceivedPacketNos",
+     "offset": "0x2e8",
+     "type": "rglVector<unsigned int>",
+     "type_index": "0x37b5",
+     "storage": "instance"
+    },
+    {
+     "name": "m_unconfirmedSentPacketNos",
+     "offset": "0x300",
+     "type": "rglVector<unsigned int>",
+     "type_index": "0x37b5",
+     "storage": "instance"
+    },
+    {
+     "name": "m_stalledPackets",
+     "offset": "0x318",
+     "type": "rglVector<mbnetBuffer>",
+     "type_index": "0x5b9b",
+     "storage": "instance"
+    },
+    {
+     "name": "m_stalledHighestReceivedPacketNos",
+     "offset": "0x330",
+     "type": "rglVector<unsigned int>",
+     "type_index": "0x37b5",
+     "storage": "instance"
+    },
+    {
+     "name": "m_lastActivityTime",
+     "offset": "0x348",
+     "type": "double",
+     "type_index": "0x41",
+     "storage": "instance"
+    },
+    {
+     "name": "m_lastSendTime",
+     "offset": "0x350",
+     "type": "double",
+     "type_index": "0x41",
+     "storage": "instance"
+    },
+    {
+     "name": "m_clientMissionTime",
+     "offset": "0x358",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_position",
+     "offset": "0x360",
+     "type": "rglVector4",
+     "type_index": "0x32a2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_speed",
+     "offset": "0x370",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_movementDirf",
+     "offset": "0x378",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_serverMissionTime",
+     "offset": "0x380",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_score",
+     "offset": "0x388",
+     "type": "short",
+     "type_index": "0x11",
+     "storage": "instance"
+    },
+    {
+     "name": "m_kills",
+     "offset": "0x38a",
+     "type": "short",
+     "type_index": "0x11",
+     "storage": "instance"
+    },
+    {
+     "name": "m_deaths",
+     "offset": "0x38c",
+     "type": "short",
+     "type_index": "0x11",
+     "storage": "instance"
+    },
+    {
+     "name": "m_ping",
+     "offset": "0x38e",
+     "type": "short",
+     "type_index": "0x11",
+     "storage": "instance"
+    },
+    {
+     "name": "m_totalPingTime",
+     "offset": "0x390",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numPings",
+     "offset": "0x394",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pinging",
+     "offset": "0x398",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pingSendTime",
+     "offset": "0x3a0",
+     "type": "double",
+     "type_index": "0x41",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pingUpdateTime",
+     "offset": "0x3a8",
+     "type": "double",
+     "type_index": "0x41",
+     "storage": "instance"
+    },
+    {
+     "name": "m_packetSendPeriod",
+     "offset": "0x3b0",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_packetAverageSize",
+     "offset": "0x3b4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_packetMaxSize",
+     "offset": "0x3b8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_uploadLimit",
+     "offset": "0x3bc",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_packetSendTime",
+     "offset": "0x3c0",
+     "type": "double",
+     "type_index": "0x41",
+     "storage": "instance"
+    },
+    {
+     "name": "m_randomGenerator",
+     "offset": "0x3c8",
+     "type": "mbnetRandomGenerator",
+     "type_index": "0x5969",
+     "storage": "instance"
+    },
+    {
+     "name": "m_inMenu",
+     "offset": "0x3d0",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numBytesSent",
+     "offset": "0x3d4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numBytesSentPerSec",
+     "offset": "0x3d8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numPacketSends",
+     "offset": "0x3dc",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_prevNumPacketSends",
+     "offset": "0x3e0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numPacketSendsFailed",
+     "offset": "0x3e4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_totalNumPacketSendsFailed",
+     "offset": "0x3e8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_cachedPriority",
+     "offset": "0x3ec",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_hasCachedReplicationPriority",
+     "offset": "0x3f0",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_agentReplicationIndex",
+     "offset": "0x3f4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_playerReplicationIndex",
+     "offset": "0x3f8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_partyReplicationIndex",
+     "offset": "0x3fc",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_extendedVersion",
+     "offset": "0x400",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_partyNo",
+     "offset": "0x404",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbnetPlayer",
+    "initialize",
+    "initializeNetworkData",
+    "clearReplication",
+    "clear",
+    "clearItems",
+    "setStatus",
+    "disconnect",
+    "isInactive",
+    "isInfo",
+    "isActive",
+    "getPosition",
+    "savePickedUpItems",
+    "getOriginalItemsValue",
+    "isItemDefault",
+    "isItemPickedUp",
+    "setPickedUpItem",
+    "setSpawnItem",
+    "setInInfoMode",
+    "sendOneTimeEvent",
+    "sendDirectEvent",
+    "sendEvent",
+    "fillPacket",
+    "ping",
+    "pong",
+    "setHighestConfirmedSentPacketNo",
+    "computePacketValues",
+    "create",
+    "replicateScore",
+    "replicatePing",
+    "getAgentReplicationPriority",
+    "getPartyReplicationPriority",
+    "getName",
+    "getUniqueId",
+    "~mbnetPlayer",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mbSceneProp": {
+   "size": 152,
+   "type_index": "0x183a6",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_id",
+     "offset": "0x0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_flags",
+     "offset": "0x48",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_hitPoints",
+     "offset": "0x50",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_metaMesh",
+     "offset": "0x58",
+     "type": "rglMetaMesh*",
+     "type_index": "0x3420",
+     "storage": "instance"
+    },
+    {
+     "name": "m_body",
+     "offset": "0x60",
+     "type": "rglBody*",
+     "type_index": "0x9ae9",
+     "storage": "instance"
+    },
+    {
+     "name": "m_center",
+     "offset": "0x68",
+     "type": "rglVector4",
+     "type_index": "0x32a2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_radius",
+     "offset": "0x78",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_simpleTriggers",
+     "offset": "0x80",
+     "type": "mbSimpleTriggerManager",
+     "type_index": "0x7280",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbSceneProp",
+    "~mbSceneProp",
+    "readStream",
+    "getType",
+    "getHitPoints",
+    "getUseTime",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "rglMesh": {
+   "size": 872,
+   "type_index": "0x1c4a5",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "rglResource",
+     "offset": "0x0",
+     "type": "rglResource",
+     "relation": "base"
+    },
+    {
+     "name": "m_baseMesh",
+     "offset": "0x60",
+     "type": "rglMesh*",
+     "type_index": "0x33d6",
+     "storage": "instance"
+    },
+    {
+     "name": "m_materialName",
+     "offset": "0x68",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_material",
+     "offset": "0xb0",
+     "type": "rglMaterial*",
+     "type_index": "0x517d",
+     "storage": "instance"
+    },
+    {
+     "name": "m_billboard",
+     "offset": "0xb8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_isCollection",
+     "offset": "0xbc",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_materialColor",
+     "offset": "0xc0",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_materialColor2",
+     "offset": "0xc4",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_frameTime",
+     "offset": "0xc8",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_cullMode",
+     "offset": "0xcc",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_useMotionBlur",
+     "offset": "0xd0",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_faceCorners",
+     "offset": "0xd8",
+     "type": "rglVector<rglMeshFaceCorner>",
+     "type_index": "0x75c8",
+     "storage": "instance"
+    },
+    {
+     "name": "m_baseColors",
+     "offset": "0xf0",
+     "type": "rglVector<unsigned int>",
+     "type_index": "0x37b5",
+     "storage": "instance"
+    },
+    {
+     "name": "m_floraWindWeighted",
+     "offset": "0x108",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_skinDataRecs",
+     "offset": "0x110",
+     "type": "rglVector<rglMeshSkinDataRec>",
+     "type_index": "0x87d2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_vertices",
+     "offset": "0x128",
+     "type": "rglVector<rglMeshVertex>",
+     "type_index": "0x75cb",
+     "storage": "instance"
+    },
+    {
+     "name": "m_vertexGroups",
+     "offset": "0x140",
+     "type": "rglVector<rglMeshVertexGroup>",
+     "type_index": "0x87d6",
+     "storage": "instance"
+    },
+    {
+     "name": "m_faces",
+     "offset": "0x158",
+     "type": "rglVector<rglMeshFace>",
+     "type_index": "0x87ce",
+     "storage": "instance"
+    },
+    {
+     "name": "m_hasUniqueFaces",
+     "offset": "0x170",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_hasUniqueVertexData",
+     "offset": "0x171",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_statsFrameStamp",
+     "offset": "0x174",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_cpuSkinningLogged",
+     "offset": "0x178",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_boneRangeLogged",
+     "offset": "0x179",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_particleSystems",
+     "offset": "0x180",
+     "type": "rglVector<rglParticleSystem *>",
+     "type_index": "0x7077",
+     "storage": "instance"
+    },
+    {
+     "name": "m_light",
+     "offset": "0x198",
+     "type": "rglLight*",
+     "type_index": "0x4d2b",
+     "storage": "instance"
+    },
+    {
+     "name": "m_curVertexKeysTimePoint",
+     "offset": "0x1a0",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_nextVertexKeysTimePoint",
+     "offset": "0x1a4",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_vertexKeys",
+     "offset": "0x1a8",
+     "type": "rglIpo<rglMeshVertexKey>",
+     "type_index": "0x87cb",
+     "storage": "instance"
+    },
+    {
+     "name": "m_localTransform",
+     "offset": "0x1c0",
+     "type": "rglTransform",
+     "type_index": "0x3482",
+     "storage": "instance"
+    },
+    {
+     "name": "m_visibilityFlags",
+     "offset": "0x200",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bufferUpdateRecs",
+     "offset": "0x204",
+     "type": "rglMeshBufferUpdateRec[80]",
+     "type_index": "0x1c495",
+     "storage": "instance"
+    },
+    {
+     "name": "m_parentTransform",
+     "offset": "0x254",
+     "type": "rglTransform",
+     "type_index": "0x3482",
+     "storage": "instance"
+    },
+    {
+     "name": "m_textureOffset",
+     "offset": "0x294",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_motionBlurTransform",
+     "offset": "0x29c",
+     "type": "rglTransform",
+     "type_index": "0x3482",
+     "storage": "instance"
+    },
+    {
+     "name": "m_renderOrder",
+     "offset": "0x2dc",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_renderOrderFlags",
+     "offset": "0x2e0",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_boneTransforms",
+     "offset": "0x2e8",
+     "type": "rglTransform*",
+     "type_index": "0x6805",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numBones",
+     "offset": "0x2f0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bloodHits",
+     "offset": "0x2f8",
+     "type": "rglVector4*",
+     "type_index": "0x7828",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numBloodHits",
+     "offset": "0x300",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bloodColor",
+     "offset": "0x304",
+     "type": "rglVector4",
+     "type_index": "0x32a2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_activeBones",
+     "offset": "0x318",
+     "type": "unsigned __int64",
+     "type_index": "0x23",
+     "storage": "instance"
+    },
+    {
+     "name": "m_boundingBox",
+     "offset": "0x320",
+     "type": "rglBoundingBox",
+     "type_index": "0x7aef",
+     "storage": "instance"
+    },
+    {
+     "name": "m_original",
+     "offset": "0x354",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_renderOrderUpdated",
+     "offset": "0x355",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_asyncBuffer",
+     "offset": "0x358",
+     "type": "char *",
+     "type_index": "0x670",
+     "storage": "instance"
+    },
+    {
+     "name": "m_asyncVertexDeclarationType",
+     "offset": "0x360",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "rglMesh",
+    "~rglMesh",
+    "getType",
+    "readStream",
+    "initMaterial",
+    "computeTangents",
+    "computeNormals",
+    "updateSkinData",
+    "updateSkinDataIfNeeeded",
+    "updateRenderOrder",
+    "clear",
+    "captureBaseColors",
+    "writeFloraWindWeights",
+    "createUniqueVertexData",
+    "createUniqueFaces",
+    "updateBoundingBox",
+    "setBaseMesh",
+    "replaceMaterial",
+    "getCopy",
+    "getSimpleCopy",
+    "getShader",
+    "getVertexDeclarationType",
+    "getFaces",
+    "getFaceCorners",
+    "getSkinData",
+    "getVertices",
+    "getVertexKeys",
+    "getVertexBufferUpdateRec",
+    "getIndexBufferUpdateRec",
+    "hasVertexKeys",
+    "setPolicy",
+    "writeVertexData",
+    "writeIndexData",
+    "frameMove",
+    "render",
+    "isSuitableForCollection",
+    "addMesh",
+    "addMeshPointUp",
+    "addMeshForCollection",
+    "addVertex",
+    "addFace",
+    "addFaceCorner",
+    "makeRectangleFace",
+    "makeRectangleFaceWithBorder",
+    "makeTriangleFace",
+    "makeQuadFace",
+    "makeQuadFaceInvertUV",
+    "drawRectangle",
+    "tileVertical",
+    "tileHorizontal",
+    "fitToRect",
+    "isGammaCorrected",
+    "gammaCorrect",
+    "scale",
+    "scaleVertices",
+    "transform",
+    "translateVertices",
+    "invertFaces",
+    "color",
+    "addParticleSystem",
+    "setLight",
+    "removeParticleSystem",
+    "setAlphaBlend",
+    "setColorAlpha",
+    "setColor",
+    "setAlpha",
+    "setVertexColorAlpha",
+    "setVertexColor",
+    "setVertexAlpha",
+    "storeBounds",
+    "updateVertexKeys",
+    "setNextVertexKeysTimePoint",
+    "setVertexKeysTimePoint",
+    "transformLocalToParent",
+    "loadOnDemandTextures",
+    "setRenderOrder",
+    "setMaterialRenderOrder",
+    "setUpdateBuffer",
+    "uniformizeColor",
+    "moveTowardsNormal",
+    "drawSpatter",
+    "addBloodHit",
+    "clearBloodHits",
+    "usesGpuSkinning",
+    "operator=",
+    "__local_vftable_ctor_closure",
+    "__vecDelDtor"
+   ]
+  },
+  "rglMetaMesh": {
+   "size": 344,
+   "type_index": "0x18285",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "s_lodLevels",
+     "offset": "0x0",
+     "type": "float[5]",
+     "type_index": "0x887e",
+     "storage": "static"
+    },
+    {
+     "name": "m_deformStartFrame",
+     "offset": "0x0",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_deformEndFrame",
+     "offset": "0x4",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_deformDuration",
+     "offset": "0x8",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_deformMode",
+     "offset": "0xc",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_deformStartTime",
+     "offset": "0x10",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_boundingBox",
+     "offset": "0x14",
+     "type": "rglBoundingBox",
+     "type_index": "0x7aef",
+     "storage": "instance"
+    },
+    {
+     "name": "m_lods",
+     "offset": "0x48",
+     "type": "rglMetaMeshLod[120]",
+     "type_index": "0x1827a",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numLods",
+     "offset": "0xc0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_curLod",
+     "offset": "0xc4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_localTransform",
+     "offset": "0xc8",
+     "type": "rglTransform",
+     "type_index": "0x3482",
+     "storage": "instance"
+    },
+    {
+     "name": "m_visibilityFlags",
+     "offset": "0x108",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_meshName",
+     "offset": "0x110",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "rglMetaMesh",
+    "~rglMetaMesh",
+    "clear",
+    "frameMove",
+    "render",
+    "selectLod",
+    "setColorAlpha",
+    "setColor",
+    "setAlpha",
+    "setVertexColorAlpha",
+    "setVertexColor",
+    "setVertexAlpha",
+    "updateBoundingBox",
+    "getNumMeshes",
+    "addMesh",
+    "getMesh",
+    "getCopy",
+    "replaceMaterial",
+    "addParticleSystem",
+    "setLight",
+    "removeParticleSystem",
+    "setVisibilityFlags",
+    "addMeshFlags",
+    "setBillboard",
+    "setPolicy",
+    "setVertexKeysTimePoint",
+    "setNextVertexKeysTimePoint",
+    "getNextVertexKeysTimePoint",
+    "startDeformAnimation",
+    "getCurrentDeformAnimationProgress",
+    "deformMove",
+    "storeBounds",
+    "scale",
+    "scaleVertices",
+    "transform",
+    "setLocalTransform",
+    "transformLocalToParent",
+    "addMetaMesh",
+    "addMetaMeshOriginal",
+    "loadOnDemandTextures",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
   "rglRenderer": {
    "size": 61312,
    "type_index": "0xad68",
@@ -7942,10 +11326,22 @@
    "va": "0x14061ee89"
   },
   {
+   "name": "??_7rglMetaMeshWidget@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140550890"
+  },
+  {
    "name": "??_7mbGameLogWindow@@6B@",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140554370"
+  },
+  {
+   "name": "??_7mbPartyWindow@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140554670"
   },
   {
    "name": "??_7mbGameWindow@@6B@",
@@ -7970,6 +11366,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140557c80"
+  },
+  {
+   "name": "??_7mbParty@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14055a810"
   },
   {
    "name": "??_7?$WSEDynMultiArray@VrglTransform@@@@6B@",
@@ -8014,6 +11416,24 @@
    "va": "0x1405653e0"
   },
   {
+   "name": "??_7rglMesh@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140565890"
+  },
+  {
+   "name": "?s_lodLevels@rglMetaMesh@@2PAMA",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140617d40"
+  },
+  {
+   "name": "?g_itemKinds@@3PEAVmbItemKind@@EA",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061f060"
+  },
+  {
    "name": "?g_missionTemplates@@3PEAVmbMissionTemplate@@EA",
    "kind": "public",
    "source": "pdb-public",
@@ -8030,6 +11450,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14061f078"
+  },
+  {
+   "name": "?g_partyTemplates@@3PEAVmbPartyTemplate@@EA",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061f0d8"
+  },
+  {
+   "name": "?g_sceneProps@@3PEAVmbSceneProp@@EA",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061f0f0"
   },
   {
    "name": "??_7WSEBasicDynMultiArray@@6B@",
@@ -8102,6 +11534,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140069ae0"
+  },
+  {
+   "name": "??A?$rglVector@PEAVrglMesh@@@@QEAAAEAPEAVrglMesh@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400699f0"
+  },
+  {
+   "name": "?size@?$rglVector@PEAVrglMesh@@@@QEBA_KXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400699e0"
   },
   {
    "name": "?applyForceToAgent@mbAgent@@QEAAXAEBVrglVector4@@H@Z",
@@ -8282,6 +11726,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140063480"
+  },
+  {
+   "name": "??_GrglMetaMesh@@QEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140063420"
   },
   {
    "name": "?attachMissileToShield@mbAgent@@QEAAXPEAVmbMissile@@AEBVrglTransform@@@Z",
@@ -9658,6 +13108,18 @@
    "va": "0x14006f0a0"
   },
   {
+   "name": "??1?$vector@PEAVrglMesh@@V?$allocator@PEAVrglMesh@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??0?$rglVector@PEAVrglMesh@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f0a0"
+  },
+  {
    "name": "?getArray@mbBasicGame@@QEAAPEAXH@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -9838,6 +13300,12 @@
    "va": "0x140070a30"
   },
   {
+   "name": "??1?$rglVector@PEAVrglMesh@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
    "name": "??1mbSlots@@QEAA@XZ",
    "kind": "public",
    "source": "pdb-public",
@@ -9908,6 +13376,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140081ed0"
+  },
+  {
+   "name": "?getRawIndex@?$rglHashVector@VmbParty@@@@QEBA?BHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400855b0"
+  },
+  {
+   "name": "?size@?$rglHashVector@VmbParty@@@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400855a0"
+  },
+  {
+   "name": "?forward@?$rglHashVector@VmbParty@@@@QEBAXAEAH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140085520"
+  },
+  {
+   "name": "?begin@?$rglHashVector@VmbParty@@@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400854d0"
   },
   {
    "name": "?getSpeakerChoiceText@mbConversationManager@@QEAA?AVrglString@@H@Z",
@@ -10334,6 +13826,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140098630"
+  },
+  {
+   "name": "??0mbPartyTemplate@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400984d0"
+  },
+  {
+   "name": "??1mbPartyTemplate@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008b460"
   },
   {
    "name": "??_GmbGame@@QEAAPEAXI@Z",
@@ -10960,6 +14464,54 @@
    "va": "0x140621680"
   },
   {
+   "name": "??_GrglMetaMeshWidget@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b7d50"
+  },
+  {
+   "name": "??_ErglMetaMeshWidget@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b7d50"
+  },
+  {
+   "name": "?setAlpha@rglMetaMeshWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b80d0"
+  },
+  {
+   "name": "?setColor@rglMetaMeshWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b8080"
+  },
+  {
+   "name": "?setScale@rglMetaMeshWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b7f70"
+  },
+  {
+   "name": "?getType@rglMetaMeshWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f270"
+  },
+  {
+   "name": "?render@rglMetaMeshWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b7ec0"
+  },
+  {
+   "name": "?autoSize@rglMetaMeshWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b7dc0"
+  },
+  {
    "name": "?makeAsyncCall@rglRenderThreadManager@@QEAAXHAEAUD3DXMATRIX@@AEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -11008,6 +14560,18 @@
    "va": "0x1400bae70"
   },
   {
+   "name": "??1?$vector@PEAVrglMetaMesh@@V?$allocator@PEAVrglMetaMesh@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$rglVector@PEAVrglMetaMesh@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
    "name": "??$_Uninit_copy@PEAVrglString@@PEAV1@V?$allocator@VrglString@@@std@@@std@@YAPEAVrglString@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglString@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -11026,10 +14590,40 @@
    "va": "0x1400bf050"
   },
   {
+   "name": "??4?$vector@PEAVrglMetaMesh@@V?$allocator@PEAVrglMetaMesh@@@std@@@std@@QEAAAEAV01@AEBV01@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400beea0"
+  },
+  {
+   "name": "??4?$rglVector@PEAVrglMetaMesh@@@@QEAAAEBV0@AEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400bee80"
+  },
+  {
+   "name": "?generateFace@mbFaceGenerator@@QEAAXHHPEAPEAVrglMetaMesh@@AEBVmbFaceKeys@@1_N2AEAI2@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400bd350"
+  },
+  {
    "name": "?readStream@mbFaceGenerator@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400bc420"
+  },
+  {
+   "name": "?createFaceMetaMeshes@mbFaceGenerator@@QEAAXPEAPEAVrglMetaMesh@@00_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400bdb40"
+  },
+  {
+   "name": "?size@?$rglVector@PEAVrglMetaMesh@@@@QEBA_KXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400699e0"
   },
   {
    "name": "?fromString@mbFaceKeys@@QEAAXAEBVrglString@@@Z",
@@ -11068,6 +14662,18 @@
    "va": "0x1400c61d0"
   },
   {
+   "name": "?setColor@mbFaction@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c61c0"
+  },
+  {
+   "name": "?getColor@mbFaction@@QEAAIXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c61b0"
+  },
+  {
    "name": "?getName@mbFaction@@QEBAAEBVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
@@ -11078,6 +14684,24 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400c5ff0"
+  },
+  {
+   "name": "??0mbFaction@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c5f10"
+  },
+  {
+   "name": "??A?$rglVector@PEAVrglMetaMesh@@@@QEAAAEAPEAVrglMetaMesh@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400699f0"
+  },
+  {
+   "name": "?empty@?$rglVector@PEAVrglMetaMesh@@@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6590"
   },
   {
    "name": "?readStream@mbFloraKindInstance@@QEAAXAEAVrglStream@@AEB_K@Z",
@@ -11110,16 +14734,106 @@
    "va": "0x14009aa80"
   },
   {
+   "name": "?_Reallocate@?$vector@PEAVmbParty@@V?$allocator@PEAVmbParty@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a0c0"
+  },
+  {
+   "name": "?_Reserve@?$vector@PEAVmbParty@@V?$allocator@PEAVmbParty@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a030"
+  },
+  {
+   "name": "?_Reallocate@?$vector@PEAVrglMesh@@V?$allocator@PEAVrglMesh@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a0c0"
+  },
+  {
    "name": "?clear@?$list@U?$pair@$$CBVrglString@@_N@std@@V?$allocator@U?$pair@$$CBVrglString@@_N@std@@@2@@std@@QEAAXXZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400e9190"
   },
   {
+   "name": "?_Reserve@?$vector@PEAVrglMesh@@V?$allocator@PEAVrglMesh@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8f90"
+  },
+  {
+   "name": "??1?$rglVector@VmbPartyStack@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1mbParty@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8e60"
+  },
+  {
+   "name": "??_EmbParty@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8de0"
+  },
+  {
    "name": "?_Tidy@?$vector@VmbMissionObject@@V?$allocator@VmbMissionObject@@@std@@@std@@IEAAXXZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400e8c40"
+  },
+  {
+   "name": "?createChunk@?$rglHashVector@VmbParty@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e87d0"
+  },
+  {
+   "name": "?getFreeItem@?$rglHashVector@VmbParty@@@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8730"
+  },
+  {
+   "name": "?addHash@?$rglHashVector@VmbParty@@@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e86c0"
+  },
+  {
+   "name": "?remove@?$rglHashVector@VmbParty@@@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8570"
+  },
+  {
+   "name": "?clear@?$rglHashVector@VmbParty@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8370"
+  },
+  {
+   "name": "?free@?$rglHashVector@VmbParty@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e82e0"
+  },
+  {
+   "name": "?push_back@?$vector@PEAVrglMesh@@V?$allocator@PEAVrglMesh@@@std@@@std@@QEAAXAEBQEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e7f30"
+  },
+  {
+   "name": "??1?$rglVector@PEAVmbParty@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
   },
   {
    "name": "?clear@?$rglMap@VrglString@@_N@@QEAAXXZ",
@@ -11138,6 +14852,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400e7b80"
+  },
+  {
+   "name": "??1?$rglHashVector@VmbParty@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e7b00"
   },
   {
    "name": "?writeStream@?$rglStableVector@VmbEvent@@@@QEAAXAEAVrglStream@@@Z",
@@ -12094,6 +15814,12 @@
    "va": "0x1400c8400"
   },
   {
+   "name": "??1mbSiteVisitor@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c8390"
+  },
+  {
    "name": "??1rglBinaryStream@@QEAA@XZ",
    "kind": "public",
    "source": "pdb-public",
@@ -12104,6 +15830,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400c8340"
+  },
+  {
+   "name": "??1mbQuest@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c81d0"
+  },
+  {
+   "name": "??1mbFaction@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c8100"
+  },
+  {
+   "name": "??1mbSite@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c7f80"
+  },
+  {
+   "name": "??1mbTroop@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c7ec0"
   },
   {
    "name": "?unload@mbGame@@QEAAXXZ",
@@ -12364,6 +16114,18 @@
    "va": "0x14007a380"
   },
   {
+   "name": "??_GmbPartyWindow@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400f0750"
+  },
+  {
+   "name": "??_EmbPartyWindow@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400f0750"
+  },
+  {
    "name": "?closeWindow@mbGameScreen@@QEAAXXZ",
    "kind": "public",
    "source": "pdb-public",
@@ -12374,6 +16136,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400f0c10"
+  },
+  {
+   "name": "??0mbPartyWindow@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400f0570"
   },
   {
    "name": "?isWindowOpen@mbGameScreen@@QEBA_NH@Z",
@@ -12712,10 +16480,106 @@
    "va": "0x14010ed30"
   },
   {
+   "name": "?getInventoryMetaMesh@mbItem@@QEBAPEAVrglMetaMesh@@MH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010ee50"
+  },
+  {
+   "name": "?getItemKind@mbItem@@QEBAPEAVmbItemKind@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010d3b0"
+  },
+  {
    "name": "?getName@mbItem@@QEBA?AVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14010e0a0"
+  },
+  {
+   "name": "??4?$vector@PEAVrglMesh@@V?$allocator@PEAVrglMesh@@@std@@@std@@QEAAAEAV01@AEBV01@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400beea0"
+  },
+  {
+   "name": "?getHorseScale@mbItemKind@@QEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fed0"
+  },
+  {
+   "name": "??1mbItemKindVariation@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140028c90"
+  },
+  {
+   "name": "??0mbItemKindVariation@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b8a50"
+  },
+  {
+   "name": "?getHitPoints@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe60"
+  },
+  {
+   "name": "?getDifficulty@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fc50"
+  },
+  {
+   "name": "?getHeadArmor@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe00"
+  },
+  {
+   "name": "?getBodyArmor@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe10"
+  },
+  {
+   "name": "?getLegArmor@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe20"
+  },
+  {
+   "name": "?getHorseManeuver@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe30"
+  },
+  {
+   "name": "?getHorseSpeed@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe40"
+  },
+  {
+   "name": "?getHorseCharge@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe50"
+  },
+  {
+   "name": "?getDamage@mbItemKind@@QEBAH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe70"
+  },
+  {
+   "name": "?getAccuracy@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe20"
   },
   {
    "name": "?getVariationMeshName@mbItemKind@@QEAA?AVrglString@@H@Z",
@@ -12724,10 +16588,34 @@
    "va": "0x1401104d0"
   },
   {
+   "name": "?getVariationMetaMesh@mbItemKind@@QEAAPEAVrglMetaMesh@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140110600"
+  },
+  {
    "name": "?getExtraVariationMeshName@mbItemKind@@QEAA?AVrglString@@HAEB_K@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401106a0"
+  },
+  {
+   "name": "?getExtraVariationMetaMesh@mbItemKind@@QEAAPEAVrglMetaMesh@@HAEB_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401107c0"
+  },
+  {
+   "name": "?getShieldHeight@mbItemKind@@QEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010feb0"
+  },
+  {
+   "name": "?getRequirement@mbItemKind@@QEBAXAEAH0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fc60"
   },
   {
    "name": "?getName@mbItemKind@@QEBAAEBVrglString@@XZ",
@@ -12742,10 +16630,64 @@
    "va": "0x140110430"
   },
   {
+   "name": "?isAvailableForFaction@mbItemKind@@QEBA_NH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401114e0"
+  },
+  {
+   "name": "?isArmor@mbItemKind@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fc20"
+  },
+  {
+   "name": "??1mbItemKind@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010f640"
+  },
+  {
+   "name": "??0mbItemKind@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010f4f0"
+  },
+  {
    "name": "?readStream@mbItemKind@@QEAAXAEAVrglStream@@HH@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14010f790"
+  },
+  {
+   "name": "?getType@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fc40"
+  },
+  {
+   "name": "?isShield@mbItemKind@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fbc0"
+  },
+  {
+   "name": "?providesAmmo@mbItemKind@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fba0"
+  },
+  {
+   "name": "?getProficiency@mbItemKind@@QEBAH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010ffa0"
+  },
+  {
+   "name": "?getAttachmentBone@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010ff00"
   },
   {
    "name": "?getAttachTransform@mbItemKind@@QEBA?AVrglTransform@@XZ",
@@ -12758,6 +16700,42 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401108a0"
+  },
+  {
+   "name": "?getMissileSpeed@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe40"
+  },
+  {
+   "name": "?cantReloadWhileMoving@mbItemKind@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401114b0"
+  },
+  {
+   "name": "?getDamageType@mbItemKind@@QEBAH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe90"
+  },
+  {
+   "name": "?getSpeedRating@mbItemKind@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fe30"
+  },
+  {
+   "name": "?isWeapon@mbItemKind@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14010fbd0"
+  },
+  {
+   "name": "?getDefaultAmmo@mbItemKind@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140111430"
   },
   {
    "name": "?getFormat@mbItemModifier@@QEBAAEBVrglString@@XZ",
@@ -12868,10 +16846,40 @@
    "va": "0x140121f80"
   },
   {
+   "name": "?getMesh@mbMeshManager@@QEAAPEAVrglMesh@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140122020"
+  },
+  {
    "name": "?readStream@mbMeshManager@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140121e30"
+  },
+  {
+   "name": "?_Reallocate@?$vector@PEAVrglMetaMesh@@V?$allocator@PEAVrglMetaMesh@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a0c0"
+  },
+  {
+   "name": "?_Reserve@?$vector@PEAVrglMetaMesh@@V?$allocator@PEAVrglMetaMesh@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8f90"
+  },
+  {
+   "name": "?push_back@?$vector@PEAVrglMetaMesh@@V?$allocator@PEAVrglMetaMesh@@@std@@@std@@QEAAXAEBQEAVrglMetaMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e7f30"
+  },
+  {
+   "name": "?push@?$rglVector@PEAVrglMetaMesh@@@@QEAAXAEBQEAVrglMetaMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401275a0"
   },
   {
    "name": "?getLocalTransform@mbMissile@@QEAA?AVrglTransform@@XZ",
@@ -12908,6 +16916,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140126490"
+  },
+  {
+   "name": "?createMetaMesh@mbMissile@@QEAAPEAVrglMetaMesh@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140125760"
   },
   {
    "name": "??$_Uninit_move@PEAVmbMissionObject@@PEAV1@V?$allocator@VmbMissionObject@@@std@@V1@@std@@YAPEAVmbMissionObject@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbMissionObject@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
@@ -13106,6 +17120,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14014b640"
+  },
+  {
+   "name": "??A?$rglVector@VmbPartyStack@@@@QEAAAEAVmbPartyStack@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14014b630"
+  },
+  {
+   "name": "??0?$rglVector@PEAVrglMetaMesh@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f0a0"
   },
   {
    "name": "?saveScene@mbMission@@QEAAXXZ",
@@ -14290,6 +18316,12 @@
    "va": "0x14015f4d0"
   },
   {
+   "name": "?getPacketPriority@mbnetPlayerReplicationRow@@QEAAMI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401607e0"
+  },
+  {
    "name": "?indexOf@?$rglVector@VrglString@@@@QEAAHAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -14338,6 +18370,132 @@
    "va": "0x14016a6f0"
   },
   {
+   "name": "??$swap@VmbPartyStack@@@std@@YAXAEAVmbPartyStack@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140174cf0"
+  },
+  {
+   "name": "?setSelection@mbPartyWindow@@QEAAXHHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140174c50"
+  },
+  {
+   "name": "?resizeCharacterImage@mbPartyWindow@@QEAAXH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140174af0"
+  },
+  {
+   "name": "?updateCharacterImage@mbPartyWindow@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140174980"
+  },
+  {
+   "name": "?doAction@mbPartyWindow@@QEAAXHHHAEA_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140174730"
+  },
+  {
+   "name": "?moveStack@mbPartyWindow@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401745c0"
+  },
+  {
+   "name": "?restoreParty@mbPartyWindow@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140174370"
+  },
+  {
+   "name": "?storeParty@mbPartyWindow@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140174130"
+  },
+  {
+   "name": "?updateGold@mbPartyWindow@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140174010"
+  },
+  {
+   "name": "?updateMorale@mbPartyWindow@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140173c20"
+  },
+  {
+   "name": "?updateInfo@mbPartyWindow@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140172110"
+  },
+  {
+   "name": "?updateSkills@mbPartyWindow@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140170e90"
+  },
+  {
+   "name": "?resizePartyMenu@mbPartyWindow@@QEAAXHHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140170be0"
+  },
+  {
+   "name": "?updatePartyMenu@mbPartyWindow@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14016f470"
+  },
+  {
+   "name": "?createPartyMenu@mbPartyWindow@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14016e2f0"
+  },
+  {
+   "name": "??1mbPartyWindow@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14016a960"
+  },
+  {
+   "name": "?close@mbPartyWindow@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14016aa40"
+  },
+  {
+   "name": "?open@mbPartyWindow@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14016ab10"
+  },
+  {
+   "name": "?obtainFocus@mbPartyWindow@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14016ca00"
+  },
+  {
+   "name": "?frameMove@mbPartyWindow@@UEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14016ca10"
+  },
+  {
+   "name": "?isFullscreen@mbPartyWindow@@UEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f980"
+  },
+  {
    "name": "?setItems@mbSelectionWindow@@QEAAXAEBVrglString@@H000000@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -14380,10 +18538,136 @@
    "va": "0x140179e30"
   },
   {
+   "name": "??0?$rglVector@VmbnetPlayerReplicationRow@@@@QEAA@AEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017f360"
+  },
+  {
+   "name": "??0mbnetPlayer@@QEAA@AEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017eb70"
+  },
+  {
+   "name": "??1?$vector@VmbnetPlayerReplicationRow@@V?$allocator@VmbnetPlayerReplicationRow@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$rglVector@VmbnetPlayerReplicationRow@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$mbnetReplication@VmbnetPlayerReplicationRow@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017bcc0"
+  },
+  {
+   "name": "??1mbnetPlayer@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017e760"
+  },
+  {
+   "name": "??$_Uninit_copy@PEAVmbnetPlayerReplicationRow@@PEAV1@V?$allocator@VmbnetPlayerReplicationRow@@@std@@@std@@YAPEAVmbnetPlayerReplicationRow@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbnetPlayerReplicationRow@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017e640"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVmbnetPlayer@@PEAV1@V?$allocator@VmbnetPlayer@@@std@@V1@@std@@YAPEAVmbnetPlayer@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbnetPlayer@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017e2b0"
+  },
+  {
+   "name": "??4?$vector@VmbnetPlayerReplicationRow@@V?$allocator@VmbnetPlayerReplicationRow@@@std@@@std@@QEAAAEAV01@AEBV01@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017de60"
+  },
+  {
+   "name": "??4mbnetPlayer@@QEAAAEAV0@AEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017d550"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVmbnetPlayer@@_KV?$allocator@VmbnetPlayer@@@std@@V1@@std@@YAXPEAVmbnetPlayer@@_KAEAU?$_Wrap_alloc@V?$allocator@VmbnetPlayer@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017d4e0"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VmbnetPlayer@@V?$allocator@VmbnetPlayer@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017d3d0"
+  },
+  {
+   "name": "?_Reserve@?$vector@VmbnetPlayer@@V?$allocator@VmbnetPlayer@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017d300"
+  },
+  {
+   "name": "?erase@?$vector@VmbnetPlayer@@V?$allocator@VmbnetPlayer@@@std@@@std@@QEAA?AV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VmbnetPlayer@@@std@@@std@@@2@V?$_Vector_const_iterator@V?$_Vector_val@U?$_Simple_types@VmbnetPlayer@@@std@@@std@@@2@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017d230"
+  },
+  {
+   "name": "?_Tidy@?$vector@VmbnetPlayer@@V?$allocator@VmbnetPlayer@@@std@@@std@@IEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017d1d0"
+  },
+  {
+   "name": "?clear@?$vector@VmbnetPlayer@@V?$allocator@VmbnetPlayer@@@std@@@std@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017d170"
+  },
+  {
+   "name": "?resize@?$vector@VmbnetPlayer@@V?$allocator@VmbnetPlayer@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017d080"
+  },
+  {
    "name": "?setServerName@mbnetData@@QEAAXAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14017ce20"
+  },
+  {
+   "name": "??1?$rglVector@VmbnetPlayer@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017bcb0"
+  },
+  {
+   "name": "?getMyPlayer@mbnetData@@QEAAPEAVmbnetPlayer@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017c480"
+  },
+  {
+   "name": "?getPlayer@mbnetData@@QEAAPEAVmbnetPlayer@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017c460"
+  },
+  {
+   "name": "?getServerPlayer@mbnetData@@QEAAPEAVmbnetPlayer@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017c4a0"
   },
   {
    "name": "?makeAsyncDownloadToFileRequest@mbnetNetworkClient@@QEAAXAEBVrglString@@0@Z",
@@ -14398,10 +18682,40 @@
    "va": "0x140188a50"
   },
   {
+   "name": "??$_Uninit_move@PEAVmbnetPlayerReplicationRow@@PEAV1@V?$allocator@VmbnetPlayerReplicationRow@@@std@@V1@@std@@YAPEAVmbnetPlayerReplicationRow@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbnetPlayerReplicationRow@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017e640"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVmbnetPlayerReplicationRow@@_KV?$allocator@VmbnetPlayerReplicationRow@@@std@@V1@@std@@YAXPEAVmbnetPlayerReplicationRow@@_KAEAU?$_Wrap_alloc@V?$allocator@VmbnetPlayerReplicationRow@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a6b80"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VmbnetPlayerReplicationRow@@V?$allocator@VmbnetPlayerReplicationRow@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a6940"
+  },
+  {
+   "name": "?_Grow_to@?$vector@VmbnetPlayerReplicationRow@@V?$allocator@VmbnetPlayerReplicationRow@@@std@@@std@@IEBA_K_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a68e0"
+  },
+  {
    "name": "?clear@?$list@U?$pair@$$CBIVrglString@@@std@@V?$allocator@U?$pair@$$CBIVrglString@@@std@@@2@@std@@QEAAXXZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401a6870"
+  },
+  {
+   "name": "?resize@?$vector@VmbnetPlayerReplicationRow@@V?$allocator@VmbnetPlayerReplicationRow@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a63e0"
   },
   {
    "name": "??1?$vector@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBIVrglString@@@std@@@std@@@std@@@std@@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBIVrglString@@@std@@@std@@@std@@@std@@@std@@@2@@std@@QEAA@XZ",
@@ -14674,6 +18988,30 @@
    "va": "0x1401b2b00"
   },
   {
+   "name": "?sendPlayerReplicationData@mbnetNetworkServer@@QEAAXPEAVmbnetPlayer@@AEAVmbnetBuffer@@PEAVmbnetPacketDeliveryControlInfo@@HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b0510"
+  },
+  {
+   "name": "?sendAgentReplicationData@mbnetNetworkServer@@QEAAXPEAVmbnetPlayer@@AEAVmbnetBuffer@@PEAVmbnetPacketDeliveryControlInfo@@HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401af030"
+  },
+  {
+   "name": "?sendPartyReplicationData@mbnetNetworkServer@@QEAAXPEAVmbnetPlayer@@AEAVmbnetBuffer@@PEAVmbnetPacketDeliveryControlInfo@@HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401aeca0"
+  },
+  {
+   "name": "?receiveConfirmedPackets@mbnetNetworkServer@@QEAAXPEAVmbnetPlayer@@PEAIH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401aca60"
+  },
+  {
    "name": "?receiveEvent@mbnetNetworkServer@@QEAAXHAEAVmbnetBuffer@@IHAEAVmbAgentControl@@H@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -14684,6 +19022,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401a9450"
+  },
+  {
+   "name": "?killPlayerAgent@mbnetNetworkServer@@QEAAXPEAVmbnetPlayer@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a7290"
   },
   {
    "name": "?sendRangedEvent@mbnetNetworkServer@@QEAAXAEBVmbnetEvent@@AEBVrglVector4@@M@Z",
@@ -14746,16 +19090,154 @@
    "va": "0x1401b5900"
   },
   {
+   "name": "??0?$rglVector@VmbnetPlayerReplicationRow@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f0a0"
+  },
+  {
+   "name": "?setSpawnItem@mbnetPlayer@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7ca0"
+  },
+  {
+   "name": "?isItemDefault@mbnetPlayer@@QEAA_NAEBVmbItem@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7be0"
+  },
+  {
+   "name": "?getOriginalItemsValue@mbnetPlayer@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b79b0"
+  },
+  {
+   "name": "?savePickedUpItems@mbnetPlayer@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7760"
+  },
+  {
+   "name": "?initializeNetworkData@mbnetPlayer@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b73f0"
+  },
+  {
    "name": "?getPosition@mbnetPlayer@@QEAA?AVrglVector4@@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401b7680"
   },
   {
+   "name": "?sendOneTimeEvent@mbnetPlayer@@QEAAXAEBVmbnetEvent@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7e40"
+  },
+  {
+   "name": "?getUniqueId@mbnetPlayer@@QEAAIXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b8fd0"
+  },
+  {
+   "name": "?getPartyReplicationPriority@mbnetPlayer@@QEAAMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b8ed0"
+  },
+  {
+   "name": "?getAgentReplicationPriority@mbnetPlayer@@QEAAMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b8be0"
+  },
+  {
+   "name": "?computePacketValues@mbnetPlayer@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b88b0"
+  },
+  {
+   "name": "?setHighestConfirmedSentPacketNo@mbnetPlayer@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b87f0"
+  },
+  {
+   "name": "?fillPacket@mbnetPlayer@@QEAA_NAEAVmbnetBuffer@@IPEAVmbnetPacketDeliveryControlInfo@@AEBNAEAH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7f70"
+  },
+  {
+   "name": "?initialize@mbnetPlayer@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7220"
+  },
+  {
+   "name": "?setInInfoMode@mbnetPlayer@@QEAAXHAEBVmbnetAddress@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7cb0"
+  },
+  {
+   "name": "?clear@mbnetPlayer@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7580"
+  },
+  {
+   "name": "?clearReplication@mbnetPlayer@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b74f0"
+  },
+  {
    "name": "?create@mbnetPlayer@@QEAAXHAEB_JAEBVrglString@@HHAEBVmbFaceKeys@@H_N@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401b8980"
+  },
+  {
+   "name": "??0mbnetPlayer@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7030"
+  },
+  {
+   "name": "?pong@mbnetPlayer@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b85f0"
+  },
+  {
+   "name": "?ping@mbnetPlayer@@QEAAXAEBN@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b83e0"
+  },
+  {
+   "name": "?isItemPickedUp@mbnetPlayer@@QEAA_NH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7c90"
+  },
+  {
+   "name": "?sendEvent@mbnetPlayer@@QEAAXAEBVmbnetEvent@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7f00"
+  },
+  {
+   "name": "?isActive@mbnetPlayer@@QEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7670"
   },
   {
    "name": "?getName@mbnetPlayer@@QEAAAEBVrglString@@_N@Z",
@@ -14812,10 +19294,268 @@
    "va": "0x1401b9f30"
   },
   {
+   "name": "??$_Uninit_move@PEAVmbPartyStack@@PEAV1@V?$allocator@VmbPartyStack@@@std@@V1@@std@@YAPEAVmbPartyStack@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbPartyStack@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017ea70"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVmbPartyStack@@_KV?$allocator@VmbPartyStack@@@std@@V1@@std@@YAXPEAVmbPartyStack@@_KAEAU?$_Wrap_alloc@V?$allocator@VmbPartyStack@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c3a00"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VmbPartyStack@@V?$allocator@VmbPartyStack@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a6ac0"
+  },
+  {
+   "name": "?_Reserve@?$vector@VmbPartyStack@@V?$allocator@VmbPartyStack@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c3930"
+  },
+  {
+   "name": "?resize@?$vector@VmbPartyStack@@V?$allocator@VmbPartyStack@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c37f0"
+  },
+  {
+   "name": "?forceAddMembers@mbParty@@QEAAXHHHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c3270"
+  },
+  {
    "name": "?setExtraText@mbParty@@QEAAXAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401c3210"
+  },
+  {
+   "name": "?getSize@mbParty@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c31b0"
+  },
+  {
+   "name": "?leaveBattle@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c3070"
+  },
+  {
+   "name": "?getMapIconNo@mbParty@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c3020"
+  },
+  {
+   "name": "?setCourage@mbParty@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2fe0"
+  },
+  {
+   "name": "?getBanditness@mbParty@@QEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2f90"
+  },
+  {
+   "name": "?getCourage@mbParty@@QEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2f60"
+  },
+  {
+   "name": "?clearParticleSystems@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c20d0"
+  },
+  {
+   "name": "?addParticleSystem@mbParty@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2070"
+  },
+  {
+   "name": "?setExtraMapIcon@mbParty@@QEAAXHMMMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2030"
+  },
+  {
+   "name": "?setBannerMapIcon@mbParty@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2020"
+  },
+  {
+   "name": "?setMapIcon@mbParty@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2000"
+  },
+  {
+   "name": "?moveStackUp@mbParty@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c18c0"
+  },
+  {
+   "name": "?getNumPrisonerStacks@mbParty@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c1840"
+  },
+  {
+   "name": "?aiCollectPossibleTargets@mbParty@@QEAAXPEAHAEAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c12e0"
+  },
+  {
+   "name": "?aiEscortParty@mbParty@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c11c0"
+  },
+  {
+   "name": "?aiGoToParty@mbParty@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c1040"
+  },
+  {
+   "name": "?aiGoToPosition@mbParty@@QEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c0fe0"
+  },
+  {
+   "name": "?aiNavigatePath@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c0e20"
+  },
+  {
+   "name": "?aiComputePath@mbParty@@QEAA_NHAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c0d00"
+  },
+  {
+   "name": "?aiUpdateMovement@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c07c0"
+  },
+  {
+   "name": "?aiUpdateBehavior@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401bfd10"
+  },
+  {
+   "name": "?aiSelectBehavior@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401bee60"
+  },
+  {
+   "name": "?updateSpeedMultiplier@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401be540"
+  },
+  {
+   "name": "?update@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401bdc20"
+  },
+  {
+   "name": "?calculateSpeed@mbParty@@QEAAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401bc1e0"
+  },
+  {
+   "name": "?initialize@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ba260"
+  },
+  {
+   "name": "?onCreation@mbParty@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ba250"
+  },
+  {
+   "name": "?addLeader@mbParty@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c3550"
+  },
+  {
+   "name": "?replicateBehaviorObject@mbParty@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c3750"
+  },
+  {
+   "name": "?getStackForTroop@mbParty@@QEAAHHI_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c1dd0"
+  },
+  {
+   "name": "?reorderCompanionStack@mbParty@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c1ee0"
+  },
+  {
+   "name": "?getRegionVariant@mbParty@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c3030"
+  },
+  {
+   "name": "?updateMovementBehavior@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401be590"
+  },
+  {
+   "name": "?isAtDestination@mbParty@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2e00"
+  },
+  {
+   "name": "?getMovementSpeed@mbParty@@QEAAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401bc170"
+  },
+  {
+   "name": "?getStack@mbParty@@QEAAPEAVmbPartyStack@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401bb090"
+  },
+  {
+   "name": "?setAggressiveness@mbParty@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2fb0"
   },
   {
    "name": "?getPosition@mbParty@@QEBAAEBVrglVector4@@XZ",
@@ -14824,16 +19564,160 @@
    "va": "0x1401c2f50"
   },
   {
+   "name": "?getDetectability@mbParty@@QEAAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2e50"
+  },
+  {
    "name": "?getName@mbParty@@QEBAAEBVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401bc090"
   },
   {
+   "name": "?frameMove@mbParty@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401bc5b0"
+  },
+  {
+   "name": "?updateHour@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401be750"
+  },
+  {
+   "name": "?isPrisoner@mbPartyStack@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ba060"
+  },
+  {
+   "name": "?addExperienceToStack@mbParty@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2bb0"
+  },
+  {
+   "name": "?updateMapMeshes@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401bb270"
+  },
+  {
+   "name": "?updatePosition@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401be330"
+  },
+  {
+   "name": "?getNumPrisoners@mbParty@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c16f0"
+  },
+  {
+   "name": "?getNumCompanions@mbParty@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c16c0"
+  },
+  {
+   "name": "?getMaxNumCompanions@mbParty@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c1720"
+  },
+  {
+   "name": "?getMaxNumPrisoners@mbParty@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c17a0"
+  },
+  {
+   "name": "?addTroops@mbParty@@QEAAHHHIH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c1c10"
+  },
+  {
+   "name": "?setNumStacks@mbParty@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c1880"
+  },
+  {
+   "name": "?isNotSendToClients@mbParty@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c37e0"
+  },
+  {
+   "name": "?reorderHeroStacks@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c19b0"
+  },
+  {
    "name": "?rename@mbParty@@QEAAXAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401bc100"
+  },
+  {
+   "name": "?getNumCompanionStacks@mbParty@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c1800"
+  },
+  {
+   "name": "?removeStack@mbParty@@QEAA?AVmbPartyStack@@HPEAVmbPartyDnas@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c25c0"
+  },
+  {
+   "name": "?updateDeadStacks@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c20f0"
+  },
+  {
+   "name": "?updateWoundedStacks@mbParty@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2490"
+  },
+  {
+   "name": "?isInEvent@mbParty@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2f40"
+  },
+  {
+   "name": "?getEvent@mbParty@@QEBAPEAVmbEvent@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2f10"
+  },
+  {
+   "name": "?isBot@mbParty@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2e40"
+  },
+  {
+   "name": "?removeStackMembers@mbParty@@QEAA_NHHPEAVmbPartyDnas@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2c70"
+  },
+  {
+   "name": "?getFilteredStackNo@mbParty@@QEAAHHI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2ab0"
   },
   {
    "name": "?readStream@mbParty@@QEAAXAEAVrglStream@@H@Z",
@@ -14846,6 +19730,24 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401bac00"
+  },
+  {
+   "name": "??0mbParty@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ba070"
+  },
+  {
+   "name": "?countFilteredMembers@mbParty@@QEAAHI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2930"
+  },
+  {
+   "name": "?getSkill@mbParty@@QEAAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401bb0a0"
   },
   {
    "name": "?getName@mbPartyTemplate@@QEBAAEBVrglString@@XZ",
@@ -14872,10 +19774,34 @@
    "va": "0x1401c3cd0"
   },
   {
+   "name": "?setProgression@mbQuest@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c4890"
+  },
+  {
    "name": "?setGiverName@mbQuest@@QEAAXAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401c4830"
+  },
+  {
+   "name": "?isConcluded@mbQuest@@QEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c4810"
+  },
+  {
+   "name": "?isSucceeded@mbQuest@@QEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c47f0"
+  },
+  {
+   "name": "??0mbQuest@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c43c0"
   },
   {
    "name": "?readStream@mbQuest@@QEAAXAEAVrglStream@@@Z",
@@ -14894,6 +19820,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401c46c0"
+  },
+  {
+   "name": "?isRandom@mbQuest@@QEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c4820"
+  },
+  {
+   "name": "?isActive@mbQuest@@QEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c47d0"
+  },
+  {
+   "name": "?isCompleted@mbQuest@@QEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c47e0"
+  },
+  {
+   "name": "?isFailed@mbQuest@@QEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c4800"
   },
   {
    "name": "??_G?$WSEDynMultiArray@H@@UEAAPEAXI@Z",
@@ -15592,6 +20542,12 @@
    "va": "0x1401f9120"
   },
   {
+   "name": "?reserve@?$rglVector@PEAVrglMetaMesh@@@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401f90e0"
+  },
+  {
    "name": "?canLoop@mbStatementBlock@@QEAA_NPEA_JAEAVmbLoopManager@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -15668,6 +20624,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401c5f90"
+  },
+  {
+   "name": "?mbGetTriggerMetaMesh@@YAPEAVrglMetaMesh@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c5e40"
+  },
+  {
+   "name": "?mbGetTriggerMesh@@YAPEAVrglMesh@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c5d20"
   },
   {
    "name": "?readPosFromMemory@@YAXPEADHAEAVrglTransform@@@Z",
@@ -15844,6 +20812,18 @@
    "va": "0x14020eed0"
   },
   {
+   "name": "??1mbSceneProp@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14020f120"
+  },
+  {
+   "name": "??0mbSceneProp@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14020f0d0"
+  },
+  {
    "name": "?readStream@mbSceneProp@@QEAAXAEAVrglStream@@H@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -15976,16 +20956,64 @@
    "va": "0x140211280"
   },
   {
+   "name": "??0mbSiteVisitor@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402107a0"
+  },
+  {
+   "name": "?resetVisitors@mbSite@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402109a0"
+  },
+  {
+   "name": "?clear@mbSiteVisitor@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140069a20"
+  },
+  {
    "name": "?getTextDescriptor@mbSite@@QEAA?AVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140210f30"
   },
   {
+   "name": "?readSceneObjFile@mbSite@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140210be0"
+  },
+  {
+   "name": "??0mbSite@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140210550"
+  },
+  {
    "name": "?readStream@mbSite@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402107d0"
+  },
+  {
+   "name": "?getTextDescriptorChecksum@mbSite@@QEAA_KXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140210eb0"
+  },
+  {
+   "name": "?getSceneObjFileChecksum@mbSite@@QEAA_KXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140210e80"
+  },
+  {
+   "name": "?loadSceneObjFile@mbSite@@QEAAX_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140210a20"
   },
   {
    "name": "?readFile@mbSkeletonManager@@QEAAXAEBVrglString@@@Z",
@@ -16010,6 +21038,114 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140213520"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglMeshFace@@PEAV1@V?$allocator@VrglMeshFace@@@std@@V1@@std@@YAPEAVrglMeshFace@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshFace@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140218090"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglMeshVertex@@PEAV1@V?$allocator@VrglMeshVertex@@@std@@V1@@std@@YAPEAVrglMeshVertex@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshVertex@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017ea20"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglMeshFaceCorner@@PEAV1@V?$allocator@VrglMeshFaceCorner@@@std@@V1@@std@@YAPEAVrglMeshFaceCorner@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshFaceCorner@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140217ff0"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglMeshFace@@V?$allocator@VrglMeshFace@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140217610"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglMeshFace@@V?$allocator@VrglMeshFace@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140217550"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglMeshVertex@@V?$allocator@VrglMeshVertex@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a6a00"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglMeshFaceCorner@@V?$allocator@VrglMeshFaceCorner@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140217480"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglMeshFaceCorner@@V?$allocator@VrglMeshFaceCorner@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402173c0"
+  },
+  {
+   "name": "?push_back@?$vector@VrglMeshFaceCorner@@V?$allocator@VrglMeshFaceCorner@@@std@@@std@@QEAAXAEBVrglMeshFaceCorner@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140216bf0"
+  },
+  {
+   "name": "?resize@?$vector@PEAVrglMetaMesh@@V?$allocator@PEAVrglMetaMesh@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ffa70"
+  },
+  {
+   "name": "?reserve@?$rglVector@VrglMeshVertex@@@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140216b90"
+  },
+  {
+   "name": "?reserve@?$rglVector@VrglMeshFaceCorner@@@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140216b30"
+  },
+  {
+   "name": "?mirrorMesh@mbSkin@@QEAAXPEAVrglMesh@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140216570"
+  },
+  {
+   "name": "?deformMesh@mbSkin@@QEAAXPEAVrglMesh@@AEBVmbDeformRec@@HPEAMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140216290"
+  },
+  {
+   "name": "?deformMetaMesh@mbSkin@@QEAAXPEAVrglMetaMesh@@AEBVmbDeformRecGroup@@PEAMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140215f70"
+  },
+  {
+   "name": "?deformBaseMetaMesh@mbSkin@@QEAAXPEAVrglMetaMesh@@PEAMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140215c00"
+  },
+  {
+   "name": "?fillDeformRec@mbSkin@@QEAAXAEAVmbDeformRec@@HPEAVrglMesh@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140214ea0"
+  },
+  {
+   "name": "?fillDeformRecGroup@mbSkin@@QEAAXAEAVmbDeformRecGroup@@PEAVrglMetaMesh@@HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140214a70"
   },
   {
    "name": "?readStream@mbDeformKey@@QEAAXAEAVrglStream@@@Z",
@@ -16040,6 +21176,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140214040"
+  },
+  {
+   "name": "?createFaceMetaMeshes@mbSkin@@QEAAXPEAPEAVrglMetaMesh@@00PEAMHHHHMM_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402151e0"
+  },
+  {
+   "name": "?deformHeadMetaMesh@mbSkin@@QEAAXPEAVrglMetaMesh@@PEAMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140215e50"
   },
   {
    "name": "?getSunDirection@mbSkybox@@QEAA?AVrglVector4@@H@Z",
@@ -16144,6 +21292,12 @@
    "va": "0x14021b550"
   },
   {
+   "name": "?createTableauMesh@mbTableauManager@@QEAAPEAVrglMesh@@HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14021ac10"
+  },
+  {
    "name": "??$_Uninit_move@PEAVrglVector4@@PEAV1@V?$allocator@VrglVector4@@@std@@V1@@std@@YAPEAVrglVector4@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglVector4@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -16184,6 +21338,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140239900"
+  },
+  {
+   "name": "?fitOuterTerrainMesh@mbTerrainGenerator@@QEAAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402395f0"
   },
   {
    "name": "??1?$rglVector@VrglVector4@@@@QEAA@XZ",
@@ -16288,6 +21448,54 @@
    "va": "0x140244f80"
   },
   {
+   "name": "?spendSkillPoints@mbTroop@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247990"
+  },
+  {
+   "name": "?findSuitableItem@mbTroop@@QEAAHHHIIHHH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247300"
+  },
+  {
+   "name": "?equipItemSlot@mbTroop@@QEAA_NHHIIHHH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247250"
+  },
+  {
+   "name": "?unequipItem@mbTroop@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140246800"
+  },
+  {
+   "name": "?computeNewProficiency@mbTroop@@QEAAMMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402464a0"
+  },
+  {
+   "name": "?setAttribute@mbTroop@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245f70"
+  },
+  {
+   "name": "?setHome@mbTroop@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247ee0"
+  },
+  {
+   "name": "?clearHome@mbTroop@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247ef0"
+  },
+  {
    "name": "?rename@mbTroop@@QEAAXAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -16300,10 +21508,64 @@
    "va": "0x140245ec0"
   },
   {
+   "name": "?setSkinNo@mbTroop@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245f30"
+  },
+  {
+   "name": "?sortInventoryByValue@mbTroop@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247780"
+  },
+  {
+   "name": "?raiseProficiencyLinear@mbTroop@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140246450"
+  },
+  {
+   "name": "?getFirstFreeSlot@mbTroopInventory@@QEBAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245280"
+  },
+  {
+   "name": "?setAge@mbTroop@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247d40"
+  },
+  {
+   "name": "?getMapSpeed@mbTroop@@QEAAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247dd0"
+  },
+  {
    "name": "?setName@mbTroop@@QEAAXAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140245df0"
+  },
+  {
+   "name": "?clear@mbTroopInventory@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245250"
+  },
+  {
+   "name": "?canEquipItemInSlot@mbTroop@@QEBA_NAEBVmbItem@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245b80"
+  },
+  {
+   "name": "??0mbTroop@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402453b0"
   },
   {
    "name": "?readStream@mbTroop@@QEAAXAEAVrglStream@@H@Z",
@@ -16312,16 +21574,160 @@
    "va": "0x1402455f0"
   },
   {
+   "name": "?distributePoints@mbTroop@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247840"
+  },
+  {
    "name": "?getPluralName@mbTroop@@QEBAAEBVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140245d40"
   },
   {
+   "name": "?getFirstFreeInventorySlot@mbTroop@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140246750"
+  },
+  {
+   "name": "?setItem@mbTroop@@QEAAXHHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402467a0"
+  },
+  {
+   "name": "?getNumInventorySlots@mbTroop@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140246690"
+  },
+  {
+   "name": "??AmbTroopInventory@@QEAAAEAVmbItem@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402453a0"
+  },
+  {
+   "name": "?refillItems@mbTroop@@QEAAX_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247aa0"
+  },
+  {
+   "name": "?dischargeItems@mbTroop@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140247c20"
+  },
+  {
+   "name": "?compactSort@mbTroopInventory@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402452b0"
+  },
+  {
+   "name": "?setAttributeWithoutLimit@mbTroop@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140246010"
+  },
+  {
+   "name": "?setSkill@mbTroop@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402460b0"
+  },
+  {
+   "name": "?unequipItems@mbTroop@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140246880"
+  },
+  {
+   "name": "?raiseSkill@mbTroop@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402462b0"
+  },
+  {
+   "name": "?getProficiencyIncrease@mbTroop@@QEAAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140246570"
+  },
+  {
+   "name": "?raiseAttribute@mbTroop@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402461f0"
+  },
+  {
+   "name": "?equipItems@mbTroop@@QEAAXH_N0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140246900"
+  },
+  {
+   "name": "?getMaxHitPoints@mbTroop@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245aa0"
+  },
+  {
+   "name": "?getSkinNo@mbTroop@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245a20"
+  },
+  {
+   "name": "?getProficiency@mbTroop@@QEBAMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245a90"
+  },
+  {
+   "name": "?getAttribute@mbTroop@@QEBAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245a30"
+  },
+  {
+   "name": "?getSkill@mbTroop@@QEBAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245a40"
+  },
+  {
+   "name": "?isHero@mbTroop@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245f60"
+  },
+  {
+   "name": "?raiseProficiency@mbTroop@@QEAAXHM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140246330"
+  },
+  {
    "name": "?getName@mbTroop@@QEBAAEBVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140245ce0"
+  },
+  {
+   "name": "?canEquipItem@mbTroop@@QEBA_NAEBVmbItem@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140245ae0"
+  },
+  {
+   "name": "??AmbTroopEquipment@@QEAAAEAVmbItem@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402453a0"
   },
   {
    "name": "?getPathOfWorkshopItem@@YA?AVrglString@@AEBV1@@Z",
@@ -16346,6 +21752,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14024cfa0"
+  },
+  {
+   "name": "?mbAttachCharacterEntityItems@@YAXPEAVrglEntity@@PEAPEAVrglMetaMesh@@PEAVmbItem@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14024cd90"
   },
   {
    "name": "?addXmlElement@@YAXPEAVTiXmlElement@@AEBVrglString@@1@Z",
@@ -16388,6 +21800,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402496b0"
+  },
+  {
+   "name": "?mbDeleteCharacterMetaMesh@@YAXPEAVrglEntity@@PEAPEAVrglMetaMesh@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14024cf60"
   },
   {
    "name": "?mbGetProficiencyNameRaw@@YA?AVrglString@@H@Z",
@@ -16456,6 +21874,24 @@
    "va": "0x14024dec0"
   },
   {
+   "name": "?mbUpdateCharacterEntityBody@@YAXPEAVrglEntity@@HHHAEBVmbItem@@PEAPEAVrglMetaMesh@@PEAHPEAV2@HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140249f00"
+  },
+  {
+   "name": "?mbUpdateCharacterEntityItems@@YAXPEAVrglEntity@@HHPEAPEAVrglMetaMesh@@PEAVmbItem@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14024c5d0"
+  },
+  {
+   "name": "?update@mbWeather@@QEAAXPEAVmbParty@@PEAMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14024ff10"
+  },
+  {
    "name": "?setupComboQuestion@mbYesNoWindow@@QEAAXAEBVrglString@@00000PEAV2@HPEAH12@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -16514,6 +21950,24 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140252600"
+  },
+  {
+   "name": "?fillFaceMesh@rglAiMesh@@QEAAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140253340"
+  },
+  {
+   "name": "?fillEdgeMesh@rglAiMesh@@QEAAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140253dd0"
+  },
+  {
+   "name": "?fillVertexMesh@rglAiMesh@@QEAAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402546f0"
   },
   {
    "name": "?writeStream@rglAiMesh@@QEAAXAEAVrglStream@@@Z",
@@ -16748,6 +22202,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402614d0"
+  },
+  {
+   "name": "?setButtonMesh@rglComboButtonWidget@@UEAAXHPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140261450"
   },
   {
    "name": "?setOverlayItemText@rglComboLabelWidget@@UEAAXHAEBVrglString@@@Z",
@@ -17074,6 +22534,12 @@
    "va": "0x140296c30"
   },
   {
+   "name": "?drawShadow@rglEntity@@QEAAXAEAPEAVrglMesh@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140295ca0"
+  },
+  {
    "name": "?selectDetail@rglEntity@@QEAAXAEBVrglVector4@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -17104,10 +22570,28 @@
    "va": "0x140292fa0"
   },
   {
+   "name": "?removeMetaMesh@rglEntity@@QEAAXPEAVrglMetaMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140294510"
+  },
+  {
    "name": "?setMeshTransform@rglEntity@@QEAAXAEBVrglTransform@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140292960"
+  },
+  {
+   "name": "?addMesh@rglEntity@@QEAAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140294460"
+  },
+  {
+   "name": "?addMetaMesh@rglEntity@@QEAAXPEAVrglMetaMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402943b0"
   },
   {
    "name": "?getTransform@rglEntity@@QEBAAEBVrglTransform@@XZ",
@@ -18202,6 +23686,12 @@
    "va": "0x1402b0880"
   },
   {
+   "name": "?setButtonMesh@rglListBoxWidget@@UEAAXHPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b07e0"
+  },
+  {
    "name": "??0rglListBoxWidget@@QEAA@AEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -18448,16 +23938,346 @@
    "va": "0x140621730"
   },
   {
+   "name": "??_GrglMesh@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b81a0"
+  },
+  {
+   "name": "??_ErglMesh@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b81a0"
+  },
+  {
+   "name": "??$_Uninit_copy@PEAVrglMeshVertexGroupPair@@PEAV1@V?$allocator@VrglMeshVertexGroupPair@@@std@@@std@@YAPEAVrglMeshVertexGroupPair@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshVertexGroupPair@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14009ba20"
+  },
+  {
+   "name": "??1?$vector@VrglMeshVertexGroupPair@@V?$allocator@VrglMeshVertexGroupPair@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglMeshVertexGroup@@PEAV1@V?$allocator@VrglMeshVertexGroup@@@std@@V1@@std@@YAPEAVrglMeshVertexGroup@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshVertexGroup@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c59c0"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglMeshVertexGroupPair@@PEAV1@V?$allocator@VrglMeshVertexGroupPair@@@std@@V1@@std@@YAPEAVrglMeshVertexGroupPair@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshVertexGroupPair@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14009ba20"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglMeshSkinDataRec@@PEAV1@V?$allocator@VrglMeshSkinDataRec@@@std@@V1@@std@@YAPEAVrglMeshSkinDataRec@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshSkinDataRec@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5960"
+  },
+  {
+   "name": "??$_Uninit_copy@PEAVrglMeshFace@@PEAV1@V?$allocator@VrglMeshFace@@@std@@@std@@YAPEAVrglMeshFace@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshFace@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140218090"
+  },
+  {
+   "name": "??$_Uninit_copy@PEAVrglMeshVertexGroup@@PEAV1@V?$allocator@VrglMeshVertexGroup@@@std@@@std@@YAPEAVrglMeshVertexGroup@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshVertexGroup@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c59c0"
+  },
+  {
+   "name": "??$_Uninit_copy@PEAVrglMeshVertex@@PEAV1@V?$allocator@VrglMeshVertex@@@std@@@std@@YAPEAVrglMeshVertex@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshVertex@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017ea20"
+  },
+  {
+   "name": "??$_Uninit_copy@PEAVrglMeshSkinDataRec@@PEAV1@V?$allocator@VrglMeshSkinDataRec@@@std@@@std@@YAPEAVrglMeshSkinDataRec@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshSkinDataRec@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5960"
+  },
+  {
+   "name": "??$_Uninit_copy@PEAVrglMeshFaceCorner@@PEAV1@V?$allocator@VrglMeshFaceCorner@@@std@@@std@@YAPEAVrglMeshFaceCorner@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglMeshFaceCorner@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140217ff0"
+  },
+  {
+   "name": "??4?$vector@VrglMeshVertexGroupPair@@V?$allocator@VrglMeshVertexGroupPair@@@std@@@std@@QEAAAEAV01@AEBV01@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c0700"
+  },
+  {
+   "name": "??$_Move@PEAVrglMeshFaceCorner@@PEAV1@@std@@YAPEAVrglMeshFaceCorner@@PEAV1@00U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5840"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVrglMeshFace@@_KV?$allocator@VrglMeshFace@@@std@@V1@@std@@YAXPEAVrglMeshFace@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglMeshFace@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5940"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVrglMeshVertexGroup@@_KV?$allocator@VrglMeshVertexGroup@@@std@@V1@@std@@YAXPEAVrglMeshVertexGroup@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglMeshVertexGroup@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5910"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVrglMeshVertex@@_KV?$allocator@VrglMeshVertex@@@std@@V1@@std@@YAXPEAVrglMeshVertex@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglMeshVertex@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6b70"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVrglMeshSkinDataRec@@_KV?$allocator@VrglMeshSkinDataRec@@@std@@V1@@std@@YAXPEAVrglMeshSkinDataRec@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglMeshSkinDataRec@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c58e0"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVrglMeshFaceCorner@@_KV?$allocator@VrglMeshFaceCorner@@@std@@V1@@std@@YAXPEAVrglMeshFaceCorner@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglMeshFaceCorner@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6b70"
+  },
+  {
+   "name": "??$_Copy_impl@PEAVrglMeshFaceCorner@@PEAV1@@std@@YAPEAVrglMeshFaceCorner@@PEAV1@00U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5840"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVrglMeshVertexGroupPair@@_KV?$allocator@VrglMeshVertexGroupPair@@@std@@V1@@std@@YAXPEAVrglMeshVertexGroupPair@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglMeshVertexGroupPair@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5820"
+  },
+  {
+   "name": "??$_Move@PEAVrglMeshVertexGroup@@PEAV1@@std@@YAPEAVrglMeshVertexGroup@@PEAV1@00@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c57a0"
+  },
+  {
+   "name": "??$_Copy_impl@PEAVrglMeshVertexGroup@@PEAV1@@std@@YAPEAVrglMeshVertexGroup@@PEAV1@00@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c57a0"
+  },
+  {
+   "name": "??$_Copy_impl@PEAVrglMeshVertex@@PEAV1@@std@@YAPEAVrglMeshVertex@@PEAV1@00@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5750"
+  },
+  {
+   "name": "??$_Copy_impl@PEAVrglMeshSkinDataRec@@PEAV1@@std@@YAPEAVrglMeshSkinDataRec@@PEAV1@00@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c56f0"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglMeshVertexGroup@@V?$allocator@VrglMeshVertexGroup@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5600"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglMeshVertexGroupPair@@V?$allocator@VrglMeshVertexGroupPair@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e9290"
+  },
+  {
+   "name": "?_Destroy@?$vector@VrglMeshVertexGroup@@V?$allocator@VrglMeshVertexGroup@@@std@@@std@@IEAAXPEAVrglMeshVertexGroup@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c55a0"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglMeshVertex@@V?$allocator@VrglMeshVertex@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c54d0"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglMeshSkinDataRec@@V?$allocator@VrglMeshSkinDataRec@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5400"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglMeshSkinDataRec@@V?$allocator@VrglMeshSkinDataRec@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5340"
+  },
+  {
+   "name": "?resize@?$vector@VrglMeshFace@@V?$allocator@VrglMeshFace@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5170"
+  },
+  {
+   "name": "??4?$vector@VrglMeshFace@@V?$allocator@VrglMeshFace@@@std@@@std@@QEAAAEAV01@AEBV01@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c4f90"
+  },
+  {
+   "name": "?_Tidy@?$vector@VrglMeshVertexGroup@@V?$allocator@VrglMeshVertexGroup@@@std@@@std@@IEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14014cf80"
+  },
+  {
+   "name": "?clear@?$vector@VrglMeshVertexGroup@@V?$allocator@VrglMeshVertexGroup@@@std@@@std@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14014cf00"
+  },
+  {
+   "name": "?resize@?$vector@VrglMeshVertexGroup@@V?$allocator@VrglMeshVertexGroup@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c4e70"
+  },
+  {
+   "name": "??4?$vector@VrglMeshVertexGroup@@V?$allocator@VrglMeshVertexGroup@@@std@@@std@@QEAAAEAV01@AEBV01@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c4d00"
+  },
+  {
+   "name": "?resize@?$vector@VrglMeshVertex@@V?$allocator@VrglMeshVertex@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c4be0"
+  },
+  {
+   "name": "??4?$vector@VrglMeshVertex@@V?$allocator@VrglMeshVertex@@@std@@@std@@QEAAAEAV01@AEBV01@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c4a10"
+  },
+  {
+   "name": "?push_back@?$vector@VrglMeshSkinDataRec@@V?$allocator@VrglMeshSkinDataRec@@@std@@@std@@QEAAXAEBVrglMeshSkinDataRec@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c48f0"
+  },
+  {
+   "name": "?resize@?$vector@VrglMeshSkinDataRec@@V?$allocator@VrglMeshSkinDataRec@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c47a0"
+  },
+  {
+   "name": "??4?$vector@VrglMeshSkinDataRec@@V?$allocator@VrglMeshSkinDataRec@@@std@@@std@@QEAAAEAV01@AEBV01@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c45d0"
+  },
+  {
+   "name": "?resize@?$vector@VrglMeshFaceCorner@@V?$allocator@VrglMeshFaceCorner@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c44f0"
+  },
+  {
+   "name": "??4?$vector@VrglMeshFaceCorner@@V?$allocator@VrglMeshFaceCorner@@@std@@@std@@QEAAAEAV01@AEBV01@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c4330"
+  },
+  {
+   "name": "?resize@?$vector@VrglMeshVertexGroupPair@@V?$allocator@VrglMeshVertexGroupPair@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c4100"
+  },
+  {
+   "name": "??1rglMeshVertexKey@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c40b0"
+  },
+  {
+   "name": "??0rglMeshVertexKey@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c4090"
+  },
+  {
+   "name": "??4?$rglIpo@VrglMeshVertexKey@@@@QEAAAEAV0@AEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c3f20"
+  },
+  {
    "name": "?readStream@?$rglIpo@VrglMeshVertexKey@@@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402c3e00"
   },
   {
+   "name": "??1?$rglIpo@VrglMeshVertexKey@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c3da0"
+  },
+  {
    "name": "?transformLocalToParent@rglMesh@@QEAAXAEBVrglTransform@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402c2530"
+  },
+  {
+   "name": "?setVertexKeysTimePoint@rglMesh@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c23c0"
+  },
+  {
+   "name": "?updateVertexKeys@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c1dd0"
+  },
+  {
+   "name": "?color@rglMesh@@QEAAXAEBVrglColor@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c1680"
+  },
+  {
+   "name": "?invertFaces@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c15c0"
+  },
+  {
+   "name": "?tileHorizontal@rglMesh@@QEAAXAEBVrglVector2@@0M_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402beff0"
+  },
+  {
+   "name": "?tileVertical@rglMesh@@QEAAXAEBVrglVector2@@0M_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402be000"
   },
   {
    "name": "?makeQuadFaceInvertUV@rglMesh@@QEAAXAEBVrglVector4@@AEBVrglVector2@@11I@Z",
@@ -18478,10 +24298,112 @@
    "va": "0x1402bcc80"
   },
   {
+   "name": "?isSuitableForCollection@rglMesh@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bb5f0"
+  },
+  {
+   "name": "?writeIndexData@rglMesh@@QEAAXPEAD_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402baff0"
+  },
+  {
+   "name": "?WriteIndexDataAsync@@YAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bafe0"
+  },
+  {
+   "name": "?writeVertexData@rglMesh@@QEAAXPEADH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402babb0"
+  },
+  {
+   "name": "?WriteVertexDataAsync@@YAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bab90"
+  },
+  {
+   "name": "?getSkinData@rglMesh@@QEBAAEBV?$rglVector@VrglMeshSkinDataRec@@@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bab00"
+  },
+  {
+   "name": "?getVertexDeclarationType@rglMesh@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402baa30"
+  },
+  {
+   "name": "?updateRenderOrder@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b9e50"
+  },
+  {
+   "name": "?updateSkinDataIfNeeeded@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b9dd0"
+  },
+  {
+   "name": "?updateSkinData@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b9930"
+  },
+  {
    "name": "?readStream@rglMesh@@QEAAXAEAVrglStream@@H@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402b84b0"
+  },
+  {
+   "name": "?getType@rglMesh@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402061e0"
+  },
+  {
+   "name": "??1rglMesh@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b81d0"
+  },
+  {
+   "name": "??1?$rglVector@VrglMeshFace@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$rglVector@VrglMeshVertexGroup@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140127b20"
+  },
+  {
+   "name": "??1?$rglVector@VrglMeshVertex@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$rglVector@VrglMeshSkinDataRec@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$rglVector@VrglMeshFaceCorner@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
   },
   {
    "name": "?readStream@rglMeshVertexKey@@QEAAXAEAVrglStream@@@Z",
@@ -18514,16 +24436,124 @@
    "va": "0x1402bb0a0"
   },
   {
+   "name": "?getVertexKeys@rglMesh@@QEBAAEBV?$rglIpo@VrglMeshVertexKey@@@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bab60"
+  },
+  {
    "name": "?addMeshPointUp@rglMesh@@QEAAXPEAV1@AEBVrglTransform@@I_N@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402bc310"
   },
   {
+   "name": "?captureBaseColors@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ba1c0"
+  },
+  {
+   "name": "?moveTowardsNormal@rglMesh@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c27f0"
+  },
+  {
+   "name": "?gammaCorrect@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c02b0"
+  },
+  {
+   "name": "?getVertices@rglMesh@@QEBAAEBV?$rglVector@VrglMeshVertex@@@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bab30"
+  },
+  {
+   "name": "?getFaces@rglMesh@@QEBAAEBV?$rglVector@VrglMeshFace@@@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402baaa0"
+  },
+  {
+   "name": "?getFaceCorners@rglMesh@@QEBAAEBV?$rglVector@VrglMeshFaceCorner@@@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402baad0"
+  },
+  {
+   "name": "?createUniqueFaces@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ba350"
+  },
+  {
+   "name": "?computeNormals@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b9320"
+  },
+  {
+   "name": "?setVertexAlpha@rglMesh@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c1b90"
+  },
+  {
+   "name": "?setLight@rglMesh@@QEAAXPEAVrglLight@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c1880"
+  },
+  {
+   "name": "?addParticleSystem@rglMesh@@QEAAXPEAVrglParticleSystem@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c17e0"
+  },
+  {
+   "name": "?removeParticleSystem@rglMesh@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c18d0"
+  },
+  {
+   "name": "?getSimpleCopy@rglMesh@@QEBAPEAV1@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ba930"
+  },
+  {
+   "name": "?writeFloraWindWeights@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ba040"
+  },
+  {
    "name": "?makeRectangleFace@rglMesh@@QEAAXAEBVrglVector4@@0AEBVrglVector2@@1I@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402bd730"
+  },
+  {
+   "name": "?createUniqueVertexData@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ba2b0"
+  },
+  {
+   "name": "?setVertexColorAlpha@rglMesh@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c1af0"
+  },
+  {
+   "name": "?setNextVertexKeysTimePoint@rglMesh@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c2370"
   },
   {
    "name": "?transform@rglMesh@@QEAAXAEBVrglTransform@@@Z",
@@ -18538,6 +24568,24 @@
    "va": "0x1402c1c40"
   },
   {
+   "name": "?uniformizeColor@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c2650"
+  },
+  {
+   "name": "?loadOnDemandTextures@rglMesh@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c25d0"
+  },
+  {
+   "name": "?clear@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b9ff0"
+  },
+  {
    "name": "?addVertex@rglMesh@@QEAAHAEBVrglVector4@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -18550,10 +24598,34 @@
    "va": "0x1402bd620"
   },
   {
+   "name": "?addFace@rglMesh@@QEAAHHHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bd560"
+  },
+  {
+   "name": "?computeTangents@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b8880"
+  },
+  {
+   "name": "?updateBoundingBox@rglMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ba390"
+  },
+  {
    "name": "?makeQuadFace@rglMesh@@QEAAXAEBVrglVector4@@AEBVrglVector2@@11I@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402bdbd0"
+  },
+  {
+   "name": "?replaceMaterial@rglMesh@@QEAAXPEAVrglMaterial@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ba5c0"
   },
   {
    "name": "?scale@rglMesh@@QEAAXAEBVrglVector4@@_NM@Z",
@@ -18562,10 +24634,46 @@
    "va": "0x1402c04e0"
   },
   {
+   "name": "?fitToRect@rglMesh@@QEAAXAEBVrglVector2@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c0050"
+  },
+  {
    "name": "?translateVertices@rglMesh@@QEAAXAEBVrglVector4@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402c1330"
+  },
+  {
+   "name": "?getCopy@rglMesh@@QEBAPEAV1@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ba6b0"
+  },
+  {
+   "name": "?setColorAlpha@rglMesh@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c1a60"
+  },
+  {
+   "name": "?setAlpha@rglMesh@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c1aa0"
+  },
+  {
+   "name": "??0rglMesh@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b7de0"
+  },
+  {
+   "name": "?scaleVertices@rglMesh@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c0bb0"
   },
   {
    "name": "?addMesh@rglMesh@@QEAAXPEAV1@AEBVrglTransform@@HI_N2@Z",
@@ -18586,6 +24694,24 @@
    "va": "0x1402c3090"
   },
   {
+   "name": "?resize@?$vector@PEAVrglMesh@@V?$allocator@PEAVrglMesh@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ffa70"
+  },
+  {
+   "name": "??0rglMetaMeshLod@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f0a0"
+  },
+  {
+   "name": "?loadOnDemandTextures@rglMetaMeshLod@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c6280"
+  },
+  {
    "name": "?addMetaMeshLodOriginal@rglMetaMeshLod@@QEAAXAEAV1@HAEBVrglTransform@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -18604,10 +24730,28 @@
    "va": "0x1402c5e10"
   },
   {
+   "name": "?addMesh@rglMetaMeshLod@@QEAAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5bd0"
+  },
+  {
    "name": "?frameMove@rglMetaMeshLod@@QEAAXMAEBVrglTransform@@AEBVrglVector4@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402c5ad0"
+  },
+  {
+   "name": "??1rglMetaMeshLod@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5a40"
+  },
+  {
+   "name": "?clear@rglMetaMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c6540"
   },
   {
    "name": "?frameMove@rglMetaMesh@@QEAAXPEAVrglEntity@@MAEBVrglTransform@@AEBVrglVector4@@@Z",
@@ -18616,10 +24760,28 @@
    "va": "0x1402c65f0"
   },
   {
+   "name": "?deformMove@rglMetaMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7b40"
+  },
+  {
+   "name": "?setVertexColorAlpha@rglMetaMesh@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c6e10"
+  },
+  {
    "name": "?addMetaMeshOriginal@rglMetaMesh@@QEAAXPEAV1@HAEBVrglTransform@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402c8140"
+  },
+  {
+   "name": "?setColorAlpha@rglMetaMesh@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c6c10"
   },
   {
    "name": "?addMetaMesh@rglMetaMesh@@QEAAXPEAV1@HAEBVrglTransform@@I@Z",
@@ -18634,6 +24796,72 @@
    "va": "0x1402c7f70"
   },
   {
+   "name": "?setVertexKeysTimePoint@rglMetaMesh@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c78d0"
+  },
+  {
+   "name": "?setLight@rglMetaMesh@@QEAAXPEAVrglLight@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7450"
+  },
+  {
+   "name": "?addParticleSystem@rglMetaMesh@@QEAAXPEAVrglParticleSystem@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7430"
+  },
+  {
+   "name": "?replaceMaterial@rglMetaMeshLod@@QEAAXPEAVrglMaterial@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5c80"
+  },
+  {
+   "name": "?replaceMaterial@rglMetaMesh@@QEAAXPEAVrglMaterial@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7390"
+  },
+  {
+   "name": "?startDeformAnimation@rglMetaMesh@@QEAAXHMMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7a60"
+  },
+  {
+   "name": "?getCurrentDeformAnimationProgress@rglMetaMesh@@QEAAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7ac0"
+  },
+  {
+   "name": "?getNextVertexKeysTimePoint@rglMetaMesh@@QEAAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7a30"
+  },
+  {
+   "name": "?removeParticleSystem@rglMetaMesh@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c74b0"
+  },
+  {
+   "name": "?setVisibilityFlags@rglMetaMesh@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7760"
+  },
+  {
+   "name": "?setBillboard@rglMetaMesh@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c77d0"
+  },
+  {
    "name": "?setLocalTransform@rglMetaMesh@@QEAAXAEBVrglTransform@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -18646,10 +24874,76 @@
    "va": "0x1402c7c80"
   },
   {
+   "name": "?scaleVertices@rglMetaMesh@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7e20"
+  },
+  {
+   "name": "?getCopy@rglMetaMesh@@QEBAPEAV1@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7080"
+  },
+  {
+   "name": "?updateBoundingBox@rglMetaMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c6eb0"
+  },
+  {
    "name": "?render@rglMetaMesh@@QEAAXPEAVrglRenderContext@@AEBVrglTransform@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402c6b60"
+  },
+  {
+   "name": "?setColor@rglMetaMesh@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c6cc0"
+  },
+  {
+   "name": "?setAlpha@rglMetaMesh@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c6d50"
+  },
+  {
+   "name": "?setNextVertexKeysTimePoint@rglMetaMesh@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7970"
+  },
+  {
+   "name": "?getMesh@rglMetaMesh@@QEAAPEAVrglMesh@@HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7060"
+  },
+  {
+   "name": "?setPolicy@rglMetaMesh@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7840"
+  },
+  {
+   "name": "??0rglMetaMesh@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c63d0"
+  },
+  {
+   "name": "?addMesh@rglMetaMesh@@QEAAXHPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7020"
+  },
+  {
+   "name": "??1rglMetaMesh@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c64e0"
   },
   {
    "name": "?writeString@rglOutputBinaryFileStreamWithChecksum@@UEAAXAEBVrglString@@@Z",
@@ -18784,10 +25078,106 @@
    "va": "0x1402d6080"
   },
   {
+   "name": "??$_Buynode@U?$pair@PEAVrglMaterial@@PEAVrglMesh@@@std@@@?$_List_buy@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@2@@std@@QEAAPEAU?$_List_node@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@PEAX@1@PEAU21@0$$QEAU?$pair@PEAVrglMaterial@@PEAVrglMesh@@@1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d3660"
+  },
+  {
+   "name": "??$_Uninit_move@PEAV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@PEAV12@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@@std@@@2@V12@@std@@YAPEAV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@0@PEAV10@00AEAU?$_Wrap_alloc@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@@std@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14009ba20"
+  },
+  {
+   "name": "?_Check_size@?$_Hash@V?$_Umap_traits@PEAVrglMaterial@@PEAVrglMesh@@V?$_Uhash_compare@PEAVrglMaterial@@U?$hash@PEAVrglMaterial@@@std@@U?$equal_to@PEAVrglMaterial@@@3@@std@@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@4@$0A@@std@@@std@@IEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d3270"
+  },
+  {
+   "name": "??$_Uninit_fill_n@PEAV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@_KV12@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@@std@@@2@V12@@std@@YAXPEAV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@0@_KPEBV10@AEAU?$_Wrap_alloc@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@@std@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14009b420"
+  },
+  {
+   "name": "??$_Insert@AEAU?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@2@@?$_Hash@V?$_Umap_traits@PEAVrglMaterial@@PEAVrglMesh@@V?$_Uhash_compare@PEAVrglMaterial@@U?$hash@PEAVrglMaterial@@@std@@U?$equal_to@PEAVrglMaterial@@@3@@std@@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@4@$0A@@std@@@std@@IEAA?AU?$pair@V?$_List_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@_N@1@AEAU?$pair@QEAVrglMaterial@@PEAVrglMesh@@@1@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d3040"
+  },
+  {
+   "name": "?_Insert_n@?$vector@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@@std@@@2@@std@@IEAA?AV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@@std@@@std@@@2@V?$_Vector_const_iterator@V?$_Vector_val@U?$_Simple_types@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@@std@@@std@@@2@_KAEBV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@2@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14009aa80"
+  },
+  {
+   "name": "?_Buynode0@?$_List_alloc@$0A@U?$_List_base_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@2@@std@@@std@@QEAAPEAU?$_List_node@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@PEAX@2@PEAU32@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d2f60"
+  },
+  {
+   "name": "?_Hashval@?$_Hash@V?$_Umap_traits@PEAVrglMaterial@@PEAVrglMesh@@V?$_Uhash_compare@PEAVrglMaterial@@U?$hash@PEAVrglMaterial@@@std@@U?$equal_to@PEAVrglMaterial@@@3@@std@@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@4@$0A@@std@@@std@@IEBA_KAEBQEAVrglMaterial@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d2ec0"
+  },
+  {
+   "name": "??1?$vector@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@std@@@std@@@std@@@std@@@2@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$list@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@2@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400995e0"
+  },
+  {
+   "name": "?clear@?$_Hash@V?$_Umap_traits@PEAVrglMaterial@@PEAVrglMesh@@V?$_Uhash_compare@PEAVrglMaterial@@U?$hash@PEAVrglMaterial@@@std@@U?$equal_to@PEAVrglMaterial@@@3@@std@@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@4@$0A@@std@@@std@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14029bce0"
+  },
+  {
+   "name": "??A?$unordered_map@PEAVrglMaterial@@PEAVrglMesh@@U?$hash@PEAVrglMaterial@@@std@@U?$equal_to@PEAVrglMaterial@@@4@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@4@@std@@QEAAAEAPEAVrglMesh@@AEBQEAVrglMaterial@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d26b0"
+  },
+  {
+   "name": "??1?$_Hash@V?$_Umap_traits@PEAVrglMaterial@@PEAVrglMesh@@V?$_Uhash_compare@PEAVrglMaterial@@U?$hash@PEAVrglMaterial@@@std@@U?$equal_to@PEAVrglMaterial@@@3@@std@@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@4@$0A@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400994a0"
+  },
+  {
+   "name": "??0?$unordered_map@PEAVrglMaterial@@PEAVrglMesh@@U?$hash@PEAVrglMaterial@@@std@@U?$equal_to@PEAVrglMaterial@@@4@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@4@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d22e0"
+  },
+  {
    "name": "?adjustFlareMesh@rglRenderContext@@QEAA?AVrglTransform@@PEAVrglRenderMesh@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402d7fd0"
+  },
+  {
+   "name": "?getOrCreateCollectionMesh@rglRenderContext@@QEAAPEAVrglMesh@@PEAVrglMaterial@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d7c30"
+  },
+  {
+   "name": "??1?$rglMap@PEAVrglMaterial@@PEAVrglMesh@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b3cd0"
   },
   {
    "name": "?addCollectionMesh@rglRenderContext@@QEAA_NPEAVrglMesh@@AEBVrglTransform@@@Z",
@@ -19054,6 +25444,12 @@
    "va": "0x1402de7b0"
   },
   {
+   "name": "?setMesh@rglRenderMesh@@QEAAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ea6f0"
+  },
+  {
    "name": "?buildText@rglRenderStats@@QEAA?AVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
@@ -19066,16 +25462,52 @@
    "va": "0x1402eb860"
   },
   {
+   "name": "??$_Pop_heap_0@PEAPEAVrglMesh@@PEAV1@P6A_NPEAV1@0@Z@std@@YAXPEAPEAVrglMesh@@0P6A_NPEAV1@1@Z0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ea5c0"
+  },
+  {
+   "name": "??$_Med3@PEAPEAVrglMesh@@P6A_NPEAV1@0@Z@std@@YAXPEAPEAVrglMesh@@00P6A_NPEAV1@1@Z@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ea540"
+  },
+  {
    "name": "??$_Buynode@U?$pair@HV?$rglVector@VrglString@@@@@std@@@?$_List_buy@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@V?$allocator@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@2@@std@@QEAAPEAU?$_List_node@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@PEAX@1@PEAU21@0$$QEAU?$pair@HV?$rglVector@VrglString@@@@@1@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402f62c0"
   },
   {
+   "name": "??$_Insertion_sort1@PEAPEAVrglMesh@@P6A_NPEAV1@0@ZPEAV1@@std@@YAXPEAPEAVrglMesh@@0P6A_NPEAV1@1@Z0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ea460"
+  },
+  {
+   "name": "??$_Make_heap@PEAPEAVrglMesh@@_JPEAV1@P6A_NPEAV1@0@Z@std@@YAXPEAPEAVrglMesh@@0P6A_NPEAV1@1@ZPEA_J0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ea340"
+  },
+  {
+   "name": "??$_Median@PEAPEAVrglMesh@@P6A_NPEAV1@0@Z@std@@YAXPEAPEAVrglMesh@@00P6A_NPEAV1@1@Z@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ea260"
+  },
+  {
    "name": "??$_Uninit_move@PEAV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@std@@@std@@@std@@PEAV12@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@std@@@std@@@std@@@std@@@2@V12@@std@@YAPEAV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@std@@@std@@@0@PEAV10@00AEAU?$_Wrap_alloc@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@std@@@std@@@std@@@std@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14009ba20"
+  },
+  {
+   "name": "??$_Unguarded_partition@PEAPEAVrglMesh@@P6A_NPEAV1@0@Z@std@@YA?AU?$pair@PEAPEAVrglMesh@@PEAPEAV1@@0@PEAPEAVrglMesh@@0P6A_NPEAV2@1@Z@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ea070"
   },
   {
    "name": "?_Check_size@?$_Hash@V?$_Umap_traits@HV?$rglVector@VrglString@@@@V?$_Uhash_compare@HU?$hash@H@std@@U?$equal_to@H@2@@std@@V?$allocator@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@3@$0A@@std@@@std@@IEAAXXZ",
@@ -19100,6 +25532,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402f5960"
+  },
+  {
+   "name": "??$_Sort@PEAPEAVrglMesh@@_JP6A_NPEAV1@0@Z@std@@YAXPEAPEAVrglMesh@@0_JP6A_NPEAV1@2@Z@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402e9f20"
   },
   {
    "name": "?_Insert_n@?$vector@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@std@@@std@@@std@@U?$_Wrap_alloc@V?$allocator@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@std@@@std@@@std@@@std@@@2@@std@@IEAA?AV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@std@@@std@@@std@@@std@@@std@@@2@V?$_Vector_const_iterator@V?$_Vector_val@U?$_Simple_types@V?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@std@@@std@@@std@@@std@@@std@@@2@_KAEBV?$_List_unchecked_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@std@@@std@@@2@@Z",
@@ -19216,6 +25654,12 @@
    "va": "0x1402ebf50"
   },
   {
+   "name": "?CompareMeshes@@YA_NPEAVrglMesh@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ebd10"
+  },
+  {
    "name": "?getShader@rglResourceManager@@QEAAPEAVrglShader@@AEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -19234,6 +25678,18 @@
    "va": "0x1402f3360"
   },
   {
+   "name": "?getDefaultTroopLabelBannerMesh@rglResourceManager@@QEAAPEAVrglMesh@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402f1460"
+  },
+  {
+   "name": "?getDefaultTroopLabelBannerHighlightMesh@rglResourceManager@@QEAAPEAVrglMesh@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402f1580"
+  },
+  {
    "name": "?getDynamicMaterial@rglResourceManager@@QEAAPEAVrglMaterial@@AEBVrglString@@0I@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -19250,6 +25706,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402f28c0"
+  },
+  {
+   "name": "?getDefaultTrackMesh@rglResourceManager@@QEAAPEAVrglMesh@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402f12b0"
+  },
+  {
+   "name": "?getDefaultBattleTrackMesh@rglResourceManager@@QEAAPEAVrglMesh@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402f1350"
   },
   {
    "name": "?tryGetMaterial@rglResourceManager@@QEAAPEAVrglMaterial@@AEBVrglString@@@Z",
@@ -19316,6 +25784,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402f9b50"
+  },
+  {
+   "name": "?lightMeshes@rglScene@@QEAAXAEAV?$rglVector@PEAVrglMesh@@@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fa9e0"
   },
   {
    "name": "?createSoundBody@rglScene@@QEAAPEAVGeometry@FMOD@@PEAVrglBodyPart@@MAEBVrglTransform@@AEBVrglVector4@@@Z",
@@ -19462,6 +25936,24 @@
    "va": "0x1403042e0"
   },
   {
+   "name": "?skinMesh@rglSkeleton@@QEAAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b8f0"
+  },
+  {
+   "name": "?updateMeshSkinning@rglSkeleton@@QEAAXPEAVrglMesh@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b840"
+  },
+  {
+   "name": "?updateMetaMeshSkinning@rglSkeleton@@QEAAXPEAVrglMetaMesh@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b7a0"
+  },
+  {
    "name": "?computePosition@rglSkeleton@@QEAA?AVrglVector4@@H@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -19492,16 +25984,40 @@
    "va": "0x14030a770"
   },
   {
+   "name": "?detachMetaMesh@rglSkeleton@@QEAAXPEAVrglMetaMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b650"
+  },
+  {
+   "name": "?attachMetaMesh@rglSkeleton@@QEAAXPEAVrglMetaMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b320"
+  },
+  {
    "name": "?attachMetaMeshToBone@rglSkeleton@@QEAAXHPEAVrglMetaMesh@@AEBVrglTransform@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14030b490"
   },
   {
+   "name": "?isMetaMeshAttachedToBone@rglSkeleton@@QEAA_NHPEAVrglMetaMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b750"
+  },
+  {
    "name": "?reattachMetaMesh@rglSkeleton@@QEAAXHPEAVrglMetaMesh@@AEBVrglTransform@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14030b600"
+  },
+  {
+   "name": "?attachMetaMeshToBone@rglSkeleton@@QEAAXHPEAVrglMetaMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b3d0"
   },
   {
    "name": "?readStream@?$rglIpo@VrglVector3@@@@QEAAXAEAVrglStream@@@Z",
@@ -20206,10 +26722,34 @@
    "va": "0x14061c418"
   },
   {
+   "name": "?forget@rglVertexBuffer@@QEAAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403191a0"
+  },
+  {
+   "name": "?allocate@rglVertexBuffer@@QEAAHPEAVrglMesh@@HI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318fa0"
+  },
+  {
+   "name": "?setMeshAutoFit@rglWidget@@UEAAXHPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d360"
+  },
+  {
    "name": "?setText@rglWidget@@UEAA?AVrglVector2@@AEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14031e330"
+  },
+  {
+   "name": "?setMesh@rglWidget@@UEAAXHPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d3b0"
   },
   {
    "name": "?drawText@rglWidget@@UEAAXAEBVrglString@@AEBVrglVector2@@@Z",
@@ -20222,6 +26762,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14031c070"
+  },
+  {
+   "name": "?setMeshStretched@rglWidget@@UEAAXHPEAVrglMesh@@AEBVrglVector2@@1@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d310"
+  },
+  {
+   "name": "?setMeshTiled@rglWidget@@UEAAXHPEAVrglMesh@@AEBVrglVector2@@1@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d400"
   },
   {
    "name": "?setVerticalBarMeshes@rglWidget@@UEAAMHAEBVrglString@@00AEBVrglVector2@@1@Z",
@@ -20470,6 +27022,12 @@
    "va": "0x14032c4a0"
   },
   {
+   "name": "?setMessageBoxBackgroundMesh@rglWindowManager@@QEAAXPEAVrglMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14032c3d0"
+  },
+  {
    "name": "?displayMessage@rglWindowManager@@QEAAXAEBVrglString@@I@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -20480,6 +27038,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14032d2a0"
+  },
+  {
+   "name": "?setTooltipMesh@rglWindowManager@@QEAAXPEAVrglMesh@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14032c7d0"
   },
   {
    "name": "?addTooltipLine@rglWindowManager@@QEAAXAEBVrglString@@MI_N@Z",
@@ -20584,6 +27148,18 @@
    "va": "0x140333cb0"
   },
   {
+   "name": "??1mbSkill@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140335d90"
+  },
+  {
+   "name": "??0mbSkill@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140335d40"
+  },
+  {
    "name": "?EnqueueMessage@@YAXAEBVrglString@@I@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -20636,6 +27212,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140698b70"
+  },
+  {
+   "name": "?g_skills@@3PAVmbSkill@@A",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14065f810"
   },
   {
    "name": "?g_gameScreen@@3VmbGameScreen@@A",
@@ -21431,6 +28013,13 @@
    "type_index": "0x34ac"
   },
   {
+   "name": "rglMetaMesh::s_lodLevels",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x140617d40",
+   "type_index": "0x887e"
+  },
+  {
    "name": "rglVector4::Up",
    "kind": "global",
    "source": "pdb-global",
@@ -21457,6 +28046,13 @@
    "source": "pdb-global",
    "va": "0x14061c3f8",
    "type_index": "0x32d9"
+  },
+  {
+   "name": "g_itemKinds",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x14061f060",
+   "type_index": "0x3416"
   },
   {
    "name": "g_renderer",
@@ -21506,6 +28102,20 @@
    "source": "pdb-global",
    "va": "0x14069fac0",
    "type_index": "0x27497"
+  },
+  {
+   "name": "g_partyTemplates",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x14061f0d8",
+   "type_index": "0x54db"
+  },
+  {
+   "name": "g_sceneProps",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x14061f0f0",
+   "type_index": "0x583f"
   }
  ],
  "vtables": [

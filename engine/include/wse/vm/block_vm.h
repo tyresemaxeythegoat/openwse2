@@ -52,6 +52,7 @@
 
 #include "wse/game/script.h"
 #include "wse/game/trigger.h"
+#include "wse/game/world_state.h"
 #include "wse/vm/execute_wse.h"
 #include "wse/vm/operand.h"
 #include "wse/vm/slots.h"
@@ -173,6 +174,7 @@ struct VmContext {
     bool profilerRecording = false;
     std::vector<std::string> profilerMarkers{};
     WseDictionaryStore dictionaries{};
+    wse::game::WseWorldState world{};
 
     bool clearLocalsBetweenCalls = false;
     std::int32_t maxCallDepth = kMaxCallDepth;
@@ -642,6 +644,7 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     operands.state.profiler_recording = &ctx.profilerRecording;
     operands.state.profiler_markers = &ctx.profilerMarkers;
     operands.state.dictionaries = &ctx.dictionaries;
+    operands.state.world = &ctx.world;
     if (ctx.scripts != nullptr) {
         operands.state.num_scripts = ctx.scripts->scripts.size();
         operands.state.execute_script_fn = &wse_invoke_script_callback;

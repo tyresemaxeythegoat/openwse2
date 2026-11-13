@@ -760,6 +760,71 @@ void test_feval_and_custom_array_sort() {
            "feval and array_sort_custom work across int/str/pos comparators, depth frames, and abort guard");
 }
 
+void test_world_state_script_integration() {
+    using namespace wse::vm;
+
+    auto op = [](WseOpcode value) { return static_cast<std::uint32_t>(value); };
+
+    VmContext ctx;
+    ctx.world.has_game = true;
+    ctx.world.water_level = 2.5f;
+    ctx.world.skills[wse::game::kSkillIronflesh].max_level = 10;
+    ctx.world.troops.resize(1);
+    ctx.world.troops[0].attributes[0] = 10;
+    ctx.world.troops[0].hit_points = 45.0f;
+    ctx.world.troops[0].slots.set(7, 30);
+    ctx.world.items.resize(1);
+    ctx.world.items[0].id = "itm_broad_sword";
+    ctx.world.mission_objects.resize(1);
+    ctx.world.mission_objects[0].active = true;
+    ctx.world.edit_mode.active = true;
+
+    StatementBlock block;
+    block.statements = {
+        make_stmt(op(WseOpcode::options_set_cheat_mode), {1}),
+        make_stmt(op(WseOpcode::stop_time), {1}),
+        make_stmt(op(WseOpcode::troop_set_skill),
+                  {0, wse::game::kSkillIronflesh, 4}),
+        make_stmt(core_op::kTryBegin, {}),
+        make_stmt(op(WseOpcode::troop_slot_gt), {0, 7, 40}),
+        make_stmt(core_op::kAssign, {reg(1), 999}),
+        make_stmt(core_op::kElseTry, {}),
+        make_stmt(core_op::kAssign, {reg(1), 10}),
+        make_stmt(core_op::kTryEnd, {}),
+        make_stmt(op(WseOpcode::troop_set_attribute), {0, 0, 20}),
+        make_stmt(op(WseOpcode::str_store_item_id), {sreg(0), 0}),
+        make_stmt(op(WseOpcode::edit_mode_select_prop_instance), {0}),
+        make_stmt(op(WseOpcode::edit_mode_get_num_selected_prop_instances),
+                  {reg(2)}),
+        make_stmt(op(WseOpcode::get_water_level), {reg(3)}),
+    };
+
+    const bool ok = execute_statement_block(block, ctx);
+    expect(ok && ctx.errorCount == 0 && ctx.unimplementedCount == 0 &&
+               ctx.world.paused &&
+               ctx.world.troops[0].get_skill_raw(wse::game::kSkillIronflesh) ==
+                   4 &&
+               ctx.world.troops[0].attributes[0] == 20 &&
+               ctx.registers[1] == 10 &&
+               ctx.stringRegisters[0] == u"itm_broad_sword" &&
+               ctx.registers[2] == 1 && ctx.registers[3] == 250,
+           "statement block integrates WseWorldState troop, item, edit_mode, and config handlers");
+
+    // Now set slot 7 above 40 and confirm troop_slot_gt takes the positive branch.
+    ctx.world.troops[0].slots.set(7, 55);
+    StatementBlock branchBlock;
+    branchBlock.statements = {
+        make_stmt(core_op::kTryBegin, {}),
+        make_stmt(op(WseOpcode::troop_slot_gt), {0, 7, 40}),
+        make_stmt(core_op::kAssign, {reg(4), 1}),
+        make_stmt(core_op::kElseTry, {}),
+        make_stmt(core_op::kAssign, {reg(4), 0}),
+        make_stmt(core_op::kTryEnd, {}),
+    };
+    expect(execute_statement_block(branchBlock, ctx) && ctx.registers[4] == 1,
+           "troop_slot_gt branches true once slot exceeds threshold");
+}
+
 }  // namespace
 
 int main() {
@@ -771,6 +836,7 @@ int main() {
     test_triggers_and_wse_integration();
     test_return_values_positions_and_dict_loop();
     test_feval_and_custom_array_sort();
+    test_world_state_script_integration();
 
     if (failures != 0) {
         std::printf("block_vm tests: FAIL (%d)\n", failures);

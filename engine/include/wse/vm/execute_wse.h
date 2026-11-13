@@ -24,13 +24,14 @@
 // The complete 440-opcode structure is in docs/WSE_OPCODES.md and
 // docs/wse_opcodes.json; wse_opcodes.h is generated from that map. This file
 // implements the arithmetic/bitwise group 2800..2809, register group
-// 3000..3002, VM/timer/RNG/profiler group 3014..3017, 3020..3022, 3027..3028,
-// 3034..3035, 3040..3043, and 3600, dictionary group 3200..3222, position
-// vector group 4100 and 4102..4104, string group 4200..4224, 4233..4234,
-// 4236, 4238, and 4240..4244, options flags group 4300..4305, floating-point
-// register group 4400..4438 (100%, including feval), and dynamic array group
-// 5000..5022 (158 of 440 opcodes). Every other known opcode reports
-// WseDispatch::unimplemented instead of guessing.
+// 3000..3017, 3020..3022, 3026..3028, 3030..3031, 3034..3038, 3040..3043,
+// 3045, and 3600..3601/3608/3610/3619/3622, dictionary group 3200..3222,
+// troop group 3700..3709, item/cur_item group 3800..3813, position vector
+// group 4100 and 4102..4104, string group 4200..4224, 4226, 4231..4236,
+// 4238..4246, options flags group 4300..4305, floating-point register group
+// 4400..4438 (100%, including feval), edit-mode group 4600..4609, and dynamic
+// array group 5000..5022 (222 of 440 opcodes). Every other known opcode
+// reports WseDispatch::unimplemented instead of guessing.
 //
 // Register group evidence:
 //   3000 register_get (line 628): mbCheckRegister(param_4[1]), then
@@ -185,6 +186,33 @@
 //   use stable natural merge sort (0x1401fdd80, max n double-passes);
 //   array_eq..array_le call 0x1401f58a0 (positions support ==/!= after
 //   orthonormalize()).
+// - Entity *_slot_gt group (3003..3013 / 0xbbb..0xbc5, 0x1401e55c5..0x1401e5912):
+//   invalid entities or unsigned slot_no > 0xfffff return false (0x1401e4ec5),
+//   out-of-range slots read 0 (0x1402183a0), and teams validate 0..7.
+// - VM/time/HUD/mission scalars (3026/3030..3031/3036..3038/3045, 3601/3608/
+//   3610/3619/3622): DAT_14061f038 (campaign_time), mbGame::m_mainPartyNo
+//   (+0x420) & m_paused (+0x43c, gated on options.cheat_mode), is_party_skill
+//   (skills[0..41].flags bit 4 at 0x14065f8ec), DAT_140657110 (hide_hud),
+//   mbMission::m_waterLevel (+0xa4f4 * fixed_point_multiplier rounded via
+//   0x1402a18a0), m_useObjectsTooltipEnabled[0..10] (+0x54a40),
+//   DAT_14061ef1a (horse_friendly_fire), DAT_14061781a (show_crosshair = true).
+// - Troop extended group (3700..3709 / 0xe74..0xe7d, 0x1401ebcee..0x1401ebf9a):
+//   points at mbTroop +0x18c/+0x190/+0x194 (>= 0 on set), troop_has_flag bitwise
+//   test at +0x128, troop_set_skill (0x1402460b0) and troop_set_attribute
+//   (0x140246010) enforcing Ironflesh/STR HP cap, and troop_set_proficiency
+//   clamped via 0x1400a61c0(val, 0, 1000) to [0, 999].
+// - Item/cur_item group (3800..3813 / 0xed8..0xee5, 0x1401ebf9f..0x1401ec52b) +
+//   str_store_item_{id,mesh_name} (4235/4239): low byte & damage-type bits on
+//   mbItemKind +0x708/+0x70c, armor/speed/+0x738 particles/+0x740 blood_color/
+//   +0x748 skeleton, and caller == -50 cur_item_* (0x1401c5e40) with
+//   rglString::spacesToUnderscores (0x14030f270) on mesh/material names.
+// - Config/skill/savegame string ops (4226/4231/4232/4245/4246): case-sensitive
+//   INI/var maps (0x1402a7da0, 0x1402aa400), skills[0..41] name/desc with
+//   _desc translation suffix (0x1401103d0, 0x140213520), and sg%d%d.sav MD5
+//   hashing (0x14024f4c0, clears sreg first via 0x14030e9e0).
+// - Edit mode group (4600..4609 / 0x11f8..0x1201, 0x1401f198c..0x1401f1c2c):
+//   mbGame +0x16ed0..+0x16f50 active/mode/dialog/selection/highlighted index,
+//   adjusting highlighted index on deselect, and DAT_14061efb8 option flag.
 
 #pragma once
 
@@ -192,6 +220,7 @@
 #include <array>
 #include <cctype>
 #include <cfloat>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -210,9 +239,11 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
+#include "wse/game/world_state.h"
 #include "wse/vm/wse_opcodes.h"
 
 namespace wse::vm {
@@ -239,11 +270,15 @@ struct WseStringBanks {
     std::span<const std::u16string_view> local{};
 };
 
-// Runtime option booleans queried and mutated by opcodes 4300..4305.
+// Runtime option booleans queried and mutated by opcodes 4300..4305, 3619,
+// 3622, and 4606.
 struct WseOptionsState {
     bool verbose_casualties = false;   // 0x1406173b7
     bool cheat_mode = false;           // 0x14061ef50
     bool realistic_headshots = false;  // 0x14061ef39
+    bool show_crosshair = true;        // 0x14061781a
+    bool horse_friendly_fire = false;  // 0x14061ef1a
+    bool edit_mode_enabled = false;    // 0x14061efb8
 };
 
 // 64-byte position frame (rglTransform at 0x140663030, stride 0x40;
@@ -943,6 +978,8 @@ struct WseVmState {
     std::size_t num_scripts = 0;
     WseExecuteScriptFn execute_script_fn = nullptr;
     void* execute_script_user = nullptr;
+    // Game-world, mission, config, skill, and edit-mode state.
+    wse::game::WseWorldState* world = nullptr;
 };
 
 // Decoded operands, matching the arrays built by mbStatement::execute.
@@ -1603,6 +1640,12 @@ inline void wse_trim(std::u16string& text) {
     case WseOpcode::options_get_realistic_headshots:
     case WseOpcode::options_set_realistic_headshots:
         return &options->realistic_headshots;
+    case WseOpcode::set_horse_friendly_fire:
+        return &options->horse_friendly_fire;
+    case WseOpcode::set_show_crosshair:
+        return &options->show_crosshair;
+    case WseOpcode::edit_mode_set_enabled:
+        return &options->edit_mode_enabled;
     default:
         return nullptr;
     }
@@ -3853,6 +3896,200 @@ template <typename BeforeOrEqual>
     return WseDispatch::condition_false;
 }
 
+// Mirrors 0x14030f270 (rglString::spacesToUnderscores): in-place ' ' -> '_'.
+inline void wse_spaces_to_underscores(std::string& text) noexcept {
+    std::replace(text.begin(), text.end(), ' ', '_');
+}
+
+// Shared entity slot lookup for opcodes 3003..3013 (0x1401e55c5..0x1401e5912).
+[[nodiscard]] inline const Slots* wse_entity_slots_by_opcode(
+    const wse::game::WseWorldState& world,
+    std::uint32_t opcode,
+    std::int32_t id) noexcept {
+    if (id < 0) {
+        return nullptr;
+    }
+    const auto idx = static_cast<std::size_t>(id);
+    switch (static_cast<WseOpcode>(opcode)) {
+    case WseOpcode::item_slot_gt:
+        return world.is_valid_item(id) ? &world.items[idx].slots : nullptr;
+    case WseOpcode::party_template_slot_gt:
+        return world.is_valid_party_template(id)
+                   ? &world.party_templates[idx].slots
+                   : nullptr;
+    case WseOpcode::troop_slot_gt:
+        return world.is_valid_troop(id) ? &world.troops[idx].slots : nullptr;
+    case WseOpcode::faction_slot_gt:
+        return world.is_valid_faction(id) ? &world.factions[idx].slots : nullptr;
+    case WseOpcode::quest_slot_gt:
+        return world.is_valid_quest(id) ? &world.quests[idx].slots : nullptr;
+    case WseOpcode::scene_slot_gt:
+        return world.is_valid_site(id) ? &world.sites[idx].slots : nullptr;
+    case WseOpcode::party_slot_gt:
+        return world.is_valid_party(id) ? &world.parties[idx].slots : nullptr;
+    case WseOpcode::player_slot_gt:
+        return world.is_valid_player(id) ? &world.players[idx].slots : nullptr;
+    case WseOpcode::team_slot_gt:
+        return world.is_valid_team(id) ? &world.teams[idx].slots : nullptr;
+    case WseOpcode::agent_slot_gt:
+        return world.is_valid_agent(id) ? &world.agents[idx].slots : nullptr;
+    case WseOpcode::scene_prop_slot_gt:
+        return world.is_valid_mission_object(id)
+                   ? &world.mission_objects[idx].slots
+                   : nullptr;
+    default:
+        return nullptr;
+    }
+}
+
+[[nodiscard]] inline WseDispatch wse_entity_slot_gt(
+    const WseOperands& operands,
+    std::uint32_t opcode) noexcept {
+    if (operands.narrow.size() < 3 || operands.wide.size() < 3) {
+        return WseDispatch::operand_count_out_of_range;
+    }
+    if (operands.state.world == nullptr) {
+        return WseDispatch::condition_false;
+    }
+    const Slots* slots = wse_entity_slots_by_opcode(
+        *operands.state.world, opcode, operands.narrow[0]);
+    if (slots == nullptr ||
+        static_cast<std::uint32_t>(operands.narrow[1]) >
+            static_cast<std::uint32_t>(wse::game::kMaxSlotIndex)) {
+        return WseDispatch::condition_false;
+    }
+    return slots->get(operands.narrow[1]) > operands.wide[2]
+               ? WseDispatch::handled_no_store
+               : WseDispatch::condition_false;
+}
+
+[[nodiscard]] inline std::int32_t wse::game::WseTroop::*
+wse_troop_points_member(std::uint32_t opcode) noexcept {
+    switch (static_cast<WseOpcode>(opcode)) {
+    case WseOpcode::troop_get_skill_points:
+    case WseOpcode::troop_set_skill_points:
+        return &wse::game::WseTroop::skill_points;
+    case WseOpcode::troop_get_attribute_points:
+    case WseOpcode::troop_set_attribute_points:
+        return &wse::game::WseTroop::attribute_points;
+    case WseOpcode::troop_get_proficiency_points:
+    case WseOpcode::troop_set_proficiency_points:
+        return &wse::game::WseTroop::proficiency_points;
+    default:
+        return nullptr;
+    }
+}
+
+// Mirrors 3800..3803 (0x1401ebf9f..0x1401ec0cf): low byte vs bits 8..9.
+inline void wse_set_item_damage_part(wse::game::WseItemKind& item,
+                                     std::uint32_t opcode,
+                                     std::int32_t value) noexcept {
+    const auto op = static_cast<WseOpcode>(opcode);
+    std::int32_t& target =
+        (op == WseOpcode::item_set_thrust_damage ||
+         op == WseOpcode::item_set_thrust_damage_type)
+            ? item.thrust_damage
+            : item.swing_damage;
+    const auto bits = static_cast<std::uint32_t>(target);
+    const auto uval = static_cast<std::uint32_t>(value);
+    if (op == WseOpcode::item_set_thrust_damage ||
+        op == WseOpcode::item_set_swing_damage) {
+        target = static_cast<std::int32_t>((bits & ~0xffu) | (uval & 0xffu));
+    } else {
+        target = static_cast<std::int32_t>((bits & 0xffu) | ((uval & 3u) << 8));
+    }
+}
+
+[[nodiscard]] inline std::int32_t wse::game::WseItemKind::*
+wse_item_int_member(std::uint32_t opcode) noexcept {
+    switch (static_cast<WseOpcode>(opcode)) {
+    case WseOpcode::item_set_head_armor:
+        return &wse::game::WseItemKind::head_armor;
+    case WseOpcode::item_set_body_armor:
+        return &wse::game::WseItemKind::body_armor;
+    case WseOpcode::item_set_leg_armor:
+        return &wse::game::WseItemKind::leg_armor;
+    case WseOpcode::item_set_speed_rating:
+        return &wse::game::WseItemKind::speed_rating;
+    case WseOpcode::item_set_missile_speed:
+        return &wse::game::WseItemKind::missile_speed;
+    default:
+        return nullptr;
+    }
+}
+
+// Shared implementation for 4232 str_store_skill_name (0x1401103d0) and 4245
+// str_store_skill_desc (0x140213520, adding "_desc" before translation lookup).
+[[nodiscard]] inline WseDispatch wse_store_skill_text(
+    const wse::game::WseWorldState* world,
+    WseStringBanks& strings,
+    std::int32_t sreg,
+    std::int32_t skill_no,
+    bool is_desc) {
+    if (!wse_register_ok(sreg) || world == nullptr || skill_no < 0 ||
+        skill_no >= wse::game::kMaxSkills) {
+        return WseDispatch::ignored;
+    }
+    const auto& skill = world->skills[static_cast<std::size_t>(skill_no)];
+    if (!skill.id.empty()) {
+        const std::string key = is_desc ? (skill.id + "_desc") : skill.id;
+        if (const auto it = world->translations.find(key);
+            it != world->translations.end()) {
+            return wse_store_dict_string(strings, sreg, it->second);
+        }
+    }
+    return wse_store_dict_string(strings, sreg,
+                                 is_desc ? skill.description : skill.name);
+}
+
+// Mirrors 0x14024f4c0 ("sg%d%d.sav" using slot/10 and slot%10) and 4246
+// (0x1401efadc..0x1401efc8d). Clears destination sreg before file open.
+[[nodiscard]] inline WseDispatch wse_store_savegame_md5(
+    const wse::game::WseWorldState* world,
+    WseStringBanks& strings,
+    std::int32_t sreg,
+    std::int32_t slot_no) {
+    if (!wse_register_ok(sreg)) {
+        return WseDispatch::ignored;
+    }
+    if (!wse_store_string(strings, sreg, u"")) {
+        return WseDispatch::ignored;
+    }
+    if (world == nullptr || world->savegames_dir.empty()) {
+        return WseDispatch::handled_no_store;
+    }
+    const std::int32_t q = slot_no / 10;
+    const std::int32_t r = slot_no - q * 10;
+    const std::string filename =
+        "sg" + std::to_string(q) + std::to_string(r) + ".sav";
+    std::ifstream in(world->savegames_dir / filename,
+                     std::ios::binary | std::ios::ate);
+    if (!in.is_open()) {
+        return WseDispatch::handled_no_store;
+    }
+    const std::streamoff byte_count = in.tellg();
+    if (byte_count <= 0) {
+        return WseDispatch::handled_no_store;
+    }
+    in.seekg(0, std::ios::beg);
+    std::string bytes(static_cast<std::size_t>(byte_count), '\0');
+    if (in.read(bytes.data(), byte_count)) {
+        (void)wse_store_string(strings, sreg, wse_md5_hex(bytes));
+    }
+    return WseDispatch::handled_no_store;
+}
+
+[[nodiscard]] inline std::int32_t wse_edit_mode_find_selected(
+    const wse::game::WseEditModeState& edit,
+    std::int32_t instance_no) noexcept {
+    for (std::size_t i = 0; i < edit.selected_prop_instances.size(); ++i) {
+        if (edit.selected_prop_instances[i] == instance_no) {
+            return static_cast<std::int32_t>(i);
+        }
+    }
+    return -1;
+}
+
 // `val_*` uses operand 0 as both source and destination; `store_*` reads
 // operands 1.. and leaves operand 0 as the destination lvalue for the caller.
 [[nodiscard]] inline WseDispatch execute_wse(std::uint32_t opcode,
@@ -3996,6 +4233,18 @@ template <typename BeforeOrEqual>
         effect.store_value = true;
         return WseDispatch::handled;
     }
+    case WseOpcode::item_slot_gt:
+    case WseOpcode::party_template_slot_gt:
+    case WseOpcode::troop_slot_gt:
+    case WseOpcode::faction_slot_gt:
+    case WseOpcode::quest_slot_gt:
+    case WseOpcode::scene_slot_gt:
+    case WseOpcode::party_slot_gt:
+    case WseOpcode::player_slot_gt:
+    case WseOpcode::team_slot_gt:
+    case WseOpcode::agent_slot_gt:
+    case WseOpcode::scene_prop_slot_gt:
+        return wse_entity_slot_gt(operands, opcode);
     case WseOpcode::store_current_trigger: {
         // 3014 (0x1401e5917): return the context flags while inside a trigger
         // (negative), otherwise 0. WSEOperationContext::GetCurrentTrigger uses
@@ -4049,6 +4298,393 @@ template <typename BeforeOrEqual>
                            : -1;
         effect.store_value = true;
         return WseDispatch::handled;
+    }
+    case WseOpcode::sleep_ms: {
+        // 3026 (0xbd2, 0x1401e62a0 / L1188): negative skips Sleep().
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (narrow[0] < 0) {
+            return WseDispatch::ignored;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(narrow[0]));
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::set_main_party: {
+        // 3030 (0xbd6, L1284): validates party via 0x1401c4ed0.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        world->main_party_no = narrow[0];
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::get_main_party: {
+        // 3031 (0xbd7, L1291): reads mbGame::m_mainPartyNo (g_game + 0x418).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->has_game) {
+            return WseDispatch::ignored;
+        }
+        effect.value = world->main_party_no;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::is_party_skill: {
+        // 3036 (0xbdc, 0x1401e63c4): skill > 41 logs and returns true; else
+        // tests bit 4 of mbSkill::m_flags (0x14065f8ec).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr ||
+            static_cast<std::uint32_t>(narrow[0]) >=
+                static_cast<std::uint32_t>(wse::game::kMaxSkills)) {
+            return WseDispatch::ignored;
+        }
+        const auto idx = static_cast<std::size_t>(narrow[0]);
+        return (world->skills[idx].flags & wse::game::kSkillPartyFlagBit) != 0
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::condition_false;
+    }
+    case WseOpcode::get_campaign_time: {
+        // 3037 (0xbdd, 0x1401e63f0): reads DAT_14061f038.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr) {
+            return WseDispatch::ignored;
+        }
+        effect.value = world->campaign_time;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::set_campaign_time: {
+        // 3038 (0xbde, 0x1401e63fc): writes DAT_14061f038 from wide[0].
+        if (wide.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr) {
+            return WseDispatch::ignored;
+        }
+        world->campaign_time = wide[0];
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::show_hud: {
+        // 3045 (0xbe5, L1571): DAT_140657110 = (*param_3 == 0).
+        if (wide.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr) {
+            return WseDispatch::ignored;
+        }
+        world->hide_hud = (wide[0] == 0);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::set_show_use_tooltip: {
+        // 3601 (0xe11, 0x1401ea71d): 0 <= type < 11 writes mbMission +0x54a40.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || narrow[0] < 0 ||
+            narrow[0] >= wse::game::kNumUseTooltipTypes) {
+            return WseDispatch::ignored;
+        }
+        world->use_objects_tooltip_enabled[static_cast<std::size_t>(
+            narrow[0])] = (narrow.size() >= 2 && narrow[1] != 0);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::stop_time: {
+        // 3608 (0xe18, 0x1401ea9da): requires cheat_mode (0x14061ef50).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->has_game ||
+            operands.state.options == nullptr ||
+            !operands.state.options->cheat_mode) {
+            return WseDispatch::ignored;
+        }
+        world->paused = (narrow[0] != 0);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::get_water_level: {
+        // 3610 (0xe1a, 0x1401eabd6): rglRound64(fixed_point * water_level).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr) {
+            return WseDispatch::ignored;
+        }
+        effect.value = wse_round64(
+            static_cast<float>(operands.state.fixed_point_multiplier) *
+            world->water_level);
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::troop_get_skill_points:
+    case WseOpcode::troop_get_attribute_points:
+    case WseOpcode::troop_get_proficiency_points: {
+        // 3700/3702/3704: read mbTroop +0x18c/+0x190/+0x194.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        const auto member = wse_troop_points_member(opcode);
+        if (world == nullptr || member == nullptr ||
+            !world->is_valid_troop(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        effect.value =
+            world->troops[static_cast<std::size_t>(narrow[1])].*member;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::troop_set_skill_points:
+    case WseOpcode::troop_set_attribute_points:
+    case WseOpcode::troop_set_proficiency_points: {
+        // 3701/3703/3705: write non-negative points into mbTroop.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        const auto member = wse_troop_points_member(opcode);
+        if (world == nullptr || member == nullptr ||
+            !world->is_valid_troop(narrow[0]) || narrow[1] < 0) {
+            return WseDispatch::ignored;
+        }
+        world->troops[static_cast<std::size_t>(narrow[0])].*member = narrow[1];
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::troop_has_flag: {
+        // 3706 (0xe7a, L4431): invalid troop logs and returns ignored; else
+        // tests (mbTroop::m_flags & wide[1]) != 0.
+        if (narrow.size() < 2 || wide.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_troop(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const auto flags =
+            world->troops[static_cast<std::size_t>(narrow[0])].flags;
+        return (flags & static_cast<std::uint64_t>(wide[1])) != 0
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::condition_false;
+    }
+    case WseOpcode::troop_set_skill: {
+        // 3707 (0xe7b, L4438 -> 0x1402460b0): clamps to skill m_maxLevel,
+        // adjusts HP for Ironflesh increase, and applies shared HP cap.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_troop(narrow[0]) ||
+            narrow[1] < 0 || narrow[1] >= wse::game::kMaxSkills) {
+            return WseDispatch::ignored;
+        }
+        world->troops[static_cast<std::size_t>(narrow[0])].set_skill(
+            narrow[1], narrow[2],
+            world->skills[static_cast<std::size_t>(narrow[1])].max_level,
+            world->skills[static_cast<std::size_t>(wse::game::kSkillIronflesh)]
+                .max_level);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::troop_set_attribute: {
+        // 3708 (0xe7c, L4451 -> 0x140246010): clamps [0, INT_MAX] and caps HP.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_troop(narrow[0]) ||
+            narrow[1] < 0 || narrow[1] >= wse::game::kMaxAttributes) {
+            return WseDispatch::ignored;
+        }
+        world->troops[static_cast<std::size_t>(narrow[0])].set_attribute(
+            narrow[1], narrow[2],
+            world->skills[static_cast<std::size_t>(wse::game::kSkillIronflesh)]
+                .max_level);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::troop_set_proficiency: {
+        // 3709 (0xe7d, L4464 -> 0x1400a61c0): clamps [0, 999] into float.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_troop(narrow[0]) ||
+            narrow[1] < 0 || narrow[1] >= wse::game::kMaxProficiencies) {
+            return WseDispatch::ignored;
+        }
+        world->troops[static_cast<std::size_t>(narrow[0])].set_proficiency(
+            narrow[1], narrow[2]);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::item_set_thrust_damage:
+    case WseOpcode::item_set_thrust_damage_type:
+    case WseOpcode::item_set_swing_damage:
+    case WseOpcode::item_set_swing_damage_type: {
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_item(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        wse_set_item_damage_part(
+            world->items[static_cast<std::size_t>(narrow[0])], opcode,
+            narrow[1]);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::item_set_head_armor:
+    case WseOpcode::item_set_body_armor:
+    case WseOpcode::item_set_leg_armor:
+    case WseOpcode::item_set_speed_rating:
+    case WseOpcode::item_set_missile_speed: {
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        const auto member = wse_item_int_member(opcode);
+        if (world == nullptr || member == nullptr ||
+            !world->is_valid_item(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        world->items[static_cast<std::size_t>(narrow[0])].*member = narrow[1];
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::item_set_horse_blood_particles: {
+        // 3809 (0xee1, L4555): requires valid item and two particle systems.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_item(narrow[0]) ||
+            !world->is_valid_particle_system(narrow[1]) ||
+            !world->is_valid_particle_system(narrow[2])) {
+            return WseDispatch::ignored;
+        }
+        world->items[static_cast<std::size_t>(narrow[0])]
+            .blood_particle_system_nos = {narrow[1], narrow[2]};
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::item_set_horse_blood_color: {
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_item(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        world->items[static_cast<std::size_t>(narrow[0])].blood_color =
+            static_cast<std::uint32_t>(narrow[1]);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::cur_item_mesh_set_color: {
+        // 3811 (0xee3, L4579): caller == -50, active rglMetaMesh (0x1401c5e40).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (operands.state.caller != -50 || world == nullptr ||
+            world->cur_item_meta_mesh == nullptr) {
+            return WseDispatch::ignored;
+        }
+        world->cur_item_meta_mesh->set_mesh_color(
+            narrow[0], static_cast<std::uint32_t>(narrow[1]));
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::cur_item_add_mesh_with_material: {
+        // 3812 (0xee4, L4602): parses mesh & material, converts spaces to
+        // underscores (0x14030f270), clones meshes per LOD [begin, end).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_string_register_ok(narrow[0], wse_tag_at(tags, 0), strings) ||
+            !wse_string_register_ok(narrow[1], wse_tag_at(tags, 1), strings)) {
+            return WseDispatch::ignored;
+        }
+        auto* const world = operands.state.world;
+        if (operands.state.caller != -50 || world == nullptr ||
+            world->cur_item_meta_mesh == nullptr) {
+            return WseDispatch::ignored;
+        }
+        std::string mesh_name;
+        std::string material_name;
+        if (!wse_resolve_parsed_utf8_operand(0, operands, mesh_name) ||
+            !wse_resolve_parsed_utf8_operand(1, operands, material_name)) {
+            return WseDispatch::ignored;
+        }
+        wse_spaces_to_underscores(mesh_name);
+        wse_spaces_to_underscores(material_name);
+        const auto mesh_it = world->resource_meshes.find(mesh_name);
+        if (mesh_it == world->resource_meshes.end()) {
+            return WseDispatch::handled_no_store;
+        }
+        const auto mat_it = world->resource_materials.find(material_name);
+        const bool mat_found =
+            mat_it != world->resource_materials.end() && mat_it->second;
+        auto& meta = *world->cur_item_meta_mesh;
+        const std::int32_t lod_begin = narrow.size() >= 3 ? narrow[2] : 0;
+        std::int32_t lod_end = narrow.size() >= 4 ? narrow[3] : 0;
+        if (lod_end == 0) {
+            lod_end = static_cast<std::int32_t>(meta.lods.size());
+        }
+        const std::int32_t color = narrow.size() >= 5 ? narrow[4] : 0;
+        if (lod_begin >= 0) {
+            for (std::int32_t lod = lod_begin;
+                 lod < lod_end &&
+                 static_cast<std::size_t>(lod) < mesh_it->second.size() &&
+                 static_cast<std::size_t>(lod) <
+                     wse::game::WseMetaMesh::kMaxLods;
+                 ++lod) {
+                wse::game::WseMesh clone =
+                    mesh_it->second[static_cast<std::size_t>(lod)];
+                clone.set_material(mat_found ? std::string_view{material_name}
+                                             : std::string_view{});
+                if (color > 0) {
+                    clone.set_color(static_cast<std::uint32_t>(color));
+                }
+                const auto u_lod = static_cast<std::size_t>(lod);
+                if (meta.lods.size() <= u_lod) {
+                    meta.lods.resize(u_lod + 1);
+                }
+                meta.lods[u_lod].push_back(std::move(clone));
+            }
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::item_set_horse_skeleton_model: {
+        // 3813 (0xee5, L4645): parses skeleton name and updates m_skeletonModel
+        // only when resolved in resource registry (0x1402f2150).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_item(narrow[0]) ||
+            !wse_string_register_ok(narrow[1], wse_tag_at(tags, 1), strings)) {
+            return WseDispatch::ignored;
+        }
+        std::string skel_name;
+        if (!wse_resolve_parsed_utf8_operand(1, operands, skel_name)) {
+            return WseDispatch::ignored;
+        }
+        if (const auto it = world->resource_skeleton_models.find(skel_name);
+            it != world->resource_skeleton_models.end() && it->second) {
+            world->items[static_cast<std::size_t>(narrow[0])].skeleton_model =
+                std::move(skel_name);
+        }
+        return WseDispatch::handled_no_store;
     }
 
     // String group 4200..4211. A failed mbCheckStringRegister returns true
@@ -4883,8 +5519,98 @@ template <typename BeforeOrEqual>
                    ? WseDispatch::handled_no_store
                    : WseDispatch::ignored;
     }
+    case WseOpcode::str_store_module_setting: {
+        // 4226 (0x1082, 0x1401ef0ef / L6003): (sreg, setting, section).
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) ||
+            !wse_string_register_ok(narrow[1], wse_tag_at(tags, 1), strings) ||
+            !wse_string_register_ok(narrow[2], wse_tag_at(tags, 2), strings)) {
+            return WseDispatch::ignored;
+        }
+        std::string setting;
+        std::string section;
+        if (!wse_resolve_parsed_utf8_operand(1, operands, setting) ||
+            !wse_resolve_parsed_utf8_operand(2, operands, section)) {
+            return WseDispatch::ignored;
+        }
+        wse_spaces_to_underscores(setting);
+        wse_spaces_to_underscores(section);
+        std::string_view found{};
+        if (const auto* const world = operands.state.world; world != nullptr) {
+            if (const auto sec_it = world->module_settings.find(section);
+                sec_it != world->module_settings.end()) {
+                if (const auto val_it = sec_it->second.find(setting);
+                    val_it != sec_it->second.end()) {
+                    found = val_it->second;
+                }
+            }
+        }
+        return wse_store_dict_string(strings, narrow[0], found);
+    }
+    case WseOpcode::str_store_game_variable: {
+        // 4231 (0x1087, L6075): (sreg, variable) from game_variables.txt.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) ||
+            !wse_string_register_ok(narrow[1], wse_tag_at(tags, 1), strings)) {
+            return WseDispatch::ignored;
+        }
+        std::string variable;
+        if (!wse_resolve_parsed_utf8_operand(1, operands, variable)) {
+            return WseDispatch::ignored;
+        }
+        wse_spaces_to_underscores(variable);
+        std::string_view found{};
+        if (const auto* const world = operands.state.world; world != nullptr) {
+            if (const auto it = world->game_variables.find(variable);
+                it != world->game_variables.end()) {
+                found = it->second;
+            }
+        }
+        return wse_store_dict_string(strings, narrow[0], found);
+    }
+    case WseOpcode::str_store_skill_name:
+    case WseOpcode::str_store_skill_desc: {
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        return wse_store_skill_text(
+            operands.state.world, strings, narrow[0], narrow[1],
+            static_cast<WseOpcode>(opcode) == WseOpcode::str_store_skill_desc);
+    }
+    case WseOpcode::str_store_item_id:
+    case WseOpcode::str_store_item_mesh_name: {
+        // 4235 (0x108b, 0x1401ef52e) / 4239 (0x108f, 0x1401ef710).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (!wse_register_ok(narrow[0]) || world == nullptr ||
+            !world->is_valid_item(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        const auto& item = world->items[static_cast<std::size_t>(narrow[1])];
+        if (static_cast<WseOpcode>(opcode) == WseOpcode::str_store_item_id) {
+            return wse_store_dict_string(strings, narrow[0], item.id);
+        }
+        const std::string_view mesh_name =
+            item.variations.empty() ? std::string_view{}
+                                    : std::string_view{item.variations[0].mesh_name};
+        return wse_store_dict_string(strings, narrow[0], mesh_name);
+    }
+    case WseOpcode::str_store_savegame_md5: {
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        return wse_store_savegame_md5(operands.state.world, strings, narrow[0],
+                                      narrow[1]);
+    }
 
-    // Options flags (0x10cc..0x10d1, 0x1401efff9..0x1401f003b).
+    // Options flags (0x10cc..0x10d1, 0x1401efff9..0x1401f003b) and bool
+    // config setters (3619/3622/4606).
     case WseOpcode::options_get_verbose_casualties:
     case WseOpcode::options_get_cheat_mode:
     case WseOpcode::options_get_realistic_headshots: {
@@ -4895,7 +5621,10 @@ template <typename BeforeOrEqual>
     }
     case WseOpcode::options_set_verbose_casualties:
     case WseOpcode::options_set_cheat_mode:
-    case WseOpcode::options_set_realistic_headshots: {
+    case WseOpcode::options_set_realistic_headshots:
+    case WseOpcode::set_horse_friendly_fire:
+    case WseOpcode::set_show_crosshair:
+    case WseOpcode::edit_mode_set_enabled: {
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -5972,6 +6701,134 @@ template <typename BeforeOrEqual>
             (void)std::filesystem::remove(target, ec);
         }
         return WseDispatch::handled_no_store;
+    }
+
+    // Edit mode group (4600..4605, 4607..4609; 4606 shares wse_option_flag).
+    case WseOpcode::edit_mode_get_num_selected_prop_instances: {
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        effect.value = (world != nullptr && world->has_game &&
+                        world->edit_mode.active)
+                           ? static_cast<std::int64_t>(
+                                 world->edit_mode.selected_prop_instances.size())
+                           : -1;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::edit_mode_get_selected_prop_instance: {
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        effect.value = -1;
+        if (world != nullptr && world->has_game && world->edit_mode.active &&
+            narrow[1] >= 0 &&
+            static_cast<std::size_t>(narrow[1]) <
+                world->edit_mode.selected_prop_instances.size()) {
+            effect.value =
+                world->edit_mode
+                    .selected_prop_instances[static_cast<std::size_t>(narrow[1])];
+        }
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::edit_mode_select_prop_instance: {
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->has_game ||
+            !world->is_valid_mission_object(narrow[0]) ||
+            !world->edit_mode.active) {
+            return WseDispatch::ignored;
+        }
+        if (wse_edit_mode_find_selected(world->edit_mode, narrow[0]) < 0) {
+            world->edit_mode.selected_prop_instances.push_back(narrow[0]);
+            world->edit_mode.selection_changed = true;
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::edit_mode_deselect_prop_instance: {
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->has_game ||
+            !world->is_valid_mission_object(narrow[0]) ||
+            !world->edit_mode.active) {
+            return WseDispatch::ignored;
+        }
+        const std::int32_t idx =
+            wse_edit_mode_find_selected(world->edit_mode, narrow[0]);
+        if (idx >= 0) {
+            if (world->edit_mode.highlighted_index == idx) {
+                world->edit_mode.highlighted_index = -1;
+            } else if (world->edit_mode.highlighted_index > idx) {
+                --world->edit_mode.highlighted_index;
+            }
+            world->edit_mode.selected_prop_instances.erase(
+                world->edit_mode.selected_prop_instances.begin() + idx);
+            world->edit_mode.selection_changed = true;
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::edit_mode_get_highlighted_prop_instance: {
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        effect.value = -1;
+        if (world != nullptr && world->has_game && world->edit_mode.active &&
+            world->edit_mode.highlighted_index >= 0 &&
+            static_cast<std::size_t>(world->edit_mode.highlighted_index) <
+                world->edit_mode.selected_prop_instances.size()) {
+            effect.value =
+                world->edit_mode.selected_prop_instances
+                    [static_cast<std::size_t>(world->edit_mode.highlighted_index)];
+        }
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::edit_mode_set_highlighted_prop_instance: {
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->has_game || !world->edit_mode.active) {
+            return WseDispatch::ignored;
+        }
+        const std::int32_t target = narrow.empty() ? -1 : narrow[0];
+        const std::int32_t idx =
+            wse_edit_mode_find_selected(world->edit_mode, target);
+        if (world->edit_mode.highlighted_index != idx) {
+            world->edit_mode.highlighted_index = idx;
+            world->edit_mode.selection_changed = true;
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::edit_mode_in_edit_objects_mode: {
+        const auto* const world = operands.state.world;
+        return (world != nullptr && world->has_game && world->edit_mode.active &&
+                world->edit_mode.mode == 0)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::condition_false;
+    }
+    case WseOpcode::edit_mode_get_mode: {
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        effect.value = (world != nullptr && world->has_game)
+                           ? world->edit_mode.mode
+                           : 0;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::edit_mode_window_open: {
+        const auto* const world = operands.state.world;
+        return (world != nullptr && world->has_game &&
+                world->edit_mode.dialog_open)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::condition_false;
     }
 
     // Dynamic array group (5000..5022 / 0x1388..0x139e).
