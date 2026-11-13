@@ -90,11 +90,20 @@ pseudocode line and the handler's call extent. `tools/extract_wse_opcodes.py` re
 `include/wse/vm/wse_opcodes.h` from the 8,844-line WSE2 v1.1.5.5 pseudocode dump and the public
 `header_operations_addon.py` names.
 
-`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements three groups. The
+`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements four groups. The
 arithmetic/bitwise group 2800–2809 covers arithmetic right shift (`val_shr`/`store_shr`), logical
 right shift (`val_lshr`/`store_lshr`), left shift (`val_shl`/`store_shl`), xor (`val_xor`/`store_xor`),
 and complement (`val_not`/`store_not`); shift counts are masked with `& 0x3F`, and `store_*` reads
 the value from operand 1 and leaves operand 0 as the destination lvalue.
+
+The register group covers `register_get` (3000), `register_set` (3001), and `store_wse_version` (3002).
+The register bank is the 128-entry int64 array at `g_basicGame+0x270` (`0x140662c30`), the same bank
+that operand tag 1 addresses; `register_get` writes the indexed value through operand 0, and
+`register_set` stores operand 1 into the register named by operand 0 and returns without a store.
+Both reject an out-of-range index with `WseDispatch::ignored`, matching `mbCheckRegister`
+(`0x1401c4e60`) and the retail `return true` fall-through. `store_wse_version` ignores its value
+operand: selector 0 yields the WSE version 5, selector 1 yields the Warband build `0x483` (1155), and
+any other selector yields the zeroed default (`0x1401e553a`–`0x1401e555b`).
 
 The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`, `fle`, `fsub`,
 `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, and the transcendental/rounding helpers

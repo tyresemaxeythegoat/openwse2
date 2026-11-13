@@ -23,9 +23,21 @@
 //
 // The complete 440-opcode structure is in docs/WSE_OPCODES.md and
 // docs/wse_opcodes.json; wse_opcodes.h is generated from that map. This file
-// implements the arithmetic/bitwise group 2800..2809 and the self-contained
-// floating-point register group 4400, 4405..4436, and 4438. Every other known
-// opcode reports WseDispatch::unimplemented instead of guessing.
+// implements the arithmetic/bitwise group 2800..2809, the register group
+// 3000..3002, and the self-contained floating-point register group 4400,
+// 4405..4436, and 4438. Every other known opcode reports
+// WseDispatch::unimplemented instead of guessing.
+//
+// Register group evidence:
+//   3000 register_get (line 628): mbCheckRegister(param_4[1]), then
+//     (&g_globalVariables)[index] through the shared operand-0 store tail.
+//   3001 register_set (line 870): mbCheckRegister(param_4[0]), then
+//     (&g_globalVariables)[index] = param_3[1]; returns true, no store.
+//   The bank is g_basicGame+0x270 (0x140662c30, confirmed at 0x1401e552d);
+//     the 128-entry bound is the same mbCheckRegister used by the float group.
+//   3002 store_wse_version (line 877, 0x1401e553a-0x1401e555b): selector 0
+//     yields r15d = 5, selector 1 yields r15d = 0x483 (build 1155), and any
+//     other selector falls through to the zeroed default.
 //
 // Transcendental helpers (case addresses in executeWSE):
 //   pow 0x1400b0400, log 0x1400a6c20, log10 0x1400a6c10, fmod 0x14006aac0,
@@ -65,6 +77,9 @@ struct WseOperands {
     std::span<const std::int32_t> narrow{};   // param_4, int32 truncations
     std::span<const std::uint8_t> tags{};     // param_5, parseOperand tags
     std::span<float> fp{};                    // DAT_140698718, 128 floats
+    // g_basicGame+0x270 (0x140662c30): the 128 int64 registers shared with
+    // operand tag 1 and used by register_get/register_set (3000/3001).
+    std::span<std::int64_t> registers{};
 };
 
 // Result of a successful handler. Value-writing handlers (mbStatement's
@@ -140,6 +155,7 @@ enum class WseDispatch : std::uint8_t {
     const auto wide = operands.wide;
     const auto narrow = operands.narrow;
     const auto fp = operands.fp;
+    const auto registers = operands.registers;
 
     switch (static_cast<WseOpcode>(opcode)) {
     case WseOpcode::val_shr: {
@@ -223,6 +239,50 @@ enum class WseDispatch : std::uint8_t {
             return WseDispatch::operand_count_out_of_range;
         }
         effect.value = ~wide[1];
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::register_get: {
+        // 3000 (pseudocode line 628): checked index in the int64 register
+        // bank, then the shared operand-0 store tail.
+        if (narrow.size() < 2 || wide.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[1]) || registers.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto index = static_cast<std::size_t>(narrow[1]);
+        if (index >= registers.size()) {
+            return WseDispatch::ignored;
+        }
+        effect.value = registers[index];
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::register_set: {
+        // 3001 (line 870): the destination is the register named by operand 0;
+        // the value is operand 1. Retail returns true without returnValue.
+        if (narrow.size() < 1 || wide.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) || registers.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto index = static_cast<std::size_t>(narrow[0]);
+        if (index >= registers.size()) {
+            return WseDispatch::ignored;
+        }
+        registers[index] = wide[1];
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::store_wse_version: {
+        // 3002 (line 877): 0 yields the WSE version (5), 1 the Warband build
+        // (0x483 = 1155); any other argument yields the zeroed r15 default.
+        if (narrow.size() < 2 || wide.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::int32_t which = narrow[1];
+        effect.value = which == 0 ? 5 : (which == 1 ? 0x483 : 0);
         effect.store_value = true;
         return WseDispatch::handled;
     }

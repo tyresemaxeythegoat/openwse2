@@ -37,7 +37,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | Portable trigger runtime | Event-key state machine reconstructed and host-tested; statement conditions/consequences are callbacks until the VM executes blocks |
 | Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
 | `executeWSE` case mapping | Complete: 440/440 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode (v1.1.5.5) |
-| Portable `executeWSE` handlers | 44 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement and 4400/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 396 report `WseDispatch::unimplemented` |
+| Portable `executeWSE` handlers | 47 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, and 4400/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 393 report `WseDispatch::unimplemented` |
 
 ## Confirmed by pseudocode
 
@@ -103,6 +103,13 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   cast to signed before `>>` (arithmetic); `val_lshr`/`store_lshr` shift the `ulonglong` operand
   directly (logical); `val_shl`/`store_shl` shift left; `val_xor`/`store_xor` combine operands 0/1 or
   1/2; `val_not`/`store_not` complement operand 0 or 1. Every shift masks the count with `& 0x3F`.
+- The 3000–3002 group is proven by the equality branch at line 628 (`register_get`) and the switch at
+  lines 870–877: `register_get` checks `param_4[1]` with `mbCheckRegister`, then loads
+  `(&g_globalVariables)[index]`; `register_set` checks `param_4[0]` and stores `param_3[1]` into the
+  same bank. The bank is `g_basicGame+0x270` (`0x140662c30`, confirmed by
+  `mov qword ptr [r14 + rcx*8 + 0x270], rax` at `0x1401e552d`). `store_wse_version` ignores its value
+  operand: selector 0 yields 5, selector 1 yields `0x483` (1155), and any other selector uses the
+  zeroed `r15` default (`0x1401e553a`–`0x1401e555b`).
 - The floating-point cases at lines 5192 and 7881–8380 index the 128-float array `DAT_140698718`
   (`g_basicGame+0x35d58`).
   `mbCheckRegister` (`0x1401c4e60`) is `cmp ecx,0x7f; ja` (unsigned 0–127); a failed check returns

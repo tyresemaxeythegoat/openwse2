@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the first three handler groups recovered.
+Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the first four handler groups recovered.
 Last updated: 2026-11-13.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -177,7 +177,16 @@ shift, `val_lshr`/`store_lshr` a logical right shift, `val_shl`/`store_shl` a le
 `(byte)count & 0x3F`; `store_*` reads the source from operand 1 (shift count from operand 2) and
 leaves operand 0 as the destination lvalue.
 
-The second group covers floating-point registers: `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
+The register group covers `register_get` (3000), `register_set` (3001), and `store_wse_version`
+(3002). The bank is the 128-entry int64 array at `g_basicGame+0x270` (`0x140662c30`, the same bank
+addressed by operand tag 1); `register_get` stores the indexed value through operand 0 and
+`register_set` writes operand 1 into the register named by operand 0, then returns without a store.
+Both validate the index with `mbCheckRegister` (`0x1401c4e60`) and fall through to `return true` on
+failure. `store_wse_version` ignores its value operand: selector 0 yields the WSE version 5, selector
+1 the Warband build `0x483` (1155), and any other selector the zeroed default
+(`0x1401e553a`–`0x1401e555b`).
+
+The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
 `fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, `fsqrt`, `fabs`, `fceil`, `ffloor`,
 `fexp`, `fpow`, `fln`, `flog`, `fmod`, `fsin`, `fcos`, `ftan`, `fsinh`, `fcosh`, `ftanh`, `fasin`,
 `facos`, `fatan`, and `fatan2` (4400, 4405–4438). The register bank is the 128-entry float array

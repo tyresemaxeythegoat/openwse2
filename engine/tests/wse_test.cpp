@@ -41,11 +41,13 @@ WseDispatch run(std::uint32_t value,
                 std::initializer_list<std::int64_t> values,
                 std::initializer_list<std::int32_t> registers,
                 WseEffect& effect,
-                std::span<float> fp = {}) {
+                std::span<float> fp = {},
+                std::span<std::int64_t> bank = {}) {
     WseOperands operands;
     operands.wide = std::span<const std::int64_t>(values.begin(), values.size());
     operands.narrow = std::span<const std::int32_t>(registers.begin(), registers.size());
     operands.fp = fp;
+    operands.registers = bank;
     effect.value = 0x1234;
     effect.store_value = true;
     return wse::vm::execute_wse(value, operands, effect);
@@ -152,7 +154,7 @@ void test_unimplemented_and_mask() {
     WseEffect effect;
     WseDispatch dispatch = WseDispatch::unimplemented;
 
-    dispatch = run(opcode(WseOpcode::register_get), {1}, {}, effect);
+    dispatch = run(opcode(WseOpcode::array_create), {1}, {}, effect);
     expect(effect.value == 0x1234 && dispatch == WseDispatch::unimplemented,
            "unimplemented opcodes leave the result untouched");
 
@@ -477,6 +479,64 @@ void test_fp_errors() {
            "fsub rejects a missing operand");
 }
 
+void test_register_group() {
+    std::array<std::int64_t, wse::vm::kFpRegisterCount> bank{};
+    WseEffect effect;
+    WseDispatch dispatch = WseDispatch::unimplemented;
+
+    bank[5] = 77;
+    dispatch = run(opcode(WseOpcode::register_get), {0, 0}, {0, 5}, effect, {}, bank);
+    expect(dispatch == WseDispatch::handled && effect.store_value &&
+               effect.value == 77,
+           "register_get reads the int64 register bank");
+
+    dispatch = run(opcode(WseOpcode::register_set), {0, 99}, {3}, effect, {}, bank);
+    expect(dispatch == WseDispatch::handled_no_store && !effect.store_value &&
+               bank[3] == 99,
+           "register_set writes operand 1 into the named register");
+
+    dispatch = run(opcode(WseOpcode::register_get), {0, 0}, {0, 3}, effect, {}, bank);
+    expect(dispatch == WseDispatch::handled && effect.value == 99,
+           "register_set and register_get share the same bank");
+
+    dispatch = run(opcode(WseOpcode::store_wse_version), {0}, {0, 0}, effect);
+    expect(dispatch == WseDispatch::handled && effect.value == 5,
+           "store_wse_version 0 reports WSE version 5");
+
+    dispatch = run(opcode(WseOpcode::store_wse_version), {0}, {0, 1}, effect);
+    expect(dispatch == WseDispatch::handled && effect.value == 0x483,
+           "store_wse_version 1 reports Warband build 1155");
+
+    dispatch = run(opcode(WseOpcode::store_wse_version), {0}, {0, 2}, effect);
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "store_wse_version defaults an unknown argument to 0");
+
+    dispatch = run(opcode(WseOpcode::register_get), {0, 0}, {0, 128}, effect, {}, bank);
+    expect(dispatch == WseDispatch::ignored,
+           "register_get rejects register 128 (mbCheckRegister accepts 0..127)");
+
+    dispatch = run(opcode(WseOpcode::register_get), {0, 0}, {0, -1}, effect, {}, bank);
+    expect(dispatch == WseDispatch::ignored,
+           "register_get rejects a negative register index");
+
+    dispatch = run(opcode(WseOpcode::register_get), {0, 0}, {0, 5}, effect);
+    expect(dispatch == WseDispatch::ignored,
+           "register_get without a register bank is a no-op");
+
+    dispatch = run(opcode(WseOpcode::register_get), {0}, {0}, effect, {}, bank);
+    expect(effect.value == 0x1234 &&
+               dispatch == WseDispatch::operand_count_out_of_range,
+           "register_get rejects a missing register index");
+
+    dispatch = run(opcode(WseOpcode::register_set), {0}, {}, effect, {}, bank);
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "register_set rejects a missing destination register");
+
+    dispatch = run(opcode(WseOpcode::store_wse_version), {}, {0}, effect);
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "store_wse_version rejects a missing selector");
+}
+
 void test_descriptions() {
     using wse::vm::describe;
     expect(!describe(WseDispatch::handled).empty(), "handled description");
@@ -496,6 +556,7 @@ int main() {
     test_enum_values();
     test_shift_group();
     test_bitwise_group();
+    test_register_group();
     test_operand_counts();
     test_unimplemented_and_mask();
     test_fp_load_store();
