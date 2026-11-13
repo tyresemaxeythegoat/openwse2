@@ -242,7 +242,7 @@ a single piece (respecting `skip_empty`) and terminates.
 - `str_is_alpha` / `str_is_digit` / `str_is_whitespace` and the trim helpers use the C library's
   wide character classes, which differ between MSVCRT, glibc, and Android's Bionic for non-ASCII
   input.
-- `sleep_ms` (3021) blocks the calling thread for the requested time.
+- `sleep_ms` (3026) blocks the calling thread for the requested time.
 - The dictionary/array file tests write fixed-name files under the system temp directory; two
   concurrent runs of the `wse` suite can collide.
 

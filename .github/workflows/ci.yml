@@ -1,0 +1,73 @@
+name: Engine CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: engine-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-linux:
+    name: Host C++20 (Linux clang++)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure and build engine host tests
+        run: |
+          CXX=clang++ cmake -S . -B build-host -DWSE_BUILD_HEADER_CHECKS=ON
+          cmake --build build-host -j"$(nproc)"
+
+      - name: Run CTest suites
+        run: |
+          ctest --test-dir build-host --output-on-failure --no-tests=error
+
+  android-arm64:
+    name: Android NDK (aarch64-linux-android29)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate Android NDK and compile all headers & tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}}"
+          if [ -z "${ndk}" ] && [ -n "${ANDROID_HOME:-}" ] && [ -d "${ANDROID_HOME}/ndk" ]; then
+            ndk="$(find "${ANDROID_HOME}/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          fi
+          if [ -z "${ndk}" ] || [ ! -d "${ndk}" ]; then
+            echo "Android NDK not found on runner" >&2
+            exit 1
+          fi
+          echo "Using Android NDK: ${ndk}"
+
+          clang_bin="${ndk}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++"
+          if [ ! -x "${clang_bin}" ]; then
+            echo "Missing NDK compiler wrapper: ${clang_bin}" >&2
+            exit 1
+          fi
+          header_out="$(mktemp -d)"
+          trap 'rm -rf "${header_out}"' EXIT
+
+          while IFS= read -r -d '' hdr; do
+            rel="${hdr#engine/include/}"
+            obj="${header_out}/$(echo "${rel}" | tr '/.' '__').o"
+            stub="${header_out}/$(echo "${rel}" | tr '/.' '__').cpp"
+            printf '#include "%s"\n' "${rel}" > "${stub}"
+            echo "arm64 header check: ${rel}"
+            "${clang_bin}" -std=c++20 -O2 -Wall -Wextra -Werror -I engine/include -c "${stub}" -o "${obj}"
+          done < <(find engine/include -name '*.h' -print0 | sort -z)
+
+          cmake -S . -B build-android \
+            -DCMAKE_TOOLCHAIN_FILE="${ndk}/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-29 \
+            -DANDROID_STL=c++_static \
+            -DWSE_BUILD_HEADER_CHECKS=ON
+          cmake --build build-android -j"$(nproc)"
