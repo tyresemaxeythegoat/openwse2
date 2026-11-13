@@ -10,8 +10,9 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 | `include/wse/io/text_stream.h` | whitespace token reader and typed decimal parsers | `rglInputTextFileStream` vftable `0x1405651e0`, `rglTextStream` readers `0x1402afa80`–`0x1402afe60`, `mbGame::readTriggers` `0x1400ccf20` |
 | `include/wse/io/binary_stream.h` | little-endian savegame reader/writer | `rglBinaryStream` vftable `0x14055c780`; writers `0x1402ae980/0x1402ae9d0/0x1402aea30`; readers `0x1402aebe0/0x1402aec00/0x1402aec20` |
 | `include/wse/vm/operand.h` | tagged operand decode and lvalue write-back | `mbStatement::parseOperand` `0x1401c6070`, `mbStatement::returnValue` `0x1401c6100`, `mbStatementBlock::execute` `0x1401f69d0`, `analyze` `0x1401f6740` |
-| `include/wse/vm/slots.h` | `mbSlots` (`std::vector<int64_t>`) get/set semantics | PDB type `0x1b004`; `parseOperand` bounds check; `returnValue` write path |
-| `include/wse/vm/statement.h` | statement record and text reader | `mbStatementBlock::readStream` `0x1401f6600`, PDB type `0xb82a` |
+| `include/wse/vm/slots.h` | `mbSlots` (`std::vector<int64_t>`) get/set semantics | PDB type `0x1b0f8`; `parseOperand` bounds check; `returnValue` write path |
+| `include/wse/vm/statement.h` | statement record and text reader | `mbStatementBlock::readStream` `0x1401f6600`, PDB type `0xb91e` |
+| `include/wse/vm/block_vm.h` | statement-block VM, loop frames, core native ops, script/trigger VM bridge | `0x1401c6150`, `0x1401f6740`–`0x1401f7f00`, `0x1400dbde0`/`0x1400dbe70`, `0x140244cd0`, `0x14020fb80`/`0x1402101a0` |
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x140244810`, `0x140244540`, `0x14020fe60`, `0x14020fab0`, `0x1400ccf20`, `0x1400cd2d0`, `0x140244970`, `0x140244b60`, `0x14020ffa0`, `0x140244cd0`, `0x14020fb80`, `0x1402101a0` |
 | `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 65-entry name table, and script mapping | `0x14020f6a0`, `0x14020f7c0`, `0x14020f9a0`; globals `0x14069fac0`/`0x14069fac8`/`0x14069facc`; table `0x140615ad0`; formats `0x14055c680`/`0x14055c690` |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
@@ -21,6 +22,7 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
 | `tests/script_test.cpp` + `fixtures/scripts.txt` | host tests for script records, header errors, duplicate mapping, and missing-name reporting | local fixture mirroring the retail grammar |
 | `tests/wse_test.cpp` | host tests for opcode enum values, shift/bitwise handlers, operand bounds, and opcode masking | local test doubles only |
+| `tests/block_vm_test.cpp` | host tests for analyze/modifiers/loops/core math/scripts/recursion/trigger VM integration | local test doubles and module fixtures |
 
 ## Module text format
 
@@ -55,8 +57,10 @@ retail module files parse identically.
 inlined retail state machines. The `int` argument is an **event key**, not a clock: non-negative
 keys run interval triggers from `g_timersTotal`, while negative keys match the rounded negative
 check interval (`-112` = agent exit status, `-105`/`-106` = ranged attack, `-26`/`-56` = death, …).
-Conditions and consequences are supplied as callbacks because `mbStatementBlock::execute` is not
-reconstructed yet; the timer, status, and event-key transitions are exact.
+`trigger.h` retains callback-based overloads alongside the state transitions, while
+`wse/vm/block_vm.h` connects triggers and scripts directly to the reconstructed
+`mbStatementBlock::execute` interpreter (`execute_trigger`, `execute_trigger_manager`,
+`execute_simple_trigger`, `execute_simple_trigger_manager`, `execute_script`, `execute_mapped_script`).
 
 ## Savegames
 
@@ -199,6 +203,7 @@ trigger tests: PASS
 savegame tests: PASS
 script tests: PASS
 wse tests: PASS
+block_vm tests: PASS
 engine host tests: PASS
 ```
 

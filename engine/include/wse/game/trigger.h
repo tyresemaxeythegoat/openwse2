@@ -9,13 +9,13 @@
 //   mbGame::readSimpleTriggers           0x1400cd2d0
 //
 // Layouts (PDB):
-//   mbTrigger             256 bytes type 0x077c9
+//   mbTrigger             256 bytes type 0x078ba
 //     +0x000 check/delay/rearm intervals (3 floats), +0x00c status
 //     +0x010 conditions block, +0x070 consequences block
 //     +0x0d0/+0x0e0/+0x0f0 check/delay/rearm rglAppTimer
-//   mbSimpleTrigger       120 bytes type 0x071a6
+//   mbSimpleTrigger       120 bytes type 0x07298
 //     +0x000 interval, +0x008 statement block, +0x068 timer
-//   rglTimer               16 bytes type 0x164d9
+//   rglTimer               16 bytes type 0x165cd
 //     +0x000 m_timerNo int32, +0x008 m_value int64
 //
 // Both managers read a count and then construct that many entries, seeding

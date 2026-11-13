@@ -4,9 +4,9 @@
 //   mbScript::readStream         0x14020f6a0  (?readStream@mbScript@@QEAAXAEAVrglStream@@H@Z)
 //   mbScriptManager::readStream  0x14020f7c0
 //   mbScriptManager::mapScripts  0x14020f9a0
-//   mbScript layout              176 bytes, PDB type 0x1f6c4
+//   mbScript layout              176 bytes, PDB type 0x1f7b8
 //     +0x00 m_id rglString, +0x48 m_interval float, +0x50 m_statementBlock
-//   mbScriptManager layout       272 bytes, PDB type 0xadfd
+//   mbScriptManager layout       272 bytes, PDB type 0xaeea
 //     +0x00 m_scripts mbScript*, +0x08 m_numScripts int32,
 //     +0x0c m_mappedScripts int32[65]
 //   Globals: g_scriptManager 0x14069fac0, count 0x14069fac8,

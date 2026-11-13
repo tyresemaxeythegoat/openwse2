@@ -1,0 +1,1185 @@
+// Portable statement-block interpreter and trigger/script execution bridge.
+//
+// Evidence (WSE2 v1.1.5.5 PE + Ghidra 12.1.4 REA pseudocode + PDB TPI):
+//   mbStatement::parseOperand      0x1401c6070  operand decode + fallback tags
+//   mbStatement::returnValue       0x1401c6100  register/slot/local lvalue store
+//   mbStatement::execute           0x1401c6150  this_or_next / neg / dispatch
+//   mbStatementBlock::analyze      0x1401f6740  two-stack block endStatement + locals
+//   mbStatementBlock::execute      0x1401f69d0  call stack (257), try/else, params
+//   mbStatementBlock::startLoop    0x1401f7290  loop frame push + initial write
+//   mbStatementBlock::endLoop      0x1401f7910  loop step/pop + register advance
+//   mbStatementBlock::canLoop      0x1401f7f00  try_for_range[_backwards] bounds
+//   mbTriggerManager::execute      0x140244cd0  trigger condition/consequence VM
+//   mbSimpleTrigger::execute       0x14020fb80  simple-trigger VM dispatch
+//   mbSimpleTriggerManager::execute 0x1402101a0 simple-trigger manager loop
+//   mbGame::executeScript          0x1400dbde0  script caller = 0x200000
+//   mbGame::executeMappedScript    0x1400dbe70  mapped script lookup
+//   Layouts: mbBasicGame (0xadd3, 221616B), mbCallStack (0x715b, 3096B),
+//            mbLoop (0x1f89a, 56B), mbLoopManager (0x1eb6b, 7176B).
+//
+// Key structural facts verified directly against v1.1.5.5:
+//   - mbBasicGame +0x270 (0x140662c30) is the 128-entry int64 register array
+//     accessed by operand tag 1; +0x258 (0x140662c18) is mbSlots m_globalVariables
+//     accessed by operand tag 2; frame locals are accessed by operand tag 0x11.
+//   - mbStatement::parseOperand returns payload for unknown tags (such as tag 3
+//     and tag 0x16 string operands) and forwards the tag byte to executeWSE.
+//   - mbStatementBlock::analyze keeps two 128-entry stacks (tryStack updated on
+//     else_try; startStack kept at the opening statement) so nested statements
+//     with unresolved endStatement link to the next else_try or try_end, and
+//     closing try_end fills the opener/else_try and trailing branch statements.
+//   - mbStatementBlock::execute resets g_skipStatement on entry, checks recursion
+//     depth < 256 (0..255), isolates 1024 int64 locals and 128 loop frames per
+//     depth, and aborts the block immediately on top-level failure (numLoops==0).
+//
+// Safety deviation: retail indexes m_registers (128) and stack locals (1024)
+// without bounds checking and logs through rglError. This port bounds-checks
+// register/local/stack capacities and records errors on VmContext without
+// out-of-bounds memory access.
+
+#pragma once
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "wse/game/script.h"
+#include "wse/game/trigger.h"
+#include "wse/vm/execute_wse.h"
+#include "wse/vm/operand.h"
+#include "wse/vm/slots.h"
+#include "wse/vm/statement.h"
+
+namespace wse::vm {
+
+inline constexpr std::uint32_t kThisOrNextFlag = 0x40000000U;
+inline constexpr std::uint32_t kNegFlag = 0x80000000U;
+inline constexpr std::uint32_t kOpcodeMask = 0x0FFFFFFFU;
+
+inline constexpr std::uint32_t kNativeOpcodeMin = 30U;
+inline constexpr std::uint32_t kNativeOpcodeMax = 2767U;
+inline constexpr std::uint32_t kWseOpcodeMin = 2768U;
+
+inline constexpr std::int32_t kMaxCallDepth = 255;       // 0x1401f7051 (< 256)
+inline constexpr std::size_t kMaxBlockStackDepth = 128;  // 0x1401f67b6
+inline constexpr std::size_t kMinLocalVariables = 32;    // 0x1401f6965
+inline constexpr std::int32_t kScriptCaller = 0x200000;  // 0x1400dbde0
+inline constexpr std::int64_t kDivisionByZeroSentinel = 40000000LL;  // 0x1401dceb0
+
+namespace core_op {
+inline constexpr std::uint32_t kCallScript = 1U;
+inline constexpr std::uint32_t kTryEnd = 3U;
+inline constexpr std::uint32_t kTryBegin = 4U;
+inline constexpr std::uint32_t kElseTry = 5U;
+inline constexpr std::uint32_t kTryForRange = 6U;
+inline constexpr std::uint32_t kTryForRangeBackwards = 7U;
+inline constexpr std::uint32_t kBreakLoop = 8U;
+inline constexpr std::uint32_t kContinueLoop = 9U;
+inline constexpr std::uint32_t kTryForAgents = 0xBU;
+inline constexpr std::uint32_t kTryForParties = 0xCU;
+inline constexpr std::uint32_t kTryForPropInstances = 0x10U;
+inline constexpr std::uint32_t kTryForPlayers = 0x11U;
+inline constexpr std::uint32_t kTryForDictKeys = 0x12U;
+inline constexpr std::uint32_t kStoreScriptParam1 = 21U;
+inline constexpr std::uint32_t kStoreScriptParam2 = 22U;
+inline constexpr std::uint32_t kStoreScriptParam = 23U;
+
+inline constexpr std::uint32_t kGe = 30U;
+inline constexpr std::uint32_t kEq = 31U;
+inline constexpr std::uint32_t kGt = 32U;
+inline constexpr std::uint32_t kIsBetween = 33U;
+inline constexpr std::uint32_t kValLshift = 2100U;
+inline constexpr std::uint32_t kValRshift = 2101U;
+inline constexpr std::uint32_t kValAdd = 2105U;
+inline constexpr std::uint32_t kValSub = 2106U;
+inline constexpr std::uint32_t kValMul = 2107U;
+inline constexpr std::uint32_t kValDiv = 2108U;
+inline constexpr std::uint32_t kValMod = 2109U;
+inline constexpr std::uint32_t kValMin = 2110U;
+inline constexpr std::uint32_t kValMax = 2111U;
+inline constexpr std::uint32_t kValClamp = 2112U;
+inline constexpr std::uint32_t kValAbs = 2113U;
+inline constexpr std::uint32_t kValOr = 2114U;
+inline constexpr std::uint32_t kValAnd = 2115U;
+inline constexpr std::uint32_t kStoreOr = 2116U;
+inline constexpr std::uint32_t kStoreAnd = 2117U;
+inline constexpr std::uint32_t kStoreMod = 2119U;
+inline constexpr std::uint32_t kStoreAdd = 2120U;
+inline constexpr std::uint32_t kStoreSub = 2121U;
+inline constexpr std::uint32_t kStoreMul = 2122U;
+inline constexpr std::uint32_t kStoreDiv = 2123U;
+inline constexpr std::uint32_t kSetFixedPointMultiplier = 2124U;
+inline constexpr std::uint32_t kStoreSqrt = 2125U;
+inline constexpr std::uint32_t kStorePow = 2126U;
+inline constexpr std::uint32_t kStoreSin = 2127U;
+inline constexpr std::uint32_t kStoreCos = 2128U;
+inline constexpr std::uint32_t kStoreTan = 2129U;
+inline constexpr std::uint32_t kConvertToFixedPoint = 2130U;
+inline constexpr std::uint32_t kConvertFromFixedPoint = 2131U;
+inline constexpr std::uint32_t kAssign = 2133U;
+}  // namespace core_op
+
+struct VmContext;
+
+using NativeOpHook = bool (*)(void* user,
+                              std::uint32_t opcode,
+                              std::span<const std::int64_t> wide,
+                              std::span<const std::int32_t> narrow,
+                              std::span<const std::uint8_t> tags,
+                              const Statement& statement,
+                              VmContext& ctx,
+                              std::span<std::int64_t> locals,
+                              bool& handled);
+
+using VmErrorCallback = void (*)(void* user, std::string_view message);
+
+struct LoopFrame {
+    std::int32_t statementNo = 0;
+    std::int32_t value = 0;
+};
+
+struct VmContext {
+    // Tag 1 operands and WSE register_{get,set} share mbBasicGame::m_registers.
+    std::array<std::int64_t, 128> registers{};
+    // Tag 2 operands map to mbBasicGame::m_globalVariables (mbSlots).
+    Slots globalVariables;
+    std::array<float, 128> fpRegisters{};
+    std::array<std::u16string, 128> stringRegisters{};
+    std::span<const std::u16string_view> globalStrings{};
+    std::span<const std::u16string_view> localStrings{};
+
+    std::array<std::int64_t, 16> returnValues{};
+    std::int32_t numReturnValues = 0;
+    std::int32_t fixedPointMultiplier = 100;
+    double appTimeSeconds = 0.0;
+    bool hasMissionTemplate = false;
+    std::int32_t missionTemplateNo = -1;
+    WseOptionsState options{};
+
+    bool clearLocalsBetweenCalls = false;
+    std::int32_t maxCallDepth = kMaxCallDepth;
+    bool skipStatement = false;
+    game::ScriptManager* scripts = nullptr;
+
+    NativeOpHook nativeHook = nullptr;
+    void* nativeHookUser = nullptr;
+
+    VmErrorCallback onError = nullptr;
+    void* errorUser = nullptr;
+    std::size_t errorCount = 0;
+    std::string lastError;
+    std::size_t unimplementedCount = 0;
+    std::uint32_t lastUnimplementedOpcode = 0;
+    std::int32_t maxObservedDepth = -1;
+
+    // Heap-backed per-depth arenas mirror retail's dynamic local/loop pools
+    // while preventing deep 255-level call_script stacks from overflowing.
+    std::vector<std::array<std::int64_t, kDefaultLocalVariables>> localFrames;
+    std::vector<std::array<LoopFrame, kMaxBlockStackDepth>> loopFrames;
+
+    void report_error(std::string_view message) {
+        ++errorCount;
+        lastError.assign(message);
+        if (onError != nullptr) {
+            onError(errorUser, message);
+        }
+    }
+};
+
+// Floor-with-half-up rounding shared by retail trigonometric/math helpers
+// (0x1402a1910: floorf(x), ++rax iff x - floorf(x) > 0.5f).
+[[nodiscard]] inline std::int64_t f2i_round(float value) noexcept {
+    const float base = std::floor(value);
+    auto out = static_cast<std::int64_t>(base);
+    if (value - base > 0.5F) {
+        ++out;
+    }
+    return out;
+}
+
+[[nodiscard]] constexpr bool is_block_opener(std::uint32_t opcode) noexcept {
+    switch (opcode) {
+    case core_op::kTryBegin:
+    case core_op::kTryForRange:
+    case core_op::kTryForRangeBackwards:
+    case core_op::kTryForAgents:
+    case core_op::kTryForParties:
+    case core_op::kTryForPropInstances:
+    case core_op::kTryForPlayers:
+    case core_op::kTryForDictKeys:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// Retail safe-divide helper matching signed two's-complement division on x86.
+[[nodiscard]] inline std::int64_t checked_signed_div(std::int64_t lhs,
+                                                     std::int64_t rhs,
+                                                     VmContext& ctx) {
+    if (rhs == 0) {
+        ctx.report_error("Division by zero");
+        return kDivisionByZeroSentinel;
+    }
+    if (lhs == std::numeric_limits<std::int64_t>::min() && rhs == -1) {
+        return std::numeric_limits<std::int64_t>::min();
+    }
+    return lhs / rhs;
+}
+
+[[nodiscard]] inline std::int64_t checked_signed_mod(std::int64_t lhs,
+                                                     std::int64_t rhs,
+                                                     VmContext& ctx,
+                                                     bool& ok) {
+    if (rhs == 0) {
+        ctx.report_error("Modulo by zero");
+        ok = false;
+        return 0;
+    }
+    ok = true;
+    if (lhs == std::numeric_limits<std::int64_t>::min() && rhs == -1) {
+        return 0;
+    }
+    return lhs % rhs;
+}
+
+// Decodes one statement operand (0x1401c6070). Values <= 0 are signed 64-bit
+// immediates; positive values extract tag (bits 56..62) and 56-bit payload.
+// Tags other than 0, 1, 2, 0x11 return the raw payload and expose `outTag` for
+// downstream WSE string/object handlers.
+[[nodiscard]] inline std::int64_t parse_operand(std::uint64_t raw,
+                                                VmContext& ctx,
+                                                std::span<const std::int64_t> locals,
+                                                std::uint8_t& outTag) {
+    if (static_cast<std::int64_t>(raw) <= 0) {
+        outTag = 0;
+        return static_cast<std::int64_t>(raw);
+    }
+
+    outTag = static_cast<std::uint8_t>((raw >> 56) & kTagMask);
+    const std::uint64_t payload = raw & kPayloadMask;
+    const auto index = static_cast<std::int32_t>(payload);
+
+    switch (static_cast<OperandTag>(outTag)) {
+    case OperandTag::immediate:
+        return static_cast<std::int64_t>(payload);
+    case OperandTag::global:
+        if (index < 0 || static_cast<std::size_t>(index) >= ctx.registers.size()) {
+            ctx.report_error("Register index out of range in parse_operand");
+            return 0;
+        }
+        return ctx.registers[static_cast<std::size_t>(index)];
+    case OperandTag::slot:
+        return ctx.globalVariables.get(index);
+    case OperandTag::local:
+        if (index < 0 || static_cast<std::size_t>(index) >= locals.size()) {
+            ctx.report_error("Local variable index out of range in parse_operand");
+            return 0;
+        }
+        return locals[static_cast<std::size_t>(index)];
+    }
+
+    return static_cast<std::int64_t>(payload);
+}
+
+// Writes `value` into a statement's lvalue operand (0x1401c6100).
+inline bool store_lvalue(std::uint64_t raw,
+                         std::int64_t value,
+                         VmContext& ctx,
+                         std::span<std::int64_t> locals) {
+    const auto tag = tag_of(raw);
+    const auto index = static_cast<std::int32_t>(raw & kPayloadMask);
+
+    switch (static_cast<OperandTag>(tag)) {
+    case OperandTag::global:
+        if (index < 0 || static_cast<std::size_t>(index) >= ctx.registers.size()) {
+            ctx.report_error("Invalid Register ID in store_lvalue");
+            return false;
+        }
+        ctx.registers[static_cast<std::size_t>(index)] = value;
+        return true;
+    case OperandTag::slot:
+        if (!ctx.globalVariables.set(index, value)) {
+            ctx.report_error("Negative global variable index in store_lvalue");
+            return false;
+        }
+        return true;
+    case OperandTag::local:
+        if (index < 0 || static_cast<std::size_t>(index) >= locals.size()) {
+            ctx.report_error("Local variable index out of range in store_lvalue");
+            return false;
+        }
+        locals[static_cast<std::size_t>(index)] = value;
+        return true;
+    case OperandTag::immediate:
+        break;
+    }
+
+    ctx.report_error("Illegal lvalue in statement");
+    return false;
+}
+
+// Mirrors mbStatementBlock::analyze (0x1401f6740): pairs try/loop openers with
+// else_try (5) and try_end (3), links inner failing statements' endStatement to
+// the enclosing branch target, and estimates local storage in [32, 1024].
+inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = nullptr) {
+    if (block.analyzed) {
+        return;
+    }
+
+    const auto total = static_cast<std::int32_t>(block.statements.size());
+    std::array<std::int32_t, kMaxBlockStackDepth> tryStack{};
+    std::array<std::int32_t, kMaxBlockStackDepth> startStack{};
+    std::size_t sp = 0;
+
+    for (std::int32_t i = 0; i < total; ++i) {
+        const std::uint32_t op = block.statements[static_cast<std::size_t>(i)].opcode & kOpcodeMask;
+        if (is_block_opener(op)) {
+            if (sp < kMaxBlockStackDepth) {
+                tryStack[sp] = i;
+                startStack[sp] = i;
+                ++sp;
+            } else if (ctx != nullptr) {
+                ctx->report_error("Statement block nesting depth exceeds 128");
+            }
+        } else if (op == core_op::kElseTry) {
+            if (sp > 0) {
+                const std::int32_t start = tryStack[sp - 1];
+                for (std::int32_t k = start + 1; k < i; ++k) {
+                    auto& inner = block.statements[static_cast<std::size_t>(k)];
+                    if (inner.endStatement < 0) {
+                        inner.endStatement = i;
+                    }
+                }
+                tryStack[sp - 1] = i;
+            } else if (ctx != nullptr) {
+                ctx->report_error("Unmatched else_try in statement block");
+            }
+        } else if (op == core_op::kTryEnd) {
+            if (sp > 0) {
+                const std::int32_t start = startStack[sp - 1];
+                for (std::int32_t k = start; k < i; ++k) {
+                    auto& inner = block.statements[static_cast<std::size_t>(k)];
+                    if (inner.endStatement < 0) {
+                        inner.endStatement = i;
+                    }
+                }
+                --sp;
+            } else if (ctx != nullptr) {
+                ctx->report_error("Unmatched try_end in statement block");
+            }
+        }
+    }
+
+    for (auto& stmt : block.statements) {
+        if (stmt.endStatement < 0) {
+            stmt.endStatement = total;
+        }
+    }
+
+    std::int32_t maxLocal = 31;
+    for (const auto& stmt : block.statements) {
+        const std::int32_t count =
+            std::clamp(stmt.numOperands, 0, static_cast<std::int32_t>(kMaxOperands));
+        for (std::int32_t opIndex = 0; opIndex < count; ++opIndex) {
+            const auto raw = static_cast<std::uint64_t>(stmt.operands[opIndex]);
+            if (static_cast<std::int64_t>(raw) > 0 &&
+                tag_of(raw) == static_cast<std::uint8_t>(OperandTag::local)) {
+                const auto localIdx = static_cast<std::int32_t>(raw & kPayloadMask);
+                if (localIdx > maxLocal) {
+                    maxLocal = localIdx;
+                }
+            }
+        }
+    }
+
+    std::int32_t used = maxLocal + 1;
+    if (used < static_cast<std::int32_t>(kMinLocalVariables)) {
+        used = static_cast<std::int32_t>(kMinLocalVariables);
+    } else if (used > kDefaultLocalVariables) {
+        used = kDefaultLocalVariables;
+    }
+    block.numLocalVariablesUsed = used;
+    block.analyzed = true;
+}
+
+[[nodiscard]] inline bool dispatch_native_statement(
+    std::uint32_t opcode,
+    std::span<const std::int64_t> wide,
+    std::span<const std::int32_t> narrow,
+    std::span<const std::uint8_t> tags,
+    const Statement& statement,
+    VmContext& ctx,
+    std::span<std::int64_t> locals) {
+    if (ctx.nativeHook != nullptr) {
+        bool handled = false;
+        const bool hookResult =
+            ctx.nativeHook(ctx.nativeHookUser, opcode, wide, narrow, tags, statement, ctx, locals, handled);
+        if (handled) {
+            return hookResult;
+        }
+    }
+
+    const auto dst = static_cast<std::uint64_t>(statement.operands[0]);
+    constexpr float kDegToRad = 0.01745329238474369F;  // DAT_1405761e8
+
+    switch (opcode) {
+    case core_op::kGe:
+        return wide[0] >= wide[1];
+    case core_op::kEq:
+        return wide[0] == wide[1];
+    case core_op::kGt:
+        return wide[0] > wide[1];
+    case core_op::kIsBetween:
+        return wide[0] >= wide[1] && wide[0] < wide[2];
+    case core_op::kValLshift: {
+        const auto shifted = static_cast<std::uint64_t>(wide[0])
+                             << (static_cast<unsigned>(wide[1]) & 63U);
+        store_lvalue(dst, static_cast<std::int64_t>(shifted), ctx, locals);
+        return true;
+    }
+    case core_op::kValRshift:
+        store_lvalue(dst, wide[0] >> (static_cast<unsigned>(wide[1]) & 63U), ctx, locals);
+        return true;
+    case core_op::kValAdd:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) +
+                                                    static_cast<std::uint64_t>(wide[1])),
+                     ctx, locals);
+        return true;
+    case core_op::kValSub:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) -
+                                                    static_cast<std::uint64_t>(wide[1])),
+                     ctx, locals);
+        return true;
+    case core_op::kValMul:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) *
+                                                    static_cast<std::uint64_t>(wide[1])),
+                     ctx, locals);
+        return true;
+    case core_op::kValDiv:
+        store_lvalue(dst, checked_signed_div(wide[0], wide[1], ctx), ctx, locals);
+        return true;
+    case core_op::kValMod: {
+        bool ok = false;
+        const std::int64_t rem = checked_signed_mod(wide[0], wide[1], ctx, ok);
+        if (ok) {
+            store_lvalue(dst, rem, ctx, locals);
+        }
+        return true;
+    }
+    case core_op::kValMin:
+        store_lvalue(dst, static_cast<std::int64_t>(std::min(narrow[0], narrow[1])), ctx, locals);
+        return true;
+    case core_op::kValMax:
+        store_lvalue(dst, static_cast<std::int64_t>(std::max(narrow[0], narrow[1])), ctx, locals);
+        return true;
+    case core_op::kValClamp: {
+        std::int32_t clamped = narrow[0];
+        if (narrow[0] < narrow[1]) {
+            clamped = narrow[1];
+        } else if (narrow[0] >= narrow[2]) {
+            clamped = static_cast<std::int32_t>(static_cast<std::uint32_t>(narrow[2]) - 1U);
+        }
+        store_lvalue(dst, static_cast<std::int64_t>(clamped), ctx, locals);
+        return true;
+    }
+    case core_op::kValAbs: {
+        const auto absVal =
+            wide[0] < 0 ? static_cast<std::int64_t>(-static_cast<std::uint64_t>(wide[0])) : wide[0];
+        store_lvalue(dst, absVal, ctx, locals);
+        return true;
+    }
+    case core_op::kValOr:
+        store_lvalue(dst, wide[0] | wide[1], ctx, locals);
+        return true;
+    case core_op::kValAnd:
+        store_lvalue(dst, wide[0] & wide[1], ctx, locals);
+        return true;
+    case core_op::kStoreOr:
+        store_lvalue(dst, wide[1] | wide[2], ctx, locals);
+        return true;
+    case core_op::kStoreAnd:
+        store_lvalue(dst, wide[1] & wide[2], ctx, locals);
+        return true;
+    case core_op::kStoreMod: {
+        bool ok = false;
+        const std::int64_t rem = checked_signed_mod(wide[1], wide[2], ctx, ok);
+        if (ok) {
+            store_lvalue(dst, rem, ctx, locals);
+        }
+        return true;
+    }
+    case core_op::kStoreAdd:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) +
+                                                    static_cast<std::uint64_t>(wide[2])),
+                     ctx, locals);
+        return true;
+    case core_op::kStoreSub:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) -
+                                                    static_cast<std::uint64_t>(wide[2])),
+                     ctx, locals);
+        return true;
+    case core_op::kStoreMul:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) *
+                                                    static_cast<std::uint64_t>(wide[2])),
+                     ctx, locals);
+        return true;
+    case core_op::kStoreDiv:
+        store_lvalue(dst, checked_signed_div(wide[1], wide[2], ctx), ctx, locals);
+        return true;
+    case core_op::kSetFixedPointMultiplier:
+        if (narrow[0] > 0) {
+            ctx.fixedPointMultiplier = narrow[0];
+        }
+        return true;
+    case core_op::kStoreSqrt:
+        if (wide[1] > 0) {
+            const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
+            const float value = std::sqrt(static_cast<float>(wide[1]) / fpScale) * fpScale;
+            store_lvalue(dst, f2i_round(value), ctx, locals);
+        }
+        return true;
+    case core_op::kStorePow: {
+        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
+        const float value =
+            std::pow(static_cast<float>(wide[1]) / fpScale, static_cast<float>(wide[2]) / fpScale) *
+            fpScale;
+        store_lvalue(dst, f2i_round(value), ctx, locals);
+        return true;
+    }
+    case core_op::kStoreSin: {
+        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
+        const float value = std::sin((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
+        store_lvalue(dst, f2i_round(value), ctx, locals);
+        return true;
+    }
+    case core_op::kStoreCos: {
+        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
+        const float value = std::cos((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
+        store_lvalue(dst, f2i_round(value), ctx, locals);
+        return true;
+    }
+    case core_op::kStoreTan: {
+        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
+        const float value = std::tan((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
+        store_lvalue(dst, f2i_round(value), ctx, locals);
+        return true;
+    }
+    case core_op::kConvertToFixedPoint:
+        store_lvalue(dst, wide[0] * static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx, locals);
+        return true;
+    case core_op::kConvertFromFixedPoint:
+        store_lvalue(dst, wide[0] / static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx, locals);
+        return true;
+    case core_op::kAssign:
+        store_lvalue(dst, wide[1], ctx, locals);
+        return true;
+    default:
+        ++ctx.unimplementedCount;
+        ctx.lastUnimplementedOpcode = opcode;
+        return true;
+    }
+}
+
+[[nodiscard]] inline bool dispatch_wse_statement(
+    std::uint32_t opcode,
+    std::int32_t caller,
+    std::size_t count,
+    std::span<const std::int64_t> wide,
+    std::span<const std::int32_t> narrow,
+    std::span<const std::uint8_t> tags,
+    const Statement& statement,
+    VmContext& ctx,
+    std::span<std::int64_t> locals) {
+    WseOperands operands;
+    operands.wide = wide.first(count);
+    operands.narrow = narrow.first(count);
+    operands.tags = tags.first(count);
+    operands.fp = ctx.fpRegisters;
+    operands.registers = ctx.registers;
+    operands.state.caller = caller;
+    operands.state.return_values = ctx.returnValues;
+    operands.state.num_return_values = ctx.numReturnValues;
+    operands.state.app_time_seconds = ctx.appTimeSeconds;
+    operands.state.current_mission_template_no =
+        ctx.hasMissionTemplate ? &ctx.missionTemplateNo : nullptr;
+    operands.state.strings.registers = ctx.stringRegisters;
+    operands.state.strings.global = ctx.globalStrings;
+    operands.state.strings.local = ctx.localStrings;
+    operands.state.options = &ctx.options;
+
+    WseEffect effect{};
+    const WseDispatch dispatch = execute_wse(opcode, operands, effect);
+    if (dispatch == WseDispatch::unimplemented) {
+        ++ctx.unimplementedCount;
+        ctx.lastUnimplementedOpcode = opcode;
+        return true;
+    }
+    if (dispatch == WseDispatch::operand_count_out_of_range) {
+        ctx.report_error("WSE opcode operand count out of range");
+        return true;
+    }
+    if (dispatch == WseDispatch::handled && effect.store_value && count > 0) {
+        store_lvalue(static_cast<std::uint64_t>(statement.operands[0]), effect.value, ctx, locals);
+    }
+    return dispatch != WseDispatch::condition_false;
+}
+
+// Executes one leaf statement (>= 30), honoring g_skipStatement (0x40000000
+// this_or_next) and negation (0x80000000 neg). Mirrors 0x1401c6150.
+[[nodiscard]] inline bool execute_statement(const Statement& statement,
+                                            std::int32_t caller,
+                                            VmContext& ctx,
+                                            std::span<std::int64_t> locals) {
+    const bool thisOrNext = (statement.opcode & kThisOrNextFlag) != 0;
+    const bool neg = (statement.opcode & kNegFlag) != 0;
+    const std::uint32_t opcode = statement.opcode & kOpcodeMask;
+
+    if (ctx.skipStatement) {
+        if (!thisOrNext) {
+            ctx.skipStatement = false;
+        }
+        return true;
+    }
+
+    const std::size_t count =
+        static_cast<std::size_t>(std::clamp(statement.numOperands, 0, static_cast<std::int32_t>(kMaxOperands)));
+    std::array<std::int64_t, kMaxOperands> wide{};
+    std::array<std::int32_t, kMaxOperands> narrow{};
+    std::array<std::uint8_t, kMaxOperands> tags{};
+
+    // First 5 slots start zeroed (0x1401c6219-0x1401c626c); remaining slots stay zero too.
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::int64_t value =
+            parse_operand(static_cast<std::uint64_t>(statement.operands[i]), ctx, locals, tags[i]);
+        wide[i] = value;
+        narrow[i] = static_cast<std::int32_t>(value);
+    }
+
+    bool result = true;
+    if (opcode >= kWseOpcodeMin) {
+        result = dispatch_wse_statement(opcode, caller, count, wide, narrow, tags, statement, ctx, locals);
+    } else if (opcode >= kNativeOpcodeMin && opcode <= kNativeOpcodeMax) {
+        result = dispatch_native_statement(opcode, wide, narrow, tags, statement, ctx, locals);
+    }
+
+    if (neg) {
+        result = !result;
+    }
+    if (thisOrNext) {
+        if (result) {
+            ctx.skipStatement = true;
+        } else {
+            result = true;
+        }
+    }
+    return result;
+}
+
+[[nodiscard]] inline bool can_loop(const StatementBlock& block,
+                                   VmContext& ctx,
+                                   std::span<const std::int64_t> locals,
+                                   std::span<const LoopFrame> loops,
+                                   std::int32_t numLoops) {
+    if (numLoops <= 0) {
+        return false;
+    }
+    const LoopFrame& top = loops[static_cast<std::size_t>(numLoops - 1)];
+    const Statement& stmt = block.statements[static_cast<std::size_t>(top.statementNo)];
+    const std::uint32_t opcode = stmt.opcode & kOpcodeMask;
+    std::uint8_t unusedTag = 0;
+
+    switch (opcode) {
+    case core_op::kTryForRange: {
+        const std::int64_t upper =
+            stmt.numOperands > 2 ? parse_operand(static_cast<std::uint64_t>(stmt.operands[2]),
+                                                 ctx, locals, unusedTag)
+                                 : 0;
+        return static_cast<std::int64_t>(top.value) < upper;
+    }
+    case core_op::kTryForRangeBackwards: {
+        const std::int64_t lower =
+            stmt.numOperands > 1 ? parse_operand(static_cast<std::uint64_t>(stmt.operands[1]),
+                                                 ctx, locals, unusedTag)
+                                 : 0;
+        return static_cast<std::int64_t>(top.value) >= lower;
+    }
+    default:
+        // Entity/dict iterators (0xb/0xc/0x10/0x11/0x12) terminate with 0
+        // iterations cleanly until those world containers are reconstructed.
+        return false;
+    }
+}
+
+inline void start_loop(const StatementBlock& block,
+                       VmContext& ctx,
+                       std::span<std::int64_t> locals,
+                       std::span<LoopFrame> loops,
+                       std::int32_t& numLoops,
+                       std::int32_t& pc) {
+    const Statement& stmt = block.statements[static_cast<std::size_t>(pc)];
+    const std::uint32_t opcode = stmt.opcode & kOpcodeMask;
+    std::uint8_t unusedTag = 0;
+
+    std::int32_t initialValue = 0;
+    if (opcode == core_op::kTryForRange) {
+        initialValue = stmt.numOperands > 1
+                           ? static_cast<std::int32_t>(parse_operand(
+                                 static_cast<std::uint64_t>(stmt.operands[1]), ctx, locals, unusedTag))
+                           : 0;
+    } else if (opcode == core_op::kTryForRangeBackwards) {
+        const std::int64_t upper =
+            stmt.numOperands > 2
+                ? parse_operand(static_cast<std::uint64_t>(stmt.operands[2]), ctx, locals, unusedTag)
+                : 0;
+        initialValue = static_cast<std::int32_t>(upper - 1);
+    }
+
+    if (static_cast<std::size_t>(numLoops) < loops.size()) {
+        loops[static_cast<std::size_t>(numLoops)] = LoopFrame{pc, initialValue};
+        ++numLoops;
+    } else {
+        ctx.report_error("Loop stack overflow in start_loop");
+        pc = stmt.endStatement;
+        return;
+    }
+
+    if (stmt.numOperands > 0) {
+        store_lvalue(static_cast<std::uint64_t>(stmt.operands[0]),
+                     static_cast<std::int64_t>(initialValue), ctx, locals);
+    }
+
+    if (can_loop(block, ctx, locals, loops, numLoops)) {
+        ++pc;
+    } else {
+        // Retail 0x1401f78ac jumps directly to try_end, which executes end_loop
+        // on the next iteration and pops the unentered loop frame.
+        pc = stmt.endStatement;
+    }
+}
+
+inline void end_loop(const StatementBlock& block,
+                     VmContext& ctx,
+                     std::span<std::int64_t> locals,
+                     std::span<LoopFrame> loops,
+                     std::int32_t& numLoops,
+                     std::int32_t& pc) {
+    ++pc;
+    if (numLoops <= 0) {
+        return;
+    }
+
+    LoopFrame& top = loops[static_cast<std::size_t>(numLoops - 1)];
+    const Statement& startStmt = block.statements[static_cast<std::size_t>(top.statementNo)];
+    const std::uint32_t opcode = startStmt.opcode & kOpcodeMask;
+
+    if (opcode == core_op::kTryBegin) {
+        --numLoops;
+        return;
+    }
+
+    if (opcode == core_op::kTryForRange) {
+        ++top.value;
+    } else if (opcode == core_op::kTryForRangeBackwards) {
+        --top.value;
+    } else {
+        --numLoops;
+        return;
+    }
+
+    if (can_loop(block, ctx, locals, loops, numLoops)) {
+        if (startStmt.numOperands > 0) {
+            store_lvalue(static_cast<std::uint64_t>(startStmt.operands[0]),
+                         static_cast<std::int64_t>(top.value), ctx, locals);
+        }
+        pc = top.statementNo + 1;
+    } else {
+        --numLoops;
+    }
+}
+
+inline bool execute_statement_block(StatementBlock& block,
+                                    std::int32_t caller,
+                                    std::int32_t depth,
+                                    std::span<const std::int64_t> params,
+                                    VmContext& ctx);
+
+inline bool execute_call_script(const Statement& stmt,
+                                std::int32_t caller,
+                                std::int32_t depth,
+                                VmContext& ctx,
+                                std::span<const std::int64_t> locals) {
+    std::uint8_t unusedTag = 0;
+    const std::int32_t scriptIdx =
+        stmt.numOperands > 0
+            ? static_cast<std::int32_t>(parse_operand(
+                  static_cast<std::uint64_t>(stmt.operands[0]), ctx, locals, unusedTag))
+            : -1;
+
+    if (ctx.scripts == nullptr || scriptIdx < 0 ||
+        static_cast<std::size_t>(scriptIdx) >= ctx.scripts->scripts.size() ||
+        depth > ctx.maxCallDepth) {
+        if (depth > ctx.maxCallDepth) {
+            ctx.report_error("Script call stack depth limit exceeded");
+        } else {
+            ctx.report_error("Invalid script index in call_script");
+        }
+        return false;
+    }
+
+    std::array<std::int64_t, kMaxOperands> childParams{};
+    const std::int32_t count = std::max<std::int32_t>(0, stmt.numOperands - 1);
+    const auto clampedCount =
+        static_cast<std::size_t>(std::min<std::int32_t>(count, static_cast<std::int32_t>(kMaxOperands)));
+    for (std::size_t i = 0; i < clampedCount; ++i) {
+        childParams[i] = parse_operand(static_cast<std::uint64_t>(stmt.operands[i + 1]), ctx,
+                                       locals, unusedTag);
+    }
+
+    StatementBlock& targetBlock = ctx.scripts->scripts[static_cast<std::size_t>(scriptIdx)].block;
+    return execute_statement_block(
+        targetBlock, caller, depth + 1, std::span<const std::int64_t>(childParams.data(), clampedCount),
+        ctx);
+}
+
+// Interprets `block` (0x1401f69d0). Analyzes lazily on first run, tracks call
+// depth and loop frames, and returns true unless a top-level (numLoops == 0)
+// statement or nested call_script fails.
+inline bool execute_statement_block(StatementBlock& block,
+                                    std::int32_t caller,
+                                    std::int32_t depth,
+                                    std::span<const std::int64_t> params,
+                                    VmContext& ctx) {
+    if (depth < 0 || depth > ctx.maxCallDepth + 1) {
+        ctx.report_error("Statement block depth out of range");
+        return false;
+    }
+
+    analyze_statement_block(block, &ctx);
+    if (depth > ctx.maxObservedDepth) {
+        ctx.maxObservedDepth = depth;
+    }
+
+    const auto depthIdx = static_cast<std::size_t>(depth);
+    if (ctx.localFrames.size() <= depthIdx) {
+        ctx.localFrames.resize(depthIdx + 1);
+    }
+    if (ctx.loopFrames.size() <= depthIdx) {
+        ctx.loopFrames.resize(depthIdx + 1);
+    }
+
+    if (ctx.clearLocalsBetweenCalls) {
+        const auto zeroCount = static_cast<std::size_t>(
+            std::clamp(block.numLocalVariablesUsed, static_cast<std::int32_t>(kMinLocalVariables),
+                       kDefaultLocalVariables));
+        std::fill_n(ctx.localFrames[depthIdx].begin(), zeroCount, 0LL);
+    }
+
+    ctx.skipStatement = false;
+    bool blockResult = true;
+    bool canEnterElse = true;
+    std::int32_t numLoops = 0;
+    std::int32_t pc = 0;
+    const auto numStatements = static_cast<std::int32_t>(block.statements.size());
+
+    while (pc < numStatements) {
+        const std::span<std::int64_t> locals(ctx.localFrames[depthIdx]);
+        const std::span<LoopFrame> loops(ctx.loopFrames[depthIdx]);
+        const Statement& stmt = block.statements[static_cast<std::size_t>(pc)];
+        const std::uint32_t maskedOp = stmt.opcode & kOpcodeMask;
+        bool currentOk = true;
+
+        if (maskedOp >= kNativeOpcodeMin) {
+            if (execute_statement(stmt, caller, ctx, locals)) {
+                ++pc;
+            } else {
+                pc = stmt.endStatement;
+                canEnterElse = false;
+                currentOk = false;
+            }
+        } else if (maskedOp == core_op::kCallScript) {
+            if (execute_call_script(stmt, caller, depth, ctx, locals)) {
+                ++pc;
+            } else {
+                pc = stmt.endStatement;
+                canEnterElse = false;
+                currentOk = false;
+            }
+        } else if (maskedOp == core_op::kStoreScriptParam1) {
+            if (params.empty()) {
+                ctx.report_error("Invalid Script Parameter ID: 1");
+            } else if (stmt.numOperands > 0) {
+                store_lvalue(static_cast<std::uint64_t>(stmt.operands[0]), params[0], ctx, locals);
+            }
+            ++pc;
+        } else if (maskedOp == core_op::kStoreScriptParam2) {
+            if (params.size() < 2U) {
+                ctx.report_error("Invalid Script Parameter ID: 2");
+            } else if (stmt.numOperands > 0) {
+                store_lvalue(static_cast<std::uint64_t>(stmt.operands[0]), params[1], ctx, locals);
+            }
+            ++pc;
+        } else if (maskedOp == core_op::kStoreScriptParam) {
+            std::uint8_t unusedTag = 0;
+            const std::int32_t oneBased =
+                stmt.numOperands > 1
+                    ? static_cast<std::int32_t>(parse_operand(
+                          static_cast<std::uint64_t>(stmt.operands[1]), ctx, locals, unusedTag))
+                    : 0;
+            const std::int32_t zeroBased = oneBased - 1;
+            if (zeroBased < 0 || static_cast<std::size_t>(zeroBased) >= params.size()) {
+                ctx.report_error("Invalid Script Parameter ID");
+            } else if (stmt.numOperands > 0) {
+                store_lvalue(static_cast<std::uint64_t>(stmt.operands[0]),
+                             params[static_cast<std::size_t>(zeroBased)], ctx, locals);
+            }
+            ++pc;
+        } else if (stmt.opcode == core_op::kBreakLoop) {
+            std::int32_t i = numLoops - 1;
+            bool found = false;
+            while (i >= 0 && !found) {
+                numLoops = i;
+                const Statement& target =
+                    block.statements[static_cast<std::size_t>(loops[static_cast<std::size_t>(i)].statementNo)];
+                if (target.opcode != core_op::kTryBegin) {
+                    pc = target.endStatement;
+                    found = true;
+                }
+                --i;
+            }
+            ++pc;
+        } else if (stmt.opcode == core_op::kContinueLoop) {
+            std::int32_t i = numLoops - 1;
+            bool found = false;
+            while (i >= 0 && !found) {
+                const Statement& target =
+                    block.statements[static_cast<std::size_t>(loops[static_cast<std::size_t>(i)].statementNo)];
+                if (target.opcode != core_op::kTryBegin) {
+                    pc = target.endStatement;
+                    numLoops = i + 1;
+                    found = true;
+                }
+                --i;
+            }
+            if (!found) {
+                ++pc;
+            }
+        } else if (stmt.opcode == core_op::kTryEnd) {
+            canEnterElse = true;
+            end_loop(block, ctx, locals, loops, numLoops, pc);
+        } else if (stmt.opcode == core_op::kTryBegin) {
+            canEnterElse = true;
+            if (static_cast<std::size_t>(numLoops) < loops.size()) {
+                loops[static_cast<std::size_t>(numLoops)] = LoopFrame{pc, 0};
+                ++numLoops;
+            } else {
+                ctx.report_error("Loop stack overflow on try_begin");
+            }
+            ++pc;
+        } else if (stmt.opcode == core_op::kElseTry) {
+            if (!canEnterElse) {
+                canEnterElse = true;
+                ++pc;
+            } else {
+                pc = stmt.endStatement;
+            }
+        } else if (is_block_opener(maskedOp)) {
+            canEnterElse = true;
+            start_loop(block, ctx, locals, loops, numLoops, pc);
+        } else {
+            ++pc;
+        }
+
+        if (numLoops == 0) {
+            blockResult = currentOk;
+        }
+        if (!blockResult) {
+            return false;
+        }
+    }
+
+    return blockResult;
+}
+
+inline bool execute_statement_block(StatementBlock& block, VmContext& ctx) {
+    return execute_statement_block(block, 0, 0, {}, ctx);
+}
+
+// Executes a loaded script by index (0x1400dbde0, default caller 0x200000).
+inline bool execute_script(game::ScriptManager& manager,
+                           std::int32_t scriptIndex,
+                           VmContext& ctx,
+                           std::span<const std::int64_t> params = {},
+                           std::int32_t caller = kScriptCaller) {
+    if (scriptIndex < 0 || static_cast<std::size_t>(scriptIndex) >= manager.scripts.size()) {
+        return false;
+    }
+    game::ScriptManager* previousScripts = ctx.scripts;
+    if (ctx.scripts == nullptr) {
+        ctx.scripts = &manager;
+    }
+    const bool result = execute_statement_block(
+        manager.scripts[static_cast<std::size_t>(scriptIndex)].block, caller, 0, params, ctx);
+    ctx.scripts = previousScripts;
+    return result;
+}
+
+inline bool execute_script(game::ScriptManager& manager,
+                           std::string_view scriptId,
+                           VmContext& ctx,
+                           std::span<const std::int64_t> params = {},
+                           std::int32_t caller = kScriptCaller) {
+    for (std::size_t i = 0; i < manager.scripts.size(); ++i) {
+        if (manager.scripts[i].id == scriptId) {
+            return execute_script(manager, static_cast<std::int32_t>(i), ctx, params, caller);
+        }
+    }
+    return false;
+}
+
+// Executes a mapped static script slot (0x1400dbe70).
+inline bool execute_mapped_script(game::ScriptManager& manager,
+                                  std::size_t mappedSlot,
+                                  VmContext& ctx,
+                                  std::span<const std::int64_t> params = {},
+                                  std::int32_t caller = kScriptCaller) {
+    if (mappedSlot >= manager.mappedScripts.size()) {
+        return false;
+    }
+    return execute_script(manager, manager.mappedScripts[mappedSlot], ctx, params, caller);
+}
+
+// Drives one trigger state machine against VmContext, passing eventKey as caller
+// so WSE ops like store_current_trigger (3014) observe the active trigger event.
+[[nodiscard]] inline bool execute_trigger(game::Trigger& trigger,
+                                          std::int32_t eventKey,
+                                          std::span<const std::int64_t> timersTotal,
+                                          VmContext& ctx) {
+    std::int64_t now = 0;
+
+    if (trigger.status == 2) {
+        if (!game::timer_now(timersTotal, trigger.rearmTimer, now)) {
+            return false;
+        }
+        if (trigger.rearmInterval <= game::timer_elapsed(now, trigger.rearmTimer.value)) {
+            trigger.status = 0;
+            if (!game::timer_now(timersTotal, trigger.checkTimer, now)) {
+                return false;
+            }
+            trigger.checkTimer.value = now;
+        }
+    }
+
+    if (trigger.status == 0) {
+        if (trigger.checkInterval <= game::kManagerEventThreshold) {
+            if (game::interval_key(trigger.checkInterval) == eventKey &&
+                execute_statement_block(trigger.conditions, eventKey, 0, {}, ctx)) {
+                trigger.status = 2;
+                if (!game::timer_now(timersTotal, trigger.rearmTimer, now)) {
+                    return false;
+                }
+                trigger.rearmTimer.value = now;
+                (void)execute_statement_block(trigger.consequences, eventKey, 0, {}, ctx);
+            }
+        } else if (eventKey >= 0) {
+            if (!game::timer_now(timersTotal, trigger.checkTimer, now)) {
+                return false;
+            }
+            if (trigger.checkInterval <= game::timer_elapsed(now, trigger.checkTimer.value)) {
+                trigger.checkTimer.value = now;
+                if (execute_statement_block(trigger.conditions, eventKey, 0, {}, ctx)) {
+                    trigger.status = 1;
+                    if (!game::timer_now(timersTotal, trigger.delayTimer, now)) {
+                        return false;
+                    }
+                    trigger.delayTimer.value = now;
+                }
+            }
+        }
+    }
+
+    if (trigger.status == 1) {
+        if (!game::timer_now(timersTotal, trigger.delayTimer, now)) {
+            return false;
+        }
+        if (trigger.delayInterval <= game::timer_elapsed(now, trigger.delayTimer.value)) {
+            trigger.status = 2;
+            if (!game::timer_now(timersTotal, trigger.rearmTimer, now)) {
+                return false;
+            }
+            trigger.rearmTimer.value = now;
+            (void)execute_statement_block(trigger.consequences, eventKey, 0, {}, ctx);
+        }
+    }
+
+    return true;
+}
+
+[[nodiscard]] inline bool execute_trigger_manager(game::TriggerManager& manager,
+                                                  std::int32_t eventKey,
+                                                  std::span<const std::int64_t> timersTotal,
+                                                  VmContext& ctx) {
+    for (auto& trigger : manager.triggers) {
+        if (!execute_trigger(trigger, eventKey, timersTotal, ctx)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] inline bool execute_simple_trigger(game::SimpleTrigger& trigger,
+                                                 std::int32_t eventKey,
+                                                 std::span<const std::int64_t> timersTotal,
+                                                 VmContext& ctx) {
+    if (trigger.interval < game::kSimpleEventThreshold) {
+        if (game::interval_key(trigger.interval) != eventKey) {
+            return true;
+        }
+    } else {
+        if (eventKey < 0) {
+            return true;
+        }
+        std::int64_t now = 0;
+        if (!game::timer_now(timersTotal, trigger.timer, now)) {
+            return false;
+        }
+        if (game::timer_elapsed(now, trigger.timer.value) < trigger.interval) {
+            return true;
+        }
+        trigger.timer.value = now;
+    }
+
+    (void)execute_statement_block(trigger.block, eventKey, 0, {}, ctx);
+    return true;
+}
+
+[[nodiscard]] inline bool execute_simple_trigger_manager(game::SimpleTriggerManager& manager,
+                                                         std::int32_t eventKey,
+                                                         std::span<const std::int64_t> timersTotal,
+                                                         VmContext& ctx) {
+    for (auto& trigger : manager.triggers) {
+        if (!execute_simple_trigger(trigger, eventKey, timersTotal, ctx)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace wse::vm
+
+namespace wse::game {
+
+using vm::execute_mapped_script;
+using vm::execute_script;
+using vm::execute_simple_trigger;
+using vm::execute_simple_trigger_manager;
+using vm::execute_trigger;
+using vm::execute_trigger_manager;
+
+}  // namespace wse::game

@@ -13,9 +13,9 @@
   "pdb_age": 449
  },
  "inputs": {
-  "layouts": 25,
+  "layouts": 29,
   "globals_scanned": 48658,
-  "symbols_curated": 1755,
+  "symbols_curated": 1782,
   "game_vtables": 73
  },
  "strings": [
@@ -379,6 +379,128 @@
     "execute",
     "executeWSE",
     "arrayCompare"
+   ]
+  },
+  "mbLoop": {
+   "size": 56,
+   "type_index": "0x1f89a",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_statementNo",
+     "offset": "0x0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_value",
+     "offset": "0x4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_missionGridIterator",
+     "offset": "0x8",
+     "type": "mbMissionGridIterator",
+     "type_index": "0x34b0",
+     "storage": "instance"
+    },
+    {
+     "name": "m_dictIterator",
+     "offset": "0x28",
+     "type": "rglOrderedMapIterator<rglString,rglString>",
+     "type_index": "0x430e",
+     "storage": "instance"
+    },
+    {
+     "name": "m_dictEndIterator",
+     "offset": "0x30",
+     "type": "rglOrderedMapIterator<rglString,rglString>",
+     "type_index": "0x430e",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbLoop",
+    "operator="
+   ]
+  },
+  "mbLoopManager": {
+   "size": 7176,
+   "type_index": "0x1eb6b",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_loops",
+     "offset": "0x0",
+     "type": "mbLoop[7168]",
+     "type_index": "0x1eb5b",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numLoops",
+     "offset": "0x1c00",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "clear",
+    "size",
+    "addLoop",
+    "endLoop",
+    "getLoop",
+    "mbLoopManager",
+    "operator="
+   ]
+  },
+  "mbCallStack": {
+   "size": 3096,
+   "type_index": "0x715b",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_depth",
+     "offset": "0x0",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_blocks",
+     "offset": "0x8",
+     "type": "mbStatementBlock*[257]",
+     "type_index": "0x7151",
+     "storage": "instance"
+    },
+    {
+     "name": "m_statementNos",
+     "offset": "0x810",
+     "type": "int32_t[257]",
+     "type_index": "0x7152",
+     "storage": "instance"
+    },
+    {
+     "name": "m_lastStatementNo",
+     "offset": "0xc14",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbCallStack",
+    "pushBlock",
+    "setStatement",
+    "popBlock",
+    "empty",
+    "print"
    ]
   },
   "mbScript": {
@@ -809,6 +931,498 @@
     "doMainScript",
     "lPushChild",
     "lToStr_t",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mbBasicGame": {
+   "size": 221616,
+   "type_index": "0xadd3",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_name",
+     "offset": "0x0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mainServerHttp",
+     "offset": "0x48",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mainServer",
+     "offset": "0x90",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_gameDownloadURL",
+     "offset": "0xd8",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_moduleDownloadURL",
+     "offset": "0x120",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_screenshotIndex",
+     "offset": "0x168",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_triggerParams",
+     "offset": "0x170",
+     "type": "__int64[16]",
+     "type_index": "0x76ef",
+     "storage": "instance"
+    },
+    {
+     "name": "m_triggerResult",
+     "offset": "0x1f0",
+     "type": "__int64",
+     "type_index": "0x13",
+     "storage": "instance"
+    },
+    {
+     "name": "m_fixedPointMultiplier",
+     "offset": "0x1f8",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_resultString",
+     "offset": "0x200",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_trackNo",
+     "offset": "0x248",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_trackOptions",
+     "offset": "0x24c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_cueTrackNo",
+     "offset": "0x250",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_globalVariables",
+     "offset": "0x258",
+     "type": "mbSlots",
+     "type_index": "0x3927",
+     "storage": "instance"
+    },
+    {
+     "name": "m_registers",
+     "offset": "0x270",
+     "type": "__int64[128]",
+     "type_index": "0xadbb",
+     "storage": "instance"
+    },
+    {
+     "name": "m_positionRegisters",
+     "offset": "0x670",
+     "type": "rglTransform[8192]",
+     "type_index": "0xadbc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_stringRegisters",
+     "offset": "0x2670",
+     "type": "rglString[9216]",
+     "type_index": "0xadbd",
+     "storage": "instance"
+    },
+    {
+     "name": "m_gameLaunched",
+     "offset": "0x4a70",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_updatePlayerItems",
+     "offset": "0x4a71",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_usedMapEntities",
+     "offset": "0x4a78",
+     "type": "rglEntity*[8][8]",
+     "type_index": "0xadbf",
+     "storage": "instance"
+    },
+    {
+     "name": "m_storedMapEntities",
+     "offset": "0x4c78",
+     "type": "rglEntity*[8][8]",
+     "type_index": "0xadbf",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numMapEntities",
+     "offset": "0x4e78",
+     "type": "int32_t[2]",
+     "type_index": "0x3009",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapMin",
+     "offset": "0x4e80",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapMax",
+     "offset": "0x4e88",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapSize",
+     "offset": "0x4e90",
+     "type": "rglVector2",
+     "type_index": "0x32bc",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapScene",
+     "offset": "0x4e98",
+     "type": "rglScene*",
+     "type_index": "0x7876",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapManifold",
+     "offset": "0x4ea0",
+     "type": "rglManifold*",
+     "type_index": "0x9cea",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapSeaMeshes",
+     "offset": "0x4ea8",
+     "type": "rglVector<rglMesh *>",
+     "type_index": "0x33d8",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapRiverMeshes",
+     "offset": "0x4ec0",
+     "type": "rglVector<rglMesh *>",
+     "type_index": "0x33d8",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapFoamMeshes",
+     "offset": "0x4ed8",
+     "type": "rglVector<rglMesh *>",
+     "type_index": "0x33d8",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mapWaveMeshes",
+     "offset": "0x4ef0",
+     "type": "rglVector<rglMesh *>",
+     "type_index": "0x33d8",
+     "storage": "instance"
+    },
+    {
+     "name": "m_aiMeshVertexPool",
+     "offset": "0x4f08",
+     "type": "rglPool<rglAiMeshVertex>",
+     "type_index": "0x3912",
+     "storage": "instance"
+    },
+    {
+     "name": "m_aiMeshEdgePool",
+     "offset": "0x4f28",
+     "type": "rglPool<rglAiMeshEdge>",
+     "type_index": "0x390c",
+     "storage": "instance"
+    },
+    {
+     "name": "m_aiMeshFacePool",
+     "offset": "0x4f48",
+     "type": "rglPool<rglAiMeshFace>",
+     "type_index": "0x390f",
+     "storage": "instance"
+    },
+    {
+     "name": "m_gameType",
+     "offset": "0x4f68",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bitMaskTable",
+     "offset": "0x4f6c",
+     "type": "uint32_t[33]",
+     "type_index": "0xadc0",
+     "storage": "instance"
+    },
+    {
+     "name": "m_tooltipText",
+     "offset": "0x4ff0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_multiplayerMissionStartTimer",
+     "offset": "0x5038",
+     "type": "rglAppTimer",
+     "type_index": "0x54af",
+     "storage": "instance"
+    },
+    {
+     "name": "m_multiplayerMissionStarting",
+     "offset": "0x5048",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_slowMotionToggle",
+     "offset": "0x5049",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_walkToggle",
+     "offset": "0x504a",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_conversationSpeakerTroopNo",
+     "offset": "0x504c",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_cameraDistance",
+     "offset": "0x5050",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "m_switchModule",
+     "offset": "0x5054",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_switchingModule",
+     "offset": "0x5055",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_switchingToCampaign",
+     "offset": "0x5056",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_connectToServer",
+     "offset": "0x5057",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_storedModule",
+     "offset": "0x5058",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_storedAddress",
+     "offset": "0x50a0",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_storedPassword",
+     "offset": "0x50e8",
+     "type": "rglString",
+     "type_index": "0x3213",
+     "storage": "instance"
+    },
+    {
+     "name": "m_consoleCommands",
+     "offset": "0x5130",
+     "type": "rglVector<rglString>",
+     "type_index": "0x3594",
+     "storage": "instance"
+    },
+    {
+     "name": "m_curConsoleCommandNo",
+     "offset": "0x5148",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_mumble",
+     "offset": "0x5150",
+     "type": "MumbleLinkedMem*",
+     "type_index": "0xadc2",
+     "storage": "instance"
+    },
+    {
+     "name": "m_TimerRegisters",
+     "offset": "0x5158",
+     "type": "rglAppTimer[2048]",
+     "type_index": "0xadc3",
+     "storage": "instance"
+    },
+    {
+     "name": "m_NetworkBufferRegisters",
+     "offset": "0x5958",
+     "type": "mbnetBuffer[197632]",
+     "type_index": "0xadc4",
+     "storage": "instance"
+    },
+    {
+     "name": "m_floatRegisters",
+     "offset": "0x35d58",
+     "type": "float[128]",
+     "type_index": "0xadc5",
+     "storage": "instance"
+    },
+    {
+     "name": "m_parser",
+     "offset": "0x35f58",
+     "type": "mu::Parser",
+     "type_index": "0x3923",
+     "storage": "instance"
+    },
+    {
+     "name": "m_wseObjects",
+     "offset": "0x360d0",
+     "type": "WSEObjectManager",
+     "type_index": "0xadc6",
+     "storage": "instance"
+    },
+    {
+     "name": "m_dictionaryType",
+     "offset": "0x36110",
+     "type": "WSEObjectType*",
+     "type_index": "0xadc8",
+     "storage": "instance"
+    },
+    {
+     "name": "m_arrayType",
+     "offset": "0x36118",
+     "type": "WSEObjectType*",
+     "type_index": "0xadc8",
+     "storage": "instance"
+    },
+    {
+     "name": "m_sortOptions",
+     "offset": "0x36120",
+     "type": "WSEArraySortOptions",
+     "type_index": "0x6690",
+     "storage": "instance"
+    },
+    {
+     "name": "m_numReturnValues",
+     "offset": "0x36128",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_returnValues",
+     "offset": "0x36130",
+     "type": "__int64[16]",
+     "type_index": "0x76ef",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "mbBasicGame",
+    "~mbBasicGame",
+    "initialize",
+    "initializeMumble",
+    "updateMumble",
+    "getAppDataPath",
+    "getMyDocumentsSceneObjPath",
+    "getMyDocumentsScreenshotPath",
+    "getMyDocumentsSavegamePath",
+    "getMyDocumentsPath",
+    "getMyDocumentsModulePath",
+    "getMyDocumentsCharactersPath",
+    "getStoragePath",
+    "isSingleplayer",
+    "isMultiplayer",
+    "isServer",
+    "isListenServer",
+    "isDedicatedServer",
+    "isClient",
+    "isMultiplayerCampaign",
+    "isMultiplayerCampaignServer",
+    "isMultiplayerCampaignClient",
+    "isValidUsername",
+    "isValidPassword",
+    "isValidServerName",
+    "getGlobalVariable",
+    "setGlobalVariable",
+    "parseString",
+    "parseToken",
+    "putValue",
+    "putData",
+    "takeValue",
+    "takeData",
+    "getPreviousConsoleCommand",
+    "getNextConsoleCommand",
+    "executeConsoleCommand",
+    "setTriggerParam",
+    "getDictionary",
+    "getArray",
     "operator=",
     "__vecDelDtor"
    ]
@@ -6385,6 +6999,12 @@
    "va": "0x140557c80"
   },
   {
+   "name": "?g_curCallStack@@3PEAVmbCallStack@@EA",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061eeb8"
+  },
+  {
    "name": "??_7rglBinaryStream@@6B@",
    "kind": "public",
    "source": "pdb-public",
@@ -8029,6 +8649,18 @@
    "va": "0x14006f0a0"
   },
   {
+   "name": "?getArray@mbBasicGame@@QEAAPEAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140073810"
+  },
+  {
+   "name": "?getDictionary@mbBasicGame@@QEAAPEAVrglSectionlessIni@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400737a0"
+  },
+  {
    "name": "??_ErglString@@QEAAPEAXI@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -8045,6 +8677,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140073340"
+  },
+  {
+   "name": "?takeData@mbBasicGame@@QEAAXPEBEAEAHPEAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400731c0"
+  },
+  {
+   "name": "?takeValue@mbBasicGame@@QEAAXPEBEAEAHPEAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400730e0"
+  },
+  {
+   "name": "?putData@mbBasicGame@@QEAAXPEAEAEAHPEBXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140072fa0"
+  },
+  {
+   "name": "?putValue@mbBasicGame@@QEAAXPEAEAEAHPEBXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140072ed0"
   },
   {
    "name": "?parseToken@mbBasicGame@@QEAA?AVrglString@@AEBV2@AEAV2@@Z",
@@ -8069,6 +8725,24 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140072000"
+  },
+  {
+   "name": "?isMultiplayerCampaignServer@mbBasicGame@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140071ff0"
+  },
+  {
+   "name": "?isMultiplayerCampaign@mbBasicGame@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140071fe0"
+  },
+  {
+   "name": "?isDedicatedServer@mbBasicGame@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140071fa0"
   },
   {
    "name": "?getStoragePath@mbBasicGame@@QEBA?AVrglString@@PEBD@Z",
@@ -8119,6 +8793,30 @@
    "va": "0x140071300"
   },
   {
+   "name": "?updateMumble@mbBasicGame@@QEAAXAEBVrglVector4@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140071250"
+  },
+  {
+   "name": "?initializeMumble@mbBasicGame@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140071120"
+  },
+  {
+   "name": "?initialize@mbBasicGame@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140070f90"
+  },
+  {
+   "name": "??1mbBasicGame@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140070a50"
+  },
+  {
    "name": "??1?$rglVector@VrglString@@@@QEAA@XZ",
    "kind": "public",
    "source": "pdb-public",
@@ -8129,6 +8827,48 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140016f10"
+  },
+  {
+   "name": "??0mbBasicGame@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006fc20"
+  },
+  {
+   "name": "?isClient@mbBasicGame@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140071fc0"
+  },
+  {
+   "name": "?isServer@mbBasicGame@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140071f70"
+  },
+  {
+   "name": "?setTriggerParam@mbBasicGame@@QEAAXH_J@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140073790"
+  },
+  {
+   "name": "?isSingleplayer@mbBasicGame@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140071f50"
+  },
+  {
+   "name": "?isMultiplayer@mbBasicGame@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140071f60"
+  },
+  {
+   "name": "?isListenServer@mbBasicGame@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140071f90"
   },
   {
    "name": "??$getWindow@VmbYesNoWindow@@@mbGameScreen@@QEBAPEAVmbYesNoWindow@@H@Z",
@@ -12493,6 +13233,30 @@
    "va": "0x140200be0"
   },
   {
+   "name": "??0?$_Wrap_alloc@V?$allocator@PEAVmbLoopManager@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14000f820"
+  },
+  {
+   "name": "?_Reallocate@?$vector@PEAVmbLoopManager@@V?$allocator@PEAVmbLoopManager@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a0c0"
+  },
+  {
+   "name": "?_Reserve@?$vector@PEAVmbLoopManager@@V?$allocator@PEAVmbLoopManager@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a030"
+  },
+  {
+   "name": "?_Destroy@?$vector@PEAVmbLoopManager@@V?$allocator@PEAVmbLoopManager@@@std@@@std@@IEAAXPEAPEAVmbLoopManager@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140004250"
+  },
+  {
    "name": "?equal_range@?$_Hash@V?$_Umap_traits@IVrglString@@V?$_Uhash_compare@IU?$hash@I@std@@U?$equal_to@I@2@@std@@V?$allocator@U?$pair@$$CBIVrglString@@@std@@@3@$0A@@std@@@std@@QEAA?AU?$pair@V?$_List_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBIVrglString@@@std@@@std@@@std@@@std@@V12@@2@AEBI@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -12605,6 +13369,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401c6060"
+  },
+  {
+   "name": "?print@mbCallStack@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c5f90"
   },
   {
    "name": "?mbCheckPath@@YA_NAEAVrglString@@@Z",
@@ -16247,6 +17017,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14069a560"
+  },
+  {
+   "name": "?g_basicGame@@3VmbBasicGame@@A",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1406629c0"
   },
   {
    "name": "?g_renderer@@3VrglRenderer@@A",

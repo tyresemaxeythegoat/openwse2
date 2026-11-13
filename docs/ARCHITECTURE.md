@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and 93 of 440 handlers recovered.
+Status: Phase 1 — binary triage complete; statement-block VM (`block_vm.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and 93 of 440 handlers recovered.
 Last updated: 2026-11-13.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -14,7 +14,7 @@ The evidence baseline is the official **WSE2 v1.1.5.5** release (2026-11-12). It
 | Artifact | Method | Result |
 | --- | --- | --- |
 | `mb_warband_wse2_x64.exe` | REA workflow / Ghidra 12.1.4 | v1.1.5.5, 7,060,992 B, SHA-256 `d4e97d56981a6dab3de0348e3a0513ae200e7b5701b86732a4654b0aa4e29709`; PE32+ `amd64`; image base `0x140000000` |
-| Imports | REA `inspect_pe_imports` | 21 static + 2 delay-load DLLs, 542 functions (2026-10-14 build; re-inventory pending) |
+| Imports | REA `inspect_pe_imports` (`ev_a4af0bca…87fc6`) | 21 static + 2 delay-load DLLs, 546 functions (482 static + 64 delay) |
 | `mb_warband_wse2_x64.pdb` | `tools/pdb_symbols.py` (MSF 7.0 + TPI + DBI) | GUID `fccf5e8d-4952-4a53-aa13-ac8b7ad38cfc`, age 449, RSDS; **156,846 TPI records**; **15,363 sized class/struct/union/enum layouts** (`types_new.json`) |
 | PDB symbols | `tools/pdb_symbols.py --globals` with PE section mapping | **48,658 symbols** with VAs where applicable (`globals_new.json`) |
 | RTTI + vtables | `tools/pe_evidence.py`, adapted `vtables.py` | **279 pointer runs ≥ 4** in `.rdata`/`.data`; **207** identified by destructor symbol; **73** belong to `rgl*`/`mb*`/`WSE*` classes (`vtables_new.json`) |
@@ -33,7 +33,7 @@ REA/Ghidra toolchain used for these runs:
 
 ## 2. Type inventory
 
-Counts of sized types by name prefix (14,877 total):
+Counts of sized types by name prefix (2026-10-14 inventory, 14,877 total; v1.1.5.5 PDB holds 15,363 sized layouts):
 
 | Prefix | Count | Interpretation |
 | --- | ---: | --- |
@@ -61,10 +61,10 @@ Physics**, **FMOD Ex**, **TinyXML**, and stock **Lua 5.1** (`lua5164.dll`, 103 i
 | Game | `mbGame`, `mbMission`, `mbMissionTemplate`, `mbAgent`, `mbParty`, `mbFaction`, `mbItem`, `mbTroop` | PDB layouts |
 | Lua extensions | `WSELuaManager`, `gameOperation`, `gameConstTable`, `WSEDynMultiArray` | PDB layouts; `g_luaManager` |
 | Physics | `bt*` (393 types) | PDB type inventory |
-| Audio | `FMOD*` (25 types), `fmodex64.dll` (53 delay imports) | PDB + imports |
+| Audio | `FMOD*` (25 types), `fmodex64.dll` (54 delay imports) | PDB + imports |
 | XML / config | `TiXml*` (19 types), `rglConfig`, `rglSectionlessIni` | PDB + `module.ini` string refs |
 | Networking | `WS2_32.dll` (37), `WINHTTP.dll` (11), `WININET.dll`, `urlmon.dll` | imports |
-| Rendering | `d3d9.dll`, `d3dx9_43.dll` (15), `rglRenderer` (57,232 bytes) | imports + PDB |
+| Rendering | `d3d9.dll`, `d3dx9_43.dll` (17), `rglRenderer` (61,312 bytes, type `0xad68`) | imports + PDB |
 
 ## 4. Core layouts (PDB TPI evidence)
 
@@ -113,7 +113,7 @@ files. The binary readers use the embedded `m_contents.m_cursor` at `+0x58` and 
 `rglStream::m_cursor` at `+0x54` is the text-stream cursor. Ghidra names the 4-byte reader
 `FUN_1402a1d00` rather than `readInt32` because it did not split the adjacent 20-byte entries.
 
-Exact reader behaviour (`ev_cebc7ae0…e8c8d3`, 18/18 functions):
+Exact reader behaviour (v1.1.5.5 `ev_1e3c2566…0fdb0b`, 18/18 functions):
 
 | Slot | Method | Behaviour |
 | --- | --- | --- |
@@ -132,7 +132,7 @@ text and a single `0x20` separator; `writeBool` emits `0`/`1`. The retail parser
 (`strtod` accepts a numeric prefix, the integer loops accept non-digits), so the portable reader
 parses strictly and rejects malformed tokens instead.
 
-### `mbStatementBlock` — 96 bytes, type 0x19048
+### `mbStatementBlock` — 96 bytes, type `0x1913c`
 
 | Offset | Member | Type |
 | ---: | --- | --- |
@@ -145,7 +145,7 @@ parses strictly and rejects malformed tokens instead.
 
 Methods: `readStream`, `analyze`, `execute`, `startLoop`, `endLoop`, `canLoop`.
 
-### `mbStatement` — 272 bytes, type 0xb82a
+### `mbStatement` — 272 bytes, type `0xb91e`
 
 | Offset | Member | Type |
 | ---: | --- | --- |
@@ -281,7 +281,7 @@ Division/modulo by zero log and return true. Handlers that do not write operand 
 no-ops (`ignored`), matching the retail `return true` fall-through. The other 347 mapped opcodes report
 `WseDispatch::unimplemented` until transcribed (93 of 440 implemented).
 
-### `mbScript` — 176 bytes, type 0x1f6c4
+### `mbScript` — 176 bytes, type `0x1f7b8`
 
 | Offset | Member | Type |
 | ---: | --- | --- |
@@ -291,7 +291,7 @@ no-ops (`ignored`), matching the retail `return true` fall-through. The other 34
 
 Methods: `readStream(rglStream&, int)`, `execute()`.
 
-### `mbScriptManager` — 272 bytes, type 0xadfd
+### `mbScriptManager` — 272 bytes, type `0xaeea`
 
 | Offset | Member | Type |
 | ---: | --- | --- |
@@ -421,8 +421,8 @@ and a game-event queue transition is detected (`DAT_1405d0f28 + 0x4a0` vs `+0x4a
 
 ### Trigger savegames
 
-`rglBinaryStream` (vtable `0x14055c780`, 30 slots; writer evidence `ev_24eecfa4…f18c0b6`,
-reader evidence `ev_130d8023…2c62e6`):
+`rglBinaryStream` (vtable `0x14055c780`, 30 slots; v1.1.5.5 writer/stream evidence `ev_8cc48986…1dab2e7` (9/9),
+reader evidence `ev_f09662c6…22777` / `ev_2ddf7a62…ed9b52`):
 
 - The stream stores raw values with no header, version, length, or checksum. PDB aliases share
   addresses: `+0x20` `writeInt64/writeUInt64`, `+0x30` `writeInt32/writeUInt32/writeFloat`,
@@ -478,7 +478,7 @@ IDs, 0–5,202), and `header_operations_addon.py` adds 477 declarations (472 uni
 opcode (5,202) fits inside the 5,300-slot hook array, corroborating that the array is indexed by
 opcode ID.
 
-### `mbGame` — 94,536 bytes, type 0x1b936 (selected members)
+### `mbGame` — 94,560 bytes, type `0x1ba2a` (selected members)
 
 | Offset | Member | Type |
 | ---: | --- | --- |
@@ -581,6 +581,7 @@ not defined by that module).
 | `0x1401f7290` | `mbStatementBlock::startLoop` | `void(int64_t*, mbLoopManager&, int&)` |
 | `0x1401f7910` | `mbStatementBlock::endLoop` | `void(int64_t*, mbLoopManager&, int&)` |
 | `0x1401f7f00` | `mbStatementBlock::canLoop` | `bool(int64_t*, mbLoopManager&)` |
+| `0x14033cdd0` | `WSELuaManager::OnStatementExecute` | Statement-level Lua hook (`ev_55263589…b114`) |
 | `0x14033d090` | `WSELuaManager::OnOperationMgrExecute` | `bool(mbStatementBlock*, int&, int64_t*, bool&)` |
 
 `WSELuaManager::OnOperationMgrExecute` is the bridge between the native statement VM and the WSE
@@ -709,22 +710,38 @@ Dispatch order:
   - All other opcodes `<= 0x14` route to `startLoop`.
   - Opcodes `>= 0x1E` go to `mbStatement::execute`.
 
+Verified supporting layouts added to `docs/SYMBOL_MAP.json` (29 classes, 1,782 symbols, 73 vtables):
+
+- `mbBasicGame` (221,616 B, type `0xadd3`): `m_globalVariables` (`mbSlots`) at `+0x258`,
+  `m_registers` (`__int64[128]`) at `+0x270` (`0x140662c30`). Operand tag `1`, `store_lvalue`,
+  and WSE `register_{get,set}` share this 128-entry bank.
+- `mbCallStack` (3,096 B, type `0x715b`), `mbLoop` (56 B, type `0x1f89a`), and
+  `mbLoopManager` (7,176 B, type `0x1eb6b`).
+
+Portable reconstruction lives in `engine/include/wse/vm/block_vm.h`: `VmContext`,
+`analyze_statement_block`, `execute_statement`, `execute_statement_block`, loop helpers
+(`start_loop`/`can_loop`/`end_loop`), core native comparisons/shifts/math/fixed-point ops
+(`30–33`, `2100–2133`), `call_script`, `store_script_param*`, `this_or_next`/`neg`,
+`dispatch_wse_statement` (forwarding `outTag` for string operands), and VM-backed
+`execute_script`, `execute_mapped_script`, `execute_trigger`, `execute_trigger_manager`,
+`execute_simple_trigger`, and `execute_simple_trigger_manager`.
+
 ## 6. External dependencies (import evidence)
 
 | DLL | Functions | Kind | Port strategy |
 | --- | ---: | --- | --- |
 | `KERNEL32.dll` | 223 | static | Replace with C++20 `std::filesystem`, `std::thread`, POSIX/Android shims |
 | `lua5164.dll` | 103 | static | Link Lua 5.1.x for arm64 (or a compatible 5.1-compatible VM); **not** LuaJIT |
-| `fmodex64.dll` | 53 | delay | Replace with Oboe/SDL audio; FMOD Ex is not redistributable here |
+| `fmodex64.dll` | 54 | delay | Replace with Oboe/SDL audio; FMOD Ex is not redistributable here |
 | `USER32.dll` | 40 | static | Replace with SDL2/Android input and windowing |
 | `WS2_32.dll` | 37 | static | BSD sockets (available on Android) |
-| `d3dx9_43.dll` | 15 | static | Replace D3DX helpers (math, texture, shader) |
+| `d3dx9_43.dll` | 17 | static | Replace D3DX helpers (math, texture, shader) |
 | `WINHTTP.dll` | 11 | static | Replace with `HttpURLConnection`/libcurl |
 | `ADVAPI32.dll` | 10 | static | Registry/crypto shims; registry not used on Android |
 | `steam_api64.dll` | 10 | delay | Exclude; no Steam on Android |
 | `dbghelp.dll` | 8 | static | Optional crash reporting; replace with `backtrace`/Breakpad |
 | `ole32.dll`, `OLEAUT32.dll` | 5 + 5 | static | COM shims only if required by SDK paths |
-| `IMM32.dll` | 4 | static | IME/text input via Android `InputMethodManager` |
+| `IMM32.dll` | 5 | static | IME/text input via Android `InputMethodManager` |
 | `SHLWAPI.dll`, `SHELL32.dll` | 4 + 2 | static | Replace path/shell helpers |
 | `WINMM.dll` | 3 | static | Timers -> `std::chrono`/SDL |
 | `XINPUT1_3.dll` | 3 | static | SDL game controller API |
@@ -773,20 +790,33 @@ superseded 2026-10-14 build, kept only to explain older citations.
 | --- | --- | --- |
 | `ev_2aaa96a845fb5e0466129d8f6726e8172c13981585db951f98d8235a415cf0f9` | `decompile_all --address-start 0x1401e4dc0 --address-end 0x1401e4dc0` | 1 procedure written, 0 failures; 8,844-line `executeWSE` pseudocode from which 440/440 opcodes are mapped |
 | `ev_7641bf02b4fb1b7a257143d21ebbc3db30c63508b4e651c54f7df703201f8413` | `decompile_all --name mbStatement` | 0 selected, 20,268 excluded: the new PDB names are not seeded into Ghidra, so name search cannot be used; address ranges are required |
+| `ev_e323351db6dcd0c5ee6971adff8ece53dd20436dc59b424d88e46d882168cd0a` | v1.1.5.5 `binary_overview` | 9 segments, 20,276 procedures, 7,448 strings (`ev_fa7fc7d68d7977c7c161b00f64de44258e1e974d7358980b949cb2aa2f04d2e4`) |
+| `ev_a4af0bca5d107b626454d91f4c69c2aef5d4f21b466cbb174333d7c8cd687fc6` | v1.1.5.5 `inspect_pe_imports` | 21 static + 2 delay DLLs (23 total), 482 + 64 = 546 functions |
+| `ev_3ebcea855452bcdf0c3325185a7803f0ab38d671cdbdae50289c5be298015986` | v1.1.5.5 `stmt_core` (`0x1401c5f90`–`0x1401c6150`) | 4/4 procedures (`mbCallStack::print`, `parseOperand`, `returnValue`, `execute`) |
+| `ev_ffc38aa54dea8de3e505a585b91ac665291570c4257be680c2ea8f20da2cb4d8` | v1.1.5.5 `stmt_block` (`0x1401f6600`–`0x1401f7f00`) | 10/10 procedures (`readStream`, `analyze`, `execute`, `startLoop`, `endLoop`, `canLoop`, …) |
+| `ev_8d37a0c8ff4172b27be70bc38d0a325287abd882f115359535ef213a2601e995` | v1.1.5.5 `script` (`0x14020f6a0`–`0x14020f9a0`) | 4/4 procedures (`mbScript` / `mbScriptManager`) |
+| `ev_3157906d86eb2e91fde12ab398ac456985e8ddc8b446b09c38bc04ae85fdfcfb` | v1.1.5.5 `simple_trigger` | 12/12 procedures (`mbSimpleTrigger::execute`, manager, serialization) |
+| `ev_f62843ac4a6fc192dce93d0c44b029607a38d68ecaa72909b908275472a0a688` | v1.1.5.5 `trigger` | 12/12 procedures (`mbTriggerManager::execute`, serialization) |
+| `ev_fc9bd1a4a59df50e5043ba9e6cc9a8e8abe92e0f206060e19e569d623f54193d` | v1.1.5.5 `game_scripts` (`0x1400dbde0`, `0x1400dbe70`) | 4/4 procedures (`executeScript`, `executeMappedScript`) |
+| `ev_052f2d86c898108ec8770657941dd3034c6860ffa565dea31236c1a546509c96` | v1.1.5.5 `game_triggers` | 2/2 procedures |
+| `ev_8cc48986006b9c7e64b7e7b94e4b37bb06c9950ecba367a50b0b601381dab2e7` | v1.1.5.5 `streams_bin` | 9/9 `rglBinaryStream` procedures |
+| `ev_1e3c25667502f1b1e6ce2e296ecc792c1cd592a4e85440bf9b7e535e8e0fdb0b` | v1.1.5.5 `streams_txt` | 18/18 `rglTextStream` procedures |
+| `ev_f09662c6d0cc3ac83fd7d6958bae56ed569f98784c32065e6d90a9a0f6d22777` | v1.1.5.5 `read_bytes` (`0x1401e22f0`) | binary byte reader + `0x140615ad0` (`ev_2ddf7a62e571269d791d6ec829d50b48c3c15367d99dec63005158fe42ed9b52`) |
+| `ev_b1f807d9…bada` / `ev_a267813e…5bba` / `ev_55263589…b114` / `ev_266b9f4c…5351` / `ev_94c53440…ec9a` / `ev_bd739bd0…056e` | v1.1.5.5 singles | `mbBasicGame::initialize` (`0x140070f90`), `mbSlots::set` (`0x1402183d0`), `WSELuaManager::OnStatementExecute` (`0x14033cdd0`), `OnOperationMgrExecute` (`0x14033d090`), `rglAppTimer::reset` (`0x140318970`), `0x1403189e0` |
 
-**2026-10-14 build (superseded)**:
+### Superseded 2026-10-14 evidence IDs (retained for historical traceability only)
 
-| ID | Operation | Notes |
+| Evidence ID | Command / Query | Notes |
 | --- | --- | --- |
-| `ev_1665f9ad51202515ef1aacbb7bf7b387cca77cbc8d89b9f1aafe2a938dd5db43` | `binary_overview` | 19,759 procedures, 7,157 strings |
-| `ev_db4cc10aa916c9f0b08683c292a14a086adf2d721408cc587a76f6e98879fd70` | `inspect_pe_imports` | 23 DLLs, 542 functions |
-| `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` | `decompile_all --name mbScript` | 5 procedures, 0 failures |
-| `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` | `decompile_all --name mbStatement` | 14 procedures written, 0 failures, 0 skipped |
-| `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` | `decompile_all --address-start 0x1401c20f0 --address-end 0x1401c21c0` | `parseOperand`, `returnValue`, `mbStatement` ctor; 3 written, 0 failures |
-| `ev_e3530f99c32b3f59ecc82debcfff9db29d8641fd14d5f7576ccf12eb4cbe8d05` | `decompile_all --name Trigger` | 52 procedures written, 0 failures; trigger layouts, loaders, runtime, and savegames |
-| `ev_cebc7ae0bef7bccaddbcbb53c560d5d2020a5acf60c5bc03a77c496077e8c8d3` | `decompile_all --name rglTextStream` | 18 procedures written, 0 failures; exact token reader/writer semantics |
-| `ev_24eecfa4fc91587dd7b5b29ca767a78c8747a538e953f37b295746c67f18c0b6` | `decompile_all --name rglBinaryStream` | 9 procedures written, 0 failures; raw 8/4/1-byte writers and length-prefixed strings |
-| `ev_130d8023206760c8a441e940113e7a231d384634f4a73d4813a3ae6b412c62e6` | `decompile_all --address-start 0x1402a1d00 --address-end 0x1402a1d7f` | 2 procedures written, 0 failures; 4-byte raw reader (`FUN_1402a1d00`); adjacent 1/8-byte entries confirmed by PDB aliases and disassembly |
+| `ev_1665f9ad51202515ef1aacbb7bf7b387cca77cbc8d89b9f1aafe2a938dd5db43` | `binary_overview` (superseded) | 19,759 procedures, 7,157 strings |
+| `ev_db4cc10aa916c9f0b08683c292a14a086adf2d721408cc587a76f6e98879fd70` | `inspect_pe_imports` (superseded) | 23 DLLs, 542 functions |
+| `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` | `decompile_all --name mbScript` (superseded) | 5 procedures, 0 failures |
+| `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` | `decompile_all --name mbStatement` (superseded) | 14 procedures written, 0 failures, 0 skipped |
+| `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` | `decompile_all --address-start 0x1401c20f0 --address-end 0x1401c21c0` (superseded) | `parseOperand`, `returnValue`, `mbStatement` ctor; 3 written, 0 failures |
+| `ev_e3530f99c32b3f59ecc82debcfff9db29d8641fd14d5f7576ccf12eb4cbe8d05` | `decompile_all --name Trigger` (superseded) | 52 procedures written, 0 failures; trigger layouts, loaders, runtime, and savegames |
+| `ev_cebc7ae0bef7bccaddbcbb53c560d5d2020a5acf60c5bc03a77c496077e8c8d3` | `decompile_all --name rglTextStream` (superseded) | 18 procedures written, 0 failures; exact token reader/writer semantics |
+| `ev_24eecfa4fc91587dd7b5b29ca767a78c8747a538e953f37b295746c67f18c0b6` | `decompile_all --name rglBinaryStream` (superseded) | 9 procedures written, 0 failures; raw 8/4/1-byte writers and length-prefixed strings |
+| `ev_130d8023206760c8a441e940113e7a231d384634f4a73d4813a3ae6b412c62e6` | `decompile_all --address-start 0x1402a1d00 --address-end 0x1402a1d7f` (superseded) | 2 procedures written, 0 failures; 4-byte raw reader (`FUN_1402a1d00`); adjacent 1/8-byte entries confirmed by PDB aliases and disassembly |
 
 Derived PDB/PE artifacts (retained outside the repository; hashes pin the exact inputs):
 

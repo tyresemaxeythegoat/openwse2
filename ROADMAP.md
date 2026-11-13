@@ -23,7 +23,7 @@ Maintain and update these after every milestone:
 
 ### Phase 1: Binary Triage & SDK Alignment
 - [x] Load the target binary through REA/Ghidra and extract imports, strings, RTTI descriptors, and global tables.
-  - 19,759 procedures, 7,157 strings, 23 DLLs / 542 imports; 14,877 PDB layouts, 47,947 symbols, 209 named vtables.
+  - 20,276 procedures, 7,448 strings, 23 DLLs / 546 imports (`ev_a4af0bca…`); 15,363 PDB layouts, 48,658 symbols, 207 destructor-named vtables (73 `rgl*`/`mb*`/`WSE*`); `docs/SYMBOL_MAP.json` indexes 29 classes / 1,782 symbols / 73 vtables.
 - [x] Cross-reference public `WSESDK` header/operation files (`header_operations.py` / Lua bindings) against binary string references to locate the main opcode dispatcher, trigger manager, and RGL resource loaders.
   - Managers and script loaders located; `mbStatement::executeWSE` (`0x1401e4dc0`) mapped to all 440 SDK operations in WSE2 v1.1.5.5 (extended range 2800–5202, 431 switch cases, 9 equality-tested cases), including the seven operations v1.1.5.5 added (3911, 4517–4522).
 - [x] Write `docs/ARCHITECTURE.md` and `docs/SYMBOL_MAP.json` before writing engine code.
@@ -31,7 +31,7 @@ Maintain and update these after every milestone:
 
 ### Phase 2: Core Data Structures & Module System VM
 - [ ] Reconstruct core RGL types (strings, vectors, matrices, `.brf` mesh/texture loaders, `.txt` module parsers) in portable C++20.
-- [ ] Reconstruct the Warband Module System script VM, all WSE2 extended opcodes, and ARM64-compatible Lua 5.1 integration (the binary imports `lua5164.dll`, not LuaJIT).
+- [ ] Reconstruct the Warband Module System script VM (`block_vm.h` core VM + trigger/script runtime complete), all WSE2 extended opcodes (93/440 implemented), and ARM64-compatible Lua 5.1 integration (the binary imports `lua5164.dll`, not LuaJIT).
 - [ ] Add headless unit tests proving the reconstructed parser and VM load and execute standard `Native` and WSE2 module scripts.
 
 ### Phase 3: Cross-Platform Replacement (Win32/DX9 -> SDL2/GLES3.2)
@@ -58,7 +58,7 @@ the trigger runtime.
 ## Current Position
 - Phase 1, Step 1 is complete. Ghidra 12.1.4 + JDK 25.0.5 + Node 26.12.1 are installed under `C:\rea-tools` (the `%TEMP%` copies are wiped by server restarts). `rea doctor` reports the Ghidra provider healthy; REA still runs via CLI because it is not registered with OpenCode.
 - Evidence baseline: official WSE2 v1.1.5.5 x64 image `d4e97d56…4e29709` (7,060,992 B, file version 1.1.5.5), PDB `fccf5e8d-4952-4a53-aa13-ac8b7ad38cfc` age 449; 20,268 procedures; 15,363 PDB layouts, 48,658 symbols, 279 vtable runs (207 named, 73 `rgl*`/`mb*`/`WSE*`). The 2026-10-14 build (`c25b51a4…acdd2b`) is superseded.
-- Dependency corrections: Bullet Physics (393 types), FMOD Ex (`fmodex64.dll`, 53 delay imports), TinyXML, muParser, JSON, and stock Lua 5.1 (`lua5164.dll`, 103 imports). No Havok or LuaJIT evidence.
+- Dependency corrections: Bullet Physics (393 types), FMOD Ex (`fmodex64.dll`, 54 delay imports), TinyXML, muParser, JSON, and stock Lua 5.1 (`lua5164.dll`, 103 imports). No Havok or LuaJIT evidence.
 - `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (25 classes), and `STATUS.md` are written.
 - v1.1.5.5 address-range export of `executeWSE` (`0x1401e4dc0`) completed: 1 written, 0 failed, evidence `ev_2aaa96a8…5cf0f9`, 8,844-line dump; 440/440 in-range SDK operations mapped (431 switch + 9 equality). The PDB confirms `mbScriptManager::readStream`, `mbScript::readStream`, and `mapScripts` (65-entry name table at `0x140615ad0`).
 - `decompile-all --name mbStatement` completed: 14 procedures, 0 failures. Confirmed the statement record (`uint32` opcode, `int32` count, 32 `int64` operands, `m_endStatement`), the 7-bit operand tag scheme (`0` immediate, `1` global, `2` global vector, `0x11` local), `analyze` control-flow resolution, the 2,738-entry native jump table at `0x1401e22f0` for opcodes 30–2767, and `executeWSE` for opcodes ≥ 2768.
@@ -73,4 +73,5 @@ the trigger runtime.
 - WSE2 v1.1.5.5 (2026-11-12) is now the evidence baseline (official `WSE2.zip` SHA-256 `c45197e8…276e28b1`). It keeps every existing opcode number and adds seven operations (3911 and 4517–4522) plus one mapped script callback, `wse_camp_button_clicked` (table entry 64, `m_mappedScripts[65]`).
 - The script reader parsed the full retail 3,467,512-byte `scripts.txt` sample: 1,755 scripts, every token consumed, 52 of 64 static names mapped (the rest are WSE-only scripts absent from that module). All 65 v1.1.5.5 names are transcribed from the table at `0x140615ad0`; duplicate ids resolve to the first script in file order.
 - Host PanVK loader/surface tests pass; no Android NDK/SDK/device is available, so arm64 compilation remains blocked.
-- Next: transcribe the remaining `executeWSE` handler groups and wire statement-block execution into triggers.
+- `block_vm.h` reconstructs the Warband statement-block interpreter (`mbStatementBlock::analyze`/`execute`/`startLoop`/`endLoop`/`canLoop`, core comparisons/math/fixed-point ops `30–33`/`2100–2133`, `call_script` up to depth 255, `store_script_param*`, `this_or_next`/`neg`) and wires VM execution into `execute_script`, `execute_mapped_script`, `execute_trigger*`, and `execute_simple_trigger*` (validated by all 6 host C++20 suites); `AGENTS.md` is added and `docs/SYMBOL_MAP.json` expands to 29 classes / 1,782 symbols / 73 vtables.
+- Next: transcribe the remaining `executeWSE` handler groups beyond 93/440 and run the `aarch64-linux-android29` NDK compile gate once an NDK is available.
