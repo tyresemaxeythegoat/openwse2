@@ -7,15 +7,15 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 
 | File | Reconstructs | Evidence |
 | --- | --- | --- |
-| `include/wse/io/text_stream.h` | whitespace token reader and typed decimal parsers | `rglInputTextFileStream` vftable `0x14051c0b0`, `rglTextStream` readers `0x1402a2ba0`–`0x1402a2f80`, `mbGame::readTriggers` `0x1400cca30` |
-| `include/wse/io/binary_stream.h` | little-endian savegame reader/writer | `rglBinaryStream` vftable `0x1405143d0`; writers `0x1402a1aa0/0x1402a1af0/0x1402a1b50`; readers `0x1402a1d00/0x1402a1d20/0x1402a1d40` |
-| `include/wse/vm/operand.h` | tagged operand decode and lvalue write-back | `mbStatement::parseOperand` `0x1401c2100`, `mbStatement::returnValue` `0x1401c2190`, `mbStatementBlock::execute` `0x1401f2530`, `analyze` `0x1401f22a0` |
+| `include/wse/io/text_stream.h` | whitespace token reader and typed decimal parsers | `rglInputTextFileStream` vftable `0x1405651e0`, `rglTextStream` readers `0x1402afa80`–`0x1402afe60`, `mbGame::readTriggers` `0x1400ccf20` |
+| `include/wse/io/binary_stream.h` | little-endian savegame reader/writer | `rglBinaryStream` vftable `0x14055c780`; writers `0x1402ae980/0x1402ae9d0/0x1402aea30`; readers `0x1402aebe0/0x1402aec00/0x1402aec20` |
+| `include/wse/vm/operand.h` | tagged operand decode and lvalue write-back | `mbStatement::parseOperand` `0x1401c6070`, `mbStatement::returnValue` `0x1401c6100`, `mbStatementBlock::execute` `0x1401f69d0`, `analyze` `0x1401f6740` |
 | `include/wse/vm/slots.h` | `mbSlots` (`std::vector<int64_t>`) get/set semantics | PDB type `0x1b004`; `parseOperand` bounds check; `returnValue` write path |
-| `include/wse/vm/statement.h` | statement record and text reader | `mbStatementBlock::readStream` `0x1401f2160`, PDB type `0xb82a` |
-| `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x14023ea20`, `0x14023e750`, `0x14020b9d0`, `0x14020b620`, `0x1400cca30`, `0x1400ccde0`, `0x14023eb80`, `0x14023ed70`, `0x14020bb10`, `0x14023eee0`, `0x14020b6f0`, `0x14020bd10` |
-| `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 64-entry name table, and script mapping | `0x14020b210`, `0x14020b330`, `0x14020b510`; globals `0x1406506c0`/`0x1406506c8`/`0x1406506cc`; table `0x1405c7ad0`; formats `0x1405142c0`/`0x1405142d0` |
-| `include/wse/vm/wse_opcodes.h` | generated enum of the 433 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e0cf0`; names from `header_operations_addon.py` |
-| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and the 2800–2809 plus floating-point handlers | `executeWSE` `0x1401e0cf0` cases at pseudocode lines 2165–2192, 2390, and 5369–8846; `mbStatement::execute` `0x1401c21e0` |
+| `include/wse/vm/statement.h` | statement record and text reader | `mbStatementBlock::readStream` `0x1401f6600`, PDB type `0xb82a` |
+| `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x140244810`, `0x140244540`, `0x14020fe60`, `0x14020fab0`, `0x1400ccf20`, `0x1400cd2d0`, `0x140244970`, `0x140244b60`, `0x14020ffa0`, `0x140244cd0`, `0x14020fb80`, `0x1402101a0` |
+| `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 65-entry name table, and script mapping | `0x14020f6a0`, `0x14020f7c0`, `0x14020f9a0`; globals `0x14069fac0`/`0x14069fac8`/`0x14069facc`; table `0x140615ad0`; formats `0x14055c680`/`0x14055c690` |
+| `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
+| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and the 2800–2809 plus floating-point handlers | `executeWSE` `0x1401e4dc0` cases at pseudocode lines 638–665, 859, and 5192/7881–8380; `mbStatement::execute` `0x1401c6150` |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
@@ -84,10 +84,10 @@ scripts, every token consumed, 52 of 64 names mapped.
 ## WSE extended opcodes
 
 `docs/wse_opcodes.json` and `docs/WSE_OPCODES.md` map every SDK operation in the retail extended range
-2800–5202 to the `executeWSE` handler that implements it: 433/433 operations are covered (424 switch
+2800–5202 to the `executeWSE` handler that implements it: 440/440 operations are covered (431 switch
 cases and 9 equality-tested cases, with no unknown or unhandled opcode in range). Each entry records the
 pseudocode line and the handler's call extent. `tools/extract_wse_opcodes.py` regenerates both files and
-`include/wse/vm/wse_opcodes.h` from the 9,245-line pseudocode dump and the public
+`include/wse/vm/wse_opcodes.h` from the 8,844-line WSE2 v1.1.5.5 pseudocode dump and the public
 `header_operations_addon.py` names.
 
 `execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements three groups. The
@@ -100,9 +100,10 @@ The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`
 `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, and the transcendental/rounding helpers
 `fsqrt`, `fabs`, `fceil`, `ffloor`, `fexp`, `fpow`, `fln`, `flog`, `fmod`, `fsin`, `fcos`, `ftan`,
 `fsinh`, `fcosh`, `ftanh`, `fasin`, `facos`, `fatan`, and `fatan2` (4400, 4405–4438). Registers are
-the 128-entry float array `DAT_140649318`; `mbCheckRegister` (`0x1401c0ef0`) accepts indices 0–127.
-`fld` divides the fixed-point operand by 100 (`DAT_1406137b8`, set to `0x64` at `0x140070f3a`);
-`fst` multiplies by 100 and rounds with `rglRound64` (`0x1402950d0`): `floorf(x)` plus one when the
+the 128-entry float array `DAT_140698718` (`g_basicGame+0x35d58`); `mbCheckRegister` (`0x1401c4e60`) accepts indices 0–127.
+`fld` divides the fixed-point operand by 100 (`g_basicGame+0x1f8` = `0x140662bb8`, set to `0x64` at
+`0x140070ffa` in `mbBasicGame::initialize`);
+`fst` multiplies by 100 and rounds with `rglRound64` (`0x1402a1910`): `floorf(x)` plus one when the
 fraction is greater than 0.5. Float comparisons use `rglAbs` and `FLT_EPSILON`. `fpow`, `fmod`, and
 `fatan2` take operand 1 in `xmm0` and operand 2 in `xmm1`; `flog` reads a literal base from operand 2
 (default 10, minimum 2). Handlers that do not write operand 0 return `WseDispatch::handled_no_store`;

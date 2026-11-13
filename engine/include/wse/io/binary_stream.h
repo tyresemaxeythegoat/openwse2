@@ -4,28 +4,28 @@
 //   ev_24eecfa4fc91587dd7b5b29ca767a78c8747a538e953f37b295746c67f18c0b6
 //     rglBinaryStream writer export (9 functions).
 //   ev_130d8023206760c8a441e940113e7a231d384634f4a73d4813a3ae6b412c62e6
-//     rglBinaryStream reader export; Ghidra emitted 0x1402a1d00 as
+//     rglBinaryStream reader export; Ghidra emitted 0x1402aebe0 as
 //     FUN_1402a1d00 because it did not split the adjacent 20-byte entries.
-//   rglBinaryStream vftable 0x1405143d0, 30 slots.
+//   rglBinaryStream vftable 0x14055c780, 30 slots.
 //   PDB public symbols at identical addresses prove the slot aliases:
-//     +0x20 writeInt64 / writeUInt64   0x1402a1af0
-//     +0x30 writeInt32 / writeUInt32   0x1402a1aa0  (also writeFloat)
-//     +0x38 writeBool / writeByte      0x1402a1b50
-//     +0x40 writeCString               0x1402a1ba0
-//     +0x48 writeString                0x1402a1c30
-//     +0x58 readFloat / readInt32      0x1402a1d00  (also +0x78/+0x80)
-//     +0x60 readBool / readByte        0x1402a1d20  (also +0x88)
-//     +0x68 readUInt64 / readInt64     0x1402a1d40  (also +0x70)
-//     +0x90 readString                 0x1402a1d60
-//   writeFloat (0x1402a1aa0) appends the raw 4 bytes of its argument,
-//   writeInt64 (0x1402a1af0) the raw 8 bytes, and writeBool (0x1402a1b50) the
+//     +0x20 writeInt64 / writeUInt64   0x1402ae9d0
+//     +0x30 writeInt32 / writeUInt32   0x1402ae980  (also writeFloat)
+//     +0x38 writeBool / writeByte      0x1402aea30
+//     +0x40 writeCString               0x1402aea80
+//     +0x48 writeString                0x1402aeb10
+//     +0x58 readFloat / readInt32      0x1402aebe0  (also +0x78/+0x80)
+//     +0x60 readBool / readByte        0x1402aec00  (also +0x88)
+//     +0x68 readUInt64 / readInt64     0x1402aec20  (also +0x70)
+//     +0x90 readString                 0x1402aec40
+//   writeFloat (0x1402ae980) appends the raw 4 bytes of its argument,
+//   writeInt64 (0x1402ae9d0) the raw 8 bytes, and writeBool (0x1402aea30) the
 //   raw byte, into the buffered rglString at stream+0x58. writeString
-//   (0x1402a1c30) and writeCString (0x1402a1ba0) first write an int32 byte
+//   (0x1402aeb10) and writeCString (0x1402aea80) first write an int32 byte
 //   count through slot +0x30, then the bytes with no terminator. readString
-//   (0x1402a1d60) reads the same int32 count through slot +0x80.
-//   readInt32 (0x1402a1d00) loads 4 raw bytes from data+(+0x60) at the int32
-//   cursor (+0x58) and advances the cursor by 4; readByte (0x1402a1d20) and
-//   readInt64 (0x1402a1d40) are the same pattern with widths 1 and 8. The
+//   (0x1402aec40) reads the same int32 count through slot +0x80.
+//   readInt32 (0x1402aebe0) loads 4 raw bytes from data+(+0x60) at the int32
+//   cursor (+0x58) and advances the cursor by 4; readByte (0x1402aec00) and
+//   readInt64 (0x1402aec20) are the same pattern with widths 1 and 8. The
 //   retail readers have no bounds check. There is no header, version, length,
 //   or checksum in this stream class.
 //

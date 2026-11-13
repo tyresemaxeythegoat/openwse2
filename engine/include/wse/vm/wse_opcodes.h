@@ -3,7 +3,7 @@
 //
 // Names come from the public WSE SDK header_operations_addon.py; the
 // numeric mapping is the mbStatement::executeWSE dispatch evidence at
-// 0x1401e0cf0. Values are the unmasked operation numbers.
+// 0x1401e4dc0. Values are the unmasked operation numbers.
 
 #pragma once
 
@@ -264,6 +264,7 @@ enum class WseOpcode : std::uint32_t {
     party_get_extra_icon = 3908,
     party_get_player_id = 3909,
     party_is_non_player = 3910,
+    party_get_current_terrain_variant = 3911,
     position_get_vector_to_position = 4100,
     position_align_to_ground = 4101,
     position_get_length = 4102,
@@ -378,6 +379,12 @@ enum class WseOpcode : std::uint32_t {
     scene_set_size = 4514,
     scene_set_region_type = 4515,
     scene_set_region_detail = 4516,
+    scene_set_region_variant = 4517,
+    scene_set_height_fog = 4518,
+    scene_set_water_waves = 4519,
+    scene_set_flora_wind = 4520,
+    scene_rebake_sky_cube = 4521,
+    scene_set_weather_direction = 4522,
     edit_mode_get_num_selected_prop_instances = 4600,
     edit_mode_get_selected_prop_instance = 4601,
     edit_mode_select_prop_instance = 4602,

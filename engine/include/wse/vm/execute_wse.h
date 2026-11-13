@@ -1,34 +1,36 @@
 // Portable dispatch for WSE-extended statement opcodes.
 //
 // Evidence (Ghidra 12.1.4 pseudocode):
-//   mbStatement::execute 0x1401c21e0 decodes every operand through
-//     mbStatement::parseOperand (0x1401c2100) into three fixed 32-element
+//   mbStatement::execute 0x1401c6150 decodes every operand through
+//     mbStatement::parseOperand (0x1401c6070) into three fixed 32-element
 //     arrays: int64 values, int32 truncations, and 4-byte tags. It masks the
 //     opcode with 0x0FFFFFFF, dispatches opcodes 30..2767 through the native
-//     jump table at 0x1401de220, and calls executeWSE for everything else.
-//   mbStatement::executeWSE 0x1401e0cf0 receives those arrays, computes a
+//     jump table at 0x1401e22f0, and calls executeWSE for everything else.
+//   mbStatement::executeWSE 0x1401e4dc0 receives those arrays, computes a
 //     64-bit result in a handler, then writes it through operand 0 with
-//     mbStatement::returnValue (0x1401c2190). A handler returning false is a
+//     mbStatement::returnValue (0x1401c6100). A handler returning false is a
 //     failed condition; a handler returning true without using returnValue is
 //     a successful no-op (for example an out-of-range register).
-//   Opcode 2800 is an equality-tested handler at pseudocode line 2390 and
-//     opcodes 2801..2809 are switch cases at lines 2165..2192.
-//   The floating-point group starts at case 0x1130 (line 5369) and uses the
-//     float array DAT_140649318, indexed by a register number. mbCheckRegister
-//     0x1401c0ef0 accepts 0..127 (`cmp ecx,0x7f; ja`). DAT_1406137b8 is the
-//     fixed-point scale and is set to 0x64 (100) at 0x140070f3a. fst uses
-//     rglRound64 0x1402950d0: floorf(x) plus one when the fraction is > 0.5.
-//     feq/fge/fle compare through rglAbs 0x140295010 with FLT_EPSILON.
+//   Opcode 2800 is an equality-tested handler at pseudocode line 859 and
+//     opcodes 2801..2809 are switch cases at lines 638..665.
+//   The floating-point group starts at case 0x1130 (line 5192) and uses the
+//     float array DAT_140698718 (g_basicGame+0x35d58), indexed by a register
+//     number. mbCheckRegister
+//     0x1401c4e60 accepts 0..127 (`cmp ecx,0x7f; ja`). DAT_140662bb8 is the
+//     fixed-point scale and is set to 0x64 (100) at 0x140070ffa. fst uses
+//     rglRound64 0x1402a1910: floorf(x) plus one when the fraction is > 0.5.
+//     feq/fge/fle compare through rglAbs 0x1402a1850 with FLT_EPSILON.
 //
-// The complete 433-opcode structure is in docs/WSE_OPCODES.md and
+// The complete 440-opcode structure is in docs/WSE_OPCODES.md and
 // docs/wse_opcodes.json; wse_opcodes.h is generated from that map. This file
 // implements the arithmetic/bitwise group 2800..2809 and the self-contained
 // floating-point register group 4400, 4405..4436, and 4438. Every other known
 // opcode reports WseDispatch::unimplemented instead of guessing.
 //
 // Transcendental helpers (case addresses in executeWSE):
-//   pow 0x1400b01e0, log 0x1400a6a00, log10 0x1400a69f0, fmod 0x14006aa00,
-//   atan2 0x14006f8f0. The call sites pass xmm0 = fp[operand 1] and
+//   pow 0x1400b0400, log 0x1400a6c20, log10 0x1400a6c10, fmod 0x14006aac0,
+//   atan2 0x14006f9b0. The call sites (0x1401f08ef, 0x1401f0cbc, 0x1401f0a28)
+//   pass xmm0 = fp[operand 1] and
 //   xmm1 = fp[operand 2], so fpow is pow(base, exponent), atan2 is
 //   atan2(y, x), and fmod is fmod(dividend, divisor). flog reads its base from
 //   the int32 operand 2 (a literal): fewer than 3 operands default to 10, and
@@ -54,7 +56,7 @@ inline constexpr std::uint32_t kWseOpcodeMask = 0x0FFFFFFFu;
 // mbCheckRegister accepts unsigned indices 0..0x7f.
 inline constexpr std::size_t kFpRegisterCount = 128;
 
-// DAT_1406137b8, fixed-point values per unit (set to 100 at 0x140070f3a).
+// DAT_140662bb8, fixed-point values per unit (set to 100 at 0x140070ffa).
 inline constexpr float kWseFixedPointScale = 100.0f;
 
 // Decoded operands, matching the arrays built by mbStatement::execute.
@@ -62,7 +64,7 @@ struct WseOperands {
     std::span<const std::int64_t> wide{};     // param_3, full int64 values
     std::span<const std::int32_t> narrow{};   // param_4, int32 truncations
     std::span<const std::uint8_t> tags{};     // param_5, parseOperand tags
-    std::span<float> fp{};                    // DAT_140649318, 128 floats
+    std::span<float> fp{};                    // DAT_140698718, 128 floats
 };
 
 // Result of a successful handler. Value-writing handlers (mbStatement's
@@ -111,7 +113,7 @@ enum class WseDispatch : std::uint8_t {
     return static_cast<std::uint32_t>(index) <= 0x7Fu;
 }
 
-// rglRound64 (0x1402950d0): floorf(x), plus one when the fraction is > 0.5.
+// rglRound64 (0x1402a1910): floorf(x), plus one when the fraction is > 0.5.
 // Out-of-range values become INT64_MIN because the retail conversion is
 // cvttss2si; this avoids undefined behaviour on the host.
 [[nodiscard]] inline std::int64_t wse_round64(float value) noexcept {

@@ -108,7 +108,9 @@ void test_fixture(const std::string& contents) {
     expect(!contains(missing, "game_start"), "mapped name is not reported missing");
     expect(contains(missing, "game_quick_start"), "second mapped name is reported missing");
     expect(contains(missing, "wse_initial_window_start"),
-           "final mapped name is reported missing");
+           "initial-window mapped name is reported missing");
+    expect(contains(missing, "wse_camp_button_clicked"),
+           "camp-button mapped name is reported missing");
 }
 
 void test_read_script_index() {

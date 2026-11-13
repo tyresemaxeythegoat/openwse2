@@ -37,6 +37,12 @@ CLASSES = [
     "gameOperation",
     "gameConstTable",
     "rglAppTimer",
+    "rglTimer",
+    "rglTextStream",
+    "rglBinaryStream",
+    "rglInputTextFileStream",
+    "rglOutputTextFileStream",
+    "mbSlots",
 ]
 
 GLOBAL_NAMES = {
@@ -51,22 +57,22 @@ GLOBAL_NAMES = {
 
 # .rdata string literals located with tools/pe_evidence.py-style scans.
 STRINGS = [
-    ("scripts.txt", 0x1405068B8),
-    ("triggers.txt", 0x14050A948),
-    ("simple_triggers.txt", 0x14050A960),
-    ("module.ini", 0x1405042A8),
-    ("module.ini", 0x140515649),
-    ("Unrecognized opcode %d", 0x1405134D0),
-    ("opcode %d out of range", 0x1405230D0),
-    ("Script [%d] %s", 0x1405142C0),
-    ("Unable to map script %s", 0x1405142D0),
+    ("scripts.txt", 0x14054E8D8),
+    ("triggers.txt", 0x1405529B8),
+    ("simple_triggers.txt", 0x1405529D0),
+    ("module.ini", 0x14054C2C8),
+    ("module.ini", 0x14055DA09),
+    ("Unrecognized opcode %d", 0x14055B890),
+    ("opcode %d out of range", 0x14056D2A0),
+    ("Script [%d] %s", 0x14055C680),
+    ("Unable to map script %s", 0x14055C690),
 ]
 
 TABLES = [
     {
         "name": "mapped_script_names",
-        "va": "0x1405c7ad0",
-        "entries": 64,
+        "va": "0x140615ad0",
+        "entries": 65,
         "element": "const char*",
         "first_entries": [
             "game_start",
@@ -78,17 +84,23 @@ TABLES = [
             "game_event_simulate_battle",
             "game_get_item_buy_price_factor",
         ],
+        "last_entries": [
+            "wse_initial_window_start",
+            "wse_camp_button_clicked",
+        ],
     },
 ]
 
 TARGET = {
     "binary": "mb_warband_wse2_x64.exe",
-    "sha256": "c25b51a42d1b504e2291b66c581c79ca613802d0674618b6d1d7bb7441acdd2b",
+    "release": "v1.1.5.5",
+    "file_version": "1.1.5.5",
+    "sha256": "d4e97d56981a6dab3de0348e3a0513ae200e7b5701b86732a4654b0aa4e29709",
     "format": "PE32+",
     "architecture": "x86_64",
     "image_base": "0x140000000",
-    "pdb_guid": "4029ca80-41b6-484a-bfa3-e26525c7efc7",
-    "pdb_age": 3,
+    "pdb_guid": "fccf5e8d-4952-4a53-aa13-ac8b7ad38cfc",
+    "pdb_age": 449,
 }
 
 

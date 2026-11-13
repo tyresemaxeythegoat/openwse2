@@ -1,7 +1,7 @@
 // Token reader over the in-memory contents of a module text file.
 //
 // Evidence:
-//   rglInputTextFileStream vftable 0x14051c0b0  -> rglTextStream readers
+//   rglInputTextFileStream vftable 0x1405651e0  -> rglTextStream readers
 //     +0x50 readStream, +0x58 readFloat, +0x60 readBool
 //     +0x68 readUInt64, +0x70 readInt64
 //     +0x78 readUInt32 / +0x80 readInt32 (same 32-bit parser)
@@ -11,18 +11,18 @@
 //   rglStream layout (PDB type 0x1b18a): m_contents rglString at +0x58,
 //     m_cursor at +0x54; the whole file is buffered and readers advance the
 //     cursor.
-//   mbGame::readTriggers (0x1400cca30): skips every byte <= 0x20 before
+//   mbGame::readTriggers (0x1400ccf20): skips every byte <= 0x20 before
 //     rglString::getNextToken, which is the same whitespace rule used here.
 //
 // Module files are therefore whitespace-delimited decimal text, not binary
 // records. A "token" is a maximal run of bytes > 0x20.
 //
 // Retail parser behaviour (rglTextStream, evidence ev_cebc7ae0...e8c8d3):
-//   readFloat  0x1402a2ba0  strtod(token, nullptr), cast to float
-//   readBool   0x1402a2c30  _stricmp "true"/"false", else strtol(token) != 0
-//   readInt32  0x1402a2e00  manual 15-char decimal loop, leading '-'
-//   readInt64  0x1402a2d80  rglString::toInt64Stream (same decimal grammar)
-//   readString 0x1402a2f80  raw token, no quote stripping
+//   readFloat  0x1402afa80  strtod(token, nullptr), cast to float
+//   readBool   0x1402afb10  _stricmp "true"/"false", else strtol(token) != 0
+//   readInt32  0x1402afce0  manual 15-char decimal loop, leading '-'
+//   readInt64  0x1402afc60  rglString::toInt64Stream (same decimal grammar)
+//   readString 0x1402afe60  raw token, no quote stripping
 // Writers emit the value, then a single 0x20 separator.
 //
 // The retail readers are deliberately lenient: strtod accepts a numeric

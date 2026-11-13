@@ -1,12 +1,12 @@
 // Trigger records and their module-text readers.
 //
 // Evidence (Ghidra 12.1.4 pseudocode):
-//   mbTriggerManager::readStream         0x14023ea20
-//   mbTrigger::readStream                0x14023e750
-//   mbSimpleTriggerManager::readStream   0x14020b9d0
-//   mbSimpleTrigger::readStream          0x14020b620
-//   mbGame::readTriggers                 0x1400cca30
-//   mbGame::readSimpleTriggers           0x1400ccde0
+//   mbTriggerManager::readStream         0x140244810
+//   mbTrigger::readStream                0x140244540
+//   mbSimpleTriggerManager::readStream   0x14020fe60
+//   mbSimpleTrigger::readStream          0x14020fab0
+//   mbGame::readTriggers                 0x1400ccf20
+//   mbGame::readSimpleTriggers           0x1400cd2d0
 //
 // Layouts (PDB):
 //   mbTrigger             256 bytes type 0x077c9
@@ -20,10 +20,10 @@
 //
 // Both managers read a count and then construct that many entries, seeding
 // every timer with m_defaultTimerNo and g_timersTotal[m_defaultTimerNo]
-// (0x1405d0ef0, public symbol ?g_timersTotal@@3PA_KA).
+// (0x14061f030, public symbol ?g_timersTotal@@3PA_KA).
 //
-// Runtime (mbTriggerManager::execute 0x14023eee0, mbSimpleTrigger::execute
-// 0x14020b6f0, mbSimpleTriggerManager::execute 0x14020bd10):
+// Runtime (mbTriggerManager::execute 0x140244cd0, mbSimpleTrigger::execute
+// 0x14020fb80, mbSimpleTriggerManager::execute 0x1402101a0):
 //   status 0 idle, 1 waiting for the delay, 2 waiting for the rearm.
 //   Intervals are seconds; timers advance in units of 100000 per second.
 //   The int argument is a trigger event key, not a clock. Interval triggers
@@ -36,14 +36,14 @@
 //   mbTriggerManager::execute inlines the whole mbTrigger state machine; the
 //   PDB declares mbTrigger::execute but no separate public symbol is emitted.
 //
-// Savegames (rglBinaryStream, vtable 0x1405143d0):
-//   mbTriggerManager::readSavegameStream  0x14023eb80
-//   mbTriggerManager::writeSavegameStream 0x14023ed70
-//   mbSimpleTriggerManager::readSavegameStream 0x14020bb10
+// Savegames (rglBinaryStream, vtable 0x14055c780):
+//   mbTriggerManager::readSavegameStream  0x140244970
+//   mbTriggerManager::writeSavegameStream 0x140244b60
+//   mbSimpleTriggerManager::readSavegameStream 0x14020ffa0
 //   int32 trigger count, then per trigger int32 status and three int64 timer
 //   values (check/delay/rearm); a simple trigger stores one int64 timer value.
 //   Timer numbers are not saved. Extra file entries are read and discarded;
-//   the retail reader shows a message box through rglError (0x140314e30) and
+//   the retail reader shows a message box through rglError (0x14032f450) and
 //   then continues. rglBinaryStream stores raw little-endian values with no
 //   per-value header (see wse/io/binary_stream.h).
 //
@@ -243,14 +243,14 @@ struct SimpleTriggerManager {
 // Savegames (rglBinaryStream)
 // ---------------------------------------------------------------------------
 //
-// mbTriggerManager::writeSavegameStream 0x14023ed70 writes:
+// mbTriggerManager::writeSavegameStream 0x140244b60 writes:
 //   int32 count
 //   per trigger: int32 status, int64 check, delay, rearm timer values
-// mbTriggerManager::readSavegameStream 0x14023eb80 reads the same order. When
+// mbTriggerManager::readSavegameStream 0x140244970 reads the same order. When
 // the file count exceeds the manager count it reports the retail error
 // "Load error: Number of triggers in file: %d, exceeds %d" and still consumes
 // every file entry, discarding the surplus.
-// mbSimpleTriggerManager::readSavegameStream 0x14020bb10 reads an int32 count
+// mbSimpleTriggerManager::readSavegameStream 0x14020ffa0 reads an int32 count
 // and one int64 timer value per entry, with the analogous
 // "Load error: Number of simple triggers in file: %d, exceeds %d" error. No
 // simple-trigger write counterpart appears in the binary.

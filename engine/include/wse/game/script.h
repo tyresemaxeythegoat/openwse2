@@ -1,18 +1,18 @@
 // Module-system script records and the `scripts.txt` reader.
 //
 // Evidence (Ghidra 12.1.4 pseudocode plus PDB TPI):
-//   mbScript::readStream         0x14020b210  (?readStream@mbScript@@QEAAXAEAVrglStream@@H@Z)
-//   mbScriptManager::readStream  0x14020b330
-//   mbScriptManager::mapScripts  0x14020b510
+//   mbScript::readStream         0x14020f6a0  (?readStream@mbScript@@QEAAXAEAVrglStream@@H@Z)
+//   mbScriptManager::readStream  0x14020f7c0
+//   mbScriptManager::mapScripts  0x14020f9a0
 //   mbScript layout              176 bytes, PDB type 0x1f6c4
 //     +0x00 m_id rglString, +0x48 m_interval float, +0x50 m_statementBlock
 //   mbScriptManager layout       272 bytes, PDB type 0xadfd
 //     +0x00 m_scripts mbScript*, +0x08 m_numScripts int32,
-//     +0x0c m_mappedScripts int32[64]
-//   Globals: g_scriptManager 0x1406506c0, count 0x1406506c8,
-//     mapped table 0x1406506cc, name table 0x1405c7ad0.
-//   Format strings: "Script [%d] %s" 0x1405142c0,
-//     "Unable to map script %s" 0x1405142d0.
+//     +0x0c m_mappedScripts int32[65]
+//   Globals: g_scriptManager 0x14069fac0, count 0x14069fac8,
+//     mapped table 0x14069facc, name table 0x140615ad0.
+//   Format strings: "Script [%d] %s" 0x14055c680,
+//     "Unable to map script %s" 0x14055c690.
 //
 // `mbScriptManager::readStream` discards two strings (the retail header is
 // `scriptsfile version`), discards one int32 version, reads the int32 script
@@ -24,7 +24,7 @@
 // (slot +0x58), the statement block, and then replaces the block id with
 // `rglFormat("Script [%d] %s", index, m_id)`.
 //
-// `mapScripts` walks the 64-entry name table in order. For each name it scans
+// `mapScripts` walks the 65-entry name table in order. For each name it scans
 // the scripts in file order and stores the first index whose `m_id` compares
 // exactly equal; a name with no match stores -1 and logs
 // `rglInfo("Unable to map script %s", name)`. Duplicate ids therefore resolve
@@ -50,9 +50,9 @@
 namespace wse::game {
 
 inline constexpr std::size_t kMaxScripts = 1u << 20;
-inline constexpr std::size_t kMappedScriptCount = 64;
+inline constexpr std::size_t kMappedScriptCount = 65;
 
-// Static 64-entry name table at 0x1405c7ad0, in retail order.
+// Static 65-entry name table at 0x140615ad0, in retail order.
 inline constexpr std::array<std::string_view, kMappedScriptCount> kMappedScriptNames = {
     "game_start",
     "game_quick_start",
@@ -118,6 +118,7 @@ inline constexpr std::array<std::string_view, kMappedScriptCount> kMappedScriptN
     "wse_savegame_loaded",
     "wse_get_server_info",
     "wse_initial_window_start",
+    "wse_camp_button_clicked",
 };
 
 struct Script {
@@ -166,7 +167,7 @@ struct ScriptMapCallbacks {
     return vm::ReadError::none;
 }
 
-// Scans the 64-entry name table and stores the first exact id match, or -1.
+// Scans the 65-entry name table and stores the first exact id match, or -1.
 inline void map_scripts(ScriptManager& manager,
                         const ScriptMapCallbacks& callbacks = {}) {
     for (std::size_t slot = 0; slot < kMappedScriptCount; ++slot) {

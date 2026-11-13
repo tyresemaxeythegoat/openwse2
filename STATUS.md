@@ -7,27 +7,27 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 
 | Check | Result | Evidence |
 | --- | --- | --- |
-| Target extraction | PASS | `mb_warband_wse2_x64.exe` 6,735,360 B, SHA-256 `c25b51a4…acdd2b` |
-| REA/Ghidra analysis | PASS | 19,759 procedures, 7,157 strings, image base `0x140000000` |
-| PE import inventory | PASS | 23 DLLs (21 static + 2 delay), 542 functions |
-| PDB parse (MSF 7.0/TPI/DBI) | PASS | 154,753 TPI records, 14,877 sized layouts |
-| PDB symbol map | PASS | 47,947 symbols: 22,600 public, 1,167 global, 14,701 constant, 8,595 UDT, 884 local |
-| Vtable scan | PASS | 281 pointer runs; 209 class-identified; 75 `rgl*`/`mb*`/`WSE*` |
-| Tracking documents | PASS | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (25 classes, 1,673 symbols, 75 vtables) |
-| `decompile-all --name mbScript` | PASS | 5 procedures written, 0 failed; entry `ev_7cd99ccc2639d6a0c4aab91f8cf6b1c8bd64971ccab2c1b77e8c0e8d8c157d7a` |
-| `decompile-all --name mbStatement` | PASS | 14 procedures written, 0 failed, 0 skipped; entry `ev_8d91b1752f2c9586db78cc7c89b816dabba31faef0df0f5bd42ba27040199b11` |
-| `decompile-all` operand helpers | PASS | 3 procedures written, 0 failed (`parseOperand`, `returnValue`, ctor); entry `ev_25469ff40260f5b7e5a9bac7c035b8cd2f0d880c536e40f566c9587993184af8` |
-| `decompile-all --name Trigger` | PASS | 52 procedures written, 0 failed, 0 skipped; entry `ev_e3530f99c32b3f59ecc82debcfff9db29d8641fd14d5f7576ccf12eb4cbe8d05` |
-| `decompile-all --name rglTextStream` | PASS | 18 procedures written, 0 failed, 0 skipped; entry `ev_cebc7ae0bef7bccaddbcbb53c560d5d2020a5acf60c5bc03a77c496077e8c8d3` |
-| `decompile-all --name rglBinaryStream` | PASS | 9 procedures written, 0 failed; entry `ev_24eecfa4fc91587dd7b5b29ca767a78c8747a538e953f37b295746c67f18c0b6` |
-| `decompile-all` binary readers | PASS | 2 procedures written, 0 failed; entry `ev_130d8023206760c8a441e940113e7a231d384634f4a73d4813a3ae6b412c62e6` |
+| Target extraction | PASS | v1.1.5.5 `mb_warband_wse2_x64.exe` 7,060,992 B, SHA-256 `d4e97d56…4e29709`; official `WSE2.zip` `c45197e8…276e28b1` |
+| REA/Ghidra analysis | PASS | v1.1.5.5 analysis completed; 20,268 procedures; image base `0x140000000`; PDB `fccf5e8d…8cfc` age 449 |
+| PE import inventory | PASS (2026-10-14) | 23 DLLs (21 static + 2 delay), 542 functions; re-inventory pending |
+| PDB parse (MSF 7.0/TPI/DBI) | PASS | 156,846 TPI records, 15,363 sized layouts |
+| PDB symbol map | PASS | 48,658 symbols with VAs (`globals_new.json`) |
+| Vtable scan | PASS | 279 pointer runs; 207 class-identified; 73 `rgl*`/`mb*`/`WSE*` |
+| Tracking documents | PASS | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (25 classes, 1,755 symbols, 73 vtables), v1.1.5.5 target |
+| `decompile-all --name mbScript` | PASS (superseded) | 2026-10-14 build: 5 procedures; entry `ev_7cd99ccc…157d7a` |
+| `decompile-all --name mbStatement` | PASS (superseded) | 2026-10-14 build: 14 procedures; entry `ev_8d91b175…99b11` |
+| `decompile-all` operand helpers | PASS (superseded) | 2026-10-14 build: 3 procedures (`parseOperand`, `returnValue`, ctor); entry `ev_25469ff4…84af8` |
+| `decompile-all --name Trigger` | PASS (superseded) | 2026-10-14 build: 52 procedures; entry `ev_e3530f99…e8d05` |
+| `decompile-all --name rglTextStream` | PASS (superseded) | 2026-10-14 build: 18 procedures; entry `ev_cebc7ae0…e8c8d3` |
+| `decompile-all --name rglBinaryStream` | PASS (superseded) | 2026-10-14 build: 9 procedures; entry `ev_24eecfa4…f18c0b6` |
+| `decompile-all` binary readers | PASS (superseded) | 2026-10-14 build: 2 procedures; entry `ev_130d8023…2c62e6` |
 | Binary savegame format | PASS | `rglBinaryStream` raw little-endian 8/4/1-byte values; strings are `int32` length + bytes; no header or checksum |
-| Module stream identification | PASS | `0x14051c0b0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x14051c2b0` = `rglOutputTextFileStream` writers; module files are decimal token text |
+| Module stream identification | PASS | `0x1405651e0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x1405653e0` = `rglOutputTextFileStream` writers; module files are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
 | Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse tests: PASS`, `engine host tests: PASS` (Zig clang++, `-Wall -Wextra -Werror`) |
-| WSE extended opcode map | PASS | 433/433 SDK operations 2800–5202 mapped to `executeWSE` handlers (424 switch + 9 equality cases); `docs/WSE_OPCODES.md`, `docs/wse_opcodes.json`, generated `engine/include/wse/vm/wse_opcodes.h` |
-| Retail `scripts.txt` parse | PASS | Full 3,467,512-byte sample: 1,755 scripts, every token consumed, 52/64 mapped names (the rest are WSE-only scripts absent from that module) |
-| WSE2 v1.1.5.5 release delta | PASS (inventory) | Official `WSE2.zip` SHA-256 `c45197e8…276e28b1`; x64 exe 7,060,992 B with file version 1.1.5.5; SDK adds 7 operations (3911, 4517–4522), no renumbering; 440 in-range ops |
+| WSE extended opcode map | PASS | v1.1.5.5 `executeWSE` (`0x1401e4dc0`) pseudocode `ev_2aaa96a8…5cf0f9`: 440/440 in-range operations 2800–5202 (431 switch + 9 equality), no unknown or unhandled opcode; 8,844-line dump |
+| Retail `scripts.txt` parse | PASS | Full 3,467,512-byte sample: 1,755 scripts, every token consumed, 52 of the 64 then-known names (the rest are WSE-only scripts absent from that module); v1.1.5.5 adds a 65th name |
+| WSE2 v1.1.5.5 release delta | PASS (inventory) | Official `WSE2.zip` SHA-256 `c45197e8…276e28b1`; x64 exe 7,060,992 B with file version 1.1.5.5; SDK adds 7 operations (3911, 4517–4522), no renumbering; 440 in-range ops; mapped script table grows to 65 with `wse_camp_button_clicked` |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
 ## In progress
@@ -36,29 +36,30 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | --- | --- |
 | Portable trigger runtime | Event-key state machine reconstructed and host-tested; statement conditions/consequences are callbacks until the VM executes blocks |
 | Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
-| `executeWSE` case mapping | Complete: 433/433 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode |
-| Portable `executeWSE` handlers | 44 of 433 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement and 4400/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 389 report `WseDispatch::unimplemented` (against the analyzed 2026-10-14 build) |
+| `executeWSE` case mapping | Complete: 440/440 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode (v1.1.5.5) |
+| Portable `executeWSE` handlers | 44 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement and 4400/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 396 report `WseDispatch::unimplemented` |
 
 ## Confirmed by pseudocode
 
-- `mbScriptManager::readStream` (`0x14020b330`): two `readString` calls (discarded), two 32-bit reads,
+- `mbScriptManager::readStream` (`0x14020f7c0`): two `readString` calls (discarded), two 32-bit reads,
   the second into `m_numScripts`; frees the old array, allocates `8 + count*176`, constructs
   `mbScript[]`, calls `mbScript::readStream(index)` per entry, then `mapScripts()`.
-- `mbScript::readStream` (`0x14020b210`) order: `m_id` (`readString`), `m_interval`
+- `mbScript::readStream` (`0x14020f6a0`) order: `m_id` (`readString`), `m_interval`
   (`readFloat` @ `+0x48`), `mbStatementBlock::readStream` (@ `+0x50`), then sets
   `m_statementBlock.m_id` to `rglFormat("Script [%d] %s", index, m_id)`.
-- `mbScriptManager::mapScripts` (`0x14020b510`): 64-entry static name table at `0x1405c7ad0`
-  (`game_start` … `wse_initial_window_start`), linear match on `m_id` with the first script in file
-  order winning, writes the index or `-1` into `m_mappedScripts` (`0x1406506cc`), and calls `rglInfo`
-  with `"Unable to map script %s"` on failure. All 64 names are transcribed in `script.h`.
+- `mbScriptManager::mapScripts` (`0x14020f9a0`): 65-entry static name table at `0x140615ad0`
+  (`game_start` … `wse_initial_window_start`, `wse_camp_button_clicked`), linear match on `m_id` with the first script in file
+  order winning, writes the index or `-1` into `m_mappedScripts` (`0x14069facc`), and calls `rglInfo`
+  with `"Unable to map script %s"` on failure. All 65 names are transcribed in `script.h` and were
+  verified byte-for-byte against the table pointers in the v1.1.5.5 image.
 - Module files are whitespace-delimited decimal text, not binary. `mbGame::readTriggers`
-  (`0x1400cca30`) and `readSimpleTriggers` (`0x1400ccde0`) build `rglInputTextFileStream`
-  (vftable `0x14051c0b0`), open `triggers.txt`/`simple_triggers.txt`, discard three header tokens
+  (`0x1400ccf20`) and `readSimpleTriggers` (`0x1400cd2d0`) build `rglInputTextFileStream`
+  (vftable `0x1405651e0`), open `triggers.txt`/`simple_triggers.txt`, discard three header tokens
   (`triggersfile version 1`), and pass the stream to the manager.
 - `rglStream` (160 B) holds `m_path` at `+0x8`, `m_cursor` at `+0x54`, and the whole file as
   `m_contents` at `+0x58`. `rglTextStream` (160 B) supplies the token readers but emits no
-  standalone vftable. `rglInputTextFileStream` (176 B, vftable `0x14051c0b0`) adds `FILE* m_file` at
-  `+0xA0` and `bool m_closed` at `+0xA8`; `rglOutputTextFileStream` (176 B, vftable `0x14051c2b0`)
+  standalone vftable. `rglInputTextFileStream` (176 B, vftable `0x1405651e0`) adds `FILE* m_file` at
+  `+0xA0` and `bool m_closed` at `+0xA8`; `rglOutputTextFileStream` (176 B, vftable `0x1405653e0`)
   adds the same plus `m_fileOpen` at `+0xA9`. Reader slots: `+0x50 readStream`, `+0x58 readFloat`,
   `+0x60 readBool`, `+0x68 readUInt64`, `+0x70 readInt64`, `+0x78/+0x80` the folded 32-bit parser,
   `+0x88 readByte`, `+0x90 readString`.
@@ -67,80 +68,86 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   manual decimal loops (15-character cap, leading `-`); `readString` copies the raw token, with no
   quote handling. Writers append a single `0x20` after each value and write booleans as `0`/`1`.
   The portable reader parses strictly and rejects malformed tokens as a safety deviation.
-- `mbStatementBlock::readStream` (`0x1401f2160`): reads `int32` statement count, allocates
+- `mbStatementBlock::readStream` (`0x1401f6600`): reads `int32` statement count, allocates
   `count * 0x110`, then per statement reads `uint32` opcode, `int32` operand count, and that many
   `int64` operand tokens; sets every `m_endStatement` (`+0x108`) to `-1`, clears `m_analyzed`, and
   seeds `m_numLocalVariablesUsed` to `0x400`. **No bounds check** on either count.
 - `mbStatementBlock` layout: `m_statements` `+0x0`, `m_numStatements` `+0x8`, `m_analyzed` `+0xc`,
   `m_numLocalVariablesUsed` `+0x10`, `m_luaHookRef` `+0x14`, `m_id` `+0x18` (96 bytes total).
-- `analyze` (`0x1401f22a0`): matches opcodes `3/4/5` and loop starters `6,7,0xb,0xc,0x10,0x11,0x12`
+- `analyze` (`0x1401f6740`): matches opcodes `3/4/5` and loop starters `6,7,0xb,0xc,0x10,0x11,0x12`
   with two 128-entry stacks, writes `m_endStatement` jump targets, caps nesting at 128, and computes
   `m_numLocalVariablesUsed` from operand tag `0x11`, clamped to `[0x20, 0x400]`.
 - Operand encoding: 7-bit tag in bits 56–62, 56-bit payload. Tags `0` immediate, `1` global variable
-  array `g_globalVariables` (`0x140613830`, unchecked), `2` global `mbSlots` (`0x140613818`,
-  read bounds-checked), `0x11` local variable. Negative 64-bit values are untagged immediates.
-- `mbStatement::parseOperand` (`0x1401c2100`) implements the decoder: `<= 0` is an immediate,
+  array `g_globalVariables` (`0x140662c30`, unchecked), `2` global `mbSlots` vector
+  (`0x140662c18` begin / `0x140662c20` end / `0x140662c28` capacity, read bounds-checked),
+  `0x11` local variable. Negative 64-bit values are untagged immediates.
+- `mbStatement::parseOperand` (`0x1401c6070`) implements the decoder: `<= 0` is an immediate,
   otherwise tag = `(value >> 56) & 0x7f` and payload = `value & 0x00FFFFFFFFFFFFFF`.
-- `mbStatement::returnValue` (`0x1401c2190`) treats operand 0 as the destination lvalue and writes
+- `mbStatement::returnValue` (`0x1401c6100`) treats operand 0 as the destination lvalue and writes
   the result to the global array (tag 1), `mbSlots::set` (tag 2), or the local array (tag `0x11`);
   other tags raise `"Illegal lvalue in statement"`.
-- `mbStatement` constructor (`0x1401c20f0`) only initializes `m_endStatement` to `-1`; `readStream`
+- `mbStatement` constructor (`0x1401c6060`) only initializes `m_endStatement` to `-1`; `readStream`
   fills the opcode and operands.
-- `mbStatement::execute` (`0x1401c21e0`): parses operands, masks opcode with `0x0FFFFFFF`, calls
+- `mbStatement::execute` (`0x1401c6150`): parses operands, masks opcode with `0x0FFFFFFF`, calls
   `WSELuaManager::OnOperationExecute` when `operationHookTable[opcode] != -2`, then dispatches
-  opcodes `30..2767` through the 2,738-entry RVA jump table at `0x1401de220` and opcodes `>= 2768`
-  to `executeWSE`. Bit 31 inverts the result; bit 30 arms the stop latch (`DAT_1405d0d9c`).
-- `docs/wse_opcodes.json` / `docs/WSE_OPCODES.md` / generated `wse_opcodes.h` now cover all 433 SDK
-  operations in the extended range 2800–5202. 424 are switch cases in `executeWSE`; the other 9 are
+  opcodes `30..2767` through the 2,738-entry RVA jump table at `0x1401e22f0` and opcodes `>= 2768`
+  to `executeWSE`. Bit 31 inverts the result; bit 30 arms the stop latch (`g_skipStatement`,
+  `0x14061eec4`).
+- `docs/wse_opcodes.json` / `docs/WSE_OPCODES.md` / generated `wse_opcodes.h` cover all 440 SDK
+  operations in the extended range 2800–5202. 431 are switch cases in `executeWSE`; the other 9 are
   equality-tested handlers at 2800, 3000, 3300, 3600, 3900, 4200, 4400, 4700, and 5000. No in-range
-  SDK operation lacks a handler.
-- The 2800–2809 group is proven by the pseudocode at lines 2165–2192 and 2390: `val_shr`/`store_shr`
+  SDK operation lacks a handler. The map is generated from the v1.1.5.5 pseudocode
+  (`ev_2aaa96a845fb5e0466129d8f6726e8172c13981585db951f98d8235a415cf0f9`).
+- The 2800–2809 group is proven by the pseudocode switch at lines 638–665 (`0xaf1`–`0xaf9`) and the
+  equality branch at line 859 (`0xaf0`): `val_shr`/`store_shr`
   cast to signed before `>>` (arithmetic); `val_lshr`/`store_lshr` shift the `ulonglong` operand
   directly (logical); `val_shl`/`store_shl` shift left; `val_xor`/`store_xor` combine operands 0/1 or
   1/2; `val_not`/`store_not` complement operand 0 or 1. Every shift masks the count with `& 0x3F`.
-- The floating-point cases at lines 5369–8846 index the 128-float array `DAT_140649318`.
-  `mbCheckRegister` (`0x1401c0ef0`) is `cmp ecx,0x7f; ja` (unsigned 0–127); a failed check returns
-  true without doing anything. `DAT_1406137b8` is the fixed-point scale and is set to `0x64` (100) at
-  `0x140070f3a`; `fld` divides by it, `fst` multiplies by it.
-- `rglRound64` (`0x1402950d0`) calls `floorf` (`0x1404bd5f8`), subtracts to get the fraction, and adds
-  one only when the fraction is greater than `0.5f` (constant at `0x14052c17c`). `rglAbs`
-  (`0x140295010`) clears the sign bit; `feq`/`fge`/`fle` compare through it with `FLT_EPSILON`.
+- The floating-point cases at lines 5192 and 7881–8380 index the 128-float array `DAT_140698718`
+  (`g_basicGame+0x35d58`).
+  `mbCheckRegister` (`0x1401c4e60`) is `cmp ecx,0x7f; ja` (unsigned 0–127); a failed check returns
+  true without doing anything. The fixed-point scale (`g_basicGame+0x1f8`, `0x140662bb8`) is set to
+  `0x64` (100) at `0x140070ffa` inside `mbBasicGame::initialize` (`0x140070f90`); `fld` divides by
+  it, `fst` multiplies by it.
+- `rglRound64` (`0x1402a1910`) calls `floorf` (`0x1404d7f78`), subtracts to get the fraction, and adds
+  one only when the fraction is greater than `0.5f` (constant at `0x14057647c`). `rglAbs`
+  (`0x1402a1850`) clears the sign bit; `feq`/`fge`/`fle` compare through it with `FLT_EPSILON`.
 - `fclamp` orders its two bounds first (`min`/`max` of operands 2 and 3), then returns the lower bound,
   the value, or the upper bound. `fdiv`/`fmod` report `"Division by zero"`/`"Modulo by zero"` and
   leave the destination unchanged.
 - The math call sites prove the argument order: `fpow` loads operand 2 into `xmm1` and operand 1 into
-  `xmm0` at `0x1401ec7bb`/`0x1401ec7cf` (`pow(base, exponent)`); `fatan2` does the same at
-  `0x1401ecb88`/`0x1401ecb9c` (`atan2(y, x)`); `fmod` loads operand 2 as the divisor and operand 1 as
-  the dividend at `0x1401ec8d5`/`0x1401ec908`. The one-operand helpers read `fp[operand 1]` and the
-  shared tail at `0x1401ec50e` stores `xmm0` through operand 0.
-- `flog` (`0x1401ec818`): fewer than three operands selects base 10 (`mov ebx,0xa`); otherwise the
-  base is the int32 literal in operand 2. A base below 2 jumps to the logger with
-  `"invalid logarithm base %d"` and returns true without storing. The result is
+  `xmm0` at `0x1401f08db`/`0x1401f08e5` (`pow(base, exponent)`); `fatan2` does the same at
+  `0x1401f0ca8`/`0x1401f0cb2` (`atan2(y, x)`); `fmod` loads operand 2 as the divisor and operand 1 as
+  the dividend at `0x1401f09f5`/`0x1401f0a1e`. The one-operand helpers read `fp[operand 1]` and the
+  shared tail at `0x1401f062e` stores `xmm0` through operand 0.
+- `flog` (line 8201, `0x1401f0968`–`0x1401f099f`): fewer than three operands selects base 10
+  (`mov ebx,0xa`); otherwise the base is the int32 literal in operand 2. A base below 2 jumps to the
+  logger with `"invalid logarithm base %d"` and returns true without storing. The result is
   `log10(fp[operand 1]) / log10((float)base)`.
-- WSE2 v1.1.5.5 (2026-11-12) keeps every existing opcode number and adds seven SDK operations:
-  `party_get_current_terrain_variant` 3911, `scene_set_region_variant` 4517,
-  `scene_set_height_fog` 4518, `scene_set_water_waves` 4519, `scene_set_flora_wind` 4520,
-  `scene_rebake_sky_cube` 4521, and `scene_set_weather_direction` 4522. The analyzed baseline
-  (2026-10-14 x64 build, no version resource) does not implement them.
-- `mbStatementBlock::execute` (`0x1401f2530`): interpreter loop with a `0x1C08`-byte frame,
+- WSE2 v1.1.5.5 keeps every existing opcode number and adds seven SDK operations, all present in the
+  recovered dispatch: `party_get_current_terrain_variant` 3911 (line 5020),
+  `scene_set_region_variant` 4517, `scene_set_height_fog` 4518, `scene_set_water_waves` 4519,
+  `scene_set_flora_wind` 4520, `scene_rebake_sky_cube` 4521, and `scene_set_weather_direction` 4522
+  (lines 8658–8725).
+- `mbStatementBlock::execute` (`0x1401f69d0`): interpreter loop with a `0x1C08`-byte frame,
   128 × `0x38` loop frames, locals zeroing, block-level Lua hook, `call_script` recursion into
   `m_scripts[index] + 0x50` (stride `0xB0`, max depth 255), and special handling for opcodes
   `3/4/5/8/9`, `0x15/0x16/0x17`.
-- `WSELuaManager::OnOperationMgrExecute` (`0x140322760`): fetches the hook from the Lua registry,
+- `WSELuaManager::OnOperationMgrExecute` (`0x14033d090`): fetches the hook from the Lua registry,
   pushes operands as integers, `lua_pcall(L, nargs, LUA_MULTRET, 0)`, and interprets the boolean
   result as an override or handled flag.
-- `mbTriggerManager::readStream` (`0x14023ea20`): reads `m_numTriggers`, allocates
+- `mbTriggerManager::readStream` (`0x140244810`): reads `m_numTriggers`, allocates
   `count * 0x100`, seeds all three `rglAppTimer`s per trigger with `m_defaultTimerNo` and
-  `g_timersTotal[m_defaultTimerNo]` (`0x1405d0ef0`), then calls `mbTrigger::readStream`.
-- `mbTrigger::readStream` (`0x14023e750`): three `readFloat` intervals (`+0x0/+0x4/+0x8`), the
+  `g_timersTotal[m_defaultTimerNo]` (`0x14061f030`), then calls `mbTrigger::readStream`.
+- `mbTrigger::readStream` (`0x140244540`): three `readFloat` intervals (`+0x0/+0x4/+0x8`), the
   conditions block (`+0x10`), the consequences block (`+0x70`), then ids
   `"%s Trigger [%d] Conditions"` / `"%s Trigger [%d] Consequences"`.
-- `mbSimpleTriggerManager::readStream` (`0x14020b9d0`): the same shape with `count * 0x78` records
-  and one timer each; `mbSimpleTrigger::readStream` (`0x14020b620`) reads one float, the statement
+- `mbSimpleTriggerManager::readStream` (`0x14020fe60`): the same shape with `count * 0x78` records
+  and one timer each; `mbSimpleTrigger::readStream` (`0x14020fab0`) reads one float, the statement
   block, and formats `"%s Trigger [%d]"`.
-- `mbGame::readTriggers` passes the prefix `"Game"` (`0x14050a958`); `readSimpleTriggers` passes
-  `"Simple"` (`0x14050a974`).
-- `mbTriggerManager::execute` (`0x14023eee0`) **inlines** the `mbTrigger` state machine; the PDB
+- `mbGame::readTriggers` passes the prefix `"Game"` (`0x1405529c8`); `readSimpleTriggers` passes
+  `"Simple"` (`0x1405529e4`).
+- `mbTriggerManager::execute` (`0x140244cd0`) **inlines** the `mbTrigger` state machine; the PDB
   declares `mbTrigger::execute`, but no separate public symbol is emitted. The integer argument is a
   trigger event key: non-negative keys run interval triggers; negative keys match
   `interval_key(checkInterval)`. Confirmed call sites pass `-112` (exit status), `-105`/`-106`
@@ -150,15 +157,15 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   `g_timersTotal` units of 100000/second and elapsed is `(float)(now - value) / 100000.0`. Rearm
   expiry resets the check timer; idle conditions success starts the delay; delay expiry runs the
   consequences; a matching negative event key runs the consequences immediately.
-- Savegames use `rglBinaryStream` (vtable `0x1405143d0`, 30 slots). Writers store raw
+- Savegames use `rglBinaryStream` (vtable `0x14055c780`, 30 slots). Writers store raw
   little-endian values (8 bytes for `writeInt64`, 4 for `writeInt32`/`writeFloat`, 1 for
   `writeBool`/`writeByte`); strings are an `int32` byte count followed by the bytes. There is no
-  header, version, or checksum. `mbTriggerManager::writeSavegameStream` (`0x14023ed70`) writes an
+  header, version, or checksum. `mbTriggerManager::writeSavegameStream` (`0x140244b60`) writes an
   `int32` count, then `int32` status and the `int64` check/delay/rearm timer values per trigger.
-  `readSavegameStream` (`0x14023eb80`) reads the same order; when the file count is larger it calls
-  `rglError` (`0x140314e30`) with `"Load error: Number of triggers in file: %d, exceeds %d"` (a
+  `readSavegameStream` (`0x140244970`) reads the same order; when the file count is larger it calls
+  `rglError` (`0x14032f450`) with `"Load error: Number of triggers in file: %d, exceeds %d"` (a
   message box that returns) and still reads and discards the surplus entries.
-  `mbSimpleTriggerManager::readSavegameStream` (`0x14020bb10`) reads one `int64` timer value per
+  `mbSimpleTriggerManager::readSavegameStream` (`0x14020ffa0`) reads one `int64` timer value per
   record with the analogous `"Load error: Number of simple triggers in file: %d, exceeds %d"`.
   The retail readers do not bounds-check; the portable reader rejects truncation.
 
@@ -188,7 +195,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 ## Next concrete task
 
 1. Transcribe the next `executeWSE` handler groups from `docs/WSE_OPCODES.md`, extending the host
-   gate as each group lands until all 433 mapped opcodes are implemented.
+   gate as each group lands until all 440 mapped opcodes are implemented.
 2. Feed reconstructed statement blocks into `execute_trigger` so conditions/consequences stop being
    test callbacks once `mbStatementBlock::execute` is portable.
 3. Update `ROADMAP.md` and this file at the next milestone.
