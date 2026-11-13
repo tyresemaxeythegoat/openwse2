@@ -1,79 +1,158 @@
 # ROADMAP — Clean-Room WSE2 Android Port
 
-Active plan for the WSE2 interoperability port. It supersedes the static-recompilation approach described in `README.md`, `analysis/`, `proof/`, and `runtime/`; those artifacts remain as CPU/ABI reference only.
+Active plan for the WSE2 interoperability port. It supersedes the static-recompilation approach
+described in the historical half of `README.md` and in `analysis/`, `proof/`, and `runtime/`; those
+artifacts remain as CPU/ABI reference only.
 
-See `AGENTS.md` for role, repository location, toolchain commands, and environment quirks.
+This file answers **"what are we building and in what order"**. It deliberately holds no live
+numbers:
 
-## Strict Legal & Technical Guardrails
-1. **Evidence-backed decompilation only.** Never hallucinate memory offsets, struct sizes, or function behavior. Every reconstructed class, vtable, and function must cite evidence queried via REA/Ghidra (symbol address, RTTI name, string cross-reference, or decompiled pseudocode).
-2. **Bring Your Own Assets (BYOA).** This is an engine reimplementation for interoperability. Do not bundle proprietary game assets and do not implement DRM circumvention. The Android app must prompt the user to select their own legally owned Mount & Blade: Warband PC game directory and `Modules/` folders.
-3. **Incremental compilation gate.** Never move to a new subsystem until the current C++ module compiles cleanly under both host native tests and the Android NDK (`clang++`, target `aarch64-linux-android29`, `-Wall -Werror`).
+| Question | Where to look |
+| --- | --- |
+| Is the gate green? How many opcodes are done? What is blocked? | `STATUS.md` |
+| How do I work in this repo (rules, gates, tooling quirks)? | `AGENTS.md` |
+| What does the binary look like (layouts, addresses, evidence IDs)? | `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` |
+| What does each portable module implement? | `engine/README.md` |
 
-## Workspace Tracking Files
-Maintain and update these after every milestone:
-- `docs/ARCHITECTURE.md` — subsystem map, RTTI class hierarchy, external dependencies (Lua 5.1, FMOD Ex/OpenAL, Bullet Physics).
-- `docs/SYMBOL_MAP.json` — verified mapping of binary addresses to reconstructed C++ functions and structs.
-- `STATUS.md` — current phase, passing/failing CMake targets, next concrete task.
+## Guardrails
 
-## Current Target
-- Primary analysis binary: `mb_warband_wse2_x64.exe` (PDB-backed; image base `0x140000000`). The plan also names the 32-bit `mb_warband_wse2.exe`, which is present in `WSE2.zip`; confirm before switching.
-- Reference device in existing docs: OPPO Reno 11, Mali-G68 (PanVK). No device is currently attached.
+1. **Evidence-backed decompilation only.** Never hallucinate memory offsets, struct sizes, or
+   function behavior. Every reconstructed class, vtable, and function must cite v1.1.5.5 evidence
+   (function VA, PDB TPI type index/size, RTTI/vtable symbol, string cross-reference, or REA `ev_*`
+   record).
+2. **Bring Your Own Assets (BYOA).** This is an engine reimplementation for interoperability. Do
+   not bundle proprietary game assets and do not implement DRM circumvention. The Android app must
+   prompt the user to select their own legally owned Mount & Blade: Warband PC game directory and
+   `Modules/` folders.
+3. **Incremental compilation gate.** A subsystem is not finished until it compiles cleanly under
+   both the host tests and the Android NDK (`clang++ -std=c++20 -target aarch64-linux-android29
+   -Wall -Wextra -Werror`).
+   **Known breach:** the NDK half has never been run (no NDK was available), so every Phase 2
+   module so far is host-verified only. Closing this is backlog item **B1** and comes before any
+   further subsystem work.
 
-## Phased Execution Plan
+## Target
 
-### Phase 1: Binary Triage & SDK Alignment
-- [x] Load the target binary through REA/Ghidra and extract imports, strings, RTTI descriptors, and global tables.
-  - 20,276 procedures, 7,448 strings, 23 DLLs / 546 imports (`ev_a4af0bca…`); 15,363 PDB layouts, 48,658 symbols, 207 destructor-named vtables (73 `rgl*`/`mb*`/`WSE*`); `docs/SYMBOL_MAP.json` indexes 58 classes / 2,804 symbols / 76 vtables.
-- [x] Cross-reference public `WSESDK` header/operation files (`header_operations.py` / Lua bindings) against binary string references to locate the main opcode dispatcher, trigger manager, and RGL resource loaders.
-  - Managers and script loaders located; `mbStatement::executeWSE` (`0x1401e4dc0`) mapped to all 440 SDK operations in WSE2 v1.1.5.5 (extended range 2800–5202, 431 switch cases, 9 equality-tested cases), including the seven operations v1.1.5.5 added (3911, 4517–4522).
-- [x] Write `docs/ARCHITECTURE.md` and `docs/SYMBOL_MAP.json` before writing engine code.
-  - Additional `STATUS.md` tracks phase, gates, and blockers.
+- Analysis binary: official **WSE2 v1.1.5.5** `mb_warband_wse2_x64.exe` (PDB-backed; image base
+  `0x140000000`). The 32-bit `mb_warband_wse2.exe` in `WSE2.zip` is out of scope.
+- Reference device in the legacy docs: OPPO Reno 11, Mali-G68 (PanVK). No device is attached.
 
-### Phase 2: Core Data Structures & Module System VM
-- [ ] Reconstruct core RGL types (strings, vectors, matrices, `.brf` mesh/texture loaders, `.txt` module parsers) in portable C++20.
-- [ ] Reconstruct the Warband Module System script VM (`block_vm.h` core VM + `try_for_dict_keys` + `array_sort_custom` script callback + trigger/script runtime complete), game-world state (`wse/game/world_state.h`), all WSE2 extended opcodes (222/440 implemented), and ARM64-compatible Lua 5.1 integration (the binary imports `lua5164.dll`, not LuaJIT).
-- [ ] Add headless unit tests proving the reconstructed parser and VM load and execute standard `Native` and WSE2 module scripts.
+## Phases
 
-### Phase 3: Cross-Platform Replacement (Win32/DX9 -> SDL2/GLES3.2)
-- [ ] Add a root `CMakeLists.txt` for desktop host builds and Android Gradle/NDK `arm64-v8a` builds with SDL2.
-- [ ] Replace Win32 filesystem, threading, memory management, and timing with C++20 (`std::filesystem`, `std::thread`) and SDL2 equivalents.
-- [ ] Replace DirectX 9 rendering with a modular OpenGL ES 3.2 / Vulkan backend; translate/cross-compile WSE2 shaders (SPIRV-Cross / HLSLcc).
-- [ ] Replace Windows audio hooks with OpenAL Soft or Oboe/SDL_mixer for low-latency Android audio.
+Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 
-### Phase 4: Native Android Features
-- [ ] **Asset & Mod Loader UI:** SAF/folder-permission launch screen to select local `Modules/` directories and switch mods (equivalent to `wse2_launcher.exe`).
-- [ ] **Dynamic touch controls:** context-sensitive overlay (virtual movement stick, 4-direction combat swipe/block zones, battle command radial menu) that hides during menu/inventory screens or when a Bluetooth controller is connected.
-- [ ] **Sensor & performance hooks:** optional gyro aiming when bows/crossbows are drawn, pinch-to-zoom on the campaign map, Android thermal-throttling awareness, and configurable frame-rate caps (60/90/120 Hz).
+### Phase 1 — Binary Triage & SDK Alignment (complete)
 
-## Immediate First Action
-Phase 1, Step 2 is complete: the 440-operation `executeWSE` map is extracted from WSE2 v1.1.5.5 and
-222 of 440 opcodes (including complete 4400–4438 floating-point with `4437` `feval`, 5000–5022 dynamic arrays, and `WseWorldState` slot/troop/item/config/skill/edit-mode handlers)
-(2800–2809, 3000–3002, 3014–3017/3020–3022/3027–3028/3034–3035/3040–3043/3600,
-dictionary ops 3200–3222 + `try_for_dict_keys` `0x12`, position vector ops 4100/4102–4104,
-string ops 4200–4224/4233–4234/4236/4238/4240–4244, options flags 4300–4305,
-floating-point load/store/`fld_pos_{x,y,z}` 4400–4404, comparisons/arithmetic, and the
-transcendental/rounding group) are host-tested.
-Continue Phase 2 by transcribing the remaining `executeWSE` handler groups (game-state string/pos
-queries such as 4225–4239, 4101/4105+, agent/party/mission/network ops) and wiring reconstructed
-statement blocks into the trigger runtime.
+- [x] Load the binary through REA/Ghidra; extract imports, strings, vtables, and global tables.
+- [x] Cross-reference the public WSE SDK (`header_operations_addon.py`) against the binary to
+      locate the opcode dispatcher, trigger managers, and script loaders; map all 440 extended
+      operations to `mbStatement::executeWSE` (`0x1401e4dc0`).
+- [x] Write `docs/ARCHITECTURE.md` and `docs/SYMBOL_MAP.json` before engine code.
+- [x] Retarget every citation from the 2026-10-14 build to v1.1.5.5.
 
-## Current Position
-- Phase 1, Step 1 is complete. Ghidra 12.1.4 + JDK 25.0.5 + Node 26.12.1 are installed under `C:\rea-tools` (the `%TEMP%` copies are wiped by server restarts). `rea doctor` reports the Ghidra provider healthy; REA still runs via CLI because it is not registered with OpenCode.
-- Evidence baseline: official WSE2 v1.1.5.5 x64 image `d4e97d56…4e29709` (7,060,992 B, file version 1.1.5.5), PDB `fccf5e8d-4952-4a53-aa13-ac8b7ad38cfc` age 449; 20,268 procedures; 15,363 PDB layouts, 48,658 symbols, 279 vtable runs (207 named, 73 `rgl*`/`mb*`/`WSE*`). The 2026-10-14 build (`c25b51a4…acdd2b`) is superseded.
-- Dependency corrections: Bullet Physics (393 types), FMOD Ex (`fmodex64.dll`, 54 delay imports), TinyXML, muParser, JSON, and stock Lua 5.1 (`lua5164.dll`, 103 imports). No Havok or LuaJIT evidence.
-- `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (58 classes, 2,804 symbols, 76 vtables), and `STATUS.md` are written.
-- v1.1.5.5 address-range export of `executeWSE` (`0x1401e4dc0`) completed: 1 written, 0 failed, evidence `ev_2aaa96a8…5cf0f9`, 8,844-line dump; 440/440 in-range SDK operations mapped (431 switch + 9 equality). The PDB confirms `mbScriptManager::readStream`, `mbScript::readStream`, and `mapScripts` (65-entry name table at `0x140615ad0`).
-- `decompile-all --name mbStatement` completed: 14 procedures, 0 failures. Confirmed the statement record (`uint32` opcode, `int32` count, 32 `int64` operands, `m_endStatement`), the 7-bit operand tag scheme (`0` immediate, `1` global, `2` global vector, `0x11` local), `analyze` control-flow resolution, the 2,738-entry native jump table at `0x1401e22f0` for opcodes 30–2767, and `executeWSE` for opcodes ≥ 2768.
-- Address-range export completed: `mbStatement::parseOperand` and `returnValue` recovered (3/3 written). Operand 0 is the destination lvalue; `returnValue` writes through `g_globalVariables`, `mbSlots::set`, or `m_locals`, and rejects other tags with `"Illegal lvalue in statement"`.
-- `decompile-all --name Trigger` completed: 52 procedures, 0 failures. Confirmed both trigger manager loaders, all trigger layouts, the three-token header, the `"Game"`/`"Simple"` id prefixes, `g_timersTotal` timer seeding, and the savegame order.
-- `decompile-all --name rglTextStream` completed: 18 procedures, 0 failures. Vtable `0x1405651e0` is `rglInputTextFileStream`; `0x1405653e0` is `rglOutputTextFileStream`. Module files are whitespace-delimited decimal text read through the inherited `rglTextStream` slots (`+0x58` float, `+0x60` bool, `+0x70` int64, `+0x78`/`+0x80` 32-bit, `+0x90` raw string).
-- Trigger runtime: `mbTriggerManager::execute` inlines the state machine; the integer argument is an event key. Non-negative keys run interval triggers; negative keys match the rounded check interval (confirmed `-112`, `-105`/`-106`, `-26`/`-56`, `-27`, `-28`, `-110`/`-109`, `-102`, `-113`).
-- `decompile-all --name rglBinaryStream` completed: 9 procedures, 0 failures, plus a 2-procedure address-range export for the readers. Savegame values are raw little-endian 8/4/1-byte copies with no header; strings are `int32` length + bytes. Trigger savegame order is reconstructed, including the count-exceeded message-box path that still consumes surplus entries.
-- Portable `engine/` now covers the token reader (including booleans), tagged operands, `mbSlots`, statements, script managers, triggers, the event-key trigger/simple-trigger state machines, the binary savegame stream, and trigger savegame read/write; `engine/build_host.ps1` reports `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse tests: PASS`, `block_vm tests: PASS`, `engine host tests: PASS`.
-- `executeWSE` opcode map: `tools/extract_wse_opcodes.py` regenerates `docs/wse_opcodes.json`, `docs/WSE_OPCODES.md`, and `engine/include/wse/vm/wse_opcodes.h` from the Ghidra pseudocode plus `header_operations_addon.py`; the VA is read from the pseudocode header, so a retarget cannot leave stale citations. The v1.1.5.5 SDK has 440 in-range operations (2800–5202).
-- Portable `engine/include/wse/vm/execute_wse.h` applies the `0x0FFFFFFF` opcode mask and implements 222 of 440 opcodes: 2800–2809 (arithmetic/logical right shifts, left shift, xor, complement; shift counts masked with `& 0x3F`), 3000–3002 (`register_get`/`register_set`/`store_wse_version`), 3003–3013 (entity `*_slot_gt` predicates backed by `WseWorldState`), 3014–3017/3020–3022/3026–3028/3030–3031/3034–3038/3040–3043/3045/3600–3601/3608/3610/3619/3622 (script-context queries, `return_values`, MT19937 `mtsrand`/`mtrand`, `sleep_ms`, `get_time`, 100 kHz `timer_reset`/`timer_get_elapsed_time`, `set_random_seed`, `profiler_*`, `main_party`/`campaign_time`/`show_hud`/`is_party_skill`/tooltips/`stop_time`/`water_level`/horse FF/crosshair), dictionary group 3200–3222 (`.wsedict`/INI/JSON/URL-encoded JSON, `dict_get_pos`/`dict_set_pos`, LIFO handle allocator shared via unified `WseObjectManager`), troop group 3700–3709 (points, `troop_has_flag`, nibble-packed `troop_set_skill` + Ironflesh/Strength HP cap, clamped `[0, 999]` proficiencies), item group 3800–3813 (damage/type nibbles, armors/speeds, blood particles/color, `caller == -50` `cur_item_*`, horse skeleton model), position vector group 4100/4102–4104, string operations 4200–4224, 4226, 4231–4236, and 4238–4246 (writable `WseStringBanks::registers` tag-0 bank, comparisons/predicates/search/num/split/sort/store ops, RFC 1321 MD5 for 4219 & `sg%d%d.sav` 4246, module setting, game variable, skill name/`_desc` translation, item id/mesh, float formatting, sanitize, integer predicate, RCON no-op, ECMAScript `std::regex` match/search/get_matches/replace, URL unescape), options flags 4300–4305 (`WseVmState::options`), the complete floating-point group 4400–4438 (128-register bank, fixed-point scale 100, `fld_str`, `fld_pos_{x,y,z}`, `rglRound64`, comparisons, arithmetic, min/max/clamp, sqrt/abs/ceil/floor/exp/pow/log/trig/atan2, and `4437` `feval` with `mbBasicGame::parseString` + AST-compiled `mu::Parser`), edit mode 4600–4609, and the dynamic array group 5000–5022 (`array_create`..`array_le`, 1–14D int/string/transform storage over `WseObjectManager`, `.wsearray` binary save/load, bottom-up natural merge sort + `array_sort_custom` comparator callback, lexicographical comparisons). The other 218 mapped opcodes report `WseDispatch::unimplemented` until transcribed.
-- WSE2 v1.1.5.5 (2026-11-12) is now the evidence baseline (official `WSE2.zip` SHA-256 `c45197e8…276e28b1`). It keeps every existing opcode number and adds seven operations (3911 and 4517–4522) plus one mapped script callback, `wse_camp_button_clicked` (table entry 64, `m_mappedScripts[65]`).
-- The script reader parsed the full retail 3,467,512-byte `scripts.txt` sample: 1,755 scripts, every token consumed, 52 of 64 static names mapped (the rest are WSE-only scripts absent from that module). All 65 v1.1.5.5 names are transcribed from the table at `0x140615ad0`; duplicate ids resolve to the first script in file order.
-- Host PanVK loader/surface tests pass; no Android NDK/SDK/device is available, so arm64 compilation remains blocked.
-- `block_vm.h` reconstructs the Warband statement-block interpreter (`mbStatementBlock::analyze`/`execute`/`startLoop`/`endLoop`/`canLoop`, including `try_for_dict_keys` `0x12`, core comparisons/math/fixed-point ops `30–33`/`2100–2133`, `call_script` up to depth 255 with recursive `currentDepth` tracking and `wse_invoke_script_callback` for `array_sort_custom`, `store_script_param*`, `this_or_next`/`neg`) and wires `WseVmState` (`WseWorldState` via `wse/game/world_state.h`) + VM execution into `execute_script`, `execute_mapped_script`, `execute_trigger*`, and `execute_simple_trigger*` (validated by all 6 host C++20 suites); `AGENTS.md` is added and `docs/SYMBOL_MAP.json` expands to 58 classes / 2,804 symbols / 76 vtables.
-- Next: transcribe the remaining `executeWSE` handler groups beyond 222/440 and run the `aarch64-linux-android29` NDK compile gate once an NDK is available.
+### Phase 2 — Core Data Structures & Module System VM (current)
+
+**2A. Streams and module text**
+- [x] `rglTextStream` token reader (`wse/io/text_stream.h`)
+- [x] `rglBinaryStream` little-endian reader/writer (`wse/io/binary_stream.h`)
+- [ ] Whole-savegame framing (only the trigger records are reconstructed)
+- [ ] Remaining module files: `troops.txt`, `item_kinds1.txt`, `factions.txt`, `parties.txt`,
+      `party_templates.txt`, `strings.txt`, `quick_strings.txt`, `skills.txt`, `quests.txt`,
+      `scenes.txt`, `mission_templates.txt`, `menus.txt`, `presentations.txt`, `module.ini`, …
+
+**2B. Statement VM**
+- [x] Operand tags, decode, and lvalue write-back (`wse/vm/operand.h`, `slots.h`)
+- [x] Statement record and reader (`wse/vm/statement.h`)
+- [x] `analyze` / `execute` / loop frames / `call_script` recursion (`wse/vm/block_vm.h`)
+- [~] Native opcodes: comparisons and integer/fixed-point math only
+- [ ] Native opcode map generated from the `0x1401e22f0` jump table (**B2**)
+- [ ] Entity iterators (`try_for_agents`, `try_for_parties`, `try_for_prop_instances`,
+      `try_for_players`) — currently iterate zero times
+
+**2C. Scripts and triggers**
+- [x] `mbScriptManager` / `mbScript` readers and the 65-name mapped-script table (`wse/game/script.h`)
+- [x] Trigger and simple-trigger loaders, event-key state machines, and savegames (`wse/game/trigger.h`)
+- [ ] `mbSimpleTriggerManager::execute` early-out (depends on the `mbGame` event queue)
+
+**2D. WSE extended opcodes**
+- [x] Opcode map and generated enum (`docs/wse_opcodes.json`, `wse/vm/wse_opcodes.h`)
+- [x] Pure-computation families: shifts, registers, dictionaries, strings, options, floating point
+      (incl. `feval`), position vectors, dynamic arrays
+- [x] State-backed families against the in-memory model: slots, troops, items, edit mode
+- [ ] Engine-backed families: agent, party, player, mission/props, scene, multiplayer/server,
+      menus, overlays/presentations, input keys, reload, skins, Lua bridge
+
+**2E. Game-world state**
+- [~] `WseWorldState` containers and validators (`wse/game/world_state.h`) — model only
+- [ ] Loaders that populate it from a user-supplied module (depends on 2A)
+- [ ] Agent, party, mission-object, and player containers with real lifetimes
+
+**2F. Lua 5.1 layer**
+- [ ] Link stock Lua 5.1 for arm64; reconstruct `WSELuaManager`, the `gameOperation` registry, and
+      the statement/operation hooks
+
+**2G. Core RGL value types**
+- [~] Transform / vector math (currently private to `execute_wse.h`)
+- [ ] `rglString` semantics as a shared type; `.brf` mesh and texture loaders
+
+**2H. Phase exit: headless `Native` run**
+- [ ] Load a user-supplied `Native` module and execute `game_start` plus one simulated frame of
+      triggers with **zero** unimplemented-opcode hits, on host and on arm64
+
+### Phase 3 — Cross-Platform Replacement (Win32/DX9 → SDL2/GLES3.2)
+
+- [ ] Root `CMakeLists.txt` for desktop host builds and Android Gradle/NDK `arm64-v8a` builds with
+      SDL2. *(The CMake/CTest part is pulled forward as backlog B1.)*
+- [ ] Replace Win32 filesystem, threading, memory management, and timing with C++20 and SDL2.
+- [ ] Replace DirectX 9 rendering with a modular OpenGL ES 3.2 / Vulkan backend; translate WSE2
+      shaders (SPIRV-Cross / HLSLcc).
+- [ ] Replace FMOD Ex with OpenAL Soft or Oboe/SDL_mixer.
+
+### Phase 4 — Native Android Features
+
+- [ ] **Asset & mod loader UI:** SAF/folder-permission launch screen to select local `Modules/`
+      directories and switch mods (equivalent to `wse2_launcher.exe`).
+- [ ] **Dynamic touch controls:** context-sensitive overlay (virtual movement stick, 4-direction
+      combat swipe/block zones, battle command radial menu) that hides during menu/inventory
+      screens or when a Bluetooth controller is connected.
+- [ ] **Sensor & performance hooks:** optional gyro aiming, pinch-to-zoom on the campaign map,
+      thermal-throttling awareness, and configurable frame-rate caps (60/90/120 Hz).
+
+## Engineering backlog (ordered)
+
+Work that is not a new subsystem but decides how fast the phases above can move. Do these in order;
+B1–B3 come before any further opcode transcription.
+
+| # | Item | Why it is next | Done when |
+| --- | --- | --- | --- |
+| B1 | **CI + cross-platform build.** One `CMakeLists.txt` + CTest for `engine/`, and a GitHub Actions workflow running the six host suites on Linux and an NDK `aarch64-linux-android29` compile of every header. | The arm64 gate has never run and is the project's stated definition of done. GitHub's Ubuntu runners ship an NDK, so the "no NDK" blocker disappears without any local install. The host suites already pass on Linux clang 18. | Workflow green on the branch; `STATUS.md` §2 shows the NDK gate as PASS |
+| B2 | **Native opcode map.** Generate `docs/native_opcodes.json` / `.md` from the jump table at `0x1401e22f0` and `header_operations.py`, mirroring `tools/extract_wse_opcodes.py`. | The 440 WSE operations are counted to the unit, but the ~2,700-slot native table — the bulk of what any module actually calls — has no inventory, so the real size of Phase 2 is unknown. | Every live slot has a name, handler VA, and implemented flag |
+| B3 | **Demand ranking.** A host tool that reads a user-supplied module's `scripts.txt` / `triggers.txt` / `simple_triggers.txt` and prints opcode frequency × implemented status. | Handlers have been transcribed in numeric order. A frequency table from real modules says which 50 opcodes unlock most scripts. The readers already parse the full retail `scripts.txt`. | Ranked list checked into `STATUS.md` (counts only — no module content) |
+| B4 | **Generated implementation status.** Have `tools/extract_wse_opcodes.py` (or a sibling) scan `execute_wse.h` and write an `implemented` flag into `docs/wse_opcodes.json` and a Done column into `docs/WSE_OPCODES.md`. | The `N/440` figure and the list of ranges were hand-copied into eight places per milestone and had already drifted. `STATUS.md` is now the single tally; generating it removes the last manual copy. | `STATUS.md` §3 table is produced by the tool |
+| B5 | **Split `execute_wse.h`.** One header per opcode family (`wse/vm/ops/string.h`, `dict.h`, `array.h`, `fp.h`, …), shared value types (`WseTransform`, UTF-8/16, MD5, JSON) moved to `wse/core/`, and `wse_test.cpp` split to match. | The file is 7,448 lines with one 3,350-line `switch`; its test file is 3,653 lines. Each takes ~15 s to compile, every handler edit touches the same file, and the remaining 218 handlers would roughly double it. | No engine header over ~1,500 lines; gate still green |
+| B6 | **Loud unimplemented opcodes.** Surface `VmContext::unimplementedCount` as a per-opcode histogram, and give native opcodes the same explicit `unimplemented` result WSE opcodes have instead of returning `true`. | An unimplemented native condition currently passes silently, so a script can take the wrong branch with no signal. | The 2H harness fails on any unimplemented hit |
+| B7 | **Citation check.** A script that verifies every `0x14…` address in `engine/include` resolves to a symbol or function range in the v1.1.5.5 evidence, and rejects superseded-build addresses. | The evidence rule is the project's core promise, and nothing enforces it. Commit `tools/vtables.py` at the same time so `SYMBOL_MAP.json` is reproducible. | Check runs in CI |
+| B8 | **Exception and platform audit of handlers.** `execute_wse()` is `noexcept` but allocates, does file I/O, and calls `std::regex`; `iswalpha`-family predicates are locale-dependent and differ between MSVCRT and Bionic; `sleep_ms` blocks the calling thread. | A thrown `std::bad_alloc` or `filesystem_error` terminates the process on Android; character-class differences change script results. | Each case has a test and a documented decision |
+
+## Milestone log
+
+Newest first. One line per landed milestone; details belong in the commit and in `STATUS.md`.
+
+| Date | Commit | Milestone |
+| --- | --- | --- |
+| 2026-11-13 | — | Project review: docs restructured around single ownership; host suites confirmed on Linux clang 18; backlog B1–B8 recorded |
+| 2026-11-13 | `2e17f3c` | `WseWorldState` and 64 world/troop/item/config/edit-mode handlers (222/440) |
+| 2026-11-13 | `6a70856` | `feval`, dynamic arrays, unified `WseObjectManager` (158/440) |
+| 2026-11-13 | `86192dc` | Timers, RNG, profiler, position math, dictionary VM (134/440) |
+| 2026-11-13 | `c9f52c1` | Statement-block VM; v1.1.5.5 symbol map and docs |
+| 2026-11-13 | `50b4f03` | String MD5/regex/URL, options flags, `fld_str` (93/440) |
+| 2026-11-13 | `6857306` | String register and store ops (76/440) |
+| 2026-11-13 | `8a9d6e2` | Evidence baseline retargeted to WSE2 v1.1.5.5; 440-opcode map regenerated |
+| 2026-11-13 | `0ad7236`, `6a0d56d` | Floating-point handlers and dispatch effect statuses |
+| 2026-11-12 | `34b3710` | WSE extended opcode map; shift/bitwise dispatch |
+| 2026-11-12 | `d651e37` | `mbScript` manager and `scripts.txt` reader |
+| 2026-11-12 | `ef6e7a8` | Binary savegame stream and trigger savegames |
+| 2026-11-12 | `7ed50c2`, `a372f01` | Module text token format, trigger loaders, trigger runtime state machines |
+| 2026-11-12 | `325dd12` | Portable operand decoder and statement reader with host tests |
+| 2026-11-12 | `0a750cf` … `1104fb4` | Evidence-backed triage, architecture, symbol map, statement VM encoding |
+| 2026-11-11 | `5a8cca5` … `5ef90e1` | Legacy static-recompilation proofs, runtime skeleton, PanVK loader (superseded approach) |

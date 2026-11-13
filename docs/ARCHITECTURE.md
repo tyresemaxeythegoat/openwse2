@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; statement-block VM (`block_vm.h`, including `try_for_dict_keys` and `array_sort_custom` callback), world/entity/skill/item/edit-mode runtime state (`wse/game/world_state.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and 222 of 440 handlers recovered.
+Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h`, including `try_for_dict_keys` and `array_sort_custom` callback), world/entity/skill/item/edit-mode runtime state (`wse/game/world_state.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the handler families listed in `STATUS.md` §3 recovered.
 Last updated: 2026-11-13.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -307,8 +307,8 @@ Additional reconstructed handler groups:
 
 Handlers that do not write operand 0 report
 `handled_no_store`; failed comparisons report `condition_false`; invalid registers are successful
-no-ops (`ignored`), matching the retail `return true` fall-through. The other 218 mapped opcodes report
-`WseDispatch::unimplemented` until transcribed (222 of 440 implemented).
+no-ops (`ignored`), matching the retail `return true` fall-through. Every other mapped opcode reports
+`WseDispatch::unimplemented` until transcribed (tally in `STATUS.md` §3).
 
 ### `mbScript` — 176 bytes, type `0x1f7b8`
 
@@ -841,11 +841,18 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 2. `mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state
    (`DAT_1405d0f28 + 0x4a0/0x4a8`, tail int `0x12`); the queue lifecycle is not reconstructed.
 3. Locate `gameOperation` table construction in `WSELuaManager` and map opcode IDs to the native jump
-   table and `executeWSE` cases.
+   table. (`executeWSE` cases are mapped; the 2,738-entry native table at `0x1401e22f0` has no
+   per-slot inventory yet — `ROADMAP.md` backlog B2.)
 4. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
 5. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
    writing asset code.
 6. Validate every reconstructed offset against decompiled member accesses before committing C++.
+7. Reconcile this document's own bookkeeping (`STATUS.md` §6): the derived-artifact names
+   (`*_new.json` in §1 vs `*_x64.json` in §9 and `tools/build_symbol_map.py`) and which build the §9
+   hashes pin; the game-class vtable count (73 in §1, 75 in §3, 76 in `SYMBOL_MAP.json`); and the §2
+   prefix counts, which are still the superseded 2026-10-14 inventory.
+8. Handler-site addresses cited only in `engine/include` source comments (85 at the 2026-11-13
+   review) are not indexed here or in `SYMBOL_MAP.json`.
 
 ## 9. Evidence index
 
