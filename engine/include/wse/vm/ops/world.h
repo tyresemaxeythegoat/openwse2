@@ -79,7 +79,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
 
 [[nodiscard]] inline WseDispatch execute_wse_world(std::uint32_t opcode,
                                                      const WseOperands& operands,
-                                                     WseEffect& effect) noexcept {
+                                                     WseEffect& effect) {
     const auto wide = operands.wide;
     const auto narrow = operands.narrow;
     const auto tags = operands.tags;

@@ -212,7 +212,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
 
 [[nodiscard]] inline WseDispatch execute_wse_dict(std::uint32_t opcode,
                                                      const WseOperands& operands,
-                                                     WseEffect& effect) noexcept {
+                                                     WseEffect& effect) {
     const auto narrow = operands.narrow;
     auto strings = operands.state.strings;
 

@@ -517,7 +517,7 @@ template <typename BeforeOrEqual>
 
 [[nodiscard]] inline WseDispatch execute_wse_array(std::uint32_t opcode,
                                                      const WseOperands& operands,
-                                                     WseEffect& effect) noexcept {
+                                                     WseEffect& effect) {
     const auto narrow = operands.narrow;
     const auto registers = operands.registers;
     auto strings = operands.state.strings;

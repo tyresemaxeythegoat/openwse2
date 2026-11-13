@@ -170,7 +170,7 @@
 //   a base below 2 logs "invalid logarithm base %d" and returns true without
 //   storing. Division and modulo by zero also log and return true.
 // - feval (4437 / 0x1155, 0x14006ff50..0x140070856, mu::Parser 0x1400a7280..
-//   0x1400a84c7, 0x1405e9a20): resolves operand 0 via mbBasicGame::parseString
+//   0x1400a84c7, vtable 0x14054f938): resolves operand 0 via mbBasicGame::parseString
 //   (0x1400720b0..0x140072b73, '^' -> '\n', recursive {...}, {!/***}, {sN},
 //   {regN}, {regN?a:b}), compiles/validates operators (<=,>=,!=,==,<,>,+,-,*,
 //   /,^,&&,||,=,?:,,,unary +/- with prINFIX=6 so -2^2 == -4), constants (_pi,
@@ -234,12 +234,12 @@ namespace wse::vm {
 // operands 1.. and leaves operand 0 as the destination lvalue for the caller.
 [[nodiscard]] inline WseDispatch execute_wse(std::uint32_t opcode,
                                              const WseOperands& operands,
-                                             WseEffect& effect) noexcept {
+                                             WseEffect& effect) {
     opcode &= kWseOpcodeMask;
     effect.store_value = false;
 
-    using DispatchFn = WseDispatch (*)(std::uint32_t, const WseOperands&,
-                                       WseEffect&) noexcept;
+    using DispatchFn =
+        WseDispatch (*)(std::uint32_t, const WseOperands&, WseEffect&);
     constexpr DispatchFn kDispatchers[] = {
         &execute_wse_bitwise,
         &execute_wse_system,

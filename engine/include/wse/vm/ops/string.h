@@ -1,11 +1,9 @@
 #pragma once
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cwctype>
 #include <regex>
 #include <span>
 #include <string>
@@ -122,7 +120,7 @@ template <typename Predicate>
 
 [[nodiscard]] inline WseDispatch execute_wse_string(std::uint32_t opcode,
                                                      const WseOperands& operands,
-                                                     WseEffect& effect) noexcept {
+                                                     WseEffect& effect) {
     const auto narrow = operands.narrow;
     const auto tags = operands.tags;
     const auto fp = operands.fp;
@@ -223,13 +221,11 @@ template <typename Predicate>
         return wse_string_test(
             wse_resolve_string(narrow[0], tag, strings),
             narrow.size() >= 2 ? narrow[1] : -1, narrow.size() >= 2,
-            [](char16_t value) {
-                return std::iswalpha(static_cast<std::wint_t>(value)) != 0;
-            });
+            wse_is_ascii_alpha);
     }
     case WseOpcode::str_is_digit: {
-        // 4205 (0x106d): iswdigit over operand 0, or only operand 1 when it
-        // is present and not -1.
+        // 4205 (0x106d): "C"-locale iswdigit over operand 0, or only operand 1
+        // when it is present and not -1.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -240,13 +236,11 @@ template <typename Predicate>
         return wse_string_test(
             wse_resolve_string(narrow[0], tag, strings),
             narrow.size() >= 2 ? narrow[1] : -1, narrow.size() >= 2,
-            [](char16_t value) {
-                return std::iswdigit(static_cast<std::wint_t>(value)) != 0;
-            });
+            wse_is_ascii_digit);
     }
     case WseOpcode::str_is_whitespace: {
-        // 4206 (0x106e): iswspace over operand 0, or only operand 1 when it
-        // is present and not -1.
+        // 4206 (0x106e): "C"-locale iswspace over operand 0, or only operand 1
+        // when it is present and not -1.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -257,9 +251,7 @@ template <typename Predicate>
         return wse_string_test(
             wse_resolve_string(narrow[0], tag, strings),
             narrow.size() >= 2 ? narrow[1] : -1, narrow.size() >= 2,
-            [](char16_t value) {
-                return std::iswspace(static_cast<std::wint_t>(value)) != 0;
-            });
+            wse_is_space);
     }
     case WseOpcode::str_length: {
         // 4207 (0x106f): length of operand 1 written through operand 0.
@@ -836,7 +828,7 @@ template <typename Predicate>
             return WseDispatch::condition_false;
         }
         for (; index < text.size(); ++index) {
-            if (std::iswdigit(static_cast<std::wint_t>(text[index])) == 0) {
+            if (!wse_is_ascii_digit(text[index])) {
                 return WseDispatch::condition_false;
             }
         }

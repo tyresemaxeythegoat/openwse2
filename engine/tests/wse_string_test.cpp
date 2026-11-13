@@ -957,11 +957,73 @@ void test_string_extended_group() {
            "fld_str rejects missing source string");
 }
 
+void test_b8_locale_and_exception_safety() {
+    WseOperands b8_ops{};
+    WseEffect b8_eff{};
+    static_assert(!noexcept(wse::vm::execute_wse(0u, b8_ops, b8_eff)),
+                  "execute_wse must permit allocation/regex exceptions");
+    static_assert(!noexcept(wse::vm::execute_wse_string(0u, b8_ops, b8_eff)),
+                  "execute_wse_string must permit allocation/regex exceptions");
+
+    std::array<std::u16string, 8> registers{};
+    WseVmState state;
+    state.strings.registers = registers;
+    WseEffect effect;
+
+    auto call = [&](WseOpcode op, std::initializer_list<std::int64_t> values,
+                    std::initializer_list<std::uint8_t> tags) {
+        WseOperands operands;
+        std::array<std::int32_t, 8> narrow{};
+        std::size_t n = 0;
+        for (const auto v : values) {
+            narrow[n++] = static_cast<std::int32_t>(v);
+        }
+        operands.wide =
+            std::span<const std::int64_t>(values.begin(), values.size());
+        operands.narrow = std::span<const std::int32_t>(narrow.data(), n);
+        operands.tags =
+            std::span<const std::uint8_t>(tags.begin(), tags.size());
+        operands.state = state;
+        return wse::vm::execute_wse(opcode(op), operands, effect);
+    };
+
+    // Non-ASCII BMP characters stay unaffected regardless of C locale.
+    registers[0] = u"\u00c9\u00e9";  // LATIN CAPITAL/SMALL E WITH ACUTE
+    registers[1] = u"Ab\u00e9";
+    registers[2] = u"09\u00b2";      // SUPERSCRIPT TWO
+    registers[3] = u" \t\n\r\f\v";
+    registers[4] = u"\u00a0 ";       // NBSP + space
+
+    expect(call(WseOpcode::str_is_alpha, {0}, {0}) == WseDispatch::condition_false &&
+               call(WseOpcode::str_is_alpha, {1, 0}, {0}) == WseDispatch::handled_no_store &&
+               call(WseOpcode::str_is_alpha, {1, 2}, {0}) == WseDispatch::condition_false,
+           "str_is_alpha uses deterministic ASCII C-locale rules");
+    expect(call(WseOpcode::str_is_digit, {2, 0}, {0}) == WseDispatch::handled_no_store &&
+               call(WseOpcode::str_is_digit, {2, 2}, {0}) == WseDispatch::condition_false,
+           "str_is_digit accepts ASCII digits and rejects non-ASCII superscripts");
+    expect(call(WseOpcode::str_is_whitespace, {3}, {0}) == WseDispatch::handled_no_store &&
+               call(WseOpcode::str_is_whitespace, {4}, {0}) == WseDispatch::condition_false,
+           "str_is_whitespace matches ASCII C-locale space without NBSP drift");
+
+    expect(call(WseOpcode::str_store_lower, {5, 1}, {0, 0}) == WseDispatch::handled_no_store &&
+               registers[5] == u"ab\u00e9" &&
+               call(WseOpcode::str_store_upper, {6, 1}, {0, 0}) == WseDispatch::handled_no_store &&
+               registers[6] == u"AB\u00e9",
+           "str_store_lower/upper fold ASCII letters and preserve non-ASCII BMP");
+
+    registers[7] = u"[unclosed";
+    expect(call(WseOpcode::str_regex_match, {1, 7}, {0, 0}) == WseDispatch::condition_false,
+           "str_regex_match catches malformed pattern without terminating");
+    expect(wse::core::wse_trim_ascii(" \t\r\nxyz\v\f ") == "xyz",
+           "wse_trim_ascii trims deterministic C-locale whitespace");
+}
+
 }  // namespace
 
 int main() {
     test_string_group();
     test_string_extended_group();
+    test_b8_locale_and_exception_safety();
     if (failures != 0) {
         std::printf("%d failures\n", failures);
         return 1;

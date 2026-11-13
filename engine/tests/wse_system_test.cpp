@@ -853,6 +853,50 @@ void test_scalar_config_skill_savegame_group() {
     std::filesystem::remove_all(save_dir, ec);
 }
 
+void test_sleep_and_dispatch_b8() {
+    WseOperands b8_ops{};
+    WseEffect b8_eff{};
+    static_assert(!noexcept(execute_wse(0u, b8_ops, b8_eff)),
+                  "execute_wse must not be noexcept");
+    static_assert(!noexcept(execute_wse_system(0u, b8_ops, b8_eff)),
+                  "execute_wse_system must not be noexcept");
+
+    struct SleepLog {
+        int calls = 0;
+        std::int32_t last_ms = -1;
+    } log;
+
+    WseVmState state;
+    state.sleep_ms_user = &log;
+    state.sleep_ms_fn = [](void* user, std::int32_t ms) {
+        auto* out = static_cast<SleepLog*>(user);
+        ++out->calls;
+        out->last_ms = ms;
+    };
+
+    WseEffect effect;
+    expect(run(opcode(WseOpcode::sleep_ms), {25}, {25}, effect, {}, {}, state) ==
+                   WseDispatch::handled_no_store &&
+               log.calls == 1 && log.last_ms == 25,
+           "sleep_ms delegates positive duration to platform sleep_ms_fn hook");
+    expect(run(opcode(WseOpcode::sleep_ms), {0}, {0}, effect, {}, {}, state) ==
+                   WseDispatch::handled_no_store &&
+               log.calls == 2 && log.last_ms == 0,
+           "sleep_ms invokes sleep_ms_fn hook for 0ms");
+    expect(run(opcode(WseOpcode::sleep_ms), {-5}, {-5}, effect, {}, {}, state) ==
+                   WseDispatch::ignored &&
+               log.calls == 2,
+           "sleep_ms skips hook on negative duration");
+    expect(run(opcode(WseOpcode::sleep_ms), {}, {}, effect, {}, {}, state) ==
+                   WseDispatch::operand_count_out_of_range,
+           "sleep_ms rejects missing operand");
+
+    state.sleep_ms_fn = nullptr;
+    expect(run(opcode(WseOpcode::sleep_ms), {0}, {0}, effect, {}, {}, state) ==
+                   WseDispatch::handled_no_store,
+           "sleep_ms fallback succeeds when sleep_ms_fn is null");
+}
+
 }  // namespace
 
 int main() {
@@ -863,6 +907,7 @@ int main() {
     test_descriptions();
     test_slot_gt_group();
     test_scalar_config_skill_savegame_group();
+    test_sleep_and_dispatch_b8();
     if (failures != 0) {
         std::printf("%d failures\n", failures);
         return 1;

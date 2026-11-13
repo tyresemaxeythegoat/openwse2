@@ -10,7 +10,7 @@ namespace wse::vm {
 
 [[nodiscard]] inline WseDispatch execute_wse_position(std::uint32_t opcode,
                                                      const WseOperands& operands,
-                                                     WseEffect& effect) noexcept {
+                                                     WseEffect& effect) {
     const auto narrow = operands.narrow;
 
     switch (static_cast<WseOpcode>(opcode)) {

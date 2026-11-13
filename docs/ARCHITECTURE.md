@@ -15,9 +15,9 @@ The evidence baseline is the official **WSE2 v1.1.5.5** release (2026-11-12). It
 | --- | --- | --- |
 | `mb_warband_wse2_x64.exe` | REA workflow / Ghidra 12.1.4 | v1.1.5.5, 7,060,992 B, SHA-256 `d4e97d56981a6dab3de0348e3a0513ae200e7b5701b86732a4654b0aa4e29709`; PE32+ `amd64`; image base `0x140000000` |
 | Imports | REA `inspect_pe_imports` (`ev_a4af0bca…87fc6`) | 21 static + 2 delay-load DLLs, 546 functions (482 static + 64 delay) |
-| `mb_warband_wse2_x64.pdb` | `tools/pdb_symbols.py` (MSF 7.0 + TPI + DBI) | GUID `fccf5e8d-4952-4a53-aa13-ac8b7ad38cfc`, age 449, RSDS; **156,846 TPI records**; **15,363 sized class/struct/union/enum layouts** (`types_new.json`) |
-| PDB symbols | `tools/pdb_symbols.py --globals` with PE section mapping | **48,658 symbols** with VAs where applicable (`globals_new.json`) |
-| RTTI + vtables | `tools/pe_evidence.py`, adapted `vtables.py` | **279 pointer runs ≥ 4** in `.rdata`/`.data`; **207** identified by destructor symbol; **73** belong to `rgl*`/`mb*`/`WSE*` classes (`vtables_new.json`) |
+| `mb_warband_wse2_x64.pdb` | `tools/pdb_symbols.py` (MSF 7.0 + TPI + DBI) | GUID `fccf5e8d-4952-4a53-aa13-ac8b7ad38cfc`, age 449, RSDS; **156,846 TPI records**; **15,363 sized class/struct/union/enum layouts** (`14,758` unique named types, `types_x64.json`) |
+| PDB symbols | `tools/pdb_symbols.py --globals` with PE section mapping | **48,658 symbols** with VAs where applicable (`globals_x64.json`) |
+| RTTI + vtables | `tools/pe_evidence.py`, `tools/vtables.py` | **279 pointer runs ≥ 4** in `.rdata`/`.data`; **207** identified by destructor symbol; **73** belong to `rgl*`/`mb*`/`WSE*` classes (+ `2` `Parser@mu` + `1` `?$WSEDynMultiArray@VrglTransform` = **76** curated in `docs/SYMBOL_MAP.json`; `vtables_x64.json`) |
 | Public SDK | WSE2 v1.1.5.5 `WSE2 SDK` (`header_operations_addon.py`, Lua headers) | 479 addon operations total, **440** in the extended range 2800–5202; used only as an external cross-reference, not copied code |
 
 The PDB is treated as authoritative structural evidence. The game was compiled without RTTI for its
@@ -33,12 +33,12 @@ REA/Ghidra toolchain used for these runs:
 
 ## 2. Type inventory
 
-Counts of sized types by name prefix (2026-10-14 inventory, 14,877 total; v1.1.5.5 PDB holds 15,363 sized layouts):
+Counts of unique sized type names in v1.1.5.5 (`14,758` unique named types across `15,363` sized TPI records; earlier 2026-10-14 build had `14,877` records):
 
 | Prefix | Count | Interpretation |
 | --- | ---: | --- |
-| `rgl*` | 374 | RGL platform layer (strings, streams, renderer, widgets, resources) |
-| `mb*` | 213 | Mount & Blade game/module layer |
+| `rgl*` | 383 | RGL platform layer (711 TPI records: strings, streams, renderer, widgets, resources) |
+| `mb*` | 215 | Mount & Blade game/module layer (272 TPI records) |
 | `WSE*` | 24 | WSE2 extensions (Lua manager, dynamic arrays, M&B net) |
 | `bt*` | 393 | Bullet Physics (statically linked) |
 | `FMOD*` | 25 | FMOD Ex audio |
@@ -46,7 +46,7 @@ Counts of sized types by name prefix (2026-10-14 inventory, 14,877 total; v1.1.5
 | `Json*` | 36 | JSON parser/serializer (jsoncpp-style diagnostics) |
 | `mu*` | 26 | muParser expression engine |
 | `lua*` | 3 | Lua 5.1 C API bindings |
-| `std::*` | 8,310 | MSVC STL (`std::unordered_map`, `std::vector`, `std::basic_string`) |
+| `std::*` | 8,387 | MSVC STL (`std::unordered_map`, `std::vector`, `std::basic_string`) |
 | `Concurrency`/`ATL` | 306 / 229 | MSVC runtime/concurrency and ATL |
 
 This supersedes the earlier ROADMAP assumptions of Havok and LuaJIT: the binary links **Bullet
@@ -56,7 +56,7 @@ Physics**, **FMOD Ex**, **TinyXML**, and stock **Lua 5.1** (`lua5164.dll`, 103 i
 
 | Layer | Representative classes | Evidence |
 | --- | --- | --- |
-| Platform / RGL | `rglString`, `rglStream`, `rglRenderer`, `rglWindowManager`, `rglGraphicsContext`, `rglWidget`, `rglMesh`, `rglMaterial` | PDB layouts; 75 game vtables |
+| Platform / RGL | `rglString`, `rglStream`, `rglRenderer`, `rglWindowManager`, `rglGraphicsContext`, `rglWidget`, `rglMesh`, `rglMaterial` | PDB layouts; 73 `rgl*`/`mb*`/`WSE*` vtables (+3 `Parser@mu`/`?$WSEDynMultiArray` = 76 in `SYMBOL_MAP.json`) |
 | Module system | `mbScriptManager`, `mbScript`, `mbStatementBlock`, `mbTriggerManager`, `mbTrigger`, `mbSimpleTriggerManager`, `mbSimpleTrigger` | PDB layouts; public function VAs |
 | Game | `mbGame`, `mbMission`, `mbMissionTemplate`, `mbAgent`, `mbParty`, `mbFaction`, `mbItem`, `mbTroop` | PDB layouts |
 | Lua extensions | `WSELuaManager`, `gameOperation`, `gameConstTable`, `WSEDynMultiArray` | PDB layouts; `g_luaManager` |
@@ -110,8 +110,8 @@ These concrete subclasses matter:
 `simple_triggers.txt`, `mission_templates.txt`, …) are whitespace-delimited decimal text. The
 separate `rglBinaryStream` (vftable `0x14055c780`, 30 slots) is used for savegames, not module
 files. The binary readers use the embedded `m_contents.m_cursor` at `+0x58` and buffer at `+0x60`;
-`rglStream::m_cursor` at `+0x54` is the text-stream cursor. Ghidra names the 4-byte reader
-`FUN_1402a1d00` rather than `readInt32` because it did not split the adjacent 20-byte entries.
+`rglStream::m_cursor` at `+0x54` is the text-stream cursor. `readInt32` (`0x1402aebe0`),
+`readByte` (`0x1402aec00`), and `readInt64` (`0x1402aec20`) sit at `0x20`-byte strides.
 
 Exact reader behaviour (v1.1.5.5 `ev_1e3c2566…0fdb0b`, 18/18 functions):
 
@@ -853,12 +853,13 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 5. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
    writing asset code.
 6. Validate every reconstructed offset against decompiled member accesses before committing C++.
-7. Reconcile this document's own bookkeeping (`STATUS.md` §6): the derived-artifact names
-   (`*_new.json` in §1 vs `*_x64.json` in §9 and `tools/build_symbol_map.py`) and which build the §9
-   hashes pin; the game-class vtable count (73 in §1, 75 in §3, 76 in `SYMBOL_MAP.json`); and the §2
-   prefix counts, which are still the superseded 2026-10-14 inventory.
-8. Handler-site addresses cited only in `engine/include` source comments (85 at the 2026-11-13
-   review) are not indexed here or in `SYMBOL_MAP.json`.
+7. ~~Reconcile this document's own bookkeeping (`STATUS.md` §6)~~ **Resolved (B7):** §1–§3 and §9 now use
+   consistent `*_x64.json` names and v1.1.5.5 counts/hashes (`73` `rgl*`/`mb*`/`WSE*` vtables,
+   `+3` `Parser@mu`/`?$WSEDynMultiArray` = `76` curated in `SYMBOL_MAP.json`; `14,758` unique named
+   types across `15,363` TPI records), generated cleanly with `tools/vtables.py`.
+8. ~~Handler-site addresses cited only in `engine/include` source comments~~ **Resolved (B7):**
+   `tools/build_symbol_map.py` exports `function_ranges`, `global_objects`, and `superseded_vas`,
+   and `tools/check_citations.py` verifies all `288` unique header VAs (plus REA `ev_*` IDs) in CI.
 
 ## 9. Evidence index
 
@@ -899,15 +900,15 @@ superseded 2026-10-14 build, kept only to explain older citations.
 | `ev_24eecfa4fc91587dd7b5b29ca767a78c8747a538e953f37b295746c67f18c0b6` | `decompile_all --name rglBinaryStream` (superseded) | 9 procedures written, 0 failures; raw 8/4/1-byte writers and length-prefixed strings |
 | `ev_130d8023206760c8a441e940113e7a231d384634f4a73d4813a3ae6b412c62e6` | `decompile_all --address-start 0x1402a1d00 --address-end 0x1402a1d7f` (superseded) | 2 procedures written, 0 failures; 4-byte raw reader (`FUN_1402a1d00`); adjacent 1/8-byte entries confirmed by PDB aliases and disassembly |
 
-Derived PDB/PE artifacts (retained outside the repository; hashes pin the exact inputs):
+Derived PDB/PE artifacts (retained outside the repository; hashes pin the exact v1.1.5.5 inputs unless noted):
 
-| Artifact | Bytes | SHA-256 |
+| Artifact | Bytes | SHA-256 / Notes |
 | --- | ---: | --- |
-| `types_x64.json` | 2,965,950 | `4ce032f331547a231dd15e52a400e0e277a38214dceb15b7de72d89aa5fbe078` |
-| `globals_x64.json` | 6,778,279 | `4af47515edab25de63e36a1a77b364a011c5e15a93d77d2660c4a970794d446b` |
-| `vtables_x64.json` | 483,710 | `f9b531cf244bd382ca2b59f3afb80638b1a46251062792cc5da80f700a54c964` |
-| `imports_x64.json` | 69,259 | `8dd4b0747bc0a1a5ff930e8f99ccb073cf861e8ec21de3281d5492762ce2a646` |
-| `analysis_x64.json` | 8,200 | `891bceb598a01a0a9d490f926ac6bddf8cf37ba8c4e21a6f4568015beed5344d` |
+| `types_x64.json` (`types_new.json`) | 3,036,982 | `fca4211129ff508400eb9005b2a2a4c14c4e45cbb4555716a79d909802df3373` (v1.1.5.5) |
+| `globals_x64.json` (`globals_new.json`) | 6,893,559 | `04fadbcb035936a3dfbe884cbf9a093cd4e690eccb261dd2ed57716ba81fa30e` (v1.1.5.5) |
+| `vtables_x64.json` (`vtables_new.json`) | 476,811 | `4cddef9237ceac2949fb0d43c39110db8977bd9a3730b5992b5f402c335141da` (v1.1.5.5, reproducible via `tools/vtables.py`) |
+| `imports_x64.json` *(2026-10-14)* | 69,259 | `8dd4b0747bc0a1a5ff930e8f99ccb073cf861e8ec21de3281d5492762ce2a646` *(superseded; v1.1.5.5 uses `ev_a4af0bca…`)* |
+| `analysis_x64.json` *(2026-10-14)* | 8,200 | `891bceb598a01a0a9d490f926ac6bddf8cf37ba8c4e21a6f4568015beed5344d` *(superseded; v1.1.5.5 uses `ev_e323351d…`)* |
 
 ## 10. Legal guardrail
 

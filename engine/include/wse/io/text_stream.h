@@ -17,7 +17,7 @@
 // Module files are therefore whitespace-delimited decimal text, not binary
 // records. A "token" is a maximal run of bytes > 0x20.
 //
-// Retail parser behaviour (rglTextStream, evidence ev_cebc7ae0...e8c8d3):
+// Retail parser behaviour (rglTextStream, evidence ev_1e3c25667502f1b1e6ce2e296ecc792c1cd592a4e85440bf9b7e535e8e0fdb0b):
 //   readFloat  0x1402afa80  strtod(token, nullptr), cast to float
 //   readBool   0x1402afb10  _stricmp "true"/"false", else strtol(token) != 0
 //   readInt32  0x1402afce0  manual 15-char decimal loop, leading '-'

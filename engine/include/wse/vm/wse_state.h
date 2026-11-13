@@ -36,6 +36,9 @@ using wse::core::wse_fold_case;
 using wse::core::wse_fold_string;
 using wse::core::wse_format_float;
 using wse::core::wse_hex_nibble;
+using wse::core::wse_is_ascii_alpha;
+using wse::core::wse_is_ascii_digit;
+using wse::core::wse_is_ascii_space;
 using wse::core::wse_is_space;
 using wse::core::wse_local_epoch_seconds;
 using wse::core::wse_md5_hex;
@@ -566,6 +569,8 @@ using WseExecuteScriptFn = bool (*)(void* user,
                                     std::int32_t script_index,
                                     std::span<const std::int64_t> params);
 
+using WseSleepMsFn = void (*)(void* user, std::int32_t milliseconds);
+
 // Runtime state read by the script-context query handlers. The defaults model
 // a statement executed outside any trigger, with no return values, zero
 // application time, and no active mission.
@@ -611,6 +616,10 @@ struct WseVmState {
     std::size_t num_scripts = 0;
     WseExecuteScriptFn execute_script_fn = nullptr;
     void* execute_script_user = nullptr;
+    // Optional sleep_ms (3026) platform callback; falls back to blocking
+    // std::this_thread::sleep_for when null.
+    WseSleepMsFn sleep_ms_fn = nullptr;
+    void* sleep_ms_user = nullptr;
     // Game-world, mission, config, skill, and edit-mode state.
     wse::game::WseWorldState* world = nullptr;
 };

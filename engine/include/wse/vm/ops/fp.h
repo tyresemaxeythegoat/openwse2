@@ -16,7 +16,7 @@ namespace wse::vm {
 
 [[nodiscard]] inline WseDispatch execute_wse_fp(std::uint32_t opcode,
                                                      const WseOperands& operands,
-                                                     WseEffect& effect) noexcept {
+                                                     WseEffect& effect) {
     const auto wide = operands.wide;
     const auto narrow = operands.narrow;
     const auto tags = operands.tags;

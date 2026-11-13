@@ -78,7 +78,7 @@ namespace wse::vm {
 
 [[nodiscard]] inline WseDispatch execute_wse_system(std::uint32_t opcode,
                                                      const WseOperands& operands,
-                                                     WseEffect& effect) noexcept {
+                                                     WseEffect& effect) {
     const auto wide = operands.wide;
     const auto narrow = operands.narrow;
     const auto registers = operands.registers;
@@ -186,14 +186,19 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::sleep_ms: {
-        // 3026 (0xbd2, 0x1401e62a0 / L1188): negative skips Sleep().
+        // 3026 (0xbd2, 0x1401e62a0 / L1188): negative skips Sleep(); invoke the
+        // host sleep hook when provided so UI/render threads do not block.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
         if (narrow[0] < 0) {
             return WseDispatch::ignored;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(narrow[0]));
+        if (operands.state.sleep_ms_fn != nullptr) {
+            operands.state.sleep_ms_fn(operands.state.sleep_ms_user, narrow[0]);
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(narrow[0]));
+        }
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::set_main_party: {

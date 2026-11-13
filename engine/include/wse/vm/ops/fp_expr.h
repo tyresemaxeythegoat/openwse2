@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstddef>
@@ -93,8 +92,7 @@ struct WseExprCompiler {
     static constexpr std::size_t kMaxParseDepth = 256;
 
     void skip_ws() noexcept {
-        while (pos < src.size() &&
-               std::isspace(static_cast<unsigned char>(src[pos])) != 0) {
+        while (pos < src.size() && wse::core::wse_is_ascii_space(src[pos])) {
             ++pos;
         }
     }

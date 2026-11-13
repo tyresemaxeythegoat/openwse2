@@ -8,7 +8,7 @@ namespace wse::vm {
 
 [[nodiscard]] inline WseDispatch execute_wse_bitwise(std::uint32_t opcode,
                                                      const WseOperands& operands,
-                                                     WseEffect& effect) noexcept {
+                                                     WseEffect& effect) {
     const auto wide = operands.wide;
 
     switch (static_cast<WseOpcode>(opcode)) {

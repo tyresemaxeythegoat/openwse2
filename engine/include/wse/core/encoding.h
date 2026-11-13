@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -11,7 +10,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <cwctype>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -21,19 +19,11 @@
 
 namespace wse::core {
 
-// _wcsicmp folds one UTF-16 code unit through towlower; keep ASCII folding
-// deterministic and fall back to the C library for the rest of the BMP.
-[[nodiscard]] inline char16_t wse_fold_case(char16_t value) noexcept {
+// _wcsicmp folds code units in the default "C" CRT locale; keep folding
+// deterministic across MSVCRT and Bionic rather than delegating to towlower.
+[[nodiscard]] constexpr char16_t wse_fold_case(char16_t value) noexcept {
     if (value >= u'A' && value <= u'Z') {
         return static_cast<char16_t>(value + (u'a' - u'A'));
-    }
-    if (value < 0x80) {
-        return value;
-    }
-    const long folded =
-        static_cast<long>(std::towlower(static_cast<std::wint_t>(value)));
-    if (folded >= 0 && folded <= 0xFFFF) {
-        return static_cast<char16_t>(folded);
     }
     return value;
 }
@@ -109,18 +99,11 @@ namespace wse::core {
     return std::strtod(narrow.c_str(), nullptr);
 }
 
-// towupper counterpart of wse_fold_case for str_store_upper (0x1401f8ac0).
-[[nodiscard]] inline char16_t wse_upper_case(char16_t value) noexcept {
+// towupper counterpart of wse_fold_case for str_store_upper (0x1401f8ac0),
+// kept locale-independent ("C" locale ASCII rules) across platforms.
+[[nodiscard]] constexpr char16_t wse_upper_case(char16_t value) noexcept {
     if (value >= u'a' && value <= u'z') {
         return static_cast<char16_t>(value - (u'a' - u'A'));
-    }
-    if (value < 0x80) {
-        return value;
-    }
-    const long folded =
-        static_cast<long>(std::towupper(static_cast<std::wint_t>(value)));
-    if (folded >= 0 && folded <= 0xFFFF) {
-        return static_cast<char16_t>(folded);
     }
     return value;
 }
@@ -174,8 +157,22 @@ namespace wse::core {
     return text;
 }
 
-[[nodiscard]] inline bool wse_is_space(char16_t value) noexcept {
-    return std::iswspace(static_cast<std::wint_t>(value)) != 0;
+[[nodiscard]] constexpr bool wse_is_ascii_alpha(char16_t value) noexcept {
+    return (value >= u'A' && value <= u'Z') || (value >= u'a' && value <= u'z');
+}
+
+[[nodiscard]] constexpr bool wse_is_ascii_digit(char16_t value) noexcept {
+    return value >= u'0' && value <= u'9';
+}
+
+[[nodiscard]] constexpr bool wse_is_ascii_space(char value) noexcept {
+    return value == ' ' || (value >= '\t' && value <= '\r');
+}
+
+// Deterministic "C"-locale whitespace check replacing std::iswspace across
+// MSVCRT/glibc/Bionic.
+[[nodiscard]] constexpr bool wse_is_space(char16_t value) noexcept {
+    return value == u' ' || (value >= u'\t' && value <= u'\r');
 }
 
 // 0x1401f8d00 removes leading whitespace.
@@ -537,12 +534,10 @@ inline void wse_trim(std::u16string& text) {
 
 [[nodiscard]] inline std::string_view wse_trim_ascii(
     std::string_view sv) noexcept {
-    while (!sv.empty() &&
-           std::isspace(static_cast<unsigned char>(sv.front())) != 0) {
+    while (!sv.empty() && wse_is_ascii_space(sv.front())) {
         sv.remove_prefix(1);
     }
-    while (!sv.empty() &&
-           std::isspace(static_cast<unsigned char>(sv.back())) != 0) {
+    while (!sv.empty() && wse_is_ascii_space(sv.back())) {
         sv.remove_suffix(1);
     }
     return sv;

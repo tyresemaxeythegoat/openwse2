@@ -1,11 +1,10 @@
 // Little-endian binary stream used by savegames.
 //
-// Evidence (Ghidra 12.1.4 pseudocode):
-//   ev_24eecfa4fc91587dd7b5b29ca767a78c8747a538e953f37b295746c67f18c0b6
-//     rglBinaryStream writer export (9 functions).
-//   ev_130d8023206760c8a441e940113e7a231d384634f4a73d4813a3ae6b412c62e6
-//     rglBinaryStream reader export; Ghidra emitted 0x1402aebe0 as
-//     FUN_1402a1d00 because it did not split the adjacent 20-byte entries.
+// Evidence (v1.1.5.5 REA / PDB):
+//   ev_8cc48986006b9c7e64b7e7b94e4b37bb06c9950ecba367a50b0b601381dab2e7
+//     rglBinaryStream writer/stream export (9 functions).
+//   readInt32 (0x1402aebe0), readByte (0x1402aec00), and readInt64 (0x1402aec20)
+//   sit at 0x20-byte strides; slot aliases and readers verified in PDB + disasm.
 //   rglBinaryStream vftable 0x14055c780, 30 slots.
 //   PDB public symbols at identical addresses prove the slot aliases:
 //     +0x20 writeInt64 / writeUInt64   0x1402ae9d0
