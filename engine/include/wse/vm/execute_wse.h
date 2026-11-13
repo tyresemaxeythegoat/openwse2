@@ -23,12 +23,13 @@
 //
 // The complete 440-opcode structure is in docs/WSE_OPCODES.md and
 // docs/wse_opcodes.json; wse_opcodes.h is generated from that map. This file
-// implements the arithmetic/bitwise group 2800..2809, the register group
-// 3000..3002, the script-context query group 3014/3016/3017/3035/3600, the
-// string group 4200..4224, 4233..4234, 4236, 4238, and 4240..4244, the options
-// flags group 4300..4305, and the self-contained floating-point register group
-// 4400..4401, 4405..4436, and 4438. Every other known opcode reports
-// WseDispatch::unimplemented instead of guessing.
+// implements the arithmetic/bitwise group 2800..2809, register group
+// 3000..3002, VM/timer/RNG/profiler group 3014..3017, 3020..3022, 3027..3028,
+// 3034..3035, 3040..3043, and 3600, dictionary group 3200..3222, position
+// vector group 4100 and 4102..4104, string group 4200..4224, 4233..4234,
+// 4236, 4238, and 4240..4244, options flags group 4300..4305, and the
+// floating-point register group 4400..4436 and 4438. Every other known
+// opcode reports WseDispatch::unimplemented instead of guessing.
 //
 // Register group evidence:
 //   3000 register_get (line 628): mbCheckRegister(param_4[1]), then
@@ -171,18 +172,25 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <cwctype>
+#include <filesystem>
+#include <fstream>
 #include <limits>
+#include <map>
+#include <memory>
 #include <regex>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #include "wse/vm/wse_opcodes.h"
@@ -218,6 +226,259 @@ struct WseOptionsState {
     bool realistic_headshots = false;  // 0x14061ef39
 };
 
+// 64-byte position frame (rglTransform at 0x140663030, stride 0x40;
+// Identity at 0x140621730): side s, forward f, up u, origin o.
+struct WseVec4 {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float w = 0.0f;
+
+    [[nodiscard]] constexpr WseVec4 operator-(const WseVec4& rhs) const noexcept {
+        return {x - rhs.x, y - rhs.y, z - rhs.z, 0.0f};
+    }
+
+    [[nodiscard]] float length() const noexcept {
+        return std::sqrt(x * x + y * y + z * z);
+    }
+
+    [[nodiscard]] constexpr float dot(const WseVec4& rhs) const noexcept {
+        return x * rhs.x + y * rhs.y + z * rhs.z;
+    }
+
+    [[nodiscard]] constexpr WseVec4 cross(const WseVec4& rhs) const noexcept {
+        return {y * rhs.z - z * rhs.y,
+                z * rhs.x - x * rhs.z,
+                x * rhs.y - y * rhs.x,
+                0.0f};
+    }
+
+    // Mirrors rglVector4::normalize (0x140318a10): threshold 1e-10f (0x1405760f4),
+    // fallback (0, 1, 0) while preserving w.
+    void normalize() noexcept {
+        const float len = length();
+        if (len <= 1.0e-10f) {
+            x = 0.0f;
+            y = 1.0f;
+            z = 0.0f;
+            return;
+        }
+        const float inv = 1.0f / len;
+        x *= inv;
+        y *= inv;
+        z *= inv;
+    }
+};
+
+struct WseTransform {
+    WseVec4 s{1.0f, 0.0f, 0.0f, 0.0f};
+    WseVec4 f{0.0f, 1.0f, 0.0f, 0.0f};
+    WseVec4 u{0.0f, 0.0f, 1.0f, 0.0f};
+    WseVec4 o{0.0f, 0.0f, 0.0f, 1.0f};
+
+    [[nodiscard]] static constexpr WseTransform identity() noexcept {
+        return {};
+    }
+
+    // 0x1402b5be0: rotates forward f and up u around local side axis s.
+    void rotate_x(float angle) noexcept {
+        const float c = std::cos(angle);
+        const float s_val = std::sin(angle);
+        const WseVec4 nf{f.x * c + u.x * s_val,
+                         f.y * c + u.y * s_val,
+                         f.z * c + u.z * s_val,
+                         f.w};
+        const WseVec4 nu{u.x * c - f.x * s_val,
+                         u.y * c - f.y * s_val,
+                         u.z * c - f.z * s_val,
+                         u.w};
+        f = nf;
+        u = nu;
+    }
+
+    // 0x1402b5ea0: rotates side s and forward f around local up axis u.
+    void rotate_z(float angle) noexcept {
+        const float c = std::cos(angle);
+        const float s_val = std::sin(angle);
+        const WseVec4 ns{s.x * c + f.x * s_val,
+                         s.y * c + f.y * s_val,
+                         s.z * c + f.z * s_val,
+                         s.w};
+        const WseVec4 nf{f.x * c - s.x * s_val,
+                         f.y * c - s.y * s_val,
+                         f.z * c - s.z * s_val,
+                         f.w};
+        s = ns;
+        f = nf;
+    }
+
+    // 0x1402b64b0: normalize f, s = normalize(f x u), u = s x f.
+    void orthonormalize() noexcept {
+        f.normalize();
+        s = f.cross(u);
+        s.normalize();
+        u = s.cross(f);
+    }
+};
+
+// 16-byte timer slot (0x140667b18 / 0x140667b20, stride 0x10).
+// Ticks run at 100,000 Hz (0x1401e5e2f divides delta by 100000.0f -> seconds).
+struct WseAppTimer {
+    std::int32_t kind = 0;
+    std::int64_t start_ticks = 0;
+};
+
+// Standard MT19937 PRNG mirroring rglMersenneTwister (0x1402a24f0/5e0/6b0/780).
+struct WseMersenneTwister {
+    std::array<std::uint32_t, 624> state{};
+    std::size_t index = 624;
+
+    WseMersenneTwister() noexcept {
+        seed(5489U);
+    }
+
+    void seed(std::uint32_t value) noexcept {
+        state[0] = value;
+        for (std::size_t i = 1; i < state.size(); ++i) {
+            const std::uint32_t prev = state[i - 1];
+            state[i] = 0x6c078965U * (prev ^ (prev >> 30U)) +
+                       static_cast<std::uint32_t>(i);
+        }
+        index = state.size();
+    }
+
+    [[nodiscard]] std::uint32_t next_u32() noexcept {
+        if (index >= state.size()) {
+            twist();
+        }
+        std::uint32_t y = state[index++];
+        y ^= y >> 11U;
+        y ^= (y << 7U) & 0x9d2c5680U;
+        y ^= (y << 15U) & 0xefc60000U;
+        y ^= y >> 18U;
+        return y;
+    }
+
+    // Exact match for 0x1402a25e0: uniform [min, max) using 32-bit unsigned span.
+    [[nodiscard]] std::int32_t get_int(std::int32_t min,
+                                       std::int32_t max) noexcept {
+        const std::uint32_t b = static_cast<std::uint32_t>(max) - 1U;
+        const std::uint32_t span = b - static_cast<std::uint32_t>(min);
+        if (span == 0xffffffffU) {
+            return static_cast<std::int32_t>(next_u32() +
+                                             static_cast<std::uint32_t>(min));
+        }
+        const std::uint32_t range = span + 1U;
+        const std::uint32_t q = 0xffffffffU / range;
+        const std::uint32_t rem = 0xffffffffU % range;
+        std::uint32_t r = 0U;
+        if (span != 0U) {
+            for (;;) {
+                r = next_u32();
+                if ((r / range) < q || rem == span) {
+                    break;
+                }
+            }
+        }
+        return static_cast<std::int32_t>((r % range) +
+                                         static_cast<std::uint32_t>(min));
+    }
+
+private:
+    void twist() noexcept {
+        constexpr std::size_t n = 624;
+        constexpr std::size_t m = 397;
+        for (std::size_t i = 0; i < n; ++i) {
+            const std::uint32_t y = (state[i] & 0x80000000U) |
+                                    (state[(i + 1) % n] & 0x7fffffffU);
+            state[i] = state[(i + m) % n] ^ (y >> 1U);
+            if ((y & 1U) != 0U) {
+                state[i] ^= 0x9908b0dfU;
+            }
+        }
+        index = 0;
+    }
+};
+
+// Ordered UTF-8 string map mirroring rglSectionlessIni.
+struct WseDictionary {
+    std::map<std::string, std::string> entries{};
+
+    [[nodiscard]] bool empty() const noexcept {
+        return entries.empty();
+    }
+
+    [[nodiscard]] std::size_t size() const noexcept {
+        return entries.size();
+    }
+
+    [[nodiscard]] bool has_key(const std::string& key) const noexcept {
+        return entries.find(key) != entries.end();
+    }
+
+    void clear() noexcept {
+        entries.clear();
+    }
+
+    void set(const std::string& key, std::string value) {
+        entries[key] = std::move(value);
+    }
+
+    void merge(const std::map<std::string, std::string>& source,
+               bool overwrite) {
+        for (const auto& [key, value] : source) {
+            if (overwrite || entries.find(key) == entries.end()) {
+                entries[key] = value;
+            }
+        }
+    }
+};
+
+// Handle allocator mirroring WSEObjectManager (0x14034e340/3b0, 0x1400737a0)
+// using LIFO free-ID reuse and stable heap storage for active dictionaries.
+struct WseDictionaryStore {
+    std::vector<std::unique_ptr<WseDictionary>> slots{};
+    std::vector<std::int32_t> free_ids{};
+    std::filesystem::path root_dir{};
+
+    [[nodiscard]] std::int32_t create() {
+        auto dict = std::make_unique<WseDictionary>();
+        if (!free_ids.empty()) {
+            const std::int32_t id = free_ids.back();
+            free_ids.pop_back();
+            slots[static_cast<std::size_t>(id)] = std::move(dict);
+            return id;
+        }
+        const auto id = static_cast<std::int32_t>(slots.size());
+        slots.push_back(std::move(dict));
+        return id;
+    }
+
+    void destroy(std::int32_t id) noexcept {
+        if (id < 0 || static_cast<std::size_t>(id) >= slots.size()) {
+            return;
+        }
+        if (slots[static_cast<std::size_t>(id)] != nullptr) {
+            slots[static_cast<std::size_t>(id)].reset();
+            free_ids.push_back(id);
+        }
+    }
+
+    [[nodiscard]] WseDictionary* get(std::int32_t id) noexcept {
+        if (id < 0 || static_cast<std::size_t>(id) >= slots.size()) {
+            return nullptr;
+        }
+        return slots[static_cast<std::size_t>(id)].get();
+    }
+
+    [[nodiscard]] const WseDictionary* get(std::int32_t id) const noexcept {
+        if (id < 0 || static_cast<std::size_t>(id) >= slots.size()) {
+            return nullptr;
+        }
+        return slots[static_cast<std::size_t>(id)].get();
+    }
+};
+
 // Runtime state read by the script-context query handlers. The defaults model
 // a statement executed outside any trigger, with no return values, zero
 // application time, and no active mission.
@@ -239,6 +500,24 @@ struct WseVmState {
     WseStringBanks strings{};
     // Runtime option flags used by options_{get,set}_* (4300-4305).
     WseOptionsState* options = nullptr;
+    // Writable return-value buffer/count for 3015 return_values.
+    std::span<std::int64_t> return_values_out{};
+    std::int32_t* num_return_values_out = nullptr;
+    // DAT_140662bb8: script fixed-point scale (default 100).
+    std::int32_t fixed_point_multiplier = 100;
+    // rglTransform[128] position registers (0x140663030, stride 0x40).
+    std::span<WseTransform> positions{};
+    // App timers (0x140667b18, 128 slots) and global tick clocks (0x14061f030).
+    std::span<WseAppTimer> timers{};
+    std::span<const std::int64_t> timers_total{};
+    // PRNG and rand_seed state for 3020/3021/3034.
+    WseMersenneTwister* rng = nullptr;
+    std::int32_t* rand_seed = nullptr;
+    // Profiler recording flag and marker log for 3040..3043.
+    bool* profiler_recording = nullptr;
+    std::vector<std::string>* profiler_markers = nullptr;
+    // Dictionary handle store for 3200..3222.
+    WseDictionaryStore* dictionaries = nullptr;
 };
 
 // Decoded operands, matching the arrays built by mbStatement::execute.
@@ -926,6 +1205,700 @@ template <typename Predicate>
     return predicate(text[static_cast<std::size_t>(index)])
                ? WseDispatch::handled_no_store
                : WseDispatch::condition_false;
+}
+
+[[nodiscard]] constexpr std::int64_t wse_days_from_civil(
+    std::int64_t y, std::int64_t m, std::int64_t d) noexcept {
+    y -= (m <= 2) ? 1 : 0;
+    const std::int64_t era = (y >= 0 ? y : y - 399) / 400;
+    const std::int64_t yoe = y - era * 400;
+    const std::int64_t doy =
+        (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const std::int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+
+// Mirrors 3022 local time conversion (_localtime64_s + _mkgmtime64).
+[[nodiscard]] inline std::int64_t wse_local_epoch_seconds(
+    std::time_t utc_time) noexcept {
+    std::tm local_tm{};
+#ifdef _WIN32
+    if (localtime_s(&local_tm, &utc_time) != 0) {
+        return static_cast<std::int64_t>(utc_time);
+    }
+#else
+    if (localtime_r(&utc_time, &local_tm) == nullptr) {
+        return static_cast<std::int64_t>(utc_time);
+    }
+#endif
+    const std::int64_t days = wse_days_from_civil(
+        static_cast<std::int64_t>(local_tm.tm_year) + 1900,
+        static_cast<std::int64_t>(local_tm.tm_mon) + 1,
+        static_cast<std::int64_t>(local_tm.tm_mday));
+    return days * 86400 + static_cast<std::int64_t>(local_tm.tm_hour) * 3600 +
+           static_cast<std::int64_t>(local_tm.tm_min) * 60 +
+           static_cast<std::int64_t>(local_tm.tm_sec);
+}
+
+[[nodiscard]] inline std::string_view wse_trim_ascii(
+    std::string_view sv) noexcept {
+    while (!sv.empty() &&
+           std::isspace(static_cast<unsigned char>(sv.front())) != 0) {
+        sv.remove_prefix(1);
+    }
+    while (!sv.empty() &&
+           std::isspace(static_cast<unsigned char>(sv.back())) != 0) {
+        sv.remove_suffix(1);
+    }
+    return sv;
+}
+
+// Mirrors mbCheckPath (0x1401c5640): rejects "<>:\"/\\|?*" (0x14055ac20),
+// trims whitespace, strips leading '.', trims again, and rejects empty names.
+[[nodiscard]] inline bool wse_check_path(std::string& name) {
+    constexpr std::string_view kBadChars = "<>:\"/\\|?*";
+    for (const char ch : name) {
+        if (ch == '\0' || kBadChars.find(ch) != std::string_view::npos) {
+            return false;
+        }
+    }
+    std::string_view sv = wse_trim_ascii(name);
+    while (!sv.empty() && sv.front() == '.') {
+        sv.remove_prefix(1);
+    }
+    sv = wse_trim_ascii(sv);
+    if (sv.empty() || sv == "." || sv == "..") {
+        return false;
+    }
+    name.assign(sv);
+    return true;
+}
+
+[[nodiscard]] inline bool wse_resolve_utf8_operand(
+    std::size_t idx, const WseOperands& operands, std::string& out) {
+    if (idx >= operands.narrow.size()) {
+        return false;
+    }
+    const std::uint8_t tag = wse_tag_at(operands.tags, idx);
+    if (!wse_string_register_ok(operands.narrow[idx], tag,
+                                operands.state.strings)) {
+        return false;
+    }
+    out = wse_utf16_to_utf8(wse_resolve_string(
+        operands.narrow[idx], tag, operands.state.strings));
+    return true;
+}
+
+[[nodiscard]] inline std::string wse_url_escape(std::string_view input) {
+    constexpr char kHex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(input.size());
+    for (const unsigned char uc : input) {
+        const bool unreserved =
+            (uc >= 'A' && uc <= 'Z') || (uc >= 'a' && uc <= 'z') ||
+            (uc >= '0' && uc <= '9') || uc == '-' || uc == '_' || uc == '.' ||
+            uc == '~';
+        if (unreserved) {
+            out.push_back(static_cast<char>(uc));
+        } else {
+            out.push_back('%');
+            out.push_back(kHex[(uc >> 4U) & 0x0fU]);
+            out.push_back(kHex[uc & 0x0fU]);
+        }
+    }
+    return out;
+}
+
+inline void wse_append_utf8_codepoint(std::string& out,
+                                      std::uint32_t cp) {
+    if (cp <= 0x7fU) {
+        out.push_back(static_cast<char>(cp));
+    } else if (cp <= 0x7ffU) {
+        out.push_back(static_cast<char>(0xc0U | ((cp >> 6U) & 0x1fU)));
+        out.push_back(static_cast<char>(0x80U | (cp & 0x3fU)));
+    } else if (cp <= 0xffffU) {
+        out.push_back(static_cast<char>(0xe0U | ((cp >> 12U) & 0x0fU)));
+        out.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3fU)));
+        out.push_back(static_cast<char>(0x80U | (cp & 0x3fU)));
+    } else if (cp <= 0x10ffffU) {
+        out.push_back(static_cast<char>(0xf0U | ((cp >> 18U) & 0x07U)));
+        out.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3fU)));
+        out.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3fU)));
+        out.push_back(static_cast<char>(0x80U | (cp & 0x3fU)));
+    }
+}
+
+inline void wse_append_json_string(std::string& out, std::string_view sv) {
+    constexpr char kHex[] = "0123456789abcdef";
+    out.push_back('"');
+    for (const unsigned char uc : sv) {
+        switch (uc) {
+        case '"':
+            out.append("\\\"");
+            break;
+        case '\\':
+            out.append("\\\\");
+            break;
+        case '\b':
+            out.append("\\b");
+            break;
+        case '\f':
+            out.append("\\f");
+            break;
+        case '\n':
+            out.append("\\n");
+            break;
+        case '\r':
+            out.append("\\r");
+            break;
+        case '\t':
+            out.append("\\t");
+            break;
+        default:
+            if (uc < 0x20U) {
+                out.append("\\u00");
+                out.push_back(kHex[(uc >> 4U) & 0x0fU]);
+                out.push_back(kHex[uc & 0x0fU]);
+            } else {
+                out.push_back(static_cast<char>(uc));
+            }
+            break;
+        }
+    }
+    out.push_back('"');
+}
+
+[[nodiscard]] inline std::string wse_serialize_json_object(
+    const std::map<std::string, std::string>& entries, bool pretty) {
+    if (entries.empty()) {
+        return pretty ? "{}\n" : "{}";
+    }
+    std::string out;
+    out.push_back('{');
+    if (pretty) {
+        out.push_back('\n');
+    }
+    bool first = true;
+    for (const auto& [key, value] : entries) {
+        if (!first) {
+            out.push_back(',');
+            if (pretty) {
+                out.push_back('\n');
+            }
+        }
+        first = false;
+        if (pretty) {
+            out.append("  ");
+        }
+        wse_append_json_string(out, key);
+        out.push_back(':');
+        if (pretty) {
+            out.push_back(' ');
+        }
+        wse_append_json_string(out, value);
+    }
+    if (pretty) {
+        out.append("\n}\n");
+    } else {
+        out.push_back('}');
+    }
+    return out;
+}
+
+inline void wse_skip_json_ws(std::string_view src, std::size_t& pos) noexcept {
+    while (pos < src.size()) {
+        const char ch = src[pos];
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+            ++pos;
+        } else {
+            break;
+        }
+    }
+}
+
+[[nodiscard]] inline bool wse_parse_hex4(std::string_view src,
+                                         std::size_t pos,
+                                         std::uint32_t& out) noexcept {
+    if (pos + 4 > src.size()) {
+        return false;
+    }
+    std::uint32_t value = 0;
+    for (std::size_t i = 0; i < 4; ++i) {
+        const int d = wse_hex_nibble(src[pos + i]);
+        if (d < 0) {
+            return false;
+        }
+        value = (value << 4U) | static_cast<std::uint32_t>(d);
+    }
+    out = value;
+    return true;
+}
+
+[[nodiscard]] inline bool wse_parse_json_string(std::string_view src,
+                                                std::size_t& pos,
+                                                std::string& out) {
+    if (pos >= src.size() || src[pos] != '"') {
+        return false;
+    }
+    ++pos;
+    out.clear();
+    while (pos < src.size()) {
+        const char ch = src[pos++];
+        if (ch == '"') {
+            return true;
+        }
+        if (static_cast<unsigned char>(ch) < 0x20U) {
+            return false;
+        }
+        if (ch != '\\') {
+            out.push_back(ch);
+            continue;
+        }
+        if (pos >= src.size()) {
+            return false;
+        }
+        const char esc = src[pos++];
+        switch (esc) {
+        case '"':
+        case '\\':
+        case '/':
+            out.push_back(esc);
+            break;
+        case 'b':
+            out.push_back('\b');
+            break;
+        case 'f':
+            out.push_back('\f');
+            break;
+        case 'n':
+            out.push_back('\n');
+            break;
+        case 'r':
+            out.push_back('\r');
+            break;
+        case 't':
+            out.push_back('\t');
+            break;
+        case 'u': {
+            std::uint32_t cp = 0;
+            if (!wse_parse_hex4(src, pos, cp)) {
+                return false;
+            }
+            pos += 4;
+            if (cp >= 0xd800U && cp <= 0xdbffU && pos + 6 <= src.size() &&
+                src[pos] == '\\' && src[pos + 1] == 'u') {
+                std::uint32_t low = 0;
+                if (wse_parse_hex4(src, pos + 2, low) && low >= 0xdc00U &&
+                    low <= 0xdfffU) {
+                    pos += 6;
+                    cp = 0x10000U +
+                         (((cp - 0xd800U) << 10U) | (low - 0xdc00U));
+                }
+            }
+            wse_append_utf8_codepoint(out, cp);
+            break;
+        }
+        default:
+            return false;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] inline bool wse_parse_json_scalar(std::string_view src,
+                                                std::size_t& pos,
+                                                std::string& out) {
+    if (pos >= src.size()) {
+        return false;
+    }
+    if (src[pos] == '"') {
+        return wse_parse_json_string(src, pos, out);
+    }
+    if (src.substr(pos).starts_with("true")) {
+        pos += 4;
+        out = "true";
+        return true;
+    }
+    if (src.substr(pos).starts_with("false")) {
+        pos += 5;
+        out = "false";
+        return true;
+    }
+    if (src.substr(pos).starts_with("null")) {
+        pos += 4;
+        out.clear();
+        return true;
+    }
+    const std::size_t start = pos;
+    if (src[pos] == '-') {
+        ++pos;
+    }
+    if (pos >= src.size()) {
+        return false;
+    }
+    if (src[pos] == '0') {
+        ++pos;
+    } else if (src[pos] >= '1' && src[pos] <= '9') {
+        while (pos < src.size() && src[pos] >= '0' && src[pos] <= '9') {
+            ++pos;
+        }
+    } else {
+        return false;
+    }
+    if (pos < src.size() && src[pos] == '.') {
+        ++pos;
+        if (pos >= src.size() || src[pos] < '0' || src[pos] > '9') {
+            return false;
+        }
+        while (pos < src.size() && src[pos] >= '0' && src[pos] <= '9') {
+            ++pos;
+        }
+    }
+    if (pos < src.size() && (src[pos] == 'e' || src[pos] == 'E')) {
+        ++pos;
+        if (pos < src.size() && (src[pos] == '+' || src[pos] == '-')) {
+            ++pos;
+        }
+        if (pos >= src.size() || src[pos] < '0' || src[pos] > '9') {
+            return false;
+        }
+        while (pos < src.size() && src[pos] >= '0' && src[pos] <= '9') {
+            ++pos;
+        }
+    }
+    out.assign(src.substr(start, pos - start));
+    return true;
+}
+
+// Parses top-level JSON object (0x1402a97f0 requires Json::objectValue).
+[[nodiscard]] inline bool wse_parse_json_object(
+    std::string_view src, std::map<std::string, std::string>& out) {
+    if (src.starts_with("\xEF\xBB\xBF")) {
+        src.remove_prefix(3);
+    }
+    std::size_t pos = 0;
+    wse_skip_json_ws(src, pos);
+    if (pos >= src.size() || src[pos] != '{') {
+        return false;
+    }
+    ++pos;
+    std::map<std::string, std::string> parsed;
+    wse_skip_json_ws(src, pos);
+    if (pos < src.size() && src[pos] == '}') {
+        ++pos;
+        wse_skip_json_ws(src, pos);
+        if (pos != src.size()) {
+            return false;
+        }
+        out = std::move(parsed);
+        return true;
+    }
+    for (;;) {
+        wse_skip_json_ws(src, pos);
+        std::string key;
+        if (!wse_parse_json_string(src, pos, key)) {
+            return false;
+        }
+        wse_skip_json_ws(src, pos);
+        if (pos >= src.size() || src[pos] != ':') {
+            return false;
+        }
+        ++pos;
+        wse_skip_json_ws(src, pos);
+        std::string value;
+        if (!wse_parse_json_scalar(src, pos, value)) {
+            return false;
+        }
+        parsed[std::move(key)] = std::move(value);
+        wse_skip_json_ws(src, pos);
+        if (pos >= src.size()) {
+            return false;
+        }
+        if (src[pos] == '}') {
+            ++pos;
+            break;
+        }
+        if (src[pos] != ',') {
+            return false;
+        }
+        ++pos;
+    }
+    wse_skip_json_ws(src, pos);
+    if (pos != src.size()) {
+        return false;
+    }
+    out = std::move(parsed);
+    return true;
+}
+
+[[nodiscard]] inline bool wse_dict_read_file_bytes(
+    const std::filesystem::path& path, std::string& out) {
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in.is_open()) {
+        return false;
+    }
+    const auto end_pos = in.tellg();
+    if (end_pos < 0) {
+        return false;
+    }
+    out.resize(static_cast<std::size_t>(end_pos));
+    in.seekg(0, std::ios::beg);
+    if (!out.empty() &&
+        !in.read(out.data(), static_cast<std::streamsize>(out.size()))) {
+        out.clear();
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] inline bool wse_dict_write_file_bytes(
+    const std::filesystem::path& path, std::string_view data) {
+    std::error_code ec;
+    const auto parent = path.parent_path();
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent, ec);
+    }
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+        return false;
+    }
+    if (!data.empty()) {
+        out.write(data.data(), static_cast<std::streamsize>(data.size()));
+    }
+    return out.good();
+}
+
+// Mirrors rglSectionlessIni::read (INI format).
+[[nodiscard]] inline bool wse_dict_load_ini(
+    const std::filesystem::path& path,
+    std::map<std::string, std::string>& out) {
+    std::string data;
+    if (!wse_dict_read_file_bytes(path, data)) {
+        return false;
+    }
+    std::string_view view(data);
+    bool first_line = true;
+    while (!view.empty()) {
+        const std::size_t nl = view.find('\n');
+        std::string_view line =
+            nl == std::string_view::npos ? view : view.substr(0, nl);
+        view = nl == std::string_view::npos ? std::string_view{}
+                                            : view.substr(nl + 1);
+        if (first_line && line.starts_with("\xEF\xBB\xBF")) {
+            line.remove_prefix(3);
+        }
+        first_line = false;
+        line = wse_trim_ascii(line);
+        std::size_t comment = line.size();
+        for (const std::string_view marker :
+             {std::string_view{"//"}, std::string_view{";"},
+              std::string_view{"#"}}) {
+            const std::size_t hit = line.find(marker);
+            if (hit != std::string_view::npos && hit < comment) {
+                comment = hit;
+            }
+        }
+        line = line.substr(0, comment);
+        const std::size_t eq = line.find('=');
+        if (eq == std::string_view::npos) {
+            continue;
+        }
+        const std::string_view key = wse_trim_ascii(line.substr(0, eq));
+        const std::string_view val = wse_trim_ascii(line.substr(eq + 1));
+        out[std::string(key)] = std::string(val);
+    }
+    return true;
+}
+
+inline void wse_dict_save_ini(
+    const std::filesystem::path& path,
+    const std::map<std::string, std::string>& entries) {
+    std::string text;
+    for (const auto& [key, value] : entries) {
+        text.append(key);
+        text.push_back('=');
+        text.append(value);
+        text.push_back('\n');
+    }
+    (void)wse_dict_write_file_bytes(path, text);
+}
+
+[[nodiscard]] constexpr std::uint32_t wse_read_le32(
+    const std::uint8_t* p) noexcept {
+    return static_cast<std::uint32_t>(p[0]) |
+           (static_cast<std::uint32_t>(p[1]) << 8U) |
+           (static_cast<std::uint32_t>(p[2]) << 16U) |
+           (static_cast<std::uint32_t>(p[3]) << 24U);
+}
+
+inline void wse_append_le32(std::string& out, std::uint32_t value) {
+    out.push_back(static_cast<char>(value & 0xffU));
+    out.push_back(static_cast<char>((value >> 8U) & 0xffU));
+    out.push_back(static_cast<char>((value >> 16U) & 0xffU));
+    out.push_back(static_cast<char>((value >> 24U) & 0xffU));
+}
+
+// Binary .wsedict format: LE magic 0x57534544, version <= 2, count,
+// and count pairs of (int32 klen, int32 vlen, kbytes, vbytes).
+inline constexpr std::uint32_t kWseDictBinaryMagic = 0x57534544U;
+inline constexpr std::int32_t kWseDictBinaryVersion = 2;
+
+[[nodiscard]] inline bool wse_dict_load_binary(
+    const std::filesystem::path& path,
+    std::map<std::string, std::string>& out) {
+    std::string bytes;
+    if (!wse_dict_read_file_bytes(path, bytes) || bytes.size() < 12) {
+        return false;
+    }
+    const auto* raw = reinterpret_cast<const std::uint8_t*>(bytes.data());
+    const std::uint32_t magic = wse_read_le32(raw);
+    const auto version = static_cast<std::int32_t>(wse_read_le32(raw + 4));
+    const auto count = static_cast<std::int32_t>(wse_read_le32(raw + 8));
+    if (magic != kWseDictBinaryMagic || version < 0 ||
+        version > kWseDictBinaryVersion || count < 0) {
+        return false;
+    }
+    std::size_t offset = 12;
+    for (std::int32_t i = 0; i < count; ++i) {
+        if (bytes.size() - offset < 8) {
+            return false;
+        }
+        const auto klen =
+            static_cast<std::int32_t>(wse_read_le32(raw + offset));
+        const auto vlen =
+            static_cast<std::int32_t>(wse_read_le32(raw + offset + 4));
+        offset += 8;
+        if (klen < 0 || vlen < 0) {
+            return false;
+        }
+        const auto uk = static_cast<std::size_t>(klen);
+        const auto uv = static_cast<std::size_t>(vlen);
+        if (bytes.size() - offset < uk ||
+            bytes.size() - offset - uk < uv) {
+            return false;
+        }
+        std::string key(bytes.substr(offset, uk));
+        offset += uk;
+        std::string value(bytes.substr(offset, uv));
+        offset += uv;
+        out[std::move(key)] = std::move(value);
+    }
+    return true;
+}
+
+inline void wse_dict_save_binary(
+    const std::filesystem::path& path,
+    const std::map<std::string, std::string>& entries) {
+    std::string out;
+    wse_append_le32(out, kWseDictBinaryMagic);
+    wse_append_le32(out, static_cast<std::uint32_t>(kWseDictBinaryVersion));
+    wse_append_le32(out, static_cast<std::uint32_t>(entries.size()));
+    for (const auto& [key, value] : entries) {
+        wse_append_le32(out, static_cast<std::uint32_t>(key.size()));
+        wse_append_le32(out, static_cast<std::uint32_t>(value.size()));
+        out.append(key);
+        out.append(value);
+    }
+    (void)wse_dict_write_file_bytes(path, out);
+}
+
+[[nodiscard]] inline bool wse_dict_target_path(
+    const WseDictionaryStore* store,
+    std::string name,
+    std::string_view ext,
+    std::filesystem::path& out_path) {
+    if (!store || store->root_dir.empty() || !wse_check_path(name)) {
+        return false;
+    }
+    name.append(ext);
+    out_path = store->root_dir / name;
+    return true;
+}
+
+// Shared loader applying 0x1401e6c18..0x1401e7f48 mode semantics:
+// mode == 0 clears then inserts all; mode == 1 overwrites existing;
+// any other mode inserts only missing keys.
+inline void wse_dict_apply_load(
+    WseDictionary& dict,
+    const std::map<std::string, std::string>& loaded,
+    std::int32_t mode) {
+    if (mode == 0) {
+        dict.clear();
+        dict.merge(loaded, false);
+    } else if (mode == 1) {
+        dict.merge(loaded, true);
+    } else {
+        dict.merge(loaded, false);
+    }
+}
+
+// 0x1402aa920: serializes o.xyz, f.xyz, u.xyz using "%f" separated by ','.
+inline void wse_dict_set_transform(WseDictionary& dict,
+                                   const std::string& key,
+                                   const WseTransform& t) {
+    const std::array<float, 9> values = {t.o.x, t.o.y, t.o.z, t.f.x, t.f.y,
+                                         t.f.z, t.u.x, t.u.y, t.u.z};
+    std::string encoded;
+    std::array<char, 64> buf{};
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            encoded.push_back(',');
+        }
+        const int written =
+            std::snprintf(buf.data(), buf.size(), "%f",
+                          static_cast<double>(values[i]));
+        if (written > 0) {
+            encoded.append(buf.data(), static_cast<std::size_t>(written));
+        }
+    }
+    dict.set(key, std::move(encoded));
+}
+
+// 0x1402aa5a0: splits on ',' preserving empty tokens, parses 9 floats into
+// (o, f, u) and orthonormalizes, or returns `fallback` when token count != 9.
+[[nodiscard]] inline WseTransform wse_dict_get_transform(
+    const WseDictionary& dict,
+    const std::string& key,
+    const WseTransform& fallback) {
+    const auto it = dict.entries.find(key);
+    if (it == dict.entries.end()) {
+        return fallback;
+    }
+    std::vector<std::string_view> tokens;
+    const std::string_view raw = it->second;
+    std::size_t start = 0;
+    for (;;) {
+        const std::size_t comma = raw.find(',', start);
+        if (comma == std::string_view::npos) {
+            tokens.push_back(raw.substr(start));
+            break;
+        }
+        tokens.push_back(raw.substr(start, comma - start));
+        start = comma + 1;
+    }
+    if (tokens.size() != 9) {
+        return fallback;
+    }
+    std::array<float, 9> parsed{};
+    for (std::size_t i = 0; i < 9; ++i) {
+        std::string tok(tokens[i]);
+        parsed[i] = static_cast<float>(std::strtod(tok.c_str(), nullptr));
+    }
+    WseTransform out{};
+    out.o = {parsed[0], parsed[1], parsed[2], 1.0f};
+    out.f = {parsed[3], parsed[4], parsed[5], 0.0f};
+    out.u = {parsed[6], parsed[7], parsed[8], 0.0f};
+    out.orthonormalize();
+    return out;
+}
+
+[[nodiscard]] inline WseDispatch wse_store_dict_string(
+    WseStringBanks& strings,
+    std::int32_t sreg,
+    std::string_view utf8_value) {
+    return wse_store_string(strings, sreg, wse_utf8_to_utf16(utf8_value))
+               ? WseDispatch::handled_no_store
+               : WseDispatch::ignored;
 }
 
 // `val_*` uses operand 0 as both source and destination; `store_*` reads
@@ -2018,6 +2991,40 @@ template <typename Predicate>
             wse_wtof(wse_resolve_string(narrow[1], tag, strings)));
         return WseDispatch::handled_no_store;
     }
+    case WseOpcode::fld_pos_x:
+    case WseOpcode::fld_pos_y:
+    case WseOpcode::fld_pos_z: {
+        // 4402..4404 (0x1132..0x1134, 0x1401f0157..0x1401f01ff):
+        // copies pos[op1].o.{x,y,z} into fp[op0].
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto positions = operands.state.positions;
+        if (!wse_register_ok(narrow[0]) || !wse_register_ok(narrow[1]) ||
+            fp.empty() || positions.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto fp_idx = static_cast<std::size_t>(narrow[0]);
+        const auto pos_idx = static_cast<std::size_t>(narrow[1]);
+        if (fp_idx >= fp.size() || pos_idx >= positions.size()) {
+            return WseDispatch::ignored;
+        }
+        const WseVec4& origin = positions[pos_idx].o;
+        switch (static_cast<WseOpcode>(opcode)) {
+        case WseOpcode::fld_pos_x:
+            fp[fp_idx] = origin.x;
+            break;
+        case WseOpcode::fld_pos_y:
+            fp[fp_idx] = origin.y;
+            break;
+        case WseOpcode::fld_pos_z:
+            fp[fp_idx] = origin.z;
+            break;
+        default:
+            break;
+        }
+        return WseDispatch::handled_no_store;
+    }
     case WseOpcode::fst: {
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -2360,6 +3367,735 @@ template <typename Predicate>
         }
         fp[destination] =
             std::log10(fp[source]) / std::log10(static_cast<float>(base));
+        return WseDispatch::handled_no_store;
+    }
+
+    // VM return values / PRNG / time / timers / profiler (0xbc7..0xbe3).
+    case WseOpcode::return_values: {
+        // 3015 (0xbc7, 0x1401e5a50): writes up to 16 int64 return slots.
+        const std::size_t max_slots =
+            std::min<std::size_t>(operands.state.return_values_out.size(), 16U);
+        const std::size_t count = std::min<std::size_t>(wide.size(), max_slots);
+        for (std::size_t i = 0; i < count; ++i) {
+            operands.state.return_values_out[i] = wide[i];
+        }
+        if (operands.state.num_return_values_out != nullptr) {
+            *operands.state.num_return_values_out = static_cast<std::int32_t>(
+                std::min<std::size_t>(wide.size(), 16U));
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::mtsrand: {
+        // 3020 (0xbcc, 0x1401e5b78): seeds rglMersenneTwister.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (operands.state.rng == nullptr) {
+            return WseDispatch::ignored;
+        }
+        operands.state.rng->seed(static_cast<std::uint32_t>(narrow[0]));
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::mtrand: {
+        // 3021 (0xbcd, 0x1401e5b85): rglMersenneTwister::getInt(min, max).
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (operands.state.rng == nullptr) {
+            return WseDispatch::ignored;
+        }
+        effect.value = static_cast<std::int64_t>(
+            operands.state.rng->get_int(narrow[1], narrow[2]));
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::get_time: {
+        // 3022 (0xbce, 0x1401e5ba2): UTC Unix epoch seconds (or local-adjusted
+        // wall-clock seconds when operand 1 != 0), 32-bit int truncated.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::time_t now = std::time(nullptr);
+        std::int64_t seconds =
+            static_cast<std::int64_t>(static_cast<std::int32_t>(now));
+        if (narrow.size() >= 2 && narrow[1] != 0) {
+            seconds = static_cast<std::int64_t>(static_cast<std::int32_t>(
+                wse_local_epoch_seconds(static_cast<std::time_t>(seconds))));
+        }
+        effect.value = seconds;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::timer_reset: {
+        // 3027 (0xbd3, 0x1401e5dab): op1 != 0 -> app clock (0), else game (2).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0]) ||
+            static_cast<std::size_t>(narrow[0]) >= operands.state.timers.size() ||
+            operands.state.timers_total.size() < 3) {
+            return WseDispatch::ignored;
+        }
+        const std::int32_t kind =
+            (narrow.size() >= 2 && narrow[1] != 0) ? 0 : 2;
+        operands.state.timers[static_cast<std::size_t>(narrow[0])] = {
+            kind, operands.state.timers_total[static_cast<std::size_t>(kind)]};
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::timer_get_elapsed_time: {
+        // 3028 (0xbd4, 0x1401e5df5): rounded elapsed seconds from 100kHz clock.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[1]) ||
+            static_cast<std::size_t>(narrow[1]) >= operands.state.timers.size()) {
+            return WseDispatch::ignored;
+        }
+        const WseAppTimer& timer =
+            operands.state.timers[static_cast<std::size_t>(narrow[1])];
+        if (timer.kind < 0 ||
+            static_cast<std::size_t>(timer.kind) >=
+                operands.state.timers_total.size()) {
+            return WseDispatch::ignored;
+        }
+        const std::int64_t total_now =
+            operands.state.timers_total[static_cast<std::size_t>(timer.kind)];
+        const float elapsed =
+            static_cast<float>(total_now - timer.start_ticks) / 100000.0f;
+        effect.value = wse_round64(elapsed);
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::set_random_seed: {
+        // 3034 (0xbda, 0x1401e62bb): stores script rand_seed (DAT_140617d54).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (operands.state.rand_seed == nullptr) {
+            return WseDispatch::ignored;
+        }
+        *operands.state.rand_seed = narrow[0];
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::profiler_start: {
+        // 3040 (0xbe0, 0x14034f7d0): sets g_profiling flag.
+        if (operands.state.profiler_recording == nullptr) {
+            return WseDispatch::ignored;
+        }
+        *operands.state.profiler_recording = true;
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::profiler_stop: {
+        // 3041 (0xbe1, 0x14034ff40): clears g_profiling flag.
+        if (operands.state.profiler_recording == nullptr) {
+            return WseDispatch::ignored;
+        }
+        *operands.state.profiler_recording = false;
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::profiler_is_recording: {
+        // 3042 (0xbe2): returns g_profiling as boolean condition.
+        const bool recording = operands.state.profiler_recording != nullptr &&
+                               *operands.state.profiler_recording;
+        return recording ? WseDispatch::handled_no_store
+                         : WseDispatch::condition_false;
+    }
+    case WseOpcode::profiler_mark: {
+        // 3043 (0xbe3, 0x1403508a0): appends marker when profiling is active.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string marker;
+        if (!wse_resolve_utf8_operand(0, operands, marker)) {
+            return WseDispatch::ignored;
+        }
+        if (operands.state.profiler_recording != nullptr &&
+            *operands.state.profiler_recording &&
+            operands.state.profiler_markers != nullptr) {
+            operands.state.profiler_markers->push_back(std::move(marker));
+        }
+        return WseDispatch::handled_no_store;
+    }
+
+    // Dictionary group (3200..3222 / 0xc80..0xc96).
+    case WseOpcode::dict_create: {
+        // 3200 (0xc80, 0x1401e6b30): allocates handle in WSEObjectManager.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (operands.state.dictionaries == nullptr) {
+            return WseDispatch::ignored;
+        }
+        effect.value =
+            static_cast<std::int64_t>(operands.state.dictionaries->create());
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::dict_free: {
+        // 3201 (0xc81, 0x1401e6b6c): destroys dictionary and frees ID.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (operands.state.dictionaries != nullptr) {
+            operands.state.dictionaries->destroy(narrow[0]);
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_load_file: {
+        // 3202 (0xc82): (dict, file_str, [mode], [format]); format 1 = .ini,
+        // otherwise binary .wsedict.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string file_name;
+        if (!wse_resolve_utf8_operand(1, operands, file_name)) {
+            return WseDispatch::ignored;
+        }
+        WseDictionary* dict = operands.state.dictionaries != nullptr
+                                  ? operands.state.dictionaries->get(narrow[0])
+                                  : nullptr;
+        const std::int32_t format = narrow.size() >= 4 ? narrow[3] : 0;
+        std::filesystem::path target;
+        if (!dict ||
+            !wse_dict_target_path(operands.state.dictionaries, file_name,
+                                  format == 1 ? ".ini" : ".wsedict", target)) {
+            return WseDispatch::handled_no_store;
+        }
+        const std::int32_t mode = narrow.size() >= 3 ? narrow[2] : 0;
+        if (mode == 0) {
+            dict->clear();
+        }
+        std::map<std::string, std::string> loaded;
+        if (format == 1) {
+            (void)wse_dict_load_ini(target, loaded);
+        } else {
+            (void)wse_dict_load_binary(target, loaded);
+        }
+        wse_dict_apply_load(*dict, loaded, mode);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_load_dict: {
+        // 3203 (0xc83): (dst, src, [mode]); mode 0 is no-op, 1 overwrites,
+        // 2 inserts missing keys.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (operands.state.dictionaries == nullptr) {
+            return WseDispatch::ignored;
+        }
+        WseDictionary* dst = operands.state.dictionaries->get(narrow[0]);
+        const WseDictionary* src = operands.state.dictionaries->get(narrow[1]);
+        const std::int32_t mode = narrow.size() >= 3 ? narrow[2] : 0;
+        if (!dst || !src || mode == 0 || dst == src) {
+            return WseDispatch::handled_no_store;
+        }
+        if (mode == 1 || mode == 2) {
+            dst->merge(src->entries, mode == 1);
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_save: {
+        // 3204 (0xc84): (dict, file_str, [format]).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string file_name;
+        if (!wse_resolve_utf8_operand(1, operands, file_name)) {
+            return WseDispatch::ignored;
+        }
+        const WseDictionary* dict =
+            operands.state.dictionaries != nullptr
+                ? operands.state.dictionaries->get(narrow[0])
+                : nullptr;
+        const std::int32_t format = narrow.size() >= 3 ? narrow[2] : 0;
+        std::filesystem::path target;
+        if (!dict ||
+            !wse_dict_target_path(operands.state.dictionaries, file_name,
+                                  format == 1 ? ".ini" : ".wsedict", target)) {
+            return WseDispatch::handled_no_store;
+        }
+        if (format == 1) {
+            wse_dict_save_ini(target, dict->entries);
+        } else {
+            wse_dict_save_binary(target, dict->entries);
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_clear: {
+        // 3205 (0xc85).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        WseDictionary* dict = operands.state.dictionaries != nullptr
+                                  ? operands.state.dictionaries->get(narrow[0])
+                                  : nullptr;
+        if (dict) {
+            dict->clear();
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_is_empty: {
+        // 3206 (0xc86): invalid dict returns true matching executeWSE.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const WseDictionary* dict =
+            operands.state.dictionaries != nullptr
+                ? operands.state.dictionaries->get(narrow[0])
+                : nullptr;
+        if (!dict || dict->empty()) {
+            return WseDispatch::handled_no_store;
+        }
+        return WseDispatch::condition_false;
+    }
+    case WseOpcode::dict_has_key: {
+        // 3207 (0xc87).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string key;
+        if (!wse_resolve_utf8_operand(1, operands, key)) {
+            return WseDispatch::ignored;
+        }
+        const WseDictionary* dict =
+            operands.state.dictionaries != nullptr
+                ? operands.state.dictionaries->get(narrow[0])
+                : nullptr;
+        if (!dict) {
+            return WseDispatch::condition_false;
+        }
+        return dict->has_key(key) ? WseDispatch::handled_no_store
+                                  : WseDispatch::condition_false;
+    }
+    case WseOpcode::dict_get_size: {
+        // 3208 (0xc88): (dest, dict).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const WseDictionary* dict =
+            operands.state.dictionaries != nullptr
+                ? operands.state.dictionaries->get(narrow[1])
+                : nullptr;
+        effect.value = dict ? static_cast<std::int64_t>(dict->size()) : 0;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::dict_delete_file: {
+        // 3209 (0xc89): (file_str, [format]).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string file_name;
+        if (!wse_resolve_utf8_operand(0, operands, file_name)) {
+            return WseDispatch::ignored;
+        }
+        const std::int32_t format = narrow.size() >= 2 ? narrow[1] : 0;
+        std::filesystem::path target;
+        if (wse_dict_target_path(operands.state.dictionaries, file_name,
+                                 format == 1 ? ".ini" : ".wsedict", target)) {
+            std::error_code ec;
+            (void)std::filesystem::remove(target, ec);
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_get_str: {
+        // 3210 (0xc8a): (sreg, dict, key_str, [default_str]).
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        std::string key;
+        if (!wse_resolve_utf8_operand(2, operands, key)) {
+            return WseDispatch::ignored;
+        }
+        std::string def_value;
+        if (narrow.size() >= 4 &&
+            !wse_resolve_utf8_operand(3, operands, def_value)) {
+            return WseDispatch::ignored;
+        }
+        const WseDictionary* dict =
+            operands.state.dictionaries != nullptr
+                ? operands.state.dictionaries->get(narrow[1])
+                : nullptr;
+        if (!dict) {
+            return WseDispatch::handled_no_store;
+        }
+        const auto it = dict->entries.find(key);
+        return wse_store_dict_string(
+            strings, narrow[0],
+            it != dict->entries.end() ? std::string_view(it->second)
+                                      : std::string_view(def_value));
+    }
+    case WseOpcode::dict_get_int: {
+        // 3211 (0xc8b): (dest, dict, key_str, [default_int]).
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string key;
+        if (!wse_resolve_utf8_operand(2, operands, key)) {
+            return WseDispatch::ignored;
+        }
+        const WseDictionary* dict =
+            operands.state.dictionaries != nullptr
+                ? operands.state.dictionaries->get(narrow[1])
+                : nullptr;
+        std::int32_t value = 0;
+        if (dict) {
+            const auto it = dict->entries.find(key);
+            if (it != dict->entries.end()) {
+                value = static_cast<std::int32_t>(
+                    std::strtol(it->second.c_str(), nullptr, 10));
+            } else {
+                value = narrow.size() >= 4 ? narrow[3] : 0;
+            }
+        }
+        effect.value = static_cast<std::int64_t>(value);
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::dict_set_str: {
+        // 3212 (0xc8c): (dict, key_str, val_str).
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string key;
+        std::string value;
+        if (!wse_resolve_utf8_operand(1, operands, key) ||
+            !wse_resolve_utf8_operand(2, operands, value)) {
+            return WseDispatch::ignored;
+        }
+        WseDictionary* dict = operands.state.dictionaries != nullptr
+                                  ? operands.state.dictionaries->get(narrow[0])
+                                  : nullptr;
+        if (dict) {
+            dict->set(key, std::move(value));
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_set_int: {
+        // 3213 (0xc8d): (dict, key_str, int_val).
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string key;
+        if (!wse_resolve_utf8_operand(1, operands, key)) {
+            return WseDispatch::ignored;
+        }
+        WseDictionary* dict = operands.state.dictionaries != nullptr
+                                  ? operands.state.dictionaries->get(narrow[0])
+                                  : nullptr;
+        if (dict) {
+            dict->set(key, std::to_string(narrow[2]));
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_get_key_by_iterator: {
+        // 3214 (0xc8e, 0x1402aae20): (sreg, dict, [index]).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const WseDictionary* dict =
+            operands.state.dictionaries != nullptr
+                ? operands.state.dictionaries->get(narrow[1])
+                : nullptr;
+        if (!dict) {
+            return WseDispatch::handled_no_store;
+        }
+        const std::int32_t steps = narrow.size() >= 3 ? narrow[2] : 0;
+        auto it = dict->entries.begin();
+        for (std::int32_t i = 0; i < steps && it != dict->entries.end(); ++i) {
+            ++it;
+        }
+        return wse_store_dict_string(
+            strings, narrow[0],
+            it != dict->entries.end() ? std::string_view(it->first)
+                                      : std::string_view{});
+    }
+    case WseOpcode::dict_get_pos: {
+        // 3215 (0xc8f, 0x1402aa5a0): (pos_dest, dict, key_str, [default_pos]).
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto positions = operands.state.positions;
+        if (!wse_register_ok(narrow[0]) || positions.empty() ||
+            static_cast<std::size_t>(narrow[0]) >= positions.size()) {
+            return WseDispatch::ignored;
+        }
+        std::string key;
+        if (!wse_resolve_utf8_operand(2, operands, key)) {
+            return WseDispatch::ignored;
+        }
+        WseTransform fallback = WseTransform::identity();
+        if (narrow.size() >= 4) {
+            if (!wse_register_ok(narrow[3]) ||
+                static_cast<std::size_t>(narrow[3]) >= positions.size()) {
+                return WseDispatch::ignored;
+            }
+            fallback = positions[static_cast<std::size_t>(narrow[3])];
+        }
+        const WseDictionary* dict =
+            operands.state.dictionaries != nullptr
+                ? operands.state.dictionaries->get(narrow[1])
+                : nullptr;
+        if (!dict) {
+            return WseDispatch::handled_no_store;
+        }
+        positions[static_cast<std::size_t>(narrow[0])] =
+            wse_dict_get_transform(*dict, key, fallback);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_set_pos: {
+        // 3216 (0xc90, 0x1402aa920): (dict, key_str, pos_no).
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string key;
+        if (!wse_resolve_utf8_operand(1, operands, key)) {
+            return WseDispatch::ignored;
+        }
+        const auto positions = operands.state.positions;
+        if (!wse_register_ok(narrow[2]) || positions.empty() ||
+            static_cast<std::size_t>(narrow[2]) >= positions.size()) {
+            return WseDispatch::ignored;
+        }
+        WseDictionary* dict = operands.state.dictionaries != nullptr
+                                  ? operands.state.dictionaries->get(narrow[0])
+                                  : nullptr;
+        if (dict) {
+            wse_dict_set_transform(
+                *dict, key, positions[static_cast<std::size_t>(narrow[2])]);
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_load_file_json: {
+        // 3217 (0xc91, 0x1402a97f0): (dict, file_str, [mode]).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string file_name;
+        if (!wse_resolve_utf8_operand(1, operands, file_name)) {
+            return WseDispatch::ignored;
+        }
+        WseDictionary* dict = operands.state.dictionaries != nullptr
+                                  ? operands.state.dictionaries->get(narrow[0])
+                                  : nullptr;
+        std::filesystem::path target;
+        if (!dict ||
+            !wse_dict_target_path(operands.state.dictionaries, file_name,
+                                  ".json", target)) {
+            return WseDispatch::handled_no_store;
+        }
+        const std::int32_t mode = narrow.size() >= 3 ? narrow[2] : 0;
+        if (mode == 0) {
+            dict->clear();
+        }
+        std::string raw_json;
+        std::map<std::string, std::string> loaded;
+        if (wse_dict_read_file_bytes(target, raw_json)) {
+            (void)wse_parse_json_object(raw_json, loaded);
+        }
+        wse_dict_apply_load(*dict, loaded, mode);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_save_json: {
+        // 3218 (0xc92, 0x1402a9f70): (dict, file_str).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string file_name;
+        if (!wse_resolve_utf8_operand(1, operands, file_name)) {
+            return WseDispatch::ignored;
+        }
+        const WseDictionary* dict =
+            operands.state.dictionaries != nullptr
+                ? operands.state.dictionaries->get(narrow[0])
+                : nullptr;
+        std::filesystem::path target;
+        if (dict && wse_dict_target_path(operands.state.dictionaries, file_name,
+                                         ".json", target)) {
+            (void)wse_dict_write_file_bytes(
+                target, wse_serialize_json_object(dict->entries, true));
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_from_url_encoded_json: {
+        // 3219 (0xc93, 0x1402aaea0): (dict, encoded_str, [mode]).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string encoded;
+        if (!wse_resolve_utf8_operand(1, operands, encoded)) {
+            return WseDispatch::ignored;
+        }
+        WseDictionary* dict = operands.state.dictionaries != nullptr
+                                  ? operands.state.dictionaries->get(narrow[0])
+                                  : nullptr;
+        if (!dict) {
+            return WseDispatch::handled_no_store;
+        }
+        const std::int32_t mode = narrow.size() >= 3 ? narrow[2] : 0;
+        if (mode == 0) {
+            dict->clear();
+        }
+        for (char& ch : encoded) {
+            if (ch == '+') {
+                ch = ' ';
+            }
+        }
+        const std::string json_text = wse_url_unescape(encoded);
+        std::map<std::string, std::string> loaded;
+        if (wse_parse_json_object(json_text, loaded)) {
+            wse_dict_apply_load(*dict, loaded, mode);
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_to_url_encoded_json: {
+        // 3220 (0xc94, 0x1402ab370): (sreg, dict).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const WseDictionary* dict =
+            operands.state.dictionaries != nullptr
+                ? operands.state.dictionaries->get(narrow[1])
+                : nullptr;
+        if (!dict) {
+            return WseDispatch::handled_no_store;
+        }
+        const std::string compact =
+            wse_serialize_json_object(dict->entries, false);
+        return wse_store_dict_string(strings, narrow[0],
+                                     wse_url_escape(compact));
+    }
+    case WseOpcode::dict_erase: {
+        // 3221 (0xc95, 0x1402ab900): (dict, key_str).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string key;
+        if (!wse_resolve_utf8_operand(1, operands, key)) {
+            return WseDispatch::ignored;
+        }
+        WseDictionary* dict = operands.state.dictionaries != nullptr
+                                  ? operands.state.dictionaries->get(narrow[0])
+                                  : nullptr;
+        if (dict) {
+            dict->entries.erase(key);
+        }
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::dict_delete_file_json: {
+        // 3222 (0xc96): (file_str).
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        std::string file_name;
+        if (!wse_resolve_utf8_operand(0, operands, file_name)) {
+            return WseDispatch::ignored;
+        }
+        std::filesystem::path target;
+        if (wse_dict_target_path(operands.state.dictionaries, file_name,
+                                 ".json", target)) {
+            std::error_code ec;
+            (void)std::filesystem::remove(target, ec);
+        }
+        return WseDispatch::handled_no_store;
+    }
+
+    // Position vector operations (4100, 4102..4104 / 0x1004, 0x1006..0x1008).
+    case WseOpcode::position_get_vector_to_position: {
+        // 4100 (0x1004, 0x1401ecd5a): (dest_dist, pos_no, pos1, pos2).
+        if (narrow.size() < 4) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto positions = operands.state.positions;
+        if (!wse_register_ok(narrow[1]) || !wse_register_ok(narrow[2]) ||
+            !wse_register_ok(narrow[3]) || positions.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto dst_idx = static_cast<std::size_t>(narrow[1]);
+        const auto p1_idx = static_cast<std::size_t>(narrow[2]);
+        const auto p2_idx = static_cast<std::size_t>(narrow[3]);
+        if (dst_idx >= positions.size() || p1_idx >= positions.size() ||
+            p2_idx >= positions.size()) {
+            return WseDispatch::ignored;
+        }
+        const WseVec4 origin = positions[p1_idx].o;
+        const WseVec4 diff = positions[p2_idx].o - origin;
+        WseTransform out = WseTransform::identity();
+        out.o = origin;
+        out.rotate_z(-std::atan2(diff.x, diff.y));
+        const float horiz = std::sqrt(diff.x * diff.x + diff.y * diff.y);
+        out.rotate_x(std::atan2(diff.z, horiz));
+        positions[dst_idx] = out;
+        effect.value = wse_round64(
+            diff.length() *
+            static_cast<float>(operands.state.fixed_point_multiplier));
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::position_get_length: {
+        // 4102 (0x1006, 0x1401ed0c1): (dest_len, pos_no) -> length(pos.o).
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto positions = operands.state.positions;
+        if (!wse_register_ok(narrow[1]) || positions.empty() ||
+            static_cast<std::size_t>(narrow[1]) >= positions.size()) {
+            return WseDispatch::ignored;
+        }
+        effect.value = wse_round64(
+            positions[static_cast<std::size_t>(narrow[1])].o.length() *
+            static_cast<float>(operands.state.fixed_point_multiplier));
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::get_dot_product_of_positions: {
+        // 4103 (0x1007, 0x1401ed10f): (dest, pos1, pos2) -> dot(p1.o, p2.o).
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto positions = operands.state.positions;
+        if (!wse_register_ok(narrow[1]) || !wse_register_ok(narrow[2]) ||
+            positions.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto p1_idx = static_cast<std::size_t>(narrow[1]);
+        const auto p2_idx = static_cast<std::size_t>(narrow[2]);
+        if (p1_idx >= positions.size() || p2_idx >= positions.size()) {
+            return WseDispatch::ignored;
+        }
+        effect.value = wse_round64(
+            positions[p1_idx].o.dot(positions[p2_idx].o) *
+            static_cast<float>(operands.state.fixed_point_multiplier));
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::get_cross_product_of_positions: {
+        // 4104 (0x1008, 0x1401ed158): (dest_pos, pos1, pos2) -> cross -> dest.o.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto positions = operands.state.positions;
+        if (!wse_register_ok(narrow[0]) || !wse_register_ok(narrow[1]) ||
+            !wse_register_ok(narrow[2]) || positions.empty()) {
+            return WseDispatch::ignored;
+        }
+        const auto dst_idx = static_cast<std::size_t>(narrow[0]);
+        const auto p1_idx = static_cast<std::size_t>(narrow[1]);
+        const auto p2_idx = static_cast<std::size_t>(narrow[2]);
+        if (dst_idx >= positions.size() || p1_idx >= positions.size() ||
+            p2_idx >= positions.size()) {
+            return WseDispatch::ignored;
+        }
+        positions[dst_idx].o = positions[p1_idx].o.cross(positions[p2_idx].o);
         return WseDispatch::handled_no_store;
     }
 

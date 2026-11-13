@@ -13,9 +13,9 @@
   "pdb_age": 449
  },
  "inputs": {
-  "layouts": 29,
+  "layouts": 35,
   "globals_scanned": 48658,
-  "symbols_curated": 1782,
+  "symbols_curated": 2098,
   "game_vtables": 73
  },
  "strings": [
@@ -6953,6 +6953,389 @@
     "operator=",
     "__vecDelDtor"
    ]
+  },
+  "rglVector4": {
+   "size": 16,
+   "type_index": "0x32d9",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "Zero",
+     "offset": "0x0",
+     "type": "const rglVector4",
+     "type_index": "0x32a3",
+     "storage": "static"
+    },
+    {
+     "name": "Side",
+     "offset": "0x0",
+     "type": "const rglVector4",
+     "type_index": "0x32a3",
+     "storage": "static"
+    },
+    {
+     "name": "Forward",
+     "offset": "0x0",
+     "type": "const rglVector4",
+     "type_index": "0x32a3",
+     "storage": "static"
+    },
+    {
+     "name": "Up",
+     "offset": "0x0",
+     "type": "const rglVector4",
+     "type_index": "0x32a3",
+     "storage": "static"
+    },
+    {
+     "name": "x",
+     "offset": "0x0",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "y",
+     "offset": "0x4",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "z",
+     "offset": "0x8",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    },
+    {
+     "name": "w",
+     "offset": "0xc",
+     "type": "float",
+     "type_index": "0x40",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "rglVector4",
+    "readStream",
+    "writeStream",
+    "rotateX",
+    "rotateY",
+    "rotateZ",
+    "almostEquals",
+    "sumComponents",
+    "cross",
+    "dot2",
+    "dot",
+    "abs",
+    "length",
+    "lengthSquared",
+    "normalize",
+    "normalized",
+    "rotatePlane",
+    "setVec2",
+    "vec2",
+    "vec3",
+    "operator+",
+    "operator-",
+    "operator*",
+    "operator/",
+    "operator+=",
+    "operator-=",
+    "operator*=",
+    "operator/=",
+    "operator==",
+    "operator!=",
+    "operator>=",
+    "operator<=",
+    "operator>",
+    "operator<",
+    "operator[]",
+    "operator float *",
+    "operator class rglVector2",
+    "operator class rglVector3",
+    "operator class btVector3",
+    "operator FMOD_VECTOR",
+    "operator struct D3DXVECTOR3",
+    "operator struct D3DXVECTOR4"
+   ]
+  },
+  "rglTransform": {
+   "size": 64,
+   "type_index": "0x34ac",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "Identity",
+     "offset": "0x0",
+     "type": "const rglTransform",
+     "type_index": "0x3483",
+     "storage": "static"
+    },
+    {
+     "name": "s",
+     "offset": "0x0",
+     "type": "rglVector4",
+     "type_index": "0x32a2",
+     "storage": "instance"
+    },
+    {
+     "name": "f",
+     "offset": "0x10",
+     "type": "rglVector4",
+     "type_index": "0x32a2",
+     "storage": "instance"
+    },
+    {
+     "name": "u",
+     "offset": "0x20",
+     "type": "rglVector4",
+     "type_index": "0x32a2",
+     "storage": "instance"
+    },
+    {
+     "name": "o",
+     "offset": "0x30",
+     "type": "rglVector4",
+     "type_index": "0x32a2",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "rglTransform",
+    "readStream",
+    "writeStream",
+    "rotateX",
+    "rotateY",
+    "rotateZ",
+    "rotateGlobalX",
+    "rotateGlobalY",
+    "rotateGlobalZ",
+    "scale",
+    "rescale",
+    "computeSide",
+    "computeForward",
+    "computeUp",
+    "orthonormalize",
+    "normalize",
+    "setRotation",
+    "clear",
+    "clearRotation",
+    "clearTranslation",
+    "getInverse",
+    "transformPointToInverse",
+    "transformPointToLocal",
+    "transformPointToParent",
+    "transformDirToInverse",
+    "transformDirToLocal",
+    "transformDirToParent",
+    "transformToInverse",
+    "transformToLocal",
+    "transformToParent",
+    "transformRotationToInverse",
+    "transformRotationToLocal",
+    "transformRotationToParent",
+    "getRotationPart",
+    "getTranslationPart",
+    "getRotationQuaternion",
+    "clearW",
+    "operator==",
+    "operator!=",
+    "operator[]",
+    "operator float *",
+    "operator struct _D3DXMATRIXA16",
+    "operator class btTransform"
+   ]
+  },
+  "rglMersenneTwister": {
+   "size": 5000,
+   "type_index": "0x6556",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_engine",
+     "offset": "0x0",
+     "type": "std::mersenne_twister_engine<unsigned int,32,624,397,31,2567483615,11,4294967295,7,2636928640,15,4022730752,18,1812433253>",
+     "type_index": "0x6547",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "seed",
+    "getInt",
+    "rglMersenneTwister"
+   ]
+  },
+  "rglSectionlessIni": {
+   "size": 16,
+   "type_index": "0x5264",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_values",
+     "offset": "0x0",
+     "type": "rglOrderedMap<rglString,rglString>",
+     "type_index": "0x4312",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "rglSectionlessIni",
+    "clear",
+    "erase",
+    "read",
+    "readBinary",
+    "readJson",
+    "write",
+    "writeBinary",
+    "writeJson",
+    "hasKey",
+    "getString",
+    "getInt",
+    "getUInt",
+    "getFloat",
+    "getVector2",
+    "getVector4",
+    "getTransform",
+    "getIntVector2",
+    "getBool",
+    "getChar",
+    "setString",
+    "setInt",
+    "setUInt",
+    "setFloat",
+    "setVector2",
+    "setVector4",
+    "setTransform",
+    "setIntVector2",
+    "setBool",
+    "setChar",
+    "getKeyByIterator",
+    "fromUrlEncodedJson",
+    "toUrlEncodedJson",
+    "~rglSectionlessIni",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "WSEObjectManager": {
+   "size": 64,
+   "type_index": "0x1b4d3",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_types",
+     "offset": "0x0",
+     "type": "std::list<WSEObjectType *,std::allocator<WSEObjectType *> >",
+     "type_index": "0x10cae",
+     "storage": "instance"
+    },
+    {
+     "name": "m_objects",
+     "offset": "0x10",
+     "type": "std::vector<WSEObjectContainer *,std::allocator<WSEObjectContainer *> >",
+     "type_index": "0xec76",
+     "storage": "instance"
+    },
+    {
+     "name": "m_free_objects",
+     "offset": "0x28",
+     "type": "std::vector<int,std::allocator<int> >",
+     "type_index": "0x33ca",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "WSEObjectManager",
+    "~WSEObjectManager",
+    "AllocType",
+    "FreeType",
+    "AllocObject",
+    "FreeObject",
+    "FetchObject",
+    "IsValidId",
+    "IncreaseStorageIfNeeded",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "WSEProfiling": {
+   "size": 66072,
+   "type_index": "0xaf0a",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_is_recording",
+     "offset": "0x0",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_profile_stream",
+     "offset": "0x8",
+     "type": "WSEBitStream",
+     "type_index": "0xaf04",
+     "storage": "instance"
+    },
+    {
+     "name": "m_str_ids",
+     "offset": "0x101b8",
+     "type": "std::unordered_map<rglString,unsigned int,std::hash<rglString>,std::equal_to<rglString>,std::allocator<std::pair<rglString const ,unsigned int> > >",
+     "type_index": "0xaf05",
+     "storage": "instance"
+    },
+    {
+     "name": "m_cur_str_id",
+     "offset": "0x101f8",
+     "type": "uint32_t",
+     "type_index": "0x75",
+     "storage": "instance"
+    },
+    {
+     "name": "m_flush_interval",
+     "offset": "0x10200",
+     "type": "__int64",
+     "type_index": "0x13",
+     "storage": "instance"
+    },
+    {
+     "name": "m_frequency",
+     "offset": "0x10208",
+     "type": "_LARGE_INTEGER",
+     "type_index": "0x33f4",
+     "storage": "instance"
+    },
+    {
+     "name": "m_last_flush",
+     "offset": "0x10210",
+     "type": "_LARGE_INTEGER",
+     "type_index": "0x33f4",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "WSEProfiling",
+    "~WSEProfiling",
+    "initialize",
+    "frameMove",
+    "Start",
+    "Stop",
+    "StartProfilingBlock",
+    "StopProfilingBlock",
+    "IsRecording",
+    "AddMarker",
+    "IntroduceStr",
+    "operator=",
+    "__vecDelDtor"
+   ]
   }
  },
  "symbols": [
@@ -6997,6 +7380,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140557c80"
+  },
+  {
+   "name": "??_7?$WSEDynMultiArray@VrglTransform@@@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14055b9b0"
   },
   {
    "name": "?g_curCallStack@@3PEAVmbCallStack@@EA",
@@ -8511,6 +8900,12 @@
    "va": "0x140028f30"
   },
   {
+   "name": "?g_aiStoredMoveTargetAgentPosition@@3VrglVector4@@A",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061f280"
+  },
+  {
    "name": "?_Tidy@?$deque@VmbAgentAiQueuedControl@@V?$allocator@VmbAgentAiQueuedControl@@@std@@@std@@IEAAXXZ",
    "kind": "public",
    "source": "pdb-public",
@@ -9495,10 +9890,22 @@
    "va": "0x1400a5f30"
   },
   {
+   "name": "??1rglSectionlessIni@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14009ba50"
+  },
+  {
    "name": "??1?$rglOrderedMap@VrglString@@V1@@@QEAA@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14009ba50"
+  },
+  {
+   "name": "??_GrglSectionlessIni@@QEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a5ef0"
   },
   {
    "name": "?makeAsyncCall@rglRenderThreadManager@@QEAAXHAEAUD3DXMATRIX@@AEBVrglString@@@Z",
@@ -9523,6 +9930,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400b8bb0"
+  },
+  {
+   "name": "?setTargetPosition@mbDivision@@QEAAXPEAVrglAiMeshFace@@AEBVrglVector4@@1@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b9f10"
   },
   {
    "name": "??$getWindow@VmbLoadingWindow@@@mbGameScreen@@QEBAPEAVmbLoadingWindow@@H@Z",
@@ -11283,6 +11696,18 @@
    "va": "0x14010f790"
   },
   {
+   "name": "?getAttachTransform@mbItemKind@@QEBA?AVrglTransform@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140110030"
+  },
+  {
+   "name": "?getCarryValues@mbItemKind@@QEAAXAEAVrglTransform@@AEAH1@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401108a0"
+  },
+  {
    "name": "?getFormat@mbItemModifier@@QEBAAEBVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
@@ -11395,6 +11820,42 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140121e30"
+  },
+  {
+   "name": "?getLocalTransform@mbMissile@@QEAA?AVrglTransform@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140126dc0"
+  },
+  {
+   "name": "?hitMissionObject@mbMissile@@QEAAXHAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140125fd0"
+  },
+  {
+   "name": "?hitScene@mbMissile@@QEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140125c30"
+  },
+  {
+   "name": "?checkTerrainCollision@mbMissile@@QEAA_NAEBVrglCapsule@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140125940"
+  },
+  {
+   "name": "?getDirection@mbMissile@@QEBA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140124d60"
+  },
+  {
+   "name": "?hitAgent@mbMissile@@QEAAXHHAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140126490"
   },
   {
    "name": "??$_Uninit_move@PEAVmbMissionObject@@PEAV1@V?$allocator@VmbMissionObject@@@std@@V1@@std@@YAPEAVmbMissionObject@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbMissionObject@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
@@ -12645,6 +13106,12 @@
    "va": "0x140152140"
   },
   {
+   "name": "?getOrderPosition@mbGroup@@QEAA?AVrglVector4@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140152440"
+  },
+  {
    "name": "?playSound@mbMissionObject@@QEAAX_NHH@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -12903,6 +13370,30 @@
    "va": "0x14019f5e0"
   },
   {
+   "name": "?fillParticleSystemBurstClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HAEBVrglTransform@@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14019c680"
+  },
+  {
+   "name": "?fillMissionObjectPositionClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14019c560"
+  },
+  {
+   "name": "?fillMissionObjectAnimatePositionClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HAEBVrglTransform@@1M_NM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14019bfc0"
+  },
+  {
+   "name": "?fillMissionObjectAnimateClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HAEBVrglTransform@@M_NM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14019bb40"
+  },
+  {
    "name": "?fillMessageStringClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -12939,6 +13430,12 @@
    "va": "0x1401931a0"
   },
   {
+   "name": "?fillOrderPositionServerEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140192d90"
+  },
+  {
    "name": "?fillMessageStringServerEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -12957,10 +13454,82 @@
    "va": "0x14018f4f0"
   },
   {
+   "name": "?fillMissionObjectHitClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HHAEBVrglTransform@@H_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14019c8c0"
+  },
+  {
+   "name": "?fillAgentBleedClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HHAEBVrglVector4@@11MH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401999b0"
+  },
+  {
+   "name": "?fillMissileHitAgentClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HHHAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140196700"
+  },
+  {
+   "name": "?fillMissileHitMissionObjectClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HHAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140196a30"
+  },
+  {
+   "name": "?fillMissileHitSceneClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401965b0"
+  },
+  {
+   "name": "?fillMissileHitShieldClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HHAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140196c90"
+  },
+  {
    "name": "?fillPartySetNameClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401a2440"
+  },
+  {
+   "name": "?fillKnockbackClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401991f0"
+  },
+  {
+   "name": "?fillAgentApplyForce@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HHAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a02e0"
+  },
+  {
+   "name": "?fillAgentSoundClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HHIAEBVrglVector4@@MH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140198890"
+  },
+  {
+   "name": "?fillAgentModuleSoundClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HHIAEBVrglVector4@@MH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140198d40"
+  },
+  {
+   "name": "?fillSoundClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HIAEBVrglVector4@@MH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401980a0"
+  },
+  {
+   "name": "?fillAgentDieClientEvent@mbnetNetworkManager@@QEAAXAEAVmbnetEvent@@HHHHAEBVrglVector4@@HH1_NHHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140196fe0"
   },
   {
    "name": "??$_Buynode@U?$pair@IVrglString@@@std@@@?$_List_buy@U?$pair@$$CBIVrglString@@@std@@V?$allocator@U?$pair@$$CBIVrglString@@@std@@@2@@std@@QEAAPEAU?$_List_node@U?$pair@$$CBIVrglString@@@std@@PEAX@1@PEAU21@0$$QEAU?$pair@IVrglString@@@1@@Z",
@@ -13065,6 +13634,12 @@
    "va": "0x1401a9450"
   },
   {
+   "name": "?sendRangedEvent@mbnetNetworkServer@@QEAAXAEBVmbnetEvent@@AEBVrglVector4@@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a70d0"
+  },
+  {
    "name": "?playerTeamChat@mbnetNetworkServer@@QEAAXHAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -13077,10 +13652,52 @@
    "va": "0x1401a8000"
   },
   {
+   "name": "?putDirection@mbnetBuffer@@QEAAXAEBVrglVector4@@HMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b5630"
+  },
+  {
+   "name": "?takeDirection@mbnetBuffer@@QEAA?AVrglVector4@@HMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b64d0"
+  },
+  {
+   "name": "?takeTransform@mbnetBuffer@@QEAA?AVrglTransform@@HMMHMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b6630"
+  },
+  {
+   "name": "?putTransform@mbnetBuffer@@QEAAXAEBVrglTransform@@HMMHMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b5720"
+  },
+  {
+   "name": "?takeVector4@mbnetBuffer@@QEAA?AVrglVector4@@HMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b63a0"
+  },
+  {
+   "name": "?putVector4@mbnetBuffer@@QEAAXAEBVrglVector4@@HMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b5520"
+  },
+  {
    "name": "?putString@mbnetBuffer@@QEAAXAEBVrglString@@H@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401b5900"
+  },
+  {
+   "name": "?getPosition@mbnetPlayer@@QEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401b7680"
   },
   {
    "name": "?create@mbnetPlayer@@QEAAXHAEB_JAEBVrglString@@HHAEBVmbFaceKeys@@H_N@Z",
@@ -13147,6 +13764,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401c3210"
+  },
+  {
+   "name": "?getPosition@mbParty@@QEBAAEBVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c2f50"
   },
   {
    "name": "?getName@mbParty@@QEBAAEBVrglString@@XZ",
@@ -13221,6 +13844,48 @@
    "va": "0x1401c46c0"
   },
   {
+   "name": "??_G?$WSEDynMultiArray@VrglTransform@@@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fcb30"
+  },
+  {
+   "name": "??_E?$WSEDynMultiArray@VrglTransform@@@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fcb30"
+  },
+  {
+   "name": "??$_Uninit_move@PEAUtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@PEAU12@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@U12@@std@@YAPEAUtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@PEAU12@00AEAU?$_Wrap_alloc@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14001bff0"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglTransform@@PEAV1@V?$allocator@VrglTransform@@@std@@V1@@std@@YAPEAVrglTransform@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglTransform@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140203430"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAUtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@_KV?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@U12@@std@@YAXPEAUtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@_KAEAU?$_Wrap_alloc@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14001a800"
+  },
+  {
+   "name": "??$_Move@PEAVrglTransform@@PEAV1@@std@@YAPEAVrglTransform@@PEAV1@00U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140201d90"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVrglTransform@@_KV?$allocator@VrglTransform@@@std@@V1@@std@@YAXPEAVrglTransform@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglTransform@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6b70"
+  },
+  {
    "name": "??$getWindow@VmbInventoryWindow@@@mbGameScreen@@QEBAPEAVmbInventoryWindow@@H@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -13231,6 +13896,24 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140200be0"
+  },
+  {
+   "name": "?_Reallocate@?$vector@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400172a0"
+  },
+  {
+   "name": "?resize@?$vector@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140017070"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglTransform@@V?$allocator@VrglTransform@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402008d0"
   },
   {
    "name": "??0?$_Wrap_alloc@V?$allocator@PEAVmbLoopManager@@@std@@@std@@QEAA@XZ",
@@ -13245,6 +13928,30 @@
    "va": "0x14008a0c0"
   },
   {
+   "name": "?merge@?$WSEDynMultiArray@VrglTransform@@@@IEAAXAEAV?$vector@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@@std@@0HHHP6A_NAEBVrglTransform@@1_K2AEBUWSEArraySortOptions@@@Z3@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140200710"
+  },
+  {
+   "name": "??1?$vector@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglTransform@@V?$allocator@VrglTransform@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140200400"
+  },
+  {
+   "name": "?resize@?$vector@VrglTransform@@V?$allocator@VrglTransform@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140200300"
+  },
+  {
    "name": "?_Reserve@?$vector@PEAVmbLoopManager@@V?$allocator@PEAVmbLoopManager@@@std@@@std@@IEAAX_K@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -13255,6 +13962,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140004250"
+  },
+  {
+   "name": "?mergeRuns@?$WSEDynMultiArray@VrglTransform@@@@IEAAHAEAV?$vector@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@@std@@0P6A_NAEBVrglTransform@@1_K2AEBUWSEArraySortOptions@@@Z3@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fff50"
+  },
+  {
+   "name": "?copySubDimension@?$WSEDynMultiArray@VrglTransform@@@@IEBAXHPEAX0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402001a0"
   },
   {
    "name": "?equal_range@?$_Hash@V?$_Umap_traits@IVrglString@@V?$_Uhash_compare@IU?$hash@I@std@@U?$equal_to@I@2@@std@@V?$allocator@U?$pair@$$CBIVrglString@@@std@@@3@$0A@@std@@@std@@QEAA?AU?$pair@V?$_List_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBIVrglString@@@std@@@std@@@std@@@std@@V12@@2@AEBI@Z",
@@ -13269,10 +13988,148 @@
    "va": "0x1401ffc40"
   },
   {
+   "name": "?push_back@?$vector@VrglTransform@@V?$allocator@VrglTransform@@@std@@@std@@QEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ff850"
+  },
+  {
+   "name": "?mergeSort@?$WSEDynMultiArray@VrglTransform@@@@IEAA_NAEBV?$vector@HV?$allocator@H@std@@@std@@P6A_NAEBVrglTransform@@1_K2AEBUWSEArraySortOptions@@@Z3@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ff270"
+  },
+  {
+   "name": "?getIndexPtr@?$WSEDynMultiArray@VrglTransform@@@@IEBAPEAVrglTransform@@AEBV?$vector@HV?$allocator@H@std@@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ff1c0"
+  },
+  {
+   "name": "?setSubDimensionVals@?$WSEDynMultiArray@VrglTransform@@@@IEBAXVrglTransform@@HPEAX@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ff050"
+  },
+  {
+   "name": "?loadSubDimension@?$WSEDynMultiArray@VrglTransform@@@@IEBAXAEAV?$basic_ifstream@DU?$char_traits@D@std@@@std@@P6AXPEADHAEAVrglTransform@@@ZHPEAX@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fef20"
+  },
+  {
+   "name": "?saveSubDimension@?$WSEDynMultiArray@VrglTransform@@@@IEBAXAEAV?$basic_ofstream@DU?$char_traits@D@std@@@std@@P6AXAEAVWSESimpleCharBuff@@PEBX@ZHPEAX@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fed40"
+  },
+  {
+   "name": "?rebuildSubDimension@?$WSEDynMultiArray@VrglTransform@@@@IEAAXPEAXHH_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401febe0"
+  },
+  {
+   "name": "?deleteSubDimension@?$WSEDynMultiArray@VrglTransform@@@@IEAAXPEAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fd540"
+  },
+  {
+   "name": "?buildSubDimension@?$WSEDynMultiArray@VrglTransform@@@@IEBAPEAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fead0"
+  },
+  {
    "name": "?clear@?$_Hash@V?$_Umap_traits@IVrglString@@V?$_Uhash_compare@IU?$hash@I@std@@U?$equal_to@I@2@@std@@V?$allocator@U?$pair@$$CBIVrglString@@@std@@@3@$0A@@std@@@std@@QEAAXXZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401f9200"
+  },
+  {
+   "name": "?sort@?$WSEDynMultiArray@VrglTransform@@@@QEAA_NAEBV?$vector@HV?$allocator@H@std@@@std@@P6A_NAEBVrglTransform@@1_K2AEBUWSEArraySortOptions@@@Z3HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fc730"
+  },
+  {
+   "name": "?pop_back_single@?$WSEDynMultiArray@VrglTransform@@@@QEAAPEAVrglTransform@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fc640"
+  },
+  {
+   "name": "?pop_back_multi@?$WSEDynMultiArray@VrglTransform@@@@UEAAPEAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fc320"
+  },
+  {
+   "name": "?push_back@?$WSEDynMultiArray@VrglTransform@@@@QEAA_NVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fc2e0"
+  },
+  {
+   "name": "?push_back@?$WSEDynMultiArray@VrglTransform@@@@QEAA_NAEAV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fc170"
+  },
+  {
+   "name": "?resizeDim@?$WSEDynMultiArray@VrglTransform@@@@UEAA_NH_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fc0f0"
+  },
+  {
+   "name": "?setAllValues@?$WSEDynMultiArray@VrglTransform@@@@QEAA_NVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fc060"
+  },
+  {
+   "name": "?setIndex@?$WSEDynMultiArray@VrglTransform@@@@QEAA_NAEBV?$vector@HV?$allocator@H@std@@@std@@VrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fbfd0"
+  },
+  {
+   "name": "?getIndex@?$WSEDynMultiArray@VrglTransform@@@@QEBAPEBVrglTransform@@AEBV?$vector@HV?$allocator@H@std@@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fbfc0"
+  },
+  {
+   "name": "?saveToFile@?$WSEDynMultiArray@VrglTransform@@@@UEBA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@P6AXAEAVWSESimpleCharBuff@@PEBX@Z@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fbdf0"
+  },
+  {
+   "name": "??1?$WSEDynMultiArray@VrglTransform@@@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fbd30"
+  },
+  {
+   "name": "??0?$WSEDynMultiArray@VrglTransform@@@@QEAA@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@P6AXPEADHAEAVrglTransform@@@ZW4type_id@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fbb70"
+  },
+  {
+   "name": "??0?$WSEDynMultiArray@VrglTransform@@@@QEAA@PEAV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fba90"
+  },
+  {
+   "name": "??0?$WSEDynMultiArray@VrglTransform@@@@QEAA@AEBV?$vector@HV?$allocator@H@std@@@std@@W4type_id@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fb9d0"
   },
   {
    "name": "?remove@?$rglMap@IVrglString@@@@QEAAXAEBI@Z",
@@ -13377,6 +14234,12 @@
    "va": "0x1401c5f90"
   },
   {
+   "name": "?readPosFromMemory@@YAXPEADHAEAVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c59f0"
+  },
+  {
    "name": "?mbCheckPath@@YA_NAEAVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -13407,6 +14270,12 @@
    "va": "0x1401c4cb0"
   },
   {
+   "name": "?g_mtRng@@3VrglMersenneTwister@@A",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061ab30"
+  },
+  {
    "name": "?buildLogLine@mbSimulationStats@@QEAA?AVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
@@ -13423,6 +14292,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140207d50"
+  },
+  {
+   "name": "?setupParticleSystem@mbParticleSystemManager@@QEAAXPEAVrglParticleSystem@@HAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140208300"
+  },
+  {
+   "name": "?createParticleSystem@mbParticleSystemManager@@QEAAPEAVrglParticleSystem@@HAEBVrglVector4@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140208240"
   },
   {
    "name": "?readStream@mbParticleSystemManager@@QEAAXAEAVrglStream@@@Z",
@@ -13461,6 +14342,12 @@
    "va": "0x14020df90"
   },
   {
+   "name": "?setOverlayMeshTransform@mbPresentationContainer@@QEAAXHAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14020e400"
+  },
+  {
    "name": "?addOverlayItem@mbPresentationContainer@@QEAAXHAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -13477,6 +14364,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14020c7d0"
+  },
+  {
+   "name": "?getOverlayPosition@mbPresentationContainer@@QEAA?AVrglVector4@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14020e7f0"
   },
   {
    "name": "?setOverlayTooltip@mbPresentationContainer@@QEAAXHAEBVrglString@@@Z",
@@ -13713,6 +14606,12 @@
    "va": "0x140214040"
   },
   {
+   "name": "?getSunDirection@mbSkybox@@QEAA?AVrglVector4@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402181f0"
+  },
+  {
    "name": "?readStream@mbSkybox@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -13767,6 +14666,96 @@
    "va": "0x14021a310"
   },
   {
+   "name": "?addTableauMesh@mbTableauManager@@QEAAXHHAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14021af50"
+  },
+  {
+   "name": "?setCameraPosition@mbTableauManager@@QEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14021b110"
+  },
+  {
+   "name": "?addPointLight@mbTableauManager@@QEAAXAEBVrglTransform@@AEBVrglColor@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14021b240"
+  },
+  {
+   "name": "?addSunLight@mbTableauManager@@QEAAXAEBVrglTransform@@AEBVrglColor@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14021b320"
+  },
+  {
+   "name": "?addMesh@mbTableauManager@@QEAAXHAEBVrglTransform@@AEBVrglVector4@@MI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14021b5b0"
+  },
+  {
+   "name": "?addMapIcon@mbTableauManager@@QEAAXHAEBVrglTransform@@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14021b430"
+  },
+  {
+   "name": "?addCharacter@mbTableauManager@@QEAAXHHAEBVrglTransform@@HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14021b550"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglVector4@@PEAV1@V?$allocator@VrglVector4@@@std@@V1@@std@@YAPEAVrglVector4@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglVector4@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400fe230"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglVector4@@V?$allocator@VrglVector4@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400fc930"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglVector4@@V?$allocator@VrglVector4@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402405b0"
+  },
+  {
+   "name": "??1?$vector@VrglVector4@@V?$allocator@VrglVector4@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "?addHandPlacedFloraToSet@mbTerrainGenerator@@QEAAXAEAVmbFloraSet@@HHAEBVrglTransform@@AEBVrglVector4@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402400b0"
+  },
+  {
+   "name": "?getPositionColor@mbTerrainGenerator@@QEAA?AVrglColor@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14023def0"
+  },
+  {
+   "name": "?getPositionForOuterTerrainMeshVertex@mbTerrainGenerator@@QEAA?AVrglVector4@@AEBV2@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140239900"
+  },
+  {
+   "name": "??1?$rglVector@VrglVector4@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
    "name": "?getTerrainCode@mbTerrainGenerator@@QEAA?AVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
@@ -13777,6 +14766,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402314e0"
+  },
+  {
+   "name": "?updateCamera@mbTerrainGenerator@@QEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14023ec10"
   },
   {
    "name": "??4mbTrigger@@QEAAAEAV0@AEBV0@@Z",
@@ -13953,6 +14948,12 @@
    "va": "0x14024f4c0"
   },
   {
+   "name": "?mbCreateCharacterEntity@@YAPEAVrglEntity@@PEAVrglScene@@HHAEBVrglTransform@@HHPEAPEAVrglMetaMesh@@IHPEAH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402496b0"
+  },
+  {
    "name": "?mbGetProficiencyNameRaw@@YA?AVrglString@@H@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -14001,10 +15002,22 @@
    "va": "0x14024e500"
   },
   {
+   "name": "?mbAdjustLookDir@@YAXAEAVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14024dde0"
+  },
+  {
    "name": "?mbGetProficiencyName@@YA?AVrglString@@H@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14024ebe0"
+  },
+  {
+   "name": "?mbComputeSlowdown@@YAXAEAVrglVector4@@AEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14024dec0"
   },
   {
    "name": "?setupComboQuestion@mbYesNoWindow@@QEAAXAEBVrglString@@00000PEAV2@HPEAH12@Z",
@@ -14037,6 +15050,12 @@
    "va": "0x1402519b0"
   },
   {
+   "name": "?getDistanceFromFace@rglAiMesh@@QEAAMPEAVrglAiMeshFace@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140253180"
+  },
+  {
    "name": "?readStream@rglAiMeshEdge@@QEAAXAEAVrglStream@@PEAPEAVrglAiMeshVertex@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -14067,6 +15086,24 @@
    "va": "0x1402527e0"
   },
   {
+   "name": "?isPositionOnFace@rglAiMesh@@QEAA_NPEAVrglAiMeshFace@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140253050"
+  },
+  {
+   "name": "?isValidFaceForPosition@rglAiMesh@@QEAA_NPEAVrglAiMeshFace@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402530f0"
+  },
+  {
+   "name": "?checkPathFast@rglAiMesh@@QEAA_NPEAVrglAiMeshFace@@AEBVrglVector4@@01H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140255580"
+  },
+  {
    "name": "??0rglBoardWidget@@QEAA@AEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -14079,6 +15116,84 @@
    "va": "0x1402581a0"
   },
   {
+   "name": "?setTransform@rglBodyPart@@UEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140004250"
+  },
+  {
+   "name": "?getMinBound@rglBodyPart@@UEAAAEBVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140258500"
+  },
+  {
+   "name": "?getMaxBound@rglBodyPart@@UEAAAEBVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140258510"
+  },
+  {
+   "name": "?scale@rglBodyPart@@UEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140004250"
+  },
+  {
+   "name": "?frameMove@rglBone@@QEAAXMAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140258c30"
+  },
+  {
+   "name": "?render@rglBone@@QEAAXPEAVrglRenderContext@@AEBVrglTransform@@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140258a60"
+  },
+  {
+   "name": "?getSkinningTransform@rglBone@@QEAAAEBVrglTransform@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140258800"
+  },
+  {
+   "name": "?addBoundingBox@rglBoundingBox@@QEAAXAEBV1@AEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402592a0"
+  },
+  {
+   "name": "?addPoint@rglBoundingBox@@QEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402591f0"
+  },
+  {
+   "name": "?transformToScreenSpace@rglCamera@@QEAA?AVrglVector4@@AEBV2@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14025ad60"
+  },
+  {
+   "name": "?cullBoundingBox@rglCameraFrustum@@QEAA_NAEBVrglBoundingBox@@AEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402598a0"
+  },
+  {
+   "name": "?cullSphere@rglCameraFrustum@@QEAA_NAEBVrglVector4@@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402597f0"
+  },
+  {
+   "name": "??0rglCapsule@@QEAA@MAEBVrglVector4@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14025ae90"
+  },
+  {
    "name": "?readStream@rglCapsule@@UEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -14089,6 +15204,42 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14025b040"
+  },
+  {
+   "name": "?scale@rglCapsule@@UEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14025b110"
+  },
+  {
+   "name": "?computeMinBound@rglCapsule@@UEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14025b320"
+  },
+  {
+   "name": "?computeMaxBound@rglCapsule@@UEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14025b380"
+  },
+  {
+   "name": "?setTransform@rglCapsule@@UEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14025b1b0"
+  },
+  {
+   "name": "?getPointB@rglCapsule@@QEBAAEBVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14025b840"
+  },
+  {
+   "name": "?getPointA@rglCapsule@@QEBAAEBVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14025b830"
   },
   {
    "name": "?integrateMotion@rglCharacterController@@QEAAXPEAVbtCollisionWorld@@MAEAVmbAgentCdPointCollector@@1@Z",
@@ -14107,6 +15258,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14025e140"
+  },
+  {
+   "name": "?rglGetShortestSegmentBetweenLines@@YAXAEBVrglVector4@@000AEAV1@1@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14025e820"
   },
   {
    "name": "??$_Uninit_fill_n@PEAVrglString@@_KV1@V?$allocator@VrglString@@@std@@V1@@std@@YAXPEAVrglString@@_KPEBV1@AEAU?$_Wrap_alloc@V?$allocator@VrglString@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
@@ -14173,6 +15330,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140262e50"
+  },
+  {
+   "name": "?computeMaxBound@rglCompositeBody@@UEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140264250"
+  },
+  {
+   "name": "?computeMinBound@rglCompositeBody@@UEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140264180"
+  },
+  {
+   "name": "?setTransform@rglCompositeBody@@UEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140264090"
+  },
+  {
+   "name": "?scale@rglCompositeBody@@UEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140263fd0"
   },
   {
    "name": "?writeStream@rglCompositeBody@@UEAAXAEAVrglStream@@@Z",
@@ -14295,10 +15476,34 @@
    "va": "0x14061c3a0"
   },
   {
+   "name": "?vStickItemToLeftHandOffset@Battle@rglConfig@@2VrglVector4@@A",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061c3e8"
+  },
+  {
    "name": "??0rglContainerWidget@@QEAA@AEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14028a9a0"
+  },
+  {
+   "name": "?getMaxBound@rglDynamicCapsule@@UEAAAEBVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028bca0"
+  },
+  {
+   "name": "?getMinBound@rglDynamicCapsule@@UEAAAEBVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028bc60"
+  },
+  {
+   "name": "??0rglDynamicCapsule@@QEAA@MAEBVrglVector4@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028bc40"
   },
   {
    "name": "??$_Buynode@U?$pair@VrglString@@_N@std@@@?$_List_buy@U?$pair@$$CBVrglString@@_N@std@@V?$allocator@U?$pair@$$CBVrglString@@_N@std@@@2@@std@@QEAAPEAU?$_List_node@U?$pair@$$CBVrglString@@_N@std@@PEAX@1@PEAU21@0$$QEAU?$pair@VrglString@@_N@1@@Z",
@@ -14427,6 +15632,66 @@
    "va": "0x140290ad0"
   },
   {
+   "name": "?computeShadowTransform@rglEntity@@QEAAXAEAVrglTransform@@AEAVrglColor@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140296c30"
+  },
+  {
+   "name": "?selectDetail@rglEntity@@QEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140294090"
+  },
+  {
+   "name": "?frameMove@rglEntity@@QEAAXMAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140291d50"
+  },
+  {
+   "name": "?setScaledBodyTransform@rglEntity@@QEAAXAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140292ce0"
+  },
+  {
+   "name": "?setScaledMeshTransform@rglEntity@@QEAAXAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140292a60"
+  },
+  {
+   "name": "?setBodyPart@rglEntity@@QEAAXPEAVrglBodyPart@@AEBVrglTransform@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140292fa0"
+  },
+  {
+   "name": "?setMeshTransform@rglEntity@@QEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140292960"
+  },
+  {
+   "name": "?getTransform@rglEntity@@QEBAAEBVrglTransform@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140292f90"
+  },
+  {
+   "name": "?setTransform@rglEntity@@QEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402929e0"
+  },
+  {
+   "name": "?getPosition@rglEntity@@QEBAAEBVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140292950"
+  },
+  {
    "name": "?readLine@rglFile@@QEAA?AVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
@@ -14449,6 +15714,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402970a0"
+  },
+  {
+   "name": "?drawGlyph@rglFont@@AEAAXHAEBVrglVector4@@MMAEBVrglVector2@@PEAVrglMesh@@I@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14029b670"
   },
   {
    "name": "?measureText@rglFont@@QEAAMAEBVrglString@@AEBVrglVector2@@@Z",
@@ -14533,6 +15804,24 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402a1c90"
+  },
+  {
+   "name": "?seed@rglMersenneTwister@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a24f0"
+  },
+  {
+   "name": "?getInt@rglMersenneTwister@@QEAAHHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a25e0"
+  },
+  {
+   "name": "?getInt@rglMersenneTwister@@QEAAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a2540"
   },
   {
    "name": "??0?$pair@$$CBVrglString@@V?$rglOrderedMap@VrglString@@VrglIniValue@@@@@std@@QEAA@AEBU01@@Z",
@@ -14853,6 +16142,12 @@
    "va": "0x1402a9bf0"
   },
   {
+   "name": "??0rglSectionlessIni@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a8ea0"
+  },
+  {
    "name": "?hasKey@rglSectionlessIni@@QEAA_NAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -14863,6 +16158,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402aa400"
+  },
+  {
+   "name": "?clear@rglSectionlessIni@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a8ed0"
   },
   {
    "name": "?read@rglSectionlessIni@@QEAA_NAEBVrglString@@@Z",
@@ -15441,6 +16742,12 @@
    "va": "0x1402afe60"
   },
   {
+   "name": "?setPosition@rglLight@@QEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b0160"
+  },
+  {
    "name": "?setOverlayItemText@rglListBoxWidget@@UEAAXHAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -15465,16 +16772,40 @@
    "va": "0x1402b0180"
   },
   {
+   "name": "?addFace@rglManifold@@QEAAHHPEAVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b2a70"
+  },
+  {
    "name": "?readStream@rglManifoldFace@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402b1190"
   },
   {
+   "name": "?computePath@rglManifold@@QEAA_NHHPEAHPEAVrglVector4@@AEAH2HHHHH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b36c0"
+  },
+  {
    "name": "?readStream@rglManifold@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402b1220"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVrglVector4@@_KV?$allocator@VrglVector4@@@std@@V1@@std@@YAXPEAVrglVector4@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglVector4@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6b70"
+  },
+  {
+   "name": "?resize@?$vector@VrglVector4@@V?$allocator@VrglVector4@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b5380"
   },
   {
    "name": "?readStream@rglManifoldBody@@UEAAXAEAVrglStream@@@Z",
@@ -15489,10 +16820,70 @@
    "va": "0x1402b49b0"
   },
   {
+   "name": "?scale@rglManifoldBody@@UEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b4bc0"
+  },
+  {
+   "name": "?setTransform@rglManifoldBody@@UEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b4c30"
+  },
+  {
+   "name": "?computeMinBound@rglManifoldBody@@UEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b4d50"
+  },
+  {
+   "name": "?computeMaxBound@rglManifoldBody@@UEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b4df0"
+  },
+  {
    "name": "?readStream@rglMaterial@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402b5970"
+  },
+  {
+   "name": "?transformPointToInverse@rglTransform@@QEBA?AVrglVector4@@AEBV2@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b6990"
+  },
+  {
+   "name": "?getInverse@rglTransform@@QEBA?AV1@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b67d0"
+  },
+  {
+   "name": "?rotateGlobalX@rglTransform@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b6000"
+  },
+  {
+   "name": "?rotateGlobalY@rglTransform@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b60e0"
+  },
+  {
+   "name": "?getRotationPart@rglTransform@@QEBA?AV1@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b76d0"
+  },
+  {
+   "name": "??9rglTransform@@QEBA_NAEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b7970"
   },
   {
    "name": "?readStream@rglTransform@@QEAAXAEAVrglStream@@@Z",
@@ -15501,10 +16892,154 @@
    "va": "0x1402b5b20"
   },
   {
+   "name": "?clearRotation@rglTransform@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b67a0"
+  },
+  {
+   "name": "?transformToInverse@rglTransform@@QEBA?AV1@AEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b6b20"
+  },
+  {
+   "name": "?setRotation@rglTransform@@QEAAXAEBVrglQuaternion@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b65d0"
+  },
+  {
+   "name": "?transformPointToParent@rglTransform@@QEBA?AVrglVector4@@AEBV2@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b6a60"
+  },
+  {
+   "name": "?setRotation@rglTransform@@QEAAXAEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b6750"
+  },
+  {
+   "name": "?transformToParent@rglTransform@@QEBA?AV1@AEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b70c0"
+  },
+  {
+   "name": "??0rglTransform@@QEAA@AEBVbtTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b5a80"
+  },
+  {
+   "name": "?scale@rglTransform@@QEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b6280"
+  },
+  {
+   "name": "?transformToLocal@rglTransform@@QEBA?AV1@AEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b6da0"
+  },
+  {
+   "name": "?computeSide@rglTransform@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b6300"
+  },
+  {
+   "name": "?orthonormalize@rglTransform@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b64b0"
+  },
+  {
+   "name": "?rotateY@rglTransform@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b5d40"
+  },
+  {
+   "name": "?rotateZ@rglTransform@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b5ea0"
+  },
+  {
+   "name": "?transformRotationToParent@rglTransform@@QEBA?AV1@AEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b7410"
+  },
+  {
+   "name": "?getRotationQuaternion@rglTransform@@QEBA?AVrglQuaternion@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b7730"
+  },
+  {
+   "name": "?rotateX@rglTransform@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b5be0"
+  },
+  {
+   "name": "?computeForward@rglTransform@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b6390"
+  },
+  {
+   "name": "?computeUp@rglTransform@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b6420"
+  },
+  {
+   "name": "?rotateGlobalZ@rglTransform@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b61b0"
+  },
+  {
+   "name": "?Identity@rglTransform@@2V1@B",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140621730"
+  },
+  {
    "name": "?readStream@?$rglIpo@VrglMeshVertexKey@@@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402c3e00"
+  },
+  {
+   "name": "?transformLocalToParent@rglMesh@@QEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c2530"
+  },
+  {
+   "name": "?makeQuadFaceInvertUV@rglMesh@@QEAAXAEBVrglVector4@@AEBVrglVector2@@11I@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bdde0"
+  },
+  {
+   "name": "?makeRectangleFaceWithBorder@rglMesh@@QEAAXAEBVrglVector4@@0IM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bd910"
+  },
+  {
+   "name": "?addMeshForCollection@rglMesh@@QEAAXPEAV1@AEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bcc80"
   },
   {
    "name": "?readStream@rglMesh@@QEAAXAEAVrglStream@@H@Z",
@@ -15531,6 +17066,156 @@
    "va": "0x1402b7a20"
   },
   {
+   "name": "?render@rglMesh@@QEAAXPEAVrglRenderContext@@AEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bb160"
+  },
+  {
+   "name": "?frameMove@rglMesh@@QEAAXMAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bb0a0"
+  },
+  {
+   "name": "?addMeshPointUp@rglMesh@@QEAAXPEAV1@AEBVrglTransform@@I_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bc310"
+  },
+  {
+   "name": "?makeRectangleFace@rglMesh@@QEAAXAEBVrglVector4@@0AEBVrglVector2@@1I@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bd730"
+  },
+  {
+   "name": "?transform@rglMesh@@QEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c0e30"
+  },
+  {
+   "name": "?storeBounds@rglMesh@@QEAAXAEAVrglVector4@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c1c40"
+  },
+  {
+   "name": "?addVertex@rglMesh@@QEAAHAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bd4a0"
+  },
+  {
+   "name": "?addFaceCorner@rglMesh@@QEAAHHAEBVrglVector2@@IAEBVrglVector4@@I@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bd620"
+  },
+  {
+   "name": "?makeQuadFace@rglMesh@@QEAAXAEBVrglVector4@@AEBVrglVector2@@11I@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bdbd0"
+  },
+  {
+   "name": "?scale@rglMesh@@QEAAXAEBVrglVector4@@_NM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c04e0"
+  },
+  {
+   "name": "?translateVertices@rglMesh@@QEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c1330"
+  },
+  {
+   "name": "?addMesh@rglMesh@@QEAAXPEAV1@AEBVrglTransform@@HI_N2@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402bb6e0"
+  },
+  {
+   "name": "?drawSpatter@rglMesh@@QEAAXAEBVrglTransform@@AEBVrglVector4@@MMAEBVrglColor@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c29c0"
+  },
+  {
+   "name": "?addBloodHit@rglMesh@@QEAAXAEBVrglTransform@@AEBVrglVector4@@1MMAEBVrglColor@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c3090"
+  },
+  {
+   "name": "?addMetaMeshLodOriginal@rglMetaMeshLod@@QEAAXAEAV1@HAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c6160"
+  },
+  {
+   "name": "?addMetaMeshLod@rglMetaMeshLod@@QEAAXAEBV1@HAEBVrglTransform@@I@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5ee0"
+  },
+  {
+   "name": "?transformLocalToParent@rglMetaMeshLod@@QEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5e10"
+  },
+  {
+   "name": "?frameMove@rglMetaMeshLod@@QEAAXMAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c5ad0"
+  },
+  {
+   "name": "?frameMove@rglMetaMesh@@QEAAXPEAVrglEntity@@MAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c65f0"
+  },
+  {
+   "name": "?addMetaMeshOriginal@rglMetaMesh@@QEAAXPEAV1@HAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c8140"
+  },
+  {
+   "name": "?addMetaMesh@rglMetaMesh@@QEAAXPEAV1@HAEBVrglTransform@@I@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c8000"
+  },
+  {
+   "name": "?transformLocalToParent@rglMetaMesh@@QEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7f70"
+  },
+  {
+   "name": "?setLocalTransform@rglMetaMesh@@QEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7ec0"
+  },
+  {
+   "name": "?storeBounds@rglMetaMesh@@QEAAXAEAVrglVector4@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c7c80"
+  },
+  {
+   "name": "?render@rglMetaMesh@@QEAAXPEAVrglRenderContext@@AEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c6b60"
+  },
+  {
    "name": "?writeString@rglOutputBinaryFileStreamWithChecksum@@UEAAXAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -15543,10 +17228,100 @@
    "va": "0x140004250"
   },
   {
+   "name": "?frameMove@rglParticleSystem@@QEAAXMAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c9f80"
+  },
+  {
+   "name": "?initializeEmitBox@rglParticleSystem@@QEAAXAEBVrglTransform@@AEBVrglVector4@@1M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c8f00"
+  },
+  {
+   "name": "?rglPerlinOctave@@YA?AVrglVector4@@MMH_NAEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402cb4a0"
+  },
+  {
+   "name": "?rglPerlin@@YA?AVrglVector4@@MAEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402cb620"
+  },
+  {
+   "name": "?createConvexHullShape@rglPhysicsManager@@QEAAPEAVbtCollisionShape@@AEBV?$rglVector@VrglVector4@@@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d13d0"
+  },
+  {
+   "name": "?createRagdollConstraint@rglPhysicsManager@@QEAAPEAVbtTypedConstraint@@PEAVbtRigidBody@@0MMMMMMAEBVrglVector4@@11@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402cfc00"
+  },
+  {
+   "name": "?createShape@rglPhysicsManager@@QEAAPEAVbtCollisionShape@@PEAVrglBodyPart@@AEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d14c0"
+  },
+  {
+   "name": "?createMeshShape@rglPhysicsManager@@QEAAPEAVbtCollisionShape@@AEBV?$rglVector@VrglVector4@@@@AEBV?$rglVector@H@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d1090"
+  },
+  {
+   "name": "?createWorld@rglPhysicsManager@@QEAAXAEBVrglVector4@@0M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402cc0a0"
+  },
+  {
+   "name": "?createBoneBody@rglPhysicsManager@@QEAAPEAVbtRigidBody@@HPEAV2@MAEBVrglTransform@@MMAEAV3@AEBVrglVector4@@MM3MMMM_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402cf2a0"
+  },
+  {
+   "name": "?createCapsuleBody@rglPhysicsManager@@QEAAPEAVbtRigidBody@@HMMMAEAVrglTransform@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402cebf0"
+  },
+  {
    "name": "?initialize@rglPostFxNode@@QEAA_NAEBVrglString@@HHW4_D3DFORMAT@@_NPEAVrglTexture@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402d4be0"
+  },
+  {
+   "name": "?computeMaxBound@rglQuad@@UEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d5820"
+  },
+  {
+   "name": "?computeMinBound@rglQuad@@UEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d5630"
+  },
+  {
+   "name": "?setTransform@rglQuad@@UEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d5410"
+  },
+  {
+   "name": "?scale@rglQuad@@UEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d5250"
   },
   {
    "name": "?writeStream@rglQuad@@UEAAXAEAVrglStream@@@Z",
@@ -15559,6 +17334,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402d5070"
+  },
+  {
+   "name": "?getRayIntersection@rglQuad@@QEBA?AVrglVector4@@AEBV2@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d5c90"
+  },
+  {
+   "name": "?getNormal@rglQuad@@QEBAAEBVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d6080"
+  },
+  {
+   "name": "?adjustFlareMesh@rglRenderContext@@QEAA?AVrglTransform@@PEAVrglRenderMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d7fd0"
+  },
+  {
+   "name": "?addCollectionMesh@rglRenderContext@@QEAA_NPEAVrglMesh@@AEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d7b80"
   },
   {
    "name": "?getPostFxFinalTechniqueName@rglRenderer@@QEAA?AVrglString@@_NH0@Z",
@@ -16059,6 +17858,126 @@
    "va": "0x1402f2790"
   },
   {
+   "name": "?findCloseAiMeshFaceRecursive@rglScene@@QEAAXAEBVrglVector4@@PEAVrglAiMeshFace@@HHPEAPEAV3@AEAM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fc7f0"
+  },
+  {
+   "name": "?getAiMeshFaceAtPosition@rglScene@@QEAAPEAVrglAiMeshFace@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fc3c0"
+  },
+  {
+   "name": "?lightPoint@rglScene@@QEAAXAEBVrglVector4@@0AEAV2@AEAVrglColor@@_N3@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fb230"
+  },
+  {
+   "name": "?getLightDataForPosition@rglScene@@QEAAXAEBVrglVector4@@AEAV2@AEAVrglColor@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402f9b50"
+  },
+  {
+   "name": "?createSoundBody@rglScene@@QEAAPEAVGeometry@FMOD@@PEAVrglBodyPart@@MAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402f8e40"
+  },
+  {
+   "name": "?createHavokRigidBody@rglScene@@QEAAPEAVbtRigidBody@@PEAVrglBodyPart@@AEBVrglTransform@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402f8a80"
+  },
+  {
+   "name": "?lightMesh@rglScene@@QEAAXPEAVrglMesh@@AEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402faaa0"
+  },
+  {
+   "name": "?getBodyPartsInPath@rglScene@@QEAAXAEBVrglVector4@@0IPEAPEAVrglBodyPart@@AEAH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fbfe0"
+  },
+  {
+   "name": "?getGroundData@rglScene@@QEAAXAEBVrglVector4@@AEAMPEAPEAVrglQuad@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fbc00"
+  },
+  {
+   "name": "?getGroundHeight@rglScene@@QEAAMAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fbfc0"
+  },
+  {
+   "name": "?findCloseAiMeshFace@rglScene@@QEAAPEAVrglAiMeshFace@@AEBVrglVector4@@PEAV2@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fc750"
+  },
+  {
+   "name": "?getNearestAiMeshFace@rglScene@@QEAAPEAVrglAiMeshFace@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fc250"
+  },
+  {
+   "name": "?checkLineOfSight@rglScene@@QEAA_NAEBVrglVector4@@0MPEAPEAVrglBodyPart@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fb900"
+  },
+  {
+   "name": "?getBodyPartsInArea@rglSceneGridCell@@QEAAXAEBVrglVector4@@0_NIPEAPEAVrglBodyPart@@AEAH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fd070"
+  },
+  {
+   "name": "?addAiMeshFace@rglSceneGrid@@QEAAXPEAVrglAiMeshFace@@AEBVrglVector4@@1@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fdad0"
+  },
+  {
+   "name": "?getCellsInPath@rglSceneGrid@@QEAAXAEBVrglVector4@@0PEAVrglIntVector2@@AEAH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fe3a0"
+  },
+  {
+   "name": "?getBodyPartsInArea@rglSceneGrid@@QEAAXAEBVrglVector4@@0IPEAPEAVrglBodyPart@@AEAH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fe9b0"
+  },
+  {
+   "name": "?getEntitiesInArea@rglSceneGrid@@QEAAXAEBVrglVector4@@0AEAV?$rglVector@PEAVrglEntity@@@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fe750"
+  },
+  {
+   "name": "?getCursorRay@rglSceneWidget@@QEAAXAEAVrglVector4@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ff940"
+  },
+  {
+   "name": "?getScreenProjection@rglSceneWidget@@QEAA?AVrglVector2@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ff7b0"
+  },
+  {
    "name": "??0rglScrollableWidget@@QEAA@AEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -16081,6 +18000,72 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140301940"
+  },
+  {
+   "name": "?checkShadowAroundPosition@rglShadowMap@@QEAA_NAEBVrglVector4@@AEAM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140302d60"
+  },
+  {
+   "name": "?addPoint@rglShadowMap@@QEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140302010"
+  },
+  {
+   "name": "?getFaceTransform@rglSkyCube@@SA?AVrglTransform@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140305500"
+  },
+  {
+   "name": "?selectProbe@rglSkyCube@@AEAAXAEBVrglVector4@@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403042e0"
+  },
+  {
+   "name": "?computePosition@rglSkeleton@@QEAA?AVrglVector4@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030a3b0"
+  },
+  {
+   "name": "?render@rglSkeleton@@QEAAXPEAVrglRenderContext@@AEBVrglTransform@@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030ae00"
+  },
+  {
+   "name": "?frameMove@rglSkeleton@@QEAAXMAEBVrglTransform@@AEBVrglVector4@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140308160"
+  },
+  {
+   "name": "?getBoneTransform@rglSkeleton@@QEAAAEBVrglTransform@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030a720"
+  },
+  {
+   "name": "?getBoneTransformForAnimation@rglSkeleton@@QEAA?AVrglTransform@@PEAVrglSkeletonAnimationSpec@@HM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030a770"
+  },
+  {
+   "name": "?attachMetaMeshToBone@rglSkeleton@@QEAAXHPEAVrglMetaMesh@@AEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b490"
+  },
+  {
+   "name": "?reattachMetaMesh@rglSkeleton@@QEAAXHPEAVrglMetaMesh@@AEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b600"
   },
   {
    "name": "?readStream@?$rglIpo@VrglVector3@@@@QEAAXAEAVrglStream@@@Z",
@@ -16117,6 +18102,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14030d230"
+  },
+  {
+   "name": "?computeMaxBound@rglSphere@@UEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030de70"
+  },
+  {
+   "name": "?computeMinBound@rglSphere@@UEAA?AVrglVector4@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030de30"
+  },
+  {
+   "name": "?setTransform@rglSphere@@UEAAXAEBVrglTransform@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030dd60"
+  },
+  {
+   "name": "?scale@rglSphere@@UEAAXAEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030dd10"
   },
   {
    "name": "?writeStream@rglSphere@@UEAAXAEAVrglStream@@@Z",
@@ -16587,6 +18596,18 @@
    "va": "0x140315b40"
   },
   {
+   "name": "?checkLineOfSight@rglTerrain@@QEAA_NAEBVrglVector4@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140316100"
+  },
+  {
+   "name": "?vec4@rglVector2@@QEBA?AVrglVector4@@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318950"
+  },
+  {
    "name": "?reset@rglTimer@@QEAAXXZ",
    "kind": "public",
    "source": "pdb-public",
@@ -16609,6 +18630,144 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1403189b0"
+  },
+  {
+   "name": "?almostEquals@rglVector4@@QEBA_NAEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318ad0"
+  },
+  {
+   "name": "??BrglVector4@@QEBA?AVbtVector3@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318d90"
+  },
+  {
+   "name": "??4rglVector4@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318d80"
+  },
+  {
+   "name": "??0rglVector4@@QEAA@MMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318ab0"
+  },
+  {
+   "name": "?length@rglVector4@@QEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318bd0"
+  },
+  {
+   "name": "??HrglVector4@@QEBA?AV0@AEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318c60"
+  },
+  {
+   "name": "?vec2@rglVector4@@QEBA?AVrglVector2@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318c50"
+  },
+  {
+   "name": "?setVec2@rglVector4@@QEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318c40"
+  },
+  {
+   "name": "?normalize@rglVector4@@QEAAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318a10"
+  },
+  {
+   "name": "??GrglVector4@@QEBA?AV0@AEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318ce0"
+  },
+  {
+   "name": "?lengthSquared@rglVector4@@QEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318c10"
+  },
+  {
+   "name": "?cross@rglVector4@@QEBA?AV1@AEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318b40"
+  },
+  {
+   "name": "??0rglVector4@@QEAA@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318a90"
+  },
+  {
+   "name": "??DrglVector4@@QEBA?AV0@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318d20"
+  },
+  {
+   "name": "??YrglVector4@@QEAAXAEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318d50"
+  },
+  {
+   "name": "??GrglVector4@@QEBA?AV0@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318ca0"
+  },
+  {
+   "name": "??BrglVector4@@QEBA?AVrglVector2@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318c50"
+  },
+  {
+   "name": "?dot@rglVector4@@QEBAMAEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318ba0"
+  },
+  {
+   "name": "??0rglVector4@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14000f820"
+  },
+  {
+   "name": "?Side@rglVector4@@2V1@B",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061c3f8"
+  },
+  {
+   "name": "?Zero@rglVector4@@2V1@B",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140734bd0"
+  },
+  {
+   "name": "?Forward@rglVector4@@2V1@B",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061c408"
+  },
+  {
+   "name": "?Up@rglVector4@@2V1@B",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061c418"
   },
   {
    "name": "?setText@rglWidget@@UEAA?AVrglVector2@@AEBVrglString@@@Z",
@@ -16941,6 +19100,12 @@
    "va": "0x140330280"
   },
   {
+   "name": "?rglLerp@@YA?AVrglTransform@@AEBV1@0M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140330000"
+  },
+  {
    "name": "?readStream@mbSoundSample@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -16953,10 +19118,22 @@
    "va": "0x140331660"
   },
   {
+   "name": "?setTransform@mbSoundManager@@QEAAXAEBVrglTransform@@AEBVrglVector4@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140332970"
+  },
+  {
    "name": "?readStream@mbSoundManager@@QEAAXAEAVrglStream@@H@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1403322e0"
+  },
+  {
+   "name": "?setChannelPosition@mbSoundManager@@QEAAXPEAVChannel@FMOD@@AEBVrglVector4@@1@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140332a60"
   },
   {
    "name": "?getObjects@rglWmi@@QEAA?AVrglWmiIterator@@AEBVrglString@@@Z",
@@ -16995,6 +19172,12 @@
    "va": "0x14061c6f0"
   },
   {
+   "name": "?g_profiling@@3VWSEProfiling@@A",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1406b4890"
+  },
+  {
    "name": "?g_scriptManager@@3VmbScriptManager@@A",
    "kind": "public",
    "source": "pdb-public",
@@ -17011,6 +19194,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14069fbd0"
+  },
+  {
+   "name": "?g_gameVariables@@3VrglSectionlessIni@@A",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140698b70"
   },
   {
    "name": "?g_gameScreen@@3VmbGameScreen@@A",
@@ -17077,6 +19266,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14033baf0"
+  },
+  {
+   "name": "?cmpPos@@YA_NAEBVrglTransform@@0_K1AEBUWSEArraySortOptions@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c030"
   },
   {
    "name": "??$_Buynode@U?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@?$_List_buy@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@@std@@QEAAPEAU?$_List_node@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@PEAX@1@PEAU21@0$$QEAU?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@1@@Z",
@@ -17493,6 +19688,30 @@
    "va": "0x14033dc80"
   },
   {
+   "name": "?IncreaseStorageIfNeeded@WSEObjectManager@@AEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14034e410"
+  },
+  {
+   "name": "?AllocObject@WSEObjectManager@@QEAAHPEAUWSEObjectType@@PEAX@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14034e340"
+  },
+  {
+   "name": "?FreeObject@WSEObjectManager@@QEAAXPEAUWSEObjectType@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14034e3b0"
+  },
+  {
+   "name": "??1WSEObjectManager@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14034e240"
+  },
+  {
    "name": "??$_Buynode@U?$pair@VrglString@@I@std@@@?$_List_buy@U?$pair@$$CBVrglString@@I@std@@V?$allocator@U?$pair@$$CBVrglString@@I@std@@@2@@std@@QEAAPEAU?$_List_node@U?$pair@$$CBVrglString@@I@std@@PEAX@1@PEAU21@0$$QEAU?$pair@VrglString@@I@1@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -17595,6 +19814,24 @@
    "va": "0x14028d1a0"
   },
   {
+   "name": "??1WSEProfiling@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14034f420"
+  },
+  {
+   "name": "?Start@WSEProfiling@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14034f7d0"
+  },
+  {
+   "name": "?Stop@WSEProfiling@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14034ff40"
+  },
+  {
    "name": "?AddMarker@WSEProfiling@@QEAAXAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -17605,6 +19842,53 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140350390"
+  },
+  {
+   "name": "?StopProfilingBlock@WSEProfiling@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140350600"
+  },
+  {
+   "name": "?frameMove@WSEProfiling@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14034f4a0"
+  },
+  {
+   "name": "rglTransform::Identity",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x140621730",
+   "type_index": "0x34ac"
+  },
+  {
+   "name": "rglVector4::Up",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x14061c418",
+   "type_index": "0x32d9"
+  },
+  {
+   "name": "rglVector4::Forward",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x14061c408",
+   "type_index": "0x32d9"
+  },
+  {
+   "name": "rglVector4::Zero",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x140734bd0",
+   "type_index": "0x32d9"
+  },
+  {
+   "name": "rglVector4::Side",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x14061c3f8",
+   "type_index": "0x32d9"
   },
   {
    "name": "g_renderer",

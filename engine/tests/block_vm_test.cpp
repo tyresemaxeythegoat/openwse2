@@ -436,6 +436,174 @@ void test_triggers_and_wse_integration() {
            "simple trigger mutates register and reads it into global slot");
 }
 
+void test_return_values_positions_and_dict_loop() {
+    using namespace wse::vm;
+    using namespace wse::game;
+
+    // 1. return_values -> store_num_return_values / store_return_value across call_script.
+    ScriptManager mgr;
+    Script callee;
+    callee.id = "ret_callee";
+    callee.block.statements = {
+        make_stmt(core_op::kAssign, {loc(1), 77}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::return_values),
+                  {42, glob(0), loc(1)}),
+    };
+    Script caller;
+    caller.id = "ret_caller";
+    caller.block.statements = {
+        make_stmt(core_op::kCallScript, {0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::store_num_return_values),
+                  {reg(0)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::store_return_value),
+                  {reg(1), 2}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::store_return_value),
+                  {reg(2), 3}),
+    };
+    mgr.scripts.push_back(std::move(callee));
+    mgr.scripts.push_back(std::move(caller));
+
+    VmContext ctx;
+    ctx.globalVariables.set(0, 9001);
+    expect(execute_script(mgr, 1, ctx) && ctx.numReturnValues == 3 &&
+               ctx.registers[0] == 3 && ctx.registers[1] == 9001 &&
+               ctx.registers[2] == 77,
+           "return_values propagates across call_script in block VM");
+
+    // 2. position_get_vector_to_position + fld_pos_{x,y,z} + fst.
+    ctx.positions[1].o = {10.0f, 20.0f, 30.0f, 1.0f};
+    ctx.positions[2].o = {13.0f, 24.0f, 30.0f, 1.0f};
+    StatementBlock posBlock;
+    posBlock.statements = {
+        make_stmt(static_cast<std::uint32_t>(
+                      WseOpcode::position_get_vector_to_position),
+                  {reg(4), 0, 1, 2}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::fld_pos_x), {0, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::fld_pos_y), {1, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::fld_pos_z), {2, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::fst), {reg(5), 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::fst), {reg(6), 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::fst), {reg(7), 2}),
+    };
+    expect(execute_statement_block(posBlock, ctx) && ctx.registers[4] == 500 &&
+               ctx.registers[5] == 1000 && ctx.registers[6] == 2000 &&
+               ctx.registers[7] == 3000,
+           "position_get_vector_to_position and fld_pos_{x,y,z} work in VM");
+
+    // 3. try_for_dict_keys: sorted iteration, nested loops + continue/break,
+    // empty/invalid dict skip, and invalid sreg error reporting.
+    ctx.stringRegisters[10] = u"z_last";
+    ctx.stringRegisters[11] = u"a_first";
+    ctx.stringRegisters[12] = u"m_mid";
+    ctx.stringRegisters[13] = u"val";
+    ctx.stringRegisters[20] = u"k1";
+    ctx.stringRegisters[21] = u"k2";
+    ctx.stringRegisters[22] = u"k3";
+    ctx.stringRegisters[23] = u"x";
+    ctx.stringRegisters[24] = u"y";
+    ctx.stringRegisters[4] = u"sentinel_empty";
+    ctx.stringRegisters[5] = u"sentinel_invalid";
+
+    StatementBlock dictLoopBlock;
+    dictLoopBlock.statements = {
+        // dict0: {"a_first", "m_mid", "z_last"} -> loc(0)
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_create), {loc(0)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_set_str),
+                  {loc(0), sreg(10), sreg(13)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_set_str),
+                  {loc(0), sreg(11), sreg(13)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_set_str),
+                  {loc(0), sreg(12), sreg(13)}),
+        // Check exact sorted visit order using base-10 positional accumulator reg(10).
+        make_stmt(core_op::kAssign, {loc(3), 0}),
+        make_stmt(core_op::kAssign, {reg(10), 0}),
+        make_stmt(core_op::kTryForDictKeys, {sreg(0), loc(0)}),
+        make_stmt(core_op::kTryBegin, {}),
+        make_stmt(core_op::kEq, {loc(3), 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::str_equals),
+                  {sreg(0), sreg(11)}),
+        make_stmt(core_op::kValAdd, {reg(10), 1}),
+        make_stmt(core_op::kElseTry, {}),
+        make_stmt(core_op::kEq, {loc(3), 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::str_equals),
+                  {sreg(0), sreg(12)}),
+        make_stmt(core_op::kValAdd, {reg(10), 10}),
+        make_stmt(core_op::kElseTry, {}),
+        make_stmt(core_op::kEq, {loc(3), 2}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::str_equals),
+                  {sreg(0), sreg(10)}),
+        make_stmt(core_op::kValAdd, {reg(10), 100}),
+        make_stmt(core_op::kTryEnd, {}),
+        make_stmt(core_op::kValAdd, {loc(3), 1}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        // Nested try_for_dict_keys with inner continue_loop and outer break_loop.
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_create), {loc(1)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_set_str),
+                  {loc(1), sreg(20), sreg(13)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_set_str),
+                  {loc(1), sreg(21), sreg(13)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_set_str),
+                  {loc(1), sreg(22), sreg(13)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_create), {loc(2)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_set_str),
+                  {loc(2), sreg(23), sreg(13)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_set_str),
+                  {loc(2), sreg(24), sreg(13)}),
+
+        make_stmt(core_op::kAssign, {reg(11), 0}),
+        make_stmt(core_op::kAssign, {reg(12), 0}),
+        make_stmt(core_op::kTryForDictKeys, {sreg(1), loc(1)}),
+        make_stmt(core_op::kValAdd, {reg(12), 1}),
+        make_stmt(core_op::kTryBegin, {}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::str_equals),
+                  {sreg(1), sreg(22)}),
+        make_stmt(core_op::kBreakLoop, {}),
+        make_stmt(core_op::kTryEnd, {}),
+        make_stmt(core_op::kTryForDictKeys, {sreg(2), loc(2)}),
+        make_stmt(core_op::kTryBegin, {}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::str_equals),
+                  {sreg(2), sreg(23)}),
+        make_stmt(core_op::kContinueLoop, {}),
+        make_stmt(core_op::kTryEnd, {}),
+        make_stmt(core_op::kValAdd, {reg(11), 1}),
+        make_stmt(core_op::kTryEnd, {}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        // Empty dict loop skips body without clobbering sreg(4).
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::dict_create), {loc(4)}),
+        make_stmt(core_op::kAssign, {reg(13), 55}),
+        make_stmt(core_op::kTryForDictKeys, {sreg(4), loc(4)}),
+        make_stmt(core_op::kAssign, {reg(13), 99}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        // Invalid dict ID skips body without clobbering sreg(5).
+        make_stmt(core_op::kAssign, {reg(14), 1}),
+        make_stmt(core_op::kTryForDictKeys, {sreg(5), -1}),
+        make_stmt(core_op::kAssign, {reg(14), 2}),
+        make_stmt(core_op::kTryEnd, {}),
+        make_stmt(core_op::kAssign, {reg(15), 88}),
+    };
+    expect(execute_statement_block(dictLoopBlock, ctx) &&
+               ctx.registers[10] == 111 && ctx.registers[11] == 2 &&
+               ctx.registers[12] == 3 && ctx.registers[13] == 55 &&
+               ctx.registers[14] == 1 && ctx.registers[15] == 88 &&
+               ctx.stringRegisters[4] == u"sentinel_empty" &&
+               ctx.stringRegisters[5] == u"sentinel_invalid" &&
+               ctx.errorCount == 0,
+           "try_for_dict_keys visits sorted keys, supports nesting/break/continue, and skips empty/invalid dicts");
+
+    // Invalid / out-of-range string register reports error cleanly.
+    StatementBlock badSregLoop;
+    badSregLoop.statements = {
+        make_stmt(core_op::kTryForDictKeys, {sreg(128), 0}),
+        make_stmt(core_op::kTryEnd, {}),
+    };
+    expect(execute_statement_block(badSregLoop, ctx) && ctx.errorCount == 3 &&
+               ctx.lastError.find("string register") != std::string::npos,
+           "try_for_dict_keys reports out-of-range string register errors");
+}
+
 }  // namespace
 
 int main() {
@@ -445,6 +613,7 @@ int main() {
     test_native_core_math_and_hook();
     test_scripts_recursion_and_depth_limit();
     test_triggers_and_wse_integration();
+    test_return_values_positions_and_dict_loop();
 
     if (failures != 0) {
         std::printf("block_vm tests: FAIL (%d)\n", failures);

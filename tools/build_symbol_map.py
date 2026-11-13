@@ -47,6 +47,12 @@ CLASSES = [
     "rglInputTextFileStream",
     "rglOutputTextFileStream",
     "mbSlots",
+    "rglVector4",
+    "rglTransform",
+    "rglMersenneTwister",
+    "rglSectionlessIni",
+    "WSEObjectManager",
+    "WSEProfiling",
 ]
 
 GLOBAL_NAMES = {

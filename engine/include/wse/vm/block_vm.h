@@ -44,6 +44,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <span>
 #include <string>
 #include <string_view>
@@ -142,6 +143,9 @@ using VmErrorCallback = void (*)(void* user, std::string_view message);
 struct LoopFrame {
     std::int32_t statementNo = 0;
     std::int32_t value = 0;
+    const WseDictionary* dict = nullptr;
+    std::map<std::string, std::string>::const_iterator dictIt{};
+    std::map<std::string, std::string>::const_iterator dictEnd{};
 };
 
 struct VmContext {
@@ -161,6 +165,14 @@ struct VmContext {
     bool hasMissionTemplate = false;
     std::int32_t missionTemplateNo = -1;
     WseOptionsState options{};
+    std::array<WseTransform, 128> positions{};
+    std::array<WseAppTimer, 128> appTimers{};
+    std::array<std::int64_t, 3> timersTotal{};
+    WseMersenneTwister mtRng{};
+    std::int32_t randSeed = 0;
+    bool profilerRecording = false;
+    std::vector<std::string> profilerMarkers{};
+    WseDictionaryStore dictionaries{};
 
     bool clearLocalsBetweenCalls = false;
     std::int32_t maxCallDepth = kMaxCallDepth;
@@ -613,6 +625,17 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     operands.state.strings.global = ctx.globalStrings;
     operands.state.strings.local = ctx.localStrings;
     operands.state.options = &ctx.options;
+    operands.state.return_values_out = ctx.returnValues;
+    operands.state.num_return_values_out = &ctx.numReturnValues;
+    operands.state.fixed_point_multiplier = ctx.fixedPointMultiplier;
+    operands.state.positions = ctx.positions;
+    operands.state.timers = ctx.appTimers;
+    operands.state.timers_total = ctx.timersTotal;
+    operands.state.rng = &ctx.mtRng;
+    operands.state.rand_seed = &ctx.randSeed;
+    operands.state.profiler_recording = &ctx.profilerRecording;
+    operands.state.profiler_markers = &ctx.profilerMarkers;
+    operands.state.dictionaries = &ctx.dictionaries;
 
     WseEffect effect{};
     const WseDispatch dispatch = execute_wse(opcode, operands, effect);
@@ -682,6 +705,24 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     return result;
 }
 
+inline void set_dict_loop_key(const Statement& stmt,
+                              const LoopFrame& frame,
+                              VmContext& ctx,
+                              std::span<const std::int64_t> locals) {
+    if (stmt.numOperands <= 0 || frame.dict == nullptr || frame.dictIt == frame.dictEnd) {
+        return;
+    }
+    std::uint8_t unusedTag = 0;
+    const auto sregIdx = static_cast<std::int32_t>(
+        parse_operand(static_cast<std::uint64_t>(stmt.operands[0]), ctx, locals, unusedTag));
+    if (!wse_register_ok(sregIdx)) {
+        ctx.report_error("Invalid string register index in try_for_dict_keys");
+        return;
+    }
+    ctx.stringRegisters[static_cast<std::size_t>(sregIdx)] =
+        wse_utf8_to_utf16(frame.dictIt->first);
+}
+
 [[nodiscard]] inline bool can_loop(const StatementBlock& block,
                                    VmContext& ctx,
                                    std::span<const std::int64_t> locals,
@@ -710,8 +751,10 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
                                  : 0;
         return static_cast<std::int64_t>(top.value) >= lower;
     }
+    case core_op::kTryForDictKeys:
+        return top.value != -1 && top.dict != nullptr && top.dictIt != top.dictEnd;
     default:
-        // Entity/dict iterators (0xb/0xc/0x10/0x11/0x12) terminate with 0
+        // Entity iterators (0xb/0xc/0x10/0x11) terminate with 0
         // iterations cleanly until those world containers are reconstructed.
         return false;
     }
@@ -727,22 +770,37 @@ inline void start_loop(const StatementBlock& block,
     const std::uint32_t opcode = stmt.opcode & kOpcodeMask;
     std::uint8_t unusedTag = 0;
 
-    std::int32_t initialValue = 0;
+    LoopFrame frame{pc, 0};
+    bool isDictLoop = false;
     if (opcode == core_op::kTryForRange) {
-        initialValue = stmt.numOperands > 1
-                           ? static_cast<std::int32_t>(parse_operand(
-                                 static_cast<std::uint64_t>(stmt.operands[1]), ctx, locals, unusedTag))
-                           : 0;
+        frame.value = stmt.numOperands > 1
+                          ? static_cast<std::int32_t>(parse_operand(
+                                static_cast<std::uint64_t>(stmt.operands[1]), ctx, locals, unusedTag))
+                          : 0;
     } else if (opcode == core_op::kTryForRangeBackwards) {
         const std::int64_t upper =
             stmt.numOperands > 2
                 ? parse_operand(static_cast<std::uint64_t>(stmt.operands[2]), ctx, locals, unusedTag)
                 : 0;
-        initialValue = static_cast<std::int32_t>(upper - 1);
+        frame.value = static_cast<std::int32_t>(upper - 1);
+    } else if (opcode == core_op::kTryForDictKeys) {
+        isDictLoop = true;
+        frame.value = -1;
+        const std::int32_t dictId =
+            stmt.numOperands > 1
+                ? static_cast<std::int32_t>(parse_operand(
+                      static_cast<std::uint64_t>(stmt.operands[1]), ctx, locals, unusedTag))
+                : -1;
+        frame.dict = ctx.dictionaries.get(dictId);
+        if (frame.dict != nullptr && !frame.dict->empty()) {
+            frame.dictIt = frame.dict->entries.begin();
+            frame.dictEnd = frame.dict->entries.end();
+            frame.value = 1;
+        }
     }
 
     if (static_cast<std::size_t>(numLoops) < loops.size()) {
-        loops[static_cast<std::size_t>(numLoops)] = LoopFrame{pc, initialValue};
+        loops[static_cast<std::size_t>(numLoops)] = frame;
         ++numLoops;
     } else {
         ctx.report_error("Loop stack overflow in start_loop");
@@ -750,12 +808,15 @@ inline void start_loop(const StatementBlock& block,
         return;
     }
 
-    if (stmt.numOperands > 0) {
+    if (!isDictLoop && stmt.numOperands > 0) {
         store_lvalue(static_cast<std::uint64_t>(stmt.operands[0]),
-                     static_cast<std::int64_t>(initialValue), ctx, locals);
+                     static_cast<std::int64_t>(frame.value), ctx, locals);
     }
 
     if (can_loop(block, ctx, locals, loops, numLoops)) {
+        if (isDictLoop) {
+            set_dict_loop_key(stmt, frame, ctx, locals);
+        }
         ++pc;
     } else {
         // Retail 0x1401f78ac jumps directly to try_end, which executes end_loop
@@ -784,17 +845,28 @@ inline void end_loop(const StatementBlock& block,
         return;
     }
 
+    bool isDictLoop = false;
     if (opcode == core_op::kTryForRange) {
         ++top.value;
     } else if (opcode == core_op::kTryForRangeBackwards) {
         --top.value;
+    } else if (opcode == core_op::kTryForDictKeys) {
+        isDictLoop = true;
+        if (top.value != -1 && top.dict != nullptr && top.dictIt != top.dictEnd) {
+            ++top.dictIt;
+            top.value = (top.dictIt != top.dictEnd) ? 1 : -1;
+        } else {
+            top.value = -1;
+        }
     } else {
         --numLoops;
         return;
     }
 
     if (can_loop(block, ctx, locals, loops, numLoops)) {
-        if (startStmt.numOperands > 0) {
+        if (isDictLoop) {
+            set_dict_loop_key(startStmt, top, ctx, locals);
+        } else if (startStmt.numOperands > 0) {
             store_lvalue(static_cast<std::uint64_t>(startStmt.operands[0]),
                          static_cast<std::int64_t>(top.value), ctx, locals);
         }

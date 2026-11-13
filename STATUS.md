@@ -13,14 +13,14 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | PDB parse (MSF 7.0/TPI/DBI) | PASS | 156,846 TPI records, 15,363 sized layouts |
 | PDB symbol map | PASS | 48,658 symbols with VAs (`globals_new.json`) |
 | Vtable scan | PASS | 279 pointer runs; 207 class-identified; 73 `rgl*`/`mb*`/`WSE*` |
-| Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (29 classes, 1,782 symbols, 73 vtables; adds `mbBasicGame`, `mbCallStack`, `mbLoop`, `mbLoopManager`), v1.1.5.5 target |
+| Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (35 classes, 2,098 symbols, 73 vtables; adds `rglVector4`, `rglTransform`, `rglMersenneTwister`, `rglSectionlessIni`, `WSEObjectManager`, `WSEProfiling`), v1.1.5.5 target |
 | v1.1.5.5 REA VM/stream batches | PASS | 75 procedures across 9 `decompile_all` exports (`stmt_core` `ev_3ebcea85…` 4/4, `stmt_block` `ev_ffc38aa5…` 10/10, `script` `ev_8d37a0c8…` 4/4, `simple_trigger` `ev_3157906d…` 12/12, `trigger` `ev_f62843ac…` 12/12, `game_scripts` `ev_fc9bd1a4…` 4/4, `game_triggers` `ev_052f2d86…` 2/2, `streams_bin` `ev_8cc48986…` 9/9, `streams_txt` `ev_1e3c2566…` 18/18), plus `read_bytes`/`0x140615ad0` (`ev_f09662c6…`/`ev_2ddf7a62…`) and 6 single-procedure exports |
 | Superseded 2026-10-14 REA runs | PASS (superseded) | Historical 2026-10-14 entries kept for provenance only: `ev_7cd99ccc…157d7a` (`mbScript` 5), `ev_8d91b175…99b11` (`mbStatement` 14), `ev_25469ff4…84af8` (3), `ev_e3530f99…e8d05` (`Trigger` 52), `ev_cebc7ae0…e8c8d3` (`rglTextStream` 18), `ev_24eecfa4…f18c0b6` (`rglBinaryStream` 9), `ev_130d8023…2c62e6` (2) |
 | Binary savegame format | PASS | `rglBinaryStream` raw little-endian 8/4/1-byte values; strings are `int32` length + bytes; no header or checksum |
 | Module stream identification | PASS | `0x1405651e0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x1405653e0` = `rglOutputTextFileStream` writers; module files are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
 | Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse tests: PASS`, `block_vm tests: PASS`, `engine host tests: PASS` (Zig clang++ `-std=c++20 -O2 -Wall -Wextra -Werror`) |
-| Statement-block VM & trigger/script bridge | PASS | `engine/include/wse/vm/block_vm.h` reconstructed and host-tested (`analyze`, `execute`, `startLoop`/`endLoop`/`canLoop`, core native ops `30–33`/`2100–2133`, `call_script` up to depth 255, `store_script_param*`, `this_or_next`/`neg`, script & trigger execution) |
+| Statement-block VM & trigger/script bridge | PASS | `engine/include/wse/vm/block_vm.h` reconstructed and host-tested (`analyze`, `execute`, `startLoop`/`endLoop`/`canLoop`, `try_for_dict_keys` `0x12`, core native ops `30–33`/`2100–2133`, `call_script` up to depth 255, `store_script_param*`, `this_or_next`/`neg`, script & trigger execution) |
 | WSE extended opcode map | PASS | v1.1.5.5 `executeWSE` (`0x1401e4dc0`) pseudocode `ev_2aaa96a8…5cf0f9`: 440/440 in-range operations 2800–5202 (431 switch + 9 equality), no unknown or unhandled opcode; 8,844-line dump |
 | Retail `scripts.txt` parse | PASS | Full 3,467,512-byte sample: 1,755 scripts, every token consumed, 52 of the 64 then-known names (the rest are WSE-only scripts absent from that module); v1.1.5.5 adds a 65th name |
 | WSE2 v1.1.5.5 release delta | PASS (inventory) | Official `WSE2.zip` SHA-256 `c45197e8…276e28b1`; x64 exe 7,060,992 B with file version 1.1.5.5; SDK adds 7 operations (3911, 4517–4522), no renumbering; 440 in-range ops; mapped script table grows to 65 with `wse_camp_button_clicked` |
@@ -30,10 +30,10 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 
 | Task | State |
 | --- | --- |
-| Portable trigger & script VM runtime | Event-key state machines and script execution (`block_vm.h`) run reconstructed conditions/consequences through the VM and pass host tests; callback overloads in `trigger.h` remain available; world entity iterators (`try_for_agents`/etc.) cleanly iterate 0 times until entity containers are reconstructed |
+| Portable trigger & script VM runtime | Event-key state machines and script execution (`block_vm.h`) run reconstructed conditions/consequences through the VM (`try_for_range`, `try_for_range_backwards`, `try_for_dict_keys`) and pass host tests; callback overloads in `trigger.h` remain available; world entity iterators (`try_for_agents`/etc.) cleanly iterate 0 times until entity containers are reconstructed |
 | Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
 | `executeWSE` case mapping | Complete: 440/440 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode (v1.1.5.5) |
-| Portable `executeWSE` handlers | 93 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, 3014/3016/3017/3035/3600 script-context queries, string group 4200–4224 (including portable RFC 1321 MD5 for 4219), 4233–4234, 4236, 4238, and 4240–4244 (`str_regex_*`/`str_decode_url`), 4300–4305 options flags, and 4400–4401/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 347 report `WseDispatch::unimplemented` |
+| Portable `executeWSE` handlers | 134 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, 3014–3017/3020–3022/3027–3028/3034–3035/3040–3043/3600 script-context queries/returns/timers/MT19937/profiler, dictionary group 3200–3222 (`.wsedict`/INI/JSON/URL-encoded JSON/pos), position vector group 4100/4102–4104, string group 4200–4224 (including portable RFC 1321 MD5 for 4219), 4233–4234, 4236, 4238, and 4240–4244 (`str_regex_*`/`str_decode_url`), 4300–4305 options flags, and 4400–4436/4438 floating-point load/store/`fld_pos_{x,y,z}`/compare/arithmetic/transcendental/rounding; the other 306 report `WseDispatch::unimplemented` |
 
 ## Confirmed by pseudocode
 
@@ -117,6 +117,25 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   `FUN_1400b9690(5)` (QPC seconds since the app-time baseline), converts to float, multiplies by
   `1000.0f` (`0x140576b90`), and rounds through `rglRound64`. `store_cur_mission_template_no`
   (`0x1401ea6b2`) reads `[0x14061f078]+0x9ae8` or yields -1 when the pointer is null.
+- **Script state, timers, RNG, and profiler (`3015`, `3020–3022`, `3027–3028`, `3034`, `3040–3043`, v1.1.5.5 `executeWSE`):**
+  `return_values` (`0xbc7`) populates up to 16 slots (`g_returnValues`) and `g_numReturnValues`;
+  `mtsrand`/`mtrand` (`0xbcc`/`0xbcd`, helpers `0x1402a24f0`/`0x1402a25e0`) back `rglMersenneTwister`
+  (`0x6556`, 5,000 B), while `set_random_seed` (`0xbda`) updates the C RNG seed; `get_time`
+  (`0xbce`, `_localtime64`/`_gmtime64` at `0x1404981d0`/`0x1404987b4`) formats calendar fields and
+  `timer_reset`/`timer_get_elapsed_time` (`0xbd3`/`0xbd4`) convert ticks using `100 kHz` resolution;
+  `profiler_{start,stop,is_recording,mark}` (`0xbe0..0xbe3`, `WSEProfiling` `0xaf0a`, 66,072 B)
+  control profiling state via `0x14034f7d0`, `0x14034ff40`, and `0x1403508a0`.
+- **Dictionary operations (`3200–3222`) & `try_for_dict_keys` (`0x12`, v1.1.5.5):**
+  `dict_*` (`0xc80..0xc96`) store key/value maps owned by `WSEObjectManager` (`0x1b4d3`, 64 B) with
+  LIFO IDs and support `.wsedict` binary, `rglSectionlessIni` (`0x5264`, 16 B) INI, JSON
+  (`0x1402a97f0`/`0x1402a9f70`), and URL-encoded JSON (`0x1402aaea0`/`0x1402ab370`) plus
+  path validation (`0x140071d10`); `core_op::kTryForDictKeys` (`0x12`) iterates sorted dictionary keys
+  across `mbStatementBlock::{startLoop,endLoop,canLoop}` (`0x1401f7290`, `0x1401f7910`, `0x1401f7f00`).
+- **Position vector & FP load operations (`4100`, `4102–4104`, `4402–4404`, v1.1.5.5):**
+  `position_get_vector_to_position` (`0x1004`), `position_get_length` (`0x1006`),
+  `get_dot_product_of_positions` (`0x1007`), `get_cross_product_of_positions` (`0x1008`), and
+  `fld_pos_{x,y,z}` (`0x1132..0x1134`) operate over `rglTransform` (`0x34ac`, 64 B) / `rglVector4`
+  (`0x32d9`, 16 B) via helpers `0x1402b5be0`/`0x1402b5ea0` and `0x140318b40..0x140318ce0`.
 - The string group covers `4200`–`4224`, `4233`–`4234`, `4236`, `4238`, and `4240`–`4244`, proven by
   the equality branch at `0x1068` (`0x1401ed1bd`) and the switch cases decoded from the jump
   table at `0x1401ed2ef` (`0x1069`–`0x1094`). String
@@ -251,6 +270,6 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 
 ## Next concrete task
 
-1. Transcribe the next `executeWSE` handler groups from `docs/WSE_OPCODES.md` beyond 93/440 (e.g., agent/party/mission/player/network ops after extracting their target layouts and globals), extending the host test gate as each group lands.
-2. Expand entity/container iteration (`try_for_agents`, `try_for_parties`, `try_for_prop_instances`, `try_for_players`, `try_for_dict_keys`) and Lua 5.1 hook wiring once the underlying entity tables and `gameOperation` registry are reconstructed.
+1. Transcribe the next `executeWSE` handler groups from `docs/WSE_OPCODES.md` beyond 134/440 (306 remaining unimplemented — e.g., agent/party/mission/player/network ops after extracting their target layouts and globals), extending the host test gate as each group lands.
+2. Expand entity/container iteration (`try_for_agents`, `try_for_parties`, `try_for_prop_instances`, `try_for_players`) and Lua 5.1 hook wiring once the underlying entity tables and `gameOperation` registry are reconstructed (`try_for_dict_keys` `0x12` is now implemented).
 3. Run the `clang++ -target aarch64-linux-android29 -Wall -Werror` arm64 compile gate once an Android NDK is installed, and keep `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json`, and this file current at each milestone.

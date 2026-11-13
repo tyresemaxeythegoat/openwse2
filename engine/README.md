@@ -12,17 +12,17 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 | `include/wse/vm/operand.h` | tagged operand decode and lvalue write-back | `mbStatement::parseOperand` `0x1401c6070`, `mbStatement::returnValue` `0x1401c6100`, `mbStatementBlock::execute` `0x1401f69d0`, `analyze` `0x1401f6740` |
 | `include/wse/vm/slots.h` | `mbSlots` (`std::vector<int64_t>`) get/set semantics | PDB type `0x1b0f8`; `parseOperand` bounds check; `returnValue` write path |
 | `include/wse/vm/statement.h` | statement record and text reader | `mbStatementBlock::readStream` `0x1401f6600`, PDB type `0xb91e` |
-| `include/wse/vm/block_vm.h` | statement-block VM, loop frames, core native ops, script/trigger VM bridge | `0x1401c6150`, `0x1401f6740`–`0x1401f7f00`, `0x1400dbde0`/`0x1400dbe70`, `0x140244cd0`, `0x14020fb80`/`0x1402101a0` |
+| `include/wse/vm/block_vm.h` | statement-block VM, loop frames (`try_for_dict_keys` `0x12`), core native ops, `WseVmState` wiring, script/trigger VM bridge | `0x1401c6150`, `0x1401f6740`–`0x1401f7f00`, `0x1401f7692`/`0x1401f7dde`, `0x1400dbde0`/`0x1400dbe70`, `0x140244cd0`, `0x14020fb80`/`0x1402101a0` |
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x140244810`, `0x140244540`, `0x14020fe60`, `0x14020fab0`, `0x1400ccf20`, `0x1400cd2d0`, `0x140244970`, `0x140244b60`, `0x14020ffa0`, `0x140244cd0`, `0x14020fb80`, `0x1402101a0` |
 | `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 65-entry name table, and script mapping | `0x14020f6a0`, `0x14020f7c0`, `0x14020f9a0`; globals `0x14069fac0`/`0x14069fac8`/`0x14069facc`; table `0x140615ad0`; formats `0x14055c680`/`0x14055c690` |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
-| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and 93/440 handlers (2800–2809, 3000–3002, 3014–3600, string 4200–4224/4233–4234/4236/4238/4240–4244, options 4300–4305, floating-point 4400–4401/4405–4438) | `executeWSE` `0x1401e4dc0` (lines 628, 638–665, 859, 870–877, 4670, 5192, 5202–6420, 7881–8380); `mbStatement::execute` `0x1401c6150` |
+| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and 134/440 handlers (2800–2809, 3000–3002, 3014–3017/3020–3022/3027–3028/3034–3035/3040–3043/3600, dict 3200–3222, pos vec 4100/4102–4104, string 4200–4224/4233–4234/4236/4238/4240–4244, options 4300–4305, floating-point 4400–4436/4438) | `executeWSE` `0x1401e4dc0` (lines 628–665, 859–877, 1032–2165, 4670, 5030–6420, 7881–8380); `0x1402a24f0`–`0x1402b64b0`; `0x14034e340`–`0x1403508a0`; `mbStatement::execute` `0x1401c6150` |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
 | `tests/script_test.cpp` + `fixtures/scripts.txt` | host tests for script records, header errors, duplicate mapping, and missing-name reporting | local fixture mirroring the retail grammar |
-| `tests/wse_test.cpp` | host tests for opcode enum values, shift/bitwise handlers, operand bounds, and opcode masking | local test doubles only |
-| `tests/block_vm_test.cpp` | host tests for analyze/modifiers/loops/core math/scripts/recursion/trigger VM integration | local test doubles and module fixtures |
+| `tests/wse_test.cpp` | host tests for opcode enum values, all 134 implemented handlers (including `.wsedict`/INI/JSON/URL dict I/O and path sandboxing), operand bounds, and opcode masking | local test doubles only |
+| `tests/block_vm_test.cpp` | host tests for analyze/modifiers/loops (`try_for_dict_keys`)/core math/scripts/recursion/return values/positions/trigger VM integration | local test doubles and module fixtures |
 
 ## Module text format
 
@@ -109,17 +109,26 @@ Both reject an out-of-range index with `WseDispatch::ignored`, matching `mbCheck
 operand: selector 0 yields the WSE version 5, selector 1 yields the Warband build `0x483` (1155), and
 any other selector yields the zeroed default (`0x1401e553a`–`0x1401e555b`).
 
-The script-context query group covers `store_current_trigger` (3014),
-`store_num_return_values` (3016), `store_return_value` (3017), `store_application_time` (3035), and
-`store_cur_mission_template_no` (3600). `store_current_trigger` returns the statement's context
+The script-context, timer, RNG, and profiler group covers `store_current_trigger` (3014),
+`return_values` (3015), `store_num_return_values` (3016), `store_return_value` (3017),
+`mtsrand`/`mtrand` (3020–3021, `rglMersenneTwister`), `get_time` (3022, UTC/local 32-bit epoch),
+`timer_reset`/`timer_get_elapsed_time` (3027–3028, 128 slots tracking 100 kHz `timers_total` with `op1 != 0 ? 0 : 2`),
+`set_random_seed` (3034), `store_application_time` (3035), `profiler_{start,stop,is_recording,mark}`
+(3040–3043), and `store_cur_mission_template_no` (3600). `store_current_trigger` returns the statement's context
 argument only while it is negative (the in-trigger marker; outside a trigger it is 0), matching
-`WSEOperationContext::GetCurrentTrigger`. `store_num_return_values` reads the count at
-`0x140698ae8`; `store_return_value` reads a 1-based slot from the 16-entry bank at `0x140698af0`,
-and an out-of-range or unset index logs and returns true without storing.
+`WSEOperationContext::GetCurrentTrigger`. `return_values` writes up to 16 `int64_t` slots at
+`0x140698af0`/`0x140698ae8`, `store_num_return_values` reads the count at
+`0x140698ae8`, and `store_return_value` reads a 1-based slot (out-of-range/unset logs and returns true without storing).
 `store_application_time` is `rglRound64((float)DXUtil_Timer(TIMER_GETAPPTIME) * 1000.0f)` — the
 call `FUN_1400b9690(5)` returns QPC seconds since the app-time baseline and the constant at
 `0x140576b90` is `1000.0f`. `store_cur_mission_template_no` reads `[0x14061f078]+0x9ae8`, or -1
 when there is no current mission.
+
+The dictionary group covers `3200–3222` (`dict_create`..`dict_delete_file_json`, paired with `core_op::kTryForDictKeys` `0x12` in `block_vm.h`): `WSEObjectManager` LIFO handle allocation/reuse, ordered UTF-8 string maps (`rglSectionlessIni`), binary `.wsedict`, `.ini`, JSON (including `\uXXXX` and UTF-16 surrogates), URL-encoded JSON (`+` -> space on decode before unescape; `%2B` and reserved percent-encoding on encode), 9-float `(o, f, u)` transforms with orthonormalization and fallback (`dict_get_pos`/`dict_set_pos`), `dict_load_dict` mode 0 no-op vs loader mode 0 clear-then-load, and `mbCheckPath` filename sandboxing.
+
+The position vector group covers `position_get_vector_to_position` (4100), `position_get_length` (4102),
+`get_dot_product_of_positions` (4103), and `get_cross_product_of_positions` (4104) on `rglTransform[128]`
+(`positions`).
 
 The string group covers `str_equals` (4200), `str_contains` (4201), `str_starts_with` (4202),
 `str_ends_with` (4203), `str_is_alpha` (4204), `str_is_digit` (4205), `str_is_whitespace` (4206),
@@ -178,7 +187,7 @@ fraction is greater than 0.5. Float comparisons use `rglAbs` and `FLT_EPSILON`. 
 a failed comparison returns `WseDispatch::condition_false`; an invalid register is a successful no-op
 (`WseDispatch::ignored`), matching the retail `return true` fall-through.
 
-Currently 93 of 440 mapped opcodes are implemented; every other mapped opcode returns
+Currently 134 of 440 mapped opcodes are implemented (leaving 306 unimplemented); every other mapped opcode returns
 `WseDispatch::unimplemented` until its handler is transcribed.
 
 ## Safety deviations

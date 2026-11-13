@@ -8,8 +8,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <initializer_list>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <span>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "wse/vm/execute_wse.h"
 
@@ -1625,6 +1630,802 @@ void test_options_group() {
     }
 }
 
+void test_script_state_and_position_group() {
+    std::u16string str_regs[128] = {};
+    const std::u16string_view global_strs[] = {
+        u"marker_global",  // 0
+        u"bad_pos_val",    // 1
+    };
+    const std::u16string_view local_strs[] = {
+        u"marker_local",   // 0
+    };
+    std::array<float, wse::vm::kFpRegisterCount> fp{};
+    std::array<std::int64_t, 128> int_regs{};
+    std::array<std::int64_t, 16> return_vals{};
+    std::int32_t num_returns = 0;
+    std::array<wse::vm::WseTransform, 128> positions{};
+    std::array<wse::vm::WseAppTimer, 128> timers{};
+    std::array<std::int64_t, 3> timers_total{1000000LL, 2000000LL, 5000000LL};
+    wse::vm::WseMersenneTwister rng{};
+    std::int32_t rand_seed = 0;
+    bool profiler_recording = false;
+    std::vector<std::string> profiler_markers{};
+
+    WseVmState state;
+    state.strings.registers = std::span<std::u16string>(str_regs);
+    state.strings.global = std::span<const std::u16string_view>(global_strs);
+    state.strings.local = std::span<const std::u16string_view>(local_strs);
+    state.return_values = return_vals;
+    state.return_values_out = return_vals;
+    state.num_return_values = 0;
+    state.num_return_values_out = &num_returns;
+    state.positions = positions;
+    state.timers = timers;
+    state.timers_total = timers_total;
+    state.rng = &rng;
+    state.rand_seed = &rand_seed;
+    state.profiler_recording = &profiler_recording;
+    state.profiler_markers = &profiler_markers;
+
+    WseEffect effect{};
+    const auto call = [&](WseOpcode op, std::initializer_list<std::int64_t> wide_args,
+                          std::initializer_list<std::uint8_t> tag_args = {}) {
+        std::vector<std::int64_t> wide(wide_args);
+        std::vector<std::int32_t> narrow(wide.size());
+        for (std::size_t i = 0; i < wide.size(); ++i) {
+            narrow[i] = static_cast<std::int32_t>(wide[i]);
+        }
+        std::vector<std::uint8_t> tags(tag_args);
+        WseOperands operands;
+        operands.wide = wide;
+        operands.narrow = narrow;
+        operands.tags = tags;
+        operands.fp = fp;
+        operands.registers = int_regs;
+        operands.state = state;
+        operands.state.return_values = return_vals;
+        operands.state.num_return_values = num_returns;
+        effect = WseEffect{0x1234, true};
+        return execute_wse(opcode(op), operands, effect);
+    };
+
+    // 3015 return_values -> 3016 store_num_return_values / 3017 store_return_value.
+    expect(call(WseOpcode::return_values, {11, 22, 33}) ==
+                   WseDispatch::handled_no_store &&
+               num_returns == 3 && return_vals[0] == 11 &&
+               return_vals[2] == 33,
+           "return_values writes up to 16 int64 slots");
+    expect(call(WseOpcode::store_num_return_values, {0}) ==
+                   WseDispatch::handled &&
+               effect.value == 3,
+           "store_num_return_values reads updated count");
+    expect(call(WseOpcode::store_return_value, {0, 2}) ==
+                   WseDispatch::handled &&
+               effect.value == 22,
+           "store_return_value reads 1-based slot after return_values");
+    expect(call(WseOpcode::return_values,
+                {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}) ==
+                   WseDispatch::handled_no_store &&
+               num_returns == 16 && return_vals[15] == 16,
+           "return_values clamps operand list to 16 slots");
+    expect(call(WseOpcode::store_return_value, {0, 17}) ==
+                   WseDispatch::ignored &&
+               effect.value == 0x1234,
+           "store_return_value rejects slot 17 beyond 16");
+    expect(call(WseOpcode::return_values, {}) ==
+                   WseDispatch::handled_no_store &&
+               num_returns == 0,
+           "return_values accepts zero operands and clears count");
+
+    // 3020 mtsrand & 3021 mtrand.
+    expect(call(WseOpcode::mtsrand, {}) == WseDispatch::operand_count_out_of_range,
+           "mtsrand requires 1 operand");
+    expect(call(WseOpcode::mtrand, {0, 10}) ==
+               WseDispatch::operand_count_out_of_range,
+           "mtrand requires 3 operands");
+    expect(call(WseOpcode::mtsrand, {1337}) == WseDispatch::handled_no_store,
+           "mtsrand seeds MT19937");
+    std::vector<std::int64_t> seq1;
+    for (int i = 0; i < 6; ++i) {
+        expect(call(WseOpcode::mtrand, {0, -5, 15}) == WseDispatch::handled &&
+                   effect.value >= -5 && effect.value < 15,
+               "mtrand produces values in [min, max)");
+        seq1.push_back(effect.value);
+    }
+    expect(call(WseOpcode::mtsrand, {1337}) == WseDispatch::handled_no_store,
+           "mtsrand re-seeds reproducibly");
+    // Edge case: min == max - 1 (span == 0) returns min without advancing RNG.
+    expect(call(WseOpcode::mtrand, {0, 42, 43}) == WseDispatch::handled &&
+               effect.value == 42,
+           "mtrand handles min == max - 1 without drawing");
+    for (int i = 0; i < 6; ++i) {
+        expect(call(WseOpcode::mtrand, {0, -5, 15}) == WseDispatch::handled &&
+                   effect.value == seq1[static_cast<std::size_t>(i)],
+               "mtrand min == max - 1 preserves exact PRNG stream");
+    }
+    // Edge case: min == max wraps unsigned span to 0xffffffffU and draws once cleanly.
+    expect(call(WseOpcode::mtrand, {0, 5, 5}) == WseDispatch::handled,
+           "mtrand min == max completes without hanging");
+    {
+        WseVmState no_rng = state;
+        no_rng.rng = nullptr;
+        std::array<std::int32_t, 3> args{0, 1, 10};
+        WseOperands ops;
+        ops.narrow = args;
+        ops.state = no_rng;
+        expect(execute_wse(opcode(WseOpcode::mtrand), ops, effect) ==
+                   WseDispatch::ignored,
+               "mtrand ignores missing RNG pointer");
+    }
+
+    // 3022 get_time (UTC & local).
+    expect(call(WseOpcode::get_time, {}) ==
+               WseDispatch::operand_count_out_of_range,
+           "get_time requires 1 operand");
+    const std::time_t sys_before = std::time(nullptr);
+    expect(call(WseOpcode::get_time, {0}) == WseDispatch::handled,
+           "get_time UTC succeeds");
+    const std::int64_t utc_val = effect.value;
+    const std::time_t sys_after = std::time(nullptr);
+    expect(utc_val >= static_cast<std::int32_t>(sys_before) - 2 &&
+               utc_val <= static_cast<std::int32_t>(sys_after) + 2,
+           "get_time returns current UTC unix epoch seconds");
+    expect(call(WseOpcode::get_time, {0, 1}) == WseDispatch::handled,
+           "get_time local succeeds");
+    const std::int64_t local_val = effect.value;
+    const std::time_t mid_t = static_cast<std::time_t>(utc_val);
+    std::tm lt{};
+    bool has_lt = false;
+#ifdef _WIN32
+    has_lt = localtime_s(&lt, &mid_t) == 0;
+#else
+    has_lt = localtime_r(&mid_t, &lt) != nullptr;
+#endif
+    if (has_lt) {
+        const std::int64_t expected_local =
+            wse::vm::wse_days_from_civil(lt.tm_year + 1900, lt.tm_mon + 1,
+                                         lt.tm_mday) *
+                86400LL +
+            static_cast<std::int64_t>(lt.tm_hour) * 3600LL +
+            static_cast<std::int64_t>(lt.tm_min) * 60LL +
+            static_cast<std::int64_t>(lt.tm_sec);
+        expect(local_val >= expected_local - 2 &&
+                   local_val <= expected_local + 2,
+               "get_time(local=1) applies local timezone offset");
+    }
+
+    // 3027 timer_reset & 3028 timer_get_elapsed_time (100kHz ticks).
+    expect(call(WseOpcode::timer_reset, {}) ==
+               WseDispatch::operand_count_out_of_range,
+           "timer_reset requires 1 operand");
+    expect(call(WseOpcode::timer_get_elapsed_time, {0}) ==
+               WseDispatch::operand_count_out_of_range,
+           "timer_get_elapsed_time requires 2 operands");
+    expect(call(WseOpcode::timer_reset, {0, 1}) ==
+                   WseDispatch::handled_no_store &&
+               timers[0].kind == 0 && timers[0].start_ticks == 1000000LL,
+           "timer_reset nonzero op1 selects app clock (kind 0)");
+    expect(call(WseOpcode::timer_reset, {1}) ==
+                   WseDispatch::handled_no_store &&
+               timers[1].kind == 2 && timers[1].start_ticks == 5000000LL,
+           "timer_reset default/0 op1 selects game clock (kind 2)");
+    timers_total[0] += 150000LL;  // 1.500s -> rglRound64(1.5f) == 1
+    expect(call(WseOpcode::timer_get_elapsed_time, {0, 0}) ==
+                   WseDispatch::handled &&
+               effect.value == 1,
+           "timer_get_elapsed_time rounds exact 1.5s down matching rglRound64");
+    timers_total[0] += 1000LL;    // 1.510s -> 2
+    expect(call(WseOpcode::timer_get_elapsed_time, {0, 0}) ==
+                   WseDispatch::handled &&
+               effect.value == 2,
+           "timer_get_elapsed_time uses 100kHz scale");
+    timers_total[2] += 325000LL;  // 3.25s -> 3
+    expect(call(WseOpcode::timer_get_elapsed_time, {0, 1}) ==
+                   WseDispatch::handled &&
+               effect.value == 3,
+           "timer_get_elapsed_time tracks kind 2 clock independently");
+    expect(call(WseOpcode::timer_reset, {128, 1}) == WseDispatch::ignored &&
+               call(WseOpcode::timer_get_elapsed_time, {0, -1}) ==
+                   WseDispatch::ignored,
+           "timer ops ignore out-of-range timer slot");
+
+    // 3034 set_random_seed.
+    expect(call(WseOpcode::set_random_seed, {}) ==
+               WseDispatch::operand_count_out_of_range,
+           "set_random_seed requires 1 operand");
+    expect(call(WseOpcode::set_random_seed, {98765}) ==
+                   WseDispatch::handled_no_store &&
+               rand_seed == 98765,
+           "set_random_seed updates state.rand_seed");
+
+    // 3040..3043 profiler_start/stop/is_recording/mark.
+    expect(call(WseOpcode::profiler_is_recording, {}) ==
+               WseDispatch::condition_false,
+           "profiler_is_recording initially false");
+    str_regs[0] = u"ignored_marker";
+    expect(call(WseOpcode::profiler_mark, {0}) ==
+                   WseDispatch::handled_no_store &&
+               profiler_markers.empty(),
+           "profiler_mark ignores markers when not recording");
+    expect(call(WseOpcode::profiler_start, {}) ==
+                   WseDispatch::handled_no_store &&
+               profiler_recording,
+           "profiler_start enables recording");
+    expect(call(WseOpcode::profiler_is_recording, {}) ==
+               WseDispatch::handled_no_store,
+           "profiler_is_recording returns true while active");
+    str_regs[0] = u"frame_0";
+    expect(call(WseOpcode::profiler_mark, {0}, {0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::profiler_mark, {0}, {3}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::profiler_mark, {0}, {0x16}) ==
+                   WseDispatch::handled_no_store,
+           "profiler_mark records across tag banks");
+    expect(profiler_markers.size() == 3U && profiler_markers[0] == "frame_0" &&
+               profiler_markers[1] == "marker_global" &&
+               profiler_markers[2] == "marker_local",
+           "profiler_mark appends UTF-8 markers");
+    expect(call(WseOpcode::profiler_stop, {}) ==
+                   WseDispatch::handled_no_store &&
+               !profiler_recording &&
+               call(WseOpcode::profiler_is_recording, {}) ==
+                   WseDispatch::condition_false,
+           "profiler_stop disables recording");
+    expect(call(WseOpcode::profiler_mark, {0}) ==
+                   WseDispatch::handled_no_store &&
+               profiler_markers.size() == 3U,
+           "profiler_mark stops recording markers after profiler_stop");
+    expect(call(WseOpcode::profiler_mark, {}) ==
+               WseDispatch::operand_count_out_of_range,
+           "profiler_mark requires 1 operand");
+
+    // 4100 position_get_vector_to_position, 4102..4104, 4402..4404 fld_pos_*.
+    positions[1].o = {1.0f, 2.0f, 3.0f, 1.0f};
+    positions[2].o = {1.0f, 6.0f, 6.0f, 1.0f};
+    expect(call(WseOpcode::position_get_vector_to_position, {0, 0, 1, 2}) ==
+                   WseDispatch::handled &&
+               effect.value == 500,
+           "position_get_vector_to_position returns scaled distance");
+    expect(close(positions[0].o.x, 1.0f) && close(positions[0].o.y, 2.0f) &&
+               close(positions[0].o.z, 3.0f) &&
+               close(positions[0].f.x, 0.0f) &&
+               close(positions[0].f.y, 0.8f) &&
+               close(positions[0].f.z, 0.6f),
+           "position_get_vector_to_position sets origin and aimed forward basis");
+    expect(close(positions[0].s.length(), 1.0f) &&
+               close(positions[0].u.length(), 1.0f) &&
+               close(positions[0].s.dot(positions[0].f), 0.0f) &&
+               close(positions[0].s.dot(positions[0].u), 0.0f) &&
+               close(positions[0].f.dot(positions[0].u), 0.0f),
+           "position_get_vector_to_position yields orthonormal basis");
+    // Aliasing test: dst == pos1.
+    positions[3].o = {3.0f, 4.0f, 12.0f, 1.0f};
+    positions[4].o = {0.0f, 0.0f, 0.0f, 1.0f};
+    expect(call(WseOpcode::position_get_vector_to_position, {0, 3, 3, 4}) ==
+                   WseDispatch::handled &&
+               effect.value == 1300 && close(positions[3].o.x, 3.0f) &&
+               close(positions[3].f.x, -3.0f / 13.0f) &&
+               close(positions[3].f.y, -4.0f / 13.0f) &&
+               close(positions[3].f.z, -12.0f / 13.0f),
+           "position_get_vector_to_position handles dst == pos1 aliasing");
+    // 4102 position_get_length.
+    positions[5].o = {3.0f, 4.0f, 12.0f, 1.0f};
+    expect(call(WseOpcode::position_get_length, {0, 5}) ==
+                   WseDispatch::handled &&
+               effect.value == 1300,
+           "position_get_length returns fixed-point vector length");
+    // 4103 get_dot_product_of_positions.
+    positions[6].o = {1.0f, 2.0f, 3.0f, 1.0f};
+    positions[7].o = {4.0f, -5.0f, 6.0f, 1.0f};
+    expect(call(WseOpcode::get_dot_product_of_positions, {0, 6, 7}) ==
+                   WseDispatch::handled &&
+               effect.value == 1200,
+           "get_dot_product_of_positions computes fixed-point dot product");
+    // 4104 get_cross_product_of_positions (including aliasing dst == pos1).
+    positions[8].o = {1.0f, 0.0f, 0.0f, 1.0f};
+    positions[9].o = {0.0f, 2.0f, 0.0f, 1.0f};
+    expect(call(WseOpcode::get_cross_product_of_positions, {8, 8, 9}) ==
+                   WseDispatch::handled_no_store &&
+               close(positions[8].o.x, 0.0f) &&
+               close(positions[8].o.y, 0.0f) &&
+               close(positions[8].o.z, 2.0f),
+           "get_cross_product_of_positions handles cross product with aliasing");
+    // 4402..4404 fld_pos_{x,y,z}.
+    positions[10].o = {-1.25f, 3.5f, 9.75f, 1.0f};
+    expect(call(WseOpcode::fld_pos_x, {4, 10}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::fld_pos_y, {5, 10}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::fld_pos_z, {6, 10}) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[4], -1.25f) && close(fp[5], 3.5f) &&
+               close(fp[6], 9.75f),
+           "fld_pos_x/y/z copy origin coordinates to fp registers");
+    expect(call(WseOpcode::fld_pos_x, {128, 10}) == WseDispatch::ignored &&
+               call(WseOpcode::fld_pos_y, {4, 128}) == WseDispatch::ignored &&
+               call(WseOpcode::position_get_length, {0, -1}) ==
+                   WseDispatch::ignored &&
+               call(WseOpcode::get_dot_product_of_positions, {0, 1, 128}) ==
+                   WseDispatch::ignored &&
+               call(WseOpcode::get_cross_product_of_positions, {128, 1, 2}) ==
+                   WseDispatch::ignored,
+           "position/fld_pos ops ignore invalid registers");
+    expect(call(WseOpcode::fld_pos_z, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::position_get_vector_to_position, {0, 1, 2}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::position_get_length, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::get_dot_product_of_positions, {0, 1}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::get_cross_product_of_positions, {0, 1}) ==
+                   WseDispatch::operand_count_out_of_range,
+           "position/fld_pos ops validate operand counts");
+}
+
+void test_dictionary_group() {
+    namespace fs = std::filesystem;
+    const fs::path temp_dir =
+        fs::temp_directory_path() / "wse2_dict_unit_test_tmp";
+    const fs::path outside_escape =
+        fs::temp_directory_path() / "wse2_dict_escape_forbidden.wsedict";
+    struct TempGuard {
+        fs::path dir;
+        fs::path escape;
+        ~TempGuard() {
+            std::error_code ec;
+            fs::remove_all(dir, ec);
+            fs::remove(escape, ec);
+        }
+    } guard{temp_dir, outside_escape};
+    {
+        std::error_code ec;
+        fs::remove_all(temp_dir, ec);
+        fs::remove(outside_escape, ec);
+        fs::create_directories(temp_dir, ec);
+        expect(!ec, "created temporary directory for dictionary file tests");
+    }
+
+    std::u16string str_regs[128] = {};
+    std::array<float, wse::vm::kFpRegisterCount> fp{};
+    std::array<std::int64_t, 128> int_regs{};
+    std::array<wse::vm::WseTransform, 128> positions{};
+    wse::vm::WseDictionaryStore store;
+    store.root_dir = temp_dir;
+
+    WseVmState state;
+    state.strings.registers = std::span<std::u16string>(str_regs);
+    state.positions = positions;
+    state.dictionaries = &store;
+
+    WseEffect effect{};
+    const auto call = [&](WseOpcode op, std::initializer_list<std::int64_t> wide_args,
+                          std::initializer_list<std::uint8_t> tag_args = {}) {
+        std::vector<std::int64_t> wide(wide_args);
+        std::vector<std::int32_t> narrow(wide.size());
+        for (std::size_t i = 0; i < wide.size(); ++i) {
+            narrow[i] = static_cast<std::int32_t>(wide[i]);
+        }
+        std::vector<std::uint8_t> tags(tag_args);
+        WseOperands operands;
+        operands.wide = wide;
+        operands.narrow = narrow;
+        operands.tags = tags;
+        operands.fp = fp;
+        operands.registers = int_regs;
+        operands.state = state;
+        effect = WseEffect{0x1234, true};
+        return execute_wse(opcode(op), operands, effect);
+    };
+
+    // 3200 dict_create & 3201 dict_free (LIFO free-ID reuse).
+    expect(call(WseOpcode::dict_create, {0}) == WseDispatch::handled &&
+               effect.value == 0,
+           "dict_create assigns id 0");
+    expect(call(WseOpcode::dict_create, {0}) == WseDispatch::handled &&
+               effect.value == 1,
+           "dict_create assigns id 1");
+    expect(call(WseOpcode::dict_create, {0}) == WseDispatch::handled &&
+               effect.value == 2,
+           "dict_create assigns id 2");
+    expect(call(WseOpcode::dict_free, {1}) == WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_free, {0}) == WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_free, {0}) == WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_free, {-1}) == WseDispatch::handled_no_store,
+           "dict_free ignores invalid or already-freed IDs");
+    expect(call(WseOpcode::dict_create, {0}) == WseDispatch::handled &&
+               effect.value == 0,
+           "dict_create reuses most recently freed id (LIFO)");
+    expect(call(WseOpcode::dict_create, {0}) == WseDispatch::handled &&
+               effect.value == 1,
+           "dict_create reuses earlier freed id next");
+    expect(call(WseOpcode::dict_create, {0}) == WseDispatch::handled &&
+               effect.value == 3,
+           "dict_create allocates fresh slot once free list is empty");
+
+    // 3206/3207/3208/3210..3214/3221/3205 basic CRUD & iteration.
+    expect(call(WseOpcode::dict_is_empty, {0}) == WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_is_empty, {99}) ==
+                   WseDispatch::handled_no_store,
+           "dict_is_empty returns true for empty and invalid IDs");
+    str_regs[0] = u"beta";
+    str_regs[1] = u"hello";
+    str_regs[2] = u"alpha";
+    str_regs[3] = u"-42";
+    str_regs[4] = u"gamma";
+    str_regs[5] = u"world\u00e9";
+    str_regs[6] = u"missing";
+    str_regs[7] = u"fallback_str";
+    expect(call(WseOpcode::dict_set_str, {0, 0, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_set_int, {0, 2, -42}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_set_str, {0, 4, 5}) ==
+                   WseDispatch::handled_no_store,
+           "dict_set_str and dict_set_int store entries");
+    expect(call(WseOpcode::dict_is_empty, {0}) ==
+                   WseDispatch::condition_false &&
+               call(WseOpcode::dict_get_size, {0, 0}) == WseDispatch::handled &&
+               effect.value == 3,
+           "dict_is_empty and dict_get_size reflect populated entries");
+    expect(call(WseOpcode::dict_has_key, {0, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_has_key, {0, 6}) ==
+                   WseDispatch::condition_false &&
+               call(WseOpcode::dict_has_key, {99, 0}) ==
+                   WseDispatch::condition_false,
+           "dict_has_key distinguishes present, missing, and invalid dicts");
+    expect(call(WseOpcode::dict_get_str, {10, 0, 4}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[10] == u"world\u00e9" &&
+               call(WseOpcode::dict_get_str, {11, 0, 6, 7}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[11] == u"fallback_str" &&
+               call(WseOpcode::dict_get_str, {12, 0, 6}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[12].empty(),
+           "dict_get_str reads UTF-8 values and applies default/empty fallback");
+    expect(call(WseOpcode::dict_get_int, {0, 0, 2}) == WseDispatch::handled &&
+               effect.value == -42 &&
+               call(WseOpcode::dict_get_int, {0, 0, 6, 77}) ==
+                   WseDispatch::handled &&
+               effect.value == 77 &&
+               call(WseOpcode::dict_get_int, {0, 0, 0, 77}) ==
+                   WseDispatch::handled &&
+               effect.value == 0,
+           "dict_get_int parses ints, uses default on missing, 0 on non-int");
+    expect(call(WseOpcode::dict_get_key_by_iterator, {20, 0, 0}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[20] == u"alpha" &&
+               call(WseOpcode::dict_get_key_by_iterator, {21, 0, 1}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[21] == u"beta" &&
+               call(WseOpcode::dict_get_key_by_iterator, {22, 0, 2}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[22] == u"gamma" &&
+               call(WseOpcode::dict_get_key_by_iterator, {23, 0, 3}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[23].empty(),
+           "dict_get_key_by_iterator visits keys in sorted order");
+    expect(call(WseOpcode::dict_erase, {0, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_has_key, {0, 0}) ==
+                   WseDispatch::condition_false &&
+               call(WseOpcode::dict_get_size, {0, 0}) == WseDispatch::handled &&
+               effect.value == 2,
+           "dict_erase removes target key only");
+
+    // 3215 dict_get_pos & 3216 dict_set_pos (9-float fallback & orthonormalization).
+    positions[0] = wse::vm::WseTransform::identity();
+    positions[0].o = {10.5f, -20.25f, 30.75f, 1.0f};
+    positions[0].rotate_z(0.6f);
+    positions[0].rotate_x(0.3f);
+    str_regs[30] = u"pose";
+    expect(call(WseOpcode::dict_set_pos, {0, 30, 0}) ==
+               WseDispatch::handled_no_store,
+           "dict_set_pos serializes 9 floats");
+    expect(call(WseOpcode::dict_get_pos, {1, 0, 30}) ==
+                   WseDispatch::handled_no_store &&
+               close(positions[1].o.x, 10.5f) &&
+               close(positions[1].o.y, -20.25f) &&
+               close(positions[1].o.z, 30.75f) &&
+               close(positions[1].s.x, positions[0].s.x) &&
+               close(positions[1].f.y, positions[0].f.y) &&
+               close(positions[1].u.z, positions[0].u.z),
+           "dict_get_pos round-trips position transform");
+    // Non-orthonormal input gets orthonormalized:
+    str_regs[31] = u"skewed";
+    str_regs[32] = u"1,2,3,0,2,0,0,1,3";
+    expect(call(WseOpcode::dict_set_str, {0, 31, 32}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_pos, {2, 0, 31}) ==
+                   WseDispatch::handled_no_store &&
+               close(positions[2].o.x, 1.0f) &&
+               close(positions[2].o.y, 2.0f) &&
+               close(positions[2].o.z, 3.0f) &&
+               close(positions[2].s.length(), 1.0f) &&
+               close(positions[2].f.length(), 1.0f) &&
+               close(positions[2].u.length(), 1.0f) &&
+               close(positions[2].s.dot(positions[2].f), 0.0f) &&
+               close(positions[2].f.dot(positions[2].u), 0.0f),
+           "dict_get_pos orthonormalizes parsed f/u vectors");
+    // Fallback when token count != 9 or key missing:
+    positions[3].o = {7.0f, 8.0f, 9.0f, 1.0f};
+    str_regs[33] = u"short_pos";
+    str_regs[34] = u"1,2,3";
+    expect(call(WseOpcode::dict_set_str, {0, 33, 34}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_pos, {4, 0, 33, 3}) ==
+                   WseDispatch::handled_no_store &&
+               close(positions[4].o.x, 7.0f) &&
+               close(positions[4].o.y, 8.0f) &&
+               close(positions[4].o.z, 9.0f) &&
+               call(WseOpcode::dict_get_pos, {4, 0, 33}) ==
+                   WseDispatch::handled_no_store &&
+               close(positions[4].o.x, 0.0f) && close(positions[4].s.x, 1.0f),
+           "dict_get_pos uses fallback/identity when tokens != 9");
+
+    // 3203 dict_load_dict mode semantics (0 is no-op, 1 overwrites, 2 inserts missing).
+    str_regs[40] = u"k_keep";
+    str_regs[41] = u"v_keep";
+    str_regs[42] = u"k_shared";
+    str_regs[43] = u"v_old";
+    str_regs[44] = u"v_new";
+    str_regs[45] = u"k_added";
+    str_regs[46] = u"v_added";
+    expect(call(WseOpcode::dict_set_str, {1, 40, 41}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_set_str, {1, 42, 43}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_set_str, {2, 42, 44}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_set_str, {2, 45, 46}) ==
+                   WseDispatch::handled_no_store,
+           "populated source and dest dicts for dict_load_dict");
+    expect(call(WseOpcode::dict_load_dict, {1, 2, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_has_key, {1, 45}) ==
+                   WseDispatch::condition_false &&
+               call(WseOpcode::dict_get_str, {50, 1, 42}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[50] == u"v_old",
+           "dict_load_dict mode 0 is a no-op");
+    expect(call(WseOpcode::dict_load_dict, {1, 2, 2}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_str, {50, 1, 45}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[50] == u"v_added" &&
+               call(WseOpcode::dict_get_str, {50, 1, 42}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[50] == u"v_old",
+           "dict_load_dict mode 2 inserts only missing keys");
+    expect(call(WseOpcode::dict_load_dict, {1, 2, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_str, {50, 1, 42}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[50] == u"v_new" &&
+               call(WseOpcode::dict_has_key, {1, 40}) ==
+                   WseDispatch::handled_no_store,
+           "dict_load_dict mode 1 overwrites collisions while preserving existing keys");
+
+    // 3204 dict_save, 3202 dict_load_file, 3209 dict_delete_file (.wsedict and .ini).
+    str_regs[60] = u"bin_dict";
+    str_regs[61] = u"ini_dict";
+    expect(call(WseOpcode::dict_save, {1, 60}) ==
+                   WseDispatch::handled_no_store &&
+               fs::exists(temp_dir / "bin_dict.wsedict"),
+           "dict_save writes binary .wsedict by default");
+    expect(call(WseOpcode::dict_save, {1, 61, 1}) ==
+                   WseDispatch::handled_no_store &&
+               fs::exists(temp_dir / "ini_dict.ini"),
+           "dict_save(format=1) writes .ini file");
+    expect(call(WseOpcode::dict_clear, {3}) == WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_set_str, {3, 40, 46}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_load_file, {3, 60, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_str, {51, 3, 40}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[51] == u"v_keep" &&
+               call(WseOpcode::dict_get_str, {51, 3, 42}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[51] == u"v_new",
+           "dict_load_file(mode=0) clears and loads binary .wsedict");
+    // Verify mode 2 vs mode 1 on INI and binary:
+    expect(call(WseOpcode::dict_set_str, {3, 42, 43}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_erase, {3, 45}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_load_file, {3, 61, 2, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_str, {51, 3, 45}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[51] == u"v_added" &&
+               call(WseOpcode::dict_get_str, {51, 3, 42}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[51] == u"v_old",
+           "dict_load_file(mode=2, format=1) inserts missing keys from .ini");
+    expect(call(WseOpcode::dict_load_file, {3, 61, 1, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_str, {51, 3, 42}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[51] == u"v_new",
+           "dict_load_file(mode=1, format=1) overwrites keys from .ini");
+    // Corrupt/truncated .wsedict does not crash.
+    {
+        std::ofstream corrupt(temp_dir / "corrupt.wsedict", std::ios::binary);
+        const char bytes[] = {'\x7f', '\x00', '\x00', '\x00', '\x01', '\x00'};
+        corrupt.write(bytes, sizeof(bytes));
+    }
+    str_regs[62] = u"corrupt";
+    expect(call(WseOpcode::dict_load_file, {3, 62, 1}) ==
+               WseDispatch::handled_no_store,
+           "dict_load_file rejects truncated/malformed binary safely");
+    expect(call(WseOpcode::dict_delete_file, {60}) ==
+                   WseDispatch::handled_no_store &&
+               !fs::exists(temp_dir / "bin_dict.wsedict") &&
+               call(WseOpcode::dict_delete_file, {61, 1}) ==
+                   WseDispatch::handled_no_store &&
+               !fs::exists(temp_dir / "ini_dict.ini"),
+           "dict_delete_file deletes .wsedict and .ini targets");
+
+    // 3217/3218/3222 JSON save/load/delete including \uXXXX and surrogate pairs.
+    {
+        std::ofstream js(temp_dir / "unicode.json", std::ios::binary);
+        js << "{\"uml\":\"\\u00e9\",\"smile\":\"\\uD83D\\uDE00\",\"esc\":\"a\\\\b\\nc\"}";
+    }
+    str_regs[63] = u"unicode";
+    str_regs[64] = u"uml";
+    str_regs[65] = u"smile";
+    str_regs[66] = u"esc";
+    expect(call(WseOpcode::dict_load_file_json, {3, 63, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_str, {52, 3, 64}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[52] == u"\u00e9" &&
+               call(WseOpcode::dict_get_str, {52, 3, 65}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[52] == u"\U0001F600" &&
+               call(WseOpcode::dict_get_str, {52, 3, 66}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[52] == u"a\\b\nc",
+           "dict_load_file_json decodes \\uXXXX, UTF-16 surrogates, and escapes");
+    str_regs[67] = u"roundtrip_json";
+    expect(call(WseOpcode::dict_save_json, {3, 67}) ==
+                   WseDispatch::handled_no_store &&
+               fs::exists(temp_dir / "roundtrip_json.json") &&
+               call(WseOpcode::dict_clear, {3}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_load_file_json, {3, 67, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_str, {52, 3, 65}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[52] == u"\U0001F600" &&
+               call(WseOpcode::dict_delete_file_json, {67}) ==
+                   WseDispatch::handled_no_store &&
+               !fs::exists(temp_dir / "roundtrip_json.json"),
+           "dict_save_json / load / delete round-trip cleanly");
+
+    // 3219 dict_from_url_encoded_json & 3220 dict_to_url_encoded_json.
+    expect(call(WseOpcode::dict_clear, {3}) == WseDispatch::handled_no_store,
+           "cleared dict 3");
+    str_regs[70] = u"a+b";
+    str_regs[71] = u"hello world!";
+    expect(call(WseOpcode::dict_set_str, {3, 70, 71}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_to_url_encoded_json, {80, 3}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[80] == u"%7B%22a%2Bb%22%3A%22hello%20world%21%22%7D",
+           "dict_to_url_encoded_json percent-encodes reserved bytes and + as %2B");
+    // Now verify dict_from_url_encoded_json turns '+' into space while keeping %2B as '+'.
+    str_regs[81] = u"%7B%22a%2Bb%22%3A+%22hello+world%21%22%7D";
+    expect(call(WseOpcode::dict_set_str, {2, 40, 41}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_from_url_encoded_json, {2, 81, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_size, {0, 2}) == WseDispatch::handled &&
+               effect.value == 1 &&
+               call(WseOpcode::dict_get_str, {53, 2, 70}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[53] == u"hello world!",
+           "dict_from_url_encoded_json converts + to space before unescape");
+    // Mode 2 keeps existing entries when loading URL-encoded JSON.
+    str_regs[82] = u"%7B%22a%2Bb%22%3A%22changed%22%2C%22extra%22%3A%22ok%22%7D";
+    str_regs[83] = u"extra";
+    expect(call(WseOpcode::dict_from_url_encoded_json, {2, 82, 2}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_get_str, {53, 2, 70}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[53] == u"hello world!" &&
+               call(WseOpcode::dict_get_str, {53, 2, 83}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[53] == u"ok",
+           "dict_from_url_encoded_json mode 2 inserts only missing keys");
+
+    // mbCheckPath sandboxing rejects traversal, separators, wildcards, empty names.
+    const std::u16string_view bad_paths[] = {
+        u"../wse2_dict_escape_forbidden",
+        u"sub/file",
+        u"sub\\file",
+        u"C:evil",
+        u"bad?name",
+        u"...",
+        u"",
+    };
+    for (const auto bad : bad_paths) {
+        str_regs[90] = std::u16string(bad);
+        expect(call(WseOpcode::dict_save, {2, 90}) ==
+                       WseDispatch::handled_no_store &&
+                   call(WseOpcode::dict_save_json, {2, 90}) ==
+                       WseDispatch::handled_no_store &&
+                   !fs::exists(outside_escape),
+               "mbCheckPath blocks unsafe/traversal file names");
+    }
+
+    // Invalid registers & operand count checks across dictionary ops.
+    expect(call(WseOpcode::dict_get_str, {128, 2, 70}) ==
+                   WseDispatch::ignored &&
+               call(WseOpcode::dict_get_key_by_iterator, {-1, 2, 0}) ==
+                   WseDispatch::ignored &&
+               call(WseOpcode::dict_to_url_encoded_json, {128, 2}) ==
+                   WseDispatch::ignored &&
+               call(WseOpcode::dict_get_pos, {128, 0, 30}) ==
+                   WseDispatch::ignored &&
+               call(WseOpcode::dict_get_pos, {1, 0, 30, 128}) ==
+                   WseDispatch::ignored &&
+               call(WseOpcode::dict_set_pos, {0, 30, 128}) ==
+                   WseDispatch::ignored,
+           "dictionary ops return ignored for invalid register indices");
+    expect(call(WseOpcode::dict_create, {}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_free, {}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_load_file, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_load_dict, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_save, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_clear, {}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_is_empty, {}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_has_key, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_get_size, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_delete_file, {}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_get_str, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_get_int, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_set_str, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_set_int, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_get_key_by_iterator, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_get_pos, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_set_pos, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_load_file_json, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_save_json, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_from_url_encoded_json, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_to_url_encoded_json, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_erase, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::dict_delete_file_json, {}) ==
+                   WseDispatch::operand_count_out_of_range,
+           "all 23 dictionary opcodes validate minimum operand count");
+}
+
 void test_descriptions() {
     using wse::vm::describe;
     expect(!describe(WseDispatch::handled).empty(), "handled description");
@@ -1649,6 +2450,8 @@ int main() {
     test_string_group();
     test_string_extended_group();
     test_options_group();
+    test_script_state_and_position_group();
+    test_dictionary_group();
     test_operand_counts();
     test_unimplemented_and_mask();
     test_fp_load_store();
