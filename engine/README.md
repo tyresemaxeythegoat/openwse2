@@ -90,7 +90,7 @@ pseudocode line and the handler's call extent. `tools/extract_wse_opcodes.py` re
 `include/wse/vm/wse_opcodes.h` from the 8,844-line WSE2 v1.1.5.5 pseudocode dump and the public
 `header_operations_addon.py` names.
 
-`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements four groups. The
+`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements five groups. The
 arithmetic/bitwise group 2800–2809 covers arithmetic right shift (`val_shr`/`store_shr`), logical
 right shift (`val_lshr`/`store_lshr`), left shift (`val_shl`/`store_shl`), xor (`val_xor`/`store_xor`),
 and complement (`val_not`/`store_not`); shift counts are masked with `& 0x3F`, and `store_*` reads
@@ -104,6 +104,18 @@ Both reject an out-of-range index with `WseDispatch::ignored`, matching `mbCheck
 (`0x1401c4e60`) and the retail `return true` fall-through. `store_wse_version` ignores its value
 operand: selector 0 yields the WSE version 5, selector 1 yields the Warband build `0x483` (1155), and
 any other selector yields the zeroed default (`0x1401e553a`–`0x1401e555b`).
+
+The script-context query group covers `store_current_trigger` (3014),
+`store_num_return_values` (3016), `store_return_value` (3017), `store_application_time` (3035), and
+`store_cur_mission_template_no` (3600). `store_current_trigger` returns the statement's context
+argument only while it is negative (the in-trigger marker; outside a trigger it is 0), matching
+`WSEOperationContext::GetCurrentTrigger`. `store_num_return_values` reads the count at
+`0x140698ae8`; `store_return_value` reads a 1-based slot from the 16-entry bank at `0x140698af0`,
+and an out-of-range or unset index logs and returns true without storing.
+`store_application_time` is `rglRound64((float)DXUtil_Timer(TIMER_GETAPPTIME) * 1000.0f)` — the
+call `FUN_1400b9690(5)` returns QPC seconds since the app-time baseline and the constant at
+`0x140576b90` is `1000.0f`. `store_cur_mission_template_no` reads `[0x14061f078]+0x9ae8`, or -1
+when there is no current mission.
 
 The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`, `fle`, `fsub`,
 `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, and the transcendental/rounding helpers

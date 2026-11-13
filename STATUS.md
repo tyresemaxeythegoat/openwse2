@@ -37,7 +37,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | Portable trigger runtime | Event-key state machine reconstructed and host-tested; statement conditions/consequences are callbacks until the VM executes blocks |
 | Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
 | `executeWSE` case mapping | Complete: 440/440 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode (v1.1.5.5) |
-| Portable `executeWSE` handlers | 47 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, and 4400/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 393 report `WseDispatch::unimplemented` |
+| Portable `executeWSE` handlers | 52 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, 3014/3016/3017/3035/3600 script-context queries, and 4400/4405–4438 floating-point load/store/compare/arithmetic plus the transcendental/rounding group; the other 388 report `WseDispatch::unimplemented` |
 
 ## Confirmed by pseudocode
 
@@ -110,6 +110,17 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   `mov qword ptr [r14 + rcx*8 + 0x270], rax` at `0x1401e552d`). `store_wse_version` ignores its value
   operand: selector 0 yields 5, selector 1 yields `0x483` (1155), and any other selector uses the
   zeroed `r15` default (`0x1401e553a`–`0x1401e555b`).
+- The script-context query group is proven by five separate handler sites:
+  `store_current_trigger` (`0x1401e5917`) returns `param_6` only when it is `<= 0` (`cmovle`),
+  and `mbStatement::execute` passes its `r8d` context argument as `param_6` at `0x1401e223e`/
+  `0x1401e2262`; WSE's `GetCurrentTrigger` uses the same negative-context rule.
+  `store_num_return_values` (`0x1401e5979`) reads `0x140698ae8`. `store_return_value`
+  (`0x1401e5985`) accepts a 1-based index 1–16, requires it to be `<= 0x140698ae8`, and reads
+  `0x140698af0 + (index-1)*8`; out-of-range/unset indices log at `0x14055afe8`/`0x14055b008` and
+  return true without storing. `store_application_time` (`0x1401e63a4`) calls
+  `FUN_1400b9690(5)` (QPC seconds since the app-time baseline), converts to float, multiplies by
+  `1000.0f` (`0x140576b90`), and rounds through `rglRound64`. `store_cur_mission_template_no`
+  (`0x1401ea6b2`) reads `[0x14061f078]+0x9ae8` or yields -1 when the pointer is null.
 - The floating-point cases at lines 5192 and 7881–8380 index the 128-float array `DAT_140698718`
   (`g_basicGame+0x35d58`).
   `mbCheckRegister` (`0x1401c4e60`) is `cmp ecx,0x7f; ja` (unsigned 0–127); a failed check returns

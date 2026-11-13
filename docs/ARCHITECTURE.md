@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the first four handler groups recovered.
+Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the first five handler groups recovered.
 Last updated: 2026-11-13.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -185,6 +185,19 @@ Both validate the index with `mbCheckRegister` (`0x1401c4e60`) and fall through 
 failure. `store_wse_version` ignores its value operand: selector 0 yields the WSE version 5, selector
 1 the Warband build `0x483` (1155), and any other selector the zeroed default
 (`0x1401e553a`–`0x1401e555b`).
+
+The script-context query group covers `store_current_trigger` (3014), `store_num_return_values`
+(3016), `store_return_value` (3017), `store_application_time` (3035), and
+`store_cur_mission_template_no` (3600). `store_current_trigger` returns the statement's context
+argument only when it is negative — the in-trigger marker — and 0 otherwise, matching
+`WSEOperationContext::GetCurrentTrigger`. The return-value bank is 16 int64 slots at
+`0x140698af0` with its count at `0x140698ae8`; `store_return_value` takes a 1-based index, logs
+`"invalid script result index %d"` or `"unset result value %d"`, and returns true without storing
+when the slot is out of range or unset. `store_application_time` rounds
+`(float)DXUtil_Timer(TIMER_GETAPPTIME) * 1000.0f` through `rglRound64`; `FUN_1400b9690(5)` returns
+QPC seconds since the app-time baseline and the scale at `0x140576b90` is `1000.0f`.
+`store_cur_mission_template_no` reads the int32 at `[0x14061f078]+0x9ae8`, or -1 when the current
+mission pointer is null.
 
 The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
 `fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, `fsqrt`, `fabs`, `fceil`, `ffloor`,

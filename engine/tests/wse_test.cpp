@@ -32,6 +32,7 @@ using wse::vm::WseDispatch;
 using wse::vm::WseEffect;
 using wse::vm::WseOpcode;
 using wse::vm::WseOperands;
+using wse::vm::WseVmState;
 
 constexpr std::uint32_t opcode(WseOpcode value) noexcept {
     return static_cast<std::uint32_t>(value);
@@ -42,12 +43,14 @@ WseDispatch run(std::uint32_t value,
                 std::initializer_list<std::int32_t> registers,
                 WseEffect& effect,
                 std::span<float> fp = {},
-                std::span<std::int64_t> bank = {}) {
+                std::span<std::int64_t> bank = {},
+                WseVmState state = {}) {
     WseOperands operands;
     operands.wide = std::span<const std::int64_t>(values.begin(), values.size());
     operands.narrow = std::span<const std::int32_t>(registers.begin(), registers.size());
     operands.fp = fp;
     operands.registers = bank;
+    operands.state = state;
     effect.value = 0x1234;
     effect.store_value = true;
     return wse::vm::execute_wse(value, operands, effect);
@@ -537,6 +540,88 @@ void test_register_group() {
            "store_wse_version rejects a missing selector");
 }
 
+void test_script_context_group() {
+    WseEffect effect;
+    WseDispatch dispatch = WseDispatch::unimplemented;
+    WseVmState state;
+
+    dispatch = run(opcode(WseOpcode::store_current_trigger), {}, {}, effect);
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "store_current_trigger is 0 outside a trigger");
+
+    state.caller = -3;
+    dispatch = run(opcode(WseOpcode::store_current_trigger), {}, {}, effect, {}, {},
+                   state);
+    expect(dispatch == WseDispatch::handled && effect.value == -3,
+           "store_current_trigger returns the negative trigger context");
+
+    state.caller = 7;
+    dispatch = run(opcode(WseOpcode::store_current_trigger), {}, {}, effect, {}, {},
+                   state);
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "store_current_trigger ignores a positive context");
+
+    state = {};
+    state.num_return_values = 3;
+    dispatch = run(opcode(WseOpcode::store_num_return_values), {}, {}, effect, {}, {},
+                   state);
+    expect(dispatch == WseDispatch::handled && effect.value == 3,
+           "store_num_return_values reads the count");
+
+    std::array<std::int64_t, 16> returns{11, 22, 33};
+    state.return_values = returns;
+    dispatch = run(opcode(WseOpcode::store_return_value), {0, 0}, {0, 2}, effect, {},
+                   {}, state);
+    expect(dispatch == WseDispatch::handled && effect.value == 22,
+           "store_return_value reads the 1-based slot");
+
+    dispatch = run(opcode(WseOpcode::store_return_value), {0, 0}, {0, 4}, effect, {},
+                   {}, state);
+    expect(dispatch == WseDispatch::ignored,
+           "store_return_value rejects an unset slot");
+
+    dispatch = run(opcode(WseOpcode::store_return_value), {0, 0}, {0, 0}, effect, {},
+                   {}, state);
+    expect(dispatch == WseDispatch::ignored,
+           "store_return_value rejects index 0");
+
+    dispatch = run(opcode(WseOpcode::store_return_value), {0, 0}, {0, 17}, effect, {},
+                   {}, state);
+    expect(dispatch == WseDispatch::ignored,
+           "store_return_value rejects index 17");
+
+    dispatch = run(opcode(WseOpcode::store_return_value), {0}, {}, effect, {}, {},
+                   state);
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "store_return_value rejects a missing index");
+
+    state = {};
+    state.app_time_seconds = 1.5;
+    dispatch = run(opcode(WseOpcode::store_application_time), {}, {}, effect, {}, {},
+                   state);
+    expect(dispatch == WseDispatch::handled && effect.value == 1500,
+           "store_application_time converts seconds to milliseconds");
+
+    state.app_time_seconds = 2.25;
+    dispatch = run(opcode(WseOpcode::store_application_time), {}, {}, effect, {}, {},
+                   state);
+    expect(dispatch == WseDispatch::handled && effect.value == 2250,
+           "store_application_time rounds to the nearest millisecond");
+
+    state = {};
+    dispatch = run(opcode(WseOpcode::store_cur_mission_template_no), {}, {}, effect, {},
+                   {}, state);
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "store_cur_mission_template_no is -1 without a mission");
+
+    std::int32_t template_no = 42;
+    state.current_mission_template_no = &template_no;
+    dispatch = run(opcode(WseOpcode::store_cur_mission_template_no), {}, {}, effect, {},
+                   {}, state);
+    expect(dispatch == WseDispatch::handled && effect.value == 42,
+           "store_cur_mission_template_no reads the active template");
+}
+
 void test_descriptions() {
     using wse::vm::describe;
     expect(!describe(WseDispatch::handled).empty(), "handled description");
@@ -557,6 +642,7 @@ int main() {
     test_shift_group();
     test_bitwise_group();
     test_register_group();
+    test_script_context_group();
     test_operand_counts();
     test_unimplemented_and_mask();
     test_fp_load_store();

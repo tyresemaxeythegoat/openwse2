@@ -24,9 +24,10 @@
 // The complete 440-opcode structure is in docs/WSE_OPCODES.md and
 // docs/wse_opcodes.json; wse_opcodes.h is generated from that map. This file
 // implements the arithmetic/bitwise group 2800..2809, the register group
-// 3000..3002, and the self-contained floating-point register group 4400,
-// 4405..4436, and 4438. Every other known opcode reports
-// WseDispatch::unimplemented instead of guessing.
+// 3000..3002, the script-context query group 3014/3016/3017/3035/3600, and
+// the self-contained floating-point register group 4400, 4405..4436, and
+// 4438. Every other known opcode reports WseDispatch::unimplemented instead
+// of guessing.
 //
 // Register group evidence:
 //   3000 register_get (line 628): mbCheckRegister(param_4[1]), then
@@ -38,6 +39,22 @@
 //   3002 store_wse_version (line 877, 0x1401e553a-0x1401e555b): selector 0
 //     yields r15d = 5, selector 1 yields r15d = 0x483 (build 1155), and any
 //     other selector falls through to the zeroed default.
+//
+// Script-context query evidence:
+//   3014 store_current_trigger (0x1401e5917): return param_6 when it is <= 0,
+//     else 0. mbStatement::execute passes its r8d context argument here; WSE
+//     stores a negative value while inside a trigger (GetCurrentTrigger).
+//   3016 store_num_return_values (0x1401e5979): g_numReturnValues at
+//     0x140698ae8.
+//   3017 store_return_value (0x1401e5985): 1-based index into the 16-slot
+//     return-value bank at 0x140698af0; index 1..16 and <= g_numReturnValues
+//     stores the slot, otherwise it logs and returns true without storing.
+//   3035 store_application_time (0x1401e63a4): rglRound64((float)
+//     DXUtil_Timer(TIMER_GETAPPTIME) * 1000.0f); FUN_1400b9690(5) returns QPC
+//     seconds since the app-time baseline, and the constant at 0x140576b90 is
+//     1000.0f.
+//   3600 store_cur_mission_template_no (0x1401ea6b2): null
+//     [0x14061f078] yields -1, otherwise the int32 at +0x9ae8.
 //
 // Transcendental helpers (case addresses in executeWSE):
 //   pow 0x1400b0400, log 0x1400a6c20, log10 0x1400a6c10, fmod 0x14006aac0,
@@ -71,6 +88,25 @@ inline constexpr std::size_t kFpRegisterCount = 128;
 // DAT_140662bb8, fixed-point values per unit (set to 100 at 0x140070ffa).
 inline constexpr float kWseFixedPointScale = 100.0f;
 
+// Runtime state read by the script-context query handlers. The defaults model
+// a statement executed outside any trigger, with no return values, zero
+// application time, and no active mission.
+struct WseVmState {
+    // param_6 of executeWSE: the statement block's context flags. WSE stores a
+    // negative value while inside a trigger (0 outside), so store_current_trigger
+    // returns it only when it is <= 0.
+    std::int32_t caller = 0;
+    // 0x140698af0: NUM_RETURN_VALUES (16) int64 slots written by return_values.
+    std::span<const std::int64_t> return_values{};
+    // 0x140698ae8: number of slots currently set by return_values.
+    std::int32_t num_return_values = 0;
+    // DXUtil_Timer(TIMER_GETAPPTIME) in seconds; 3035 scales it by 1000.
+    double app_time_seconds = 0.0;
+    // [0x14061f078] + 0x9ae8: cur_mission->cur_mission_template_no. A null
+    // pointer means there is no current mission, which yields -1.
+    const std::int32_t* current_mission_template_no = nullptr;
+};
+
 // Decoded operands, matching the arrays built by mbStatement::execute.
 struct WseOperands {
     std::span<const std::int64_t> wide{};     // param_3, full int64 values
@@ -80,6 +116,8 @@ struct WseOperands {
     // g_basicGame+0x270 (0x140662c30): the 128 int64 registers shared with
     // operand tag 1 and used by register_get/register_set (3000/3001).
     std::span<std::int64_t> registers{};
+    // Script-context state for the global query handlers (3014-3600).
+    WseVmState state{};
 };
 
 // Result of a successful handler. Value-writing handlers (mbStatement's
@@ -283,6 +321,60 @@ enum class WseDispatch : std::uint8_t {
         }
         const std::int32_t which = narrow[1];
         effect.value = which == 0 ? 5 : (which == 1 ? 0x483 : 0);
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::store_current_trigger: {
+        // 3014 (0x1401e5917): return the context flags while inside a trigger
+        // (negative), otherwise 0. WSEOperationContext::GetCurrentTrigger uses
+        // exactly this `m_context_flags < 0 ? m_context_flags : 0` rule.
+        effect.value = operands.state.caller <= 0 ? operands.state.caller : 0;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::store_num_return_values: {
+        // 3016 (0x1401e5979): g_numReturnValues at 0x140698ae8.
+        effect.value = operands.state.num_return_values;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::store_return_value: {
+        // 3017 (0x1401e5985): operand 1 is a 1-based index into the 16-slot
+        // return-value bank at 0x140698af0. Out-of-range or unset indices log
+        // ("invalid script result index %d" / "unset result value %d") and
+        // return true without storing.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::int32_t index = narrow[1];
+        if (index < 1 || index > 16) {
+            return WseDispatch::ignored;
+        }
+        if (index > operands.state.num_return_values) {
+            return WseDispatch::ignored;
+        }
+        const auto slot = static_cast<std::size_t>(index - 1);
+        if (slot >= operands.state.return_values.size()) {
+            return WseDispatch::ignored;
+        }
+        effect.value = operands.state.return_values[slot];
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::store_application_time: {
+        // 3035 (0x1401e63a4): rglRound64((float)DXUtil_Timer(5) * 1000.0f).
+        // FUN_1400b9690(5) returns QPC seconds since the app-time baseline.
+        effect.value = wse_round64(
+            static_cast<float>(operands.state.app_time_seconds) * 1000.0f);
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::store_cur_mission_template_no: {
+        // 3600 (0x1401ea6b2): null g_currentMission (0x14061f078) yields -1,
+        // otherwise the int32 at +0x9ae8 (cur_mission_template_no).
+        effect.value = operands.state.current_mission_template_no
+                           ? *operands.state.current_mission_template_no
+                           : -1;
         effect.store_value = true;
         return WseDispatch::handled;
     }

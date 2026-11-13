@@ -47,10 +47,11 @@ Maintain and update these after every milestone:
 
 ## Immediate First Action
 Phase 1, Step 2 is complete: the 440-operation `executeWSE` map is extracted from WSE2 v1.1.5.5 and
-four handler groups
-(2800–2809, 3000–3002, the floating-point load/store/compare/arithmetic group, and the
-transcendental/rounding group) are host-tested. Continue Phase 2 by transcribing the remaining
-`executeWSE` handler groups and wiring reconstructed statement blocks into the trigger runtime.
+five handler groups
+(2800–2809, 3000–3002, 3014/3016/3017/3035/3600, the floating-point
+load/store/compare/arithmetic group, and the transcendental/rounding group) are host-tested.
+Continue Phase 2 by transcribing the remaining `executeWSE` handler groups and wiring reconstructed
+statement blocks into the trigger runtime.
 
 ## Current Position
 - Phase 1, Step 1 is complete. Ghidra 12.1.4 + JDK 25.0.5 + Node 26.12.1 are installed under `C:\rea-tools` (the `%TEMP%` copies are wiped by server restarts). `rea doctor` reports the Ghidra provider healthy; REA still runs via CLI because it is not registered with OpenCode.
