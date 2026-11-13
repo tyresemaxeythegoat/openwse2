@@ -11,7 +11,7 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows (Zig clang++) and Linux CI (`clang++ 18.1.3` CMake/CTest) — 12 suites, 69 test functions on Linux; the Windows script last ran before the `platform` suite was added (11 suites) |
+| Host gate | **PASS** on Windows (Zig clang++) and Linux CI (`clang++ 18.1.3` CMake/CTest) — 12 suites, 70 test functions on Linux; the Windows script last ran before the `platform` suite was added (11 suites) |
 | Android arm64 gate | **PASS (CI)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all 27 headers standalone + CMake build; on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **222/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` unnamed live handlers `53, 2180, 2749`); **49/1,053 implemented** (`16` control-flow incl. 4 zero-iteration stubs + `33` switch) |
@@ -25,8 +25,8 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Gate | Result | Detail |
 | --- | --- | --- |
 | Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: `operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm` |
-| Host C++20, Linux | PASS (CI pending) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 27 standalone header checks, 12/12 test suites, and `extract_wse_opcodes.py --check` |
-| Android NDK `aarch64-linux-android29` | PASS (CI pending) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all 27 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
+| Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 27 standalone header checks, 12/12 test suites, and `extract_wse_opcodes.py --check` |
+| Android NDK `aarch64-linux-android29` | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all 27 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
 | CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` and `android-arm64` on push and PR |
 
@@ -78,7 +78,7 @@ Generated from `mbStatement::execute` jump table `0x1401e22f0` (`2,738` slots), 
   - **1,037** live unique `switch_handler` `.text` targets (incl. **3** unnamed live handlers: `53` reading `rglConfig::General::bCheatMode`, `2180` counting main-party prisoner stacks, `2749` agent helper), of which **33** are implemented in `block_vm.h`: comparisons `30–33`, shifts/arithmetic/math/assign `2100–2101`, `2105–2117`, `2119–2131`, `2133`.
   - **6** shared `noop_true` stubs jumping directly to `0x1401e226b` (`473`, `477`, `1070`, `1104`, `1302`, `1491`).
   - **1,695** `execute_wse_fallback` slots jumping to `0x1401e223e`: **1** SDK-named (`1004` `race_completed_by_player` / `is_vanilla_warband`, returning `false` under WSE2) and **1,694** unassigned holes.
-- Every other native opcode currently returns `true` and increments `VmContext::unimplementedCount`. A condition built on an unimplemented opcode therefore **passes silently**; results from running real module scripts are not trustworthy until `unimplementedCount` reaches zero (`ROADMAP.md` B6).
+- Unimplemented native and WSE opcodes return explicit `NativeDispatch::unimplemented` / `WseDispatch::unimplemented` states recorded in `VmContext::unimplementedOpcodeCounts` (as well as `unimplementedCount` / `lastUnimplementedOpcode`). Compatibility mode (`failOnUnimplemented = false`) falls through `true`; strict/2H harness mode (`failOnUnimplemented = true`) fails loudly with an error and aborts execution before `else_try` / `neg` / `this_or_next` / `call_script` can mask the hit (`ROADMAP.md` B6).
 
 ### Demand ranking (`tools/demand_rank.py`, Backlog B3)
 
@@ -144,7 +144,7 @@ Top categories by unimplemented native calls (`scripts.txt`): `entity_slots` (**
 | `wse_dict_test.cpp` | 1 |
 | `wse_array_test.cpp` | 1 |
 | `wse_world_test.cpp` | 3 |
-| `block_vm_test.cpp` | 9 |
+| `block_vm_test.cpp` | 10 |
 | `platform_test.cpp` | 6 |
 
 ## 4. Blocked
@@ -157,23 +157,20 @@ Top categories by unimplemented native calls (`scripts.txt`): `entity_slots` (**
 
 ## 5. Next concrete tasks (ordered)
 
-1. **Surface per-opcode unimplemented native counters (`ROADMAP.md` backlog B6):** add a per-opcode
-   histogram to `VmContext` (matching `NativeDispatch::unimplemented` counts) so Phase 2H and real
-   scripts report every missing opcode clearly instead of only incrementing an aggregate count.
-2. **Evidence & citation verification (`ROADMAP.md` backlog B7–B8):** add automated VA/symbol citation
-   checking, commit/fold `tools/vtables.py`, and audit exception/locale/`sleep_ms` edge cases.
-3. **Demand-driven native opcodes & world loaders:** reconstruct the `entity_slots` (`500–599`) and
+1. **Evidence & platform audit (`ROADMAP.md` backlog B7–B8):** add automated `0x14…` citation
+   verification in CI, commit/fold `tools/vtables.py` so `docs/SYMBOL_MAP.json` is reproducible,
+   and audit `noexcept`/locale/`sleep_ms` edge cases.
+2. **Demand-driven native opcodes & world loaders:** reconstruct the `entity_slots` (`500–599`) and
    top `strings` (`2319–2322`) / `store_random_in_range` (`2136`) / `position_set_{x,y}` (`729–730`)
    handlers along with `troops.txt`/`item_kinds1.txt`/`factions.txt`/`parties.txt`/`strings.txt`
    loaders feeding `WseWorldState` (unlocking >62% of unimplemented calls in `scripts.txt`).
-4. Continue remaining `executeWSE` handlers and entity containers (`agent`, `party`, `mission`) in
+3. Continue remaining `executeWSE` handlers and entity containers (`agent`, `party`, `mission`) in
    demand order rather than numeric order.
 
 Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
 
 1. **Finish P1:** route the direct `std::filesystem`/`fstream`/`chrono`/`thread` uses in
-   `wse/vm/ops/{dict,array,string,system}.h` and `world_state.h` through `wse/platform` (own
-   commit, once B6 has landed), then the Gradle + SDL3 app shell with the on-device self-test and
+   `wse/vm/ops/{dict,array,string,system}.h` and `world_state.h` through `wse/platform`, then the Gradle + SDL3 app shell with the on-device self-test and
    a CI-built debug APK.
 2. **P3 evidence exports** for the `.brf` and `.dds` loaders (`ARCHITECTURE.md` §8 gap 5) — needs
    the Windows REA machine; the decoders themselves are host-only work.

@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h`, including `try_for_dict_keys` and `array_sort_custom` callback), world/entity/skill/item/edit-mode runtime state (`wse/game/world_state.h`), pure STL helpers (`wse/core/{math,encoding,json}.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the per-family handler headers under `wse/vm/ops/` listed in `STATUS.md` §3 recovered.
+Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h`, including `NativeDispatch`/`failOnUnimplemented`, `try_for_dict_keys`, and `array_sort_custom` callback), world/entity/skill/item/edit-mode runtime state (`wse/game/world_state.h`), pure STL helpers (`wse/core/{math,encoding,json}.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the per-family handler headers under `wse/vm/ops/` listed in `STATUS.md` §3 recovered.
 Last updated: 2026-11-14.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
