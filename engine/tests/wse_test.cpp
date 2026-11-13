@@ -44,10 +44,12 @@ WseDispatch run(std::uint32_t value,
                 WseEffect& effect,
                 std::span<float> fp = {},
                 std::span<std::int64_t> bank = {},
-                WseVmState state = {}) {
+                WseVmState state = {},
+                std::initializer_list<std::uint8_t> tags = {}) {
     WseOperands operands;
     operands.wide = std::span<const std::int64_t>(values.begin(), values.size());
     operands.narrow = std::span<const std::int32_t>(registers.begin(), registers.size());
+    operands.tags = std::span<const std::uint8_t>(tags.begin(), tags.size());
     operands.fp = fp;
     operands.registers = bank;
     operands.state = state;
@@ -622,6 +624,400 @@ void test_script_context_group() {
            "store_cur_mission_template_no reads the active template");
 }
 
+void test_string_group() {
+    const std::u16string_view literals[] = {
+        u"alpha",  // 0
+        u"ALPHA",  // 1
+        u"beta",   // 2
+        u"world",  // 3
+        u"hello",  // 4
+        u"a b",    // 5
+        u"123",    // 6
+        u"12a",    // 7
+        u" \t",    // 8
+        u"abcabc", // 9
+        u"bc",     // 10
+        u"12.5",   // 11
+        u"12abc",  // 12
+        u" 42",    // 13
+        u"abc",    // 14
+        u"",       // 15
+        u"HELLO",  // 16
+        u"a1",     // 17
+        u"1a",     // 18
+        u"0.29",   // 19
+        u"-7.9",   // 20
+        u"1e3",    // 21
+        u"-0.29",  // 22
+        u" ",      // 23
+        u"WORLD",  // 24
+    };
+    const std::u16string_view global[] = {u"global0", u"hello world"};
+    const std::u16string_view local[] = {u"local0", u"xyz"};
+
+    WseVmState state;
+    state.strings.literals = std::span<const std::u16string_view>(literals);
+    state.strings.global = std::span<const std::u16string_view>(global);
+    state.strings.local = std::span<const std::u16string_view>(local);
+
+    WseEffect effect;
+    WseDispatch dispatch = WseDispatch::unimplemented;
+    const auto call = [&](WseOpcode op, std::initializer_list<std::int32_t> operands,
+                          std::initializer_list<std::uint8_t> tags) {
+        return run(opcode(op), {}, operands, effect, {}, {}, state, tags);
+    };
+
+    // Tag resolution and mbCheckStringRegister bounds.
+    dispatch = call(WseOpcode::str_length, {0, 0}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 5,
+           "str_length reads a literal by tag 0");
+    dispatch = call(WseOpcode::str_length, {0, 0}, {0, 3});
+    expect(dispatch == WseDispatch::handled && effect.value == 7,
+           "str_length reads a global register by tag 3");
+    dispatch = call(WseOpcode::str_length, {0, 0}, {0, 0x16});
+    expect(dispatch == WseDispatch::handled && effect.value == 6,
+           "str_length reads a local register by tag 0x16");
+    dispatch = call(WseOpcode::str_length, {0, 0}, {0, 9});
+    expect(dispatch == WseDispatch::handled && effect.value == 7,
+           "an unknown string tag resolves through the global bank");
+    dispatch = call(WseOpcode::str_length, {0, 127}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "literal index 127 passes the check but resolves empty");
+    dispatch = call(WseOpcode::str_length, {0, 128}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "literal index 128 fails mbCheckStringRegister");
+    dispatch = call(WseOpcode::str_length, {0, 2}, {0, 3});
+    expect(dispatch == WseDispatch::ignored,
+           "a global index at the count fails mbCheckStringRegister");
+    dispatch = call(WseOpcode::str_length, {0, 2}, {0, 0x16});
+    expect(dispatch == WseDispatch::ignored,
+           "a local index at the count fails mbCheckStringRegister");
+    dispatch = call(WseOpcode::str_length, {0, 99}, {0, 9});
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "an unknown tag out of range resolves empty instead of failing");
+
+    // str_equals.
+    dispatch = call(WseOpcode::str_equals, {0, 1}, {0, 0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_equals is case-sensitive by default");
+    dispatch = call(WseOpcode::str_equals, {0, 1, 1}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_equals folds case when operand 2 is nonzero");
+    dispatch = call(WseOpcode::str_equals, {0, 0}, {0, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_equals accepts identical strings");
+    dispatch = call(WseOpcode::str_equals, {0, 0}, {3, 0x16});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_equals compares the global and local banks");
+    dispatch = call(WseOpcode::str_equals, {0, 0}, {7, 3});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_equals resolves an unknown tag through the global bank");
+    dispatch = call(WseOpcode::str_equals, {128, 0}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_equals ignores an invalid string operand");
+    dispatch = call(WseOpcode::str_equals, {0}, {0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_equals rejects a missing second operand");
+
+    // str_contains.
+    dispatch = call(WseOpcode::str_contains, {1, 3}, {3, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_contains finds a substring");
+    dispatch = call(WseOpcode::str_contains, {1, 4}, {3, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_contains finds a leading substring");
+    dispatch = call(WseOpcode::str_contains, {1, 1}, {3, 0x16});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_contains rejects a missing substring");
+    dispatch = call(WseOpcode::str_contains, {1, 15}, {3, 0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_contains treats an empty needle as not contained");
+    dispatch = call(WseOpcode::str_contains, {1, 16}, {3, 0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_contains is case-sensitive by default");
+    dispatch = call(WseOpcode::str_contains, {1, 16, 1}, {3, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_contains folds case when operand 2 is nonzero");
+    dispatch = call(WseOpcode::str_contains, {128, 0}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_contains ignores an invalid string operand");
+    dispatch = call(WseOpcode::str_contains, {1}, {3});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_contains rejects a missing second operand");
+
+    // str_starts_with / str_ends_with.
+    dispatch = call(WseOpcode::str_starts_with, {1, 4}, {3, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_starts_with matches a prefix");
+    dispatch = call(WseOpcode::str_starts_with, {1, 3}, {3, 0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_starts_with rejects a non-prefix");
+    dispatch = call(WseOpcode::str_starts_with, {1, 16}, {3, 0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_starts_with is case-sensitive by default");
+    dispatch = call(WseOpcode::str_starts_with, {1, 16, 1}, {3, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_starts_with folds case when operand 2 is nonzero");
+    dispatch = call(WseOpcode::str_starts_with, {1, 15}, {3, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_starts_with accepts an empty prefix");
+    dispatch = call(WseOpcode::str_starts_with, {128, 0}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_starts_with ignores an invalid string operand");
+
+    dispatch = call(WseOpcode::str_ends_with, {1, 3}, {3, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_ends_with matches a suffix");
+    dispatch = call(WseOpcode::str_ends_with, {1, 4}, {3, 0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_ends_with rejects a non-suffix");
+    dispatch = call(WseOpcode::str_ends_with, {1, 24}, {3, 0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_ends_with is case-sensitive by default");
+    dispatch = call(WseOpcode::str_ends_with, {1, 24, 1}, {3, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_ends_with folds case when operand 2 is nonzero");
+    dispatch = call(WseOpcode::str_ends_with, {1, 15}, {3, 0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_ends_with accepts an empty suffix");
+    dispatch = call(WseOpcode::str_ends_with, {128, 0}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_ends_with ignores an invalid string operand");
+
+    // str_is_alpha.
+    dispatch = call(WseOpcode::str_is_alpha, {0}, {0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_alpha scans the whole string without an index");
+    dispatch = call(WseOpcode::str_is_alpha, {17}, {0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_is_alpha rejects a string with a digit");
+    dispatch = call(WseOpcode::str_is_alpha, {0, 0}, {0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_alpha checks a single index");
+    dispatch = call(WseOpcode::str_is_alpha, {18, 0}, {0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_is_alpha rejects a digit at the index");
+    dispatch = call(WseOpcode::str_is_alpha, {18, 1}, {0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_alpha accepts a letter at the index");
+    dispatch = call(WseOpcode::str_is_alpha, {0, 5}, {0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_is_alpha ignores an index at the string length");
+    dispatch = call(WseOpcode::str_is_alpha, {0, -1}, {0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_alpha treats index -1 as the whole string");
+    dispatch = call(WseOpcode::str_is_alpha, {0, -2}, {0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_is_alpha ignores another negative index");
+    dispatch = call(WseOpcode::str_is_alpha, {1}, {3});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_is_alpha rejects the space in a global string");
+    dispatch = call(WseOpcode::str_is_alpha, {15}, {0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_alpha accepts the empty string");
+
+    // str_is_digit.
+    dispatch = call(WseOpcode::str_is_digit, {6}, {0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_digit scans the whole numeric string");
+    dispatch = call(WseOpcode::str_is_digit, {7}, {0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_is_digit rejects a string with a letter");
+    dispatch = call(WseOpcode::str_is_digit, {7, 2}, {0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_is_digit rejects a letter at the index");
+    dispatch = call(WseOpcode::str_is_digit, {7, 0}, {0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_digit accepts a digit at the index");
+    dispatch = call(WseOpcode::str_is_digit, {0, 5}, {0x16});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_digit reads a local string register");
+    dispatch = call(WseOpcode::str_is_digit, {0, 6}, {0x16});
+    expect(dispatch == WseDispatch::ignored,
+           "str_is_digit ignores an index at the string length");
+
+    // str_is_whitespace.
+    dispatch = call(WseOpcode::str_is_whitespace, {8}, {0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_whitespace accepts spaces and tabs");
+    dispatch = call(WseOpcode::str_is_whitespace, {5}, {0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_is_whitespace rejects letters");
+    dispatch = call(WseOpcode::str_is_whitespace, {5, 1}, {0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_whitespace checks a single space");
+    dispatch = call(WseOpcode::str_is_whitespace, {23}, {0});
+    expect(dispatch == WseDispatch::handled_no_store,
+           "str_is_whitespace accepts a single space");
+    dispatch = call(WseOpcode::str_is_whitespace, {0}, {0});
+    expect(dispatch == WseDispatch::condition_false,
+           "str_is_whitespace rejects a word");
+    dispatch = call(WseOpcode::str_is_whitespace, {5, 3}, {0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_is_whitespace ignores an index at the string length");
+
+    // str_length.
+    dispatch = call(WseOpcode::str_length, {0, 1}, {0, 3});
+    expect(dispatch == WseDispatch::handled && effect.value == 11,
+           "str_length measures a global string");
+    dispatch = call(WseOpcode::str_length, {0, 15}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "str_length of the empty string is zero");
+    dispatch = call(WseOpcode::str_length, {0, 1}, {0, 0x16});
+    expect(dispatch == WseDispatch::handled && effect.value == 3,
+           "str_length measures a local string");
+    dispatch = call(WseOpcode::str_length, {0, 128}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_length ignores an invalid string operand");
+    dispatch = call(WseOpcode::str_length, {0}, {0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_length rejects a missing source operand");
+
+    // str_index_of.
+    dispatch = call(WseOpcode::str_index_of, {0, 9, 10}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 1,
+           "str_index_of finds the first occurrence");
+    dispatch = call(WseOpcode::str_index_of, {0, 9, 10, 2}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 4,
+           "str_index_of honours the start operand");
+    dispatch = call(WseOpcode::str_index_of, {0, 9, 10, 0, 3}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 1,
+           "str_index_of accepts a match before the end operand");
+    dispatch = call(WseOpcode::str_index_of, {0, 9, 10, 2, 3}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_index_of rejects a match after the end operand");
+    dispatch = call(WseOpcode::str_index_of, {0, 9, 10, 6}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_index_of rejects a start at the string length");
+    dispatch = call(WseOpcode::str_index_of, {0, 9, 10, 0, 6}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_index_of rejects an end at the string length");
+    dispatch = call(WseOpcode::str_index_of, {0, 9, 10, 4, 2}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_index_of rejects an end before the start");
+    dispatch = call(WseOpcode::str_index_of, {0, 9, 0}, {0, 0, 0x16});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_index_of reports -1 for a missing needle");
+    dispatch = call(WseOpcode::str_index_of, {0, 9, 15}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_index_of reports -1 for an empty needle");
+    dispatch = call(WseOpcode::str_index_of, {0, 128, 10}, {0, 0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_index_of ignores an invalid haystack");
+    dispatch = call(WseOpcode::str_index_of, {0, 9}, {0, 0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_index_of rejects a missing needle operand");
+
+    // str_last_index_of.
+    dispatch = call(WseOpcode::str_last_index_of, {0, 9, 10}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 4,
+           "str_last_index_of finds the last occurrence");
+    dispatch = call(WseOpcode::str_last_index_of, {0, 9, 10, 0, 2}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 1,
+           "str_last_index_of returns the previous match before the end");
+    dispatch = call(WseOpcode::str_last_index_of, {0, 9, 10, 0, 3}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_last_index_of mirrors the retail loop when the next match "
+           "passes the end");
+    dispatch = call(WseOpcode::str_last_index_of, {0, 9, 10, 2}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 4,
+           "str_last_index_of honours the start operand");
+    dispatch = call(WseOpcode::str_last_index_of, {0, 9, 10, 4, 5}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 4,
+           "str_last_index_of accepts a match at the end");
+    dispatch = call(WseOpcode::str_last_index_of, {0, 9, 10, 5, 5}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_last_index_of rejects a start at the end");
+    dispatch = call(WseOpcode::str_last_index_of, {0, 9, 10, 0, 0}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_last_index_of rejects an end at the start");
+    dispatch = call(WseOpcode::str_last_index_of, {0, 9, 0}, {0, 0, 0x16});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_last_index_of reports -1 for a missing needle");
+    dispatch = call(WseOpcode::str_last_index_of, {0, 9, 15}, {0, 0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -1,
+           "str_last_index_of reports -1 for an empty needle");
+    dispatch = call(WseOpcode::str_last_index_of, {0, 128, 10}, {0, 0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_last_index_of ignores an invalid haystack");
+    dispatch = call(WseOpcode::str_last_index_of, {0, 9}, {0, 0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_last_index_of rejects a missing needle operand");
+
+    // str_get_char.
+    dispatch = call(WseOpcode::str_get_char, {0, 0, 0}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == u'a',
+           "str_get_char reads the first literal character");
+    dispatch = call(WseOpcode::str_get_char, {0, 0, 4}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == u'a',
+           "str_get_char reads the last literal character");
+    dispatch = call(WseOpcode::str_get_char, {0, 1, 6}, {0, 3});
+    expect(dispatch == WseDispatch::handled && effect.value == u'w',
+           "str_get_char reads a global string character");
+    dispatch = call(WseOpcode::str_get_char, {0, 0, 1}, {0, 0x16});
+    expect(dispatch == WseDispatch::handled && effect.value == u'o',
+           "str_get_char reads a local string character");
+    dispatch = call(WseOpcode::str_get_char, {0, 0, 5}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_get_char ignores an index at the string length");
+    dispatch = call(WseOpcode::str_get_char, {0, 0, -1}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_get_char ignores a negative index");
+    dispatch = call(WseOpcode::str_get_char, {0, 0}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == u'a',
+           "str_get_char defaults a missing index to zero");
+    dispatch = call(WseOpcode::str_get_char, {0, 128, 0}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_get_char ignores an invalid string operand");
+    dispatch = call(WseOpcode::str_get_char, {0}, {0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_get_char rejects a missing source operand");
+
+    // str_to_num.
+    dispatch = call(WseOpcode::str_to_num, {0, 6}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 123,
+           "str_to_num parses an integer");
+    dispatch = call(WseOpcode::str_to_num, {0, 11}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 12,
+           "str_to_num truncates a fractional value");
+    dispatch = call(WseOpcode::str_to_num, {0, 20}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -7,
+           "str_to_num truncates toward zero");
+    dispatch = call(WseOpcode::str_to_num, {0, 12}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 12,
+           "str_to_num parses the numeric prefix");
+    dispatch = call(WseOpcode::str_to_num, {0, 13}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 42,
+           "str_to_num skips leading whitespace");
+    dispatch = call(WseOpcode::str_to_num, {0, 14}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "str_to_num yields zero for a non-numeric string");
+    dispatch = call(WseOpcode::str_to_num, {0, 15}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 0,
+           "str_to_num yields zero for the empty string");
+    dispatch = call(WseOpcode::str_to_num, {0, 21}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 1000,
+           "str_to_num parses an exponent");
+    dispatch = call(WseOpcode::str_to_num, {0, 11, 1}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 1250,
+           "str_to_num applies the fixed-point scale");
+    dispatch = call(WseOpcode::str_to_num, {0, 19, 1}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 28,
+           "str_to_num truncates a scaled fractional value");
+    dispatch = call(WseOpcode::str_to_num, {0, 22, 1}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == -28,
+           "str_to_num truncates a negative scaled value toward zero");
+    dispatch = call(WseOpcode::str_to_num, {0, 6, 0}, {0, 0});
+    expect(dispatch == WseDispatch::handled && effect.value == 123,
+           "str_to_num leaves the value unscaled for a zero flag");
+    dispatch = call(WseOpcode::str_to_num, {0, 128}, {0, 0});
+    expect(dispatch == WseDispatch::ignored,
+           "str_to_num ignores an invalid string operand");
+    dispatch = call(WseOpcode::str_to_num, {0}, {0});
+    expect(dispatch == WseDispatch::operand_count_out_of_range,
+           "str_to_num rejects a missing source operand");
+}
+
 void test_descriptions() {
     using wse::vm::describe;
     expect(!describe(WseDispatch::handled).empty(), "handled description");
@@ -643,6 +1039,7 @@ int main() {
     test_bitwise_group();
     test_register_group();
     test_script_context_group();
+    test_string_group();
     test_operand_counts();
     test_unimplemented_and_mask();
     test_fp_load_store();

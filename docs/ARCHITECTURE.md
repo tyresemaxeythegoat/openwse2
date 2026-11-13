@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the first five handler groups recovered.
+Status: Phase 1 — binary triage complete; script statement VM parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the first six handler groups recovered.
 Last updated: 2026-11-13.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -198,6 +198,25 @@ when the slot is out of range or unset. `store_application_time` rounds
 QPC seconds since the app-time baseline and the scale at `0x140576b90` is `1000.0f`.
 `store_cur_mission_template_no` reads the int32 at `[0x14061f078]+0x9ae8`, or -1 when the current
 mission pointer is null.
+
+The string group covers `str_equals` (4200), `str_contains` (4201), `str_starts_with` (4202),
+`str_ends_with` (4203), `str_is_alpha` (4204), `str_is_digit` (4205), `str_is_whitespace` (4206),
+`str_length` (4207), `str_index_of` (4208), `str_last_index_of` (4209), `str_get_char` (4210), and
+`str_to_num` (4211). The resolver at `0x140219c70` maps tag 0 to the 128-entry literal table at
+`0x140665030` (stride 0x48), tag 0x16 to the local string registers (`[0x140621778]`, count
+`[0x140621784]`, stride 0x90), and tag 3 or an unknown tag to the global registers
+(`[0x140621770]`, count `[0x140621780]`, stride 0x90). `mbCheckStringRegister` (`0x1401c51f0`)
+bounds tags 3/0x16 by their counts, tag 0 by `0x7f`, and accepts unknown tags; a failed check logs
+and returns true without an effect. Comparisons use `wcscmp` (`0x1401f86b0`) or `_wcsicmp`
+(`0x1401f86f0`) when operand 2 is nonzero. `str_contains` lower-cases both strings
+(`0x1401f8b40`) and treats an empty needle as not contained. The `str_is_*` predicates call
+`iswalpha`/`iswdigit`/`iswspace` (`0x140498854`/`0x140498860`/`0x14049886c`), scan the whole string
+when the index is absent or -1, and leave the initial true result on an out-of-bounds index.
+`str_index_of`/`str_last_index_of` take operand 3 as the start (default 0) and operand 4 as the end
+(default length-1); the last-index handler mirrors the retail loop, which searches again before
+testing `end <= start`. `str_get_char` stores a UTF-16 code unit and stores nothing on an
+out-of-bounds index. `str_to_num` calls `_wtof` (`0x140498878`), multiplies by the fixed-point
+scale (`DAT_140662bb8` = 100) when operand 2 is nonzero, and truncates to int64.
 
 The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
 `fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, `fsqrt`, `fabs`, `fceil`, `ffloor`,

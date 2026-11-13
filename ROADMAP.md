@@ -47,8 +47,8 @@ Maintain and update these after every milestone:
 
 ## Immediate First Action
 Phase 1, Step 2 is complete: the 440-operation `executeWSE` map is extracted from WSE2 v1.1.5.5 and
-five handler groups
-(2800–2809, 3000–3002, 3014/3016/3017/3035/3600, the floating-point
+six handler groups
+(2800–2809, 3000–3002, 3014/3016/3017/3035/3600, 4200–4211, the floating-point
 load/store/compare/arithmetic group, and the transcendental/rounding group) are host-tested.
 Continue Phase 2 by transcribing the remaining `executeWSE` handler groups and wiring reconstructed
 statement blocks into the trigger runtime.

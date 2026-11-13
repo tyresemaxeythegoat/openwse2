@@ -24,10 +24,10 @@
 // The complete 440-opcode structure is in docs/WSE_OPCODES.md and
 // docs/wse_opcodes.json; wse_opcodes.h is generated from that map. This file
 // implements the arithmetic/bitwise group 2800..2809, the register group
-// 3000..3002, the script-context query group 3014/3016/3017/3035/3600, and
-// the self-contained floating-point register group 4400, 4405..4436, and
-// 4438. Every other known opcode reports WseDispatch::unimplemented instead
-// of guessing.
+// 3000..3002, the script-context query group 3014/3016/3017/3035/3600, the
+// string group 4200..4211, and the self-contained floating-point register
+// group 4400, 4405..4436, and 4438. Every other known opcode reports
+// WseDispatch::unimplemented instead of guessing.
 //
 // Register group evidence:
 //   3000 register_get (line 628): mbCheckRegister(param_4[1]), then
@@ -56,6 +56,41 @@
 //   3600 store_cur_mission_template_no (0x1401ea6b2): null
 //     [0x14061f078] yields -1, otherwise the int32 at +0x9ae8.
 //
+// String group evidence:
+//   String operands are decoded through mbCheckStringRegister (0x1401c51f0)
+//   and the resolver at 0x140219c70. Tag 0 is the fixed 128-entry literal
+//   table at 0x140665030 (stride 0x48); tag 0x16 addresses the local string
+//   registers ([0x140621778], count [0x140621784], stride 0x90); tag 3 and
+//   any unknown tag address the global string registers ([0x140621770],
+//   count [0x140621780], stride 0x90). mbCheckStringRegister requires
+//   0 <= index < count for tags 3/0x16, index <= 0x7f for tag 0, and accepts
+//   unknown tags; a failed check logs and returns true without an effect.
+//   4200 str_equals (0x1068 equality branch, 0x1401ed1bd): checks both
+//     operands, then compares with wcscmp (0x1401f86b0) or _wcsicmp
+//     (0x1401f86f0) when operand 2 is nonzero; equal means true.
+//   4201 str_contains (0x1069): lower-cases both copies (0x1401f8b40) when
+//     operand 2 is nonzero, then finds the needle (0x1401f8a80) from 0. A
+//     null needle data pointer (empty string) yields -1, so an empty needle
+//     is not contained.
+//   4202/4203 str_starts_with/str_ends_with (0x106a/0x106b): take
+//     Left/Right(needle length) (0x1401f8fd0/0x1401f8f20) and compare as in
+//     str_equals.
+//   4204..4206 str_is_alpha/digit/whitespace (0x106c..0x106e): iswalpha
+//     (0x140498854, category 0x103), iswdigit (0x140498860, category 4), and
+//     iswspace (0x14049886c, category 8). Fewer than 2 operands or index -1
+//     scans the whole string; an out-of-bounds index logs and leaves the
+//     initial true result.
+//   4207 str_length (0x106f): length of operand 1 written through operand 0.
+//   4208/4209 str_index_of/last_index_of (0x1070/0x1071): operand 1 is the
+//     haystack, operand 2 the needle, operand 3 the start (default 0), and
+//     operand 4 the end (default length-1). An empty needle yields -1; the
+//     result is -1 unless the match is within [start, end].
+//   4210 str_get_char (0x1072): UTF-16 code unit of operand 1 at operand 2;
+//     an out-of-bounds index logs and stores nothing.
+//   4211 str_to_num (0x1073): _wtof (0x140498878) of operand 1, multiplied by
+//     DAT_140662bb8 (100.0) when operand 2 is nonzero, then truncated to
+//     int64 (cvttsd2si).
+//
 // Transcendental helpers (case addresses in executeWSE):
 //   pow 0x1400b0400, log 0x1400a6c20, log10 0x1400a6c10, fmod 0x14006aac0,
 //   atan2 0x14006f9b0. The call sites (0x1401f08ef, 0x1401f0cbc, 0x1401f0a28)
@@ -72,8 +107,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cwctype>
 #include <limits>
 #include <span>
+#include <string>
 #include <string_view>
 
 #include "wse/vm/wse_opcodes.h"
@@ -87,6 +125,18 @@ inline constexpr std::size_t kFpRegisterCount = 128;
 
 // DAT_140662bb8, fixed-point values per unit (set to 100 at 0x140070ffa).
 inline constexpr float kWseFixedPointScale = 100.0f;
+
+// String banks addressed by the str_* handlers. The spans hold views into the
+// runtime's string registers; a missing entry resolves to the empty string,
+// matching the static empty rgl::string returned by 0x140219c70.
+struct WseStringBanks {
+    // Tag 0: the fixed 128-entry literal table at 0x140665030 (stride 0x48).
+    std::span<const std::u16string_view> literals{};
+    // Tag 3 (and unknown tags): [0x140621770], count [0x140621780].
+    std::span<const std::u16string_view> global{};
+    // Tag 0x16: [0x140621778], count [0x140621784].
+    std::span<const std::u16string_view> local{};
+};
 
 // Runtime state read by the script-context query handlers. The defaults model
 // a statement executed outside any trigger, with no return values, zero
@@ -105,6 +155,8 @@ struct WseVmState {
     // [0x14061f078] + 0x9ae8: cur_mission->cur_mission_template_no. A null
     // pointer means there is no current mission, which yields -1.
     const std::int32_t* current_mission_template_no = nullptr;
+    // String registers used by the string group (4200-4211).
+    WseStringBanks strings{};
 };
 
 // Decoded operands, matching the arrays built by mbStatement::execute.
@@ -183,6 +235,173 @@ enum class WseDispatch : std::uint8_t {
     return result;
 }
 
+// cvttsd2si semantics: NaN and out-of-range values become INT64_MIN.
+[[nodiscard]] inline std::int64_t wse_trunc64(double value) noexcept {
+    if (!std::isfinite(value) ||
+        value < static_cast<double>(std::numeric_limits<std::int64_t>::min()) ||
+        value >= static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
+        return std::numeric_limits<std::int64_t>::min();
+    }
+    return static_cast<std::int64_t>(value);
+}
+
+// mbCheckStringRegister (0x1401c51f0): tags 3 and 0x16 are bounded by the
+// runtime register counts, tag 0 by the fixed 128-entry literal table, and
+// unknown tags are accepted.
+[[nodiscard]] inline bool wse_string_register_ok(
+    std::int32_t index, std::uint8_t tag, const WseStringBanks& banks) noexcept {
+    switch (tag) {
+    case 0:
+        return static_cast<std::uint32_t>(index) <= 0x7Fu;
+    case 3:
+        return index >= 0 &&
+               static_cast<std::size_t>(index) < banks.global.size();
+    case 0x16:
+        return index >= 0 &&
+               static_cast<std::size_t>(index) < banks.local.size();
+    default:
+        return true;
+    }
+}
+
+// 0x140219c70: tag 0 reads the literal table, tag 0x16 the local bank, and
+// tag 3 or an unknown tag the global bank. Out-of-range reads resolve to the
+// static empty rgl::string (0x140621818 / 0x140621788).
+[[nodiscard]] inline std::u16string_view wse_resolve_string(
+    std::int32_t index, std::uint8_t tag, const WseStringBanks& banks) noexcept {
+    if (tag == 0) {
+        if (static_cast<std::uint32_t>(index) <= 0x7Fu &&
+            static_cast<std::size_t>(index) < banks.literals.size()) {
+            return banks.literals[static_cast<std::size_t>(index)];
+        }
+        return {};
+    }
+    const auto bank = tag == 0x16 ? banks.local : banks.global;
+    if (index >= 0 && static_cast<std::size_t>(index) < bank.size()) {
+        return bank[static_cast<std::size_t>(index)];
+    }
+    return {};
+}
+
+// Missing tags and operands read as zero: mbStatement::execute zeroes the
+// first five tag and operand slots before parsing (0x1401c6219-0x1401c626c).
+[[nodiscard]] constexpr std::uint8_t wse_tag_at(
+    std::span<const std::uint8_t> tags, std::size_t index) noexcept {
+    return index < tags.size() ? tags[index] : std::uint8_t{0};
+}
+
+// _wcsicmp folds one UTF-16 code unit through towlower; keep ASCII folding
+// deterministic and fall back to the C library for the rest of the BMP.
+[[nodiscard]] inline char16_t wse_fold_case(char16_t value) noexcept {
+    if (value >= u'A' && value <= u'Z') {
+        return static_cast<char16_t>(value + (u'a' - u'A'));
+    }
+    if (value < 0x80) {
+        return value;
+    }
+    const long folded =
+        static_cast<long>(std::towlower(static_cast<std::wint_t>(value)));
+    if (folded >= 0 && folded <= 0xFFFF) {
+        return static_cast<char16_t>(folded);
+    }
+    return value;
+}
+
+[[nodiscard]] inline bool wse_string_equals(std::u16string_view lhs,
+                                            std::u16string_view rhs,
+                                            bool case_insensitive) noexcept {
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < lhs.size(); ++i) {
+        const char16_t left = case_insensitive ? wse_fold_case(lhs[i]) : lhs[i];
+        const char16_t right = case_insensitive ? wse_fold_case(rhs[i]) : rhs[i];
+        if (left != right) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] inline std::u16string wse_fold_string(std::u16string_view text) {
+    std::u16string folded;
+    folded.reserve(text.size());
+    for (const char16_t value : text) {
+        folded.push_back(wse_fold_case(value));
+    }
+    return folded;
+}
+
+[[nodiscard]] inline bool wse_string_contains(std::u16string_view haystack,
+                                              std::u16string_view needle,
+                                              bool case_insensitive) {
+    if (needle.empty()) {
+        // The retail find receives a null data pointer for an empty needle and
+        // returns -1 (0x1069).
+        return false;
+    }
+    if (case_insensitive) {
+        return wse_fold_string(haystack).find(wse_fold_string(needle)) !=
+               std::u16string::npos;
+    }
+    return haystack.find(needle) != std::u16string_view::npos;
+}
+
+[[nodiscard]] inline bool wse_string_starts_with(
+    std::u16string_view haystack, std::u16string_view needle,
+    bool case_insensitive) noexcept {
+    return needle.size() <= haystack.size() &&
+           wse_string_equals(haystack.substr(0, needle.size()), needle,
+                             case_insensitive);
+}
+
+[[nodiscard]] inline bool wse_string_ends_with(std::u16string_view haystack,
+                                               std::u16string_view needle,
+                                               bool case_insensitive) noexcept {
+    return needle.size() <= haystack.size() &&
+           wse_string_equals(haystack.substr(haystack.size() - needle.size()),
+                             needle, case_insensitive);
+}
+
+// _wtof (0x140498878): the CRT parses the longest decimal/inf/nan prefix and
+// returns 0.0 when there is none. strtod gives the same correctly-rounded
+// result; the numeric grammar is ASCII.
+[[nodiscard]] inline double wse_wtof(std::u16string_view text) noexcept {
+    std::string narrow;
+    narrow.reserve(text.size());
+    for (const char16_t value : text) {
+        if (value == 0 || value > 0x7F) {
+            break;
+        }
+        narrow.push_back(static_cast<char>(value));
+    }
+    return std::strtod(narrow.c_str(), nullptr);
+}
+
+// Shared body of str_is_alpha/digit/whitespace. `has_index == false` or
+// index -1 scans the whole string; an out-of-bounds index logs and returns
+// the initial true result.
+template <typename Predicate>
+[[nodiscard]] inline WseDispatch wse_string_test(std::u16string_view text,
+                                                 std::int32_t index,
+                                                 bool has_index,
+                                                 Predicate predicate) noexcept {
+    if (!has_index || index == -1) {
+        for (const char16_t value : text) {
+            if (!predicate(value)) {
+                return WseDispatch::condition_false;
+            }
+        }
+        return WseDispatch::handled_no_store;
+    }
+    if (index < 0 || static_cast<std::size_t>(index) >= text.size()) {
+        return WseDispatch::ignored;
+    }
+    return predicate(text[static_cast<std::size_t>(index)])
+               ? WseDispatch::handled_no_store
+               : WseDispatch::condition_false;
+}
+
 // `val_*` uses operand 0 as both source and destination; `store_*` reads
 // operands 1.. and leaves operand 0 as the destination lvalue for the caller.
 [[nodiscard]] inline WseDispatch execute_wse(std::uint32_t opcode,
@@ -192,8 +411,10 @@ enum class WseDispatch : std::uint8_t {
     effect.store_value = false;
     const auto wide = operands.wide;
     const auto narrow = operands.narrow;
+    const auto tags = operands.tags;
     const auto fp = operands.fp;
     const auto registers = operands.registers;
+    const auto strings = operands.state.strings;
 
     switch (static_cast<WseOpcode>(opcode)) {
     case WseOpcode::val_shr: {
@@ -375,6 +596,283 @@ enum class WseDispatch : std::uint8_t {
         effect.value = operands.state.current_mission_template_no
                            ? *operands.state.current_mission_template_no
                            : -1;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+
+    // String group 4200..4211. A failed mbCheckStringRegister returns true
+    // without an effect; condition handlers therefore report `ignored`, which
+    // the trigger runtime treats as a passing condition.
+    case WseOpcode::str_equals: {
+        // 4200 (0x1068 equality branch, 0x1401ed1bd): compare operands 0 and
+        // 1 with wcscmp or _wcsicmp when operand 2 is nonzero.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag0 = wse_tag_at(tags, 0);
+        const std::uint8_t tag1 = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[0], tag0, strings) ||
+            !wse_string_register_ok(narrow[1], tag1, strings)) {
+            return WseDispatch::ignored;
+        }
+        const bool case_insensitive = narrow.size() >= 3 && narrow[2] != 0;
+        return wse_string_equals(wse_resolve_string(narrow[0], tag0, strings),
+                                 wse_resolve_string(narrow[1], tag1, strings),
+                                 case_insensitive)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::condition_false;
+    }
+    case WseOpcode::str_contains: {
+        // 4201 (0x1069): lower-case both strings when operand 2 is nonzero,
+        // then find the needle from 0. An empty needle is not contained.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag0 = wse_tag_at(tags, 0);
+        const std::uint8_t tag1 = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[0], tag0, strings) ||
+            !wse_string_register_ok(narrow[1], tag1, strings)) {
+            return WseDispatch::ignored;
+        }
+        const bool case_insensitive = narrow.size() >= 3 && narrow[2] != 0;
+        return wse_string_contains(wse_resolve_string(narrow[0], tag0, strings),
+                                   wse_resolve_string(narrow[1], tag1, strings),
+                                   case_insensitive)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::condition_false;
+    }
+    case WseOpcode::str_starts_with: {
+        // 4202 (0x106a): compare Left(haystack, needle length) with the
+        // needle, using the same case rule as str_equals.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag0 = wse_tag_at(tags, 0);
+        const std::uint8_t tag1 = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[0], tag0, strings) ||
+            !wse_string_register_ok(narrow[1], tag1, strings)) {
+            return WseDispatch::ignored;
+        }
+        const bool case_insensitive = narrow.size() >= 3 && narrow[2] != 0;
+        return wse_string_starts_with(
+                   wse_resolve_string(narrow[0], tag0, strings),
+                   wse_resolve_string(narrow[1], tag1, strings),
+                   case_insensitive)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::condition_false;
+    }
+    case WseOpcode::str_ends_with: {
+        // 4203 (0x106b): compare Right(haystack, needle length) with the
+        // needle, using the same case rule as str_equals.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag0 = wse_tag_at(tags, 0);
+        const std::uint8_t tag1 = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[0], tag0, strings) ||
+            !wse_string_register_ok(narrow[1], tag1, strings)) {
+            return WseDispatch::ignored;
+        }
+        const bool case_insensitive = narrow.size() >= 3 && narrow[2] != 0;
+        return wse_string_ends_with(
+                   wse_resolve_string(narrow[0], tag0, strings),
+                   wse_resolve_string(narrow[1], tag1, strings),
+                   case_insensitive)
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::condition_false;
+    }
+    case WseOpcode::str_is_alpha: {
+        // 4204 (0x106c): iswalpha over operand 0, or only operand 1 when it
+        // is present and not -1.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 0);
+        if (!wse_string_register_ok(narrow[0], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        return wse_string_test(
+            wse_resolve_string(narrow[0], tag, strings),
+            narrow.size() >= 2 ? narrow[1] : -1, narrow.size() >= 2,
+            [](char16_t value) {
+                return std::iswalpha(static_cast<std::wint_t>(value)) != 0;
+            });
+    }
+    case WseOpcode::str_is_digit: {
+        // 4205 (0x106d): iswdigit over operand 0, or only operand 1 when it
+        // is present and not -1.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 0);
+        if (!wse_string_register_ok(narrow[0], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        return wse_string_test(
+            wse_resolve_string(narrow[0], tag, strings),
+            narrow.size() >= 2 ? narrow[1] : -1, narrow.size() >= 2,
+            [](char16_t value) {
+                return std::iswdigit(static_cast<std::wint_t>(value)) != 0;
+            });
+    }
+    case WseOpcode::str_is_whitespace: {
+        // 4206 (0x106e): iswspace over operand 0, or only operand 1 when it
+        // is present and not -1.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 0);
+        if (!wse_string_register_ok(narrow[0], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        return wse_string_test(
+            wse_resolve_string(narrow[0], tag, strings),
+            narrow.size() >= 2 ? narrow[1] : -1, narrow.size() >= 2,
+            [](char16_t value) {
+                return std::iswspace(static_cast<std::wint_t>(value)) != 0;
+            });
+    }
+    case WseOpcode::str_length: {
+        // 4207 (0x106f): length of operand 1 written through operand 0.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        effect.value = static_cast<std::int64_t>(
+            wse_resolve_string(narrow[1], tag, strings).size());
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::str_index_of: {
+        // 4208 (0x1070): operand 1 is the haystack, operand 2 the needle,
+        // operand 3 the start (default 0), operand 4 the end (default
+        // length-1). The result is -1 unless the match is inside [start, end].
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t haystack_tag = wse_tag_at(tags, 1);
+        const std::uint8_t needle_tag = wse_tag_at(tags, 2);
+        if (!wse_string_register_ok(narrow[1], haystack_tag, strings) ||
+            !wse_string_register_ok(narrow[2], needle_tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const auto haystack =
+            wse_resolve_string(narrow[1], haystack_tag, strings);
+        const auto needle = wse_resolve_string(narrow[2], needle_tag, strings);
+        const std::int32_t start = narrow.size() >= 4 ? narrow[3] : 0;
+        const std::int32_t end =
+            narrow.size() >= 5
+                ? narrow[4]
+                : static_cast<std::int32_t>(haystack.size()) - 1;
+        std::int64_t result = -1;
+        if (start >= 0 && end >= 0 &&
+            static_cast<std::size_t>(start) < haystack.size() &&
+            static_cast<std::size_t>(end) < haystack.size() && start <= end &&
+            !needle.empty()) {
+            const auto found =
+                haystack.find(needle, static_cast<std::size_t>(start));
+            if (found != std::u16string_view::npos &&
+                found <= static_cast<std::size_t>(end)) {
+                result = static_cast<std::int64_t>(found);
+            }
+        }
+        effect.value = result;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::str_last_index_of: {
+        // 4209 (0x1071): mirror the retail loop, which advances past each
+        // match and returns the previous match when the next search starts at
+        // or beyond `end`; the final result must also be <= end.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t haystack_tag = wse_tag_at(tags, 1);
+        const std::uint8_t needle_tag = wse_tag_at(tags, 2);
+        if (!wse_string_register_ok(narrow[1], haystack_tag, strings) ||
+            !wse_string_register_ok(narrow[2], needle_tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const auto haystack =
+            wse_resolve_string(narrow[1], haystack_tag, strings);
+        const auto needle = wse_resolve_string(narrow[2], needle_tag, strings);
+        const std::int32_t start = narrow.size() >= 4 ? narrow[3] : 0;
+        const std::int32_t end =
+            narrow.size() >= 5
+                ? narrow[4]
+                : static_cast<std::int32_t>(haystack.size()) - 1;
+        std::int64_t result = -1;
+        if (start >= 0 && end >= 0 &&
+            static_cast<std::size_t>(start) < haystack.size() &&
+            static_cast<std::size_t>(end) < haystack.size() && start <= end) {
+            std::int64_t found = -1;
+            std::int64_t previous = -1;
+            std::int32_t position = start;
+            for (;;) {
+                previous = found;
+                if (end <= position) {
+                    break;
+                }
+                if (needle.empty()) {
+                    found = -1;
+                } else {
+                    const auto at = haystack.find(
+                        needle, static_cast<std::size_t>(position));
+                    found = at == std::u16string_view::npos
+                                ? -1
+                                : static_cast<std::int64_t>(at);
+                }
+                position = static_cast<std::int32_t>(found + 1);
+                if (found == -1) {
+                    break;
+                }
+            }
+            if (previous <= end) {
+                result = previous;
+            }
+        }
+        effect.value = result;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::str_get_char: {
+        // 4210 (0x1072): UTF-16 code unit of operand 1 at operand 2. An
+        // out-of-bounds index logs and stores nothing.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        const auto text = wse_resolve_string(narrow[1], tag, strings);
+        const std::int32_t index = narrow.size() >= 3 ? narrow[2] : 0;
+        if (index < 0 || static_cast<std::size_t>(index) >= text.size()) {
+            return WseDispatch::ignored;
+        }
+        effect.value =
+            static_cast<std::int64_t>(text[static_cast<std::size_t>(index)]);
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::str_to_num: {
+        // 4211 (0x1073): _wtof of operand 1, scaled by the fixed-point factor
+        // when operand 2 is nonzero, then truncated to int64.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const std::uint8_t tag = wse_tag_at(tags, 1);
+        if (!wse_string_register_ok(narrow[1], tag, strings)) {
+            return WseDispatch::ignored;
+        }
+        double value = wse_wtof(wse_resolve_string(narrow[1], tag, strings));
+        if (narrow.size() >= 3 && narrow[2] != 0) {
+            value *= static_cast<double>(kWseFixedPointScale);
+        }
+        effect.value = wse_trunc64(value);
         effect.store_value = true;
         return WseDispatch::handled;
     }

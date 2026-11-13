@@ -90,7 +90,7 @@ pseudocode line and the handler's call extent. `tools/extract_wse_opcodes.py` re
 `include/wse/vm/wse_opcodes.h` from the 8,844-line WSE2 v1.1.5.5 pseudocode dump and the public
 `header_operations_addon.py` names.
 
-`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements five groups. The
+`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements six groups. The
 arithmetic/bitwise group 2800–2809 covers arithmetic right shift (`val_shr`/`store_shr`), logical
 right shift (`val_lshr`/`store_lshr`), left shift (`val_shl`/`store_shl`), xor (`val_xor`/`store_xor`),
 and complement (`val_not`/`store_not`); shift counts are masked with `& 0x3F`, and `store_*` reads
@@ -116,6 +116,20 @@ and an out-of-range or unset index logs and returns true without storing.
 call `FUN_1400b9690(5)` returns QPC seconds since the app-time baseline and the constant at
 `0x140576b90` is `1000.0f`. `store_cur_mission_template_no` reads `[0x14061f078]+0x9ae8`, or -1
 when there is no current mission.
+
+The string group covers `str_equals` (4200), `str_contains` (4201), `str_starts_with` (4202),
+`str_ends_with` (4203), `str_is_alpha` (4204), `str_is_digit` (4205), `str_is_whitespace` (4206),
+`str_length` (4207), `str_index_of` (4208), `str_last_index_of` (4209), `str_get_char` (4210), and
+`str_to_num` (4211). Operands resolve through `0x140219c70`: tag 0 is the 128-entry literal table at
+`0x140665030`, tag 0x16 the local string registers (`[0x140621778]`, count `[0x140621784]`), and
+tag 3 or an unknown tag the global registers (`[0x140621770]`, count `[0x140621780]`).
+`mbCheckStringRegister` (`0x1401c51f0`) validates the index and logs on failure. Comparisons use
+`wcscmp`/`_wcsicmp`; `str_contains` lower-cases both strings when operand 2 is nonzero and treats an
+empty needle as not contained. The predicates scan the whole string when the index is absent or -1;
+an out-of-bounds index logs and leaves the true result. `str_index_of`/`str_last_index_of` take an
+optional start (operand 3) and end (operand 4); the last-index handler mirrors the retail loop's
+search-before-bound-check order. `str_to_num` uses `_wtof` and truncates after applying the
+fixed-point scale when operand 2 is nonzero.
 
 The floating-point group covers `fld`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`, `fle`, `fsub`,
 `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, and the transcendental/rounding helpers
