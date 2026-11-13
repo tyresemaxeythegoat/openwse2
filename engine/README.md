@@ -3,6 +3,28 @@
 Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from the evidence in
 `docs/ARCHITECTURE.md` and `docs/SYMBOL_MAP.json`; it contains no lifted machine code.
 
+This file describes **what each module implements and how it deviates from retail**. Coverage
+counts and gate results are kept only in [`../STATUS.md`](../STATUS.md); the plan is in
+[`../ROADMAP.md`](../ROADMAP.md).
+
+## Layout
+
+```
+engine/
+  include/wse/io/     text_stream.h, binary_stream.h          module text + savegame streams
+  include/wse/vm/     operand.h, slots.h, statement.h         statement encoding
+                      block_vm.h                              block interpreter + native opcodes
+                      wse_opcodes.h (generated), execute_wse.h WSE extended opcodes
+  include/wse/game/   script.h, trigger.h, world_state.h      managers and game-state model
+  tests/              one *_test.cpp per suite, no framework (expect() + exit code)
+  fixtures/           hand-written module snippets (never retail files)
+  build_host.ps1      Windows host gate
+```
+
+The engine is header-only and has no build system beyond the gate script; see `ROADMAP.md` backlog
+B1 (CMake + CI) and B5 (splitting `execute_wse.h`, which is far larger than every other header
+combined).
+
 ## Current modules
 
 | File | Reconstructs | Evidence |
@@ -17,12 +39,12 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x140244810`, `0x140244540`, `0x14020fe60`, `0x14020fab0`, `0x1400ccf20`, `0x1400cd2d0`, `0x140244970`, `0x140244b60`, `0x14020ffa0`, `0x140244cd0`, `0x14020fb80`, `0x1402101a0` |
 | `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 65-entry name table, and script mapping | `0x14020f6a0`, `0x14020f7c0`, `0x14020f9a0`; globals `0x14069fac0`/`0x14069fac8`/`0x14069facc`; table `0x140615ad0`; formats `0x14055c680`/`0x14055c690` |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
-| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, unified `WseObjectManager`, `parseString`, and 222/440 handlers (2800–2809, 3000–3017/3020–3022/3026–3028/3030–3031/3034–3038/3040–3043/3045/3600–3601/3608/3610/3619/3622, dict 3200–3222, troop 3700–3709, item/cur_item 3800–3813, pos vec 4100/4102–4104, string 4200–4224/4226/4231–4236/4238–4246, options 4300–4305, floating-point 4400–4438 incl. `feval` `4437`, edit mode 4600–4609, dynamic array 5000–5022) | `executeWSE` `0x1401e4dc0`; `0x1400720b0`/`0x1400a6c10`–`0x1400ad5a0`; `0x1401e55c5`–`0x1401ec52b`; `0x1401ef0ef`–`0x1401efc8d`; `0x1401f198c`–`0x1401f1c2c`; `0x1401f58a0`–`0x1401fdd80`; `0x140246010`–`0x1402461d7`; `0x14024f4c0`; `0x1402a24f0`–`0x1402b64b0`; `0x14034e340`–`0x1403508a0`; `mbStatement::execute` `0x1401c6150` |
+| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, unified `WseObjectManager`, `parseString`, and the implemented handlers (2800–2809, 3000–3017/3020–3022/3026–3028/3030–3031/3034–3038/3040–3043/3045/3600–3601/3608/3610/3619/3622, dict 3200–3222, troop 3700–3709, item/cur_item 3800–3813, pos vec 4100/4102–4104, string 4200–4224/4226/4231–4236/4238–4246, options 4300–4305, floating-point 4400–4438 incl. `feval` `4437`, edit mode 4600–4609, dynamic array 5000–5022) | `executeWSE` `0x1401e4dc0`; `0x1400720b0`/`0x1400a6c10`–`0x1400ad5a0`; `0x1401e55c5`–`0x1401ec52b`; `0x1401ef0ef`–`0x1401efc8d`; `0x1401f198c`–`0x1401f1c2c`; `0x1401f58a0`–`0x1401fdd80`; `0x140246010`–`0x1402461d7`; `0x14024f4c0`; `0x1402a24f0`–`0x1402b64b0`; `0x14034e340`–`0x1403508a0`; `mbStatement::execute` `0x1401c6150` |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
 | `tests/script_test.cpp` + `fixtures/scripts.txt` | host tests for script records, header errors, duplicate mapping, and missing-name reporting | local fixture mirroring the retail grammar |
-| `tests/wse_test.cpp` | host tests for opcode enum values, all 222 implemented handlers (including `*_slot_gt`, scalar/config/skill/savegame MD5, troop HP cap/nibble/proficiency, item/cur_item, edit-mode selection/highlight, `feval`/`parseString`, `.wsedict`/INI/JSON/URL dict I/O, `.wsearray` binary I/O, path sandboxing, natural merge sort, and array relations), operand bounds, and opcode masking | local test doubles only |
+| `tests/wse_test.cpp` | host tests for opcode enum values, all implemented handlers (including `*_slot_gt`, scalar/config/skill/savegame MD5, troop HP cap/nibble/proficiency, item/cur_item, edit-mode selection/highlight, `feval`/`parseString`, `.wsedict`/INI/JSON/URL dict I/O, `.wsearray` binary I/O, path sandboxing, natural merge sort, and array relations), operand bounds, and opcode masking | local test doubles only |
 | `tests/block_vm_test.cpp` | host tests for analyze/modifiers/loops (`try_for_dict_keys`)/core math/scripts/recursion/return values/positions/trigger VM integration/`feval`, `array_sort_custom` script callbacks, and `WseWorldState` script integration | local test doubles and module fixtures |
 
 ## Module text format
@@ -197,8 +219,12 @@ not write operand 0 return `WseDispatch::handled_no_store`;
 a failed comparison returns `WseDispatch::condition_false`; an invalid register is a successful no-op
 (`WseDispatch::ignored`), matching the retail `return true` fall-through.
 
-Currently 222 of 440 mapped opcodes are implemented (leaving 218 unimplemented); every other mapped opcode returns
-`WseDispatch::unimplemented` until its handler is transcribed.
+Every mapped opcode without a transcribed handler returns `WseDispatch::unimplemented`. The
+implemented/remaining tally per opcode family is in `STATUS.md` §3.
+
+Native (non-WSE) opcodes behave differently: `block_vm.h` returns `true` for an unimplemented native
+opcode and only increments `VmContext::unimplementedCount`, so a condition built on one passes
+silently. Check that counter after any run against real module scripts (`ROADMAP.md` backlog B6).
 
 ## Safety deviations
 
@@ -208,11 +234,29 @@ binary savegames; none of these checks changes valid module behaviour. In `str_s
 empty delimiter cannot advance in retail and would loop indefinitely; the port stores the source as
 a single piece (respecting `skip_empty`) and terminates.
 
+## Known limits of the current handlers
+
+- `execute_wse()` is declared `noexcept`, but many handlers allocate, touch the filesystem, or run
+  `std::regex`. Only the regex paths catch exceptions; an allocation or filesystem failure
+  elsewhere terminates the process.
+- `str_is_alpha` / `str_is_digit` / `str_is_whitespace` and the trim helpers use the C library's
+  wide character classes, which differ between MSVCRT, glibc, and Android's Bionic for non-ASCII
+  input.
+- `sleep_ms` (3021) blocks the calling thread for the requested time.
+- The dictionary/array file tests write fixed-name files under the system temp directory; two
+  concurrent runs of the `wse` suite can collide.
+
+These are recorded as `ROADMAP.md` backlog B8.
+
 ## Build and test
+
+Windows:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
 ```
+
+Linux: use the loop in `AGENTS.md` §2 (plain `clang++`, same flags).
 
 Expected tail:
 
@@ -226,5 +270,5 @@ block_vm tests: PASS
 engine host tests: PASS
 ```
 
-The Android half of the gate (`clang++ -target aarch64-linux-android29 -Wall -Werror`) cannot run
-until an NDK is installed; see `STATUS.md`.
+The Android half of the gate (`clang++ -std=c++20 -target aarch64-linux-android29 -Wall -Wextra
+-Werror`) has never been run; see `STATUS.md` §2.

@@ -1,10 +1,59 @@
 # wse2-android
 
-> **Active plan (2026-11):** the project has moved from static recompilation to an
-> evidence-backed clean-room decompile/recompile to portable C++20. See
-> [`ROADMAP.md`](ROADMAP.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
-> [`docs/SYMBOL_MAP.json`](docs/SYMBOL_MAP.json), and [`STATUS.md`](STATUS.md).
-> The static-recompilation material below is retained as CPU/ABI reference only.
+A clean-room, evidence-backed **C++20 reconstruction of the WSE2** (Warband Script Enhancer 2)
+engine, aimed at running natively on **Android arm64-v8a**. No emulator, no Wine/Box64/Dynarmic,
+no MNBTool mod.
+
+The project is **bring-your-own-assets**: it contains no game files, no retail executables or
+PDBs, and no lifted machine code. The eventual Android app loads a Warband installation and
+`Modules/` folder that the user already owns. It is not affiliated with TaleWorlds Entertainment.
+
+## Where things stand
+
+The project is early: the module-system script VM is being reconstructed and tested on a desktop
+host. There is no renderer, audio, input, or Android app in the clean-room engine yet, and nothing
+has been compiled for arm64. Live numbers and gate results are in [`STATUS.md`](STATUS.md).
+
+| Read this | To learn |
+| --- | --- |
+| [`STATUS.md`](STATUS.md) | What passes, what is covered, what is blocked, what is next |
+| [`ROADMAP.md`](ROADMAP.md) | Phases, ordered engineering backlog, milestone log |
+| [`AGENTS.md`](AGENTS.md) | Rules for contributors and coding agents: evidence, gates, doc upkeep |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Recovered layouts, addresses, and evidence records |
+| [`engine/README.md`](engine/README.md) | What each portable module implements and how to test it |
+
+## Repository layout
+
+| Path | Status | Contents |
+| --- | --- | --- |
+| `engine/` | active | Portable C++20 headers (`include/wse/{io,vm,game}`), host tests, fixtures |
+| `docs/` | active | Architecture notes, symbol map, generated WSE opcode map |
+| `tools/` | mixed | Evidence extractors and generators (active); `pe_catalog.py` and the PanVK helpers are legacy |
+| `analysis/`, `proof/`, `runtime/` | legacy | The superseded static-recompilation approach, kept as CPU/ABI reference |
+
+## Build and test
+
+Windows (Zig's `clang++`):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
+```
+
+Linux: see the host-gate loop in [`AGENTS.md`](AGENTS.md) §2. Both must end with
+`engine host tests: PASS`.
+
+## License
+
+Tooling and analysis in this repository: MIT (see [`LICENSE`](LICENSE)). Engine symbols and any
+generated code remain the property of their respective rights holders.
+
+---
+
+# Historical: static recompilation (superseded 2026-11)
+
+Everything below describes the project's first approach — lifting the x64 machine code to C and
+recompiling it. It was replaced by the clean-room reconstruction above and is kept unchanged as
+CPU/ABI reference. Its figures refer to the older 6,735,360-byte build, not the v1.1.5.5 baseline.
 
 Static recompilation of the **WSE2** (Warband Script Enhancer 2) x64 engine to
 native **Android ARM64**. No MNBTool mod, no emulator, no Wine/Box64/Dynarmic.
@@ -173,8 +222,3 @@ Prior art studied for pipeline shape, not copied:
 - `kvse/dsr-native`
 - `mamcjr/BOTWRecompAndroid`
 - `caos-obliquo/tboi-recomp`
-
-## License
-
-Tooling and analysis in this repository: MIT. Engine symbols and any generated
-code remain the property of their respective rights holders.

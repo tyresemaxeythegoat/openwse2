@@ -1,9 +1,132 @@
 # STATUS
 
 Last updated: 2026-11-13.
-Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary streams, trigger loaders/runtime/savegames recovered).
+Phase: **2 — Core Data Structures & Module System VM** (Phase 1 triage is complete; see `ROADMAP.md`).
 
-## Passing
+This file is the **only** place that holds live numbers (gate results, coverage counts). Other
+documents link here instead of repeating them — see the ownership table in `AGENTS.md` §4.
+
+## 1. At a glance
+
+| Area | State |
+| --- | --- |
+| Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
+| Host gate | **PASS** on Windows (Zig clang++) and on Linux (clang 18.1.3) — 6 suites, 63 test functions |
+| Android arm64 gate | **NEVER RUN** — no NDK has been available; every engine header is unverified on `aarch64-linux-android29` |
+| WSE extended opcodes | 440/440 mapped, **222/440 implemented** |
+| Native (non-WSE) opcodes | **33 implemented** in the `30–2767` jump-table range, plus 16 control-flow opcodes; the live slots of the 2,738-entry table are **not mapped yet** |
+| Module loaders | `scripts.txt`, `triggers.txt`, `simple_triggers.txt` only |
+| World state | In-memory model (`WseWorldState`) exists; nothing loads it from module files yet |
+| Lua 5.1 layer | Not started (hook call sites documented only) |
+| Renderer / audio / input / Android app | Not started in the clean-room engine (legacy PanVK loader work lives in `runtime/android/`) |
+
+## 2. Gates
+
+| Gate | Result | Detail |
+| --- | --- | --- |
+| Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: `operand`, `trigger`, `savegame`, `script`, `wse`, `block_vm` |
+| Host C++20, Linux | PASS (2026-11-13) | Ubuntu `clang++` 18.1.3 + libstdc++, same flags, same six suites, run by hand with the loop in `AGENTS.md` §2. First non-Windows run; not scripted or in CI yet |
+| Android NDK `aarch64-linux-android29` | **NEVER RUN** | No NDK installed on any machine used so far. ROADMAP guardrail 3 has therefore been waived for every subsystem to date — treat arm64 cleanliness as unproven |
+| Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
+| CI | none | No `.github/workflows`; gates only run when someone remembers |
+
+## 3. Coverage
+
+### WSE extended opcodes (222/440)
+
+Counted from the distinct `case WseOpcode::…` labels in `execute_wse()` against `docs/wse_opcodes.json`.
+The per-opcode handler notes live in `engine/README.md`; this table is the only tally.
+
+| Block | Family | Done | Remaining examples |
+| ---: | --- | ---: | --- |
+| 2800 | shifts / xor / not | 10/10 | — |
+| 2900 | player | 0/10 | `player_set_skin`, `player_set_banner_id` |
+| 3000 | registers, script context, slots, timers, misc | 36/46 | `set_forced_lod`, `send_message_to_url_advanced`, `order_flag_is_active`, `play_bink_file` |
+| 3100 | input keys | 0/3 | `game_key_get_key`, `key_released` |
+| 3200 | dictionaries | 23/23 | — |
+| 3300 | agent | 0/61 | `agent_get_item_modifier`, `agent_get_animation_progress` |
+| 3400 | multiplayer messaging | 0/17 | `multiplayer_send_chat_message_to_player` |
+| 3500 | server admin | 0/21 | `server_set_password_admin`, `server_map_rotation_get_count` |
+| 3600 | mission / props / particles | 6/26 | `particle_system_remove`, `prop_instance_set_forced_lod` |
+| 3700 | troop | 10/10 | — |
+| 3800 | item / cur_item | 14/14 | — |
+| 3900 | party | 0/12 | `party_stack_get_experience`, `party_has_flag` |
+| 4100 | position vectors | 4/5 | `position_align_to_ground` |
+| 4200 | strings | 41/47 | `str_store_multiplayer_profile_name`, `str_store_overlay_text` |
+| 4300 | options | 6/6 | — |
+| 4400 | floating point | 39/39 | — |
+| 4500 | scene | 0/23 | `scene_set_flags`, `scene_set_water_level` |
+| 4600 | edit mode | 10/10 | — |
+| 4700 | reload / material | 0/4 | `update_material`, `reload_item_kinds` |
+| 4800 | menus | 0/4 | `menu_create_new`, `menu_add_item` |
+| 4900 | overlays / presentations | 0/8 | `overlay_get_val`, `presentation_activate` |
+| 5000 | dynamic arrays | 23/23 | — |
+| 5100 | Lua bridge | 0/15 | `lua_get_top`, `lua_set_top` |
+| 5200 | skins / skeletons | 0/3 | `skin_set_blood_color` |
+
+The pure-computation families are finished. Every remaining family needs engine state that does
+not exist yet (agents, parties, mission, network, UI, Lua), so the count will not move much until
+those containers are reconstructed.
+
+### Native opcodes (`block_vm.h`)
+
+- Control flow (16): `call_script` 1, `try_end`/`try_begin`/`else_try` 3–5, `try_for_range` 6,
+  `try_for_range_backwards` 7, `break_loop` 8, `continue_loop` 9, `try_for_agents` `0xB`,
+  `try_for_parties` `0xC`, `try_for_prop_instances` `0x10`, `try_for_players` `0x11`,
+  `try_for_dict_keys` `0x12`, `store_script_param*` 21–23. The four entity iterators run **zero
+  iterations** until entity containers exist.
+- Jump-table range `30–2767` (33): comparisons 30–33; `2100`–`2101`, `2105`–`2117`, `2119`–`2131`,
+  `2133`.
+- Every other native opcode returns `true` and increments `VmContext::unimplementedCount`. A
+  condition built on an unimplemented opcode therefore **passes silently**; results from running
+  real module scripts are not trustworthy until the counter is surfaced per run.
+
+### Tests
+
+| Suite | Test functions |
+| --- | ---: |
+| `operand_test.cpp` | 6 |
+| `trigger_test.cpp` | 10 |
+| `savegame_test.cpp` | 8 |
+| `script_test.cpp` | 5 |
+| `wse_test.cpp` | 25 |
+| `block_vm_test.cpp` | 9 |
+
+## 4. Blocked
+
+| Blocker | Impact | Way out |
+| --- | --- | --- |
+| No Android NDK/SDK, `adb`, or device | arm64 gate never run; no on-device validation | GitHub-hosted Ubuntu runners ship an NDK — a CI workflow can run the compile gate without any local install (ROADMAP backlog B1) |
+| REA not registered with OpenCode | REA/Ghidra tools are not exposed through MCP; the CLI works from `%TEMP%\opencode\tools\rea\node_modules\rea-agents` | Keep using the CLI |
+| `tools/vtables.py` is not in the repository | `tools/build_symbol_map.py` names it as the source of `vtables_x64.json`, so `docs/SYMBOL_MAP.json` cannot be regenerated from a clean checkout | Commit the script or fold it into `tools/pe_evidence.py` |
+
+## 5. Next concrete tasks (ordered)
+
+1. **Close the arm64 gate** with CI (host suites + NDK compile) — ROADMAP backlog B1.
+2. **Map the native opcodes** (`0x1401e22f0` jump table × `header_operations.py`) into a generated
+   `docs/native_opcodes.json`, the same way the WSE map was built — B2.
+3. **Measure demand before transcribing more handlers:** count opcode usage across a user-supplied
+   `Native` module (`scripts.txt`, `triggers.txt`, `simple_triggers.txt`) and rank unimplemented
+   opcodes by frequency — B3. The script reader already parses the full retail `scripts.txt`.
+4. Reconstruct the module data loaders that feed `WseWorldState` (troops, items, factions,
+   parties, strings), then the agent/party/mission containers the remaining WSE families need.
+5. Continue `executeWSE` handlers in demand order rather than numeric order.
+
+## 6. Open documentation questions
+
+These were found during the 2026-11-13 review and need the original evidence files to settle:
+
+- `docs/ARCHITECTURE.md` §1 calls the derived artifacts `types_new.json` / `globals_new.json` /
+  `vtables_new.json`; §9 and `tools/build_symbol_map.py` call them `*_x64.json`. It is unclear
+  whether the §9 hashes are for the v1.1.5.5 or the superseded build.
+- Vtable counts disagree: 73 game-class vtables (ARCHITECTURE §1), 75 (§3), 76 in
+  `docs/SYMBOL_MAP.json`.
+- `docs/ARCHITECTURE.md` §2 (type inventory) still holds the superseded 2026-10-14 prefix counts.
+- 274 distinct image addresses are cited in `engine/include`; 98 of them appear in
+  `docs/SYMBOL_MAP.json` and 85 appear in neither the symbol map nor `docs/ARCHITECTURE.md`
+  (mostly mid-function handler sites in `execute_wse.h`). Nothing checks citations automatically.
+
+## 7. Evidence & analysis ledger
 
 | Check | Result | Evidence |
 | --- | --- | --- |
@@ -27,16 +150,26 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | WSE2 v1.1.5.5 release delta | PASS (inventory) | Official `WSE2.zip` SHA-256 `c45197e8…276e28b1`; x64 exe 7,060,992 B with file version 1.1.5.5; SDK adds 7 operations (3911, 4517–4522), no renumbering; 440 in-range ops; mapped script table grows to 65 with `wse_camp_button_clicked` |
 | Ghidra toolchain health | PASS | `rea doctor`: ghidra 12.1.4, JDK 25.0.5, native decompiler and native authority all healthy |
 
-## In progress
+## 8. Environment notes
 
-| Task | State |
-| --- | --- |
-| Portable trigger & script VM runtime | Event-key state machines and script execution (`block_vm.h`) run reconstructed conditions/consequences through the VM (`try_for_range`, `try_for_range_backwards`, `try_for_dict_keys`) and pass host tests; callback overloads in `trigger.h` remain available; world entity iterators (`try_for_agents`/etc.) cleanly iterate 0 times until entity containers are reconstructed |
-| Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
-| `executeWSE` case mapping | Complete: 440/440 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode (v1.1.5.5) |
-| Portable `executeWSE` handlers | 222 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, 3003–3013 entity `*_slot_gt` predicates, 3014–3017/3020–3022/3026–3028/3030–3031/3034–3038/3040–3043/3045/3600–3601/3608/3610/3619/3622 script-context queries/returns/timers/MT19937/profiler/world scalars/config flags, dictionary group 3200–3222 (`.wsedict`/INI/JSON/URL-encoded JSON/pos), 3700–3709 `troop_*`, 3800–3813 `item_*`/`cur_item_*`, position vector group 4100/4102–4104, string group 4200–4224/4226/4231–4236/4238–4246 (including RFC 1321 MD5 for 4219 & `sg%d%d.sav` 4246, module settings, game vars, skill text with `_desc` translations, item strings, regex, URL decode), options 4300–4305, floating-point 4400–4438 (100%, including `4437` `feval`), 4600–4609 `edit_mode_*`, and dynamic array group 5000–5022 (`array_create`..`array_le`, unified `WseObjectManager`, `.wsearray` binary I/O, natural merge sort + `array_sort_custom` callback); the other 218 report `WseDispatch::unimplemented` |
+- `%TEMP%` extraction directories are wiped on server restarts. Node 26, JDK 25, and Ghidra 12.1.4
+  are now extracted to the persistent `C:\rea-tools` tree; the zips remain in `%TEMP%\opencode\tools`.
+- Required environment for CLI runs:
+  `JAVA_HOME=C:\rea-tools\jdk-25.0.5+8`,
+  `GHIDRA_INSTALL_DIR=C:\rea-tools\ghidra_12.1.4\ghidra_12.1.4_PUBLIC`.
+- `msdia140.dll` is now COM-registered system-wide (`regsvr32`, elevated) from
+  `C:\rea-tools\ghidra_12.1.4\ghidra_12.1.4_PUBLIC\Ghidra\Features\PDB\os\win_x86_64\`. Ghidra can
+  load the retail PDB directly; the earlier hanging `RegSvr32` dialogs were orphaned manual
+  registration attempts and are resolved.
+- `decompile-all` refuses a pre-created output directory; let the tool create it. Use `--resume`
+  only when a previous export manifest exists.
+- Each export re-runs full Ghidra auto-analysis (~15–20 min). Do not run two exports concurrently
+  on this 8 GB machine; a second OpenCode session using Ghidra drives free RAM below 1 GB.
 
-## Confirmed by pseudocode
+## Appendix A — Facts confirmed by pseudocode / disassembly
+
+Reference material, kept verbatim. Grouped facts for the same subsystem also appear in
+`docs/ARCHITECTURE.md`; when the two disagree, re-check the evidence export before trusting either.
 
 - `mbScriptManager::readStream` (`0x14020f7c0`): two `readString` calls (discarded), two 32-bit reads,
   the second into `m_numScripts`; frees the old array, allocates `8 + count*176`, constructs
@@ -263,32 +396,3 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   `mbSimpleTriggerManager::readSavegameStream` (`0x14020ffa0`) reads one `int64` timer value per
   record with the analogous `"Load error: Number of simple triggers in file: %d, exceeds %d"`.
   The retail readers do not bounds-check; the portable reader rejects truncation.
-
-## Blocked
-
-| Blocker | Impact |
-| --- | --- |
-| No Android NDK/SDK, `adb`, or device | Native arm64 build and on-device validation cannot run; only host/static checks |
-| REA not registered with OpenCode | REA/Ghidra tools are not exposed through MCP; CLI works directly from `%TEMP%\opencode\tools\rea\node_modules\rea-agents` |
-
-## Environment notes
-
-- `%TEMP%` extraction directories are wiped on server restarts. Node 26, JDK 25, and Ghidra 12.1.4
-  are now extracted to the persistent `C:\rea-tools` tree; the zips remain in `%TEMP%\opencode\tools`.
-- Required environment for CLI runs:
-  `JAVA_HOME=C:\rea-tools\jdk-25.0.5+8`,
-  `GHIDRA_INSTALL_DIR=C:\rea-tools\ghidra_12.1.4\ghidra_12.1.4_PUBLIC`.
-- `msdia140.dll` is now COM-registered system-wide (`regsvr32`, elevated) from
-  `C:\rea-tools\ghidra_12.1.4\ghidra_12.1.4_PUBLIC\Ghidra\Features\PDB\os\win_x86_64\`. Ghidra can
-  load the retail PDB directly; the earlier hanging `RegSvr32` dialogs were orphaned manual
-  registration attempts and are resolved.
-- `decompile-all` refuses a pre-created output directory; let the tool create it. Use `--resume`
-  only when a previous export manifest exists.
-- Each export re-runs full Ghidra auto-analysis (~15–20 min). Do not run two exports concurrently
-  on this 8 GB machine; a second OpenCode session using Ghidra drives free RAM below 1 GB.
-
-## Next concrete task
-
-1. Transcribe the next `executeWSE` handler groups from `docs/WSE_OPCODES.md` beyond 222/440 (218 remaining unimplemented — e.g., remaining agent/party/mission/player/network ops after extracting their target layouts and globals), extending the host test gate as each group lands.
-2. Expand entity/container iteration (`try_for_agents`, `try_for_parties`, `try_for_prop_instances`, `try_for_players`) and Lua 5.1 hook wiring once the underlying entity tables and `gameOperation` registry are reconstructed (`try_for_dict_keys` `0x12` is now implemented).
-3. Run the `clang++ -target aarch64-linux-android29 -Wall -Werror` arm64 compile gate once an Android NDK is installed, and keep `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json`, and this file current at each milestone.
