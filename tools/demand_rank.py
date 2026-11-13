@@ -117,7 +117,7 @@ def scan_implemented_native(block_vm_path: Path) -> set[int]:
         for m in re.finditer(r"k([A-Za-z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)U?", core_m.group(1))
     }
     disp_m = re.search(
-        r"dispatch_native_statement\s*\(.*?\n(.*?)\n\s*\+\+ctx\.unimplementedCount;",
+        r"dispatch_native_statement\s*\(.*?\n(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+NativeDispatch::unimplemented;)",
         text,
         re.S,
     )

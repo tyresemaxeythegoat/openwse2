@@ -766,6 +766,7 @@ void test_world_state_script_integration() {
     auto op = [](WseOpcode value) { return static_cast<std::uint32_t>(value); };
 
     VmContext ctx;
+    ctx.failOnUnimplemented = true;
     ctx.world.has_game = true;
     ctx.world.water_level = 2.5f;
     ctx.world.skills[wse::game::kSkillIronflesh].max_level = 10;
@@ -821,8 +822,122 @@ void test_world_state_script_integration() {
         make_stmt(core_op::kAssign, {reg(4), 0}),
         make_stmt(core_op::kTryEnd, {}),
     };
-    expect(execute_statement_block(branchBlock, ctx) && ctx.registers[4] == 1,
-           "troop_slot_gt branches true once slot exceeds threshold");
+    expect(execute_statement_block(branchBlock, ctx) && ctx.registers[4] == 1 &&
+               ctx.errorCount == 0 && ctx.unimplementedCount == 0 &&
+               ctx.unimplementedOpcodeCounts.empty(),
+           "troop_slot_gt branches true once slot exceeds threshold with loud check enabled");
+}
+
+void test_unimplemented_histogram_and_loud_failure() {
+    using namespace wse::vm;
+
+    // 1. dispatch_native_statement returns explicit NativeDispatch status values.
+    {
+        VmContext ctx;
+        std::array<std::int64_t, 128> locals{};
+        std::array<std::int64_t, 4> wide{5, 3, 0, 0};
+        std::array<std::int32_t, 4> narrow{5, 3, 0, 0};
+        std::array<std::uint8_t, 4> tags{};
+        Statement stmt{};
+
+        expect(dispatch_native_statement(core_op::kGe, wide, narrow, tags, stmt, ctx, locals) ==
+                       NativeDispatch::handled &&
+                   describe(NativeDispatch::handled) == "handled",
+               "native handled condition reports NativeDispatch::handled");
+
+        wide = {2, 9, 0, 0};
+        expect(dispatch_native_statement(core_op::kGe, wide, narrow, tags, stmt, ctx, locals) ==
+                       NativeDispatch::condition_false &&
+                   describe(NativeDispatch::condition_false) == "false condition",
+               "native false condition reports NativeDispatch::condition_false");
+
+        expect(dispatch_native_statement(520U, wide, narrow, tags, stmt, ctx, locals) ==
+                       NativeDispatch::unimplemented &&
+                   describe(NativeDispatch::unimplemented) == "unimplemented native opcode" &&
+                   ctx.unimplementedCount == 0,
+               "dispatch_native_statement returns NativeDispatch::unimplemented cleanly");
+    }
+
+    // 2. Default compatibility mode records per-opcode histogram without aborting.
+    {
+        VmContext ctx;
+        StatementBlock compatBlock;
+        compatBlock.statements = {
+            make_stmt(500U, {0, 1, 2}),
+            make_stmt(520U, {reg(0), 0, 1}),
+            make_stmt(500U, {0, 1, 3}),
+            make_stmt(3340U, {0, 100}),  // unimplemented WSE opcode
+            make_stmt(13U, {}),          // unused control-flow slot (<30)
+            make_stmt(core_op::kAssign, {reg(1), 42}),
+        };
+        expect(execute_statement_block(compatBlock, ctx) && ctx.errorCount == 0 &&
+                   ctx.unimplementedCount == 5 && ctx.lastUnimplementedOpcode == 13U &&
+                   ctx.registers[1] == 42,
+               "compatibility mode tracks unimplemented hits while falling through true");
+        expect(ctx.unimplementedOpcodeCounts.size() == 4U &&
+                   ctx.unimplementedOpcodeCounts[500U] == 2U &&
+                   ctx.unimplementedOpcodeCounts[520U] == 1U &&
+                   ctx.unimplementedOpcodeCounts[3340U] == 1U &&
+                   ctx.unimplementedOpcodeCounts[13U] == 1U,
+               "per-opcode histogram records exact native, WSE, and control-flow counts");
+    }
+
+    // 3. Loud mode (failOnUnimplemented = true) aborts before else_try, neg, this_or_next, or call_script recovery.
+    {
+        VmContext ctx;
+        ctx.failOnUnimplemented = true;
+        StatementBlock loudNativeBlock;
+        loudNativeBlock.statements = {
+            make_stmt(core_op::kTryBegin, {}),
+            make_stmt(540U, {0, 1, 2}),  // unimplemented troop_slot_eq condition
+            make_stmt(core_op::kAssign, {reg(0), 111}),
+            make_stmt(core_op::kElseTry, {}),
+            make_stmt(core_op::kAssign, {reg(0), 222}),  // must NEVER execute!
+            make_stmt(core_op::kTryEnd, {}),
+        };
+        expect(!execute_statement_block(loudNativeBlock, ctx) && ctx.registers[0] == 0 &&
+                   ctx.errorCount == 1 && ctx.unimplementedCount == 1 &&
+                   ctx.unimplementedOpcodeCounts[540U] == 1U &&
+                   ctx.lastError.find("540") != std::string::npos,
+               "failOnUnimplemented aborts before else_try can recover");
+
+        StatementBlock negBlock;
+        negBlock.statements = {
+            make_stmt(kNegFlag | 540U, {0, 1, 2}),
+            make_stmt(core_op::kAssign, {reg(1), 99}),
+        };
+        expect(!execute_statement_block(negBlock, ctx) && ctx.registers[1] == 0 &&
+                   ctx.unimplementedOpcodeCounts[540U] == 2U && ctx.errorCount == 2,
+               "neg flag cannot invert failOnUnimplemented abort into true");
+
+        StatementBlock tonBlock;
+        tonBlock.statements = {
+            make_stmt(kThisOrNextFlag | 3340U, {0, 100}),
+            make_stmt(core_op::kAssign, {reg(2), 77}),
+        };
+        expect(!execute_statement_block(tonBlock, ctx) && ctx.registers[2] == 0 &&
+                   ctx.unimplementedOpcodeCounts[3340U] == 1U && ctx.errorCount == 3,
+               "this_or_next flag cannot swallow loud unimplemented WSE abort");
+
+        wse::game::ScriptManager mgr;
+        wse::game::Script callee;
+        callee.id = "missing_callee";
+        callee.block.statements = {make_stmt(2320U, {0, 0})};  // str_store_string (unimplemented)
+        mgr.scripts.push_back(std::move(callee));
+        ctx.scripts = &mgr;
+
+        StatementBlock callBlock;
+        callBlock.statements = {
+            make_stmt(core_op::kTryBegin, {}),
+            make_stmt(core_op::kCallScript, {0}),
+            make_stmt(core_op::kElseTry, {}),
+            make_stmt(core_op::kAssign, {reg(3), 555}),
+            make_stmt(core_op::kTryEnd, {}),
+        };
+        expect(!execute_statement_block(callBlock, ctx) && ctx.registers[3] == 0 &&
+                   ctx.unimplementedOpcodeCounts[2320U] == 1U && ctx.errorCount == 4,
+               "failOnUnimplemented inside call_script aborts outer try/else caller");
+    }
 }
 
 }  // namespace
@@ -837,6 +952,7 @@ int main() {
     test_return_values_positions_and_dict_loop();
     test_feval_and_custom_array_sort();
     test_world_state_script_integration();
+    test_unimplemented_histogram_and_loud_failure();
 
     if (failures != 0) {
         std::printf("block_vm tests: FAIL (%d)\n", failures);

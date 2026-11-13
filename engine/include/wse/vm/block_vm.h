@@ -129,6 +129,24 @@ inline constexpr std::uint32_t kAssign = 2133U;
 
 struct VmContext;
 
+enum class NativeDispatch : std::uint8_t {
+    handled = 0,       // handled statement or passing condition
+    condition_false,   // handled condition evaluated false
+    unimplemented,     // native opcode not yet implemented
+};
+
+[[nodiscard]] constexpr std::string_view describe(NativeDispatch result) noexcept {
+    switch (result) {
+    case NativeDispatch::handled:
+        return "handled";
+    case NativeDispatch::condition_false:
+        return "false condition";
+    case NativeDispatch::unimplemented:
+        return "unimplemented native opcode";
+    }
+    return "unknown native dispatch result";
+}
+
 using NativeOpHook = bool (*)(void* user,
                               std::uint32_t opcode,
                               std::span<const std::int64_t> wide,
@@ -191,6 +209,8 @@ struct VmContext {
     std::string lastError;
     std::size_t unimplementedCount = 0;
     std::uint32_t lastUnimplementedOpcode = 0;
+    std::map<std::uint32_t, std::size_t> unimplementedOpcodeCounts{};
+    bool failOnUnimplemented = false;
     std::int32_t maxObservedDepth = -1;
 
     // Heap-backed per-depth arenas mirror retail's dynamic local/loop pools
@@ -203,6 +223,15 @@ struct VmContext {
         lastError.assign(message);
         if (onError != nullptr) {
             onError(errorUser, message);
+        }
+    }
+
+    void record_unimplemented(std::uint32_t opcode) {
+        ++unimplementedCount;
+        lastUnimplementedOpcode = opcode;
+        ++unimplementedOpcodeCounts[opcode];
+        if (failOnUnimplemented) {
+            report_error("Unimplemented opcode " + std::to_string(opcode));
         }
     }
 };
@@ -424,7 +453,7 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     block.analyzed = true;
 }
 
-[[nodiscard]] inline bool dispatch_native_statement(
+[[nodiscard]] inline NativeDispatch dispatch_native_statement(
     std::uint32_t opcode,
     std::span<const std::int64_t> wide,
     std::span<const std::int32_t> narrow,
@@ -437,7 +466,7 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
         const bool hookResult =
             ctx.nativeHook(ctx.nativeHookUser, opcode, wide, narrow, tags, statement, ctx, locals, handled);
         if (handled) {
-            return hookResult;
+            return hookResult ? NativeDispatch::handled : NativeDispatch::condition_false;
         }
     }
 
@@ -446,54 +475,55 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
 
     switch (opcode) {
     case core_op::kGe:
-        return wide[0] >= wide[1];
+        return wide[0] >= wide[1] ? NativeDispatch::handled : NativeDispatch::condition_false;
     case core_op::kEq:
-        return wide[0] == wide[1];
+        return wide[0] == wide[1] ? NativeDispatch::handled : NativeDispatch::condition_false;
     case core_op::kGt:
-        return wide[0] > wide[1];
+        return wide[0] > wide[1] ? NativeDispatch::handled : NativeDispatch::condition_false;
     case core_op::kIsBetween:
-        return wide[0] >= wide[1] && wide[0] < wide[2];
+        return (wide[0] >= wide[1] && wide[0] < wide[2]) ? NativeDispatch::handled
+                                                         : NativeDispatch::condition_false;
     case core_op::kValLshift: {
         const auto shifted = static_cast<std::uint64_t>(wide[0])
                              << (static_cast<unsigned>(wide[1]) & 63U);
         store_lvalue(dst, static_cast<std::int64_t>(shifted), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     }
     case core_op::kValRshift:
         store_lvalue(dst, wide[0] >> (static_cast<unsigned>(wide[1]) & 63U), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kValAdd:
         store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) +
                                                     static_cast<std::uint64_t>(wide[1])),
                      ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kValSub:
         store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) -
                                                     static_cast<std::uint64_t>(wide[1])),
                      ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kValMul:
         store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) *
                                                     static_cast<std::uint64_t>(wide[1])),
                      ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kValDiv:
         store_lvalue(dst, checked_signed_div(wide[0], wide[1], ctx), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kValMod: {
         bool ok = false;
         const std::int64_t rem = checked_signed_mod(wide[0], wide[1], ctx, ok);
         if (ok) {
             store_lvalue(dst, rem, ctx, locals);
         }
-        return true;
+        return NativeDispatch::handled;
     }
     case core_op::kValMin:
         store_lvalue(dst, static_cast<std::int64_t>(std::min(narrow[0], narrow[1])), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kValMax:
         store_lvalue(dst, static_cast<std::int64_t>(std::max(narrow[0], narrow[1])), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kValClamp: {
         std::int32_t clamped = narrow[0];
         if (narrow[0] < narrow[1]) {
@@ -502,103 +532,101 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
             clamped = static_cast<std::int32_t>(static_cast<std::uint32_t>(narrow[2]) - 1U);
         }
         store_lvalue(dst, static_cast<std::int64_t>(clamped), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     }
     case core_op::kValAbs: {
         const auto absVal =
             wide[0] < 0 ? static_cast<std::int64_t>(-static_cast<std::uint64_t>(wide[0])) : wide[0];
         store_lvalue(dst, absVal, ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     }
     case core_op::kValOr:
         store_lvalue(dst, wide[0] | wide[1], ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kValAnd:
         store_lvalue(dst, wide[0] & wide[1], ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kStoreOr:
         store_lvalue(dst, wide[1] | wide[2], ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kStoreAnd:
         store_lvalue(dst, wide[1] & wide[2], ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kStoreMod: {
         bool ok = false;
         const std::int64_t rem = checked_signed_mod(wide[1], wide[2], ctx, ok);
         if (ok) {
             store_lvalue(dst, rem, ctx, locals);
         }
-        return true;
+        return NativeDispatch::handled;
     }
     case core_op::kStoreAdd:
         store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) +
                                                     static_cast<std::uint64_t>(wide[2])),
                      ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kStoreSub:
         store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) -
                                                     static_cast<std::uint64_t>(wide[2])),
                      ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kStoreMul:
         store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) *
                                                     static_cast<std::uint64_t>(wide[2])),
                      ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kStoreDiv:
         store_lvalue(dst, checked_signed_div(wide[1], wide[2], ctx), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kSetFixedPointMultiplier:
         if (narrow[0] > 0) {
             ctx.fixedPointMultiplier = narrow[0];
         }
-        return true;
+        return NativeDispatch::handled;
     case core_op::kStoreSqrt:
         if (wide[1] > 0) {
             const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
             const float value = std::sqrt(static_cast<float>(wide[1]) / fpScale) * fpScale;
             store_lvalue(dst, f2i_round(value), ctx, locals);
         }
-        return true;
+        return NativeDispatch::handled;
     case core_op::kStorePow: {
         const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
         const float value =
             std::pow(static_cast<float>(wide[1]) / fpScale, static_cast<float>(wide[2]) / fpScale) *
             fpScale;
         store_lvalue(dst, f2i_round(value), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     }
     case core_op::kStoreSin: {
         const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
         const float value = std::sin((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
         store_lvalue(dst, f2i_round(value), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     }
     case core_op::kStoreCos: {
         const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
         const float value = std::cos((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
         store_lvalue(dst, f2i_round(value), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     }
     case core_op::kStoreTan: {
         const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
         const float value = std::tan((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
         store_lvalue(dst, f2i_round(value), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     }
     case core_op::kConvertToFixedPoint:
         store_lvalue(dst, wide[0] * static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kConvertFromFixedPoint:
         store_lvalue(dst, wide[0] / static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     case core_op::kAssign:
         store_lvalue(dst, wide[1], ctx, locals);
-        return true;
+        return NativeDispatch::handled;
     default:
-        ++ctx.unimplementedCount;
-        ctx.lastUnimplementedOpcode = opcode;
-        return true;
+        return NativeDispatch::unimplemented;
     }
 }
 
@@ -654,9 +682,8 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     WseEffect effect{};
     const WseDispatch dispatch = execute_wse(opcode, operands, effect);
     if (dispatch == WseDispatch::unimplemented) {
-        ++ctx.unimplementedCount;
-        ctx.lastUnimplementedOpcode = opcode;
-        return true;
+        ctx.record_unimplemented(opcode);
+        return !ctx.failOnUnimplemented;
     }
     if (dispatch == WseDispatch::operand_count_out_of_range) {
         ctx.report_error("WSE opcode operand count out of range");
@@ -701,9 +728,23 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
 
     bool result = true;
     if (opcode >= kWseOpcodeMin) {
+        const std::size_t unimplementedBefore = ctx.unimplementedCount;
         result = dispatch_wse_statement(opcode, caller, count, wide, narrow, tags, statement, ctx, locals);
+        if (ctx.failOnUnimplemented && ctx.unimplementedCount > unimplementedBefore) {
+            return false;
+        }
     } else if (opcode >= kNativeOpcodeMin && opcode <= kNativeOpcodeMax) {
-        result = dispatch_native_statement(opcode, wide, narrow, tags, statement, ctx, locals);
+        const NativeDispatch nativeResult =
+            dispatch_native_statement(opcode, wide, narrow, tags, statement, ctx, locals);
+        if (nativeResult == NativeDispatch::unimplemented) {
+            ctx.record_unimplemented(opcode);
+            if (ctx.failOnUnimplemented) {
+                return false;
+            }
+            result = true;
+        } else {
+            result = (nativeResult == NativeDispatch::handled);
+        }
     }
 
     if (neg) {
@@ -995,17 +1036,25 @@ inline bool execute_statement_block(StatementBlock& block,
         bool currentOk = true;
 
         if (maskedOp >= kNativeOpcodeMin) {
+            const std::size_t unimplementedBefore = ctx.unimplementedCount;
             if (execute_statement(stmt, caller, ctx, locals)) {
                 ++pc;
             } else {
+                if (ctx.failOnUnimplemented && ctx.unimplementedCount > unimplementedBefore) {
+                    return false;
+                }
                 pc = stmt.endStatement;
                 canEnterElse = false;
                 currentOk = false;
             }
         } else if (maskedOp == core_op::kCallScript) {
+            const std::size_t unimplementedBefore = ctx.unimplementedCount;
             if (execute_call_script(stmt, caller, depth, ctx, locals)) {
                 ++pc;
             } else {
+                if (ctx.failOnUnimplemented && ctx.unimplementedCount > unimplementedBefore) {
+                    return false;
+                }
                 pc = stmt.endStatement;
                 canEnterElse = false;
                 currentOk = false;
@@ -1092,6 +1141,10 @@ inline bool execute_statement_block(StatementBlock& block,
             canEnterElse = true;
             start_loop(block, ctx, locals, loops, numLoops, pc);
         } else {
+            ctx.record_unimplemented(maskedOp);
+            if (ctx.failOnUnimplemented) {
+                return false;
+            }
             ++pc;
         }
 

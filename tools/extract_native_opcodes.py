@@ -128,9 +128,9 @@ def scan_implemented_from_block_vm(block_vm_path: Path) -> tuple[set[int], set[i
     for m in re.finditer(r"k([A-Za-z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)U?", core_block_m.group(1)):
         core_map["k" + m.group(1)] = int(m.group(2), 0)
 
-    # Extract dispatch_native_statement body up to closing brace before next function.
+    # Extract dispatch_native_statement body up to unimplemented return.
     disp_m = re.search(
-        r"dispatch_native_statement\s*\(.*?\n(.*?)\n\s*\+\+ctx\.unimplementedCount;",
+        r"dispatch_native_statement\s*\(.*?\n(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+NativeDispatch::unimplemented;)",
         text,
         re.S,
     )
