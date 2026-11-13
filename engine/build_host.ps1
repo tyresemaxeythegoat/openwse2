@@ -55,7 +55,8 @@ $tests = @(
     @{ Name = "wse_dict"; Source = Join-Path $here "tests\wse_dict_test.cpp" },
     @{ Name = "wse_array"; Source = Join-Path $here "tests\wse_array_test.cpp" },
     @{ Name = "wse_world"; Source = Join-Path $here "tests\wse_world_test.cpp" },
-    @{ Name = "block_vm"; Source = Join-Path $here "tests\block_vm_test.cpp" }
+    @{ Name = "block_vm"; Source = Join-Path $here "tests\block_vm_test.cpp" },
+    @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp" }
 )
 
 Write-Host "zig          $zig"

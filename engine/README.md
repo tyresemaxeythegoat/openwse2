@@ -19,6 +19,7 @@ engine/
                       ops/{bitwise,system,world,string,fp_expr,fp,dict,array,position}.h
                       wse_opcodes.h (generated)               WSE extended opcode enum
   include/wse/game/   script.h, trigger.h, world_state.h      managers and game-state model
+  include/wse/platform/ vfs.h, clock.h, log.h                 platform seam (port infrastructure)
   tests/              one *_test.cpp per suite (+ wse_test_common.h), no framework
   fixtures/           hand-written module snippets (never retail files)
   build_host.ps1      Windows host gate
@@ -44,6 +45,8 @@ The engine is header-only and built through CMake (`../CMakeLists.txt`), CI (`.g
 | `include/wse/vm/wse_state.h` | opcode mask, operand/effect structs, `WseStringBanks`, `WseOptionsState`, `WseObjectManager`, `parseString`, shared file helpers | `executeWSE` `0x1401e4dc0`, `0x1400720b0`, `0x1401c6150` |
 | `include/wse/vm/ops/{bitwise,system,world,string,fp_expr,fp,dict,array,position}.h` | per-family `executeWSE` dispatch handlers (2800–2809, 3000–3045/3619/3622/4300–4305/4606, 3600–3813/4600–4609, 4200–4246, `feval` 4400–4438, dict 3200–3222, array 5000–5022, pos vec 4100–4104) | `executeWSE` `0x1401e4dc0`; `0x1400a6c10`–`0x1400ad5a0`; `0x1401e55c5`–`0x1401ec52b`; `0x1401ef0ef`–`0x1401efc8d`; `0x1401f198c`–`0x1401f1c2c`; `0x1401f58a0`–`0x1401fdd80`; `0x140246010`–`0x1402461d7`; `0x14024f4c0`; `0x1402a24f0`–`0x1402b64b0`; `0x14034e340`–`0x1403508a0` |
 | `include/wse/vm/execute_wse.h` | top-level `execute_wse()` umbrella dispatching across `wse/vm/ops/*.h` | `executeWSE` `0x1401e4dc0` |
+| `include/wse/platform/{vfs,clock,log}.h` | **port infrastructure, not a reconstruction:** `Vfs` (case-insensitive, `/` and `\\` separators, root-confined) with `MemoryVfs` and `HostVfs`; `Clock` in the engine's 100,000-per-second ticks with `SteadyClock`/`ManualClock`; `LogSink` with stderr, capture, and null sinks | none — mirrors no retail layout; replaces the Win32 file/timer imports listed in `docs/ARCHITECTURE.md` §6 (design in `docs/PLATFORM_PLAN.md`) |
+| `tests/platform_test.cpp` | host tests for path normalisation and escape rejection, one `Vfs` contract run against both implementations, `Vfs` → `TokenReader`, clocks, and log sinks | temp directory + in-memory tree |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
