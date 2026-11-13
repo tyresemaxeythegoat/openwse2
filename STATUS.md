@@ -13,7 +13,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | PDB parse (MSF 7.0/TPI/DBI) | PASS | 156,846 TPI records, 15,363 sized layouts |
 | PDB symbol map | PASS | 48,658 symbols with VAs (`globals_new.json`) |
 | Vtable scan | PASS | 279 pointer runs; 207 class-identified; 73 `rgl*`/`mb*`/`WSE*` |
-| Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (35 classes, 2,098 symbols, 73 vtables; adds `rglVector4`, `rglTransform`, `rglMersenneTwister`, `rglSectionlessIni`, `WSEObjectManager`, `WSEProfiling`), v1.1.5.5 target |
+| Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (44 classes, 2,267 symbols, 76 vtables; adds `WSEObjectContainer`, `WSEObjectType`, `WSEArraySortOptions`, `WSEBasicDynMultiArray`, `WSEDynMultiArray<int/rglString/rglTransform>`, `mu::Parser`, `mu::ParserBase`), v1.1.5.5 target |
 | v1.1.5.5 REA VM/stream batches | PASS | 75 procedures across 9 `decompile_all` exports (`stmt_core` `ev_3ebcea85…` 4/4, `stmt_block` `ev_ffc38aa5…` 10/10, `script` `ev_8d37a0c8…` 4/4, `simple_trigger` `ev_3157906d…` 12/12, `trigger` `ev_f62843ac…` 12/12, `game_scripts` `ev_fc9bd1a4…` 4/4, `game_triggers` `ev_052f2d86…` 2/2, `streams_bin` `ev_8cc48986…` 9/9, `streams_txt` `ev_1e3c2566…` 18/18), plus `read_bytes`/`0x140615ad0` (`ev_f09662c6…`/`ev_2ddf7a62…`) and 6 single-procedure exports |
 | Superseded 2026-10-14 REA runs | PASS (superseded) | Historical 2026-10-14 entries kept for provenance only: `ev_7cd99ccc…157d7a` (`mbScript` 5), `ev_8d91b175…99b11` (`mbStatement` 14), `ev_25469ff4…84af8` (3), `ev_e3530f99…e8d05` (`Trigger` 52), `ev_cebc7ae0…e8c8d3` (`rglTextStream` 18), `ev_24eecfa4…f18c0b6` (`rglBinaryStream` 9), `ev_130d8023…2c62e6` (2) |
 | Binary savegame format | PASS | `rglBinaryStream` raw little-endian 8/4/1-byte values; strings are `int32` length + bytes; no header or checksum |
@@ -33,7 +33,7 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 | Portable trigger & script VM runtime | Event-key state machines and script execution (`block_vm.h`) run reconstructed conditions/consequences through the VM (`try_for_range`, `try_for_range_backwards`, `try_for_dict_keys`) and pass host tests; callback overloads in `trigger.h` remain available; world entity iterators (`try_for_agents`/etc.) cleanly iterate 0 times until entity containers are reconstructed |
 | Portable trigger savegames | Binary reader/writer and simple-trigger reader reconstructed and host-tested, including count-exceeded consumption and truncation rejection |
 | `executeWSE` case mapping | Complete: 440/440 SDK operations 2800–5202 resolved to switch/equality handlers; no unknown in-range opcode (v1.1.5.5) |
-| Portable `executeWSE` handlers | 134 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, 3014–3017/3020–3022/3027–3028/3034–3035/3040–3043/3600 script-context queries/returns/timers/MT19937/profiler, dictionary group 3200–3222 (`.wsedict`/INI/JSON/URL-encoded JSON/pos), position vector group 4100/4102–4104, string group 4200–4224 (including portable RFC 1321 MD5 for 4219), 4233–4234, 4236, 4238, and 4240–4244 (`str_regex_*`/`str_decode_url`), 4300–4305 options flags, and 4400–4436/4438 floating-point load/store/`fld_pos_{x,y,z}`/compare/arithmetic/transcendental/rounding; the other 306 report `WseDispatch::unimplemented` |
+| Portable `executeWSE` handlers | 158 of 440 opcodes transcribed and host-tested: 2800–2809 shifts/xor/complement, 3000–3002 register get/set and version query, 3014–3017/3020–3022/3027–3028/3034–3035/3040–3043/3600 script-context queries/returns/timers/MT19937/profiler, dictionary group 3200–3222 (`.wsedict`/INI/JSON/URL-encoded JSON/pos), position vector group 4100/4102–4104, string group 4200–4224 (including portable RFC 1321 MD5 for 4219), 4233–4234, 4236, 4238, and 4240–4244 (`str_regex_*`/`str_decode_url`), 4300–4305 options flags, 4400–4438 floating-point group (100%, including `4437` `feval` with `mbBasicGame::parseString` + AST-compiled `mu::Parser`), and 5000–5022 dynamic array group (`array_create`..`array_le`, unified `WseObjectManager`, `.wsearray` binary I/O, natural merge sort + `array_sort_custom` callback); the other 282 report `WseDispatch::unimplemented` |
 
 ## Confirmed by pseudocode
 
@@ -201,6 +201,24 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
   (`mov ebx,0xa`); otherwise the base is the int32 literal in operand 2. A base below 2 jumps to the
   logger with `"invalid logarithm base %d"` and returns true without storing. The result is
   `log10(fp[operand 1]) / log10((float)base)`.
+- `feval` (`4437`, `0x1155`, line 8353): resolves its string operand, runs `mbBasicGame::parseString`
+  (`0x1400720b0`, unconditionally mapping literal `'^'` at `0x140072338` to `'\n'` while leaving
+  expanded `{sN}` contents un-reparsed), and evaluates with `mu::Parser` (`0x1a146`, 376 B; `SetExpr`
+  `0x1400a9980`, `Eval` `0x1400ad5a0`, unary `'-'` `prINFIX=6` at `0x1400a8310` below `'^'`, `log`
+  and `ln` both bound to `logf` `0x1400a6c20`, `rint` bound to `floorf(x + 0.5)` at `0x1400a6c50`).
+  The portable implementation compiles the full AST before evaluation so syntax/arity/lvalue errors
+  leave `fp[0..127]` and `positions[0..127]` unchanged.
+- Dynamic arrays (`5000` `array_create` equality branch line 6427; `5001`–`5022` `0x1389`–`0x139e`
+  switch lines 6802–7510): share `WSEObjectManager` (`0x1b4d3`, 64 B) / `WSEObjectContainer` (`0x18774`,
+  16 B) / `WSEObjectType` (`0x18026`, 32 B) with dictionaries via unified `WseObjectManager` (type-checked
+  object lookups), backing `WSEBasicDynMultiArray` (`0x163ff`, 48 B) and `WSEDynMultiArray<int/rglString/rglTransform>`
+  (`0x66db`/`0x677c`/`0x681f`, 48 B) across 1–14 dimensions. `.wsearray` save/load (`0x1401c5910`/`0x1401c59f0`)
+  stores `rglTransform` as 9 floats `[o.xyz, f.xyz, u.xyz]` and calls `orthonormalize()` on load;
+  `array_sort`/`array_sort_custom` (`WSEArraySortOptions` `0x18fb1`, 8 B) use bottom-up natural merge
+  sort (`0x1401fdd80`, aborting without mutation after `n` double-passes); `array_eq..array_le`
+  (`0x1401f58a0`, `0x1401f5d30`–`0x1401f606b`) normalize position copies before comparing all 12 floats;
+  and `block_vm.h` tracks `currentDepth` so `array_sort_custom` invokes comparator scripts via
+  `wse_invoke_script_callback`.
 - WSE2 v1.1.5.5 keeps every existing opcode number and adds seven SDK operations, all present in the
   recovered dispatch: `party_get_current_terrain_variant` 3911 (line 5020),
   `scene_set_region_variant` 4517, `scene_set_height_fog` 4518, `scene_set_water_waves` 4519,
@@ -270,6 +288,6 @@ Phase: **1 — Binary Triage & SDK Alignment** (script VM, module text/binary st
 
 ## Next concrete task
 
-1. Transcribe the next `executeWSE` handler groups from `docs/WSE_OPCODES.md` beyond 134/440 (306 remaining unimplemented — e.g., agent/party/mission/player/network ops after extracting their target layouts and globals), extending the host test gate as each group lands.
+1. Transcribe the next `executeWSE` handler groups from `docs/WSE_OPCODES.md` beyond 158/440 (282 remaining unimplemented — e.g., agent/party/mission/player/network ops after extracting their target layouts and globals), extending the host test gate as each group lands.
 2. Expand entity/container iteration (`try_for_agents`, `try_for_parties`, `try_for_prop_instances`, `try_for_players`) and Lua 5.1 hook wiring once the underlying entity tables and `gameOperation` registry are reconstructed (`try_for_dict_keys` `0x12` is now implemented).
 3. Run the `clang++ -target aarch64-linux-android29 -Wall -Werror` arm64 compile gate once an Android NDK is installed, and keep `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json`, and this file current at each milestone.

@@ -12,17 +12,17 @@ Clean-room C++20 reconstruction of the WSE2 engine. Code here is written from th
 | `include/wse/vm/operand.h` | tagged operand decode and lvalue write-back | `mbStatement::parseOperand` `0x1401c6070`, `mbStatement::returnValue` `0x1401c6100`, `mbStatementBlock::execute` `0x1401f69d0`, `analyze` `0x1401f6740` |
 | `include/wse/vm/slots.h` | `mbSlots` (`std::vector<int64_t>`) get/set semantics | PDB type `0x1b0f8`; `parseOperand` bounds check; `returnValue` write path |
 | `include/wse/vm/statement.h` | statement record and text reader | `mbStatementBlock::readStream` `0x1401f6600`, PDB type `0xb91e` |
-| `include/wse/vm/block_vm.h` | statement-block VM, loop frames (`try_for_dict_keys` `0x12`), core native ops, `WseVmState` wiring, script/trigger VM bridge | `0x1401c6150`, `0x1401f6740`–`0x1401f7f00`, `0x1401f7692`/`0x1401f7dde`, `0x1400dbde0`/`0x1400dbe70`, `0x140244cd0`, `0x14020fb80`/`0x1402101a0` |
+| `include/wse/vm/block_vm.h` | statement-block VM, loop frames (`try_for_dict_keys` `0x12`), core native ops, `WseVmState` wiring, recursive `currentDepth` / `wse_invoke_script_callback` (`array_sort_custom`), script/trigger VM bridge | `0x1401c6150`, `0x1401f6740`–`0x1401f7f00`, `0x1401f7692`/`0x1401f7dde`, `0x1400dbde0`/`0x1400dbe70`, `0x140244cd0`, `0x14020fb80`/`0x1402101a0` |
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x140244810`, `0x140244540`, `0x14020fe60`, `0x14020fab0`, `0x1400ccf20`, `0x1400cd2d0`, `0x140244970`, `0x140244b60`, `0x14020ffa0`, `0x140244cd0`, `0x14020fb80`, `0x1402101a0` |
 | `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 65-entry name table, and script mapping | `0x14020f6a0`, `0x14020f7c0`, `0x14020f9a0`; globals `0x14069fac0`/`0x14069fac8`/`0x14069facc`; table `0x140615ad0`; formats `0x14055c680`/`0x14055c690` |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
-| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, and 134/440 handlers (2800–2809, 3000–3002, 3014–3017/3020–3022/3027–3028/3034–3035/3040–3043/3600, dict 3200–3222, pos vec 4100/4102–4104, string 4200–4224/4233–4234/4236/4238/4240–4244, options 4300–4305, floating-point 4400–4436/4438) | `executeWSE` `0x1401e4dc0` (lines 628–665, 859–877, 1032–2165, 4670, 5030–6420, 7881–8380); `0x1402a24f0`–`0x1402b64b0`; `0x14034e340`–`0x1403508a0`; `mbStatement::execute` `0x1401c6150` |
+| `include/wse/vm/execute_wse.h` | opcode mask, decoded operand view, dispatch result, unified `WseObjectManager`, `parseString`, and 158/440 handlers (2800–2809, 3000–3002, 3014–3017/3020–3022/3027–3028/3034–3035/3040–3043/3600, dict 3200–3222, pos vec 4100/4102–4104, string 4200–4224/4233–4234/4236/4238/4240–4244, options 4300–4305, floating-point 4400–4438 incl. `feval` `4437`, dynamic array 5000–5022) | `executeWSE` `0x1401e4dc0` (lines 628–665, 859–877, 1032–2165, 4670, 5030–7510, 7881–8380); `0x1400720b0`/`0x1400a6c10`–`0x1400ad5a0`; `0x1401f58a0`–`0x1401fdd80`; `0x1402a24f0`–`0x1402b64b0`; `0x14034e340`–`0x1403508a0`; `mbStatement::execute` `0x1401c6150` |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
 | `tests/script_test.cpp` + `fixtures/scripts.txt` | host tests for script records, header errors, duplicate mapping, and missing-name reporting | local fixture mirroring the retail grammar |
-| `tests/wse_test.cpp` | host tests for opcode enum values, all 134 implemented handlers (including `.wsedict`/INI/JSON/URL dict I/O and path sandboxing), operand bounds, and opcode masking | local test doubles only |
-| `tests/block_vm_test.cpp` | host tests for analyze/modifiers/loops (`try_for_dict_keys`)/core math/scripts/recursion/return values/positions/trigger VM integration | local test doubles and module fixtures |
+| `tests/wse_test.cpp` | host tests for opcode enum values, all 158 implemented handlers (including `feval`/`parseString`, `.wsedict`/INI/JSON/URL dict I/O, `.wsearray` binary I/O, path sandboxing, natural merge sort, and array relations), operand bounds, and opcode masking | local test doubles only |
+| `tests/block_vm_test.cpp` | host tests for analyze/modifiers/loops (`try_for_dict_keys`)/core math/scripts/recursion/return values/positions/trigger VM integration/`feval` and `array_sort_custom` script callbacks | local test doubles and module fixtures |
 
 ## Module text format
 
@@ -172,10 +172,10 @@ evaluate false or leave stores untouched.
 The options flags group (`4300`–`4305`, `0x10cc`–`0x10d1`) exposes `verbose_casualties`,
 `cheat_mode`, and `realistic_headshots` via `WseVmState::options`.
 
-The floating-point group covers `fld`, `fld_str`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`, `fle`, `fsub`,
-`fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, and the transcendental/rounding helpers
-`fsqrt`, `fabs`, `fceil`, `ffloor`, `fexp`, `fpow`, `fln`, `flog`, `fmod`, `fsin`, `fcos`, `ftan`,
-`fsinh`, `fcosh`, `ftanh`, `fasin`, `facos`, `fatan`, and `fatan2` (4400–4401, 4405–4438). Registers are
+The floating-point group covers `fld`, `fld_str`, `fld_pos_x`, `fld_pos_y`, `fld_pos_z`, `fst`, `fcpy`,
+`feq`, `fgt`, `flt`, `fge`, `fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, `feval`, and the
+transcendental/rounding helpers `fsqrt`, `fabs`, `fceil`, `ffloor`, `fexp`, `fpow`, `fln`, `flog`, `fmod`,
+`fsin`, `fcos`, `ftan`, `fsinh`, `fcosh`, `ftanh`, `fasin`, `facos`, `fatan`, and `fatan2` (4400–4438, 100%). Registers are
 the 128-entry float array `DAT_140698718` (`g_basicGame+0x35d58`); `mbCheckRegister` (`0x1401c4e60`) accepts indices 0–127.
 `fld` divides the fixed-point operand by 100 (`g_basicGame+0x1f8` = `0x140662bb8`, set to `0x64` at
 `0x140070ffa` in `mbBasicGame::initialize`); `fld_str` (`4401`) parses operand 1 with `atof`
@@ -183,11 +183,20 @@ the 128-entry float array `DAT_140698718` (`g_basicGame+0x35d58`); `mbCheckRegis
 `fst` multiplies by 100 and rounds with `rglRound64` (`0x1402a1910`): `floorf(x)` plus one when the
 fraction is greater than 0.5. Float comparisons use `rglAbs` and `FLT_EPSILON`. `fpow`, `fmod`, and
 `fatan2` take operand 1 in `xmm0` and operand 2 in `xmm1`; `flog` reads a literal base from operand 2
-(default 10, minimum 2). Handlers that do not write operand 0 return `WseDispatch::handled_no_store`;
+(default 10, minimum 2). `feval` (`4437`) runs `mbBasicGame::parseString` (`0x1400720b0`, turning literal
+`'^'` into `'\n'` while leaving expanded `{sN}` contents un-reparsed) and compiles the full expression
+to an AST (`mu::Parser` semantics) before executing so syntax errors leave `fp` and `positions` intact.
+
+The dynamic array group (`5000`–`5022`, `array_create`..`array_le`) shares `WseObjectManager` LIFO object
+IDs and `mbCheckPath` sandboxing with dictionaries across 1–14D integer, string, and `rglTransform` arrays,
+`.wsearray` binary save/load (`[o.xyz, f.xyz, u.xyz]` transform serialization with `orthonormalize`),
+bottom-up natural merge sort (`array_sort` and `array_sort_custom` invoking `execute_script` via
+`wse_invoke_script_callback`), and lexicographical comparisons (`array_eq`..`array_le`). Handlers that do
+not write operand 0 return `WseDispatch::handled_no_store`;
 a failed comparison returns `WseDispatch::condition_false`; an invalid register is a successful no-op
 (`WseDispatch::ignored`), matching the retail `return true` fall-through.
 
-Currently 134 of 440 mapped opcodes are implemented (leaving 306 unimplemented); every other mapped opcode returns
+Currently 158 of 440 mapped opcodes are implemented (leaving 282 unimplemented); every other mapped opcode returns
 `WseDispatch::unimplemented` until its handler is transcribed.
 
 ## Safety deviations

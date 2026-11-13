@@ -13,10 +13,10 @@
   "pdb_age": 449
  },
  "inputs": {
-  "layouts": 35,
+  "layouts": 44,
   "globals_scanned": 48658,
-  "symbols_curated": 2098,
-  "game_vtables": 73
+  "symbols_curated": 2267,
+  "game_vtables": 76
  },
  "strings": [
   {
@@ -7265,6 +7265,560 @@
     "__vecDelDtor"
    ]
   },
+  "WSEObjectContainer": {
+   "size": 16,
+   "type_index": "0x18774",
+   "kind": "struct",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_type",
+     "offset": "0x0",
+     "type": "WSEObjectType*",
+     "type_index": "0xadc8",
+     "storage": "instance"
+    },
+    {
+     "name": "m_object",
+     "offset": "0x8",
+     "type": "void *",
+     "type_index": "0x603",
+     "storage": "instance"
+    }
+   ],
+   "methods": []
+  },
+  "WSEObjectType": {
+   "size": 32,
+   "type_index": "0x18026",
+   "kind": "struct",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "m_name",
+     "offset": "0x0",
+     "type": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >",
+     "type_index": "0x1057",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "WSEObjectType",
+    "~WSEObjectType",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "WSEArraySortOptions": {
+   "size": 8,
+   "type_index": "0x18fb1",
+   "kind": "struct",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "sortDescending",
+     "offset": "0x0",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "sortCaseInsensitive",
+     "offset": "0x1",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "sortCmpScriptNo",
+     "offset": "0x4",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "setSortMode"
+   ]
+  },
+  "WSEBasicDynMultiArray": {
+   "size": 48,
+   "type_index": "0x163ff",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "data",
+     "offset": "0x8",
+     "type": "void *",
+     "type_index": "0x603",
+     "storage": "instance"
+    },
+    {
+     "name": "dimSizes",
+     "offset": "0x10",
+     "type": "std::vector<int,std::allocator<int> >",
+     "type_index": "0x33ca",
+     "storage": "instance"
+    },
+    {
+     "name": "dataTypeID",
+     "offset": "0x28",
+     "type": "type_id",
+     "type_index": "0x653e",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "WSEBasicDynMultiArray",
+    "~WSEBasicDynMultiArray",
+    "getDimSize",
+    "getDimCount",
+    "isValid",
+    "isMultidim",
+    "getTypeID",
+    "saveToFile",
+    "resizeDim",
+    "pop_back_multi",
+    "loadIntIndexFromFile",
+    "isArrayFile",
+    "getVersionFromFile",
+    "getDataTypeIdFromFile",
+    "isDimSizesValid",
+    "isPtrDim",
+    "isIndicesValid",
+    "operator=",
+    "__local_vftable_ctor_closure",
+    "__vecDelDtor"
+   ]
+  },
+  "WSEDynMultiArray<int>": {
+   "size": 48,
+   "type_index": "0x66db",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "WSEBasicDynMultiArray",
+     "offset": "0x0",
+     "type": "WSEBasicDynMultiArray",
+     "relation": "base"
+    }
+   ],
+   "methods": [
+    "WSEDynMultiArray<int>",
+    "~WSEDynMultiArray<int>",
+    "saveToFile",
+    "getIndex",
+    "setIndex",
+    "setAllValues",
+    "resizeDim",
+    "push_back",
+    "pop_back_multi",
+    "pop_back_single",
+    "sort",
+    "buildSubDimension",
+    "deleteSubDimension",
+    "rebuildSubDimension",
+    "copySubDimension",
+    "saveSubDimension",
+    "loadSubDimension",
+    "setSubDimensionVals",
+    "createPrimitiveCopy",
+    "getIndexPtr",
+    "mergeSort",
+    "mergeRuns",
+    "merge",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "WSEDynMultiArray<rglTransform>": {
+   "size": 48,
+   "type_index": "0x681f",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "WSEBasicDynMultiArray",
+     "offset": "0x0",
+     "type": "WSEBasicDynMultiArray",
+     "relation": "base"
+    }
+   ],
+   "methods": [
+    "WSEDynMultiArray<rglTransform>",
+    "~WSEDynMultiArray<rglTransform>",
+    "saveToFile",
+    "getIndex",
+    "setIndex",
+    "setAllValues",
+    "resizeDim",
+    "push_back",
+    "pop_back_multi",
+    "pop_back_single",
+    "sort",
+    "buildSubDimension",
+    "deleteSubDimension",
+    "rebuildSubDimension",
+    "copySubDimension",
+    "saveSubDimension",
+    "loadSubDimension",
+    "setSubDimensionVals",
+    "createPrimitiveCopy",
+    "getIndexPtr",
+    "mergeSort",
+    "mergeRuns",
+    "merge",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "WSEDynMultiArray<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >": {
+   "size": 48,
+   "type_index": "0x677c",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "WSEBasicDynMultiArray",
+     "offset": "0x0",
+     "type": "WSEBasicDynMultiArray",
+     "relation": "base"
+    }
+   ],
+   "methods": [
+    "WSEDynMultiArray<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >",
+    "~WSEDynMultiArray<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >",
+    "saveToFile",
+    "getIndex",
+    "setIndex",
+    "setAllValues",
+    "resizeDim",
+    "push_back",
+    "pop_back_multi",
+    "pop_back_single",
+    "sort",
+    "buildSubDimension",
+    "deleteSubDimension",
+    "rebuildSubDimension",
+    "copySubDimension",
+    "saveSubDimension",
+    "loadSubDimension",
+    "setSubDimensionVals",
+    "createPrimitiveCopy",
+    "getIndexPtr",
+    "mergeSort",
+    "mergeRuns",
+    "merge",
+    "operator=",
+    "__vecDelDtor"
+   ]
+  },
+  "mu::Parser": {
+   "size": 376,
+   "type_index": "0x1a146",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "mu::ParserBase",
+     "offset": "0x0",
+     "type": "mu::ParserBase",
+     "relation": "base"
+    }
+   ],
+   "methods": [
+    "Parser",
+    "InitCharSets",
+    "InitFun",
+    "InitConst",
+    "InitOprt",
+    "OnDetectVar",
+    "Diff",
+    "Sin",
+    "Cos",
+    "Tan",
+    "Tan2",
+    "ASin",
+    "ACos",
+    "ATan",
+    "ATan2",
+    "Sinh",
+    "Cosh",
+    "Tanh",
+    "ASinh",
+    "ACosh",
+    "ATanh",
+    "Log2",
+    "Log10",
+    "Ln",
+    "Exp",
+    "Abs",
+    "Sqrt",
+    "Rint",
+    "Sign",
+    "UnaryMinus",
+    "UnaryPlus",
+    "Sum",
+    "Avg",
+    "Min",
+    "Max",
+    "IsVal",
+    "~Parser",
+    "operator=",
+    "__local_vftable_ctor_closure",
+    "__vecDelDtor"
+   ]
+  },
+  "mu::ParserBase": {
+   "size": 376,
+   "type_index": "0x1a181",
+   "kind": "class",
+   "source": "pdb-tpi",
+   "members": [
+    {
+     "name": "s_MaxNumOpenMPThreads",
+     "offset": "0x0",
+     "type": "const int32_t",
+     "type_index": "0x1030",
+     "storage": "static"
+    },
+    {
+     "name": "c_DefaultOprt",
+     "offset": "0x0",
+     "type": "const char*[0]",
+     "type_index": "0x1a17d",
+     "storage": "static"
+    },
+    {
+     "name": "s_locale",
+     "offset": "0x0",
+     "type": "std::locale",
+     "type_index": "0x17fe",
+     "storage": "static"
+    },
+    {
+     "name": "g_DbgDumpCmdCode",
+     "offset": "0x0",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "static"
+    },
+    {
+     "name": "g_DbgDumpStack",
+     "offset": "0x0",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "static"
+    },
+    {
+     "name": "m_pParseFormula",
+     "offset": "0x8",
+     "type": "float (mu::ParserBase::*)(...)*",
+     "type_index": "0x43c6",
+     "storage": "instance"
+    },
+    {
+     "name": "m_vRPN",
+     "offset": "0x10",
+     "type": "mu::ParserByteCode",
+     "type_index": "0x4954",
+     "storage": "instance"
+    },
+    {
+     "name": "m_vStringBuf",
+     "offset": "0x40",
+     "type": "std::vector<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,std::allocator<std::basic_string<char,std::char_traits<char>,std::allocator<char> > > >",
+     "type_index": "0x14bb",
+     "storage": "instance"
+    },
+    {
+     "name": "m_vStringVarBuf",
+     "offset": "0x58",
+     "type": "std::vector<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,std::allocator<std::basic_string<char,std::char_traits<char>,std::allocator<char> > > >",
+     "type_index": "0x14bb",
+     "storage": "instance"
+    },
+    {
+     "name": "m_pTokenReader",
+     "offset": "0x70",
+     "type": "std::auto_ptr<mu::ParserTokenReader>",
+     "type_index": "0x4946",
+     "storage": "instance"
+    },
+    {
+     "name": "m_FunDef",
+     "offset": "0x78",
+     "type": "std::map<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,mu::ParserCallback,std::less<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >,std::allocator<std::pair<std::basic_string<char,std::char_traits<char>,std::allocator<char> > const ,mu::ParserCallback> > >",
+     "type_index": "0x445e",
+     "storage": "instance"
+    },
+    {
+     "name": "m_PostOprtDef",
+     "offset": "0x88",
+     "type": "std::map<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,mu::ParserCallback,std::less<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >,std::allocator<std::pair<std::basic_string<char,std::char_traits<char>,std::allocator<char> > const ,mu::ParserCallback> > >",
+     "type_index": "0x445e",
+     "storage": "instance"
+    },
+    {
+     "name": "m_InfixOprtDef",
+     "offset": "0x98",
+     "type": "std::map<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,mu::ParserCallback,std::less<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >,std::allocator<std::pair<std::basic_string<char,std::char_traits<char>,std::allocator<char> > const ,mu::ParserCallback> > >",
+     "type_index": "0x445e",
+     "storage": "instance"
+    },
+    {
+     "name": "m_OprtDef",
+     "offset": "0xa8",
+     "type": "std::map<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,mu::ParserCallback,std::less<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >,std::allocator<std::pair<std::basic_string<char,std::char_traits<char>,std::allocator<char> > const ,mu::ParserCallback> > >",
+     "type_index": "0x445e",
+     "storage": "instance"
+    },
+    {
+     "name": "m_ConstDef",
+     "offset": "0xb8",
+     "type": "std::map<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,float,std::less<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >,std::allocator<std::pair<std::basic_string<char,std::char_traits<char>,std::allocator<char> > const ,float> > >",
+     "type_index": "0x4461",
+     "storage": "instance"
+    },
+    {
+     "name": "m_StrVarDef",
+     "offset": "0xc8",
+     "type": "std::map<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,unsigned __int64,std::less<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >,std::allocator<std::pair<std::basic_string<char,std::char_traits<char>,std::allocator<char> > const ,unsigned __int64> > >",
+     "type_index": "0x4464",
+     "storage": "instance"
+    },
+    {
+     "name": "m_VarDef",
+     "offset": "0xd8",
+     "type": "std::map<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,float *,std::less<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >,std::allocator<std::pair<std::basic_string<char,std::char_traits<char>,std::allocator<char> > const ,float *> > >",
+     "type_index": "0x4445",
+     "storage": "instance"
+    },
+    {
+     "name": "m_bBuiltInOp",
+     "offset": "0xe8",
+     "type": "bool",
+     "type_index": "0x30",
+     "storage": "instance"
+    },
+    {
+     "name": "m_sNameChars",
+     "offset": "0xf0",
+     "type": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >",
+     "type_index": "0x1057",
+     "storage": "instance"
+    },
+    {
+     "name": "m_sOprtChars",
+     "offset": "0x110",
+     "type": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >",
+     "type_index": "0x1057",
+     "storage": "instance"
+    },
+    {
+     "name": "m_sInfixOprtChars",
+     "offset": "0x130",
+     "type": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >",
+     "type_index": "0x1057",
+     "storage": "instance"
+    },
+    {
+     "name": "m_nIfElseCounter",
+     "offset": "0x150",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    },
+    {
+     "name": "m_vStackBuffer",
+     "offset": "0x158",
+     "type": "std::vector<float,std::allocator<float> >",
+     "type_index": "0x33eb",
+     "storage": "instance"
+    },
+    {
+     "name": "m_nFinalResultIdx",
+     "offset": "0x170",
+     "type": "int32_t",
+     "type_index": "0x74",
+     "storage": "instance"
+    }
+   ],
+   "methods": [
+    "EnableDebugDump",
+    "ParserBase",
+    "operator=",
+    "~ParserBase",
+    "Eval",
+    "GetNumResults",
+    "SetExpr",
+    "SetVarFactory",
+    "SetDecSep",
+    "SetThousandsSep",
+    "ResetLocale",
+    "EnableOptimizer",
+    "EnableBuiltInOprt",
+    "HasBuiltInOprt",
+    "AddValIdent",
+    "DefineOprt",
+    "DefineConst",
+    "DefineStrConst",
+    "DefineVar",
+    "DefinePostfixOprt",
+    "DefineInfixOprt",
+    "ClearVar",
+    "ClearFun",
+    "ClearConst",
+    "ClearInfixOprt",
+    "ClearPostfixOprt",
+    "ClearOprt",
+    "RemoveVar",
+    "GetUsedVar",
+    "GetVar",
+    "GetConst",
+    "GetExpr",
+    "GetFunDef",
+    "GetVersion",
+    "GetOprtDef",
+    "DefineNameChars",
+    "DefineOprtChars",
+    "DefineInfixOprtChars",
+    "ValidNameChars",
+    "ValidOprtChars",
+    "ValidInfixOprtChars",
+    "SetArgSep",
+    "GetArgSep",
+    "Error",
+    "Init",
+    "InitCharSets",
+    "InitFun",
+    "InitConst",
+    "InitOprt",
+    "OnDetectVar",
+    "Assign",
+    "InitTokenReader",
+    "ReInit",
+    "AddCallback",
+    "ApplyRemainingOprt",
+    "ApplyBinOprt",
+    "ApplyIfElse",
+    "ApplyFunc",
+    "ApplyStrFunc",
+    "GetOprtPrecedence",
+    "GetOprtAssociativity",
+    "CreateRPN",
+    "ParseString",
+    "ParseCmdCode",
+    "ParseCmdCodeBulk",
+    "CheckName",
+    "CheckOprt",
+    "StackDump",
+    "__local_vftable_ctor_closure",
+    "__vecDelDtor"
+   ]
+  },
   "WSEProfiling": {
    "size": 66072,
    "type_index": "0xaf0a",
@@ -7352,6 +7906,42 @@
    "va": "0x140549560"
   },
   {
+   "name": "??_7Parser@mu@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14054f938"
+  },
+  {
+   "name": "??_7?$change_dec_sep@D@ParserBase@mu@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14054f970"
+  },
+  {
+   "name": "??_7ParserBase@mu@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14054f9c0"
+  },
+  {
+   "name": "?c_DefaultOprt@ParserBase@mu@@1PAPEBDA",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140615a30"
+  },
+  {
+   "name": "?g_DbgDumpStack@ParserBase@mu@@1_NA",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061ee88"
+  },
+  {
+   "name": "?g_DbgDumpCmdCode@ParserBase@mu@@1_NA",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14061ee89"
+  },
+  {
    "name": "??_7mbGameLogWindow@@6B@",
    "kind": "public",
    "source": "pdb-public",
@@ -7386,6 +7976,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14055b9b0"
+  },
+  {
+   "name": "??_7?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14055b9d0"
+  },
+  {
+   "name": "??_7?$WSEDynMultiArray@H@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14055ba08"
   },
   {
    "name": "?g_curCallStack@@3PEAVmbCallStack@@EA",
@@ -7428,6 +8030,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14061f078"
+  },
+  {
+   "name": "??_7WSEBasicDynMultiArray@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14056bfc8"
   },
   {
    "name": "?readStream@mbActionSet@@QEAAXAEAVrglStream@@@Z",
@@ -8990,6 +9598,12 @@
    "va": "0x140073ec0"
   },
   {
+   "name": "??$DefineFun@P6AMM@Z@ParserBase@mu@@QEAAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@P6AMM@Z_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140073de0"
+  },
+  {
    "name": "?_Reallocate@?$vector@VrglString@@V?$allocator@VrglString@@@std@@@std@@IEAAX_K@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -9210,6 +9824,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140070a50"
+  },
+  {
+   "name": "??1Parser@mu@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140070a40"
   },
   {
    "name": "??1?$rglVector@VrglString@@@@QEAA@XZ",
@@ -9906,6 +10526,438 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400a5ef0"
+  },
+  {
+   "name": "??_GParser@mu@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a7320"
+  },
+  {
+   "name": "??_EParser@mu@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a7320"
+  },
+  {
+   "name": "??$DefineFun@P6AMPEBMH@Z@ParserBase@mu@@QEAAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@P6AMPEBMH@Z_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a8b00"
+  },
+  {
+   "name": "?OnDetectVar@Parser@mu@@UEAAXPEAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEAH1@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140004250"
+  },
+  {
+   "name": "?InitOprt@Parser@mu@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a8310"
+  },
+  {
+   "name": "?InitConst@Parser@mu@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a8240"
+  },
+  {
+   "name": "?InitFun@Parser@mu@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a73b0"
+  },
+  {
+   "name": "?InitCharSets@Parser@mu@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a7350"
+  },
+  {
+   "name": "?IsVal@Parser@mu@@KAHPEBDPEAHPEAM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a7010"
+  },
+  {
+   "name": "?Max@Parser@mu@@KAMPEBMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6f20"
+  },
+  {
+   "name": "?Min@Parser@mu@@KAMPEBMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6e30"
+  },
+  {
+   "name": "?Avg@Parser@mu@@KAMPEBMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6d60"
+  },
+  {
+   "name": "?Sum@Parser@mu@@KAMPEBMH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6ca0"
+  },
+  {
+   "name": "?UnaryPlus@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140004250"
+  },
+  {
+   "name": "?UnaryMinus@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6c90"
+  },
+  {
+   "name": "?Sign@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6c60"
+  },
+  {
+   "name": "?Rint@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6c50"
+  },
+  {
+   "name": "?Sqrt@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6c40"
+  },
+  {
+   "name": "?Abs@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6c30"
+  },
+  {
+   "name": "?Exp@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006a6d0"
+  },
+  {
+   "name": "?Ln@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6c20"
+  },
+  {
+   "name": "?Log10@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6c10"
+  },
+  {
+   "name": "?Log2@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6be0"
+  },
+  {
+   "name": "?ATanh@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6bb0"
+  },
+  {
+   "name": "?ACosh@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6b80"
+  },
+  {
+   "name": "?ASinh@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6b50"
+  },
+  {
+   "name": "?Tanh@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6b40"
+  },
+  {
+   "name": "?Cosh@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6b30"
+  },
+  {
+   "name": "?Sinh@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6b20"
+  },
+  {
+   "name": "?ATan2@Parser@mu@@KAMMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f9b0"
+  },
+  {
+   "name": "?ATan@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6b10"
+  },
+  {
+   "name": "?ACos@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6b00"
+  },
+  {
+   "name": "?ASin@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6af0"
+  },
+  {
+   "name": "?Tan@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6ae0"
+  },
+  {
+   "name": "?Cos@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6ad0"
+  },
+  {
+   "name": "?Sin@Parser@mu@@KAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a6ac0"
+  },
+  {
+   "name": "??0Parser@mu@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a7280"
+  },
+  {
+   "name": "??_GParserBase@mu@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a7320"
+  },
+  {
+   "name": "??_EParserBase@mu@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a7320"
+  },
+  {
+   "name": "??_G?$change_dec_sep@D@ParserBase@mu@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400126f0"
+  },
+  {
+   "name": "??_E?$change_dec_sep@D@ParserBase@mu@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400126f0"
+  },
+  {
+   "name": "??$?0V?$change_dec_sep@D@ParserBase@mu@@@locale@std@@QEAA@AEBV01@PEBV?$change_dec_sep@D@ParserBase@mu@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400aee90"
+  },
+  {
+   "name": "?do_grouping@?$change_dec_sep@D@ParserBase@mu@@MEBA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400adce0"
+  },
+  {
+   "name": "?do_thousands_sep@?$change_dec_sep@D@ParserBase@mu@@MEBADXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400adcd0"
+  },
+  {
+   "name": "?do_decimal_point@?$change_dec_sep@D@ParserBase@mu@@MEBADXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400adcc0"
+  },
+  {
+   "name": "?StackDump@ParserBase@mu@@AEBAXAEBV?$ParserStack@V?$ParserToken@MV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@mu@@@2@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400ad090"
+  },
+  {
+   "name": "?Error@ParserBase@mu@@QEBAXW4EErrorCodes@2@HAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400ad050"
+  },
+  {
+   "name": "?ParseString@ParserBase@mu@@AEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400ad010"
+  },
+  {
+   "name": "?CreateRPN@ParserBase@mu@@AEBAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400ac370"
+  },
+  {
+   "name": "?ParseCmdCodeBulk@ParserBase@mu@@AEBAMHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400ab7c0"
+  },
+  {
+   "name": "?ParseCmdCode@ParserBase@mu@@AEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400ab7b0"
+  },
+  {
+   "name": "?ApplyRemainingOprt@ParserBase@mu@@AEBAXAEAV?$ParserStack@V?$ParserToken@MV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@mu@@@2@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400ab5a0"
+  },
+  {
+   "name": "?ApplyBinOprt@ParserBase@mu@@AEBAXAEAV?$ParserStack@V?$ParserToken@MV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@mu@@@2@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400ab160"
+  },
+  {
+   "name": "?ApplyIfElse@ParserBase@mu@@AEBAXAEAV?$ParserStack@V?$ParserToken@MV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@mu@@@2@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400aad60"
+  },
+  {
+   "name": "?ApplyFunc@ParserBase@mu@@AEBAXAEAV?$ParserStack@V?$ParserToken@MV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@mu@@@2@0H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400aa4f0"
+  },
+  {
+   "name": "?ApplyStrFunc@ParserBase@mu@@AEBA?AV?$ParserToken@MV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@AEBV32@AEBV?$vector@V?$ParserToken@MV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@mu@@V?$allocator@V?$ParserToken@MV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@mu@@@std@@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400aa010"
+  },
+  {
+   "name": "?GetOprtPrecedence@ParserBase@mu@@AEBAHAEBV?$ParserToken@MV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a9e50"
+  },
+  {
+   "name": "?SetExpr@ParserBase@mu@@QEAAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a9980"
+  },
+  {
+   "name": "?CheckName@ParserBase@mu@@AEBAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a9840"
+  },
+  {
+   "name": "?CheckOprt@ParserBase@mu@@AEBAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBVParserCallback@2@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a96c0"
+  },
+  {
+   "name": "?OnDetectVar@ParserBase@mu@@MEAAXPEAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEAH1@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140004250"
+  },
+  {
+   "name": "?ReInit@ParserBase@mu@@AEBAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a92b0"
+  },
+  {
+   "name": "?InitTokenReader@ParserBase@mu@@AEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a9230"
+  },
+  {
+   "name": "??0ParserBase@mu@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a8de0"
+  },
+  {
+   "name": "?AddValIdent@ParserBase@mu@@QEAAXP6AHPEBDPEAHPEAM@Z@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a9300"
+  },
+  {
+   "name": "?DefineConst@ParserBase@mu@@QEAAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a9d30"
+  },
+  {
+   "name": "?Eval@ParserBase@mu@@QEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400ad5a0"
+  },
+  {
+   "name": "?DefineVar@ParserBase@mu@@QEAAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a9b50"
+  },
+  {
+   "name": "??1ParserBase@mu@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a8fb0"
+  },
+  {
+   "name": "?AddCallback@ParserBase@mu@@AEAAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBVParserCallback@2@AEAV?$map@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@VParserCallback@mu@@U?$less@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@VParserCallback@mu@@@std@@@2@@4@PEBD@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a9390"
+  },
+  {
+   "name": "?ValidNameChars@ParserBase@mu@@QEBAPEBDXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400a9b00"
+  },
+  {
+   "name": "?s_locale@ParserBase@mu@@1Vlocale@std@@A",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140621680"
   },
   {
    "name": "?makeAsyncCall@rglRenderThreadManager@@QEAAXHAEAUD3DXMATRIX@@AEBVrglString@@@Z",
@@ -13844,6 +14896,30 @@
    "va": "0x1401c46c0"
   },
   {
+   "name": "??_G?$WSEDynMultiArray@H@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fcaa0"
+  },
+  {
+   "name": "??_E?$WSEDynMultiArray@H@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fcaa0"
+  },
+  {
+   "name": "??_G?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fcb00"
+  },
+  {
+   "name": "??_E?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fcb00"
+  },
+  {
    "name": "??_G?$WSEDynMultiArray@VrglTransform@@@@UEAAPEAXI@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -13862,6 +14938,18 @@
    "va": "0x14001bff0"
   },
   {
+   "name": "??$_Uninit_move@PEAUtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@PEAU12@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@@std@@U12@@std@@YAPEAUtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@PEAU12@00AEAU?$_Wrap_alloc@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14001bff0"
+  },
+  {
+   "name": "??$_Uninit_move@PEAUtmpSortElement@?$WSEDynMultiArray@H@@PEAU12@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@H@@@std@@U12@@std@@YAPEAUtmpSortElement@?$WSEDynMultiArray@H@@PEAU12@00AEAU?$_Wrap_alloc@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@H@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14001bff0"
+  },
+  {
    "name": "??$_Uninit_move@PEAVrglTransform@@PEAV1@V?$allocator@VrglTransform@@@std@@V1@@std@@YAPEAVrglTransform@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglTransform@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -13869,6 +14957,18 @@
   },
   {
    "name": "??$_Uninit_def_fill_n@PEAUtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@_KV?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@U12@@std@@YAXPEAUtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@_KAEAU?$_Wrap_alloc@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14001a800"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAUtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@_KV?$allocator@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@@std@@U12@@std@@YAXPEAUtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@_KAEAU?$_Wrap_alloc@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14001a800"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAUtmpSortElement@?$WSEDynMultiArray@H@@_KV?$allocator@UtmpSortElement@?$WSEDynMultiArray@H@@@std@@U12@@std@@YAXPEAUtmpSortElement@?$WSEDynMultiArray@H@@_KAEAU?$_Wrap_alloc@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@H@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14001a800"
@@ -13904,7 +15004,31 @@
    "va": "0x1400172a0"
   },
   {
+   "name": "?_Reallocate@?$vector@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400172a0"
+  },
+  {
+   "name": "?_Reallocate@?$vector@UtmpSortElement@?$WSEDynMultiArray@H@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@H@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400172a0"
+  },
+  {
    "name": "?resize@?$vector@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140017070"
+  },
+  {
+   "name": "?resize@?$vector@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140017070"
+  },
+  {
+   "name": "?resize@?$vector@UtmpSortElement@?$WSEDynMultiArray@H@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@H@@@std@@@std@@QEAAX_K@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140017070"
@@ -13934,7 +15058,31 @@
    "va": "0x140200710"
   },
   {
+   "name": "?merge@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEAAXAEAV?$vector@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@@std@@@std@@0HHHP6A_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@3@1_K2AEBUWSEArraySortOptions@@@Z3@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140200710"
+  },
+  {
+   "name": "?merge@?$WSEDynMultiArray@H@@IEAAXAEAV?$vector@UtmpSortElement@?$WSEDynMultiArray@H@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@H@@@std@@@std@@0HHHP6A_NAEBH1_K2AEBUWSEArraySortOptions@@@Z3@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140200710"
+  },
+  {
    "name": "??1?$vector@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@VrglTransform@@@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$vector@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$vector@UtmpSortElement@?$WSEDynMultiArray@H@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@H@@@std@@@std@@QEAA@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140016f10"
@@ -13974,6 +15122,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402001a0"
+  },
+  {
+   "name": "?mergeRuns@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEAAHAEAV?$vector@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@@std@@@std@@0P6A_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@3@1_K2AEBUWSEArraySortOptions@@@Z3@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fff50"
+  },
+  {
+   "name": "?copySubDimension@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEBAXHPEAX0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402000c0"
+  },
+  {
+   "name": "?mergeRuns@?$WSEDynMultiArray@H@@IEAAHAEAV?$vector@UtmpSortElement@?$WSEDynMultiArray@H@@V?$allocator@UtmpSortElement@?$WSEDynMultiArray@H@@@std@@@std@@0P6A_NAEBH1_K2AEBUWSEArraySortOptions@@@Z3@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fff50"
+  },
+  {
+   "name": "?copySubDimension@?$WSEDynMultiArray@H@@IEBAXHPEAX0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401ffe80"
   },
   {
    "name": "?equal_range@?$_Hash@V?$_Umap_traits@IVrglString@@V?$_Uhash_compare@IU?$hash@I@std@@U?$equal_to@I@2@@std@@V?$allocator@U?$pair@$$CBIVrglString@@@std@@@3@$0A@@std@@@std@@QEAA?AU?$pair@V?$_List_iterator@V?$_List_val@U?$_List_simple_types@U?$pair@$$CBIVrglString@@@std@@@std@@@std@@@std@@V12@@2@AEBI@Z",
@@ -14040,6 +15212,102 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401fead0"
+  },
+  {
+   "name": "?mergeSort@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEAA_NAEBV?$vector@HV?$allocator@H@std@@@std@@P6A_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@3@1_K2AEBUWSEArraySortOptions@@@Z3@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fe780"
+  },
+  {
+   "name": "?getIndexPtr@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEBAPEAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBV?$vector@HV?$allocator@H@std@@@3@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fe6d0"
+  },
+  {
+   "name": "?setSubDimensionVals@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEBAXV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@HPEAX@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fe590"
+  },
+  {
+   "name": "?loadSubDimension@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEBAXAEAV?$basic_ifstream@DU?$char_traits@D@std@@@std@@P6AXPEADHAEAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@3@@ZHPEAX@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fe460"
+  },
+  {
+   "name": "?saveSubDimension@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEBAXAEAV?$basic_ofstream@DU?$char_traits@D@std@@@std@@P6AXAEAVWSESimpleCharBuff@@PEBX@ZHPEAX@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fe280"
+  },
+  {
+   "name": "?rebuildSubDimension@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEAAXPEAXHH_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fe120"
+  },
+  {
+   "name": "?deleteSubDimension@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEAAXPEAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fe030"
+  },
+  {
+   "name": "?buildSubDimension@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@IEBAPEAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fdf20"
+  },
+  {
+   "name": "?mergeSort@?$WSEDynMultiArray@H@@IEAA_NAEBV?$vector@HV?$allocator@H@std@@@std@@P6A_NAEBH1_K2AEBUWSEArraySortOptions@@@Z3@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fdbf0"
+  },
+  {
+   "name": "?getIndexPtr@?$WSEDynMultiArray@H@@IEBAPEAHAEBV?$vector@HV?$allocator@H@std@@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fdb40"
+  },
+  {
+   "name": "?setSubDimensionVals@?$WSEDynMultiArray@H@@IEBAXHHPEAX@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fda80"
+  },
+  {
+   "name": "?loadSubDimension@?$WSEDynMultiArray@H@@IEBAXAEAV?$basic_ifstream@DU?$char_traits@D@std@@@std@@P6AXPEADHAEAH@ZHPEAX@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fd950"
+  },
+  {
+   "name": "?saveSubDimension@?$WSEDynMultiArray@H@@IEBAXAEAV?$basic_ofstream@DU?$char_traits@D@std@@@std@@P6AXAEAVWSESimpleCharBuff@@PEBX@ZHPEAX@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fd780"
+  },
+  {
+   "name": "?rebuildSubDimension@?$WSEDynMultiArray@H@@IEAAXPEAXHH_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fd620"
+  },
+  {
+   "name": "?deleteSubDimension@?$WSEDynMultiArray@H@@IEAAXPEAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fd540"
+  },
+  {
+   "name": "?buildSubDimension@?$WSEDynMultiArray@H@@IEBAPEAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fd430"
   },
   {
    "name": "?clear@?$_Hash@V?$_Umap_traits@IVrglString@@V?$_Uhash_compare@IU?$hash@I@std@@U?$equal_to@I@2@@std@@V?$allocator@U?$pair@$$CBIVrglString@@@std@@@3@$0A@@std@@@std@@QEAAXXZ",
@@ -14130,6 +15398,174 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401fb9d0"
+  },
+  {
+   "name": "?sort@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@QEAA_NAEBV?$vector@HV?$allocator@H@std@@@std@@P6A_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@3@1_K2AEBUWSEArraySortOptions@@@Z3HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fb8e0"
+  },
+  {
+   "name": "?pop_back_single@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@QEAAPEAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fb7f0"
+  },
+  {
+   "name": "?pop_back_multi@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@UEAAPEAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fb4d0"
+  },
+  {
+   "name": "?push_back@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@QEAA_NV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fb450"
+  },
+  {
+   "name": "?push_back@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@QEAA_NAEAV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fb2e0"
+  },
+  {
+   "name": "?resizeDim@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@UEAA_NH_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fb260"
+  },
+  {
+   "name": "?setAllValues@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@QEAA_NV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fb180"
+  },
+  {
+   "name": "?setIndex@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@QEAA_NAEBV?$vector@HV?$allocator@H@std@@@std@@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@3@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fb100"
+  },
+  {
+   "name": "?getIndex@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@QEBAPEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBV?$vector@HV?$allocator@H@std@@@3@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fb0f0"
+  },
+  {
+   "name": "?saveToFile@?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@UEBA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@P6AXAEAVWSESimpleCharBuff@@PEBX@Z@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401faf20"
+  },
+  {
+   "name": "??1?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fae60"
+  },
+  {
+   "name": "??0?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@QEAA@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@P6AXPEADHAEAV12@@ZW4type_id@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401faca0"
+  },
+  {
+   "name": "??0?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@QEAA@PEAV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fabc0"
+  },
+  {
+   "name": "??0?$WSEDynMultiArray@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@@QEAA@AEBV?$vector@HV?$allocator@H@std@@@std@@W4type_id@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fab00"
+  },
+  {
+   "name": "?sort@?$WSEDynMultiArray@H@@QEAA_NAEBV?$vector@HV?$allocator@H@std@@@std@@P6A_NAEBH1_K2AEBUWSEArraySortOptions@@@Z3HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401faa10"
+  },
+  {
+   "name": "?pop_back_single@?$WSEDynMultiArray@H@@QEAAPEAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fa980"
+  },
+  {
+   "name": "?pop_back_multi@?$WSEDynMultiArray@H@@UEAAPEAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fa660"
+  },
+  {
+   "name": "?push_back@?$WSEDynMultiArray@H@@QEAA_NH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fa610"
+  },
+  {
+   "name": "?push_back@?$WSEDynMultiArray@H@@QEAA_NAEAV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fa4a0"
+  },
+  {
+   "name": "?resizeDim@?$WSEDynMultiArray@H@@UEAA_NH_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fa420"
+  },
+  {
+   "name": "?setAllValues@?$WSEDynMultiArray@H@@QEAA_NH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fa3c0"
+  },
+  {
+   "name": "?setIndex@?$WSEDynMultiArray@H@@QEAA_NAEBV?$vector@HV?$allocator@H@std@@@std@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fa390"
+  },
+  {
+   "name": "?getIndex@?$WSEDynMultiArray@H@@QEBAPEBHAEBV?$vector@HV?$allocator@H@std@@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fa380"
+  },
+  {
+   "name": "?saveToFile@?$WSEDynMultiArray@H@@UEBA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@P6AXAEAVWSESimpleCharBuff@@PEBX@Z@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fa1b0"
+  },
+  {
+   "name": "??1?$WSEDynMultiArray@H@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401fa0f0"
+  },
+  {
+   "name": "??0?$WSEDynMultiArray@H@@QEAA@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@P6AXPEADHAEAH@ZW4type_id@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401f9f30"
+  },
+  {
+   "name": "??0?$WSEDynMultiArray@H@@QEAA@PEAV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401f9e50"
+  },
+  {
+   "name": "??0?$WSEDynMultiArray@H@@QEAA@AEBV?$vector@HV?$allocator@H@std@@@std@@W4type_id@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401f9d90"
   },
   {
    "name": "?remove@?$rglMap@IVrglString@@@@QEAAXAEBI@Z",
@@ -19268,10 +20704,106 @@
    "va": "0x14033baf0"
   },
   {
+   "name": "??_GWSEBasicDynMultiArray@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c0c0"
+  },
+  {
+   "name": "??_EWSEBasicDynMultiArray@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c0c0"
+  },
+  {
+   "name": "?loadIntIndexFromFile@WSEBasicDynMultiArray@@SA_NAEAHAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c220"
+  },
+  {
+   "name": "?getTypeID@WSEBasicDynMultiArray@@QEBA?AW4type_id@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c210"
+  },
+  {
+   "name": "?isArrayFile@WSEBasicDynMultiArray@@SA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c340"
+  },
+  {
+   "name": "?getVersionFromFile@WSEBasicDynMultiArray@@SAHAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c370"
+  },
+  {
+   "name": "?getDataTypeIdFromFile@WSEBasicDynMultiArray@@SA?AW4type_id@@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c3a0"
+  },
+  {
+   "name": "?getDimCount@WSEBasicDynMultiArray@@QEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c190"
+  },
+  {
+   "name": "?isMultidim@WSEBasicDynMultiArray@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c1f0"
+  },
+  {
+   "name": "?getDimSize@WSEBasicDynMultiArray@@QEBAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c160"
+  },
+  {
+   "name": "?setSortMode@WSEArraySortOptions@@QEAA_NHH_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033bd00"
+  },
+  {
+   "name": "?cmpInt@@YA_NAEBH0_K1AEBUWSEArraySortOptions@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033bd40"
+  },
+  {
+   "name": "?cmpStr@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0_K1AEBUWSEArraySortOptions@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033bdc0"
+  },
+  {
    "name": "?cmpPos@@YA_NAEBVrglTransform@@0_K1AEBUWSEArraySortOptions@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14033c030"
+  },
+  {
+   "name": "??1WSEBasicDynMultiArray@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c120"
+  },
+  {
+   "name": "?isDimSizesValid@WSEBasicDynMultiArray@@IEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c1a0"
+  },
+  {
+   "name": "?isValid@WSEBasicDynMultiArray@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14033c1a0"
   },
   {
    "name": "??$_Buynode@U?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@?$_List_buy@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@V?$allocator@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@@2@@std@@QEAAPEAU?$_List_node@U?$pair@$$CBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@std@@PEAX@1@PEAU21@0$$QEAU?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAUgameOperation@@@1@@Z",
@@ -19688,6 +21220,42 @@
    "va": "0x14033dc80"
   },
   {
+   "name": "??$_Buynode@AEBQEAUWSEObjectType@@@?$_List_buy@PEAUWSEObjectType@@V?$allocator@PEAUWSEObjectType@@@std@@@std@@QEAAPEAU?$_List_node@PEAUWSEObjectType@@PEAX@1@PEAU21@0AEBQEAUWSEObjectType@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b5ef0"
+  },
+  {
+   "name": "?_Buynode0@?$_List_alloc@$0A@U?$_List_base_types@PEAUWSEObjectType@@V?$allocator@PEAUWSEObjectType@@@std@@@std@@@std@@QEAAPEAU?$_List_node@PEAUWSEObjectType@@PEAX@2@PEAU32@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b5d60"
+  },
+  {
+   "name": "?_Reserve@?$vector@PEAUWSEObjectContainer@@V?$allocator@PEAUWSEObjectContainer@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a030"
+  },
+  {
+   "name": "?_Reallocate@?$vector@PEAUWSEObjectContainer@@V?$allocator@PEAUWSEObjectContainer@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a0c0"
+  },
+  {
+   "name": "??1?$vector@PEAUWSEObjectContainer@@V?$allocator@PEAUWSEObjectContainer@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$list@PEAUWSEObjectType@@V?$allocator@PEAUWSEObjectType@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400995e0"
+  },
+  {
    "name": "?IncreaseStorageIfNeeded@WSEObjectManager@@AEAAXXZ",
    "kind": "public",
    "source": "pdb-public",
@@ -19970,6 +21538,20 @@
    "source": "pe-pointer-run+pdb-destructor"
   },
   {
+   "va": "0x14054f938",
+   "entries": 16,
+   "class": "Parser@mu",
+   "first_symbol": "??_GParser@mu@@UEAAPEAXI@Z",
+   "source": "pe-pointer-run+pdb-destructor"
+  },
+  {
+   "va": "0x14054f9c0",
+   "entries": 6,
+   "class": "Parser@mu",
+   "first_symbol": "??_GParser@mu@@UEAAPEAXI@Z",
+   "source": "pe-pointer-run+pdb-destructor"
+  },
+  {
    "va": "0x140550890",
    "entries": 70,
    "class": "rglMetaMeshWidget",
@@ -20226,6 +21808,13 @@
    "entries": 11,
    "class": "mbSelectionWindow",
    "first_symbol": "??_GmbSelectionWindow@@UEAAPEAXI@Z",
+   "source": "pe-pointer-run+pdb-destructor"
+  },
+  {
+   "va": "0x14055b9b0",
+   "entries": 23,
+   "class": "?$WSEDynMultiArray@VrglTransform",
+   "first_symbol": "??_G?$WSEDynMultiArray@VrglTransform@@@@UEAAPEAXI@Z",
    "source": "pe-pointer-run+pdb-destructor"
   },
   {

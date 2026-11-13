@@ -52,7 +52,30 @@ CLASSES = [
     "rglMersenneTwister",
     "rglSectionlessIni",
     "WSEObjectManager",
+    "WSEObjectContainer",
+    "WSEObjectType",
+    "WSEArraySortOptions",
+    "WSEBasicDynMultiArray",
+    "WSEDynMultiArray<int>",
+    "WSEDynMultiArray<rglTransform>",
+    "WSEDynMultiArray<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >",
+    "mu::Parser",
+    "mu::ParserBase",
     "WSEProfiling",
+]
+
+LAYOUT_FILES = {
+    "WSEDynMultiArray<int>": "WSEDynMultiArray_int.json",
+    "WSEDynMultiArray<rglTransform>": "WSEDynMultiArray_rglTransform.json",
+    "WSEDynMultiArray<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >": "WSEDynMultiArray_string.json",
+    "mu::Parser": "mu_Parser.json",
+    "mu::ParserBase": "mu_ParserBase.json",
+}
+
+SYMBOL_TOKENS = [
+    "Parser@mu@@",
+    "ParserBase@mu@@",
+    "WSEDynMultiArray",
 ]
 
 GLOBAL_NAMES = {
@@ -153,7 +176,8 @@ def main():
 
     classes = {}
     for name in CLASSES:
-        path = os.path.join(args.layouts, name + ".json")
+        filename = LAYOUT_FILES.get(name, name + ".json")
+        path = os.path.join(args.layouts, filename)
         if not os.path.exists(path):
             continue
         layout = json.load(open(path, encoding="utf-8"))["layout"]
@@ -167,13 +191,15 @@ def main():
             "methods": methods,
         }
 
+    plain_classes = [cls for cls in CLASSES if cls not in LAYOUT_FILES]
+    sym_filters = plain_classes + SYMBOL_TOKENS
     globals_rows = json.load(open(args.globals, encoding="utf-8"))["globals"]
     symbols = []
     for row in globals_rows:
         if row.get("kind") not in ("public", "global"):
             continue
         name = row["name"]
-        if not any(cls in name for cls in CLASSES) and name not in GLOBAL_NAMES:
+        if not any(tok in name for tok in sym_filters) and name not in GLOBAL_NAMES:
             continue
         entry = {"name": name, "kind": row["kind"], "source": "pdb-" + row["kind"]}
         if row.get("va"):
@@ -185,7 +211,7 @@ def main():
     vtables = []
     for row in json.load(open(args.vtables, encoding="utf-8"))["vtables"]:
         cls = row.get("class_guess")
-        if not cls or not re.match(r"^(rgl|mb|WSE)", cls):
+        if not cls or not re.match(r"^(rgl|mb|WSE|Parser@mu|\?\$WSEDynMultiArray)", cls):
             continue
         vtables.append({
             "va": "0x%x" % row["va"],

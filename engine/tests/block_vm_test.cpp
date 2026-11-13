@@ -604,6 +604,162 @@ void test_return_values_positions_and_dict_loop() {
            "try_for_dict_keys reports out-of-range string register errors");
 }
 
+void test_feval_and_custom_array_sort() {
+    using namespace wse::vm;
+
+    VmContext ctx;
+    wse::game::ScriptManager scripts;
+    scripts.scripts.resize(4);
+
+    // Script 0: cmp_int_desc using reg0 >= reg1 + verifying script params & depth isolation.
+    scripts.scripts[0].id = "cmp_int_desc";
+    scripts.scripts[0].block.statements = {
+        make_stmt(core_op::kStoreScriptParam1, {loc(0)}),
+        make_stmt(core_op::kStoreScriptParam2, {loc(1)}),
+        make_stmt(core_op::kGe, {loc(0), 0}),
+        make_stmt(core_op::kGe, {loc(1), 0}),
+        make_stmt(core_op::kValAdd, {reg(20), 1}),
+        make_stmt(core_op::kTryBegin, {}),
+        make_stmt(core_op::kGe, {reg(0), reg(1)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::return_values), {1}),
+        make_stmt(core_op::kElseTry, {}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::return_values), {0}),
+        make_stmt(core_op::kTryEnd, {}),
+    };
+
+    // Script 1: cmp_str_len_then_lex on s0 vs s1.
+    scripts.scripts[1].id = "cmp_str_len_then_lex";
+    scripts.scripts[1].block.statements = {
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::str_length), {reg(3), sreg(0)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::str_length), {reg(4), sreg(1)}),
+        make_stmt(core_op::kTryBegin, {}),
+        make_stmt(core_op::kGt, {reg(4), reg(3)}),  // len(s0) < len(s1)
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::return_values), {1}),
+        make_stmt(core_op::kElseTry, {}),
+        make_stmt(core_op::kEq, {reg(3), reg(4)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::str_compare), {reg(5), sreg(0), sreg(1)}),
+        make_stmt(core_op::kGt, {1, reg(5)}),  // reg(5) <= 0
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::return_values), {1}),
+        make_stmt(core_op::kElseTry, {}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::return_values), {0}),
+        make_stmt(core_op::kTryEnd, {}),
+    };
+
+    // Script 2: cmp_pos_x via feval on pos0 vs pos1.
+    scripts.scripts[2].id = "cmp_pos_x";
+    scripts.scripts[2].block.statements = {
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::feval), {sreg(30)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::fst), {reg(3), 0}),
+        make_stmt(core_op::kTryBegin, {}),
+        make_stmt(core_op::kGe, {reg(3), 100}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::return_values), {1}),
+        make_stmt(core_op::kElseTry, {}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::return_values), {0}),
+        make_stmt(core_op::kTryEnd, {}),
+    };
+
+    // Script 3: broken comparator always returning 0 (tests max double-pass abort).
+    scripts.scripts[3].id = "cmp_broken";
+    scripts.scripts[3].block.statements = {
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::return_values), {0}),
+    };
+
+    ctx.scripts = &scripts;
+    ctx.stringRegisters[30] = u"fp0 = (pos0x <= pos1x)";
+    ctx.stringRegisters[31] = u"fp1 = {reg10} + 2.5";
+    ctx.stringRegisters[10] = u"pear";
+    ctx.stringRegisters[11] = u"a";
+    ctx.stringRegisters[12] = u"kiwi";
+    ctx.stringRegisters[13] = u"hi";
+
+    ctx.positions[10] = WseTransform::identity();
+    ctx.positions[10].o.x = 30.0f;
+    ctx.positions[11] = WseTransform::identity();
+    ctx.positions[11].o.x = -5.0f;
+    ctx.positions[12] = WseTransform::identity();
+    ctx.positions[12].o.x = 12.0f;
+
+    StatementBlock driver;
+    driver.statements = {
+        // Seed caller local 0 and verify nested array_sort_custom does not clobber it.
+        make_stmt(core_op::kAssign, {loc(0), 7777}),
+        // Test feval inside VM with {reg10} substitution.
+        make_stmt(core_op::kAssign, {reg(10), 4}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::feval), {sreg(31)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::fst), {reg(11), 1}),
+        // Seed stale return_values before array_sort_custom.
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::return_values), {99, 88}),
+
+        // 1) 2D int array (4x2): (10, 0), (30, 1), (30, 2), (20, 3) -> desc by col 0.
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_create), {loc(1), 0, 4, 2}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(1), 10, 0, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(1), 0, 0, 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(1), 30, 1, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(1), 1, 1, 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(1), 30, 2, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(1), 2, 2, 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(1), 20, 3, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(1), 3, 3, 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_sort_custom), {loc(1), 0, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {reg(21), loc(1), 0, 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {reg(22), loc(1), 1, 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {reg(23), loc(1), 2, 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {reg(24), loc(1), 3, 1}),
+
+        // 2) 1D string array: ["pear", "a", "kiwi", "hi"] -> ["a", "hi", "kiwi", "pear"].
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_create), {loc(2), 1, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_push), {loc(2), sreg(10)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_push), {loc(2), sreg(11)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_push), {loc(2), sreg(12)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_push), {loc(2), sreg(13)}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_sort_custom), {loc(2), 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {sreg(20), loc(2), 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {sreg(21), loc(2), 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {sreg(22), loc(2), 2}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {sreg(23), loc(2), 3}),
+
+        // 3) 1D pos array: [x=30, x=-5, x=12] -> [-5, 12, 30].
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_create), {loc(3), 2, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_push), {loc(3), 10}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_push), {loc(3), 11}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_push), {loc(3), 12}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_sort_custom), {loc(3), 2}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {25, loc(3), 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {26, loc(3), 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {27, loc(3), 2}),
+
+        // 4) Broken comparator aborts without mutating [5, 1, 9].
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_create), {loc(4), 0, 3}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(4), 5, 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(4), 1, 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_set_val), {loc(4), 9, 2}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_sort_custom), {loc(4), 3}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {reg(25), loc(4), 0}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {reg(26), loc(4), 1}),
+        make_stmt(static_cast<std::uint32_t>(WseOpcode::array_get_val), {reg(27), loc(4), 2}),
+
+        // Verify caller local 0 survived all comparator callbacks intact!
+        make_stmt(core_op::kAssign, {reg(29), loc(0)}),
+    };
+
+    expect(execute_statement_block(driver, ctx) && ctx.errorCount == 0 &&
+               ctx.registers[11] == 650 && ctx.registers[20] > 0 &&
+               ctx.registers[21] == 1 && ctx.registers[22] == 2 &&
+               ctx.registers[23] == 3 && ctx.registers[24] == 0 &&
+               ctx.stringRegisters[20] == u"a" &&
+               ctx.stringRegisters[21] == u"hi" &&
+               ctx.stringRegisters[22] == u"kiwi" &&
+               ctx.stringRegisters[23] == u"pear" &&
+               ctx.positions[25].o.x == -5.0f &&
+               ctx.positions[26].o.x == 12.0f &&
+               ctx.positions[27].o.x == 30.0f &&
+               ctx.registers[25] == 5 && ctx.registers[26] == 1 &&
+               ctx.registers[27] == 9 &&
+               ctx.registers[29] == 7777 && ctx.currentDepth == 0 &&
+               ctx.maxObservedDepth >= 1,
+           "feval and array_sort_custom work across int/str/pos comparators, depth frames, and abort guard");
+}
+
 }  // namespace
 
 int main() {
@@ -614,6 +770,7 @@ int main() {
     test_scripts_recursion_and_depth_limit();
     test_triggers_and_wse_integration();
     test_return_values_positions_and_dict_loop();
+    test_feval_and_custom_array_sort();
 
     if (failures != 0) {
         std::printf("block_vm tests: FAIL (%d)\n", failures);

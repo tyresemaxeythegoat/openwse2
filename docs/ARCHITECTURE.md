@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 1 — binary triage complete; statement-block VM (`block_vm.h`, including `try_for_dict_keys`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and 134 of 440 handlers recovered.
+Status: Phase 1 — binary triage complete; statement-block VM (`block_vm.h`, including `try_for_dict_keys` and `array_sort_custom` callback), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and 158 of 440 handlers recovered.
 Last updated: 2026-11-13.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -262,7 +262,12 @@ writes the booleans `verbose_casualties` (`0x1406173b7`), `cheat_mode` (`0x14061
 The floating-point group covers `fld`, `fld_str`, `fld_pos_x`, `fld_pos_y`, `fld_pos_z`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
 `fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, `fsqrt`, `fabs`, `fceil`, `ffloor`,
 `fexp`, `fpow`, `fln`, `flog`, `fmod`, `fsin`, `fcos`, `ftan`, `fsinh`, `fcosh`, `ftanh`, `fasin`,
-`facos`, `fatan`, and `fatan2` (4400–4436, 4438). `fld_str` (`4401`, `0x1401f00c7`) resolves
+`facos`, `fatan`, `feval`, and `fatan2` (4400–4438, 100%). `feval` (`4437`, `0x1401e4dc0` line 8353)
+expands its string operand via `mbBasicGame::parseString` (`0x1400720b0`, converting literal `'^'` at
+`0x140072338` into `'\n'` while leaving expanded `{sN}` contents un-reparsed) before passing the string to
+`mu::Parser` (`0x1a146`, 376 B; `SetExpr` `0x1400a9980`, `Eval` `0x1400ad5a0`, unary `'-'` `prINFIX=6` at
+`0x1400a8310` below `'^'`, `log` and `ln` both bound to `logf` at `0x1400a6c20`, `rint` `floorf(x+0.5)` at
+`0x1400a6c50`), with full-AST compilation preventing partial mutations on errors. `fld_str` (`4401`, `0x1401f00c7`) resolves
 operand 1, calls `atof` (`0x1404989cc`), and stores `(float)` into `fp[operand 0]`, while `fld_pos_{x,y,z}`
 (`4402`–`4404`, `0x1401f0157`–`0x1401f01ff`) load `o.{x,y,z}` from `rglTransform[128]`. The float register bank is the 128-entry float array
 `DAT_140698718` (`g_basicGame+0x35d58`); `mbCheckRegister` (`0x1401c4e60`) accepts indices 0–127 with
@@ -290,13 +295,18 @@ Additional reconstructed handler groups:
   backed by `WSEObjectManager` (`0x1b4d3`, 64 B, `0x14034e340`/`0x14034e3b0` LIFO free-ID reuse) and ordered `rglSectionlessIni` (`0x5264`, 16 B) maps,
   with `.wsedict` binary, `.ini`, JSON (`0x1402a97f0`/`0x1402a9f70` with `\uXXXX` + surrogate pairs), and URL-encoded JSON (`0x1402aaea0`/`0x1402ab370`: `'+'` -> `' '` before `UrlUnescapeA`, percent-escape outside unreserved bytes keeping literal `'+'` as `%2B`),
   `dict_get_pos`/`dict_set_pos` (`0x1402aa5a0`/`0x1402aa920`, 9 comma-separated `"%f"` floats `(o, f, u)` with `default_pos`/identity fallback and `orthonormalize`), `dict_load_dict` mode 0 no-op vs loader mode 0 clear-then-load, and `mbCheckPath` path sandboxing. `try_for_dict_keys` (`0x1401f7692`/`0x1401f7dde`) iterates sorted map keys into tag-0 `stringRegisters` via `LoopFrame`.
+- **Dynamic arrays** (`5000`–`5022`, `0x1388`–`0x139e`, `0x1401e4dc0` equality line 6427 & switch lines 6802–7510):
+  shares unified `WSEObjectManager` (`0x1b4d3`, 64 B) / `WSEObjectContainer` (`0x18774`, 16 B) / `WSEObjectType` (`0x18026`, 32 B) handles (`WseObjectManager`) with dictionaries, backing `WSEBasicDynMultiArray` (`0x163ff`, 48 B) and `WSEDynMultiArray<int/rglString/rglTransform>` (`0x66db`/`0x677c`/`0x681f`, 48 B) across 1–14 dimensions;
+  `.wsearray` save/load (`0x1401c5910`/`0x1401c59f0`, with `mbCheckPath` sandboxing) serializes transforms as 9 floats `[o.xyz, f.xyz, u.xyz]` and calls `orthonormalize()` on load;
+  `array_sort`/`array_sort_custom` (`WSEArraySortOptions` `0x18fb1`, 8 B) use bottom-up natural merge sort (`0x1401fdd80`, aborting cleanly without mutation after `n` double-passes), with `array_sort_custom` invoking comparator scripts via `wse_invoke_script_callback`;
+  and `array_eq..array_le` (`0x1401f58a0`, `0x1401f5d30`–`0x1401f606b`) compare elements lexicographically (normalizing position copies and comparing all 12 floats `s, f, u, o`).
 - **Position vector group** (`4100`, `4102`–`4104` at `0x1401ecd5a`, `0x1401ed0c1`, `0x1401ed10f`, `0x1401ed158`):
   operates on `rglTransform[128]` (`0x140663030`, 64 B, `0x34ac`, four `rglVector4` `0x32d9`: `s, f, u, o`), computing fixed-point length/dot/cross products and `position_get_vector_to_position` orientation (`rotateZ`/`rotateX`).
 
 Handlers that do not write operand 0 report
 `handled_no_store`; failed comparisons report `condition_false`; invalid registers are successful
-no-ops (`ignored`), matching the retail `return true` fall-through. The other 306 mapped opcodes report
-`WseDispatch::unimplemented` until transcribed (134 of 440 implemented).
+no-ops (`ignored`), matching the retail `return true` fall-through. The other 282 mapped opcodes report
+`WseDispatch::unimplemented` until transcribed (158 of 440 implemented).
 
 ### `mbScript` — 176 bytes, type `0x1f7b8`
 
@@ -727,24 +737,28 @@ Dispatch order:
   - All other opcodes `<= 0x14` route to `startLoop`.
   - Opcodes `>= 0x1E` go to `mbStatement::execute`.
 
-Verified supporting layouts added to `docs/SYMBOL_MAP.json` (35 classes, 2,098 symbols, 73 vtables):
+Verified supporting layouts added to `docs/SYMBOL_MAP.json` (44 classes, 2,267 symbols, 76 vtables):
 
 - `mbBasicGame` (221,616 B, type `0xadd3`): `m_globalVariables` (`mbSlots`) at `+0x258`,
   `m_registers` (`__int64[128]`) at `+0x270` (`0x140662c30`). Operand tag `1`, `store_lvalue`,
   and WSE `register_{get,set}` share this 128-entry bank.
 - `mbCallStack` (3,096 B, type `0x715b`), `mbLoop` (56 B, type `0x1f89a`), and
   `mbLoopManager` (7,176 B, type `0x1eb6b`).
-- Timer, math, INI, dictionary-owner, and profiler layouts: `rglVector4` (16 B, type `0x32d9`),
+- Timer, math, INI, container-owner, array, expression-parser, and profiler layouts: `rglVector4` (16 B, type `0x32d9`),
   `rglTransform` (64 B, type `0x34ac`), `rglMersenneTwister` (5,000 B, type `0x6556`),
-  `rglSectionlessIni` (16 B, type `0x5264`), `WSEObjectManager` (64 B, type `0x1b4d3`), and
+  `rglSectionlessIni` (16 B, type `0x5264`), `WSEObjectManager` (64 B, type `0x1b4d3`),
+  `WSEObjectContainer` (16 B, type `0x18774`), `WSEObjectType` (32 B, type `0x18026`),
+  `WSEArraySortOptions` (8 B, type `0x18fb1`), `WSEBasicDynMultiArray` (48 B, type `0x163ff`),
+  `WSEDynMultiArray<int/rglString/rglTransform>` (`0x66db`/`0x677c`/`0x681f`, 48 B),
+  `mu::Parser` (376 B, type `0x1a146`), `mu::ParserBase` (376 B, type `0x1a181`), and
   `WSEProfiling` (66,072 B, type `0xaf0a`).
 
 Portable reconstruction lives in `engine/include/wse/vm/block_vm.h`: `VmContext`,
-`analyze_statement_block`, `execute_statement`, `execute_statement_block`, loop helpers
+`analyze_statement_block`, `execute_statement`, `execute_statement_block` (`DepthGuard` tracking `currentDepth` + `wse_invoke_script_callback`), loop helpers
 (`start_loop`/`can_loop`/`end_loop` including `core_op::kTryForDictKeys` `0x12`), core native
 comparisons/shifts/math/fixed-point ops (`30–33`, `2100–2133`), `call_script`,
 `store_script_param*`, `this_or_next`/`neg`, `dispatch_wse_statement` (forwarding `outTag` for
-string operands and wiring `WseVmState` position, timer, RNG, profiler, and dictionary state),
+string operands and wiring `WseVmState` position, timer, RNG, profiler, object-manager, and script-callback state),
 and VM-backed `execute_script`, `execute_mapped_script`, `execute_trigger`,
 `execute_trigger_manager`, `execute_simple_trigger`, and `execute_simple_trigger_manager`.
 

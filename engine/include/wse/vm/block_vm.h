@@ -176,6 +176,7 @@ struct VmContext {
 
     bool clearLocalsBetweenCalls = false;
     std::int32_t maxCallDepth = kMaxCallDepth;
+    std::int32_t currentDepth = 0;
     bool skipStatement = false;
     game::ScriptManager* scripts = nullptr;
 
@@ -599,6 +600,11 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     }
 }
 
+[[nodiscard]] inline bool wse_invoke_script_callback(
+    void* user,
+    std::int32_t script_index,
+    std::span<const std::int64_t> params);
+
 [[nodiscard]] inline bool dispatch_wse_statement(
     std::uint32_t opcode,
     std::int32_t caller,
@@ -636,6 +642,11 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     operands.state.profiler_recording = &ctx.profilerRecording;
     operands.state.profiler_markers = &ctx.profilerMarkers;
     operands.state.dictionaries = &ctx.dictionaries;
+    if (ctx.scripts != nullptr) {
+        operands.state.num_scripts = ctx.scripts->scripts.size();
+        operands.state.execute_script_fn = &wse_invoke_script_callback;
+        operands.state.execute_script_user = &ctx;
+    }
 
     WseEffect effect{};
     const WseDispatch dispatch = execute_wse(opcode, operands, effect);
@@ -933,6 +944,19 @@ inline bool execute_statement_block(StatementBlock& block,
         return false;
     }
 
+    struct DepthGuard {
+        std::int32_t& slot;
+        std::int32_t previous;
+        explicit DepthGuard(std::int32_t& target, std::int32_t next) noexcept
+            : slot(target), previous(target) {
+            slot = next;
+        }
+        ~DepthGuard() noexcept {
+            slot = previous;
+        }
+    };
+    const DepthGuard depthGuard(ctx.currentDepth, depth);
+
     analyze_statement_block(block, &ctx);
     if (depth > ctx.maxObservedDepth) {
         ctx.maxObservedDepth = depth;
@@ -1081,6 +1105,23 @@ inline bool execute_statement_block(StatementBlock& block,
 
 inline bool execute_statement_block(StatementBlock& block, VmContext& ctx) {
     return execute_statement_block(block, 0, 0, {}, ctx);
+}
+
+[[nodiscard]] inline bool wse_invoke_script_callback(
+    void* user,
+    std::int32_t script_index,
+    std::span<const std::int64_t> params) {
+    auto* ctx = static_cast<VmContext*>(user);
+    if (ctx == nullptr || ctx->scripts == nullptr || script_index < 0 ||
+        static_cast<std::size_t>(script_index) >= ctx->scripts->scripts.size()) {
+        return false;
+    }
+    const bool prev_skip = ctx->skipStatement;
+    const bool ok = execute_statement_block(
+        ctx->scripts->scripts[static_cast<std::size_t>(script_index)].block,
+        kScriptCaller, ctx->currentDepth + 1, params, *ctx);
+    ctx->skipStatement = prev_skip;
+    return ok;
 }
 
 // Executes a loaded script by index (0x1400dbde0, default caller 0x200000).

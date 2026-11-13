@@ -70,8 +70,10 @@ void test_enum_values() {
     expect(opcode(WseOpcode::fld) == 4400, "fld opcode value");
     expect(opcode(WseOpcode::fsqrt) == 4418, "fsqrt opcode value");
     expect(opcode(WseOpcode::fatan2) == 4436, "fatan2 opcode value");
+    expect(opcode(WseOpcode::feval) == 4437, "feval opcode value");
     expect(opcode(WseOpcode::fadd) == 4438, "fadd opcode value");
     expect(opcode(WseOpcode::array_create) == 5000, "array_create opcode value");
+    expect(opcode(WseOpcode::array_le) == 5022, "array_le opcode value");
     expect(opcode(WseOpcode::skeleton_model_clean_body_sections) == 5202,
            "final opcode value");
 }
@@ -164,7 +166,7 @@ void test_unimplemented_and_mask() {
     WseEffect effect;
     WseDispatch dispatch = WseDispatch::unimplemented;
 
-    dispatch = run(opcode(WseOpcode::array_create), {1}, {}, effect);
+    dispatch = run(opcode(WseOpcode::lua_get_top), {1}, {}, effect);
     expect(effect.value == 0x1234 && dispatch == WseDispatch::unimplemented,
            "unimplemented opcodes leave the result untouched");
 
@@ -2439,6 +2441,548 @@ void test_descriptions() {
            "operand count description");
 }
 
+void test_feval() {
+    std::array<std::u16string, 128> str_regs{};
+    std::array<std::u16string_view, 2> global_strs = {u"fp5 = 99", u"bad"};
+    std::array<std::u16string_view, 2> local_strs = {u"fp6 = 77", u"zero"};
+    std::array<float, wse::vm::kFpRegisterCount> fp{};
+    std::array<std::int64_t, 128> int_regs{};
+    std::array<wse::vm::WseTransform, 128> positions{};
+    for (auto& pos : positions) {
+        pos = wse::vm::WseTransform::identity();
+    }
+
+    WseVmState state;
+    state.strings.registers = str_regs;
+    state.strings.global = global_strs;
+    state.strings.local = local_strs;
+    state.positions = positions;
+
+    WseEffect effect{};
+    const auto eval_expr = [&](std::u16string_view expr) {
+        str_regs[0].assign(expr);
+        WseOperands operands;
+        const std::array<std::int64_t, 1> wide = {0};
+        const std::array<std::int32_t, 1> narrow = {0};
+        const std::array<std::uint8_t, 1> tags = {0};
+        operands.wide = wide;
+        operands.narrow = narrow;
+        operands.tags = tags;
+        operands.fp = fp;
+        operands.registers = int_regs;
+        operands.state = state;
+        effect = WseEffect{0x1234, true};
+        return wse::vm::execute_wse(opcode(WseOpcode::feval), operands, effect);
+    };
+
+    // Constants, unary precedence (-2^2 == -4), right-assoc ^, and assignment.
+    // Retail mbBasicGame::parseString (0x140072338) turns literal '^' into
+    // '\n', so caret power expressions arrive via un-reparsed {sN} tokens.
+    str_regs[3] = u"-2^2";
+    str_regs[4] = u"(-2)^2";
+    str_regs[5] = u"2^3^2";
+    str_regs[6] = u"2^-2";
+    expect(eval_expr(u"fp0 = _pi, fp1 = _e, fp2 = {s3}, fp3 = {s4}, fp4 = {s5}") ==
+                   WseDispatch::handled_no_store &&
+               close(fp[0], 3.1415927f) && close(fp[1], 2.7182817f) &&
+               close(fp[2], -4.0f) && close(fp[3], 4.0f) && close(fp[4], 512.0f),
+           "feval evaluates constants, -2^2=-4 precedence, and right-assoc power");
+
+    // Global (tag 3) and local (tag 0x16) string register dispatch, plus invalid.
+    expect(run(opcode(WseOpcode::feval), {0}, {0}, effect, fp, int_regs, state, {3}) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[5], 99.0f) &&
+               run(opcode(WseOpcode::feval), {0}, {0}, effect, fp, int_regs, state, {0x16}) ==
+                   WseDispatch::handled_no_store &&
+               close(fp[6], 77.0f) &&
+               run(opcode(WseOpcode::feval), {2}, {2}, effect, fp, int_regs, state, {3}) ==
+                   WseDispatch::ignored &&
+               run(opcode(WseOpcode::feval), {2}, {2}, effect, fp, int_regs, state, {0x16}) ==
+                   WseDispatch::ignored &&
+               run(opcode(WseOpcode::feval), {128}, {128}, effect, fp, int_regs, state, {0}) ==
+                   WseDispatch::ignored,
+           "feval supports tag 0/3/0x16 string operands and rejects out-of-range");
+
+    // parseString expansion inside feval: {regN}, {regN?a:b}, {sN} non-recursive, {!/***}.
+    int_regs[0] = -7;
+    int_regs[1] = 1;
+    str_regs[1] = u"10 + 5";
+    str_regs[2] = u"{reg0}";  // Should NOT be re-parsed when expanded via {s2}.
+    expect(eval_expr(u"fp10 = {reg0}{!ignored}{***also ignored}, fp11 = ({s1}) * ({reg1?2:3}), fp12 = {reg0?{reg1?4:5}:9}") ==
+                   WseDispatch::handled_no_store &&
+               close(fp[10], -7.0f) && close(fp[11], 30.0f) && close(fp[12], 4.0f),
+           "feval expands {regN}, {regN?a:b}, {sN}, and strips comment tokens");
+
+    // Non-recursive {s2} containing "{reg0}" should fail mu::Parser cleanly without mutating fp13.
+    fp[13] = 42.0f;
+    expect(eval_expr(u"fp13 = 1, fp14 = {s2}") == WseDispatch::handled_no_store &&
+               close(fp[13], 42.0f),
+           "parseString does not recursively expand braces inside s[n]");
+
+    // Position coordinates (all 12 components: sx..sz, fx..fz, ux..uz, x..z).
+    expect(eval_expr(u"pos0sx=1, pos0sy=2, pos0sz=3, pos1fx=4, pos1fy=5, pos1fz=6, pos2ux=7, pos2uy=8, pos2uz=9, pos3x=10, pos3y=11, pos3z=12") ==
+                   WseDispatch::handled_no_store &&
+               close(positions[0].s.x, 1.0f) && close(positions[0].s.y, 2.0f) &&
+               close(positions[0].s.z, 3.0f) && close(positions[1].f.x, 4.0f) &&
+               close(positions[1].f.y, 5.0f) && close(positions[1].f.z, 6.0f) &&
+               close(positions[2].u.x, 7.0f) && close(positions[2].u.y, 8.0f) &&
+               close(positions[2].u.z, 9.0f) && close(positions[3].o.x, 10.0f) &&
+               close(positions[3].o.y, 11.0f) && close(positions[3].o.z, 12.0f),
+           "feval reads and mutates all 12 pos<N><comp> fields");
+
+    // Ternary short-circuiting & logical/relational operators (plus literal '^' -> '\n').
+    fp[20] = 100.0f;
+    fp[21] = 200.0f;
+    fp[24] = 9.0f;
+    expect(eval_expr(u"fp22 = (1 < 2 && 3 >= 3 && 4 != 5 && 0 == 0) ? (fp20 = 11) : (fp21 = 99), fp23 = (0 || 0) ? 1 : {s6}") ==
+                   WseDispatch::handled_no_store &&
+               eval_expr(u"fp24 = 2^3") == WseDispatch::handled_no_store &&
+               close(fp[20], 11.0f) && close(fp[21], 200.0f) &&
+               close(fp[22], 11.0f) && close(fp[23], 0.25f) &&
+               close(fp[24], 9.0f),
+           "feval evaluates logical, comparison, negative exponent, and short-circuit ternary");
+
+    // Math functions: deg2rad, rad2deg, clamp(lo>hi), rint, sign, ln/log/log2/log10, fmod, atan2, sum/avg/min/max.
+    expect(eval_expr(u"fp30 = deg2rad(180), fp31 = rad2deg(fp30), fp32 = clamp(5, 10, 2), fp33 = clamp(15, 10, 2), fp34 = rint(2.5), fp35 = sign(-9) + sign(0) + sign(4)") ==
+                   WseDispatch::handled_no_store &&
+               close(fp[30], 3.1415927f) && close(fp[31], 180.0f, 1e-4f) &&
+               close(fp[32], 5.0f) && close(fp[33], 10.0f) &&
+               close(fp[34], 3.0f) && close(fp[35], 0.0f) &&
+               eval_expr(u"fp36 = ln(_e) + log(_e) + log2(8) + log10(1000) + abs(-4) + sqrt(9) + floor(2.9) + ceil(2.1) + fmod(7.5, 2) + round_missing_noop = 0") ==
+                   WseDispatch::handled_no_store,
+           "feval validates bad syntax before mutating");
+    expect(close(fp[36], 0.0f) &&
+               eval_expr(u"fp36 = ln(_e) + log(_e) + log2(8) + log10(1000) + abs(-4) + sqrt(9) + floor(2.9) + ceil(2.1) + fmod(7.5, 2), fp37 = atan2(0, -1), fp38 = sum(1,2,3,4), fp39 = avg(2,4,6), fp40 = min(9,2,5) + max(9,2,5), fp41 = sin(0) + cos(0) + tan(0) + exp(0) + sinh(0) + cosh(0) + tanh(0) + asinh(0) + acosh(1) + atanh(0) + asin(0) + acos(1) + atan(0)") ==
+                   WseDispatch::handled_no_store &&
+               close(fp[36], 1.0f + 1.0f + 3.0f + 3.0f + 4.0f + 3.0f + 2.0f + 3.0f + 1.5f) &&
+               close(fp[37], 3.1415927f, 1e-4f) &&
+               close(fp[38], 10.0f) && close(fp[39], 4.0f) &&
+               close(fp[40], 11.0f) && close(fp[41], 3.0f),
+           "feval evaluates all built-in math and variadic functions");
+
+    // Atomic error non-mutation checks: non-lvalue assignment, unknown vars, bad arity.
+    fp[50] = 12.5f;
+    positions[10].o.x = 3.5f;
+    expect(eval_expr(u"fp50 = 1, 2 = 3") == WseDispatch::handled_no_store &&
+               eval_expr(u"fp50 = 99, pos0 = 1") == WseDispatch::handled_no_store &&
+               eval_expr(u"fp50 = 99, sum()") == WseDispatch::handled_no_store &&
+               eval_expr(u"fp50 = 99, clamp(1, 2)") == WseDispatch::handled_no_store &&
+               eval_expr(u"pos10x = 9, fp128 = 1") == WseDispatch::handled_no_store &&
+               close(fp[50], 12.5f) && close(positions[10].o.x, 3.5f) &&
+               run(opcode(WseOpcode::feval), {}, {}, effect) ==
+                   WseDispatch::operand_count_out_of_range,
+           "feval aborts cleanly on syntax/lvalue/arity errors without mutation");
+}
+
+void test_array_group() {
+    namespace fs = std::filesystem;
+    const fs::path temp_dir =
+        fs::temp_directory_path() / "wse2_array_unit_test_tmp";
+    const fs::path outside_escape =
+        fs::temp_directory_path() / "wse2_array_escape_forbidden.wsearray";
+    struct TempGuard {
+        fs::path dir;
+        fs::path escape;
+        ~TempGuard() {
+            std::error_code ec;
+            fs::remove_all(dir, ec);
+            fs::remove(escape, ec);
+        }
+    } guard{temp_dir, outside_escape};
+    {
+        std::error_code ec;
+        fs::remove_all(temp_dir, ec);
+        fs::remove(outside_escape, ec);
+        fs::create_directories(temp_dir, ec);
+        expect(!ec, "created temporary directory for array file tests");
+    }
+
+    std::array<std::u16string, 128> str_regs{};
+    std::array<float, wse::vm::kFpRegisterCount> fp{};
+    std::array<std::int64_t, 128> int_regs{};
+    std::array<wse::vm::WseTransform, 128> positions{};
+    for (auto& pos : positions) {
+        pos = wse::vm::WseTransform::identity();
+    }
+    wse::vm::WseObjectManager objects;
+    objects.root_dir = temp_dir;
+
+    WseVmState state;
+    state.strings.registers = str_regs;
+    state.positions = positions;
+    state.dictionaries = &objects;
+
+    WseEffect effect{};
+    const auto call = [&](WseOpcode op,
+                          std::initializer_list<std::int64_t> wide_args,
+                          std::initializer_list<std::uint8_t> tag_args = {}) {
+        std::vector<std::int64_t> wide(wide_args);
+        std::vector<std::int32_t> narrow(wide.size());
+        for (std::size_t i = 0; i < wide.size(); ++i) {
+            narrow[i] = static_cast<std::int32_t>(wide[i]);
+        }
+        std::vector<std::uint8_t> tags(tag_args);
+        WseOperands operands;
+        operands.wide = wide;
+        operands.narrow = narrow;
+        operands.tags = tags;
+        operands.fp = fp;
+        operands.registers = int_regs;
+        operands.state = state;
+        effect = WseEffect{0x1234, true};
+        return wse::vm::execute_wse(opcode(op), operands, effect);
+    };
+
+    // Unified WseObjectManager ID sharing and cross-type rejection.
+    expect(call(WseOpcode::dict_create, {0}) == WseDispatch::handled &&
+               effect.value == 0,
+           "unified pool allocates dict id 0");
+    expect(call(WseOpcode::array_create, {0, 0, 3}) == WseDispatch::handled &&
+               effect.value == 1,
+           "unified pool allocates array id 1 next");
+    expect(call(WseOpcode::dict_get_size, {0, 1}) == WseDispatch::handled &&
+               effect.value == 0 &&
+               call(WseOpcode::array_get_type_id, {0, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_free, {0}) == WseDispatch::handled_no_store,
+           "cross-type dictionary/array operations safely reject mismatched handles");
+    expect(call(WseOpcode::array_free, {1}) == WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_create, {0}) == WseDispatch::handled &&
+               effect.value == 1,
+           "dict_create reuses freed array handle in LIFO order");
+    expect(call(WseOpcode::dict_free, {0}) == WseDispatch::handled_no_store &&
+               call(WseOpcode::dict_free, {1}) == WseDispatch::handled_no_store,
+           "cleaned up dict handles");
+
+    // 5000 array_create validation + 1..14D + default initialization.
+    expect(call(WseOpcode::array_create, {0, 3, 2}) == WseDispatch::handled &&
+               effect.value == 0 &&
+               call(WseOpcode::array_create, {0, 0, -1}) == WseDispatch::handled &&
+               effect.value == 0 &&
+               call(WseOpcode::array_create, {0, 0, 2, 0}) == WseDispatch::handled &&
+               effect.value == 0 &&
+               call(WseOpcode::array_create,
+                    {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}) ==
+                   WseDispatch::handled &&
+               effect.value == 0,
+           "array_create stores 0 on invalid type_id, dims, or >14 dimensions");
+
+    expect(call(WseOpcode::array_create,
+                {0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}) ==
+               WseDispatch::handled,
+           "array_create creates 14D integer array");
+    const std::int64_t arr14d = effect.value;
+    expect(call(WseOpcode::array_get_dim_count, {0, arr14d}) == WseDispatch::handled &&
+               effect.value == 14 &&
+               call(WseOpcode::array_get_dim_size, {0, arr14d, 0}) ==
+                   WseDispatch::handled &&
+               effect.value == 2 &&
+               call(WseOpcode::array_get_dim_size, {0, arr14d, 14}) ==
+                   WseDispatch::handled &&
+               effect.value == -1 &&
+               call(WseOpcode::array_get_val,
+                    {0, arr14d, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}) ==
+                   WseDispatch::handled &&
+               effect.value == 0 &&
+               call(WseOpcode::array_free, {arr14d}) == WseDispatch::handled_no_store,
+           "14D array reports dim count/sizes, default 0 values, and -1 OOB dim");
+
+    // 1D int array: set_val, set_val_all, resize_dim (size>=1), copy, eq..le.
+    expect(call(WseOpcode::array_create, {0, 0, 3}) == WseDispatch::handled,
+           "create 1D int array");
+    const std::int64_t ints_id = effect.value;
+    expect(call(WseOpcode::array_set_val_all, {ints_id, 42}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_set_val, {ints_id, 15, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_resize_dim, {ints_id, 0, 5}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_resize_dim, {ints_id, 0, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_dim_size, {0, ints_id, 0}) ==
+                   WseDispatch::handled &&
+               effect.value == 5 &&
+               call(WseOpcode::array_get_val, {0, ints_id, 0}) ==
+                   WseDispatch::handled &&
+               effect.value == 42 &&
+               call(WseOpcode::array_get_val, {0, ints_id, 1}) ==
+                   WseDispatch::handled &&
+               effect.value == 15 &&
+               call(WseOpcode::array_get_val, {0, ints_id, 4}) ==
+                   WseDispatch::handled &&
+               effect.value == 0,
+           "int array set_val_all, set_val, and resize_dim preserve overlap and zero-fill");
+
+    expect(call(WseOpcode::array_eq, {ints_id, 15, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_neq, {ints_id, 99, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_gt, {ints_id, 10, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_ge, {ints_id, 15, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_lt, {ints_id, 20, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_le, {ints_id, 15, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_gt, {ints_id, 15, 1}) ==
+                   WseDispatch::condition_false &&
+               call(WseOpcode::array_eq, {ints_id, 15, 99}) ==
+                   WseDispatch::condition_false,
+           "array_eq..array_le evaluate integer comparisons and OOB indices");
+
+    // 5002 array_copy creates independent deep copy; bad handle does not store.
+    expect(call(WseOpcode::array_copy, {0, ints_id}) == WseDispatch::handled,
+           "array_copy duplicates int array");
+    const std::int64_t copy_id = effect.value;
+    expect(call(WseOpcode::array_set_val, {copy_id, 999, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_val, {0, ints_id, 1}) ==
+                   WseDispatch::handled &&
+               effect.value == 15 &&
+               call(WseOpcode::array_copy, {0, 9999}) ==
+                   WseDispatch::handled_no_store &&
+               effect.value == 0x1234,
+           "array_copy is deep and ignores invalid source ID");
+    (void)call(WseOpcode::array_free, {copy_id});
+
+    // 5009 / 5010 push & pop on 1D int/string/pos + 2D multidim + empty pop guard.
+    expect(call(WseOpcode::array_push, {ints_id, 77}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_pop, {0, ints_id}) == WseDispatch::handled &&
+               effect.value == 77 &&
+               call(WseOpcode::array_get_dim_size, {0, ints_id, 0}) ==
+                   WseDispatch::handled &&
+               effect.value == 5,
+           "1D int array_push/array_pop updates element and dimension size");
+
+    expect(call(WseOpcode::array_create, {0, 1, 0}) == WseDispatch::handled,
+           "create 1D empty string array");
+    const std::int64_t strs_id = effect.value;
+    int_regs[3] = 55;
+    str_regs[0] = u"val^{reg3}";
+    str_regs[1] = u"Alpha";
+    str_regs[2] = u"alpha";
+    str_regs[3] = u"beta";
+    expect(call(WseOpcode::array_push, {strs_id, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_push, {strs_id, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_push, {strs_id, 2}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_push, {strs_id, 3}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_val, {5, strs_id, 0}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[5] == u"val\n55" &&
+               call(WseOpcode::array_pop, {128, strs_id}) == WseDispatch::ignored &&
+               call(WseOpcode::array_get_dim_size, {0, strs_id, 0}) ==
+                   WseDispatch::handled &&
+               effect.value == 4 &&
+               call(WseOpcode::array_lt, {strs_id, 2, 1}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_pop, {6, strs_id}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[6] == u"beta",
+           "string array expands parseString, guards pop dst register, and compares bytes");
+
+    // 5015 array_sort: CS/CI string sort + 2D stability check!
+    expect(call(WseOpcode::array_sort, {strs_id, 2}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_val, {10, strs_id, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_val, {11, strs_id, 1}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[10] == u"Alpha" && str_regs[11] == u"alpha" &&
+               call(WseOpcode::array_sort, {strs_id, 3}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_val, {10, strs_id, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_val, {11, strs_id, 1}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[10] == u"val\n55" && str_regs[11] == u"Alpha",
+           "string array_sort supports CI ascending/descending while staying stable");
+
+    // 2D int array stability, subdim sort, push_subarray, pop_subarray!
+    expect(call(WseOpcode::array_create, {0, 0, 4, 2}) == WseDispatch::handled,
+           "create 2D (4x2) int array");
+    const std::int64_t arr2d = effect.value;
+    // Rows: (key=20, id=0), (key=10, id=1), (key=20, id=2), (key=10, id=3).
+    (void)call(WseOpcode::array_set_val, {arr2d, 20, 0, 0});
+    (void)call(WseOpcode::array_set_val, {arr2d, 0, 0, 1});
+    (void)call(WseOpcode::array_set_val, {arr2d, 10, 1, 0});
+    (void)call(WseOpcode::array_set_val, {arr2d, 1, 1, 1});
+    (void)call(WseOpcode::array_set_val, {arr2d, 20, 2, 0});
+    (void)call(WseOpcode::array_set_val, {arr2d, 2, 2, 1});
+    (void)call(WseOpcode::array_set_val, {arr2d, 10, 3, 0});
+    (void)call(WseOpcode::array_set_val, {arr2d, 3, 3, 1});
+    expect(call(WseOpcode::array_sort, {arr2d, 0, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_val, {0, arr2d, 0, 1}) ==
+                   WseDispatch::handled &&
+               effect.value == 1 &&
+               call(WseOpcode::array_get_val, {0, arr2d, 1, 1}) ==
+                   WseDispatch::handled &&
+               effect.value == 3 &&
+               call(WseOpcode::array_get_val, {0, arr2d, 2, 1}) ==
+                   WseDispatch::handled &&
+               effect.value == 0 &&
+               call(WseOpcode::array_get_val, {0, arr2d, 3, 1}) ==
+                   WseDispatch::handled &&
+               effect.value == 2,
+           "2D array_sort permutes dim 0 stably by key at subdims");
+
+    // 1D subarray push + pop on 2D array + mismatched push rejection.
+    expect(call(WseOpcode::array_create, {0, 0, 2}) == WseDispatch::handled,
+           "create matching 1D slice");
+    const std::int64_t row_id = effect.value;
+    (void)call(WseOpcode::array_set_val, {row_id, 50, 0});
+    (void)call(WseOpcode::array_set_val, {row_id, 99, 1});
+    expect(call(WseOpcode::array_push, {arr2d, row_id}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_dim_size, {0, arr2d, 0}) ==
+                   WseDispatch::handled &&
+               effect.value == 5 &&
+               call(WseOpcode::array_push, {arr2d, ints_id}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_dim_size, {0, arr2d, 0}) ==
+                   WseDispatch::handled &&
+               effect.value == 5 &&
+               call(WseOpcode::array_pop, {0, arr2d}) == WseDispatch::handled,
+           "multidim push/pop rejects mismatched dims and creates subarray on pop");
+    const std::int64_t popped_row = effect.value;
+    expect(call(WseOpcode::array_get_dim_count, {0, popped_row}) ==
+                   WseDispatch::handled &&
+               effect.value == 1 &&
+               call(WseOpcode::array_get_val, {0, popped_row, 1}) ==
+                   WseDispatch::handled &&
+               effect.value == 99,
+           "multidim popped row contains pushed elements");
+
+    // Position arrays: default zeroed transform, orthonormalize compare in array_eq/neq, file I/O!
+    expect(call(WseOpcode::array_create, {0, 2, 2}) == WseDispatch::handled,
+           "create 1D position array");
+    const std::int64_t pos_arr = effect.value;
+    expect(call(WseOpcode::array_get_val, {20, pos_arr, 0}) ==
+                   WseDispatch::handled_no_store &&
+               positions[20].s.x == 0.0f && positions[20].f.y == 0.0f &&
+               positions[20].o.x == 0.0f,
+           "position array default initializes to 0-position");
+    positions[1] = wse::vm::WseTransform::identity();
+    positions[1].o = {1.5f, -2.25f, 3.75f, 1.0f};
+    positions[1].f = {0.0f, 5.0f, 0.0f, 0.0f};  // Unnormalized forward, orthonormalize makes identical!
+    positions[2] = wse::vm::WseTransform::identity();
+    positions[2].o = {1.5f, -2.25f, 3.75f, 1.0f};
+    positions[3] = wse::vm::WseTransform::identity();
+    positions[3].o = {9.0f, 0.0f, 0.0f, 1.0f};
+    expect(call(WseOpcode::array_set_val, {pos_arr, 1, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_eq, {pos_arr, 2, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_neq, {pos_arr, 3, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_gt, {pos_arr, 2, 0}) ==
+                   WseDispatch::condition_false &&
+               call(WseOpcode::array_sort, {pos_arr, 0}) ==
+                   WseDispatch::handled_no_store,
+           "position array_eq/neq orthonormalizes copies and rejects ordered compare ops");
+
+    // .wsearray binary save / load / delete + path traversal & version > 1 checks!
+    str_regs[0] = u"unit_pos_{reg3}";
+    str_regs[1] = u"../wse2_array_escape_forbidden";
+    expect(call(WseOpcode::array_save_file, {pos_arr, 0}) ==
+                   WseDispatch::handled_no_store &&
+               fs::exists(temp_dir / "unit_pos_55.wsearray") &&
+               call(WseOpcode::array_save_file, {pos_arr, 1}) ==
+                   WseDispatch::handled_no_store &&
+               !fs::exists(outside_escape) &&
+               call(WseOpcode::array_load_file, {0, 0}) == WseDispatch::handled &&
+               effect.value > 0,
+           "array_save_file/load_file roundtrip .wsearray and reject traversal paths");
+    const std::int64_t loaded_pos = effect.value;
+    expect(call(WseOpcode::array_eq, {loaded_pos, 2, 0}) ==
+                   WseDispatch::handled_no_store,
+           "loaded .wsearray orthonormalizes transforms cleanly");
+
+    // Write a version=2 .wsearray header and confirm load returns 0.
+    {
+        const fs::path bad_ver = temp_dir / "future_ver.wsearray";
+        std::ofstream out(bad_ver, std::ios::binary | std::ios::trunc);
+        const std::array<std::uint8_t, 16> header = {
+            0x41, 0x45, 0x53, 0x57,  // LE 0x57534541
+            0x02, 0x00, 0x00, 0x00,  // version 2 (> 1)
+            0x00, 0x00, 0x00, 0x00,  // int
+            0x01, 0x00, 0x00, 0x00   // dimCount = 1
+        };
+        out.write(reinterpret_cast<const char*>(header.data()),
+                  static_cast<std::streamsize>(header.size()));
+    }
+    str_regs[4] = u"future_ver";
+    expect(call(WseOpcode::array_load_file, {0, 4}) == WseDispatch::handled &&
+               effect.value == 0 &&
+               call(WseOpcode::array_delete_file, {0}) ==
+                   WseDispatch::handled_no_store &&
+               !fs::exists(temp_dir / "unit_pos_55.wsearray"),
+           "array_load_file rejects version>1 with 0 and delete_file removes .wsearray");
+
+    // Binary .wsearray save/load roundtrip for 2D integer + string arrays.
+    str_regs[7] = u"arr2d_bin";
+    str_regs[8] = u"strs_bin";
+    expect(call(WseOpcode::array_save_file, {arr2d, 7}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_save_file, {strs_id, 8}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_load_file, {0, 7}) == WseDispatch::handled &&
+               effect.value > 0 &&
+               call(WseOpcode::array_eq, {effect.value, 10, 0, 0}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_load_file, {0, 8}) == WseDispatch::handled &&
+               effect.value > 0 &&
+               call(WseOpcode::array_get_val, {12, effect.value, 0}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[12] == u"val\n55",
+           ".wsearray binary save/load roundtrips 2D int and UTF-8 string arrays");
+
+    // Operand-count checks across array ops.
+    expect(call(WseOpcode::array_create, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_free, {}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_copy, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_save_file, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_load_file, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_delete_file, {}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_set_val, {0, 1}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_set_val_all, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_get_val, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_push, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_pop, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_resize_dim, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_get_dim_size, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_get_dim_count, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_get_type_id, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_sort, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_sort_custom, {0}) ==
+                   WseDispatch::operand_count_out_of_range &&
+               call(WseOpcode::array_eq, {0, 0}) ==
+                   WseDispatch::operand_count_out_of_range,
+           "array ops validate operand counts");
+}
+
 }  // namespace
 
 int main() {
@@ -2452,6 +2996,8 @@ int main() {
     test_options_group();
     test_script_state_and_position_group();
     test_dictionary_group();
+    test_feval();
+    test_array_group();
     test_operand_counts();
     test_unimplemented_and_mask();
     test_fp_load_store();
