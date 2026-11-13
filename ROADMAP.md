@@ -25,11 +25,11 @@ numbers:
    prompt the user to select their own legally owned Mount & Blade: Warband PC game directory and
    `Modules/` folders.
 3. **Incremental compilation gate.** A subsystem is not finished until it compiles cleanly under
-   both the host tests and the Android NDK (`clang++ -std=c++20 -target aarch64-linux-android29
-   -Wall -Wextra -Werror`).
-   **Known breach:** the NDK half has never been run (no NDK was available), so every Phase 2
-   module so far is host-verified only. Closing this is backlog item **B1** and comes before any
-   further subsystem work.
+   both the host tests and the Android NDK (`aarch64-linux-android29-clang++ -std=c++20 -O2 -Wall
+   -Wextra -Werror`).
+   **Gate status:** enforced in `.github/workflows/ci.yml` (`host-linux` + `android-arm64`) as of
+   commit `117436a` (Backlog B1). On-device Android runtime execution remains blocked until hardware
+   or an emulator is available (see `STATUS.md` §4).
 
 ## Target
 
@@ -65,7 +65,7 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [x] Statement record and reader (`wse/vm/statement.h`)
 - [x] `analyze` / `execute` / loop frames / `call_script` recursion (`wse/vm/block_vm.h`)
 - [~] Native opcodes: comparisons and integer/fixed-point math only
-- [ ] Native opcode map generated from the `0x1401e22f0` jump table (**B2**)
+- [x] Native opcode map generated from the `0x1401e22f0` jump table (**B2**, `docs/native_opcodes.json`)
 - [ ] Entity iterators (`try_for_agents`, `try_for_parties`, `try_for_prop_instances`,
       `try_for_players`) — currently iterate zero times
 
@@ -101,8 +101,9 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 
 ### Phase 3 — Cross-Platform Replacement (Win32/DX9 → SDL2/GLES3.2)
 
-- [ ] Root `CMakeLists.txt` for desktop host builds and Android Gradle/NDK `arm64-v8a` builds with
-      SDL2. *(The CMake/CTest part is pulled forward as backlog B1.)*
+- [x] Root `CMakeLists.txt` + CTest for desktop host builds, paired with GitHub Actions NDK
+      `arm64-v8a` (`android-29`) header/CMake verification (`117436a`, Backlog B1).
+- [ ] Extend root `CMakeLists.txt` for Android Gradle/`SDL2`/`GLES3.2` app packaging (Phase 3 runtime).
 - [ ] Replace Win32 filesystem, threading, memory management, and timing with C++20 and SDL2.
 - [ ] Replace DirectX 9 rendering with a modular OpenGL ES 3.2 / Vulkan backend; translate WSE2
       shaders (SPIRV-Cross / HLSLcc).
@@ -125,9 +126,9 @@ B1–B3 come before any further opcode transcription.
 
 | # | Item | Why it is next | Done when |
 | --- | --- | --- | --- |
-| B1 | **CI + cross-platform build.** One `CMakeLists.txt` + CTest for `engine/`, and a GitHub Actions workflow running the six host suites on Linux and an NDK `aarch64-linux-android29` compile of every header. | The arm64 gate has never run and is the project's stated definition of done. GitHub's Ubuntu runners ship an NDK, so the "no NDK" blocker disappears without any local install. The host suites already pass on Linux clang 18. | Workflow green on the branch; `STATUS.md` §2 shows the NDK gate as PASS |
-| B2 | **Native opcode map.** Generate `docs/native_opcodes.json` / `.md` from the jump table at `0x1401e22f0` and `header_operations.py`, mirroring `tools/extract_wse_opcodes.py`. | The 440 WSE operations are counted to the unit, but the ~2,700-slot native table — the bulk of what any module actually calls — has no inventory, so the real size of Phase 2 is unknown. | Every live slot has a name, handler VA, and implemented flag |
-| B3 | **Demand ranking.** A host tool that reads a user-supplied module's `scripts.txt` / `triggers.txt` / `simple_triggers.txt` and prints opcode frequency × implemented status. | Handlers have been transcribed in numeric order. A frequency table from real modules says which 50 opcodes unlock most scripts. The readers already parse the full retail `scripts.txt`. | Ranked list checked into `STATUS.md` (counts only — no module content) |
+| B1 | **CI + cross-platform build.** One `CMakeLists.txt` + CTest for `engine/`, and a GitHub Actions workflow running the six host suites on Linux and an NDK `aarch64-linux-android29` compile of every header. | The arm64 gate has never run and is the project's stated definition of done. GitHub's Ubuntu runners ship an NDK, so the "no NDK" blocker disappears without any local install. The host suites already pass on Linux clang 18. | **DONE (`117436a`).** Workflow green on `main`; `STATUS.md` §2 shows both Linux CMake/CTest and NDK `aarch64-linux-android29` gates PASS |
+| B2 | **Native opcode map.** Generate `docs/native_opcodes.json` / `.md` from the jump table at `0x1401e22f0` and `header_operations.py`, mirroring `tools/extract_wse_opcodes.py`. | The 440 WSE operations are counted to the unit, but the ~2,700-slot native table — the bulk of what any module actually calls — has no inventory, so the real size of Phase 2 is unknown. | **DONE.** `tools/extract_native_opcodes.py` generated `docs/native_opcodes.json` and `docs/NATIVE_OPCODES.md` with SDK names, handler VAs, and `implemented` flags scanned from `block_vm.h` (`STATUS.md` §3) |
+| B3 | **Demand ranking.** A host tool that reads a user-supplied module's `scripts.txt` / `triggers.txt` / `simple_triggers.txt` and prints opcode frequency × implemented status. | Handlers have been transcribed in numeric order. A frequency table from real modules says which 50 opcodes unlock most scripts. The readers already parse the full retail `scripts.txt`. | **DONE.** `tools/demand_rank.py` added; counts-only ranking checked into `STATUS.md` §3 |
 | B4 | **Generated implementation status.** Have `tools/extract_wse_opcodes.py` (or a sibling) scan `execute_wse.h` and write an `implemented` flag into `docs/wse_opcodes.json` and a Done column into `docs/WSE_OPCODES.md`. | The `N/440` figure and the list of ranges were hand-copied into eight places per milestone and had already drifted. `STATUS.md` is now the single tally; generating it removes the last manual copy. | `STATUS.md` §3 table is produced by the tool |
 | B5 | **Split `execute_wse.h`.** One header per opcode family (`wse/vm/ops/string.h`, `dict.h`, `array.h`, `fp.h`, …), shared value types (`WseTransform`, UTF-8/16, MD5, JSON) moved to `wse/core/`, and `wse_test.cpp` split to match. | The file is 7,448 lines with one 3,350-line `switch`; its test file is 3,653 lines. Each takes ~15 s to compile, every handler edit touches the same file, and the remaining 218 handlers would roughly double it. | No engine header over ~1,500 lines; gate still green |
 | B6 | **Loud unimplemented opcodes.** Surface `VmContext::unimplementedCount` as a per-opcode histogram, and give native opcodes the same explicit `unimplemented` result WSE opcodes have instead of returning `true`. | An unimplemented native condition currently passes silently, so a script can take the wrong branch with no signal. | The 2H harness fails on any unimplemented hit |
@@ -140,7 +141,9 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
-| 2026-11-13 | — | Project review: docs restructured around single ownership; host suites confirmed on Linux clang 18; backlog B1–B8 recorded |
+| 2026-11-13 | — | Native opcode map (`docs/native_opcodes.json`, B2), module demand ranking tool (`tools/demand_rank.py`, B3), and `kTryForParties`/`kTryForAgents` (`0xB`/`0xC`) VM fix (`STATUS.md` §3) |
+| 2026-11-13 | `117436a` | Root `CMakeLists.txt`/CTest and GitHub Actions Linux clang++ + Android NDK `aarch64-linux-android29` CI (`B1`) |
+| 2026-11-13 | `75b4b22` | Project review: docs restructured around single ownership; host suites confirmed on Linux clang 18; backlog B1–B8 recorded |
 | 2026-11-13 | `2e17f3c` | `WseWorldState` and 64 world/troop/item/config/edit-mode handlers (222/440) |
 | 2026-11-13 | `6a70856` | `feval`, dynamic arrays, unified `WseObjectManager` (158/440) |
 | 2026-11-13 | `86192dc` | Timers, RNG, profiler, position math, dictionary VM (134/440) |

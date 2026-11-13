@@ -11,10 +11,10 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows (Zig clang++) and on Linux (clang 18.1.3) — 6 suites, 63 test functions |
-| Android arm64 gate | **NEVER RUN** — no NDK has been available; every engine header is unverified on `aarch64-linux-android29` |
+| Host gate | **PASS** on Windows (Zig clang++) and Linux CI (`clang++ 18.1.3` CMake/CTest) — 6 suites, 63 test functions |
+| Android arm64 gate | **PASS (CI)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all 11 headers standalone + CMake build; on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **222/440 implemented** |
-| Native (non-WSE) opcodes | **33 implemented** in the `30–2767` jump-table range, plus 16 control-flow opcodes; the live slots of the 2,738-entry table are **not mapped yet** |
+| Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` unnamed live handlers `53, 2180, 2749`); **49/1,053 implemented** (`16` control-flow incl. 4 zero-iteration stubs + `33` switch) |
 | Module loaders | `scripts.txt`, `triggers.txt`, `simple_triggers.txt` only |
 | World state | In-memory model (`WseWorldState`) exists; nothing loads it from module files yet |
 | Lua 5.1 layer | Not started (hook call sites documented only) |
@@ -25,10 +25,10 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Gate | Result | Detail |
 | --- | --- | --- |
 | Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: `operand`, `trigger`, `savegame`, `script`, `wse`, `block_vm` |
-| Host C++20, Linux | PASS (2026-11-13) | Ubuntu `clang++` 18.1.3 + libstdc++, same flags, same six suites, run by hand with the loop in `AGENTS.md` §2. First non-Windows run; not scripted or in CI yet |
-| Android NDK `aarch64-linux-android29` | **NEVER RUN** | No NDK installed on any machine used so far. ROADMAP guardrail 3 has therefore been waived for every subsystem to date — treat arm64 cleanliness as unproven |
+| Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 11 standalone header checks + 6/6 suites passing |
+| Android NDK `aarch64-linux-android29` | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all 11 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
-| CI | none | No `.github/workflows`; gates only run when someone remembers |
+| CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` and `android-arm64` on push and PR |
 
 ## 3. Coverage
 
@@ -68,18 +68,66 @@ The pure-computation families are finished. Every remaining family needs engine 
 not exist yet (agents, parties, mission, network, UI, Lua), so the count will not move much until
 those containers are reconstructed.
 
-### Native opcodes (`block_vm.h`)
+### Native opcodes (`block_vm.h`, `docs/native_opcodes.json`)
 
-- Control flow (16): `call_script` 1, `try_end`/`try_begin`/`else_try` 3–5, `try_for_range` 6,
-  `try_for_range_backwards` 7, `break_loop` 8, `continue_loop` 9, `try_for_agents` `0xB`,
-  `try_for_parties` `0xC`, `try_for_prop_instances` `0x10`, `try_for_players` `0x11`,
-  `try_for_dict_keys` `0x12`, `store_script_param*` 21–23. The four entity iterators run **zero
-  iterations** until entity containers exist.
-- Jump-table range `30–2767` (33): comparisons 30–33; `2100`–`2101`, `2105`–`2117`, `2119`–`2131`,
-  `2133`.
-- Every other native opcode returns `true` and increments `VmContext::unimplementedCount`. A
-  condition built on an unimplemented opcode therefore **passes silently**; results from running
-  real module scripts are not trustworthy until the counter is surfaced per run.
+Generated from `mbStatement::execute` jump table `0x1401e22f0` (`2,738` slots), `mbStatementBlock` control-flow dispatch (`0–29`), public `header_operations.py` (`1,057` unique IDs in `0–2767`), and live `block_vm.h` scan via `tools/extract_native_opcodes.py` (`docs/NATIVE_OPCODES.md`):
+
+- Control flow `0–29` (**16/16 live** implemented): `call_script` 1, `try_end`/`try_begin`/`else_try` 3–5, `try_for_range` 6, `try_for_range_backwards` 7, `break_loop` 8, `continue_loop` 9, `try_for_parties` `0xB` (11), `try_for_agents` `0xC` (12), `try_for_prop_instances` `0x10` (16), `try_for_players` `0x11` (17), `try_for_dict_keys` `0x12` (18), `store_script_param*` 21–23. (`0xB` / `0xC` swapped naming in `block_vm.h` was fixed to match `startLoop` `0x1401f7516`/`0x1401f732e` and `header_operations.py`.) The four entity iterators (`11, 12, 16, 17`) run **zero iterations** until world entity containers are loaded.
+- Switch table `30–2767` (`2,738` slots):
+  - **1,037** live unique `switch_handler` `.text` targets (incl. **3** unnamed live handlers: `53` reading `rglConfig::General::bCheatMode`, `2180` counting main-party prisoner stacks, `2749` agent helper), of which **33** are implemented in `block_vm.h`: comparisons `30–33`, shifts/arithmetic/math/assign `2100–2101`, `2105–2117`, `2119–2131`, `2133`.
+  - **6** shared `noop_true` stubs jumping directly to `0x1401e226b` (`473`, `477`, `1070`, `1104`, `1302`, `1491`).
+  - **1,695** `execute_wse_fallback` slots jumping to `0x1401e223e`: **1** SDK-named (`1004` `race_completed_by_player` / `is_vanilla_warband`, returning `false` under WSE2) and **1,694** unassigned holes.
+- Every other native opcode currently returns `true` and increments `VmContext::unimplementedCount`. A condition built on an unimplemented opcode therefore **passes silently**; results from running real module scripts are not trustworthy until `unimplementedCount` reaches zero (`ROADMAP.md` B6).
+
+### Demand ranking (`tools/demand_rank.py`, Backlog B3)
+
+Measured on the `3,467,512`-byte retail `Native` `scripts.txt` (**1,755** scripts, **131,080** statements, **653** distinct opcodes; counts only — no module content; `triggers.txt` and `simple_triggers.txt` were absent from that local build output):
+
+- **Covered today:** `86,807` statements (`86,760` implemented native calls, including `221` zero-iteration entity-loop calls; `24` `noop_true`/fallback calls; `23` implemented WSE calls). `212 / 1,755` scripts use zero unimplemented opcodes.
+- **Unimplemented demand:** `44,268` native calls across **596** distinct native opcodes, plus `5` WSE calls across `3` unimplemented opcodes (`3340` `agent_set_action_speed_modifier` ×2, `3341` `agent_get_action_speed_modifier` ×2, `3904` `party_switch_stacks` ×1).
+- **Entity-iterator zero-iteration stubs used:** `try_for_agents` (`12`) ×190 calls in 110 scripts; `try_for_parties` (`11`) ×31 calls in 30 scripts.
+
+| Top K unimplemented native | Unimplemented calls covered | Share of missing native calls | Fully covered scripts |
+| ---: | ---: | ---: | ---: |
+| 10 | 27,747 | 62.68% | 403 |
+| 25 | 32,732 | 73.94% | 537 |
+| 50 | 36,502 | 82.46% | 725 |
+| 100 | 39,954 | 90.25% | 948 |
+
+Top categories by unimplemented native calls (`scripts.txt`): `entity_slots` (**27,324** across 45 opcodes — **61.7%** of all missing native calls), `strings` (3,144 / 21), `troops` (2,210 / 52), `parties` (2,060 / 86), `agents` (1,915 / 83), `ui_presentations_and_menus` (1,751 / 40), `positions_and_math` (1,580 / 32), `scenes_props_and_mission` (914 / 33), `game_state_and_stores` (859 / 26), `arithmetic_registers_and_vars` (803 / 5).
+
+<details>
+<summary>Top 25 unimplemented native opcodes in Native scripts.txt (counts only)</summary>
+
+| Rank | Opcode | Name | Category | Calls | Scripts |
+| ---: | ---: | --- | --- | ---: | ---: |
+| 1 | 500 | `troop_set_slot` | `entity_slots` | 10,624 | 296 |
+| 2 | 507 | `item_set_slot` | `entity_slots` | 7,815 | 63 |
+| 3 | 501 | `party_set_slot` | `entity_slots` | 2,347 | 103 |
+| 4 | 2320 | `str_store_string` | `strings` | 1,975 | 227 |
+| 5 | 520 | `troop_get_slot` | `entity_slots` | 1,248 | 397 |
+| 6 | 502 | `faction_set_slot` | `entity_slots` | 829 | 41 |
+| 7 | 540 | `troop_slot_eq` | `entity_slots` | 811 | 263 |
+| 8 | 2136 | `store_random_in_range` | `arithmetic_registers_and_vars` | 771 | 229 |
+| 9 | 1106 | `display_message` | `ui_presentations_and_menus` | 724 | 254 |
+| 10 | 1560 | `troop_set_health` | `troops` | 603 | 18 |
+| 11 | 521 | `party_get_slot` | `entity_slots` | 463 | 170 |
+| 12 | 541 | `party_slot_eq` | `entity_slots` | 459 | 141 |
+| 13 | 2319 | `str_clear` | `strings` | 422 | 90 |
+| 14 | 505 | `agent_set_slot` | `entity_slots` | 395 | 90 |
+| 15 | 729 | `position_set_x` | `positions_and_math` | 392 | 78 |
+| 16 | 730 | `position_set_y` | `positions_and_math` | 362 | 76 |
+| 17 | 1263 | `set_visitor` | `scenes_props_and_mission` | 357 | 16 |
+| 18 | 1704 | `agent_is_human` | `agents` | 345 | 141 |
+| 19 | 2322 | `str_store_troop_name` | `strings` | 321 | 149 |
+| 20 | 525 | `agent_get_slot` | `entity_slots` | 284 | 80 |
+| 21 | 1507 | `troop_is_hero` | `troops` | 274 | 176 |
+| 22 | 1718 | `agent_get_troop_id` | `agents` | 246 | 137 |
+| 23 | 2204 | `store_faction_of_party` | `parties` | 226 | 126 |
+| 24 | 522 | `faction_get_slot` | `entity_slots` | 222 | 96 |
+| 25 | 2173 | `store_troop_faction` | `troops` | 217 | 116 |
+
+</details>
 
 ### Tests
 
@@ -96,21 +144,22 @@ those containers are reconstructed.
 
 | Blocker | Impact | Way out |
 | --- | --- | --- |
-| No Android NDK/SDK, `adb`, or device | arm64 gate never run; no on-device validation | GitHub-hosted Ubuntu runners ship an NDK — a CI workflow can run the compile gate without any local install (ROADMAP backlog B1) |
+| No local Android NDK/SDK, `adb`, or device | CI runs the NDK arm64 compile gate on Linux; on-device Android runtime tests remain unrun | Keep `.github/workflows/ci.yml` enforcing the arm64 build; add `adb`/device validation later in Phase 3/4 |
 | REA not registered with OpenCode | REA/Ghidra tools are not exposed through MCP; the CLI works from `%TEMP%\opencode\tools\rea\node_modules\rea-agents` | Keep using the CLI |
-| `tools/vtables.py` is not in the repository | `tools/build_symbol_map.py` names it as the source of `vtables_x64.json`, so `docs/SYMBOL_MAP.json` cannot be regenerated from a clean checkout | Commit the script or fold it into `tools/pe_evidence.py` |
+| `tools/vtables.py` is not in the repository | `tools/build_symbol_map.py` names it as the source of `vtables_x64.json`, so `docs/SYMBOL_MAP.json` cannot be regenerated from a clean checkout | Commit the script or fold it into `tools/pe_evidence.py` (backlog B7) |
 
 ## 5. Next concrete tasks (ordered)
 
-1. **Close the arm64 gate** with CI (host suites + NDK compile) — ROADMAP backlog B1.
-2. **Map the native opcodes** (`0x1401e22f0` jump table × `header_operations.py`) into a generated
-   `docs/native_opcodes.json`, the same way the WSE map was built — B2.
-3. **Measure demand before transcribing more handlers:** count opcode usage across a user-supplied
-   `Native` module (`scripts.txt`, `triggers.txt`, `simple_triggers.txt`) and rank unimplemented
-   opcodes by frequency — B3. The script reader already parses the full retail `scripts.txt`.
-4. Reconstruct the module data loaders that feed `WseWorldState` (troops, items, factions,
-   parties, strings), then the agent/party/mission containers the remaining WSE families need.
-5. Continue `executeWSE` handlers in demand order rather than numeric order.
+1. **Generate WSE implementation status (`ROADMAP.md` backlog B4):** have `tools/extract_wse_opcodes.py`
+   scan `execute_wse.h` so `docs/wse_opcodes.json` and `STATUS.md` §3 tallies stay machine-generated.
+2. **Split `execute_wse.h` & `wse_test.cpp` (backlog B5)** and **surface per-opcode unimplemented native
+   counters (backlog B6)** so Phase 2H fails loudly on any missing native opcode.
+3. **Demand-driven native opcodes & world loaders:** reconstruct the `entity_slots` (`500–599`) and
+   top `strings` (`2319–2322`) / `store_random_in_range` (`2136`) / `position_set_{x,y}` (`729–730`)
+   handlers along with `troops.txt`/`item_kinds1.txt`/`factions.txt`/`parties.txt`/`strings.txt`
+   loaders feeding `WseWorldState` (unlocking >62% of unimplemented calls in `scripts.txt`).
+4. Continue remaining `executeWSE` handlers and entity containers (`agent`, `party`, `mission`) in
+   demand order rather than numeric order.
 
 ## 6. Open documentation questions
 

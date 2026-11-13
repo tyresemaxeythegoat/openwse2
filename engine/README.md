@@ -256,9 +256,15 @@ Windows:
 powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
 ```
 
-Linux: use the loop in `AGENTS.md` §2 (plain `clang++`, same flags).
+Cross-platform (CMake + CTest, matching `.github/workflows/ci.yml`):
 
-Expected tail:
+```sh
+cmake -S . -B build -DCMAKE_CXX_COMPILER=clang++ -DWSE_BUILD_HEADER_CHECKS=ON
+cmake --build build -j
+ctest --test-dir build --output-on-failure --no-tests=error
+```
+
+Expected host test lines:
 
 ```
 operand tests: PASS
@@ -267,8 +273,7 @@ savegame tests: PASS
 script tests: PASS
 wse tests: PASS
 block_vm tests: PASS
-engine host tests: PASS
 ```
 
-The Android half of the gate (`clang++ -std=c++20 -target aarch64-linux-android29 -Wall -Wextra
--Werror`) has never been run; see `STATUS.md` §2.
+The Android NDK (`aarch64-linux-android29`) header checks and cross-compile build also run in
+`.github/workflows/ci.yml`; see [`STATUS.md`](../STATUS.md) §2 for current gate results.
