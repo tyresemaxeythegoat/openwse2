@@ -805,7 +805,7 @@ and VM-backed `execute_script`, `execute_mapped_script`, `execute_trigger`,
 | `KERNEL32.dll` | 223 | static | Replace with C++20 `std::filesystem`, `std::thread`, POSIX/Android shims |
 | `lua5164.dll` | 103 | static | Link Lua 5.1.x for arm64 (or a compatible 5.1-compatible VM); **not** LuaJIT |
 | `fmodex64.dll` | 54 | delay | Replace with Oboe/SDL audio; FMOD Ex is not redistributable here |
-| `USER32.dll` | 40 | static | Replace with SDL2/Android input and windowing |
+| `USER32.dll` | 40 | static | Replace with SDL3 input and windowing |
 | `WS2_32.dll` | 37 | static | BSD sockets (available on Android) |
 | `d3dx9_43.dll` | 17 | static | Replace D3DX helpers (math, texture, shader) |
 | `WINHTTP.dll` | 11 | static | Replace with `HttpURLConnection`/libcurl |
@@ -829,12 +829,14 @@ C++20 core (libwse2.so, arm64-v8a)
   ├─ module loader: reads user-selected Modules/ via SAF file descriptors
   ├─ script/trigger VM: mbScriptManager + mbTriggerManager + mbSimpleTriggerManager
   ├─ WSE Lua layer: WSELuaManager + gameOperation table on Lua 5.1
-  ├─ renderer: Vulkan (PanVK on Mali) with GLES 3.2 fallback
+  ├─ platform seam: wse/platform (Vfs, Clock, LogSink; later Rhi, AudioDevice, Input)
+  ├─ renderer: Vulkan RHI; driver chosen at runtime (system, PanVK on Mali, Turnip on Adreno)
   ├─ physics: Bullet (arm64 build) — imported type inventory already matches
-  └─ audio: Oboe/OpenSL ES
+  └─ audio: SDL3 audio stream + mixer
 ```
 
-Existing `runtime/android` PanVK work remains valid for the renderer path: the loader deliberately
+The slice plan for this stack is `docs/PLATFORM_PLAN.md`. GPU drivers are user-supplied at runtime
+and never bundled. Existing `runtime/android` PanVK work remains valid for the renderer path: the loader deliberately
 bypasses platform `libvulkan.so`, patches the ICD's `libhardware.so` dependency to `libpanvk_hw.so`,
 and requires `extractNativeLibs=true`. It is independent of the reconstructed game code.
 

@@ -11,22 +11,22 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows (Zig clang++) and Linux CI (`clang++ 18.1.3` CMake/CTest) — 11 suites, 64 test functions |
-| Android arm64 gate | **PASS (CI)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all 24 headers standalone + CMake build (`e4109fe` green; on-device runtime tests remain unrun) |
+| Host gate | **PASS** on Windows (Zig clang++) and Linux CI (`clang++ 18.1.3` CMake/CTest) — 12 suites, 70 test functions on Linux; the Windows script last ran before the `platform` suite was added (11 suites) |
+| Android arm64 gate | **PASS (CI)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all 27 headers standalone + CMake build; on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **222/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` unnamed live handlers `53, 2180, 2749`); **49/1,053 implemented** (`16` control-flow incl. 4 zero-iteration stubs + `33` switch) |
 | Module loaders | `scripts.txt`, `triggers.txt`, `simple_triggers.txt` only |
 | World state | In-memory model (`WseWorldState`) exists; nothing loads it from module files yet |
 | Lua 5.1 layer | Not started (hook call sites documented only) |
-| Renderer / audio / input / Android app | Not started in the clean-room engine (legacy PanVK loader work lives in `runtime/android/`) |
+| Platform track (Phase 3/4) | Planned as slices P0–P9 in `docs/PLATFORM_PLAN.md`. P0 done; P1 seam headers `wse/platform/{vfs,clock,log}.h` landed and host-tested, nothing in the engine routed through them yet. No app, renderer, audio, or input code (legacy PanVK loader work lives in `runtime/android/`) |
 
 ## 2. Gates
 
 | Gate | Result | Detail |
 | --- | --- | --- |
 | Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: `operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm` |
-| Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`, verified `e4109fe`): all 24 standalone header checks, 11/11 test suites, and `extract_wse_opcodes.py --check` |
-| Android NDK `aarch64-linux-android29` | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`, verified `e4109fe`): all 24 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
+| Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 27 standalone header checks, 12/12 test suites, and `extract_wse_opcodes.py --check` |
+| Android NDK `aarch64-linux-android29` | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all 27 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
 | CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` and `android-arm64` on push and PR |
 
@@ -145,6 +145,7 @@ Top categories by unimplemented native calls (`scripts.txt`): `entity_slots` (**
 | `wse_array_test.cpp` | 1 |
 | `wse_world_test.cpp` | 3 |
 | `block_vm_test.cpp` | 10 |
+| `platform_test.cpp` | 6 |
 
 ## 4. Blocked
 
@@ -165,6 +166,15 @@ Top categories by unimplemented native calls (`scripts.txt`): `entity_slots` (**
    loaders feeding `WseWorldState` (unlocking >62% of unimplemented calls in `scripts.txt`).
 3. Continue remaining `executeWSE` handlers and entity containers (`agent`, `party`, `mission`) in
    demand order rather than numeric order.
+
+Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
+
+1. **Finish P1:** route the direct `std::filesystem`/`fstream`/`chrono`/`thread` uses in
+   `wse/vm/ops/{dict,array,string,system}.h` and `world_state.h` through `wse/platform`, then the Gradle + SDL3 app shell with the on-device self-test and
+   a CI-built debug APK.
+2. **P3 evidence exports** for the `.brf` and `.dds` loaders (`ARCHITECTURE.md` §8 gap 5) — needs
+   the Windows REA machine; the decoders themselves are host-only work.
+3. **P2** launcher and `SafVfs` once the app shell exists.
 
 ## 6. Open documentation questions
 

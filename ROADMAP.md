@@ -99,24 +99,34 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [ ] Load a user-supplied `Native` module and execute `game_start` plus one simulated frame of
       triggers with **zero** unimplemented-opcode hits, on host and on arm64
 
-### Phase 3 — Cross-Platform Replacement (Win32/DX9 → SDL2/GLES3.2)
+### Phase 3 — Cross-Platform Replacement (Win32/DX9/FMOD → C++20/SDL3/Vulkan)
 
-- [x] Root `CMakeLists.txt` + CTest for desktop host builds, paired with GitHub Actions NDK
-      `arm64-v8a` (`android-29`) header/CMake verification (`117436a`, Backlog B1).
-- [ ] Extend root `CMakeLists.txt` for Android Gradle/`SDL2`/`GLES3.2` app packaging (Phase 3 runtime).
-- [ ] Replace Win32 filesystem, threading, memory management, and timing with C++20 and SDL2.
-- [ ] Replace DirectX 9 rendering with a modular OpenGL ES 3.2 / Vulkan backend; translate WSE2
-      shaders (SPIRV-Cross / HLSLcc).
-- [ ] Replace FMOD Ex with OpenAL Soft or Oboe/SDL_mixer.
+Runs **in parallel** with Phase 2 as the platform track. Design, layout, slice contents, and risks
+are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below are its slices.
+
+- [x] **P0** Root `CMakeLists.txt` + CTest and GitHub Actions host + NDK `aarch64-linux-android29`
+      gates (`117436a`, backlog B1).
+- [~] **P1** Platform seam and app shell.
+  - [x] `wse/platform/{vfs,clock,log}.h` with host implementations and the `platform` suite
+  - [ ] Route the engine's direct file, clock, and thread calls through the seam
+  - [ ] Gradle + SDL3 `SDLActivity` + `libwse2.so` with an on-device self-test screen; CI builds the APK
+- [ ] **P3** Asset decoders: `.brf`, `.dds`, module resource lists (evidence exports first).
+- [ ] **P4** Vulkan RHI and runtime driver loader: system driver, PanVK (Mali), Turnip (Adreno) —
+      drivers are user-supplied, never bundled.
+- [ ] **P5** Module shaders → SPIR-V at import time, cached; D3D9 conventions handled in the RHI.
+- [ ] **P6** Audio: SDL3 audio-stream backend and mixer replacing FMOD Ex.
+- [ ] **P9** Convergence with Phase 2: scene/terrain/skeletal rendering, widgets, Bullet, Lua link,
+      and the 2H headless run on device.
 
 ### Phase 4 — Native Android Features
 
-- [ ] **Asset & mod loader UI:** SAF/folder-permission launch screen to select local `Modules/`
-      directories and switch mods (equivalent to `wse2_launcher.exe`).
-- [ ] **Dynamic touch controls:** context-sensitive overlay (virtual movement stick, 4-direction
+- [ ] **P2 Asset & mod loader UI:** SAF folder picker for the user's Warband install, persisted
+      permission, module list and mod switcher (equivalent to `wse2_launcher.exe`), GPU driver
+      picker; native `SafVfs` with a one-time case-insensitive index.
+- [ ] **P7 Dynamic touch controls:** context-sensitive overlay (virtual movement stick, 4-direction
       combat swipe/block zones, battle command radial menu) that hides during menu/inventory
-      screens or when a Bluetooth controller is connected.
-- [ ] **Sensor & performance hooks:** optional gyro aiming, pinch-to-zoom on the campaign map,
+      screens or when a controller is connected.
+- [ ] **P8 Sensor & performance hooks:** optional gyro aiming, pinch-to-zoom on the campaign map,
       thermal-throttling awareness, and configurable frame-rate caps (60/90/120 Hz).
 
 ## Engineering backlog (ordered)
@@ -141,6 +151,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-14 | — | Phase 3/4 planned as platform slices P0–P9 (`docs/PLATFORM_PLAN.md`: SDL3, Vulkan with user-supplied PanVK/Turnip); platform seam `wse/platform/{vfs,clock,log}.h` + `platform` suite (P1, first part) |
 | 2026-11-14 | — | `NativeDispatch`, per-opcode unimplemented histogram (`unimplementedOpcodeCounts`), and strict `failOnUnimplemented` abort mode (`B6`) |
 | 2026-11-14 | `e4109fe` | Generated WSE opcode status + CI `--check` (`B4`), `execute_wse.h` split into `wse/core/` + `wse/vm/ops/*.h`, and `wse_test.cpp` split into 6 suites (`B5`) |
 | 2026-11-13 | `7e9c9df` | Native opcode map (`docs/native_opcodes.json`, B2), module demand ranking tool (`tools/demand_rank.py`, B3), and `kTryForParties`/`kTryForAgents` (`0xB`/`0xC`) VM fix (`STATUS.md` §3) |

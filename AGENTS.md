@@ -19,15 +19,15 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
     ```powershell
     powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
     ```
-    Compiles and runs all host test suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`) via Zig `clang++ -std=c++20 -O2 -Wall -Wextra -Werror` and must finish with `engine host tests: PASS`.
-  - Linux / cloud sessions (no PowerShell or Zig needed; verified with Ubuntu `clang++` 18.1.3). Run from the repository root and build outside the tree. The `wse_dict` and `wse_array` suites write fixed-name scratch files under the system temp directory, so do not run two copies of the gate at once:
+    Compiles and runs all host test suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `platform`) via Zig `clang++ -std=c++20 -O2 -Wall -Wextra -Werror` and must finish with `engine host tests: PASS`.
+  - Linux / cloud sessions (no PowerShell or Zig needed; verified with Ubuntu `clang++` 18.1.3). Run from the repository root and build outside the tree. The `wse_dict`, `wse_array`, and `platform` suites write fixed-name scratch files under the system temp directory, so do not run two copies of the gate at once:
     ```sh
     out="$(mktemp -d)"; root="$PWD"
-    for t in operand trigger savegame script wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm; do
+    for t in operand trigger savegame script wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm platform; do
       clang++ -std=c++20 -O2 -Wall -Wextra -Werror -I engine/include \
         -o "$out/${t}_test" "engine/tests/${t}_test.cpp" || exit 1
     done
-    cd "$out" && for t in operand trigger savegame wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm; do ./${t}_test || exit 1; done \
+    cd "$out" && for t in operand trigger savegame wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm platform; do ./${t}_test || exit 1; done \
       && ./script_test "$root/engine/fixtures/scripts.txt" && echo "engine host tests: PASS"
     ```
     Every suite must print `<name> tests: PASS`. `wse_string`, `wse_dict`, `wse_array`, and `block_vm` take ~5–15 s each to compile.
@@ -54,8 +54,8 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
 
 | Path | Status | Contents |
 | --- | --- | --- |
-| `engine/` | **active** | Clean-room C++20 headers (`include/wse/{core,io,vm,game}`), host tests, fixtures |
-| `docs/` | **active** | `ARCHITECTURE.md`, `SYMBOL_MAP.json`, generated native & WSE opcode maps |
+| `engine/` | **active** | Clean-room C++20 headers (`include/wse/{core,io,vm,game,platform}`), host tests, fixtures |
+| `docs/` | **active** | `PLATFORM_PLAN.md` (Phase 3/4 design), `ARCHITECTURE.md`, `SYMBOL_MAP.json`, generated native & WSE opcode maps |
 | `tools/build_symbol_map.py`, `demand_rank.py`, `extract_native_opcodes.py`, `extract_wse_opcodes.py`, `pdb_symbols.py`, `pe_evidence.py`, `symbol_inventory.py` | **active** | Evidence extraction, generators, and demand analysis |
 | `tools/pe_catalog.py`, `check_panvk.py`, `patch_panvk.py` | legacy | Static-recompilation catalog and PanVK helpers |
 | `analysis/`, `proof/`, `runtime/` | legacy | Superseded static-recompilation dossier, lifter proofs, guest runtime, PanVK loader |
@@ -79,6 +79,7 @@ in several files is what made the documents drift before.
 | --- | --- | --- |
 | Current phase, gate results, `N/440` and other coverage counts, blockers, next tasks | `STATUS.md` §1–§5 | Link to `STATUS.md`; do **not** restate the number |
 | Phase checklists, backlog order, milestone log | `ROADMAP.md` | — |
+| Phase 3/4 design: seam, target layout, slice contents, platform risks | `docs/PLATFORM_PLAN.md` | `ROADMAP.md` holds only the checklist |
 | Struct layouts, offsets, function VAs, evidence IDs | `docs/ARCHITECTURE.md` + `docs/SYMBOL_MAP.json` | Source comments cite the VA; prose docs link |
 | Per-handler behavior notes and safety deviations | `engine/README.md` and the header comment next to the handler | — |
 | Opcode numbers and names | generated `docs/wse_opcodes.json` | Never typed by hand |
