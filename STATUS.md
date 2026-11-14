@@ -11,10 +11,10 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows (Zig clang++) and Linux CI (`clang++ 18.1.3` CMake/CTest) — 12 suites, 72 test functions |
-| Android arm64 gate | **PASS (CI)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all 27 headers standalone + CMake build; on-device runtime tests remain unrun |
+| Host gate | **PASS** on Windows (Zig clang++, 12 suites / 76 test functions) and Linux CI (`clang++ 18.1.3` CMake/CTest) |
+| Android arm64 gate | **PASS (CI on last push)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all headers standalone + CMake build via `CMakeLists.txt` glob; on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **222/440 implemented** |
-| Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` unnamed live handlers `53, 2180, 2749`); **49/1,053 implemented** (`16` control-flow incl. 4 zero-iteration stubs + `33` switch) |
+| Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` unnamed live handlers `53, 2180, 2749`); **161/1,053 implemented** (`16` control-flow incl. 4 zero-iteration stubs + `145` switch across `block_vm.h` and `native_ops.h`) |
 | Module loaders | `scripts.txt`, `triggers.txt`, `simple_triggers.txt` only |
 | World state | In-memory model (`WseWorldState`) exists; nothing loads it from module files yet |
 | Lua 5.1 layer | Not started (hook call sites documented only) |
@@ -24,7 +24,7 @@ documents link here instead of repeating them — see the ownership table in `AG
 
 | Gate | Result | Detail |
 | --- | --- | --- |
-| Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: 12/12 suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `platform`), 27/27 standalone header checks (`windows-gnu` and `linux-musl` arm64) |
+| Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: 12/12 suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `platform`), 28/28 standalone header checks (`x86_64-windows-gnu` and `aarch64-linux-musl`) |
 | Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 27 standalone header checks, 12/12 test suites, `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
 | Android NDK `aarch64-linux-android29` | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all 27 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
@@ -69,13 +69,13 @@ The pure-computation families are finished. Every remaining family needs engine 
 not exist yet (agents, parties, mission, network, UI, Lua), so the count will not move much until
 those containers are reconstructed.
 
-### Native opcodes (`block_vm.h`, `docs/native_opcodes.json`)
+### Native opcodes (`block_vm.h`, `native_ops.h`, `docs/native_opcodes.json`)
 
-Generated from `mbStatement::execute` jump table `0x1401e22f0` (`2,738` slots), `mbStatementBlock` control-flow dispatch (`0–29`), public `header_operations.py` (`1,057` unique IDs in `0–2767`), and live `block_vm.h` scan via `tools/extract_native_opcodes.py` (`docs/NATIVE_OPCODES.md`):
+Generated from `mbStatement::execute` jump table `0x1401e22f0` (`2,738` slots), `mbStatementBlock` control-flow dispatch (`0–29`), public `header_operations.py` (`1,057` unique IDs in `0–2767`), and live `block_vm.h` + `native_ops.h` scan via `tools/extract_native_opcodes.py` (`docs/NATIVE_OPCODES.md`):
 
 - Control flow `0–29` (**16/16 live** implemented): `call_script` 1, `try_end`/`try_begin`/`else_try` 3–5, `try_for_range` 6, `try_for_range_backwards` 7, `break_loop` 8, `continue_loop` 9, `try_for_parties` `0xB` (11), `try_for_agents` `0xC` (12), `try_for_prop_instances` `0x10` (16), `try_for_players` `0x11` (17), `try_for_dict_keys` `0x12` (18), `store_script_param*` 21–23. (`0xB` / `0xC` swapped naming in `block_vm.h` was fixed to match `startLoop` `0x1401f7516`/`0x1401f732e` and `header_operations.py`.) The four entity iterators (`11, 12, 16, 17`) run **zero iterations** until world entity containers are loaded.
 - Switch table `30–2767` (`2,738` slots):
-  - **1,037** live unique `switch_handler` `.text` targets (incl. **3** unnamed live handlers: `53` reading `rglConfig::General::bCheatMode`, `2180` counting main-party prisoner stacks, `2749` agent helper), of which **33** are implemented in `block_vm.h`: comparisons `30–33`, shifts/arithmetic/math/assign `2100–2101`, `2105–2117`, `2119–2131`, `2133`.
+  - **1,037** live unique `switch_handler` `.text` targets (incl. **3** unnamed live handlers: `53` reading `rglConfig::General::bCheatMode`, `2180` counting main-party prisoner stacks, `2749` agent helper), of which **145** are implemented across `block_vm.h` (**33** core: comparisons `30–33`, shifts/arithmetic/math/assign `2100–2101`, `2105–2117`, `2119–2131`, `2133`) and `native_ops.h` (**112** high-demand: `44` `entity_slots` `500–510`, `520–530`, `540–550`, `560–570`; `35` `positions_and_math` `700, 701, 705, 710, 711, 714, 716–731, 734–746`; `8` `arithmetic_registers_and_vars` `2134–2136, 2140–2143, 2149` completing all `37/37` ops in that category; `19` `strings` `2318–2327, 2330, 2335, 2336, 2341–2344, 2350, 2355`; `3` `troops` `1507, 1560, 2173`; `1` `parties` `2204`; `1` `agents` `1704`; `1` `ui_presentations_and_menus` `1106`).
   - **6** shared `noop_true` stubs jumping directly to `0x1401e226b` (`473`, `477`, `1070`, `1104`, `1302`, `1491`).
   - **1,695** `execute_wse_fallback` slots jumping to `0x1401e223e`: **1** SDK-named (`1004` `race_completed_by_player` / `is_vanilla_warband`, returning `false` under WSE2) and **1,694** unassigned holes.
 - Unimplemented native and WSE opcodes return explicit `NativeDispatch::unimplemented` / `WseDispatch::unimplemented` states recorded in `VmContext::unimplementedOpcodeCounts` (as well as `unimplementedCount` / `lastUnimplementedOpcode`). Compatibility mode (`failOnUnimplemented = false`) falls through `true`; strict/2H harness mode (`failOnUnimplemented = true`) fails loudly with an error and aborts execution before `else_try` / `neg` / `this_or_next` / `call_script` can mask the hit (`ROADMAP.md` B6).
@@ -84,49 +84,49 @@ Generated from `mbStatement::execute` jump table `0x1401e22f0` (`2,738` slots), 
 
 Measured on the `3,467,512`-byte retail `Native` `scripts.txt` (**1,755** scripts, **131,080** statements, **653** distinct opcodes; counts only — no module content; `triggers.txt` and `simple_triggers.txt` were absent from that local build output):
 
-- **Covered today:** `86,807` statements (`86,760` implemented native calls, including `221` zero-iteration entity-loop calls; `24` `noop_true`/fallback calls; `23` implemented WSE calls). `212 / 1,755` scripts use zero unimplemented opcodes.
-- **Unimplemented demand:** `44,268` native calls across **596** distinct native opcodes, plus `5` WSE calls across `3` unimplemented opcodes (`3340` `agent_set_action_speed_modifier` ×2, `3341` `agent_get_action_speed_modifier` ×2, `3904` `party_switch_stacks` ×1).
+- **Covered today:** `121,893` statements (**93.0%** — `121,846` implemented native calls, including `221` zero-iteration entity-loop calls; `24` `noop_true`/fallback calls; `23` implemented WSE calls). `685 / 1,755` scripts use zero unimplemented opcodes.
+- **Unimplemented demand:** `9,182` native calls across **504** distinct native opcodes, plus `5` WSE calls across `3` unimplemented opcodes (`3340` `agent_set_action_speed_modifier` ×2, `3341` `agent_get_action_speed_modifier` ×2, `3904` `party_switch_stacks` ×1).
 - **Entity-iterator zero-iteration stubs used:** `try_for_agents` (`12`) ×190 calls in 110 scripts; `try_for_parties` (`11`) ×31 calls in 30 scripts.
 
 | Top K unimplemented native | Unimplemented calls covered | Share of missing native calls | Fully covered scripts |
 | ---: | ---: | ---: | ---: |
-| 10 | 27,747 | 62.68% | 403 |
-| 25 | 32,732 | 73.94% | 537 |
-| 50 | 36,502 | 82.46% | 725 |
-| 100 | 39,954 | 90.25% | 948 |
+| 10 | 2,039 | 22.21% | 724 |
+| 25 | 3,669 | 39.96% | 834 |
+| 50 | 5,334 | 58.09% | 980 |
+| 100 | 7,005 | 76.29% | 1,174 |
 
-Top categories by unimplemented native calls (`scripts.txt`): `entity_slots` (**27,324** across 45 opcodes — **61.7%** of all missing native calls), `strings` (3,144 / 21), `troops` (2,210 / 52), `parties` (2,060 / 86), `agents` (1,915 / 83), `ui_presentations_and_menus` (1,751 / 40), `positions_and_math` (1,580 / 32), `scenes_props_and_mission` (914 / 33), `game_state_and_stores` (859 / 26), `arithmetic_registers_and_vars` (803 / 5).
+Top categories by unimplemented native calls (`scripts.txt`): `parties` (**1,834** across 85 opcodes), `agents` (1,570 / 82), `troops` (1,116 / 49), `ui_presentations_and_menus` (1,027 / 39), `scenes_props_and_mission` (914 / 33), `game_state_and_stores` (859 / 26), `other_native` (743 / 55), `multiplayer_and_players` (415 / 53), `mission_combat_and_teams` (237 / 21), `audio_particles_and_tableau` (148 / 13), `items` (148 / 24), `entity_slots` (82 / 6), `positions_and_math` (40 / 5), `strings` (32 / 6).
 
 <details>
 <summary>Top 25 unimplemented native opcodes in Native scripts.txt (counts only)</summary>
 
 | Rank | Opcode | Name | Category | Calls | Scripts |
 | ---: | ---: | --- | --- | ---: | ---: |
-| 1 | 500 | `troop_set_slot` | `entity_slots` | 10,624 | 296 |
-| 2 | 507 | `item_set_slot` | `entity_slots` | 7,815 | 63 |
-| 3 | 501 | `party_set_slot` | `entity_slots` | 2,347 | 103 |
-| 4 | 2320 | `str_store_string` | `strings` | 1,975 | 227 |
-| 5 | 520 | `troop_get_slot` | `entity_slots` | 1,248 | 397 |
-| 6 | 502 | `faction_set_slot` | `entity_slots` | 829 | 41 |
-| 7 | 540 | `troop_slot_eq` | `entity_slots` | 811 | 263 |
-| 8 | 2136 | `store_random_in_range` | `arithmetic_registers_and_vars` | 771 | 229 |
-| 9 | 1106 | `display_message` | `ui_presentations_and_menus` | 724 | 254 |
-| 10 | 1560 | `troop_set_health` | `troops` | 603 | 18 |
-| 11 | 521 | `party_get_slot` | `entity_slots` | 463 | 170 |
-| 12 | 541 | `party_slot_eq` | `entity_slots` | 459 | 141 |
-| 13 | 2319 | `str_clear` | `strings` | 422 | 90 |
-| 14 | 505 | `agent_set_slot` | `entity_slots` | 395 | 90 |
-| 15 | 729 | `position_set_x` | `positions_and_math` | 392 | 78 |
-| 16 | 730 | `position_set_y` | `positions_and_math` | 362 | 76 |
-| 17 | 1263 | `set_visitor` | `scenes_props_and_mission` | 357 | 16 |
-| 18 | 1704 | `agent_is_human` | `agents` | 345 | 141 |
-| 19 | 2322 | `str_store_troop_name` | `strings` | 321 | 149 |
-| 20 | 525 | `agent_get_slot` | `entity_slots` | 284 | 80 |
-| 21 | 1507 | `troop_is_hero` | `troops` | 274 | 176 |
-| 22 | 1718 | `agent_get_troop_id` | `agents` | 246 | 137 |
-| 23 | 2204 | `store_faction_of_party` | `parties` | 226 | 126 |
-| 24 | 522 | `faction_get_slot` | `entity_slots` | 222 | 96 |
-| 25 | 2173 | `store_troop_faction` | `troops` | 217 | 116 |
+| 1 | 1263 | `set_visitor` | `scenes_props_and_mission` | 357 | 16 |
+| 2 | 1718 | `agent_get_troop_id` | `agents` | 246 | 137 |
+| 3 | 1521 | `troop_raise_skill` | `troops` | 215 | 20 |
+| 4 | 1702 | `agent_is_alive` | `agents` | 204 | 120 |
+| 5 | 1652 | `party_stack_get_troop_id` | `parties` | 194 | 109 |
+| 6 | 926 | `overlay_set_position` | `ui_presentations_and_menus` | 194 | 41 |
+| 7 | 132 | `party_is_active` | `parties` | 182 | 98 |
+| 8 | 1650 | `party_get_num_companion_stacks` | `parties` | 150 | 94 |
+| 9 | 1770 | `agent_get_team` | `agents` | 149 | 72 |
+| 10 | 1942 | `mission_tpl_entry_add_override_item` | `other_native` | 148 | 5 |
+| 11 | 921 | `overlay_set_color` | `ui_presentations_and_menus` | 137 | 27 |
+| 12 | 1710 | `agent_get_position` | `agents` | 134 | 71 |
+| 13 | 925 | `overlay_set_size` | `ui_presentations_and_menus` | 131 | 40 |
+| 14 | 1530 | `troop_add_item` | `troops` | 131 | 22 |
+| 15 | 1706 | `agent_is_ally` | `agents` | 122 | 58 |
+| 16 | 110 | `main_party_has_troop` | `parties` | 116 | 64 |
+| 17 | 2281 | `store_distance_to_party_from_party` | `parties` | 114 | 56 |
+| 18 | 2190 | `store_relation` | `game_state_and_stores` | 103 | 60 |
+| 19 | 1541 | `troop_get_inventory_slot` | `troops` | 100 | 71 |
+| 20 | 1720 | `store_agent_hit_points` | `game_state_and_stores` | 99 | 48 |
+| 21 | 947 | `overlay_set_display` | `ui_presentations_and_menus` | 96 | 5 |
+| 22 | 395 | `multiplayer_send_int_to_player` | `multiplayer_and_players` | 89 | 6 |
+| 23 | 2171 | `store_character_level` | `game_state_and_stores` | 86 | 55 |
+| 24 | 2170 | `store_skill_level` | `game_state_and_stores` | 86 | 50 |
+| 25 | 1523 | `troop_raise_proficiency_linear` | `troops` | 86 | 19 |
 
 </details>
 
@@ -144,9 +144,9 @@ Top categories by unimplemented native calls (`scripts.txt`): `entity_slots` (**
 | `wse_dict_test.cpp` | 1 |
 | `wse_array_test.cpp` | 1 |
 | `wse_world_test.cpp` | 3 |
-| `block_vm_test.cpp` | 10 |
+| `block_vm_test.cpp` | 14 |
 | `platform_test.cpp` | 6 |
-| **Total (12 suites)** | **72** |
+| **Total (12 suites)** | **76** |
 
 ## 4. Blocked
 
@@ -157,10 +157,7 @@ Top categories by unimplemented native calls (`scripts.txt`): `entity_slots` (**
 
 ## 5. Next concrete tasks (ordered)
 
-1. **Demand-driven native opcodes & world loaders:** reconstruct the `entity_slots` (`500–599`) and
-   top `strings` (`2319–2322`) / `store_random_in_range` (`2136`) / `position_set_{x,y}` (`729–730`)
-   handlers along with `troops.txt`/`item_kinds1.txt`/`factions.txt`/`parties.txt`/`strings.txt`
-   loaders feeding `WseWorldState` (unlocking >62% of unimplemented calls in `scripts.txt`).
+1. **World loaders & remaining top native families:** the 112 high-demand native opcodes (`entity_slots` `500–510`/`520–530`/`540–550`/`560–570`, `positions_and_math`, `arithmetic_registers_and_vars`, `strings`, plus `1106`, `1507`, `1560`, `1704`, `2173`, `2204`) are now implemented in `wse/vm/native_ops.h`, raising `Native` `scripts.txt` statement coverage from `66.2%` to `93.0%` (`685 / 1,755` zero-unimplemented scripts). Next, implement the `troops.txt`/`item_kinds1.txt`/`factions.txt`/`parties.txt`/`strings.txt` module loaders feeding `WseWorldState`, then continue `parties`, `agents`, and `troops` native opcodes in demand order.
 2. Continue remaining `executeWSE` handlers and entity containers (`agent`, `party`, `mission`) in
    demand order rather than numeric order.
 
@@ -187,15 +184,15 @@ None open — the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vtables_
 | PDB parse (MSF 7.0/TPI/DBI) | PASS | 156,846 TPI records, 15,363 sized layouts |
 | PDB symbol map | PASS | 48,658 symbols with VAs (`globals_new.json`) |
 | Vtable scan | PASS | `tools/vtables.py`: 279 pointer runs `>= 4`; 207 class-identified; 73 `rgl*`/`mb*`/`WSE*` (byte-identical to `vtables_new.json`) |
-| Citation check (B7) | PASS | `tools/check_citations.py --self-test` validates every `0x14…` address and rejects superseded `ev_*` / synthetic addresses across all 27 headers under `engine/include/` (validated in CI and against `v1155/` PDB/globals/PE ranges) |
-| Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (58 classes, 2,909 symbols, 76 vtables, 4,152 function ranges, 18 global objects, 2,503 curated superseded VAs), v1.1.5.5 target |
+| Citation check (B7) | PASS | `tools/check_citations.py --self-test` validates every `0x14…` address and rejects superseded `ev_*` / synthetic addresses across all 28 headers (`499` VA refs / `320` unique VAs) under `engine/include/` (validated against committed maps and `v1155/` PDB/globals/PE ranges) |
+| Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (58 classes, 2,914 symbols, 76 vtables, 4,157 function ranges, 18 global objects, 2,508 curated superseded VAs), v1.1.5.5 target |
 | v1.1.5.5 REA VM/stream batches | PASS | 75 procedures across 9 `decompile_all` exports (`stmt_core` `ev_3ebcea85…` 4/4, `stmt_block` `ev_ffc38aa5…` 10/10, `script` `ev_8d37a0c8…` 4/4, `simple_trigger` `ev_3157906d…` 12/12, `trigger` `ev_f62843ac…` 12/12, `game_scripts` `ev_fc9bd1a4…` 4/4, `game_triggers` `ev_052f2d86…` 2/2, `streams_bin` `ev_8cc48986…` 9/9, `streams_txt` `ev_1e3c2566…` 18/18), plus `read_bytes`/`0x140615ad0` (`ev_f09662c6…`/`ev_2ddf7a62…`) and 6 single-procedure exports |
 | Superseded 2026-10-14 REA runs | PASS (superseded) | Historical 2026-10-14 entries kept for provenance only: `ev_7cd99ccc…157d7a` (`mbScript` 5), `ev_8d91b175…99b11` (`mbStatement` 14), `ev_25469ff4…84af8` (3), `ev_e3530f99…e8d05` (`Trigger` 52), `ev_cebc7ae0…e8c8d3` (`rglTextStream` 18), `ev_24eecfa4…f18c0b6` (`rglBinaryStream` 9), `ev_130d8023…2c62e6` (2) |
 | Binary savegame format | PASS | `rglBinaryStream` raw little-endian 8/4/1-byte values; strings are `int32` length + bytes; no header or checksum |
 | Module stream identification | PASS | `0x1405651e0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x1405653e0` = `rglOutputTextFileStream` writers; module files are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
 | Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse_bitwise_fp tests: PASS`, `wse_system tests: PASS`, `wse_string tests: PASS`, `wse_dict tests: PASS`, `wse_array tests: PASS`, `wse_world tests: PASS`, `block_vm tests: PASS`, `platform tests: PASS`, `engine host tests: PASS` (Zig clang++ `-std=c++20 -O2 -Wall -Wextra -Werror`) |
-| Statement-block VM & trigger/script bridge | PASS | `engine/include/wse/vm/block_vm.h` reconstructed and host-tested (`analyze`, `execute`, `startLoop`/`endLoop`/`canLoop`, `try_for_dict_keys` `0x12`, core native ops `30–33`/`2100–2133`, `call_script` up to depth 255, `store_script_param*`, `this_or_next`/`neg`, script & trigger execution) |
+| Statement-block VM & trigger/script bridge | PASS | `engine/include/wse/vm/block_vm.h` + `native_ops.h` reconstructed and host-tested (`analyze`, `execute`, `startLoop`/`endLoop`/`canLoop`, `try_for_dict_keys` `0x12`, `16` control-flow + `145` switch native ops across `entity_slots`/`positions_and_math`/`arithmetic`/`strings`/world ops, `call_script` up to depth 255, `store_script_param*`, `this_or_next`/`neg`, script & trigger execution) |
 | Game-world runtime state | PASS | `engine/include/wse/game/world_state.h` models PDB-verified entity/slot, troop, skill, item/mesh, mission, config, and edit-mode containers (`WseWorldState` wired into `VmContext::world` and `WseVmState::world`) |
 | WSE extended opcode map | PASS | v1.1.5.5 `executeWSE` (`0x1401e4dc0`) pseudocode `ev_2aaa96a8…5cf0f9`: 440/440 in-range operations 2800–5202 (431 switch + 9 equality), no unknown or unhandled opcode; 8,844-line dump |
 | Retail `scripts.txt` parse | PASS | Full 3,467,512-byte sample: 1,755 scripts, every token consumed, 52 of the 64 then-known names (the rest are WSE-only scripts absent from that module); v1.1.5.5 adds a 65th name |

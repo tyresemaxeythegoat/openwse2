@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h`, including `NativeDispatch`/`failOnUnimplemented`, `try_for_dict_keys`, and `array_sort_custom` callback), world/entity/skill/item/edit-mode runtime state (`wse/game/world_state.h`), pure STL helpers (`wse/core/{math,encoding,json}.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the per-family handler headers under `wse/vm/ops/` listed in `STATUS.md` §3 recovered.
+Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h` + extended native dispatcher `native_ops.h`, including `NativeDispatch`/`failOnUnimplemented`, `try_for_dict_keys`, and `array_sort_custom` callback), world/entity/skill/item/edit-mode runtime state (`wse/game/world_state.h`), pure STL helpers (`wse/core/{math,encoding,json}.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the per-family handler headers under `wse/vm/ops/` listed in `STATUS.md` §3 recovered.
 Last updated: 2026-11-14.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -773,7 +773,7 @@ Dispatch order:
   - All other opcodes `<= 0x14` route to `startLoop`.
   - Opcodes `>= 0x1E` go to `mbStatement::execute`.
 
-Verified supporting layouts added to `docs/SYMBOL_MAP.json` (58 classes, 2,909 symbols, 76 vtables, 4,152 function ranges):
+Verified supporting layouts added to `docs/SYMBOL_MAP.json` (58 classes, 2,914 symbols, 76 vtables, 4,157 function ranges):
 
 - `mbBasicGame` (221,616 B, type `0xadd3`): `m_globalVariables` (`mbSlots`) at `+0x258`,
   `m_registers` (`__int64[128]`) at `+0x270` (`0x140662c30`). Operand tag `1`, `store_lvalue`,
@@ -789,10 +789,12 @@ Verified supporting layouts added to `docs/SYMBOL_MAP.json` (58 classes, 2,909 s
   `mu::Parser` (376 B, type `0x1a146`), `mu::ParserBase` (376 B, type `0x1a181`), and
   `WSEProfiling` (66,072 B, type `0xaf0a`).
 
-Portable reconstruction lives in `engine/include/wse/vm/block_vm.h`: `VmContext`,
+Portable reconstruction lives in `engine/include/wse/vm/block_vm.h` and `engine/include/wse/vm/native_ops.h`: `VmContext`,
 `analyze_statement_block`, `execute_statement`, `execute_statement_block` (`DepthGuard` tracking `currentDepth` + `wse_invoke_script_callback`), loop helpers
 (`start_loop`/`can_loop`/`end_loop` including `core_op::kTryForDictKeys` `0x12`), core native
-comparisons/shifts/math/fixed-point ops (`30–33`, `2100–2133`), `call_script`,
+comparisons/shifts/math/fixed-point ops (`30–33`, `2100–2133`), 112 high-demand native handlers
+(`entity_slots`, `positions_and_math`, `arithmetic_registers_and_vars`, `strings`, and entity ops in
+`native_ops.h`), `call_script`,
 `store_script_param*`, `this_or_next`/`neg`, `dispatch_wse_statement` (forwarding `outTag` for
 string operands and wiring `WseVmState` position, timer, RNG, profiler, object-manager, and script-callback state),
 and VM-backed `execute_script`, `execute_mapped_script`, `execute_trigger`,
@@ -859,7 +861,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    types across `15,363` TPI records), generated cleanly with `tools/vtables.py`.
 8. ~~Handler-site addresses cited only in `engine/include` source comments~~ **Resolved (B7):**
    `tools/build_symbol_map.py` exports `function_ranges`, `global_objects`, and `superseded_vas`,
-   and `tools/check_citations.py` verifies all `288` unique header VAs (plus REA `ev_*` IDs) in CI.
+   and `tools/check_citations.py` verifies all `320` unique header VAs across `28` headers (plus REA `ev_*` IDs) in CI.
 
 ## 9. Evidence index
 

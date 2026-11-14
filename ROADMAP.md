@@ -64,7 +64,12 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [x] Operand tags, decode, and lvalue write-back (`wse/vm/operand.h`, `slots.h`)
 - [x] Statement record and reader (`wse/vm/statement.h`)
 - [x] `analyze` / `execute` / loop frames / `call_script` recursion (`wse/vm/block_vm.h`)
-- [~] Native opcodes: comparisons and integer/fixed-point math only
+- [~] Native opcodes: `161/1,053` implemented across `wse/vm/block_vm.h` and `wse/vm/native_ops.h`
+      (control flow, comparisons, integer/fixed-point/trig/RNG math, `entity_slots`
+      `500–510`/`520–530`/`540–550`/`560–570`, `positions_and_math` `700–746`, `strings`
+      `2318–2355`, `display_message` `1106`, `troop_is_hero` `1507`, `troop_set_health` `1560`,
+      `agent_is_human` `1704`, `store_troop_gold` `2149`, `store_troop_faction` `2173`,
+      `store_faction_of_party` `2204`)
 - [x] Native opcode map generated from the `0x1401e22f0` jump table (**B2**, `docs/native_opcodes.json`)
 - [ ] Entity iterators (`try_for_agents`, `try_for_parties`, `try_for_prop_instances`,
       `try_for_players`) — currently iterate zero times
@@ -92,7 +97,10 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
       the statement/operation hooks
 
 **2G. Core RGL value types**
-- [~] Transform / vector math (moved into `wse/core/math.h`; vector ops `4100/4102–4104` in `wse/vm/ops/position.h`)
+- [~] Transform / vector math (`WseVec2` length/`get_angle`, `WseVec4`, and `WseTransform`
+      local/global rotations and parent/local transforms in `wse/core/math.h`; 35 native position
+      ops `700–746` in `wse/vm/native_ops.h`; WSE vector ops `4100/4102–4104` in
+      `wse/vm/ops/position.h`)
 - [ ] `rglString` semantics as a shared type; `.brf` mesh and texture loaders
 
 **2H. Phase exit: headless `Native` run**
@@ -151,6 +159,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-14 | `025b06f` | Phase 2 Milestone 1: reconstruct `112` high-demand native Warband opcodes (`161/1,053` live native handlers across `block_vm.h` + `native_ops.h`), raising `Native` `scripts.txt` coverage from `66.2%` to `93.0%` (`685/1,755` zero-unimplemented scripts) |
 | 2026-11-14 | `4bd4066` | `tools/vtables.py` + `tools/check_citations.py --self-test` in CI + `SYMBOL_MAP.json` expansion (`B7`); non-`noexcept` `execute_wse*`, ASCII `"C"`-locale char helpers, and `WseVmState::sleep_ms_fn` hook (`B8`) |
 | 2026-11-14 | `4092c7c` | Phase 3/4 planned as platform slices P0–P9 (`docs/PLATFORM_PLAN.md`: SDL3, Vulkan with user-supplied PanVK/Turnip); platform seam `wse/platform/{vfs,clock,log}.h` + `platform` suite (`cc69cfa`, P1 first part; PR `#2`) |
 | 2026-11-14 | `8131b16` | `NativeDispatch`, per-opcode unimplemented histogram (`unimplementedOpcodeCounts`), and strict `failOnUnimplemented` abort mode (`B6`) |
