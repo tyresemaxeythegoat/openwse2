@@ -13,7 +13,7 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | Metric | Value |
 | --- | ---: |
 | Handler opcodes | 440 |
-| Implemented in VM headers | 236/440 |
+| Implemented in VM headers | 440/440 |
 | Opcode range | 2800–5202 |
 | Switch-block handlers | 431 |
 | Equality-test handlers | 9 |
@@ -25,29 +25,29 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | Block | Family | Done | Remaining examples |
 | ---: | --- | ---: | --- |
 | 2800 | shifts / xor / not | 10/10 | — |
-| 2900 | player | 0/10 | `player_set_skin`, `player_stop_controlling_agent` |
-| 3000 | registers, script context, slots, timers, misc | 36/46 | `set_forced_lod`, `send_message_to_url_advanced` |
-| 3100 | input keys | 0/3 | `game_key_get_key`, `key_released` |
+| 2900 | player | 10/10 | — |
+| 3000 | registers, script context, slots, timers, misc | 46/46 | — |
+| 3100 | input keys | 3/3 | — |
 | 3200 | dictionaries | 23/23 | — |
-| 3300 | agent | 2/61 | `agent_get_item_modifier`, `agent_get_item_slot_modifier` |
-| 3400 | multiplayer messaging | 0/17 | `multiplayer_send_chat_message_to_player`, `multiplayer_send_composite_message_to_player` |
-| 3500 | server admin | 0/21 | `server_set_password_admin`, `server_set_password_private` |
-| 3600 | mission / props / particles | 6/26 | `set_ally_collision_threshold`, `particle_system_remove` |
+| 3300 | agent | 61/61 | — |
+| 3400 | multiplayer messaging | 17/17 | — |
+| 3500 | server admin | 21/21 | — |
+| 3600 | mission / props / particles | 26/26 | — |
 | 3700 | troop | 10/10 | — |
 | 3800 | item / cur_item | 14/14 | — |
 | 3900 | party | 12/12 | — |
-| 4100 | position vectors | 4/5 | `position_align_to_ground` |
-| 4200 | strings | 41/47 | `str_store_multiplayer_profile_name`, `str_store_server_password_admin` |
+| 4100 | position vectors | 5/5 | — |
+| 4200 | strings | 47/47 | — |
 | 4300 | options | 6/6 | — |
 | 4400 | floating point | 39/39 | — |
-| 4500 | scene | 0/23 | `scene_set_flags`, `scene_set_water_level` |
+| 4500 | scene | 23/23 | — |
 | 4600 | edit mode | 10/10 | — |
-| 4700 | reload / material | 0/4 | `update_material`, `reload_item_kinds` |
-| 4800 | menus | 0/4 | `menu_create_new`, `menu_add_item` |
-| 4900 | overlays / presentations | 0/8 | `overlay_get_val`, `presentation_activate` |
+| 4700 | reload / material | 4/4 | — |
+| 4800 | menus | 4/4 | — |
+| 4900 | overlays / presentations | 8/8 | — |
 | 5000 | dynamic arrays | 23/23 | — |
-| 5100 | Lua bridge | 0/15 | `lua_get_top`, `lua_set_top` |
-| 5200 | skins / skeletons | 0/3 | `skin_set_blood_color`, `skeleton_model_set_bone_body_section` |
+| 5100 | Lua bridge | 15/15 | — |
+| 5200 | skins / skeletons | 3/3 | — |
 
 ## Switch blocks
 
@@ -77,16 +77,16 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 2807 | `0xaf7` | `store_xor` | yes | switch | 659 |  |  |
 | 2808 | `0xaf8` | `val_not` | yes | switch | 662 |  |  |
 | 2809 | `0xaf9` | `store_not` | yes | switch | 665 |  |  |
-| 2900 | `0xb54` | `player_set_skin` | no | switch | 670 |  |  |
-| 2901 | `0xb55` | `player_stop_controlling_agent` | no | switch | 707 |  |  |
-| 2902 | `0xb56` | `player_set_banner_id` | no | switch | 752 |  |  |
-| 2903 | `0xb57` | `player_set_username` | no | switch | 759 |  |  |
-| 2904 | `0xb58` | `player_temp_ban` | no | switch | 779 |  |  |
-| 2905 | `0xb59` | `player_get_wse2_version` | no | switch | 804 |  |  |
-| 2906 | `0xb5a` | `player_get_party_id` | no | switch | 812 |  |  |
-| 2907 | `0xb5b` | `player_set_party_id` | no | switch | 820 |  |  |
-| 2908 | `0xb5c` | `player_get_anticheat_stat` | no | switch | 835 |  |  |
-| 2909 | `0xb5d` | `player_anticheat_report` | no | switch | 843 |  |  |
+| 2900 | `0xb54` | `player_set_skin` | yes | switch | 670 |  |  |
+| 2901 | `0xb55` | `player_stop_controlling_agent` | yes | switch | 707 |  |  |
+| 2902 | `0xb56` | `player_set_banner_id` | yes | switch | 752 |  |  |
+| 2903 | `0xb57` | `player_set_username` | yes | switch | 759 |  |  |
+| 2904 | `0xb58` | `player_temp_ban` | yes | switch | 779 |  |  |
+| 2905 | `0xb59` | `player_get_wse2_version` | yes | switch | 804 |  |  |
+| 2906 | `0xb5a` | `player_get_party_id` | yes | switch | 812 |  |  |
+| 2907 | `0xb5b` | `player_set_party_id` | yes | switch | 820 |  |  |
+| 2908 | `0xb5c` | `player_get_anticheat_stat` | yes | switch | 835 |  |  |
+| 2909 | `0xb5d` | `player_anticheat_report` | yes | switch | 843 |  |  |
 | 3000 | `0xbb8` | `register_get` | yes | if-equality | 628 |  |  |
 | 3001 | `0xbb9` | `register_set` | yes | switch | 870 |  |  |
 | 3002 | `0xbba` | `store_wse_version` | yes | switch | 877 |  |  |
@@ -105,37 +105,37 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 3015 | `0xbc7` | `return_values` | yes | switch | 1032 |  |  |
 | 3016 | `0xbc8` | `store_num_return_values` | yes | switch | 1049 |  |  |
 | 3017 | `0xbc9` | `store_return_value` | yes | switch | 1052 |  |  |
-| 3018 | `0xbca` | `set_forced_lod` | no | switch | 1065 |  |  |
-| 3019 | `0xbcb` | `send_message_to_url_advanced` | no | switch | 1076 |  |  |
+| 3018 | `0xbca` | `set_forced_lod` | yes | switch | 1065 |  |  |
+| 3019 | `0xbcb` | `send_message_to_url_advanced` | yes | switch | 1076 |  |  |
 | 3020 | `0xbcc` | `mtsrand` | yes | switch | 1119 |  |  |
 | 3021 | `0xbcd` | `mtrand` | yes | switch | 1125 |  |  |
 | 3022 | `0xbce` | `get_time` | yes | switch | 1132 |  |  |
-| 3023 | `0xbcf` | `order_flag_is_active` | no | switch | 1143 |  |  |
-| 3024 | `0xbd0` | `play_bink_file` | no | switch | 1150 |  |  |
-| 3025 | `0xbd1` | `process_advanced_url_messages` | no | switch | 1185 |  |  |
+| 3023 | `0xbcf` | `order_flag_is_active` | yes | switch | 1143 |  |  |
+| 3024 | `0xbd0` | `play_bink_file` | yes | switch | 1150 |  |  |
+| 3025 | `0xbd1` | `process_advanced_url_messages` | yes | switch | 1185 |  |  |
 | 3026 | `0xbd2` | `sleep_ms` | yes | switch | 1188 |  |  |
 | 3027 | `0xbd3` | `timer_reset` | yes | switch | 1194 |  |  |
 | 3028 | `0xbd4` | `timer_get_elapsed_time` | yes | switch | 1207 |  |  |
-| 3029 | `0xbd5` | `shell_open_url` | no | switch | 1219 |  |  |
+| 3029 | `0xbd5` | `shell_open_url` | yes | switch | 1219 |  |  |
 | 3030 | `0xbd6` | `set_main_party` | yes | switch | 1284 |  |  |
 | 3031 | `0xbd7` | `get_main_party` | yes | switch | 1291 |  |  |
-| 3032 | `0xbd8` | `make_screenshot` | no | switch | 1294 |  |  |
-| 3033 | `0xbd9` | `send_post_message_to_url_advanced` | no | switch | 1338 |  |  |
+| 3032 | `0xbd8` | `make_screenshot` | yes | switch | 1294 |  |  |
+| 3033 | `0xbd9` | `send_post_message_to_url_advanced` | yes | switch | 1338 |  |  |
 | 3034 | `0xbda` | `set_random_seed` | yes | switch | 1393 |  |  |
 | 3035 | `0xbdb` | `store_application_time` | yes | switch | 1396 |  |  |
 | 3036 | `0xbdc` | `is_party_skill` | yes | switch | 1403 |  |  |
 | 3037 | `0xbdd` | `get_campaign_time` | yes | switch | 1409 |  |  |
 | 3038 | `0xbde` | `set_campaign_time` | yes | switch | 1412 |  |  |
-| 3039 | `0xbdf` | `get_mouse_map_coordinates` | no | switch | 1433 |  |  |
+| 3039 | `0xbdf` | `get_mouse_map_coordinates` | yes | switch | 1433 |  |  |
 | 3040 | `0xbe0` | `profiler_start` | yes | switch | 1541 |  |  |
 | 3041 | `0xbe1` | `profiler_stop` | yes | switch | 1544 |  |  |
 | 3042 | `0xbe2` | `profiler_is_recording` | yes | switch | 1547 |  |  |
 | 3043 | `0xbe3` | `profiler_mark` | yes | switch | 1549 |  |  |
-| 3044 | `0xbe4` | `conversation_screen_auto_update_choice` | no | switch | 1562 |  |  |
+| 3044 | `0xbe4` | `conversation_screen_auto_update_choice` | yes | switch | 1562 |  |  |
 | 3045 | `0xbe5` | `show_hud` | yes | switch | 1571 |  |  |
-| 3100 | `0xc1c` | `game_key_get_key` | no | switch | 1576 |  |  |
-| 3101 | `0xc1d` | `key_released` | no | switch | 1595 |  |  |
-| 3102 | `0xc1e` | `game_key_released` | no | switch | 1611 |  |  |
+| 3100 | `0xc1c` | `game_key_get_key` | yes | switch | 1576 |  |  |
+| 3101 | `0xc1d` | `key_released` | yes | switch | 1595 |  |  |
+| 3102 | `0xc1e` | `game_key_released` | yes | switch | 1611 |  |  |
 | 3200 | `0xc80` | `dict_create` | yes | switch | 1624 |  |  |
 | 3201 | `0xc81` | `dict_free` | yes | switch | 1632 |  |  |
 | 3202 | `0xc82` | `dict_load_file` | yes | switch | 1640 |  |  |
@@ -159,131 +159,131 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 3220 | `0xc94` | `dict_to_url_encoded_json` | yes | switch | 2134 |  |  |
 | 3221 | `0xc95` | `dict_erase` | yes | switch | 2147 |  |  |
 | 3222 | `0xc96` | `dict_delete_file_json` | yes | switch | 2161 |  |  |
-| 3300 | `0xce4` | `agent_get_item_modifier` | no | if-equality | 616 |  |  |
-| 3301 | `0xce5` | `agent_get_item_slot_modifier` | no | switch | 2187 |  |  |
-| 3302 | `0xce6` | `agent_get_animation_progress` | no | switch | 2201 |  |  |
-| 3303 | `0xce7` | `agent_get_dna` | no | switch | 2214 |  |  |
-| 3304 | `0xce8` | `agent_get_ground_scene_prop` | no | switch | 2222 |  |  |
-| 3305 | `0xce9` | `agent_set_item_slot_ammo` | no | switch | 2248 |  |  |
-| 3306 | `0xcea` | `agent_get_item_slot_hit_points` | no | switch | 2261 |  |  |
-| 3307 | `0xceb` | `agent_set_item_slot_hit_points` | no | switch | 2275 |  |  |
-| 3308 | `0xcec` | `agent_get_wielded_item_slot_no` | no | switch | 2288 |  |  |
-| 3309 | `0xced` | `agent_get_scale` | no | switch | 2301 |  |  |
-| 3310 | `0xcee` | `agent_set_forced_lod` | no | switch | 2310 |  |  |
-| 3311 | `0xcef` | `agent_get_item_slot_flags` | no | switch | 2328 |  |  |
-| 3312 | `0xcf0` | `agent_ai_get_move_target_position` | no | switch | 2341 |  |  |
-| 3313 | `0xcf1` | `agent_set_horse` | no | switch | 2371 |  |  |
-| 3314 | `0xcf2` | `agent_ai_set_simple_behavior` | no | switch | 2399 |  |  |
-| 3315 | `0xcf3` | `agent_accelerate` | no | switch | 2417 |  |  |
-| 3316 | `0xcf4` | `agent_set_item_slot_modifier` | no | switch | 2435 |  |  |
-| 3317 | `0xcf5` | `agent_body_meta_mesh_set_vertex_keys_time_point` | no | switch | 2456 |  |  |
-| 3318 | `0xcf6` | `agent_body_meta_mesh_set_visibility` | no | switch | 2474 |  |  |
-| 3319 | `0xcf7` | `agent_set_personal_animation` | no | switch | 2495 |  |  |
-| 3320 | `0xcf8` | `agent_get_personal_animation` | no | switch | 2553 |  |  |
-| 3321 | `0xcf9` | `agent_set_default_animations` | no | switch | 2572 |  |  |
-| 3322 | `0xcfa` | `agent_cancel_current_animation` | no | switch | 2596 |  |  |
-| 3323 | `0xcfb` | `agent_get_ranged_damage_modifier` | no | switch | 2610 |  |  |
-| 3324 | `0xcfc` | `agent_add_stun` | no | switch | 2619 |  |  |
-| 3325 | `0xcfd` | `agent_body_meta_mesh_deform_in_range` | no | switch | 2630 |  |  |
-| 3326 | `0xcfe` | `agent_body_meta_mesh_deform_in_cycle_loop` | no | switch | 2649 |  |  |
-| 3327 | `0xcff` | `agent_body_meta_mesh_get_current_deform_progress` | no | switch | 2668 |  |  |
-| 3328 | `0xd00` | `agent_body_meta_mesh_get_current_deform_frame` | no | switch | 2688 |  |  |
-| 3329 | `0xd01` | `agent_set_footstep_sound` | no | switch | 2705 |  |  |
-| 3330 | `0xd02` | `agent_get_horse_rotation_velocity` | no | switch | 2720 |  |  |
-| 3331 | `0xd03` | `agent_get_current_vertical_speed` | no | switch | 2728 |  |  |
-| 3332 | `0xd04` | `agent_set_current_vertical_speed` | no | switch | 2736 |  |  |
-| 3333 | `0xd05` | `agent_get_position_in_group` | no | switch | 2757 |  |  |
-| 3334 | `0xd06` | `agent_get_current_ai_mesh_face_group` | no | switch | 2770 |  |  |
-| 3335 | `0xd07` | `agent_set_time_speed_multiplier` | no | switch | 2783 |  |  |
-| 3336 | `0xd08` | `agent_get_time_speed_multiplier` | no | switch | 2792 |  |  |
-| 3337 | `0xd09` | `agent_kick` | no | switch | 2800 |  |  |
-| 3338 | `0xd0a` | `agent_set_dropped_items_prune_time` | no | switch | 2841 |  |  |
-| 3339 | `0xd0b` | `agent_set_missile_items_prune_time` | no | switch | 2852 |  |  |
+| 3300 | `0xce4` | `agent_get_item_modifier` | yes | if-equality | 616 |  |  |
+| 3301 | `0xce5` | `agent_get_item_slot_modifier` | yes | switch | 2187 |  |  |
+| 3302 | `0xce6` | `agent_get_animation_progress` | yes | switch | 2201 |  |  |
+| 3303 | `0xce7` | `agent_get_dna` | yes | switch | 2214 |  |  |
+| 3304 | `0xce8` | `agent_get_ground_scene_prop` | yes | switch | 2222 |  |  |
+| 3305 | `0xce9` | `agent_set_item_slot_ammo` | yes | switch | 2248 |  |  |
+| 3306 | `0xcea` | `agent_get_item_slot_hit_points` | yes | switch | 2261 |  |  |
+| 3307 | `0xceb` | `agent_set_item_slot_hit_points` | yes | switch | 2275 |  |  |
+| 3308 | `0xcec` | `agent_get_wielded_item_slot_no` | yes | switch | 2288 |  |  |
+| 3309 | `0xced` | `agent_get_scale` | yes | switch | 2301 |  |  |
+| 3310 | `0xcee` | `agent_set_forced_lod` | yes | switch | 2310 |  |  |
+| 3311 | `0xcef` | `agent_get_item_slot_flags` | yes | switch | 2328 |  |  |
+| 3312 | `0xcf0` | `agent_ai_get_move_target_position` | yes | switch | 2341 |  |  |
+| 3313 | `0xcf1` | `agent_set_horse` | yes | switch | 2371 |  |  |
+| 3314 | `0xcf2` | `agent_ai_set_simple_behavior` | yes | switch | 2399 |  |  |
+| 3315 | `0xcf3` | `agent_accelerate` | yes | switch | 2417 |  |  |
+| 3316 | `0xcf4` | `agent_set_item_slot_modifier` | yes | switch | 2435 |  |  |
+| 3317 | `0xcf5` | `agent_body_meta_mesh_set_vertex_keys_time_point` | yes | switch | 2456 |  |  |
+| 3318 | `0xcf6` | `agent_body_meta_mesh_set_visibility` | yes | switch | 2474 |  |  |
+| 3319 | `0xcf7` | `agent_set_personal_animation` | yes | switch | 2495 |  |  |
+| 3320 | `0xcf8` | `agent_get_personal_animation` | yes | switch | 2553 |  |  |
+| 3321 | `0xcf9` | `agent_set_default_animations` | yes | switch | 2572 |  |  |
+| 3322 | `0xcfa` | `agent_cancel_current_animation` | yes | switch | 2596 |  |  |
+| 3323 | `0xcfb` | `agent_get_ranged_damage_modifier` | yes | switch | 2610 |  |  |
+| 3324 | `0xcfc` | `agent_add_stun` | yes | switch | 2619 |  |  |
+| 3325 | `0xcfd` | `agent_body_meta_mesh_deform_in_range` | yes | switch | 2630 |  |  |
+| 3326 | `0xcfe` | `agent_body_meta_mesh_deform_in_cycle_loop` | yes | switch | 2649 |  |  |
+| 3327 | `0xcff` | `agent_body_meta_mesh_get_current_deform_progress` | yes | switch | 2668 |  |  |
+| 3328 | `0xd00` | `agent_body_meta_mesh_get_current_deform_frame` | yes | switch | 2688 |  |  |
+| 3329 | `0xd01` | `agent_set_footstep_sound` | yes | switch | 2705 |  |  |
+| 3330 | `0xd02` | `agent_get_horse_rotation_velocity` | yes | switch | 2720 |  |  |
+| 3331 | `0xd03` | `agent_get_current_vertical_speed` | yes | switch | 2728 |  |  |
+| 3332 | `0xd04` | `agent_set_current_vertical_speed` | yes | switch | 2736 |  |  |
+| 3333 | `0xd05` | `agent_get_position_in_group` | yes | switch | 2757 |  |  |
+| 3334 | `0xd06` | `agent_get_current_ai_mesh_face_group` | yes | switch | 2770 |  |  |
+| 3335 | `0xd07` | `agent_set_time_speed_multiplier` | yes | switch | 2783 |  |  |
+| 3336 | `0xd08` | `agent_get_time_speed_multiplier` | yes | switch | 2792 |  |  |
+| 3337 | `0xd09` | `agent_kick` | yes | switch | 2800 |  |  |
+| 3338 | `0xd0a` | `agent_set_dropped_items_prune_time` | yes | switch | 2841 |  |  |
+| 3339 | `0xd0b` | `agent_set_missile_items_prune_time` | yes | switch | 2852 |  |  |
 | 3340 | `0xd0c` | `agent_set_action_speed_modifier` | yes | switch | 2863 |  |  |
 | 3341 | `0xd0d` | `agent_get_action_speed_modifier` | yes | switch | 2876 |  |  |
-| 3342 | `0xd0e` | `agent_set_left_hand_weapon_collision` | no | switch | 2884 |  |  |
-| 3343 | `0xd0f` | `agent_ai_set_can_weapon_switch` | no | switch | 2893 |  |  |
-| 3344 | `0xd10` | `agent_ai_set_can_fight` | no | switch | 2902 |  |  |
-| 3345 | `0xd11` | `agent_fade_out_advanced` | no | switch | 2911 |  |  |
-| 3346 | `0xd12` | `agent_fade_in_advanced` | no | switch | 2930 |  |  |
-| 3347 | `0xd13` | `agent_set_voice_sound` | no | switch | 2949 |  |  |
-| 3348 | `0xd14` | `agent_set_enable_tilt` | no | switch | 2964 |  |  |
-| 3349 | `0xd15` | `agent_set_rider_rotation_angles` | no | switch | 2973 |  |  |
-| 3350 | `0xd16` | `agent_get_rider_rotation_angles` | no | switch | 2990 |  |  |
-| 3351 | `0xd17` | `agent_set_default_rider_rotation_angles` | no | switch | 3010 |  |  |
-| 3352 | `0xd18` | `agent_ai_set_can_aim` | no | switch | 3026 |  |  |
-| 3353 | `0xd19` | `agent_set_can_multihit` | no | switch | 3035 |  |  |
-| 3354 | `0xd1a` | `agent_has_multihit` | no | switch | 3047 |  |  |
-| 3355 | `0xd1b` | `agent_set_crush_through` | no | switch | 3054 |  |  |
-| 3356 | `0xd1c` | `agent_get_crush_through` | no | switch | 3067 |  |  |
-| 3357 | `0xd1d` | `agent_set_trigger_disabled` | no | switch | 3075 |  |  |
-| 3358 | `0xd1e` | `agent_is_trigger_disabled` | no | switch | 3084 |  |  |
-| 3359 | `0xd1f` | `agent_set_can_piercing` | no | switch | 3092 |  |  |
-| 3360 | `0xd20` | `agent_has_piercing` | no | switch | 3104 |  |  |
-| 3400 | `0xd48` | `multiplayer_send_chat_message_to_player` | no | switch | 3113 |  |  |
-| 3401 | `0xd49` | `multiplayer_send_composite_message_to_player` | no | switch | 3155 |  |  |
-| 3402 | `0xd4a` | `multiplayer_send_composite_message_to_server` | no | switch | 3204 |  |  |
-| 3403 | `0xd4b` | `multiplayer_get_cur_profile` | no | switch | 3246 |  |  |
-| 3404 | `0xd4c` | `multiplayer_get_num_profiles` | no | switch | 3249 |  |  |
-| 3405 | `0xd4d` | `multiplayer_message_init` | no | switch | 3254 |  |  |
-| 3406 | `0xd4e` | `multiplayer_message_put_string` | no | switch | 3273 |  |  |
-| 3407 | `0xd4f` | `multiplayer_message_put_int` | no | switch | 3291 |  |  |
-| 3408 | `0xd50` | `multiplayer_message_put_position` | no | switch | 3311 |  |  |
-| 3409 | `0xd51` | `multiplayer_message_put_coordinate` | no | switch | 3332 |  |  |
-| 3410 | `0xd52` | `multiplayer_cur_message_get_string` | no | switch | 3356 |  |  |
-| 3411 | `0xd53` | `multiplayer_cur_message_get_int` | no | switch | 3374 |  |  |
-| 3412 | `0xd54` | `multiplayer_cur_message_get_position` | no | switch | 3393 |  |  |
-| 3413 | `0xd55` | `multiplayer_cur_message_get_coordinate` | no | switch | 3433 |  |  |
-| 3414 | `0xd56` | `multiplayer_cur_profile_get_skin` | no | switch | 3461 |  |  |
-| 3415 | `0xd57` | `multiplayer_connect_to_server` | no | switch | 3465 |  |  |
-| 3416 | `0xd58` | `multiplayer_is_campaign` | no | switch | 3492 |  |  |
-| 3500 | `0xdac` | `server_set_password_admin` | no | switch | 3495 |  |  |
-| 3501 | `0xdad` | `server_set_password_private` | no | switch | 3513 |  |  |
-| 3502 | `0xdae` | `server_map_rotation_get_count` (shared) | no | switch | 2241 |  |  |
-| 3503 | `0xdaf` | `server_map_rotation_get_index` (shared) | no | switch | 2242 |  |  |
-| 3504 | `0xdb0` | `server_map_rotation_set_index` (shared) | no | switch | 3531 |  |  |
-| 3505 | `0xdb1` | `server_map_rotation_get_map` (shared) | no | switch | 2243 |  |  |
-| 3506 | `0xdb2` | `server_map_rotation_add_map` (shared) | no | switch | 3532 |  |  |
-| 3507 | `0xdb3` | `server_map_rotation_remove_map` (shared) | no | switch | 3533 |  |  |
-| 3508 | `0xdb4` | `server_get_horse_friendly_fire` | no | switch | 3537 |  |  |
-| 3509 | `0xdb5` | `server_set_horse_friendly_fire` | no | switch | 3545 |  |  |
-| 3510 | `0xdb6` | `server_get_show_crosshair` | no | switch | 3557 |  |  |
-| 3511 | `0xdb7` | `server_set_show_crosshair` | no | switch | 3568 |  |  |
-| 3512 | `0xdb8` | `get_server_option_at_connect` | no | switch | 3580 |  |  |
-| 3513 | `0xdb9` | `server_set_password_rcon` (shared) | no | switch | 3534 |  |  |
-| 3514 | `0xdba` | `execute_server_console_command` (shared) | no | switch | 3535 |  |  |
-| 3515 | `0xdbb` | `add_anonymous_player` | no | switch | 3626 |  |  |
-| 3516 | `0xdbc` | `remove_anonymous_player` | no | switch | 3643 |  |  |
-| 3517 | `0xdbd` | `clear_anonymous_players` | no | switch | 3651 |  |  |
-| 3518 | `0xdbe` | `server_set_ghost_mode_advanced` | no | switch | 3658 |  |  |
-| 3519 | `0xdbf` | `server_set_anticheat_option` | no | switch | 3667 |  |  |
-| 3520 | `0xdc0` | `server_get_anticheat_option` | no | switch | 3674 |  |  |
+| 3342 | `0xd0e` | `agent_set_left_hand_weapon_collision` | yes | switch | 2884 |  |  |
+| 3343 | `0xd0f` | `agent_ai_set_can_weapon_switch` | yes | switch | 2893 |  |  |
+| 3344 | `0xd10` | `agent_ai_set_can_fight` | yes | switch | 2902 |  |  |
+| 3345 | `0xd11` | `agent_fade_out_advanced` | yes | switch | 2911 |  |  |
+| 3346 | `0xd12` | `agent_fade_in_advanced` | yes | switch | 2930 |  |  |
+| 3347 | `0xd13` | `agent_set_voice_sound` | yes | switch | 2949 |  |  |
+| 3348 | `0xd14` | `agent_set_enable_tilt` | yes | switch | 2964 |  |  |
+| 3349 | `0xd15` | `agent_set_rider_rotation_angles` | yes | switch | 2973 |  |  |
+| 3350 | `0xd16` | `agent_get_rider_rotation_angles` | yes | switch | 2990 |  |  |
+| 3351 | `0xd17` | `agent_set_default_rider_rotation_angles` | yes | switch | 3010 |  |  |
+| 3352 | `0xd18` | `agent_ai_set_can_aim` | yes | switch | 3026 |  |  |
+| 3353 | `0xd19` | `agent_set_can_multihit` | yes | switch | 3035 |  |  |
+| 3354 | `0xd1a` | `agent_has_multihit` | yes | switch | 3047 |  |  |
+| 3355 | `0xd1b` | `agent_set_crush_through` | yes | switch | 3054 |  |  |
+| 3356 | `0xd1c` | `agent_get_crush_through` | yes | switch | 3067 |  |  |
+| 3357 | `0xd1d` | `agent_set_trigger_disabled` | yes | switch | 3075 |  |  |
+| 3358 | `0xd1e` | `agent_is_trigger_disabled` | yes | switch | 3084 |  |  |
+| 3359 | `0xd1f` | `agent_set_can_piercing` | yes | switch | 3092 |  |  |
+| 3360 | `0xd20` | `agent_has_piercing` | yes | switch | 3104 |  |  |
+| 3400 | `0xd48` | `multiplayer_send_chat_message_to_player` | yes | switch | 3113 |  |  |
+| 3401 | `0xd49` | `multiplayer_send_composite_message_to_player` | yes | switch | 3155 |  |  |
+| 3402 | `0xd4a` | `multiplayer_send_composite_message_to_server` | yes | switch | 3204 |  |  |
+| 3403 | `0xd4b` | `multiplayer_get_cur_profile` | yes | switch | 3246 |  |  |
+| 3404 | `0xd4c` | `multiplayer_get_num_profiles` | yes | switch | 3249 |  |  |
+| 3405 | `0xd4d` | `multiplayer_message_init` | yes | switch | 3254 |  |  |
+| 3406 | `0xd4e` | `multiplayer_message_put_string` | yes | switch | 3273 |  |  |
+| 3407 | `0xd4f` | `multiplayer_message_put_int` | yes | switch | 3291 |  |  |
+| 3408 | `0xd50` | `multiplayer_message_put_position` | yes | switch | 3311 |  |  |
+| 3409 | `0xd51` | `multiplayer_message_put_coordinate` | yes | switch | 3332 |  |  |
+| 3410 | `0xd52` | `multiplayer_cur_message_get_string` | yes | switch | 3356 |  |  |
+| 3411 | `0xd53` | `multiplayer_cur_message_get_int` | yes | switch | 3374 |  |  |
+| 3412 | `0xd54` | `multiplayer_cur_message_get_position` | yes | switch | 3393 |  |  |
+| 3413 | `0xd55` | `multiplayer_cur_message_get_coordinate` | yes | switch | 3433 |  |  |
+| 3414 | `0xd56` | `multiplayer_cur_profile_get_skin` | yes | switch | 3461 |  |  |
+| 3415 | `0xd57` | `multiplayer_connect_to_server` | yes | switch | 3465 |  |  |
+| 3416 | `0xd58` | `multiplayer_is_campaign` | yes | switch | 3492 |  |  |
+| 3500 | `0xdac` | `server_set_password_admin` | yes | switch | 3495 |  |  |
+| 3501 | `0xdad` | `server_set_password_private` | yes | switch | 3513 |  |  |
+| 3502 | `0xdae` | `server_map_rotation_get_count` (shared) | yes | switch | 2241 |  |  |
+| 3503 | `0xdaf` | `server_map_rotation_get_index` (shared) | yes | switch | 2242 |  |  |
+| 3504 | `0xdb0` | `server_map_rotation_set_index` (shared) | yes | switch | 3531 |  |  |
+| 3505 | `0xdb1` | `server_map_rotation_get_map` (shared) | yes | switch | 2243 |  |  |
+| 3506 | `0xdb2` | `server_map_rotation_add_map` (shared) | yes | switch | 3532 |  |  |
+| 3507 | `0xdb3` | `server_map_rotation_remove_map` (shared) | yes | switch | 3533 |  |  |
+| 3508 | `0xdb4` | `server_get_horse_friendly_fire` | yes | switch | 3537 |  |  |
+| 3509 | `0xdb5` | `server_set_horse_friendly_fire` | yes | switch | 3545 |  |  |
+| 3510 | `0xdb6` | `server_get_show_crosshair` | yes | switch | 3557 |  |  |
+| 3511 | `0xdb7` | `server_set_show_crosshair` | yes | switch | 3568 |  |  |
+| 3512 | `0xdb8` | `get_server_option_at_connect` | yes | switch | 3580 |  |  |
+| 3513 | `0xdb9` | `server_set_password_rcon` (shared) | yes | switch | 3534 |  |  |
+| 3514 | `0xdba` | `execute_server_console_command` (shared) | yes | switch | 3535 |  |  |
+| 3515 | `0xdbb` | `add_anonymous_player` | yes | switch | 3626 |  |  |
+| 3516 | `0xdbc` | `remove_anonymous_player` | yes | switch | 3643 |  |  |
+| 3517 | `0xdbd` | `clear_anonymous_players` | yes | switch | 3651 |  |  |
+| 3518 | `0xdbe` | `server_set_ghost_mode_advanced` | yes | switch | 3658 |  |  |
+| 3519 | `0xdbf` | `server_set_anticheat_option` | yes | switch | 3667 |  |  |
+| 3520 | `0xdc0` | `server_get_anticheat_option` | yes | switch | 3674 |  |  |
 | 3600 | `0xe10` | `store_cur_mission_template_no` | yes | if-equality | 604 |  |  |
 | 3601 | `0xe11` | `set_show_use_tooltip` | yes | switch | 3708 |  |  |
-| 3602 | `0xe12` | `set_ally_collision_threshold` | no | switch | 3717 |  |  |
-| 3603 | `0xe13` | `particle_system_remove` | no | switch | 3745 |  |  |
-| 3604 | `0xe14` | `get_spectated_agent_no` | no | switch | 3771 |  |  |
-| 3605 | `0xe15` | `prop_instance_set_forced_lod` | no | switch | 3775 |  |  |
-| 3606 | `0xe16` | `prop_instance_set_variation_id` | no | switch | 3788 |  |  |
-| 3607 | `0xe17` | `prop_instance_set_variation_id_2` | no | switch | 3796 |  |  |
+| 3602 | `0xe12` | `set_ally_collision_threshold` | yes | switch | 3717 |  |  |
+| 3603 | `0xe13` | `particle_system_remove` | yes | switch | 3745 |  |  |
+| 3604 | `0xe14` | `get_spectated_agent_no` | yes | switch | 3771 |  |  |
+| 3605 | `0xe15` | `prop_instance_set_forced_lod` | yes | switch | 3775 |  |  |
+| 3606 | `0xe16` | `prop_instance_set_variation_id` | yes | switch | 3788 |  |  |
+| 3607 | `0xe17` | `prop_instance_set_variation_id_2` | yes | switch | 3796 |  |  |
 | 3608 | `0xe18` | `stop_time` | yes | switch | 3804 |  |  |
-| 3609 | `0xe19` | `missile_get_path_point_position` | no | switch | 3810 |  |  |
+| 3609 | `0xe19` | `missile_get_path_point_position` | yes | switch | 3810 |  |  |
 | 3610 | `0xe1a` | `get_water_level` | yes | switch | 3856 |  |  |
-| 3611 | `0xe1b` | `missile_remove_on_hit` | no | switch | 3859 |  |  |
-| 3612 | `0xe1c` | `missile_is_valid` | no | switch | 3881 |  |  |
-| 3613 | `0xe1d` | `missile_get_cur_position` | no | switch | 3893 |  |  |
-| 3614 | `0xe1e` | `set_prop_collision_threshold` | no | switch | 3934 |  |  |
-| 3615 | `0xe1f` | `get_camera_position` | no | switch | 4027 |  |  |
-| 3616 | `0xe20` | `prop_instance_remove_particle_system` | no | switch | 4051 |  |  |
-| 3617 | `0xe21` | `prop_instance_remove_light` | no | switch | 4065 |  |  |
-| 3618 | `0xe22` | `prop_instance_get_sound_progress` | no | switch | 4106 |  |  |
+| 3611 | `0xe1b` | `missile_remove_on_hit` | yes | switch | 3859 |  |  |
+| 3612 | `0xe1c` | `missile_is_valid` | yes | switch | 3881 |  |  |
+| 3613 | `0xe1d` | `missile_get_cur_position` | yes | switch | 3893 |  |  |
+| 3614 | `0xe1e` | `set_prop_collision_threshold` | yes | switch | 3934 |  |  |
+| 3615 | `0xe1f` | `get_camera_position` | yes | switch | 4027 |  |  |
+| 3616 | `0xe20` | `prop_instance_remove_particle_system` | yes | switch | 4051 |  |  |
+| 3617 | `0xe21` | `prop_instance_remove_light` | yes | switch | 4065 |  |  |
+| 3618 | `0xe22` | `prop_instance_get_sound_progress` | yes | switch | 4106 |  |  |
 | 3619 | `0xe23` | `set_horse_friendly_fire` | yes | switch | 4125 |  |  |
-| 3620 | `0xe24` | `cast_ray_agents` | no | switch | 4135 |  |  |
-| 3621 | `0xe25` | `ai_mesh_face_group_translate` | no | switch | 4282 |  |  |
+| 3620 | `0xe24` | `cast_ray_agents` | yes | switch | 4135 |  |  |
+| 3621 | `0xe25` | `ai_mesh_face_group_translate` | yes | switch | 4282 |  |  |
 | 3622 | `0xe26` | `set_show_crosshair` | yes | switch | 4326 |  |  |
-| 3623 | `0xe27` | `shift_entry_point` | no | switch | 4336 |  |  |
-| 3624 | `0xe28` | `missile_remove` | no | switch | 4344 |  |  |
-| 3625 | `0xe29` | `scene_prop_remove` | no | switch | 4352 |  |  |
+| 3623 | `0xe27` | `shift_entry_point` | yes | switch | 4336 |  |  |
+| 3624 | `0xe28` | `missile_remove` | yes | switch | 4344 |  |  |
+| 3625 | `0xe29` | `scene_prop_remove` | yes | switch | 4352 |  |  |
 | 3700 | `0xe74` | `troop_get_skill_points` | yes | switch | 4371 |  |  |
 | 3701 | `0xe75` | `troop_set_skill_points` | yes | switch | 4379 |  |  |
 | 3702 | `0xe76` | `troop_get_attribute_points` | yes | switch | 4391 |  |  |
@@ -321,7 +321,7 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 3910 | `0xf46` | `party_is_non_player` | yes | switch | 5012 |  |  |
 | 3911 | `0xf47` | `party_get_current_terrain_variant` | yes | switch | 5020 |  |  |
 | 4100 | `0x1004` | `position_get_vector_to_position` | yes | switch | 5030 |  |  |
-| 4101 | `0x1005` | `position_align_to_ground` | no | switch | 5085 |  |  |
+| 4101 | `0x1005` | `position_align_to_ground` | yes | switch | 5085 |  |  |
 | 4102 | `0x1006` | `position_get_length` | yes | switch | 5143 |  |  |
 | 4103 | `0x1007` | `get_dot_product_of_positions` | yes | switch | 5154 |  |  |
 | 4104 | `0x1008` | `get_cross_product_of_positions` | yes | switch | 5171 |  |  |
@@ -350,19 +350,19 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 4222 | `0x107e` | `str_store_join` | yes | switch | 5908 |  |  |
 | 4223 | `0x107f` | `str_store_replace_spaces_with_underscores` | yes | switch | 5954 |  |  |
 | 4224 | `0x1080` | `str_store_replace_underscores_with_spaces` | yes | switch | 5972 |  |  |
-| 4225 | `0x1081` | `str_store_multiplayer_profile_name` | no | switch | 5990 |  |  |
+| 4225 | `0x1081` | `str_store_multiplayer_profile_name` | yes | switch | 5990 |  |  |
 | 4226 | `0x1082` | `str_store_module_setting` | yes | switch | 6003 |  |  |
-| 4227 | `0x1083` | `str_store_server_password_admin` | no | switch | 6029 |  |  |
-| 4228 | `0x1084` | `str_store_server_password_private` | no | switch | 6036 |  |  |
-| 4229 | `0x1085` | `str_store_overlay_text` | no | switch | 6043 |  |  |
-| 4230 | `0x1086` | `str_store_player_ip` | no | switch | 6057 |  |  |
+| 4227 | `0x1083` | `str_store_server_password_admin` | yes | switch | 6029 |  |  |
+| 4228 | `0x1084` | `str_store_server_password_private` | yes | switch | 6036 |  |  |
+| 4229 | `0x1085` | `str_store_overlay_text` | yes | switch | 6043 |  |  |
+| 4230 | `0x1086` | `str_store_player_ip` | yes | switch | 6057 |  |  |
 | 4231 | `0x1087` | `str_store_game_variable` | yes | switch | 6075 |  |  |
 | 4232 | `0x1088` | `str_store_skill_name` | yes | switch | 6093 |  |  |
 | 4233 | `0x1089` | `str_store_float` | yes | switch | 6105 |  |  |
 | 4234 | `0x108a` | `str_sanitize` | yes | switch | 6121 |  |  |
 | 4235 | `0x108b` | `str_store_item_id` | yes | switch | 6136 |  |  |
 | 4236 | `0x108c` | `str_is_integer` | yes | switch | 6147 |  |  |
-| 4237 | `0x108d` | `str_store_multiplayer_profile_face_keys` | no | switch | 6183 |  |  |
+| 4237 | `0x108d` | `str_store_multiplayer_profile_face_keys` | yes | switch | 6183 |  |  |
 | 4238 | `0x108e` | `str_store_server_password_rcon` | yes | switch | 6199 |  |  |
 | 4239 | `0x108f` | `str_store_item_mesh_name` | yes | switch | 6201 |  |  |
 | 4240 | `0x1090` | `str_regex_match` | yes | switch | 6212 |  |  |
@@ -417,29 +417,29 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 4436 | `0x1154` | `fatan2` | yes | switch | 8336 |  |  |
 | 4437 | `0x1155` | `feval` | yes | switch | 8353 |  |  |
 | 4438 | `0x1156` | `fadd` | yes | switch | 8366 |  |  |
-| 4500 | `0x1194` | `scene_set_flags` | no | switch | 8381 |  |  |
-| 4501 | `0x1195` | `scene_set_water_level` | no | switch | 8389 |  |  |
-| 4502 | `0x1196` | `scene_set_bounds` | no | switch | 8397 |  |  |
-| 4503 | `0x1197` | `scene_set_outer_terrain` | no | switch | 8412 |  |  |
-| 4504 | `0x1198` | `scene_set_terrain_seed` | no | switch | 8423 |  |  |
-| 4505 | `0x1199` | `scene_set_river_seed` | no | switch | 8441 |  |  |
-| 4506 | `0x119a` | `scene_set_flora_seed` | no | switch | 8459 |  |  |
-| 4507 | `0x119b` | `scene_set_deep_water` | no | switch | 8477 |  |  |
-| 4508 | `0x119c` | `scene_set_place_river` | no | switch | 8495 |  |  |
-| 4509 | `0x119d` | `scene_set_disable_grass` | no | switch | 8513 |  |  |
-| 4510 | `0x119e` | `scene_set_valley_size` | no | switch | 8531 |  |  |
-| 4511 | `0x119f` | `scene_set_hill_height` | no | switch | 8549 |  |  |
-| 4512 | `0x11a0` | `scene_set_ruggedness` | no | switch | 8567 |  |  |
-| 4513 | `0x11a1` | `scene_set_vegetation` | no | switch | 8585 |  |  |
-| 4514 | `0x11a2` | `scene_set_size` | no | switch | 8603 |  |  |
-| 4515 | `0x11a3` | `scene_set_region_type` | no | switch | 8622 |  |  |
-| 4516 | `0x11a4` | `scene_set_region_detail` | no | switch | 8640 |  |  |
-| 4517 | `0x11a5` | `scene_set_region_variant` | no | switch | 8658 |  |  |
-| 4518 | `0x11a6` | `scene_set_height_fog` | no | switch | 8684 |  |  |
-| 4519 | `0x11a7` | `scene_set_water_waves` | no | switch | 8696 |  |  |
-| 4520 | `0x11a8` | `scene_set_flora_wind` | no | switch | 8707 |  |  |
-| 4521 | `0x11a9` | `scene_rebake_sky_cube` | no | switch | 8717 |  |  |
-| 4522 | `0x11aa` | `scene_set_weather_direction` | no | switch | 8725 |  |  |
+| 4500 | `0x1194` | `scene_set_flags` | yes | switch | 8381 |  |  |
+| 4501 | `0x1195` | `scene_set_water_level` | yes | switch | 8389 |  |  |
+| 4502 | `0x1196` | `scene_set_bounds` | yes | switch | 8397 |  |  |
+| 4503 | `0x1197` | `scene_set_outer_terrain` | yes | switch | 8412 |  |  |
+| 4504 | `0x1198` | `scene_set_terrain_seed` | yes | switch | 8423 |  |  |
+| 4505 | `0x1199` | `scene_set_river_seed` | yes | switch | 8441 |  |  |
+| 4506 | `0x119a` | `scene_set_flora_seed` | yes | switch | 8459 |  |  |
+| 4507 | `0x119b` | `scene_set_deep_water` | yes | switch | 8477 |  |  |
+| 4508 | `0x119c` | `scene_set_place_river` | yes | switch | 8495 |  |  |
+| 4509 | `0x119d` | `scene_set_disable_grass` | yes | switch | 8513 |  |  |
+| 4510 | `0x119e` | `scene_set_valley_size` | yes | switch | 8531 |  |  |
+| 4511 | `0x119f` | `scene_set_hill_height` | yes | switch | 8549 |  |  |
+| 4512 | `0x11a0` | `scene_set_ruggedness` | yes | switch | 8567 |  |  |
+| 4513 | `0x11a1` | `scene_set_vegetation` | yes | switch | 8585 |  |  |
+| 4514 | `0x11a2` | `scene_set_size` | yes | switch | 8603 |  |  |
+| 4515 | `0x11a3` | `scene_set_region_type` | yes | switch | 8622 |  |  |
+| 4516 | `0x11a4` | `scene_set_region_detail` | yes | switch | 8640 |  |  |
+| 4517 | `0x11a5` | `scene_set_region_variant` | yes | switch | 8658 |  |  |
+| 4518 | `0x11a6` | `scene_set_height_fog` | yes | switch | 8684 |  |  |
+| 4519 | `0x11a7` | `scene_set_water_waves` | yes | switch | 8696 |  |  |
+| 4520 | `0x11a8` | `scene_set_flora_wind` | yes | switch | 8707 |  |  |
+| 4521 | `0x11a9` | `scene_rebake_sky_cube` | yes | switch | 8717 |  |  |
+| 4522 | `0x11aa` | `scene_set_weather_direction` | yes | switch | 8725 |  |  |
 | 4600 | `0x11f8` | `edit_mode_get_num_selected_prop_instances` | yes | switch | 8739 |  |  |
 | 4601 | `0x11f9` | `edit_mode_get_selected_prop_instance` | yes | switch | 8743 |  |  |
 | 4602 | `0x11fa` | `edit_mode_select_prop_instance` | yes | switch | 8756 |  |  |
@@ -450,22 +450,22 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 4607 | `0x11ff` | `edit_mode_in_edit_objects_mode` | yes | switch | 8821 |  |  |
 | 4608 | `0x1200` | `edit_mode_get_mode` | yes | switch | 8832 |  |  |
 | 4609 | `0x1201` | `edit_mode_window_open` | yes | switch | 8838 |  |  |
-| 4700 | `0x125c` | `update_material` | no | if-equality | 7817 |  |  |
-| 4701 | `0x125d` | `reload_item_kinds` | no | switch | 6487 |  |  |
-| 4702 | `0x125e` | `reload_troops` | no | switch | 6496 |  |  |
-| 4703 | `0x125f` | `reload_parties` | no | switch | 6505 |  |  |
-| 4800 | `0x12c0` | `menu_create_new` | no | switch | 6516 |  |  |
-| 4801 | `0x12c1` | `menu_add_item` | no | switch | 6560 |  |  |
-| 4802 | `0x12c2` | `menu_clear_items` | no | switch | 6626 |  |  |
-| 4803 | `0x12c3` | `menu_clear_generated` | no | switch | 6636 |  |  |
-| 4900 | `0x1324` | `overlay_get_val` | no | switch | 6649 |  |  |
-| 4901 | `0x1325` | `presentation_activate` | no | switch | 6670 |  |  |
-| 4902 | `0x1326` | `overlay_button_set_type` | no | switch | 6710 |  |  |
-| 4903 | `0x1327` | `overlay_get_scroll_pos` | no | switch | 6724 |  |  |
-| 4904 | `0x1328` | `overlay_set_scroll_pos` | no | switch | 6742 |  |  |
-| 4905 | `0x1329` | `overlay_enable` | no | switch | 6761 |  |  |
-| 4906 | `0x132a` | `overlay_item_set_text` | no | switch | 6773 |  |  |
-| 4907 | `0x132b` | `start_conversation_presentation` | no | switch | 6787 |  |  |
+| 4700 | `0x125c` | `update_material` | yes | if-equality | 7817 |  |  |
+| 4701 | `0x125d` | `reload_item_kinds` | yes | switch | 6487 |  |  |
+| 4702 | `0x125e` | `reload_troops` | yes | switch | 6496 |  |  |
+| 4703 | `0x125f` | `reload_parties` | yes | switch | 6505 |  |  |
+| 4800 | `0x12c0` | `menu_create_new` | yes | switch | 6516 |  |  |
+| 4801 | `0x12c1` | `menu_add_item` | yes | switch | 6560 |  |  |
+| 4802 | `0x12c2` | `menu_clear_items` | yes | switch | 6626 |  |  |
+| 4803 | `0x12c3` | `menu_clear_generated` | yes | switch | 6636 |  |  |
+| 4900 | `0x1324` | `overlay_get_val` | yes | switch | 6649 |  |  |
+| 4901 | `0x1325` | `presentation_activate` | yes | switch | 6670 |  |  |
+| 4902 | `0x1326` | `overlay_button_set_type` | yes | switch | 6710 |  |  |
+| 4903 | `0x1327` | `overlay_get_scroll_pos` | yes | switch | 6724 |  |  |
+| 4904 | `0x1328` | `overlay_set_scroll_pos` | yes | switch | 6742 |  |  |
+| 4905 | `0x1329` | `overlay_enable` | yes | switch | 6761 |  |  |
+| 4906 | `0x132a` | `overlay_item_set_text` | yes | switch | 6773 |  |  |
+| 4907 | `0x132b` | `start_conversation_presentation` | yes | switch | 6787 |  |  |
 | 5000 | `0x1388` | `array_create` | yes | if-equality | 6427 |  |  |
 | 5001 | `0x1389` | `array_free` | yes | switch | 6803 |  |  |
 | 5002 | `0x138a` | `array_copy` | yes | switch | 6811 |  |  |
@@ -489,21 +489,21 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 5020 | `0x139c` | `array_ge` | yes | switch | 7500 |  |  |
 | 5021 | `0x139d` | `array_lt` | yes | switch | 7503 |  |  |
 | 5022 | `0x139e` | `array_le` | yes | switch | 7506 |  |  |
-| 5100 | `0x13ec` | `lua_get_top` | no | switch | 7513 |  |  |
-| 5101 | `0x13ed` | `lua_set_top` | no | switch | 7516 |  |  |
-| 5102 | `0x13ee` | `lua_insert` | no | switch | 7519 |  |  |
-| 5103 | `0x13ef` | `lua_remove` | no | switch | 7526 |  |  |
-| 5104 | `0x13f0` | `lua_pop` | no | switch | 7533 |  |  |
-| 5105 | `0x13f1` | `lua_to_int` | no | switch | 7536 |  |  |
-| 5106 | `0x13f2` | `lua_to_str` | no | switch | 7543 |  |  |
-| 5107 | `0x13f3` | `lua_to_pos` | no | switch | 7560 |  |  |
-| 5108 | `0x13f4` | `lua_push_int` | no | switch | 7597 |  |  |
-| 5109 | `0x13f5` | `lua_push_str` | no | switch | 7600 |  |  |
-| 5110 | `0x13f6` | `lua_push_pos` | no | switch | 7611 |  |  |
-| 5111 | `0x13f7` | `lua_get_type` | no | switch | 7619 |  |  |
-| 5112 | `0x13f8` | `lua_call` | no | switch | 7626 |  |  |
-| 5113 | `0x13f9` | `lua_triggerCallback` | no | switch | 7699 |  |  |
-| 5114 | `0x13fa` | `lua_test` | no | switch | 7720 |  |  |
-| 5200 | `0x1450` | `skin_set_blood_color` | no | switch | 7727 |  |  |
-| 5201 | `0x1451` | `skeleton_model_set_bone_body_section` | no | switch | 7735 |  |  |
-| 5202 | `0x1452` | `skeleton_model_clean_body_sections` | no | switch | 7792 |  |  |
+| 5100 | `0x13ec` | `lua_get_top` | yes | switch | 7513 |  |  |
+| 5101 | `0x13ed` | `lua_set_top` | yes | switch | 7516 |  |  |
+| 5102 | `0x13ee` | `lua_insert` | yes | switch | 7519 |  |  |
+| 5103 | `0x13ef` | `lua_remove` | yes | switch | 7526 |  |  |
+| 5104 | `0x13f0` | `lua_pop` | yes | switch | 7533 |  |  |
+| 5105 | `0x13f1` | `lua_to_int` | yes | switch | 7536 |  |  |
+| 5106 | `0x13f2` | `lua_to_str` | yes | switch | 7543 |  |  |
+| 5107 | `0x13f3` | `lua_to_pos` | yes | switch | 7560 |  |  |
+| 5108 | `0x13f4` | `lua_push_int` | yes | switch | 7597 |  |  |
+| 5109 | `0x13f5` | `lua_push_str` | yes | switch | 7600 |  |  |
+| 5110 | `0x13f6` | `lua_push_pos` | yes | switch | 7611 |  |  |
+| 5111 | `0x13f7` | `lua_get_type` | yes | switch | 7619 |  |  |
+| 5112 | `0x13f8` | `lua_call` | yes | switch | 7626 |  |  |
+| 5113 | `0x13f9` | `lua_triggerCallback` | yes | switch | 7699 |  |  |
+| 5114 | `0x13fa` | `lua_test` | yes | switch | 7720 |  |  |
+| 5200 | `0x1450` | `skin_set_blood_color` | yes | switch | 7727 |  |  |
+| 5201 | `0x1451` | `skeleton_model_set_bone_body_section` | yes | switch | 7735 |  |  |
+| 5202 | `0x1452` | `skeleton_model_clean_body_sections` | yes | switch | 7792 |  |  |

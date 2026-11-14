@@ -870,7 +870,7 @@ void test_unimplemented_histogram_and_loud_failure() {
             make_stmt(80U, {reg(3)}),   // unused native slot 80
             make_stmt(81U, {5}),        // unused native slot 81
             make_stmt(80U, {reg(4)}),
-            make_stmt(5100U, {reg(5)}), // unimplemented WSE lua_get_top
+            make_stmt(9999U, {reg(5)}), // unimplemented out-of-range WSE slot
             make_stmt(13U, {}),         // unused control-flow slot (<30)
             make_stmt(core_op::kAssign, {reg(1), 42}),
         };
@@ -881,7 +881,7 @@ void test_unimplemented_histogram_and_loud_failure() {
         expect(ctx.unimplementedOpcodeCounts.size() == 4U &&
                    ctx.unimplementedOpcodeCounts[80U] == 2U &&
                    ctx.unimplementedOpcodeCounts[81U] == 1U &&
-                   ctx.unimplementedOpcodeCounts[5100U] == 1U &&
+                   ctx.unimplementedOpcodeCounts[9999U] == 1U &&
                    ctx.unimplementedOpcodeCounts[13U] == 1U,
                "per-opcode histogram records exact native, WSE, and control-flow counts");
     }
@@ -916,11 +916,11 @@ void test_unimplemented_histogram_and_loud_failure() {
 
         StatementBlock tonBlock;
         tonBlock.statements = {
-            make_stmt(kThisOrNextFlag | 5100U, {reg(4)}),
+            make_stmt(kThisOrNextFlag | 9999U, {reg(4)}),
             make_stmt(core_op::kAssign, {reg(2), 77}),
         };
         expect(!execute_statement_block(tonBlock, ctx) && ctx.registers[2] == 0 &&
-                   ctx.unimplementedOpcodeCounts[5100U] == 1U && ctx.errorCount == 3,
+                   ctx.unimplementedOpcodeCounts[9999U] == 1U && ctx.errorCount == 3,
                "this_or_next flag cannot swallow loud unimplemented WSE abort");
 
         wse::game::ScriptManager mgr;

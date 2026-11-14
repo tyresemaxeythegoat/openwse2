@@ -111,7 +111,7 @@ void test_unimplemented_and_mask() {
     WseEffect effect;
     WseDispatch dispatch = WseDispatch::unimplemented;
 
-    dispatch = run(opcode(WseOpcode::lua_get_top), {1}, {}, effect);
+    dispatch = run(9999U, {1}, {}, effect);
     expect(effect.value == 0x1234 && dispatch == WseDispatch::unimplemented,
            "unimplemented opcodes leave the result untouched");
 

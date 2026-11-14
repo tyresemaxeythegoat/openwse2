@@ -71,7 +71,7 @@
   "sdk_ops_in_range": 440,
   "sdk_ops_without_handler": 0,
   "unknown_opcodes": [],
-  "implemented_opcodes": 236,
+  "implemented_opcodes": 440,
   "implemented_blocks": [
    {
     "block": 2800,
@@ -83,32 +83,23 @@
    {
     "block": 2900,
     "family": "player",
-    "done": 0,
+    "done": 10,
     "total": 10,
-    "remaining_examples": [
-     "player_set_skin",
-     "player_stop_controlling_agent"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 3000,
     "family": "registers, script context, slots, timers, misc",
-    "done": 36,
+    "done": 46,
     "total": 46,
-    "remaining_examples": [
-     "set_forced_lod",
-     "send_message_to_url_advanced"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 3100,
     "family": "input keys",
-    "done": 0,
+    "done": 3,
     "total": 3,
-    "remaining_examples": [
-     "game_key_get_key",
-     "key_released"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 3200,
@@ -120,42 +111,30 @@
    {
     "block": 3300,
     "family": "agent",
-    "done": 2,
+    "done": 61,
     "total": 61,
-    "remaining_examples": [
-     "agent_get_item_modifier",
-     "agent_get_item_slot_modifier"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 3400,
     "family": "multiplayer messaging",
-    "done": 0,
+    "done": 17,
     "total": 17,
-    "remaining_examples": [
-     "multiplayer_send_chat_message_to_player",
-     "multiplayer_send_composite_message_to_player"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 3500,
     "family": "server admin",
-    "done": 0,
+    "done": 21,
     "total": 21,
-    "remaining_examples": [
-     "server_set_password_admin",
-     "server_set_password_private"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 3600,
     "family": "mission / props / particles",
-    "done": 6,
+    "done": 26,
     "total": 26,
-    "remaining_examples": [
-     "set_ally_collision_threshold",
-     "particle_system_remove"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 3700,
@@ -181,21 +160,16 @@
    {
     "block": 4100,
     "family": "position vectors",
-    "done": 4,
+    "done": 5,
     "total": 5,
-    "remaining_examples": [
-     "position_align_to_ground"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 4200,
     "family": "strings",
-    "done": 41,
+    "done": 47,
     "total": 47,
-    "remaining_examples": [
-     "str_store_multiplayer_profile_name",
-     "str_store_server_password_admin"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 4300,
@@ -214,12 +188,9 @@
    {
     "block": 4500,
     "family": "scene",
-    "done": 0,
+    "done": 23,
     "total": 23,
-    "remaining_examples": [
-     "scene_set_flags",
-     "scene_set_water_level"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 4600,
@@ -231,32 +202,23 @@
    {
     "block": 4700,
     "family": "reload / material",
-    "done": 0,
+    "done": 4,
     "total": 4,
-    "remaining_examples": [
-     "update_material",
-     "reload_item_kinds"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 4800,
     "family": "menus",
-    "done": 0,
+    "done": 4,
     "total": 4,
-    "remaining_examples": [
-     "menu_create_new",
-     "menu_add_item"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 4900,
     "family": "overlays / presentations",
-    "done": 0,
+    "done": 8,
     "total": 8,
-    "remaining_examples": [
-     "overlay_get_val",
-     "presentation_activate"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 5000,
@@ -268,22 +230,16 @@
    {
     "block": 5100,
     "family": "Lua bridge",
-    "done": 0,
+    "done": 15,
     "total": 15,
-    "remaining_examples": [
-     "lua_get_top",
-     "lua_set_top"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 5200,
     "family": "skins / skeletons",
-    "done": 0,
+    "done": 3,
     "total": 3,
-    "remaining_examples": [
-     "skin_set_blood_color",
-     "skeleton_model_set_bone_body_section"
-    ]
+    "remaining_examples": []
    }
   ]
  },
@@ -479,7 +435,7 @@
    "vtable_offsets": [],
    "name": "player_set_skin",
    "sdk_comment": "(player_set_skin, <player_no>, <skin_no>), #Sets <player_no>'s skin (gender) to <skin_no> (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 2901,
@@ -502,7 +458,7 @@
    "vtable_offsets": [],
    "name": "player_stop_controlling_agent",
    "sdk_comment": "(player_stop_controlling_agent, <player_no>), #Gives <player_no>'s agent back to AI control (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 2902,
@@ -521,7 +477,7 @@
    "vtable_offsets": [],
    "name": "player_set_banner_id",
    "sdk_comment": "(player_set_banner_id, <player_no>, <banner_no>), #Sets <player_no>'s banner to <banner_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 2903,
@@ -545,7 +501,7 @@
    "vtable_offsets": [],
    "name": "player_set_username",
    "sdk_comment": "(player_set_username, <player_no>, <string_no>), #Sets <player_no>'s username to <string_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 2904,
@@ -566,7 +522,7 @@
    "vtable_offsets": [],
    "name": "player_temp_ban",
    "sdk_comment": "(player_temp_ban, <player_no>, <ban_time>), #Bans <player_no> temporarily for <ban_time> seconds",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 2905,
@@ -585,7 +541,7 @@
    "vtable_offsets": [],
    "name": "player_get_wse2_version",
    "sdk_comment": "(player_get_wse2_version, <destination>, <player_no>), #Stores <player_no>'s WSE2 version into <destination>. Works only on servers. 0 - vanilla Warband engine (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 2906,
@@ -604,7 +560,7 @@
    "vtable_offsets": [],
    "name": "player_get_party_id",
    "sdk_comment": "(player_get_party_id, <destination>, <player_no>), #Stores <player_no>'s party reference into <destination>. For multiplayer campaign mode (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 2907,
@@ -625,7 +581,7 @@
    "vtable_offsets": [],
    "name": "player_set_party_id",
    "sdk_comment": "(player_set_party_id, <player_no>, <party_no>), #Sets <player_no>'s party to <party_no>. For multiplayer campaign mode (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 2908,
@@ -645,7 +601,7 @@
    "vtable_offsets": [],
    "name": "player_get_anticheat_stat",
    "sdk_comment": "(player_get_anticheat_stat, <destination>, <player_no>, <stat_no>), #Stores anti-cheat statistic acs_* of <player_no> into <destination>. Values marked (fp) are fixed point (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 2909,
@@ -665,7 +621,7 @@
    "vtable_offsets": [],
    "name": "player_anticheat_report",
    "sdk_comment": "(player_anticheat_report, <player_no>, <value>), #Reports a module-side detection for <player_no> through the anti-cheat pipeline (log, ti_on_cheat_detected, kick). Server only (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3000,
@@ -1024,7 +980,7 @@
    "vtable_offsets": [],
    "name": "set_forced_lod",
    "sdk_comment": "(set_forced_lod, <lod_level>), #Forces the current trigger entity's LOD level to <lod_level> (0 = auto)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3019,
@@ -1047,7 +1003,7 @@
    "vtable_offsets": [],
    "name": "send_message_to_url_advanced",
    "sdk_comment": "(send_message_to_url_advanced, <url_string>, <user_agent_string>, [<success_callback_script_no>], [<failure_callback_script_no>], [<skip_parsing>], [<timeout>]), #Sends a HTTP request to <url_string> with <user_agent_string>. If the request succeeds, [<success_callback_script_no>] will be called. The script will behave like game_receive_url_response, unless [<skip_parsing>] is non-zero, in which case the script will receive no arguments and s0 will contain the full response. If the request fails, [<failure_callback_script_no>] will be called.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3020,
@@ -1122,7 +1078,7 @@
    "vtable_offsets": [],
    "name": "order_flag_is_active",
    "sdk_comment": "(order_flag_is_active), #Fails if the order flag is not being placed",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3024,
@@ -1149,7 +1105,7 @@
    "vtable_offsets": [],
    "name": "play_bink_file",
    "sdk_comment": "(play_bink_file, <path_from_module_directory>, [<duration_in_ms>]), #Plays a .bik file located at <path_from_module_directory>. If [<duration_in_ms>] is not set the full movie will be played",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3025,
@@ -1168,7 +1124,7 @@
    "vtable_offsets": [],
    "name": "process_advanced_url_messages",
    "sdk_comment": "(process_advanced_url_messages), #Forces processing of URL messages sent with send_message_to_url_advanced",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3026,
@@ -1248,7 +1204,7 @@
    "vtable_offsets": [],
    "name": "shell_open_url",
    "sdk_comment": "(shell_open_url, <url>), #Opens <url> in default browser. Support only http://, https://, ftp:// and ts3server:// urls.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3030,
@@ -1310,7 +1266,7 @@
    "vtable_offsets": [],
    "name": "make_screenshot",
    "sdk_comment": "(make_screenshot, <format>, <file>), #Make game screenshot. For security reasons, <file> will be saved into a Screenshots directory. Supported <format>s: BMP - 0, JPG - 1, TGA - 2, PNG - 3.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3033,
@@ -1332,7 +1288,7 @@
    "vtable_offsets": [],
    "name": "send_post_message_to_url_advanced",
    "sdk_comment": "(send_post_message_to_url_advanced, <url_string>, <user_agent_string>, <post_data>, [<success_callback_script_no>], [<failure_callback_script_no>], [<skip_parsing>], [<timeout>]), #Sends a HTTP POST (application/x-www-form-urlencoded) request to <url_string> with <user_agent_string> and <post_data>. If the request succeeds, [<success_callback_script_no>] will be called. The script will behave like game_receive_url_response, unless [<skip_parsing>] is non-zero, in which case the script will receive no arguments and s0 will contain the full response. If the request fails, [<failure_callback_script_no>] will be called.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3034,
@@ -1446,7 +1402,7 @@
    "vtable_offsets": [],
    "name": "get_mouse_map_coordinates",
    "sdk_comment": "(get_mouse_map_coordinates, <position_register>), #Stores mouse map coordinates into <position_register> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3040,
@@ -1540,7 +1496,7 @@
    "vtable_offsets": [],
    "name": "conversation_screen_auto_update_choice",
    "sdk_comment": "(conversation_screen_auto_update_choice), #Auto update single conversation choice without mouse click. Useful if you need to get text from external scripts. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3045,
@@ -1574,7 +1530,7 @@
    "vtable_offsets": [],
    "name": "game_key_get_key",
    "sdk_comment": "(game_key_get_key, <destination>, <game_key_no>, [<alternative>], [<modifier>]), #Stores the key mapped to <game_key_no> into <destination> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3101,
@@ -1591,7 +1547,7 @@
    "vtable_offsets": [],
    "name": "key_released",
    "sdk_comment": "(key_released, <key>, [<bypass_console_check>]), #Fails if <key> wasn't released in the current frame",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3102,
@@ -1610,7 +1566,7 @@
    "vtable_offsets": [],
    "name": "game_key_released",
    "sdk_comment": "(game_key_released, <game_key_no>, [<bypass_console_check>]), #Fails if <game_key_no> wasn't released in the current frame",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3200,
@@ -2221,7 +2177,7 @@
    "vtable_offsets": [],
    "name": "agent_get_item_modifier",
    "sdk_comment": "(agent_get_item_modifier, <destination>, <agent_no>), #Stores <agent_no>'s horse item modifier (-1 if agent is not a horse) into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3301,
@@ -2243,7 +2199,7 @@
    "vtable_offsets": [],
    "name": "agent_get_item_slot_modifier",
    "sdk_comment": "(agent_get_item_slot_modifier, <destination>, <agent_no>, <item_slot_no>), #Stores <agent_no>'s <item_slot_no> modifier into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3302,
@@ -2264,7 +2220,7 @@
    "vtable_offsets": [],
    "name": "agent_get_animation_progress",
    "sdk_comment": "(agent_get_animation_progress, <destination>, <agent_no>, [<channel_no>]), #Stores <agent_no>'s channel [<channel_no>] animation progress (in %%) into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3303,
@@ -2284,7 +2240,7 @@
    "vtable_offsets": [],
    "name": "agent_get_dna",
    "sdk_comment": "(agent_get_dna, <destination>, <agent_no>), #Stores <agent_no>'s dna into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3304,
@@ -2307,7 +2263,7 @@
    "vtable_offsets": [],
    "name": "agent_get_ground_scene_prop",
    "sdk_comment": "(agent_get_ground_scene_prop, <destination>, <agent_no>), #Stores the prop instance on which <agent_no> is standing into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3305,
@@ -2329,7 +2285,7 @@
    "vtable_offsets": [],
    "name": "agent_set_item_slot_ammo",
    "sdk_comment": "(agent_set_item_slot_ammo, <agent_no>, <item_slot_no>, <value>), #Sets <agent_no>'s <item_slot_no> ammo count to <value>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3306,
@@ -2351,7 +2307,7 @@
    "vtable_offsets": [],
    "name": "agent_get_item_slot_hit_points",
    "sdk_comment": "(agent_get_item_slot_hit_points, <destination>, <agent_no>, <item_slot_no>), #Stores <agent_no>'s <item_slot_no> shield hitpoints into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3307,
@@ -2373,7 +2329,7 @@
    "vtable_offsets": [],
    "name": "agent_set_item_slot_hit_points",
    "sdk_comment": "(agent_set_item_slot_hit_points, <agent_no>, <item_slot_no>, <value>), #Sets <agent_no>'s <item_slot_no> shield hitpoints to <value>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3308,
@@ -2394,7 +2350,7 @@
    "vtable_offsets": [],
    "name": "agent_get_wielded_item_slot_no",
    "sdk_comment": "(agent_get_wielded_item_slot_no, <destination>, <agent_no>, [<hand_no>]), #Stores <agent_no>'s wielded item slot for [<hand_no>] into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3309,
@@ -2415,7 +2371,7 @@
    "vtable_offsets": [],
    "name": "agent_get_scale",
    "sdk_comment": "(agent_get_scale, <destination_fixed_point>, <agent_no>), #Stores <agent_no>'s scale into <destination_fixed_point>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3310,
@@ -2437,7 +2393,7 @@
    "vtable_offsets": [],
    "name": "agent_set_forced_lod",
    "sdk_comment": "(agent_set_forced_lod, <agent_no>, <lod_level>), #Forces <agent_no>'s LOD level to <lod_level> (0 = auto)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3311,
@@ -2458,7 +2414,7 @@
    "vtable_offsets": [],
    "name": "agent_get_item_slot_flags",
    "sdk_comment": "(agent_get_item_slot_flags, <destination>, <agent_no>, <item_slot_no>), #Stores <agent_no>'s <item_slot_no> item slot flags into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3312,
@@ -2482,7 +2438,7 @@
    "vtable_offsets": [],
    "name": "agent_ai_get_move_target_position",
    "sdk_comment": "(agent_ai_get_move_target_position, <position_register>, <agent_no>), #Stores <agent_no>'s move target position agent into <position_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3313,
@@ -2504,7 +2460,7 @@
    "vtable_offsets": [],
    "name": "agent_set_horse",
    "sdk_comment": "(agent_set_horse, <agent_no>, <horse_agent_no>), #Sets <agent_no>'s horse to <horse_agent_no> (-1 for no horse)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3314,
@@ -2527,7 +2483,7 @@
    "vtable_offsets": [],
    "name": "agent_ai_set_simple_behavior",
    "sdk_comment": "(agent_ai_set_simple_behavior, <agent_no>, <simple_behavior>, [<guaranteed_time>]), #Sets <agent_no>'s behavior to <simple_behavior> and guarantees it won't be changed for [<guaranteed_time>] seconds. If [<guaranteed_time>] is not specified or <= 0, it won't be changed until agent_force_rethink is called",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3315,
@@ -2550,7 +2506,7 @@
    "vtable_offsets": [],
    "name": "agent_accelerate",
    "sdk_comment": "(agent_accelerate, <agent_no>, <position_register_no>, [<movement_timer_fixed_point>]), #Uses x, y, z components of <position_register_no> to apply acceleration to <agent_no>. Specify [<movement_timer_fixed_point>] for ghosting time",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3316,
@@ -2573,7 +2529,7 @@
    "vtable_offsets": [],
    "name": "agent_set_item_slot_modifier",
    "sdk_comment": "(agent_set_item_slot_modifier, <agent_no>, <item_slot_no>, <item_modifier_no>), #Sets <agent_no>'s <item_slot_no> modifier to <item_modifier_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3317,
@@ -2595,7 +2551,7 @@
    "vtable_offsets": [],
    "name": "agent_body_meta_mesh_set_vertex_keys_time_point",
    "sdk_comment": "(agent_body_meta_mesh_set_vertex_keys_time_point, <agent_no>, <body_meta_mesh>, <time_point>), #Sets <agent_no>'s <body_meta_mesh> vertex keys time point to <time_point>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3318,
@@ -2617,7 +2573,7 @@
    "vtable_offsets": [],
    "name": "agent_body_meta_mesh_set_visibility",
    "sdk_comment": "(agent_body_meta_mesh_set_visibility, <agent_no>, <body_meta_mesh>, <value>), #Shows (<value> = 1) or hides (<value> = 0) <agent_no>'s <body_meta_mesh>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3319,
@@ -2640,7 +2596,7 @@
    "vtable_offsets": [],
    "name": "agent_set_personal_animation",
    "sdk_comment": "(agent_set_personal_animation, <agent_no>, <anim_no>, <anim_no>), #Replaces <agent_no>'s default <anim_no> to personal <anim_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3320,
@@ -2661,7 +2617,7 @@
    "vtable_offsets": [],
    "name": "agent_get_personal_animation",
    "sdk_comment": "(agent_get_personal_animation, <destination>, <agent_no>, <anim_no>), #Stores <agent_no>'s personal <anim_no> into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3321,
@@ -2682,7 +2638,7 @@
    "vtable_offsets": [],
    "name": "agent_set_default_animations",
    "sdk_comment": "(agent_set_default_animations, <agent_no>), #Removes <agent_no>'s personal animations",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3322,
@@ -2703,7 +2659,7 @@
    "vtable_offsets": [],
    "name": "agent_cancel_current_animation",
    "sdk_comment": "(agent_cancel_current_animation, <agent_no>, <channel_no>), #Cancels <agent_no>'s channel <2> animation",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3323,
@@ -2724,7 +2680,7 @@
    "vtable_offsets": [],
    "name": "agent_get_ranged_damage_modifier",
    "sdk_comment": "(agent_get_ranged_damage_modifier, <destination>, <agent_no>), #Stores <agent_no>'s ranged damage modifier into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3324,
@@ -2745,7 +2701,7 @@
    "vtable_offsets": [],
    "name": "agent_add_stun",
    "sdk_comment": "(agent_add_stun, <agent_no>, <duration>), #Adds stun to <agent_no> for <duration> milliseconds",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3325,
@@ -2767,7 +2723,7 @@
    "vtable_offsets": [],
    "name": "agent_body_meta_mesh_deform_in_range",
    "sdk_comment": "(agent_body_meta_mesh_deform_in_range, <agent_no>, <body_meta_mesh>, <start_frame>, <end_frame>, <time_period>), #Animates <agent_no>'s <body_meta_mesh> from <start_frame> to <end_frame> within the specified <time_period> (in milliseconds)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3326,
@@ -2789,7 +2745,7 @@
    "vtable_offsets": [],
    "name": "agent_body_meta_mesh_deform_in_cycle_loop",
    "sdk_comment": "(agent_body_meta_mesh_deform_in_cycle_loop, <agent_no>, <body_meta_mesh>, <start_frame>, <end_frame>, <time_period>), #Performs looping animation of  <agent_no>'s <body_meta_mesh> from <start_frame> to <end_frame> and within the specified <time_period> (in milliseconds)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3327,
@@ -2811,7 +2767,7 @@
    "vtable_offsets": [],
    "name": "agent_body_meta_mesh_get_current_deform_progress",
    "sdk_comment": "(agent_body_meta_mesh_get_current_deform_progress, <destination>, <agent_no>, <body_meta_mesh>), #Stores <agent_no>'s <body_meta_mesh> deform progress percentage value between 0 and 100 if animation is still in progress into <destination>. Returns 100 otherwise",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3328,
@@ -2834,7 +2790,7 @@
    "vtable_offsets": [],
    "name": "agent_body_meta_mesh_get_current_deform_frame",
    "sdk_comment": "(agent_body_meta_mesh_get_current_deform_frame, <destination>, <agent_no>, <body_meta_mesh>), #Stores <agent_no>'s <body_meta_mesh> current deform frame, rounded to nearest integer value, into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3329,
@@ -2856,7 +2812,7 @@
    "vtable_offsets": [],
    "name": "agent_set_footstep_sound",
    "sdk_comment": "(agent_set_footstep_sound, <agent_no>, <type>, <sound_no>), #Sets <agent_no>'s footstep <sound_no> for <type>. For human type: 0 - water, 1 - indoors, 2 - outdoors. For horse type: 0 - water, 1 - walk, 2 - trot, 3 - canter, 4 - gallop. For mute use sound_no = -1",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3330,
@@ -2877,7 +2833,7 @@
    "vtable_offsets": [],
    "name": "agent_get_horse_rotation_velocity",
    "sdk_comment": "(agent_get_horse_rotation_velocity, <destination_fixed_point>, <agent_no>), #Stores <agent_no>'s horse rotation velocity into <destination_fixed_point>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3331,
@@ -2898,7 +2854,7 @@
    "vtable_offsets": [],
    "name": "agent_get_current_vertical_speed",
    "sdk_comment": "(agent_get_current_vertical_speed, <destination>, <agent_no>), #Stores <agent_no>'s current vertical speed into <destination> (in centimeters per second)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3332,
@@ -2919,7 +2875,7 @@
    "vtable_offsets": [],
    "name": "agent_set_current_vertical_speed",
    "sdk_comment": "(agent_set_current_vertical_speed, <agent_no>, <value>), #Sets <agent_no>'s current vertical speed to <value> (in centimeters per second)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3333,
@@ -2942,7 +2898,7 @@
    "vtable_offsets": [],
    "name": "agent_get_position_in_group",
    "sdk_comment": "(agent_get_position_in_group, <position_register>, <agent_no>), #Stores <agent_no>'s position in group into <position_register> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3334,
@@ -2963,7 +2919,7 @@
    "vtable_offsets": [],
    "name": "agent_get_current_ai_mesh_face_group",
    "sdk_comment": "(agent_get_current_ai_mesh_face_group, <destination>, <agent_no>), #Stores <agent_no>'s current ai mesh face group into <destination> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3335,
@@ -2983,7 +2939,7 @@
    "vtable_offsets": [],
    "name": "agent_set_time_speed_multiplier",
    "sdk_comment": "(agent_set_time_speed_multiplier, <agent_no>, <value_fixed_point>), #Sets <agent_no>'s time speed multiplier to <value_fixed_point> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3336,
@@ -3004,7 +2960,7 @@
    "vtable_offsets": [],
    "name": "agent_get_time_speed_multiplier",
    "sdk_comment": "(agent_get_time_speed_multiplier, <destination_fixed_point>, <agent_no>), #Stores <agent_no>'s time speed multiplier into <destination_fixed_point> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3337,
@@ -3035,7 +2991,7 @@
    "vtable_offsets": [],
    "name": "agent_kick",
    "sdk_comment": "(agent_kick, <agent_no>), #AI <agent_no> performs kick (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3338,
@@ -3055,7 +3011,7 @@
    "vtable_offsets": [],
    "name": "agent_set_dropped_items_prune_time",
    "sdk_comment": "(agent_set_dropped_items_prune_time, <agent_no>, <value>), #Sets <agent_no>'s dropped items prune time to <value> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3339,
@@ -3075,7 +3031,7 @@
    "vtable_offsets": [],
    "name": "agent_set_missile_items_prune_time",
    "sdk_comment": "(agent_set_missile_items_prune_time, <agent_no>, <value>), #Sets <agent_no>'s missile items prune time to <value> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3340,
@@ -3138,7 +3094,7 @@
    "vtable_offsets": [],
    "name": "agent_set_left_hand_weapon_collision",
    "sdk_comment": "(agent_set_left_hand_weapon_collision, <agent_no>, <value>), #Enables or disables <agent_no>'s left hand weapon collision (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3343,
@@ -3158,7 +3114,7 @@
    "vtable_offsets": [],
    "name": "agent_ai_set_can_weapon_switch",
    "sdk_comment": "(agent_ai_set_can_weapon_switch, <agent_no>, <value>), #Enables or disables <agent_no>'s weapon switching for ai (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3344,
@@ -3178,7 +3134,7 @@
    "vtable_offsets": [],
    "name": "agent_ai_set_can_fight",
    "sdk_comment": "(agent_ai_set_can_fight, <agent_no>, <value>), #Enables or disables <agent_no>'s engaging enemy for ai (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3345,
@@ -3201,7 +3157,7 @@
    "vtable_offsets": [],
    "name": "agent_fade_out_advanced",
    "sdk_comment": "(agent_fade_out_advanced, <agent_no>, <value_fixed_point>), #Makes the <agent_no> disappear within specified time <value_fixed_point>. The agent is not deleted, but made invisible. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3346,
@@ -3224,7 +3180,7 @@
    "vtable_offsets": [],
    "name": "agent_fade_in_advanced",
    "sdk_comment": "(agent_fade_in_advanced, <agent_no>, <value_fixed_point>), #Makes the <agent_no> reappear within specified time <value_fixed_point>. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3347,
@@ -3246,7 +3202,7 @@
    "vtable_offsets": [],
    "name": "agent_set_voice_sound",
    "sdk_comment": "(agent_set_voice_sound, <agent_no>, <type>, <sound_no>), #Sets <agent_no>'s voice <sound_no> for <type>. For human type: check header_skins.py. For horse only 0 (neigh). For mute use sound_no = -1 (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3348,
@@ -3266,7 +3222,7 @@
    "vtable_offsets": [],
    "name": "agent_set_enable_tilt",
    "sdk_comment": "(agent_set_enable_tilt, <agent_no>, <value>), #Enables or disables <agent_no>'s tilt (for horse) (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3349,
@@ -3288,7 +3244,7 @@
    "vtable_offsets": [],
    "name": "agent_set_rider_rotation_angles",
    "sdk_comment": "(agent_set_rider_rotation_angles, <agent_no>, <rotation_type>, <right_side_angle_fixed_point>, <left_side_angle_fixed_point>), #Sets <agent_no>'s rider rotation for <rotation_type> to <right_side_angle_fixed_point> and <left_side_angle_fixed_point>. For <rotation_type>: check amf_rider_rot flags from header_animations.py. From 0 to 11: 0 - without flag, 1 - for bow, etc. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3350,
@@ -3310,7 +3266,7 @@
    "vtable_offsets": [],
    "name": "agent_get_rider_rotation_angles",
    "sdk_comment": "(agent_get_rider_rotation_angles, <destination_fixed_point>, <agent_no>, <rotation_type>, <side>), #Stores <agent_no>'s rider rotation angle for <rotation_type> and <side> into <destination_fixed_point>. Side: 0 - right, 1 - left. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3351,
@@ -3330,7 +3286,7 @@
    "vtable_offsets": [],
    "name": "agent_set_default_rider_rotation_angles",
    "sdk_comment": "(agent_set_default_rider_rotation_angles, <agent_no>), #Sets <agent_no>'s default rider rotation angles. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3352,
@@ -3350,7 +3306,7 @@
    "vtable_offsets": [],
    "name": "agent_ai_set_can_aim",
    "sdk_comment": "(agent_ai_set_can_aim, <agent_no>, <value>), #Enables or disables <agent_no>'s ranged aiming (ballistic arc computation) for ai. When disabled, ranged agents look straight at the target instead of aiming upward. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3353,
@@ -3371,7 +3327,7 @@
    "vtable_offsets": [],
    "name": "agent_set_can_multihit",
    "sdk_comment": "(agent_set_can_multihit, <agent_no>, <value>, [<max_targets>]), #Enables or disables <agent_no>'s  melee attacks to hit multiple enemies in a single swing, applying damage to every valid target intersecting the weapon's hitbox. Each target is hit at most once per swing. Attacks can still be blocked. If the agent is using a crush-through-block weapon, the swing will bypass blocks under the normal crush-through rules and continue past blocked defenders. Optional [<max_targets>] caps the number of distinct agents that can be damaged in a single swing (0 = unlimited, default). Must be set on the server side in multiplayer. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3354,
@@ -3391,7 +3347,7 @@
    "vtable_offsets": [],
    "name": "agent_has_multihit",
    "sdk_comment": "(agent_has_multihit, <agent_no>), #Fails if the <agent_no> has multi-hit disabled. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3355,
@@ -3412,7 +3368,7 @@
    "vtable_offsets": [],
    "name": "agent_set_crush_through",
    "sdk_comment": "(agent_set_crush_through, <agent_no>, <value>), #Makes all <agent_no>'s attacks function like itp_crush_through if <value> set to 1, like itp_crush_through_any_direction if <value> set to 2, else native functionality. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3356,
@@ -3432,7 +3388,7 @@
    "vtable_offsets": [],
    "name": "agent_get_crush_through",
    "sdk_comment": "(agent_get_crush_through, <destination>, <agent_no>), #Returns 1 if <agent_no> is set to itp_crush_through functionality, returns 2 if set to itp_crush_through_any_direction functionality, else returns 0. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3357,
@@ -3453,7 +3409,7 @@
    "vtable_offsets": [],
    "name": "agent_set_trigger_disabled",
    "sdk_comment": "(agent_set_trigger_disabled, <agent_no>, <trigger_id>, <value>), #Disables (<value>=1) or enables (<value>=0) firing of <trigger_id> for <agent_no>. Supported triggers: ti_on_agent_turn, ti_on_agent_fill_collision_capsule (WSE2), ti_on_agent_fill_movement_capsule (WSE2), ti_on_agent_footstep_sound_played.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3358,
@@ -3474,7 +3430,7 @@
    "vtable_offsets": [],
    "name": "agent_is_trigger_disabled",
    "sdk_comment": "(agent_is_trigger_disabled, <agent_no>, <trigger_id>), #Fails if <trigger_id> is enabled for <agent_no>. Supported triggers: ti_on_agent_turn, ti_on_agent_fill_collision_capsule (WSE2), ti_on_agent_fill_movement_capsule (WSE2), ti_on_agent_footstep_sound_played.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3359,
@@ -3495,7 +3451,7 @@
    "vtable_offsets": [],
    "name": "agent_set_can_piercing",
    "sdk_comment": "(agent_set_can_piercing, <agent_no>, <value>, [<max_targets>]), #Enables or disables <agent_no>'s ranged projectiles (arrows, bolts, thrown weapons) to pierce through enemies instead of stopping on the first hit. Each agent is hit at most once per projectile. Shield blocks, friendly hits, scene geometry and mission objects still stop the projectile. Optional [<max_targets>] caps the number of distinct agents (including horses) that a single projectile can damage (0 = unlimited, default). Must be set on the server side in multiplayer. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3360,
@@ -3515,7 +3471,7 @@
    "vtable_offsets": [],
    "name": "agent_has_piercing",
    "sdk_comment": "(agent_has_piercing, <agent_no>), #Fails if the <agent_no> has piercing projectiles disabled. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3400,
@@ -3547,7 +3503,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_send_chat_message_to_player",
    "sdk_comment": "(multiplayer_send_chat_message_to_player, <player_no>, <sender_player_no>, <text>, [<type>]), #Sends <text> to <player_no> as a (native compatible) chat message by <sender_player_no>. Works only on servers. [<type>]: 0 = chat, 1 = team chat",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3401,
@@ -3580,7 +3536,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_send_composite_message_to_player",
    "sdk_comment": "(multiplayer_send_composite_message_to_player, <player_no>, <message_type>, <message_register>), #Sends <message_register> with <message_type> to <player_no> (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3402,
@@ -3610,7 +3566,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_send_composite_message_to_server",
    "sdk_comment": "(multiplayer_send_composite_message_to_server, <message_type>, <message_register>), #Sends <message_register> with <message_type> to the server (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3403,
@@ -3629,7 +3585,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_get_cur_profile",
    "sdk_comment": "(multiplayer_get_cur_profile, <destination>), #Stores the current multiplayer profile into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3404,
@@ -3648,7 +3604,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_get_num_profiles",
    "sdk_comment": "(multiplayer_get_num_profiles, <destination>), #Stores the number of multiplayer profiles into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3405,
@@ -3672,7 +3628,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_message_init",
    "sdk_comment": "(multiplayer_message_init, <message_register>), #Initializes (empties) <message_register> (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3406,
@@ -3697,7 +3653,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_message_put_string",
    "sdk_comment": "(multiplayer_message_put_string, <message_register>, <string>), #Puts <string> into <message_register> (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3407,
@@ -3719,7 +3675,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_message_put_int",
    "sdk_comment": "(multiplayer_message_put_int, <message_register>, <value>, [<num_bits>]), #Puts [<num_bits>] of <value> into <message_register> (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3408,
@@ -3740,7 +3696,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_message_put_position",
    "sdk_comment": "(multiplayer_message_put_position, <message_register>, <position_register>, [<local>]), #Puts <position_register> into <9>. Set [<local>] to non-zero for small, relative positions (default: scene positions) (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3409,
@@ -3761,7 +3717,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_message_put_coordinate",
    "sdk_comment": "(multiplayer_message_put_coordinate, <message_register>, <position_register>, [<local>]), #Puts x, y, z coordinates from <position_register> into <message_register>. Set [<local>] to non-zero for small, relative positions (default: scene positions) (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3410,
@@ -3784,7 +3740,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_cur_message_get_string",
    "sdk_comment": "(multiplayer_cur_message_get_string, <string_register>), #Stores a string from the current message register into <string_register> (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3411,
@@ -3806,7 +3762,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_cur_message_get_int",
    "sdk_comment": "(multiplayer_cur_message_get_int, <destination>, [<num_bits>]), #Stores [<num_bits>] of an int from the current message register into <destination>. [<num_bits>] MUST match the number of bits sent (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3412,
@@ -3828,7 +3784,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_cur_message_get_position",
    "sdk_comment": "(multiplayer_cur_message_get_position, <position_register>, [<local>]), #Stores a position from the current message register into <position_register>. [<local>] MUST match the type sent (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3413,
@@ -3850,7 +3806,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_cur_message_get_coordinate",
    "sdk_comment": "(multiplayer_cur_message_get_coordinate, <position_register>, [<local>]), #Stores x, y, z coordinates from the current message register into <position_register>. [<local>] MUST match the type sent (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3414,
@@ -3869,7 +3825,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_cur_profile_get_skin",
    "sdk_comment": "(multiplayer_cur_profile_get_skin, <destination>), #Stores current profile's skin into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3415,
@@ -3891,7 +3847,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_connect_to_server",
    "sdk_comment": "(multiplayer_connect_to_server, <address>, <password>, [<campaign>]), #Connect to server with <address> and <password>. Set [<campaign>] to non-zero for connect to multiplayer campaign server. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3416,
@@ -3910,7 +3866,7 @@
    "vtable_offsets": [],
    "name": "multiplayer_is_campaign",
    "sdk_comment": "(multiplayer_is_campaign), #Checks that the code is running on multiplayer campaign mode. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3500,
@@ -3936,7 +3892,7 @@
    "vtable_offsets": [],
    "name": "server_set_password_admin",
    "sdk_comment": "(server_set_password_admin, <password>), #Sets <password> as server administrator password",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3501,
@@ -3962,7 +3918,7 @@
    "vtable_offsets": [],
    "name": "server_set_password_private",
    "sdk_comment": "(server_set_password_private, <password>), #Sets <password> as server private player password",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3502,
@@ -3981,7 +3937,7 @@
    "vtable_offsets": [],
    "name": "server_map_rotation_get_count",
    "sdk_comment": "(server_map_rotation_get_count, <destination>), #Stores the number of maps in rotation into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3503,
@@ -4000,7 +3956,7 @@
    "vtable_offsets": [],
    "name": "server_map_rotation_get_index",
    "sdk_comment": "(server_map_rotation_get_index, <destination>), #Stores the current map rotation index into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3504,
@@ -4021,7 +3977,7 @@
    "vtable_offsets": [],
    "name": "server_map_rotation_set_index",
    "sdk_comment": "(server_map_rotation_set_index, <index>), #Sets the current rotation index to <index>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3505,
@@ -4040,7 +3996,7 @@
    "vtable_offsets": [],
    "name": "server_map_rotation_get_map",
    "sdk_comment": "(server_map_rotation_get_map, <destination>, <index>), #Stores the map at <index> into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3506,
@@ -4061,7 +4017,7 @@
    "vtable_offsets": [],
    "name": "server_map_rotation_add_map",
    "sdk_comment": "(server_map_rotation_add_map, <site_no>, [<index>]), #Adds <site_no> to the map rotation at [<index>]",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3507,
@@ -4082,7 +4038,7 @@
    "vtable_offsets": [],
    "name": "server_map_rotation_remove_map",
    "sdk_comment": "(server_map_rotation_remove_map, [<index>]), #Removes the map at [<index>] from the map rotation (does not work when only one left)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3508,
@@ -4101,7 +4057,7 @@
    "vtable_offsets": [],
    "name": "server_get_horse_friendly_fire",
    "sdk_comment": "(server_get_horse_friendly_fire, <destination>), #Stores horse friendly fire status into <destination> (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3509,
@@ -4122,7 +4078,7 @@
    "vtable_offsets": [],
    "name": "server_set_horse_friendly_fire",
    "sdk_comment": "(server_set_horse_friendly_fire, <value>), #Enables or disables horse friendly fire (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3510,
@@ -4141,7 +4097,7 @@
    "vtable_offsets": [],
    "name": "server_get_show_crosshair",
    "sdk_comment": "(server_get_show_crosshair, <destination>), #Stores crosshair visibility status into <destination> (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3511,
@@ -4162,7 +4118,7 @@
    "vtable_offsets": [],
    "name": "server_set_show_crosshair",
    "sdk_comment": "(server_set_show_crosshair, <value>), #Enables or disables the crosshair (requires, for WSE: network_compatible = 0 in wse_settings.ini, for WSE2: bBreakWarbandCompatibility=true in rgl_config.ini)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3512,
@@ -4192,7 +4148,7 @@
    "vtable_offsets": [],
    "name": "get_server_option_at_connect",
    "sdk_comment": "(get_server_option_at_connect, <destination>, [<index>]), #Stores option [<index>] into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3513,
@@ -4213,7 +4169,7 @@
    "vtable_offsets": [],
    "name": "server_set_password_rcon",
    "sdk_comment": "(server_set_password_rcon, <password>), #Sets <password> as server RCON password",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3514,
@@ -4234,7 +4190,7 @@
    "vtable_offsets": [],
    "name": "execute_server_console_command",
    "sdk_comment": "(execute_server_console_command, <string_register>, <command>), #Executes dedicated server console command <command> and stores result string into <string_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3515,
@@ -4258,7 +4214,7 @@
    "vtable_offsets": [],
    "name": "add_anonymous_player",
    "sdk_comment": "(add_anonymous_player, <unique_id>, <name>), #Sets <name> pseudonym for multiplayer player <unique_id> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3516,
@@ -4278,7 +4234,7 @@
    "vtable_offsets": [],
    "name": "remove_anonymous_player",
    "sdk_comment": "(remove_anonymous_player, <unique_id>), #Removes pseudonym for multiplayer player <unique_id> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3517,
@@ -4298,7 +4254,7 @@
    "vtable_offsets": [],
    "name": "clear_anonymous_players",
    "sdk_comment": "(clear_anonymous_players), #Clears pseudonyms for multiplayer players (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3518,
@@ -4318,7 +4274,7 @@
    "vtable_offsets": [],
    "name": "server_set_ghost_mode_advanced",
    "sdk_comment": "(server_set_ghost_mode_advanced, <value>, <can't_be_free>, <team>, <lock_to_view>, <only_players>), #Sets settings for advanced ghost mode. Works only for WSE2 clients. <value>: 0 - disable, 1 - enable, <can't_be_free>: 0 - camera can move, 1 - camera can't move, <team>: 0 - any team, 1 - player's team only, <lock_to_view>: 0 - freely rotate camera, 1 - lock to agent's view, <only_players>: 0 - any agents, 1 - only players (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3519,
@@ -4338,7 +4294,7 @@
    "vtable_offsets": [],
    "name": "server_set_anticheat_option",
    "sdk_comment": "(server_set_anticheat_option, <option_no>, <value>), #Sets anti-cheat option aco_* to <value> at runtime. Server only. Float options take fixed point values (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3520,
@@ -4357,7 +4313,7 @@
    "vtable_offsets": [],
    "name": "server_get_anticheat_option",
    "sdk_comment": "(server_get_anticheat_option, <destination>, <option_no>), #Stores anti-cheat option aco_* into <destination>. Float options are returned as fixed point (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3600,
@@ -4414,7 +4370,7 @@
    "vtable_offsets": [],
    "name": "set_ally_collision_threshold",
    "sdk_comment": "(set_ally_collision_threshold, <low_boundary>, <high_boundary>), #Changes the animation progress boundaries (in percents) that determine if attacks on allies will collide (default: 45% <= x <= 60%)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3603,
@@ -4441,7 +4397,7 @@
    "vtable_offsets": [],
    "name": "particle_system_remove",
    "sdk_comment": "(particle_system_remove, [<particle_system_no>]), #Removes [<particle_system_no>] (all particle systems if not set or -1) from the current entity (can be used in several in triggers)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3604,
@@ -4460,7 +4416,7 @@
    "vtable_offsets": [],
    "name": "get_spectated_agent_no",
    "sdk_comment": "(get_spectated_agent_no, <destination>), #Stores spectated agent no into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3605,
@@ -4481,7 +4437,7 @@
    "vtable_offsets": [],
    "name": "prop_instance_set_forced_lod",
    "sdk_comment": "(prop_instance_set_forced_lod, <prop_instance_no>, <lod_level>), #Forces <prop_instance_no>'s LOD level to <lod_level> (0 = auto)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3606,
@@ -4501,7 +4457,7 @@
    "vtable_offsets": [],
    "name": "prop_instance_set_variation_id",
    "sdk_comment": "(prop_instance_set_variation_id, <prop_instance_no>, <value>), #Sets <prop_instance_no>'s variation id to <value>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3607,
@@ -4521,7 +4477,7 @@
    "vtable_offsets": [],
    "name": "prop_instance_set_variation_id_2",
    "sdk_comment": "(prop_instance_set_variation_id_2, <prop_instance_no>, <value>), #Sets <prop_instance_no>'s variation id 2 to <value>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3608,
@@ -4563,7 +4519,7 @@
    "vtable_offsets": [],
    "name": "missile_get_path_point_position",
    "sdk_comment": "(missile_get_path_point_position, <position_register>, <path_point_no>, <missile_no>), #Stores the position of the <missile_no>'s <path_point_no> (0-499) into <position_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3610,
@@ -4605,7 +4561,7 @@
    "vtable_offsets": [],
    "name": "missile_remove_on_hit",
    "sdk_comment": "(missile_remove_on_hit), #Causes a missile item not to spawn on hit (can be only used inside ti_on_missile_hit)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3612,
@@ -4624,7 +4580,7 @@
    "vtable_offsets": [],
    "name": "missile_is_valid",
    "sdk_comment": "(missile_is_valid, <missile_no>), #Fails if <missile_no> is not valid",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3613,
@@ -4648,7 +4604,7 @@
    "vtable_offsets": [],
    "name": "missile_get_cur_position",
    "sdk_comment": "(missile_get_cur_position, <position_register>, <missile_no>), #Stores <missile_no>'s current position into <position_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3614,
@@ -4669,7 +4625,7 @@
    "vtable_offsets": [],
    "name": "set_prop_collision_threshold",
    "sdk_comment": "(set_prop_collision_threshold, <attack_direction>, <low_boundary>, <high_boundary>), #Changes the animation progress boundaries (in percents) that determine if swing attacks on props will collide (default: 40% <= x <= 80% (75% for overheads))",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3615,
@@ -4688,7 +4644,7 @@
    "vtable_offsets": [],
    "name": "get_camera_position",
    "sdk_comment": "(get_camera_position, <position_register>), #Stores camera position and rotation into <position_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3616,
@@ -4709,7 +4665,7 @@
    "vtable_offsets": [],
    "name": "prop_instance_remove_particle_system",
    "sdk_comment": "(prop_instance_remove_particle_system, <prop_instance_no>, [<particle_system_no>]), #Removes [<particle_system_no>] (all particle systems if not set or -1) from <prop_instance_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3617,
@@ -4734,7 +4690,7 @@
    "vtable_offsets": [],
    "name": "prop_instance_remove_light",
    "sdk_comment": "(prop_instance_remove_light, <prop_instance_no>), #Removes light from <prop_instance_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3618,
@@ -4755,7 +4711,7 @@
    "vtable_offsets": [],
    "name": "prop_instance_get_sound_progress",
    "sdk_comment": "(prop_instance_get_sound_progress, <destination>, <prop_instance_no>), #Stores <prop_instance_no>'s sound_progress into <destination>. Returned value can be between 0-100, or -1 if nothing is being played. (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3619,
@@ -4817,7 +4773,7 @@
    "vtable_offsets": [],
    "name": "cast_ray_agents",
    "sdk_comment": "(cast_ray_agents, <destination>, <hit_position_register>, <ray_position_register>, [<ray_length_fixed_point>]), #Casts a ray of length [<ray_length_fixed_point>] starting from <ray_position_register> and stores the closest agent's hit position into <hit_position_register> (fails if no hits). Agent's id will be stored into <destination> and bone no will be stored into reg0 (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3621,
@@ -4839,7 +4795,7 @@
    ],
    "name": "ai_mesh_face_group_translate",
    "sdk_comment": "(ai_mesh_face_group_translate, <group_no>, <position_register>), #Translates the ai mesh face <group_no> by distance given in <position_register> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3622,
@@ -4879,7 +4835,7 @@
    "vtable_offsets": [],
    "name": "shift_entry_point",
    "sdk_comment": "(shift_entry_point, <entry_no>), #Shift <entry_no> same way game does to spawn visitors (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3624,
@@ -4900,7 +4856,7 @@
    "vtable_offsets": [],
    "name": "missile_remove",
    "sdk_comment": "(missile_remove, <missile_no>), #Removes <missile_no> from the mission",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3625,
@@ -4924,7 +4880,7 @@
    "vtable_offsets": [],
    "name": "scene_prop_remove",
    "sdk_comment": "(scene_prop_remove, <prop_instance_no>), #Removes <prop_instance_no> from the mission (server/singleplayer authoritative; auto-synced to clients). Only works on scene props, not dropped items/missiles. The id becomes invalid and may be reused - clear it after calling. NOTE for mixed servers: vanilla Warband clients cannot clear the leftover collision and will keep an invisible hitbox; to support them, first move the prop far underground with prop_instance_set_position (a networked event vanilla understands, which relocates its hitbox) and only THEN call scene_prop_remove. Pure WSE2 servers and singleplayer do not need this (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3700,
@@ -5751,7 +5707,7 @@
    "vtable_offsets": [],
    "name": "position_align_to_ground",
    "sdk_comment": "(position_align_to_ground, <position_register>, [<point_up>], [<set_z_to_ground_level>]), #Aligns <position_register> to the ground (or to the ground normal if [<point_up>] is set)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4102,
@@ -6553,7 +6509,7 @@
    "vtable_offsets": [],
    "name": "str_store_multiplayer_profile_name",
    "sdk_comment": "(str_store_multiplayer_profile_name, <string_register>, <profile_no>), #Stores <profile_no>'s name into <string_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4226,
@@ -6600,7 +6556,7 @@
    "vtable_offsets": [],
    "name": "str_store_server_password_admin",
    "sdk_comment": "(str_store_server_password_admin, <string_register>), #Stores the server administrator password into <string_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4228,
@@ -6620,7 +6576,7 @@
    "vtable_offsets": [],
    "name": "str_store_server_password_private",
    "sdk_comment": "(str_store_server_password_private, <string_register>), #Stores the server private player password into <string_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4229,
@@ -6645,7 +6601,7 @@
    ],
    "name": "str_store_overlay_text",
    "sdk_comment": "(str_store_overlay_text, <string_register>, <overlay_no>), #Stores <overlay_no>'s text into <string_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4230,
@@ -6670,7 +6626,7 @@
    "vtable_offsets": [],
    "name": "str_store_player_ip",
    "sdk_comment": "(str_store_player_ip, <string_register>, <player_no>), #Stores <player_no>'s IP address into <string_register> (works only on servers)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4231,
@@ -6837,7 +6793,7 @@
    "vtable_offsets": [],
    "name": "str_store_multiplayer_profile_face_keys",
    "sdk_comment": "(str_store_multiplayer_profile_face_keys, <string_register>, <profile_no>), #Stores <profile_no>'s face keys into <string_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4238,
@@ -7983,7 +7939,7 @@
    "vtable_offsets": [],
    "name": "scene_set_flags",
    "sdk_comment": "(scene_set_flags, <scene_no>, <flags>), #Sets <scene_no>'s flags to <flags>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4501,
@@ -8003,7 +7959,7 @@
    "vtable_offsets": [],
    "name": "scene_set_water_level",
    "sdk_comment": "(scene_set_water_level, <scene_no>, <water_level_fixed_point>), #Sets <scene_no>'s water level to <water_level_fixed_point>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4502,
@@ -8024,7 +7980,7 @@
    "vtable_offsets": [],
    "name": "scene_set_bounds",
    "sdk_comment": "(scene_set_bounds, <scene_no>, <min_x_fixed_point>, <min_y_fixed_point>, <max_x_fixed_point>, <max_y_fixed_point>), #Sets <scene_no>'s bounds to (<min_x_fixed_point>, <min_y_fixed_point>) and (<max_x_fixed_point>, <max_y_fixed_point>)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4503,
@@ -8048,7 +8004,7 @@
    "vtable_offsets": [],
    "name": "scene_set_outer_terrain",
    "sdk_comment": "(scene_set_outer_terrain, <scene_no>, <outer_terrain_mesh_name>), #Sets <scene_no>'s outer terrain to <outer_terrain_mesh_name>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4504,
@@ -8072,7 +8028,7 @@
    "vtable_offsets": [],
    "name": "scene_set_terrain_seed",
    "sdk_comment": "(scene_set_terrain_seed, <scene_no>, <value>), #Sets <scene_no>'s terrain generator terrain seed to <value>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4505,
@@ -8096,7 +8052,7 @@
    "vtable_offsets": [],
    "name": "scene_set_river_seed",
    "sdk_comment": "(scene_set_river_seed, <scene_no>, <value>), #Sets <scene_no>'s terrain generator river seed to <value>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4506,
@@ -8120,7 +8076,7 @@
    "vtable_offsets": [],
    "name": "scene_set_flora_seed",
    "sdk_comment": "(scene_set_flora_seed, <scene_no>, <value>), #Sets <scene_no>'s terrain generator flora seed to <value>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4507,
@@ -8144,7 +8100,7 @@
    "vtable_offsets": [],
    "name": "scene_set_deep_water",
    "sdk_comment": "(scene_set_deep_water, <scene_no>, <value>), #Enables or disables terrain generator deep water for <scene_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4508,
@@ -8168,7 +8124,7 @@
    "vtable_offsets": [],
    "name": "scene_set_place_river",
    "sdk_comment": "(scene_set_place_river, <scene_no>, <value>), #Enables or disables terrain generator river placement for <scene_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4509,
@@ -8192,7 +8148,7 @@
    "vtable_offsets": [],
    "name": "scene_set_disable_grass",
    "sdk_comment": "(scene_set_disable_grass, <scene_no>, <value>), #Enables or disables terrain generator grass placement for <scene_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4510,
@@ -8216,7 +8172,7 @@
    "vtable_offsets": [],
    "name": "scene_set_valley_size",
    "sdk_comment": "(scene_set_valley_size, <scene_no>, <value>), #Sets <scene_no>'s terrain generator valley size to <value> (0-127)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4511,
@@ -8240,7 +8196,7 @@
    "vtable_offsets": [],
    "name": "scene_set_hill_height",
    "sdk_comment": "(scene_set_hill_height, <scene_no>, <value>), #Sets <scene_no>'s terrain generator hill height to <value> (0-127)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4512,
@@ -8264,7 +8220,7 @@
    "vtable_offsets": [],
    "name": "scene_set_ruggedness",
    "sdk_comment": "(scene_set_ruggedness, <scene_no>, <value>), #Sets <scene_no>'s terrain generator ruggedness to <value> (0-127)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4513,
@@ -8288,7 +8244,7 @@
    "vtable_offsets": [],
    "name": "scene_set_vegetation",
    "sdk_comment": "(scene_set_vegetation, <scene_no>, <value>), #Sets <scene_no>'s terrain generator vegetation to <value> (0-127)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4514,
@@ -8313,7 +8269,7 @@
    "vtable_offsets": [],
    "name": "scene_set_size",
    "sdk_comment": "(scene_set_size, <scene_no>, <x>, <y>), #Sets <scene_no>'s terrain generator map size to (<x>, <y>) (0-1023)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4515,
@@ -8337,7 +8293,7 @@
    "vtable_offsets": [],
    "name": "scene_set_region_type",
    "sdk_comment": "(scene_set_region_type, <scene_no>, <value>), #Sets <scene_no>'s terrain generator region type to <value> (0-15)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4516,
@@ -8361,7 +8317,7 @@
    "vtable_offsets": [],
    "name": "scene_set_region_detail",
    "sdk_comment": "(scene_set_region_detail, <scene_no>, <value>), #Sets <scene_no>'s terrain generator region detail to <value> (0-3)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4517,
@@ -8386,7 +8342,7 @@
    "vtable_offsets": [],
    "name": "scene_set_region_variant",
    "sdk_comment": "(scene_set_region_variant, <scene_no>, <value>), #Sets <scene_no>'s terrain generator region variant to <value> (0-127). Flora kinds tagged with fkf_variant(<value>) replace the normal flora of their category (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4518,
@@ -8406,7 +8362,7 @@
    "vtable_offsets": [],
    "name": "scene_set_height_fog",
    "sdk_comment": "(scene_set_height_fog, <base_height_fixed_point>, <falloff_fixed_point>, <strength_fixed_point>), #Makes the air thicken towards the ground in the current scene, so mist gathers in hollows while hilltops stand clear. All three are in hundredths: <base_height_fixed_point> is the world height below which it starts, <falloff_fixed_point> how far it takes to come on - small is a layer with a visible top, large a gradual haze - and <strength_fixed_point> how many times thicker the air gets at the bottom, where 100 is double. A <strength_fixed_point> of 0 turns it off. It can only ever thicken the fog set by set_fog_distance, never thin it, so a scene that wants limited visibility keeps it. Needs the effect WSE2 ships (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4519,
@@ -8425,7 +8381,7 @@
    "vtable_offsets": [],
    "name": "scene_set_water_waves",
    "sdk_comment": "(scene_set_water_waves, <height_fixed_point>, <length_fixed_point>, <speed_fixed_point>), #Sets the swell on the water of the current scene, so a village pond can be still while a quest at sea is not. All three are in hundredths: <height_fixed_point> is crest to trough in metres, <length_fixed_point> the distance between crests, and <speed_fixed_point> a multiple of the speed water of that length really travels at, so 100 is right. A <height_fixed_point> of 0 is flat calm. Two things depend on the height and are worth telling apart - the surface tilts by about height over length, and that tilt is what makes the wave visible at all, while the water also rises and falls by half the height, which is what decides whether a familiar shoreline still looks like itself. To make a wave more visible on calm water, shorten the length rather than raise the height. Below about 800 there are too few vertices to a wave and it comes out as triangles. Needs the effect WSE2 ships (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4520,
@@ -8444,7 +8400,7 @@
    "vtable_offsets": [],
    "name": "scene_set_flora_wind",
    "sdk_comment": "(scene_set_flora_wind, <strength_fixed_point>, <gust_size_fixed_point>, <speed_fixed_point>), #Sets the wind on the vegetation of the current scene, so a gale in a quest and still air in a village are not the same weather. All three are in hundredths: <strength_fixed_point> is how far the top of a plant travels in metres, <gust_size_fixed_point> how far a gust reaches - the distance over which plants lean together instead of each on its own - and <speed_fixed_point> how fast the gust crosses the ground in metres a second. A <strength_fixed_point> of 0 is still air. The foot of each plant stays put whatever the strength: the engine works out how far up its own plant every vertex sits, so a stem bends rather than the whole bush sliding. Needs the effect WSE2 ships (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4521,
@@ -8463,7 +8419,7 @@
    "vtable_offsets": [],
    "name": "scene_rebake_sky_cube",
    "sdk_comment": "(scene_rebake_sky_cube), #Takes the baked sky of the current scene again, so that reflections and the directional part of the ambient show the scene as it stands now. The sky is baked once, when the scene loads, and it holds the geometry that stood there then. Call this once the prop has finished moving. It is not instant: the engine draws one face a frame, so a probe takes six frames and a scene with four of them takes about two dozen. Call it when something has actually changed rather than on a timer all the same: the work is real, and the bake at load costs far more because the scene is cold. A change in the COLOUR of the light needs no call, the ambient being normalised against its own average and surviving that almost intact; it is moved GEOMETRY that makes the old bake wrong. Its neighbour rebuild_shadow_map = 2393 does the same job for the shadows and is deliberately separate, so a scene that moves a prop and wants both has to ask for both. Needs the effect WSE2 ships and iEffectShaderModel=3 (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4522,
@@ -8482,7 +8438,7 @@
    "vtable_offsets": [],
    "name": "scene_set_weather_direction",
    "sdk_comment": "(scene_set_weather_direction, <angle>), #Says which way the weather of this scene is going, as a compass <angle> in whole degrees - 0 along the world x axis, 90 along the world y - and the falling rain, the gusts on the grass and the swell on the sea all follow it instead of each pointing along an axis of its own. A negative <angle> hands the direction back to the map, which interpolates it between four sample points and is what happens when nothing calls this. Call it from ti_before_mission_start, where the rest of the weather is decided, and all three agree; called later it turns the grass and the sea while the falling rain keeps the slant it was created with, because the rain's particles are made once when the mission starts. It sets DIRECTION only - how hard the wind blows and how high the sea runs stay with scene_set_flora_wind and scene_set_water_waves - and it is obeyed even when the player has the weather direction switched off, because the weather belongs to the scene. Needs the effect WSE2 ships (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4600,
@@ -8700,7 +8656,7 @@
    "vtable_offsets": [],
    "name": "update_material",
    "sdk_comment": "(update_material, <material_name>, <new_material_name>), #Updates <material_name> with <new_material_name>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4701,
@@ -8724,7 +8680,7 @@
    "vtable_offsets": [],
    "name": "reload_item_kinds",
    "sdk_comment": "(reload_item_kinds, [<change_file>], [<file_name>]), #Reload item kinds. If [<change_file>] sets, then [<file_name>] loaded instead default file (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4702,
@@ -8748,7 +8704,7 @@
    "vtable_offsets": [],
    "name": "reload_troops",
    "sdk_comment": "(reload_troops, [<change_file>], [<file_name>]), #Reload troops. If [<change_file>] sets, then [<file_name>] loaded instead default file (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4703,
@@ -8772,7 +8728,7 @@
    "vtable_offsets": [],
    "name": "reload_parties",
    "sdk_comment": "(reload_parties, [<change_file>], [<file_name>]), #Reload parties. If [<change_file>] sets, then [<file_name>] loaded instead default file (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4800,
@@ -8804,7 +8760,7 @@
    "vtable_offsets": [],
    "name": "menu_create_new",
    "sdk_comment": "(menu_create_new, <destination>, <text>, [<mesh_name>], [<flags>], [<script_no>], [<script_param>]), #Creates a dynamic menu and stores its id into <destination>. [<script_no>] (-1 for no script) will be called with params 1 = menu_no, 2 = [<script_param>] when the operations block is executed",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4801,
@@ -8836,7 +8792,7 @@
    "vtable_offsets": [],
    "name": "menu_add_item",
    "sdk_comment": "(menu_add_item, <menu_no>, <text>, [<conditions_script_no>], [<consequences_script_no>], [<script_param>]), #Adds a new menu item to <menu_no>. [<conditions_script_no>] and [<consequences_script_no>] (-1 for no script) will be called with params 1 = <menu_no>, 2 = [<script_param>] when the conditions/consequences blocks are executed",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4802,
@@ -8858,7 +8814,7 @@
    "vtable_offsets": [],
    "name": "menu_clear_items",
    "sdk_comment": "(menu_clear_items, <menu_no>), #Removes all menu items from <menu_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4803,
@@ -8880,7 +8836,7 @@
    "vtable_offsets": [],
    "name": "menu_clear_generated",
    "sdk_comment": "(menu_clear_generated), #Removes all dynamic menus",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4900,
@@ -8905,7 +8861,7 @@
    ],
    "name": "overlay_get_val",
    "sdk_comment": "(overlay_get_val, <destination>, <overlay_no>), #Stores <overlay_no>'s value into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4901,
@@ -8932,7 +8888,7 @@
    ],
    "name": "presentation_activate",
    "sdk_comment": "(presentation_activate, <presentation_no>), #Activates <presentation_no>. Fails if <presentation_no> is not running",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4902,
@@ -8954,7 +8910,7 @@
    ],
    "name": "overlay_button_set_type",
    "sdk_comment": "(overlay_button_set_type, <overlay_no>, <toggle_or_not>, <deselectable_or_not>), #Sets <overlay_no>'s <toggle_or_not> and <deselectable_or_not>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4903,
@@ -8977,7 +8933,7 @@
    ],
    "name": "overlay_get_scroll_pos",
    "sdk_comment": "(overlay_get_scroll_pos, <destination_fixed_point>, <overlay_no>, [<horizontal>]), #Stores <overlay_no>'s scroll pos into <destination_fixed_point> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4904,
@@ -9000,7 +8956,7 @@
    ],
    "name": "overlay_set_scroll_pos",
    "sdk_comment": "(overlay_set_scroll_pos, <overlay_no>, <value_fixed_point>, [<horizontal>]), #Sets <overlay_no>'s scroll pos <value_fixed_point> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4905,
@@ -9023,7 +8979,7 @@
    ],
    "name": "overlay_enable",
    "sdk_comment": "(overlay_enable, <overlay_no>, <enable_or_disable>), #Sets <overlay_no>'s <enable_or_disable>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4906,
@@ -9047,7 +9003,7 @@
    "vtable_offsets": [],
    "name": "overlay_item_set_text",
    "sdk_comment": "(overlay_item_set_text, <overlay_no>, <item_no>, <text>), #Changes the <overlay_no>'s <item_no>'s <text>. Items are indexed from 0 (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4907,
@@ -9069,7 +9025,7 @@
    "vtable_offsets": [],
    "name": "start_conversation_presentation",
    "sdk_comment": "(start_conversation_presentation, <presentation_no>), #Opens <presentation_no> over the open conversation window, ending other running ones like start_presentation does in a mission (except prsntf_manual_end_only). Unless it is prsntf_read_only, choices are blocked and the conversation stays where it is (no conditions or consequences run) until the presentation ends. Does nothing if the conversation window is not open (check with conversation_screen_is_active). (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5000,
@@ -9673,7 +9629,7 @@
    "vtable_offsets": [],
    "name": "lua_get_top",
    "sdk_comment": "(lua_get_top, <destination>), #Stores the index of the top element in the lua stack into <destination>. The result also is equal to the number of elements in the stack.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5101,
@@ -9690,7 +9646,7 @@
    "vtable_offsets": [],
    "name": "lua_set_top",
    "sdk_comment": "(lua_set_top, <index>), #Sets the top of the stack to <index>. Setting it to 0 just clears the entire stack.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5102,
@@ -9709,7 +9665,7 @@
    "vtable_offsets": [],
    "name": "lua_insert",
    "sdk_comment": "(lua_insert, <index>), #Moves the stacks top element into <index>, shifting up the elements above <index> to open space.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5103,
@@ -9728,7 +9684,7 @@
    "vtable_offsets": [],
    "name": "lua_remove",
    "sdk_comment": "(lua_remove, <index>), #Removes the element at the given <index>, shifting down the elements above <index> to fill the gap.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5104,
@@ -9745,7 +9701,7 @@
    "vtable_offsets": [],
    "name": "lua_pop",
    "sdk_comment": "(lua_pop, <value>), #Pops <value> values from the lua stack.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5105,
@@ -9764,7 +9720,7 @@
    "vtable_offsets": [],
    "name": "lua_to_int",
    "sdk_comment": "(lua_to_int, <destination>, <index>), #Retrieves the value at <index> from the lua stack and stores it in <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5106,
@@ -9785,7 +9741,7 @@
    "vtable_offsets": [],
    "name": "lua_to_str",
    "sdk_comment": "(lua_to_str, <string_register>, <index>), #Retrieves the string at <index> from the lua stack and stores it in <string_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5107,
@@ -9808,7 +9764,7 @@
    "vtable_offsets": [],
    "name": "lua_to_pos",
    "sdk_comment": "(lua_to_pos, <pos_register>, <index>), #Retrieves the position at <index> from the lua stack and stores it in <pos_register>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5108,
@@ -9825,7 +9781,7 @@
    "vtable_offsets": [],
    "name": "lua_push_int",
    "sdk_comment": "(lua_push_int, <value>), #Pushes <value> onto the lua stack.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5109,
@@ -9848,7 +9804,7 @@
    "vtable_offsets": [],
    "name": "lua_push_str",
    "sdk_comment": "(lua_push_str, <string_1>), #Pushes <string_1> onto the lua stack.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5110,
@@ -9868,7 +9824,7 @@
    "vtable_offsets": [],
    "name": "lua_push_pos",
    "sdk_comment": "(lua_push_pos, <pos_register>), #Pushes the position in <pos_register> onto the lua stack.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5111,
@@ -9887,7 +9843,7 @@
    "vtable_offsets": [],
    "name": "lua_get_type",
    "sdk_comment": "(lua_get_type, <destination>, <index>), #Stores the type of the value at <index> in the stack into <destination>. Return types can be found in header_common(_addon).py (LUA_T*)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5112,
@@ -9923,7 +9879,7 @@
    "vtable_offsets": [],
    "name": "lua_call",
    "sdk_comment": "(lua_call, <func_name>, <num_args>), #Calls the lua function with name <func_name>, using the lua stack to pass <num_args> arguments and to return values.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5113,
@@ -9943,7 +9899,7 @@
    "vtable_offsets": [],
    "name": "lua_triggerCallback",
    "sdk_comment": "(lua_triggerCallback, <reference>, <triggerPart>, [<context>]), #Calls the lua trigger callback with <reference>. This operation is utilized internally and should not be used, unless you know what you are doing.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5114,
@@ -9962,7 +9918,7 @@
    "vtable_offsets": [],
    "name": "lua_test",
    "sdk_comment": "(lua_test, <index>), #Checks if the lua stack at <index> evaluates to true (any value different from false and nil). If you want to test only actual boolean values, check the type too.",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5200,
@@ -9982,7 +9938,7 @@
    "vtable_offsets": [],
    "name": "skin_set_blood_color",
    "sdk_comment": "(skin_set_blood_color, <skin_no>, <color>), #Sets <skin_no>'s blood <color> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5201,
@@ -10007,7 +9963,7 @@
    "vtable_offsets": [],
    "name": "skeleton_model_set_bone_body_section",
    "sdk_comment": "(skeleton_model_set_bone_body_section, <skeleton_model_name>, <bone_no>, <body_section>), #Sets <skeleton_model_name>'s <bone_no> <body_section>. 0 - none, 1 - lowerbody, 2 - rightside (included lowerbody), 3 - all (included lowerbody and rightside). Check acf_enforce animations flags (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 5202,
@@ -10032,7 +9988,7 @@
    "vtable_offsets": [],
    "name": "skeleton_model_clean_body_sections",
    "sdk_comment": "(skeleton_model_clean_body_sections, <skeleton_model_name>), #Cleans <skeleton_model_name>'s body sections. Use to clean default body sections before set new (requires WSE2)",
-   "implemented": false
+   "implemented": true
   }
  ],
  "sdk_ops_without_handler": []

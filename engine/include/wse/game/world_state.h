@@ -48,6 +48,7 @@
 
 #include "wse/core/math.h"
 #include "wse/game/world_subsystem_types.h"
+#include "wse/game/world_m6_types.h"
 #include "wse/vm/slots.h"
 
 namespace wse::game {
@@ -1205,6 +1206,7 @@ struct WseWorldState {
     WseMpSessionState mp{};
     WseMiscRuntimeState misc{};
     WseM5WorldExt m5{};
+    WseM6WorldExt m6{};
     std::vector<WseInfoPage> info_pages{};
     std::vector<WseBattleEvent> battle_events{};
     std::vector<std::string> mesh_names{};

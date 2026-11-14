@@ -383,9 +383,15 @@ def render_status_wse_section(document: dict) -> str:
         examples = ', '.join(f'`{name}`' for name in blk['remaining_examples']) or '—'
         lines.append(f"| {blk['block']} | {blk['family']} | {blk['done']}/{blk['total']} | {examples} |")
     lines.append('')
-    lines.append('The pure-computation families are finished. Every remaining family needs engine state that does')
-    lines.append('not exist yet (agents, parties, mission, network, UI, Lua), so the count will not move much until')
-    lines.append('those containers are reconstructed.')
+    if done == total:
+        lines.append(
+            f'All {done}/{total} WSE extended opcodes across all {len(s["implemented_blocks"])} blocks '
+            '(`2800`–`5200`) are implemented across `execute_wse.h` and `wse/vm/ops/*.h`.'
+        )
+    else:
+        lines.append('The pure-computation families are finished. Every remaining family needs engine state that does')
+        lines.append('not exist yet (agents, parties, mission, network, UI, Lua), so the count will not move much until')
+        lines.append('those containers are reconstructed.')
     return '\n'.join(lines)
 
 
@@ -403,7 +409,7 @@ def update_status_markdown(document: dict, status_path: Path, check_only: bool =
     )
 
     section_re = re.compile(
-        r'### WSE extended opcodes \([^\r\n]+\).*?those containers are reconstructed\.',
+        r'### WSE extended opcodes \([^\r\n]+\).*?(?=\r?\n\r?\n### |\Z)',
         re.S,
     )
     if not section_re.search(updated):

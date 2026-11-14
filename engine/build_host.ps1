@@ -58,6 +58,7 @@ $tests = @(
     @{ Name = "block_vm"; Source = Join-Path $here "tests\block_vm_test.cpp" },
     @{ Name = "native_world"; Source = Join-Path $here "tests\native_world_test.cpp" },
     @{ Name = "native_m5"; Source = Join-Path $here "tests\native_m5_test.cpp" },
+    @{ Name = "wse_m6"; Source = Join-Path $here "tests\wse_m6_test.cpp" },
     @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp" }
 )
 

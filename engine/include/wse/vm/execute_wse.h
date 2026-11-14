@@ -218,13 +218,18 @@
 
 #include <cstdint>
 
+#include "wse/vm/ops/agent_ext.h"
 #include "wse/vm/ops/array.h"
 #include "wse/vm/ops/bitwise.h"
 #include "wse/vm/ops/dict.h"
 #include "wse/vm/ops/fp.h"
+#include "wse/vm/ops/lua_bridge.h"
+#include "wse/vm/ops/player_mp.h"
 #include "wse/vm/ops/position.h"
+#include "wse/vm/ops/scene_mission.h"
 #include "wse/vm/ops/string.h"
 #include "wse/vm/ops/system.h"
+#include "wse/vm/ops/ui_menu.h"
 #include "wse/vm/ops/world.h"
 #include "wse/vm/wse_state.h"
 
@@ -249,6 +254,11 @@ namespace wse::vm {
         &execute_wse_dict,
         &execute_wse_array,
         &execute_wse_position,
+        &execute_wse_player_mp,
+        &execute_wse_agent_ext,
+        &execute_wse_scene_mission,
+        &execute_wse_ui_menu,
+        &execute_wse_lua_bridge,
     };
     for (const DispatchFn dispatch : kDispatchers) {
         const WseDispatch res = dispatch(opcode, operands, effect);
