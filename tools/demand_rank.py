@@ -19,7 +19,7 @@ from pathlib import Path
 
 
 OPCODE_MASK = 0x0FFFFFFF
-ENTITY_ITERATOR_STUBS = {11, 12, 16, 17}
+ENTITY_ITERATOR_STUBS: set[int] = set()
 
 
 class TokenCursor:
@@ -108,10 +108,7 @@ def parse_simple_triggers_file(path: Path) -> list[list[int]]:
 
 
 def scan_implemented_native(block_vm_path: Path) -> set[int]:
-    paths = [block_vm_path]
-    native_ops_path = block_vm_path.parent / "native_ops.h"
-    if native_ops_path.is_file():
-        paths.append(native_ops_path)
+    paths = [block_vm_path] + sorted(block_vm_path.parent.glob("native_*.h"))
 
     texts = [p.read_text(encoding="utf-8", errors="replace") for p in paths]
     core_map: dict[str, int] = {}
@@ -133,7 +130,7 @@ def scan_implemented_native(block_vm_path: Path) -> set[int]:
         raise SystemExit(f"Could not locate core_op namespace in {block_vm_path}")
 
     disp_pattern = re.compile(
-        r"dispatch_native_statement(?:_ext)?\s*\([^)]*\)\s*\{(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+(?:NativeDispatch::unimplemented|dispatch_native_statement_ext\([^;]*\));)",
+        r"dispatch_native(?:_entity|_mission)?_statement(?:_ext)?\s*\([^)]*\)\s*\{(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+(?:NativeDispatch::unimplemented|dispatch_native(?:_entity|_mission)?_statement(?:_ext)?\([^;]*\));)",
         re.S,
     )
     impl: set[int] = set()
@@ -382,8 +379,14 @@ def render_markdown(res: dict) -> str:
         "| Metric | Value |",
         "| --- | ---: |",
         f"| Distinct opcodes used | {t['distinct_opcodes_used']} |",
-        f"| Native implemented calls (`block_vm.h`) | {t['native_implemented_calls']} |",
-        f"| Native entity-iterator zero-stub calls (`11, 12, 16, 17`) | {t['native_entity_iterator_stub_calls']} |",
+        f"| Native implemented calls (`block_vm.h` + `native_*.h`) | {t['native_implemented_calls']} |",
+        *(
+            [
+                f"| Native entity-iterator zero-stub calls ({', '.join(str(x) for x in sorted(ENTITY_ITERATOR_STUBS))}) | {t['native_entity_iterator_stub_calls']} |"
+            ]
+            if ENTITY_ITERATOR_STUBS
+            else []
+        ),
         f"| Native `noop_true` / fallback calls | {t['native_noop_or_fallback_calls']} |",
         f"| Native unimplemented calls | {t['native_unimplemented_calls']} ({t['distinct_unimplemented_native_opcodes']} distinct opcodes) |",
         f"| WSE implemented calls | {t['wse_implemented_calls']} |",

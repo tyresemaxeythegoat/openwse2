@@ -52,7 +52,7 @@ CONTROL_FLOW_VAS: dict[int, tuple[str, str]] = {
     23: ("0x1401f71ee", "mbStatementBlock::execute"),
 }
 
-ENTITY_ITERATOR_STUBS = {11, 12, 16, 17}
+ENTITY_ITERATOR_STUBS: set[int] = set()
 
 
 def sha256_file(path: Path) -> str:
@@ -118,11 +118,8 @@ def parse_sdk_operations(sdk_path: Path) -> dict:
 
 
 def scan_implemented_from_block_vm(block_vm_path: Path) -> tuple[set[int], set[int]]:
-    """Scan block_vm.h (and sibling native_ops.h) for implemented control-flow (<30) and switch (30..2767) opcodes."""
-    paths = [block_vm_path]
-    native_ops_path = block_vm_path.parent / "native_ops.h"
-    if native_ops_path.is_file():
-        paths.append(native_ops_path)
+    """Scan block_vm.h and sibling native_*.h for implemented control-flow (<30) and switch (30..2767) opcodes."""
+    paths = [block_vm_path] + sorted(block_vm_path.parent.glob("native_*.h"))
 
     texts = [p.read_text(encoding="utf-8", errors="replace") for p in paths]
     core_map: dict[str, int] = {}
@@ -144,7 +141,7 @@ def scan_implemented_from_block_vm(block_vm_path: Path) -> tuple[set[int], set[i
         raise SystemExit(f"Could not find namespace core_op in {block_vm_path}")
 
     disp_pattern = re.compile(
-        r"dispatch_native_statement(?:_ext)?\s*\([^)]*\)\s*\{(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+(?:NativeDispatch::unimplemented|dispatch_native_statement_ext\([^;]*\));)",
+        r"dispatch_native(?:_entity|_mission)?_statement(?:_ext)?\s*\([^)]*\)\s*\{(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+(?:NativeDispatch::unimplemented|dispatch_native(?:_entity|_mission)?_statement(?:_ext)?\([^;]*\));)",
         re.S,
     )
     impl_switch: set[int] = set()
@@ -446,7 +443,7 @@ def render_markdown(doc: dict) -> str:
         "",
         f"- `mbStatement::execute` switch guard `{doc['function']['switch_guard_va']}` and jump table `{doc['function']['jump_table_va']}` (`{doc['target']}`, `{doc['release']}`, SHA-256 `{doc['exe_sha256']}`)",
         "- `mbStatementBlock::{analyze, execute, startLoop, endLoop, canLoop}` control-flow handlers (`0–29`)",
-        "- Public Warband SDK constants (`header_operations.py`) and implemented scan of `engine/include/wse/vm/block_vm.h`",
+        "- Public Warband SDK constants (`header_operations.py`) and implemented scan of `engine/include/wse/vm/block_vm.h` + `native_*.h`",
         "",
         "Machine-readable copy: `docs/native_opcodes.json`.",
         "",
@@ -461,7 +458,13 @@ def render_markdown(doc: dict) -> str:
         f"| Fallback to `executeWSE` (`execute_wse_fallback`) | {s['execute_wse_fallback_total']} | Jump to `{doc['function']['fallback_va']}`; {s['execute_wse_fallback_named']} SDK-named (`1004`), {s['execute_wse_fallback_unused']} empty holes |",
         f"| **Total live native handlers (`0–2767`)** | **{s['total_live_native_handlers']}** | {s['control_flow_live']} control-flow + {s['switch_handlers']} switch |",
         f"| SDK unique IDs in `0–2767` | {s['sdk_unique_ids_0_2767']} | {s['sdk_total_symbols_0_2767']} symbol definitions incl. aliases |",
-        f"| Implemented in `block_vm.h` (`control_flow` / `switch`) | {s['implemented_control_flow']} / {s['implemented_switch']} | Total implemented: **{s['implemented_total']}** (4 entity iterators run 0 iterations until world containers load) |",
+        f"| Implemented in VM (`block_vm.h` + `native_*.h`) (`control_flow` / `switch`) | {s['implemented_control_flow']} / {s['implemented_switch']} | Total implemented: **{s['implemented_total']}**"
+        + (
+            f" ({len(s['entity_iterator_stubs'])} entity iterators run 0 iterations until world containers load)"
+            if s["entity_iterator_stubs"]
+            else ""
+        )
+        + " |",
         "",
         "## Special slots",
         "",
@@ -500,7 +503,7 @@ def render_markdown(doc: dict) -> str:
         "",
         "## Category breakdown (live handlers)",
         "",
-        "| Category | Live handlers | Implemented (`block_vm.h`) |",
+        "| Category | Live handlers | Implemented (`block_vm.h` + `native_*.h`) |",
         "| --- | ---: | ---: |",
     ])
     for cat in doc["categories"]:

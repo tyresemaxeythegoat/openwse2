@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h` + extended native dispatcher `native_ops.h`, including `NativeDispatch`/`failOnUnimplemented`, `try_for_dict_keys`, and `array_sort_custom` callback), world/entity/skill/item/edit-mode runtime state (`wse/game/world_state.h`), pure STL helpers (`wse/core/{math,encoding,json}.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the per-family handler headers under `wse/vm/ops/` listed in `STATUS.md` §3 recovered.
+Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h` + extended native dispatchers `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, including `NativeDispatch`/`failOnUnimplemented`, live entity iterators `11/12/16/17`, `try_for_dict_keys`, and `array_sort_custom` callback), world/entity/skill/item/quest/site/party/mission/edit-mode runtime state (`wse/game/world_state.h`), pure STL helpers (`wse/core/{math,encoding,json}.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the per-family handler headers under `wse/vm/ops/` listed in `STATUS.md` §3 recovered.
 Last updated: 2026-11-14.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -789,12 +789,12 @@ Verified supporting layouts added to `docs/SYMBOL_MAP.json` (58 classes, 2,914 s
   `mu::Parser` (376 B, type `0x1a146`), `mu::ParserBase` (376 B, type `0x1a181`), and
   `WSEProfiling` (66,072 B, type `0xaf0a`).
 
-Portable reconstruction lives in `engine/include/wse/vm/block_vm.h` and `engine/include/wse/vm/native_ops.h`: `VmContext`,
-`analyze_statement_block`, `execute_statement`, `execute_statement_block` (`DepthGuard` tracking `currentDepth` + `wse_invoke_script_callback`), loop helpers
-(`start_loop`/`can_loop`/`end_loop` including `core_op::kTryForDictKeys` `0x12`), core native
-comparisons/shifts/math/fixed-point ops (`30–33`, `2100–2133`), 112 high-demand native handlers
-(`entity_slots`, `positions_and_math`, `arithmetic_registers_and_vars`, `strings`, and entity ops in
-`native_ops.h`), `call_script`,
+Portable reconstruction lives in `engine/include/wse/vm/block_vm.h` and `engine/include/wse/vm/native_*.h`: `VmContext`,
+`analyze_statement_block`, `execute_statement`, `execute_statement_block` (`DepthGuard` tracking `currentDepth` / preserving `currentCaller` + `wse_invoke_script_callback`), loop helpers
+(`start_loop`/`can_loop`/`end_loop` including live entity iterators `11/12/16/17` and `core_op::kTryForDictKeys` `0x12`), and `319` switch native handlers across
+`native_ops.h` (`33` core comparisons/shifts/math ops `30–33`, `2100–2133` + `112` Milestone 1 handlers across `entity_slots`, `positions_and_math`, `arithmetic_registers_and_vars`, `strings`, and entity helpers),
+`native_entity_ops.h` (`108` Milestone 2 player/MP, quest, audio/UI/overlay, site/faction, troop, and party ops), and
+`native_mission_ops.h` (`66` Milestone 2 agent, team/mission combat, scene prop, and mission timer ops), `call_script`,
 `store_script_param*`, `this_or_next`/`neg`, `dispatch_wse_statement` (forwarding `outTag` for
 string operands and wiring `WseVmState` position, timer, RNG, profiler, object-manager, and script-callback state),
 and VM-backed `execute_script`, `execute_mapped_script`, `execute_trigger`,
@@ -861,7 +861,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    types across `15,363` TPI records), generated cleanly with `tools/vtables.py`.
 8. ~~Handler-site addresses cited only in `engine/include` source comments~~ **Resolved (B7):**
    `tools/build_symbol_map.py` exports `function_ranges`, `global_objects`, and `superseded_vas`,
-   and `tools/check_citations.py` verifies all `320` unique header VAs across `28` headers (plus REA `ev_*` IDs) in CI.
+   and `tools/check_citations.py` verifies all `507` unique header VAs (`702` VA refs) across `30` headers (plus REA `ev_*` IDs) in CI.
 
 ## 9. Evidence index
 

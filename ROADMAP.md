@@ -64,15 +64,15 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [x] Operand tags, decode, and lvalue write-back (`wse/vm/operand.h`, `slots.h`)
 - [x] Statement record and reader (`wse/vm/statement.h`)
 - [x] `analyze` / `execute` / loop frames / `call_script` recursion (`wse/vm/block_vm.h`)
-- [~] Native opcodes: `161/1,053` implemented across `wse/vm/block_vm.h` and `wse/vm/native_ops.h`
-      (control flow, comparisons, integer/fixed-point/trig/RNG math, `entity_slots`
-      `500–510`/`520–530`/`540–550`/`560–570`, `positions_and_math` `700–746`, `strings`
-      `2318–2355`, `display_message` `1106`, `troop_is_hero` `1507`, `troop_set_health` `1560`,
-      `agent_is_human` `1704`, `store_troop_gold` `2149`, `store_troop_faction` `2173`,
-      `store_faction_of_party` `2204`)
+- [~] Native opcodes: `335/1,053` implemented across `wse/vm/block_vm.h` and
+      `wse/vm/native_{ops,entity_ops,mission_ops}.h` (control flow, comparisons,
+      integer/fixed-point/trig/RNG math, `entity_slots` `500–510`/`520–530`/`540–550`/`560–570`,
+      `positions_and_math` `700–746`/`791`, `strings` `2318–2355`, player/MP, quest, audio/UI,
+      site/faction, troop/party ops in `native_entity_ops.h`, and agent/team/prop/mission/timer
+      ops in `native_mission_ops.h`)
 - [x] Native opcode map generated from the `0x1401e22f0` jump table (**B2**, `docs/native_opcodes.json`)
-- [ ] Entity iterators (`try_for_agents`, `try_for_parties`, `try_for_prop_instances`,
-      `try_for_players`) — currently iterate zero times
+- [x] Entity iterators (`try_for_parties`, `try_for_agents`, `try_for_prop_instances`,
+      `try_for_players`) — live against `WseWorldState` containers and preserving `currentCaller`
 
 **2C. Scripts and triggers**
 - [x] `mbScriptManager` / `mbScript` readers and the 65-name mapped-script table (`wse/game/script.h`)
@@ -88,7 +88,9 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
       menus, overlays/presentations, input keys, reload, skins, Lua bridge
 
 **2E. Game-world state**
-- [~] `WseWorldState` containers and validators (`wse/game/world_state.h`) — model only
+- [~] `WseWorldState` containers and validators (`wse/game/world_state.h`: players, troops, items,
+      skills, factions, quests, sites/visitors, parties/stacks, agents, mission props/timers, teams,
+      presentations/overlays, audio events) — in-memory model only
 - [ ] Loaders that populate it from a user-supplied module (depends on 2A)
 - [ ] Agent, party, mission-object, and player containers with real lifetimes
 
@@ -159,6 +161,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-14 | `—` | Phase 2 Milestone 2: expand `WseWorldState`, activate the 4 entity iterators (`11/12/16/17`) preserving `currentCaller`, and reconstruct `174` high-demand native opcodes (`108` in `native_entity_ops.h` + `66` in `native_mission_ops.h`, `335/1,053` live handlers), raising `Native` `scripts.txt` statement coverage from `93.0%` to `97.76%` (`1,041/1,755` zero-unimplemented scripts) |
 | 2026-11-14 | `025b06f` | Phase 2 Milestone 1: reconstruct `112` high-demand native Warband opcodes (`161/1,053` live native handlers across `block_vm.h` + `native_ops.h`), raising `Native` `scripts.txt` coverage from `66.2%` to `93.0%` (`685/1,755` zero-unimplemented scripts) |
 | 2026-11-14 | `4bd4066` | `tools/vtables.py` + `tools/check_citations.py --self-test` in CI + `SYMBOL_MAP.json` expansion (`B7`); non-`noexcept` `execute_wse*`, ASCII `"C"`-locale char helpers, and `WseVmState::sleep_ms_fn` hook (`B8`) |
 | 2026-11-14 | `4092c7c` | Phase 3/4 planned as platform slices P0–P9 (`docs/PLATFORM_PLAN.md`: SDL3, Vulkan with user-supplied PanVK/Turnip); platform seam `wse/platform/{vfs,clock,log}.h` + `platform` suite (`cc69cfa`, P1 first part; PR `#2`) |

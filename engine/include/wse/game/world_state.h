@@ -46,11 +46,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include "wse/core/math.h"
 #include "wse/vm/slots.h"
 
 namespace wse::game {
 
 inline constexpr std::int32_t kMaxSkills = 42;            // 0x2a (0x1401e63c7)
+inline constexpr std::int32_t kSkillInventoryManagement = 12; // 0x0c (0x140246690)
 inline constexpr std::int32_t kSkillIronflesh = 36;       // 0x24 (0x140246125)
 inline constexpr std::int32_t kMaxAttributes = 4;         // 0x04 (0x1401ebf06)
 inline constexpr std::int32_t kMaxProficiencies = 7;      // 0x07 (0x1401ebf6c)
@@ -58,6 +60,15 @@ inline constexpr std::int32_t kMaxSlotIndex = 0xfffff;    // 0x1401e55e3..0x1401
 inline constexpr std::int32_t kNumTeams = 8;              // 0..7 (0x1401e581e)
 inline constexpr std::int32_t kNumUseTooltipTypes = 11;   // 0x0b (0x1401ea725)
 inline constexpr std::uint32_t kSkillPartyFlagBit = 0x10; // bit 4 (0x1401e63e5)
+inline constexpr std::int32_t kMaxPlayers = 250;          // 0xfa (0x1401c7e4c)
+inline constexpr std::int32_t kMaxEntryPoints = 128;      // 0x80 (0x1401d59f1)
+inline constexpr std::int32_t kNumTroopEquipmentSlots = 10;     // 0..9 (0x1401d0b64)
+inline constexpr std::int32_t kNumTroopInventorySlots = 96;     // 0x60 (0x140245250)
+inline constexpr std::int32_t kTotalTroopInventoryCapacity =
+    kNumTroopEquipmentSlots + kNumTroopInventorySlots;
+inline constexpr std::int32_t kMaxAgentItems = 4;         // 0..3 (0x1401d6880)
+inline constexpr std::int32_t kNumQuestNotes = 16;        // 0..15 (0x1401cdde9)
+inline constexpr std::int32_t kNumDivisions = 9;          // 0..8 (0x1401d5ff8)
 
 struct WseSkill {
     std::string description{};
@@ -65,6 +76,103 @@ struct WseSkill {
     std::string id{};
     std::int32_t max_level = 10;
     std::uint32_t flags = 0;
+};
+
+struct WseInventorySlot {
+    std::int32_t item_no = -1;
+    std::int32_t modifier = 0;
+    std::int32_t ammo = 0;
+    std::int32_t hit_points = 0;
+
+    [[nodiscard]] constexpr bool is_empty() const noexcept {
+        return item_no < 0;
+    }
+
+    void clear() noexcept {
+        item_no = -1;
+        modifier = 0;
+        ammo = 0;
+        hit_points = 0;
+    }
+};
+
+struct WsePartyStack {
+    std::int32_t troop_no = -1;
+    std::int32_t num_troops = 0;
+    std::int32_t num_wounded_troops = 0;
+    std::uint32_t flags = 0;  // bit 0 (0x1): prisoner stack
+
+    [[nodiscard]] constexpr bool is_prisoner() const noexcept {
+        return (flags & 1U) != 0U;
+    }
+
+    [[nodiscard]] constexpr std::int32_t unwounded() const noexcept {
+        return num_troops > num_wounded_troops ? (num_troops - num_wounded_troops) : 0;
+    }
+};
+
+struct WseSiteVisitor {
+    std::int32_t entry_no = 0;
+    std::int32_t troop_no = -1;
+    std::int32_t dna = -0xd0cd;
+};
+
+struct WseQuestNote {
+    std::u16string text{};
+    std::int32_t date = -1;
+    bool available = false;
+};
+
+struct WsePresentationOverlay {
+    std::int32_t type = 0;
+    std::u16string text{};
+    std::uint32_t color = 0xffffffffu;
+    float alpha = 1.0f;
+    wse::core::WseVec2 position{};
+    wse::core::WseVec2 size{1.0f, 1.0f};
+    std::int32_t val = 0;
+    bool visible = true;
+};
+
+struct WseMissionTemplate {
+    std::string id{};
+    std::string name{};
+};
+
+struct WseMultiplayerMessage {
+    std::int32_t player_no = -1;
+    std::int32_t event_type = 0;
+    std::array<std::int64_t, 4> ints{};
+    std::int32_t num_ints = 0;
+    std::u16string text{};
+};
+
+struct WseBattleEvent {
+    std::int32_t type = 0;
+    std::int32_t sound_no = -1;
+    std::int32_t agent_no = -1;
+    std::int32_t flags = 0;
+    wse::core::WseVec4 position{};
+};
+
+struct WseEntryPoint {
+    bool valid = false;
+    wse::core::WseTransform position = wse::core::WseTransform::identity();
+};
+
+// Mirrors rglTimer (0x1403189e0): elapsed seconds = (timersTotal[timer_no] - value) / 100000.0f.
+struct WseMissionTimer {
+    std::int32_t timer_no = 0;
+    std::int64_t value = 0;
+
+    [[nodiscard]] float elapsed_seconds(
+        const std::array<std::int64_t, 3>& totals) const noexcept {
+        if (timer_no < 0 || timer_no >= 3) {
+            return 0.0f;
+        }
+        return static_cast<float>(totals[static_cast<std::size_t>(timer_no)] - value) /
+               100000.0f;
+    }
 };
 
 struct WseTroop {
@@ -81,6 +189,11 @@ struct WseTroop {
     std::string plural_name{};
     std::int32_t faction_no = 0;  // mbTroop::m_factionNo (0x1401dd9d8)
     std::int32_t gold = 0;        // mbTroop::m_gold (0x1401dd5b3)
+    std::int32_t skin_no = 0;     // mbTroop::m_skinNo (0x140245a20)
+    std::int32_t class_no = 0;    // mbTroop::m_classNo (0x1401d043d)
+    std::int32_t level = 1;       // mbTroop::m_level (0x1401dd92b)
+    bool auto_equip = false;      // mbTroop::m_flags bit / auto-equip (0x1401d02d0)
+    std::array<WseInventorySlot, kTotalTroopInventoryCapacity> inventory{};
 
     // Mirrors mbTroop::isHero (0x140245f60): (m_flags >> 4) & 1.
     [[nodiscard]] constexpr bool is_hero() const noexcept {
@@ -169,6 +282,117 @@ struct WseTroop {
         proficiencies[static_cast<std::size_t>(prof_no)] =
             static_cast<float>(std::clamp(value, 0, 999));
     }
+
+    // Mirrors mbTroop::getSkinNo (0x140245a20).
+    [[nodiscard]] constexpr std::int32_t get_skin_no() const noexcept {
+        return skin_no;
+    }
+
+    // Mirrors mbTroop::setSkinNo (0x140245f30): writes skin_no and low 4 bits of flags.
+    void set_skin_no(std::int32_t new_skin) noexcept {
+        skin_no = new_skin;
+        flags = (flags & ~std::uint64_t{0xf}) | (static_cast<std::uint64_t>(new_skin) & 0xfU);
+    }
+
+    // Mirrors mbTroop::getNumInventorySlots (0x140246690):
+    // hero uses min(inv_mgmt, max_level) -> min(9, lvl)*6 + 30 or 96 for >= 10; non-hero -> 90.
+    [[nodiscard]] std::int32_t get_num_inventory_slots(
+        std::int32_t inv_mgmt_max_level) const noexcept {
+        if (!is_hero()) {
+            return 90;
+        }
+        const std::int32_t cap = std::max<std::int32_t>(0, inv_mgmt_max_level);
+        const std::int32_t lvl =
+            std::clamp(get_skill_raw(kSkillInventoryManagement), 0, cap);
+        if (lvl >= 10) {
+            return kNumTroopInventorySlots;
+        }
+        return 30 + lvl * 6;
+    }
+
+    // Mirrors mbTroop::getFirstFreeInventorySlot (0x140246750), offset by kNumTroopEquipmentSlots (10)
+    // to index the combined 10+96 array used by troop_get_inventory_slot.
+    [[nodiscard]] std::int32_t get_first_free_inventory_slot(
+        std::int32_t inv_mgmt_max_level) const noexcept {
+        const std::int32_t bag_slots = get_num_inventory_slots(inv_mgmt_max_level);
+        for (std::int32_t i = 0; i < bag_slots; ++i) {
+            const auto idx = static_cast<std::size_t>(kNumTroopEquipmentSlots + i);
+            if (idx < inventory.size() && inventory[idx].is_empty()) {
+                return kNumTroopEquipmentSlots + i;
+            }
+        }
+        return -1;
+    }
+
+    // Mirrors mbTroop::setItem (0x1402467a0).
+    void set_item(std::int32_t slot_no,
+                  std::int32_t item_no,
+                  std::int32_t modifier = 0,
+                  std::int32_t max_ammo = 0) noexcept {
+        if (slot_no < 0 || static_cast<std::size_t>(slot_no) >= inventory.size()) {
+            return;
+        }
+        auto& slot = inventory[static_cast<std::size_t>(slot_no)];
+        slot.item_no = item_no;
+        slot.modifier = (modifier >= 0 && modifier < 0x2b) ? modifier : 0;
+        slot.ammo = item_no >= 0 ? max_ammo : 0;
+        slot.hit_points = 0;
+    }
+
+    // Mirrors mbTroopInventory::clear (0x140245250): clears bag slots 10..105.
+    void clear_inventory() noexcept {
+        for (std::size_t i = static_cast<std::size_t>(kNumTroopEquipmentSlots);
+             i < inventory.size(); ++i) {
+            inventory[i].clear();
+        }
+    }
+
+    // Mirrors mbTroop::raiseAttribute (0x1402461f0).
+    void raise_attribute(std::int32_t attr_no,
+                         std::int32_t delta,
+                         std::int32_t ironflesh_max_level,
+                         std::int32_t attr_limit) noexcept {
+        if (attr_no < 0 || attr_no >= kMaxAttributes || delta == 0) {
+            return;
+        }
+        const std::int32_t step = delta < 0 ? -1 : 1;
+        std::int32_t rem = delta < 0 ? -delta : delta;
+        while (rem > 0) {
+            --rem;
+            const std::int32_t next = attributes[static_cast<std::size_t>(attr_no)] + step;
+            if (next >= 0 && next < attr_limit) {
+                if (attr_no == 2) {
+                    skill_points += step;
+                } else if (attr_no == 0) {
+                    hit_points += static_cast<float>(step);
+                }
+                set_attribute(attr_no, next, ironflesh_max_level);
+            }
+        }
+    }
+
+    // Mirrors mbTroop::raiseSkill (0x1402462b0).
+    void raise_skill(std::int32_t skill_no,
+                     std::int32_t delta,
+                     std::int32_t skill_max_level,
+                     std::int32_t ironflesh_max_level) noexcept {
+        if (skill_no < 0 || skill_no >= kMaxSkills) {
+            return;
+        }
+        const std::int32_t cap = std::max<std::int32_t>(0, skill_max_level);
+        const std::int32_t cur = std::min(get_skill_raw(skill_no), cap);
+        set_skill(skill_no, cur + delta, skill_max_level, ironflesh_max_level);
+    }
+
+    // Mirrors mbTroop::raiseProficiencyLinear (0x140246450).
+    void raise_proficiency_linear(std::int32_t prof_no, std::int32_t delta) noexcept {
+        if (prof_no < 0 || prof_no >= kMaxProficiencies) {
+            return;
+        }
+        const float next =
+            proficiencies[static_cast<std::size_t>(prof_no)] + static_cast<float>(delta);
+        proficiencies[static_cast<std::size_t>(prof_no)] = std::clamp(next, 0.0f, 1000.0f);
+    }
 };
 
 struct WseMesh {
@@ -234,6 +458,9 @@ struct WseItemKind {
     std::array<std::int32_t, 2> blood_particle_system_nos{-1, -1};
     std::uint32_t blood_color = 0;
     std::string skeleton_model{};
+    std::uint64_t properties = 0;
+    std::int32_t max_ammo = 0;
+    std::int32_t value = 0;
 };
 
 struct WsePartyTemplate {
@@ -246,12 +473,46 @@ struct WseFaction {
     std::string name{};
     std::string id{};
     wse::vm::Slots slots{};
+    std::uint32_t color = 0xffffffffu;
+    std::vector<float> relations{};
+
+    void set_relation(std::size_t other_idx, float relation) {
+        if (relations.size() <= other_idx) {
+            relations.resize(other_idx + 1, 0.0f);
+        }
+        relations[other_idx] = relation;
+    }
+
+    [[nodiscard]] float get_relation(std::size_t other_idx) const noexcept {
+        return other_idx < relations.size() ? relations[other_idx] : 0.0f;
+    }
 };
 
 struct WseQuest {
     std::string id{};
     wse::vm::Slots slots{};
-    std::string title{};  // mbQuest::m_title (0x1401dec93 / 0x1401defc4)
+    std::string title{};                 // mbQuest::m_title (0x1401dec93 / 0x1401defc4)
+    std::uint32_t progression_flags = 0; // bit8 active, bit9 completed, bit10 succeeded, bit11 failed, bit12 concluded
+    std::uint32_t template_flags = 0;
+    std::int32_t giver_troop_no = -1;
+    float start_date = 0.0f;
+    std::array<WseQuestNote, kNumQuestNotes> notes{};
+
+    [[nodiscard]] constexpr bool is_active() const noexcept {
+        return ((progression_flags >> 8U) & 1U) != 0U;
+    }
+    [[nodiscard]] constexpr bool is_completed() const noexcept {
+        return ((progression_flags >> 9U) & 1U) != 0U;
+    }
+    [[nodiscard]] constexpr bool is_succeeded() const noexcept {
+        return ((progression_flags >> 10U) & 1U) != 0U;
+    }
+    [[nodiscard]] constexpr bool is_failed() const noexcept {
+        return ((progression_flags >> 11U) & 1U) != 0U;
+    }
+    [[nodiscard]] constexpr bool is_concluded() const noexcept {
+        return ((progression_flags >> 12U) & 1U) != 0U;
+    }
 };
 
 struct WseSite {
@@ -259,6 +520,7 @@ struct WseSite {
     std::string name{};
     float water_level = 0.0f;
     wse::vm::Slots slots{};
+    std::vector<WseSiteVisitor> visitors{};
 };
 
 struct WseParty {
@@ -267,33 +529,277 @@ struct WseParty {
     bool active = true;
     wse::vm::Slots slots{};
     std::int32_t faction_no = 0;  // mbParty::m_factionNo (0x1401ddd7f)
+    std::uint64_t flags = 0;
+    std::int32_t icon_no = 0;
+    std::int32_t banner_icon_no = -1;
+    std::string extra_text{};
+    std::int32_t behavior = 0;
+    std::int32_t behavior_object = -1;
+    std::int32_t ai_state = 0;
+    std::int32_t attached_to_party_no = -1;
+    std::int32_t battle_opponent_no = -1;
+    std::int32_t current_terrain = 0;
+    wse::core::WseTransform position = wse::core::WseTransform::identity();
+    std::vector<WsePartyStack> stacks{};
+    std::array<std::int32_t, kMaxSkills> skill_levels{};
+
+    [[nodiscard]] std::int32_t get_num_companions() const noexcept {
+        std::int32_t total = 0;
+        for (const auto& s : stacks) {
+            if (!s.is_prisoner()) {
+                total += s.num_troops;
+            }
+        }
+        return total;
+    }
+
+    [[nodiscard]] std::int32_t get_num_prisoners() const noexcept {
+        std::int32_t total = 0;
+        for (const auto& s : stacks) {
+            if (s.is_prisoner()) {
+                total += s.num_troops;
+            }
+        }
+        return total;
+    }
+
+    [[nodiscard]] std::int32_t get_size() const noexcept {
+        return get_num_companions() + get_num_prisoners();
+    }
+
+    [[nodiscard]] std::int32_t get_size_wo_prisoners() const noexcept {
+        return get_num_companions();
+    }
+
+    [[nodiscard]] std::int32_t get_num_companion_stacks() const noexcept {
+        std::int32_t n = 0;
+        for (const auto& s : stacks) {
+            if (!s.is_prisoner()) {
+                ++n;
+            }
+        }
+        return n;
+    }
+
+    [[nodiscard]] std::int32_t get_num_prisoner_stacks() const noexcept {
+        std::int32_t n = 0;
+        for (const auto& s : stacks) {
+            if (s.is_prisoner()) {
+                ++n;
+            }
+        }
+        return n;
+    }
+
+    [[nodiscard]] std::int32_t get_troop_kind_count(std::int32_t troop_no) const noexcept {
+        std::int32_t count = 0;
+        for (const auto& s : stacks) {
+            if (s.troop_no == troop_no && !s.is_prisoner()) {
+                count += s.num_troops;
+            }
+        }
+        return count;
+    }
+
+    std::int32_t add_members(std::int32_t troop_no,
+                             std::int32_t count,
+                             bool prisoner = false) {
+        if (count <= 0) {
+            return 0;
+        }
+        const std::uint32_t flag = prisoner ? 1U : 0U;
+        std::int32_t before = 0;
+        WsePartyStack* target = nullptr;
+        for (auto& s : stacks) {
+            if (s.troop_no == troop_no && (s.flags & 1U) == flag) {
+                before += s.num_troops;
+                if (target == nullptr) {
+                    target = &s;
+                }
+            }
+        }
+        if (target != nullptr) {
+            target->num_troops += count;
+        } else {
+            stacks.push_back(WsePartyStack{troop_no, count, 0, flag});
+        }
+        return before;
+    }
+
+    std::int32_t remove_members(std::int32_t troop_no,
+                                std::int32_t count,
+                                bool prisoner = false) {
+        if (count <= 0) {
+            return 0;
+        }
+        const std::uint32_t flag = prisoner ? 1U : 0U;
+        for (std::size_t idx = stacks.size(); idx > 0; --idx) {
+            auto& s = stacks[idx - 1];
+            if (s.troop_no == troop_no && (s.flags & 1U) == flag) {
+                const std::int32_t removed = std::min(count, s.num_troops);
+                s.num_troops -= removed;
+                if (s.num_wounded_troops > s.num_troops) {
+                    s.num_wounded_troops = s.num_troops;
+                }
+                if (s.num_troops <= 0) {
+                    stacks.erase(stacks.begin() + static_cast<std::ptrdiff_t>(idx - 1));
+                }
+                return removed;
+            }
+        }
+        return 0;
+    }
+
+    // Mirrors mbParty::getSkill (0x1401bb0a0); falls back to skill_levels when stacks empty.
+    [[nodiscard]] std::int32_t get_skill(std::int32_t skill_no,
+                                         const std::vector<WseTroop>& troops,
+                                         const std::array<WseSkill, kMaxSkills>& skills) const noexcept {
+        if (skill_no < 0 || skill_no >= kMaxSkills) {
+            return 0;
+        }
+        if (stacks.empty()) {
+            return skill_levels[static_cast<std::size_t>(skill_no)];
+        }
+        const std::int32_t max_lvl =
+            std::max<std::int32_t>(0, skills[static_cast<std::size_t>(skill_no)].max_level);
+        const bool is_party =
+            (skills[static_cast<std::size_t>(skill_no)].flags & kSkillPartyFlagBit) != 0U;
+        auto troop_skill = [&](std::int32_t troop_no) -> std::int32_t {
+            if (troop_no < 0 || static_cast<std::size_t>(troop_no) >= troops.size()) {
+                return 0;
+            }
+            return std::min(troops[static_cast<std::size_t>(troop_no)].get_skill_raw(skill_no),
+                            max_lvl);
+        };
+        std::int32_t leader_skill = 0;
+        if (!stacks[0].is_prisoner() && stacks[0].unwounded() > 0) {
+            leader_skill = troop_skill(stacks[0].troop_no);
+        }
+        std::int32_t best = leader_skill;
+        if (is_party) {
+            for (std::size_t i = 1; i < stacks.size(); ++i) {
+                const auto& st = stacks[i];
+                if (!st.is_prisoner() && st.unwounded() > 0 && st.troop_no >= 0 &&
+                    static_cast<std::size_t>(st.troop_no) < troops.size() &&
+                    troops[static_cast<std::size_t>(st.troop_no)].is_hero()) {
+                    best = std::max(best, troop_skill(st.troop_no));
+                }
+            }
+            std::int32_t bonus = 0;
+            if (leader_skill >= 10) {
+                bonus = 4;
+            } else if (leader_skill >= 8) {
+                bonus = 3;
+            } else if (leader_skill >= 5) {
+                bonus = 2;
+            } else if (leader_skill >= 2) {
+                bonus = 1;
+            }
+            best += bonus;
+        }
+        return best;
+    }
 };
 
 struct WsePlayer {
     std::int32_t status = 2; // mbnetPlayer::m_status == 2 checked by 0x1401c5530
     std::string name{};
     wse::vm::Slots slots{};
+    std::int32_t team_no = 0;
+    std::int32_t troop_no = -1;
+    std::int32_t agent_no = -1;
+    std::int32_t gold = 0;
+    std::int32_t score = 0;
+    std::int32_t kill_count = 0;
+    std::int32_t death_count = 0;
+    std::int32_t ping = 0;
+    bool is_muted = false;
+    bool is_admin = false;
+    std::int32_t unique_id = 0;
+    std::int32_t profile_gender = 0;
 };
 
 struct WseTeam {
     wse::vm::Slots slots{};
+    std::int32_t faction_no = 0;
+    std::array<std::int32_t, kNumTeams> relations{};
+    std::int32_t order_listener = -1;
+    std::array<std::int32_t, kNumDivisions> order_types{};
+    std::array<std::int32_t, kNumDivisions> order_subtypes{};
+    std::array<wse::core::WseTransform, kNumDivisions> order_positions{};
+    std::int32_t leader_agent_no = -1;
+    std::array<std::int32_t, kNumDivisions> division_leaders{-1, -1, -1, -1, -1, -1, -1, -1, -1};
 };
 
 struct WseAgent {
     bool active = true;
-    std::int32_t status = 0;
+    std::int32_t status = 1; // mbAgent::m_status: 1 = alive (0x14002b8f0), 3 = wounded (0x14002b900)
     wse::vm::Slots slots{};
     std::int32_t type = 0;  // mbAgent::m_type: 0 = human, 1 = horse (0x14002b910)
+    std::int32_t horse_agent_no = -1;
+    std::int32_t rider_agent_no = -1;
+    std::int32_t party_no = -1;
+    std::int32_t troop_no = -1;
+    std::int32_t team_no = 0;
+    std::int32_t division_no = 0;
+    std::int32_t entry_no = 0;
+    float hit_points = 100.0f;
+    float max_hit_points = 100.0f;
+    bool is_wounded = false;
+    bool is_routed = false;
+    bool is_defender = false;
+    bool is_non_player = true;
+    std::int32_t class_no = 0;
+    std::int32_t kill_count = 0;
+    std::int32_t wound_count = 0;
+    std::array<std::int32_t, kNumTroopEquipmentSlots> equipped_items{
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+    std::array<std::int32_t, kNumTroopEquipmentSlots> item_ammo{};
+    std::array<std::int32_t, 2> wielded_items{-1, -1}; // [0]=hand 0 (weapon), [1]=hand 1 (shield)
+    std::array<std::int32_t, kMaxAgentItems> attached_mission_object_nos{-1, -1, -1, -1};
+    bool ai_alarmed = false;
+    std::int32_t simple_behavior = 0;
+    bool has_scripted_destination = false;
+    float speed_limit = 0.0f;
+    std::int32_t group_no = 0;
+    wse::core::WseTransform position = wse::core::WseTransform::identity();
+    wse::core::WseVec4 speed{};
+    wse::core::WseTransform target_position = wse::core::WseTransform::identity();
+    std::int32_t animation = -1;
+    std::int32_t stand_animation = -1;
 
     // Mirrors mbAgent::isHuman (0x14002b910): m_type == 0.
     [[nodiscard]] constexpr bool is_human() const noexcept {
         return type == 0;
+    }
+
+    // Mirrors mbAgent::isAlive (0x14002b8f0): m_status == 1.
+    [[nodiscard]] constexpr bool is_alive() const noexcept {
+        return active && status == 1;
+    }
+
+    // Mirrors mbAgent::isWounded (0x14002b900): m_status == 3.
+    [[nodiscard]] constexpr bool is_wounded_state() const noexcept {
+        return status == 3 || is_wounded;
     }
 };
 
 struct WseMissionObject {
     bool active = true;
     wse::vm::Slots slots{};
+    std::int32_t meta_mesh_no = -1;
+    std::int32_t scene_prop_no = -1;
+    std::int32_t variation_id_no = 0;
+    std::int32_t variation_id_2_no = 0;
+    float hit_points = 0.0f;
+    float max_hit_points = 0.0f;
+    std::int32_t parent_agent_no = -1;
+    std::int32_t team_no = 0;
+    bool visible = true;
+    bool is_destructible = false;
+    wse::core::WseTransform position = wse::core::WseTransform::identity();
+    wse::core::WseTransform target_position = wse::core::WseTransform::identity();
+    wse::core::WseVec4 scale{1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct WseDisplayedMessage {
@@ -313,11 +819,41 @@ struct WseEditModeState {
 struct WseWorldState {
     bool has_game = true;
     std::int32_t main_party_no = 0;                       // mbGame +0x0420
+    std::int32_t player_troop_no = 0;                     // mbGame::m_playerTroopNo
+    std::int32_t player_agent_no = -1;                    // mbMission::m_playerAgentNo
+    std::int32_t player_agent_own_troop_kill_count = 0;
+    std::int32_t player_agent_own_troop_wound_count = 0;
+    std::int32_t main_party_side = 0;                     // mbMission::m_mainPartySide
+    std::int32_t enemy_side = 1;                          // mbMission::m_enemySide
     std::int64_t campaign_time = 0;                       // DAT_14061f038
+    std::int32_t current_hours = 0;                       // mbGame +hours (0x1401de26d)
+    std::int32_t game_year = 1257;                        // mbGame::m_year (0x1401cdde9)
     bool paused = false;                                  // mbGame +0x043c
     bool hide_hud = false;                                // DAT_140657110
+    bool show_messages = true;                            // g_windowManager.m_displayMessages
     float water_level = 0.0f;                             // mbMission +0xa4f4
+    float ground_level_z = 0.0f;                          // default terrain Z for ground probe
+    std::int32_t max_players = kMaxPlayers;               // rglConfig::Network::iNumPlayersLimit
+    std::int32_t num_skins = 2;                           // g_faceGenerator.m_numSkins
+    std::int32_t attribute_limit = 64;                    // rglConfig::General::iAttributeLimit
+    std::int32_t site_no_being_modified = -1;             // g_siteNoBeingModified
+    std::int32_t conversation_partner_troop_no = -1;      // g_conversationManager.m_partnerTroopNo
+    std::int32_t partner_faction_no = -1;                 // g_conversationManager.m_partnerFactionNo
+    std::int32_t active_presentation_no = -1;
+    std::int32_t presentation_duration = 0;
+    bool presentation_background = false;
+    bool order_menu_open = false;
+    std::int32_t order_menu_type = -2;
+    std::int32_t order_menu_subtype = -1;
+    std::int32_t mission_result = 0;
+    bool mission_finished = false;
+    float mission_finish_delay = 0.0f;
+    std::int32_t jump_mission_no = -1;
+    std::int32_t jump_menu_no = -1;
+    std::int64_t trigger_result = 0;
     std::array<bool, kNumUseTooltipTypes> use_objects_tooltip_enabled{};
+    std::array<WseEntryPoint, kMaxEntryPoints> entry_points{};
+    std::array<WseMissionTimer, 3> mission_timers{};
     WseEditModeState edit_mode{};
 
     std::array<WseSkill, kMaxSkills> skills{};            // 0x14065f810
@@ -332,6 +868,10 @@ struct WseWorldState {
     std::array<WseTeam, kNumTeams> teams{};
     std::vector<WseAgent> agents{};
     std::vector<WseMissionObject> mission_objects{};
+    std::vector<WseMissionTemplate> mission_templates{};
+    std::vector<WsePresentationOverlay> overlays{};
+    std::vector<WseMultiplayerMessage> multiplayer_messages{};
+    std::vector<WseBattleEvent> played_sounds{};
     std::int32_t num_particle_systems = 0;                // DAT_140623a10
 
     WseMetaMesh* cur_item_meta_mesh = nullptr;            // 0x1401c5e40 (caller -50)
@@ -383,6 +923,16 @@ struct WseWorldState {
     [[nodiscard]] bool is_valid_mission_object(std::int32_t id) const noexcept {
         return id >= 0 && static_cast<std::size_t>(id) < mission_objects.size() &&
                mission_objects[static_cast<std::size_t>(id)].active;
+    }
+    [[nodiscard]] bool is_valid_overlay(std::int32_t id) const noexcept {
+        return id >= 0 && static_cast<std::size_t>(id) < overlays.size();
+    }
+    [[nodiscard]] bool is_valid_entry_point(std::int32_t id) const noexcept {
+        return id >= 0 && id < kMaxEntryPoints &&
+               entry_points[static_cast<std::size_t>(id)].valid;
+    }
+    [[nodiscard]] bool is_valid_mission_template(std::int32_t id) const noexcept {
+        return id >= 0 && static_cast<std::size_t>(id) < mission_templates.size();
     }
     [[nodiscard]] bool is_valid_particle_system(std::int32_t id) const noexcept {
         return id >= 0 && id < num_particle_systems;

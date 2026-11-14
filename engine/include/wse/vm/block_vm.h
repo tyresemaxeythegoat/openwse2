@@ -197,6 +197,7 @@ struct VmContext {
     bool clearLocalsBetweenCalls = false;
     std::int32_t maxCallDepth = kMaxCallDepth;
     std::int32_t currentDepth = 0;
+    std::int32_t currentCaller = 0;
     bool skipStatement = false;
     game::ScriptManager* scripts = nullptr;
 
@@ -453,15 +454,6 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     block.analyzed = true;
 }
 
-[[nodiscard]] inline NativeDispatch dispatch_native_statement_ext(
-    std::uint32_t opcode,
-    std::span<const std::int64_t> wide,
-    std::span<const std::int32_t> narrow,
-    std::span<const std::uint8_t> tags,
-    const Statement& statement,
-    VmContext& ctx,
-    std::span<std::int64_t> locals);
-
 [[nodiscard]] inline NativeDispatch dispatch_native_statement(
     std::uint32_t opcode,
     std::span<const std::int64_t> wide,
@@ -469,175 +461,7 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     std::span<const std::uint8_t> tags,
     const Statement& statement,
     VmContext& ctx,
-    std::span<std::int64_t> locals) {
-    if (ctx.nativeHook != nullptr) {
-        bool handled = false;
-        const bool hookResult =
-            ctx.nativeHook(ctx.nativeHookUser, opcode, wide, narrow, tags, statement, ctx, locals, handled);
-        if (handled) {
-            return hookResult ? NativeDispatch::handled : NativeDispatch::condition_false;
-        }
-    }
-
-    const auto dst = static_cast<std::uint64_t>(statement.operands[0]);
-    constexpr float kDegToRad = 0.01745329238474369F;  // DAT_1405761e8
-
-    switch (opcode) {
-    case core_op::kGe:
-        return wide[0] >= wide[1] ? NativeDispatch::handled : NativeDispatch::condition_false;
-    case core_op::kEq:
-        return wide[0] == wide[1] ? NativeDispatch::handled : NativeDispatch::condition_false;
-    case core_op::kGt:
-        return wide[0] > wide[1] ? NativeDispatch::handled : NativeDispatch::condition_false;
-    case core_op::kIsBetween:
-        return (wide[0] >= wide[1] && wide[0] < wide[2]) ? NativeDispatch::handled
-                                                         : NativeDispatch::condition_false;
-    case core_op::kValLshift: {
-        const auto shifted = static_cast<std::uint64_t>(wide[0])
-                             << (static_cast<unsigned>(wide[1]) & 63U);
-        store_lvalue(dst, static_cast<std::int64_t>(shifted), ctx, locals);
-        return NativeDispatch::handled;
-    }
-    case core_op::kValRshift:
-        store_lvalue(dst, wide[0] >> (static_cast<unsigned>(wide[1]) & 63U), ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kValAdd:
-        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) +
-                                                    static_cast<std::uint64_t>(wide[1])),
-                     ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kValSub:
-        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) -
-                                                    static_cast<std::uint64_t>(wide[1])),
-                     ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kValMul:
-        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) *
-                                                    static_cast<std::uint64_t>(wide[1])),
-                     ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kValDiv:
-        store_lvalue(dst, checked_signed_div(wide[0], wide[1], ctx), ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kValMod: {
-        bool ok = false;
-        const std::int64_t rem = checked_signed_mod(wide[0], wide[1], ctx, ok);
-        if (ok) {
-            store_lvalue(dst, rem, ctx, locals);
-        }
-        return NativeDispatch::handled;
-    }
-    case core_op::kValMin:
-        store_lvalue(dst, static_cast<std::int64_t>(std::min(narrow[0], narrow[1])), ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kValMax:
-        store_lvalue(dst, static_cast<std::int64_t>(std::max(narrow[0], narrow[1])), ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kValClamp: {
-        std::int32_t clamped = narrow[0];
-        if (narrow[0] < narrow[1]) {
-            clamped = narrow[1];
-        } else if (narrow[0] >= narrow[2]) {
-            clamped = static_cast<std::int32_t>(static_cast<std::uint32_t>(narrow[2]) - 1U);
-        }
-        store_lvalue(dst, static_cast<std::int64_t>(clamped), ctx, locals);
-        return NativeDispatch::handled;
-    }
-    case core_op::kValAbs: {
-        const auto absVal =
-            wide[0] < 0 ? static_cast<std::int64_t>(-static_cast<std::uint64_t>(wide[0])) : wide[0];
-        store_lvalue(dst, absVal, ctx, locals);
-        return NativeDispatch::handled;
-    }
-    case core_op::kValOr:
-        store_lvalue(dst, wide[0] | wide[1], ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kValAnd:
-        store_lvalue(dst, wide[0] & wide[1], ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kStoreOr:
-        store_lvalue(dst, wide[1] | wide[2], ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kStoreAnd:
-        store_lvalue(dst, wide[1] & wide[2], ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kStoreMod: {
-        bool ok = false;
-        const std::int64_t rem = checked_signed_mod(wide[1], wide[2], ctx, ok);
-        if (ok) {
-            store_lvalue(dst, rem, ctx, locals);
-        }
-        return NativeDispatch::handled;
-    }
-    case core_op::kStoreAdd:
-        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) +
-                                                    static_cast<std::uint64_t>(wide[2])),
-                     ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kStoreSub:
-        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) -
-                                                    static_cast<std::uint64_t>(wide[2])),
-                     ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kStoreMul:
-        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) *
-                                                    static_cast<std::uint64_t>(wide[2])),
-                     ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kStoreDiv:
-        store_lvalue(dst, checked_signed_div(wide[1], wide[2], ctx), ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kSetFixedPointMultiplier:
-        if (narrow[0] > 0) {
-            ctx.fixedPointMultiplier = narrow[0];
-        }
-        return NativeDispatch::handled;
-    case core_op::kStoreSqrt:
-        if (wide[1] > 0) {
-            const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
-            const float value = std::sqrt(static_cast<float>(wide[1]) / fpScale) * fpScale;
-            store_lvalue(dst, f2i_round(value), ctx, locals);
-        }
-        return NativeDispatch::handled;
-    case core_op::kStorePow: {
-        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
-        const float value =
-            std::pow(static_cast<float>(wide[1]) / fpScale, static_cast<float>(wide[2]) / fpScale) *
-            fpScale;
-        store_lvalue(dst, f2i_round(value), ctx, locals);
-        return NativeDispatch::handled;
-    }
-    case core_op::kStoreSin: {
-        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
-        const float value = std::sin((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
-        store_lvalue(dst, f2i_round(value), ctx, locals);
-        return NativeDispatch::handled;
-    }
-    case core_op::kStoreCos: {
-        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
-        const float value = std::cos((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
-        store_lvalue(dst, f2i_round(value), ctx, locals);
-        return NativeDispatch::handled;
-    }
-    case core_op::kStoreTan: {
-        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
-        const float value = std::tan((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
-        store_lvalue(dst, f2i_round(value), ctx, locals);
-        return NativeDispatch::handled;
-    }
-    case core_op::kConvertToFixedPoint:
-        store_lvalue(dst, wide[0] * static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kConvertFromFixedPoint:
-        store_lvalue(dst, wide[0] / static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx, locals);
-        return NativeDispatch::handled;
-    case core_op::kAssign:
-        store_lvalue(dst, wide[1], ctx, locals);
-        return NativeDispatch::handled;
-    default:
-        return dispatch_native_statement_ext(opcode, wide, narrow, tags, statement, ctx, locals);
-    }
-}
+    std::span<std::int64_t> locals);
 
 [[nodiscard]] inline bool wse_invoke_script_callback(
     void* user,
@@ -743,8 +567,11 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
             return false;
         }
     } else if (opcode >= kNativeOpcodeMin && opcode <= kNativeOpcodeMax) {
+        const std::int32_t savedCaller = ctx.currentCaller;
+        ctx.currentCaller = caller;
         const NativeDispatch nativeResult =
             dispatch_native_statement(opcode, wide, narrow, tags, statement, ctx, locals);
+        ctx.currentCaller = savedCaller;
         if (nativeResult == NativeDispatch::unimplemented) {
             ctx.record_unimplemented(opcode);
             if (ctx.failOnUnimplemented) {
@@ -787,6 +614,20 @@ inline void set_dict_loop_key(const Statement& stmt,
         wse_utf8_to_utf16(frame.dictIt->first);
 }
 
+[[nodiscard]] inline std::int32_t find_next_valid_party(const VmContext& ctx,
+                                                        std::int32_t start) noexcept;
+[[nodiscard]] inline std::int32_t find_next_valid_agent(const Statement& stmt,
+                                                        VmContext& ctx,
+                                                        std::span<const std::int64_t> locals,
+                                                        std::int32_t start,
+                                                        bool reportPosError);
+[[nodiscard]] inline std::int32_t find_next_valid_prop(const Statement& stmt,
+                                                       VmContext& ctx,
+                                                       std::span<const std::int64_t> locals,
+                                                       std::int32_t start);
+[[nodiscard]] inline std::int32_t find_next_valid_player(const VmContext& ctx,
+                                                         std::int32_t start) noexcept;
+
 [[nodiscard]] inline bool can_loop(const StatementBlock& block,
                                    VmContext& ctx,
                                    std::span<const std::int64_t> locals,
@@ -815,11 +656,21 @@ inline void set_dict_loop_key(const Statement& stmt,
                                  : 0;
         return static_cast<std::int64_t>(top.value) >= lower;
     }
+    case core_op::kTryForParties:
+        return top.value >= 0 &&
+               static_cast<std::size_t>(top.value) < ctx.world.parties.size();
+    case core_op::kTryForAgents:
+        return top.value >= 0 &&
+               static_cast<std::size_t>(top.value) < ctx.world.agents.size();
+    case core_op::kTryForPropInstances:
+        return top.value >= 0 &&
+               static_cast<std::size_t>(top.value) < ctx.world.mission_objects.size();
+    case core_op::kTryForPlayers:
+        return top.value >= 0 && top.value < ctx.world.max_players &&
+               static_cast<std::size_t>(top.value) < ctx.world.players.size();
     case core_op::kTryForDictKeys:
         return top.value != -1 && top.dict != nullptr && top.dictIt != top.dictEnd;
     default:
-        // Entity iterators (0xb/0xc/0x10/0x11) terminate with 0
-        // iterations cleanly until those world containers are reconstructed.
         return false;
     }
 }
@@ -847,6 +698,19 @@ inline void start_loop(const StatementBlock& block,
                 ? parse_operand(static_cast<std::uint64_t>(stmt.operands[2]), ctx, locals, unusedTag)
                 : 0;
         frame.value = static_cast<std::int32_t>(upper - 1);
+    } else if (opcode == core_op::kTryForParties) {
+        frame.value = find_next_valid_party(ctx, 0);
+    } else if (opcode == core_op::kTryForAgents) {
+        frame.value = find_next_valid_agent(stmt, ctx, locals, 0, true);
+    } else if (opcode == core_op::kTryForPropInstances) {
+        frame.value = find_next_valid_prop(stmt, ctx, locals, 0);
+    } else if (opcode == core_op::kTryForPlayers) {
+        const std::int32_t startIdx =
+            (stmt.numOperands > 1 &&
+             parse_operand(static_cast<std::uint64_t>(stmt.operands[1]), ctx, locals, unusedTag) != 0)
+                ? 1
+                : 0;
+        frame.value = find_next_valid_player(ctx, startIdx);
     } else if (opcode == core_op::kTryForDictKeys) {
         isDictLoop = true;
         frame.value = -1;
@@ -914,6 +778,14 @@ inline void end_loop(const StatementBlock& block,
         ++top.value;
     } else if (opcode == core_op::kTryForRangeBackwards) {
         --top.value;
+    } else if (opcode == core_op::kTryForParties) {
+        top.value = find_next_valid_party(ctx, top.value + 1);
+    } else if (opcode == core_op::kTryForAgents) {
+        top.value = find_next_valid_agent(startStmt, ctx, locals, top.value + 1, false);
+    } else if (opcode == core_op::kTryForPropInstances) {
+        top.value = find_next_valid_prop(startStmt, ctx, locals, top.value + 1);
+    } else if (opcode == core_op::kTryForPlayers) {
+        top.value = find_next_valid_player(ctx, top.value + 1);
     } else if (opcode == core_op::kTryForDictKeys) {
         isDictLoop = true;
         if (top.value != -1 && top.dict != nullptr && top.dictIt != top.dictEnd) {

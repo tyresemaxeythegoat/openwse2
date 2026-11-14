@@ -307,6 +307,15 @@ inline void native_store_name_link(std::int32_t reg_idx,
     ctx.stringRegisters[static_cast<std::size_t>(reg_idx)] = wse_utf8_to_utf16(formatted);
 }
 
+[[nodiscard]] inline NativeDispatch dispatch_native_entity_statement(
+    std::uint32_t opcode,
+    std::span<const std::int64_t> wide,
+    std::span<const std::int32_t> narrow,
+    std::span<const std::uint8_t> tags,
+    const Statement& statement,
+    VmContext& ctx,
+    std::span<std::int64_t> locals);
+
 [[nodiscard]] inline NativeDispatch dispatch_native_statement_ext(
     std::uint32_t opcode,
     std::span<const std::int64_t> wide,
@@ -923,8 +932,294 @@ inline void native_store_name_link(std::int32_t reg_idx,
         return NativeDispatch::handled;
 
     default:
-        return NativeDispatch::unimplemented;
+        break;
+    }
+    return dispatch_native_entity_statement(
+        opcode, wide, narrow, tags, statement, ctx, locals);
+}
+
+[[nodiscard]] inline NativeDispatch dispatch_native_statement(
+    std::uint32_t opcode,
+    std::span<const std::int64_t> wide,
+    std::span<const std::int32_t> narrow,
+    std::span<const std::uint8_t> tags,
+    const Statement& statement,
+    VmContext& ctx,
+    std::span<std::int64_t> locals) {
+    if (ctx.nativeHook != nullptr) {
+        bool handled = false;
+        const bool hookResult =
+            ctx.nativeHook(ctx.nativeHookUser, opcode, wide, narrow, tags, statement, ctx, locals, handled);
+        if (handled) {
+            return hookResult ? NativeDispatch::handled : NativeDispatch::condition_false;
+        }
+    }
+
+    const auto dst = static_cast<std::uint64_t>(statement.operands[0]);
+    constexpr float kDegToRad = 0.01745329238474369F;  // DAT_1405761e8
+
+    switch (opcode) {
+    case core_op::kGe:
+        return wide[0] >= wide[1] ? NativeDispatch::handled : NativeDispatch::condition_false;
+    case core_op::kEq:
+        return wide[0] == wide[1] ? NativeDispatch::handled : NativeDispatch::condition_false;
+    case core_op::kGt:
+        return wide[0] > wide[1] ? NativeDispatch::handled : NativeDispatch::condition_false;
+    case core_op::kIsBetween:
+        return (wide[0] >= wide[1] && wide[0] < wide[2]) ? NativeDispatch::handled
+                                                         : NativeDispatch::condition_false;
+    case core_op::kValLshift: {
+        const auto shifted = static_cast<std::uint64_t>(wide[0])
+                             << (static_cast<unsigned>(wide[1]) & 63U);
+        store_lvalue(dst, static_cast<std::int64_t>(shifted), ctx, locals);
+        return NativeDispatch::handled;
+    }
+    case core_op::kValRshift:
+        store_lvalue(dst, wide[0] >> (static_cast<unsigned>(wide[1]) & 63U), ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kValAdd:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) +
+                                                    static_cast<std::uint64_t>(wide[1])),
+                     ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kValSub:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) -
+                                                    static_cast<std::uint64_t>(wide[1])),
+                     ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kValMul:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[0]) *
+                                                    static_cast<std::uint64_t>(wide[1])),
+                     ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kValDiv:
+        store_lvalue(dst, checked_signed_div(wide[0], wide[1], ctx), ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kValMod: {
+        bool ok = false;
+        const std::int64_t rem = checked_signed_mod(wide[0], wide[1], ctx, ok);
+        if (ok) {
+            store_lvalue(dst, rem, ctx, locals);
+        }
+        return NativeDispatch::handled;
+    }
+    case core_op::kValMin:
+        store_lvalue(dst, static_cast<std::int64_t>(std::min(narrow[0], narrow[1])), ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kValMax:
+        store_lvalue(dst, static_cast<std::int64_t>(std::max(narrow[0], narrow[1])), ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kValClamp: {
+        std::int32_t clamped = narrow[0];
+        if (narrow[0] < narrow[1]) {
+            clamped = narrow[1];
+        } else if (narrow[0] >= narrow[2]) {
+            clamped = static_cast<std::int32_t>(static_cast<std::uint32_t>(narrow[2]) - 1U);
+        }
+        store_lvalue(dst, static_cast<std::int64_t>(clamped), ctx, locals);
+        return NativeDispatch::handled;
+    }
+    case core_op::kValAbs: {
+        const auto absVal =
+            wide[0] < 0 ? static_cast<std::int64_t>(-static_cast<std::uint64_t>(wide[0])) : wide[0];
+        store_lvalue(dst, absVal, ctx, locals);
+        return NativeDispatch::handled;
+    }
+    case core_op::kValOr:
+        store_lvalue(dst, wide[0] | wide[1], ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kValAnd:
+        store_lvalue(dst, wide[0] & wide[1], ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kStoreOr:
+        store_lvalue(dst, wide[1] | wide[2], ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kStoreAnd:
+        store_lvalue(dst, wide[1] & wide[2], ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kStoreMod: {
+        bool ok = false;
+        const std::int64_t rem = checked_signed_mod(wide[1], wide[2], ctx, ok);
+        if (ok) {
+            store_lvalue(dst, rem, ctx, locals);
+        }
+        return NativeDispatch::handled;
+    }
+    case core_op::kStoreAdd:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) +
+                                                    static_cast<std::uint64_t>(wide[2])),
+                     ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kStoreSub:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) -
+                                                    static_cast<std::uint64_t>(wide[2])),
+                     ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kStoreMul:
+        store_lvalue(dst, static_cast<std::int64_t>(static_cast<std::uint64_t>(wide[1]) *
+                                                    static_cast<std::uint64_t>(wide[2])),
+                     ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kStoreDiv:
+        store_lvalue(dst, checked_signed_div(wide[1], wide[2], ctx), ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kSetFixedPointMultiplier:
+        if (narrow[0] > 0) {
+            ctx.fixedPointMultiplier = narrow[0];
+        }
+        return NativeDispatch::handled;
+    case core_op::kStoreSqrt:
+        if (wide[1] > 0) {
+            const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
+            const float value = std::sqrt(static_cast<float>(wide[1]) / fpScale) * fpScale;
+            store_lvalue(dst, f2i_round(value), ctx, locals);
+        }
+        return NativeDispatch::handled;
+    case core_op::kStorePow: {
+        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
+        const float value =
+            std::pow(static_cast<float>(wide[1]) / fpScale, static_cast<float>(wide[2]) / fpScale) *
+            fpScale;
+        store_lvalue(dst, f2i_round(value), ctx, locals);
+        return NativeDispatch::handled;
+    }
+    case core_op::kStoreSin: {
+        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
+        const float value = std::sin((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
+        store_lvalue(dst, f2i_round(value), ctx, locals);
+        return NativeDispatch::handled;
+    }
+    case core_op::kStoreCos: {
+        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
+        const float value = std::cos((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
+        store_lvalue(dst, f2i_round(value), ctx, locals);
+        return NativeDispatch::handled;
+    }
+    case core_op::kStoreTan: {
+        const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
+        const float value = std::tan((static_cast<float>(wide[1]) * kDegToRad) / fpScale) * fpScale;
+        store_lvalue(dst, f2i_round(value), ctx, locals);
+        return NativeDispatch::handled;
+    }
+    case core_op::kConvertToFixedPoint:
+        store_lvalue(dst, wide[0] * static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kConvertFromFixedPoint:
+        store_lvalue(dst, wide[0] / static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx, locals);
+        return NativeDispatch::handled;
+    case core_op::kAssign:
+        store_lvalue(dst, wide[1], ctx, locals);
+        return NativeDispatch::handled;
+    default:
+        return dispatch_native_statement_ext(opcode, wide, narrow, tags, statement, ctx, locals);
     }
 }
 
+[[nodiscard]] inline std::int32_t find_next_valid_party(const VmContext& ctx,
+                                                        std::int32_t start) noexcept {
+    const auto limit = static_cast<std::int32_t>(ctx.world.parties.size());
+    for (std::int32_t idx = std::max<std::int32_t>(0, start); idx < limit; ++idx) {
+        if (ctx.world.is_valid_party(idx)) {
+            return idx;
+        }
+    }
+    return limit;
+}
+
+[[nodiscard]] inline std::int32_t find_next_valid_agent(const Statement& stmt,
+                                                        VmContext& ctx,
+                                                        std::span<const std::int64_t> locals,
+                                                        std::int32_t start,
+                                                        bool reportPosError) {
+    bool useDistance = false;
+    std::int32_t posIdx = -1;
+    float maxDist = 0.0f;
+    if (stmt.numOperands > 1) {
+        std::uint8_t unusedTag = 0;
+        const auto reg = static_cast<std::int32_t>(parse_operand(
+            static_cast<std::uint64_t>(stmt.operands[1]), ctx, locals, unusedTag));
+        if (static_cast<std::uint32_t>(reg) < 128U) {
+            posIdx = reg;
+            const std::int64_t rawRad =
+                stmt.numOperands > 2
+                    ? parse_operand(static_cast<std::uint64_t>(stmt.operands[2]), ctx, locals, unusedTag)
+                    : 0;
+            const float fpMul = ctx.fixedPointMultiplier != 0
+                                    ? static_cast<float>(ctx.fixedPointMultiplier)
+                                    : 100.0f;
+            maxDist = static_cast<float>(rawRad) / fpMul;
+            useDistance = true;
+        } else if (reportPosError) {
+            ctx.report_error("Invalid Register ID in try_for_agents");
+        }
+    }
+
+    const auto limit = static_cast<std::int32_t>(ctx.world.agents.size());
+    for (std::int32_t idx = std::max<std::int32_t>(0, start); idx < limit; ++idx) {
+        if (!ctx.world.is_valid_agent(idx)) {
+            continue;
+        }
+        if (useDistance) {
+            const auto& origin = ctx.positions[static_cast<std::size_t>(posIdx)].o;
+            const auto& apos = ctx.world.agents[static_cast<std::size_t>(idx)].position.o;
+            const float dx = origin.x - apos.x;
+            const float dy = origin.y - apos.y;
+            const float dz = origin.z - apos.z;
+            if (std::sqrt(dx * dx + dy * dy + dz * dz) > maxDist) {
+                continue;
+            }
+        }
+        return idx;
+    }
+    return limit;
+}
+
+[[nodiscard]] inline std::int32_t find_next_valid_prop(const Statement& stmt,
+                                                       VmContext& ctx,
+                                                       std::span<const std::int64_t> locals,
+                                                       std::int32_t start) {
+    std::uint8_t unusedTag = 0;
+    const std::int32_t filterProp =
+        stmt.numOperands > 1
+            ? static_cast<std::int32_t>(parse_operand(
+                  static_cast<std::uint64_t>(stmt.operands[1]), ctx, locals, unusedTag))
+            : 0;
+    const std::int32_t filterMetaPlusOne =
+        stmt.numOperands > 2
+            ? static_cast<std::int32_t>(parse_operand(
+                  static_cast<std::uint64_t>(stmt.operands[2]), ctx, locals, unusedTag))
+            : 0;
+
+    const auto limit = static_cast<std::int32_t>(ctx.world.mission_objects.size());
+    for (std::int32_t idx = std::max<std::int32_t>(0, start); idx < limit; ++idx) {
+        if (!ctx.world.is_valid_mission_object(idx)) {
+            continue;
+        }
+        const auto& obj = ctx.world.mission_objects[static_cast<std::size_t>(idx)];
+        if (filterProp > 0 && obj.scene_prop_no != filterProp) {
+            continue;
+        }
+        if (filterMetaPlusOne > 0 && obj.meta_mesh_no != filterMetaPlusOne - 1) {
+            continue;
+        }
+        return idx;
+    }
+    return limit;
+}
+
+[[nodiscard]] inline std::int32_t find_next_valid_player(const VmContext& ctx,
+                                                         std::int32_t start) noexcept {
+    const std::int32_t limit =
+        std::min<std::int32_t>(ctx.world.max_players,
+                               static_cast<std::int32_t>(ctx.world.players.size()));
+    for (std::int32_t idx = std::max<std::int32_t>(0, start); idx < limit; ++idx) {
+        if (ctx.world.is_valid_player(idx)) {
+            return idx;
+        }
+    }
+    return ctx.world.max_players;
+}
+
 }  // namespace wse::vm
+
+#include "wse/vm/native_entity_ops.h"

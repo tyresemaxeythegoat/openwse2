@@ -1250,6 +1250,589 @@ void test_native_strings_and_entity_ops() {
            "all 25 strings/UI/entity native opcodes match v1.1.5.5 semantics");
 }
 
+void test_entity_iterators() {
+    using namespace wse::vm;
+
+    VmContext ctx;
+    ctx.failOnUnimplemented = true;
+    ctx.fixedPointMultiplier = 100;
+    ctx.world.has_game = true;
+
+    // 3 parties: 0 (active), 1 (inactive), 2 (active).
+    ctx.world.parties.resize(3);
+    ctx.world.parties[0].active = true;
+    ctx.world.parties[1].active = false;
+    ctx.world.parties[2].active = true;
+
+    // 3 agents: 0 (active, alive, near), 1 (inactive), 2 (active, wounded, far).
+    ctx.world.agents.resize(3);
+    ctx.world.agents[0].active = true;
+    ctx.world.agents[0].status = 1;
+    ctx.world.agents[0].position.o = {1.0f, 1.0f, 0.0f, 0.0f};
+    ctx.world.agents[1].active = false;
+    ctx.world.agents[2].active = true;
+    ctx.world.agents[2].status = 3;
+    ctx.world.agents[2].position.o = {20.0f, 0.0f, 0.0f, 0.0f};
+
+    // 4 mission objects for try_for_prop_instances filters.
+    ctx.world.mission_objects.resize(4);
+    ctx.world.mission_objects[0] = {};
+    ctx.world.mission_objects[0].active = true;
+    ctx.world.mission_objects[0].scene_prop_no = 10;
+    ctx.world.mission_objects[0].meta_mesh_no = 2;
+    ctx.world.mission_objects[1].active = false;
+    ctx.world.mission_objects[1].scene_prop_no = 10;
+    ctx.world.mission_objects[1].meta_mesh_no = 2;
+    ctx.world.mission_objects[2].active = true;
+    ctx.world.mission_objects[2].scene_prop_no = 20;
+    ctx.world.mission_objects[2].meta_mesh_no = 2;
+    ctx.world.mission_objects[3].active = true;
+    ctx.world.mission_objects[3].scene_prop_no = 10;
+    ctx.world.mission_objects[3].meta_mesh_no = 5;
+
+    // 4 players: 0 (server active), 1 (inactive), 2 (active), 3 (active).
+    ctx.world.max_players = 4;
+    ctx.world.players.resize(4);
+    ctx.world.players[0].status = 2;
+    ctx.world.players[1].status = 0;
+    ctx.world.players[2].status = 2;
+    ctx.world.players[3].status = 2;
+
+    StatementBlock block;
+    block.statements = {
+        // Party loop (0, 2 -> encoded bitmask in reg0 = (1<<0)|(1<<2) = 5, with continue skipping id==99 none)
+        make_stmt(core_op::kAssign, {reg(0), 0}),
+        make_stmt(core_op::kTryForParties, {loc(0)}),
+        make_stmt(core_op::kValAdd, {loc(0), 1}),
+        make_stmt(core_op::kStoreAdd, {reg(0), reg(0), loc(0)}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        // Agent whole-world loop (0, 2 -> count in reg1 = 2, sum+1 in reg2 = 4)
+        make_stmt(core_op::kAssign, {reg(1), 0}),
+        make_stmt(core_op::kAssign, {reg(2), 0}),
+        make_stmt(core_op::kTryForAgents, {loc(1)}),
+        make_stmt(core_op::kValAdd, {reg(1), 1}),
+        make_stmt(core_op::kValAdd, {loc(1), 1}),
+        make_stmt(core_op::kValAdd, {reg(2), loc(1)}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        // Agent distance-filtered loop around pos0=(0,0,0) radius 500 (5.0m) -> only agent 0!
+        make_stmt(core_op::kInitPosition, {0}),
+        make_stmt(core_op::kAssign, {reg(3), 0}),
+        make_stmt(core_op::kTryForAgents, {loc(2), 0, 500}),
+        make_stmt(core_op::kValAdd, {reg(3), 1}),
+        make_stmt(core_op::kAssign, {reg(4), loc(2)}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        // Prop instances unfiltered (0, 2, 3 -> count=3 in reg5), prop=10 (0, 3 -> count=2 in reg6),
+        // prop=10 & meta+1=3 (meta==2 -> only 0 -> count=1 in reg7).
+        make_stmt(core_op::kAssign, {reg(5), 0}),
+        make_stmt(core_op::kTryForPropInstances, {loc(3)}),
+        make_stmt(core_op::kValAdd, {reg(5), 1}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        make_stmt(core_op::kAssign, {reg(6), 0}),
+        make_stmt(core_op::kTryForPropInstances, {loc(3), 10}),
+        make_stmt(core_op::kValAdd, {reg(6), 1}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        make_stmt(core_op::kAssign, {reg(7), 0}),
+        make_stmt(core_op::kTryForPropInstances, {loc(3), 10, 3}),
+        make_stmt(core_op::kValAdd, {reg(7), 1}),
+        make_stmt(core_op::kAssign, {reg(8), loc(3)}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        // Players mode 0 (0, 2, 3 -> count=3 in reg9) and mode 1 skipping server (2, 3 -> count=2 in reg10)
+        // plus nested break_loop on player == 2 in reg11 (visited only player 0 -> sum+1 = 1).
+        make_stmt(core_op::kAssign, {reg(9), 0}),
+        make_stmt(core_op::kTryForPlayers, {loc(4), 0}),
+        make_stmt(core_op::kValAdd, {reg(9), 1}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        make_stmt(core_op::kAssign, {reg(10), 0}),
+        make_stmt(core_op::kTryForPlayers, {loc(4), 1}),
+        make_stmt(core_op::kValAdd, {reg(10), 1}),
+        make_stmt(core_op::kTryEnd, {}),
+
+        make_stmt(core_op::kAssign, {reg(11), 0}),
+        make_stmt(core_op::kTryForPlayers, {loc(4)}),
+        make_stmt(core_op::kTryBegin, {}),
+        make_stmt(core_op::kEq, {loc(4), 2}),
+        make_stmt(core_op::kBreakLoop, {}),
+        make_stmt(core_op::kTryEnd, {}),
+        make_stmt(core_op::kValAdd, {reg(11), 1}),
+        make_stmt(core_op::kTryEnd, {}),
+    };
+
+    const bool ok = execute_statement_block(block, ctx);
+    expect(ok && ctx.errorCount == 0 && ctx.unimplementedCount == 0 &&
+               ctx.registers[0] == 4 && ctx.registers[1] == 2 && ctx.registers[2] == 4 &&
+               ctx.registers[3] == 1 && ctx.registers[4] == 0 &&
+               ctx.registers[5] == 3 && ctx.registers[6] == 2 &&
+               ctx.registers[7] == 1 && ctx.registers[8] == 0 &&
+               ctx.registers[9] == 3 && ctx.registers[10] == 2 && ctx.registers[11] == 1,
+           "all 4 entity iterators (11, 12, 16, 17) iterate, filter, and break accurately");
+}
+
+void test_native_entity_ops() {
+    using namespace wse::vm;
+    namespace game = wse::game;
+
+    VmContext ctx;
+    ctx.failOnUnimplemented = true;
+    ctx.fixedPointMultiplier = 100;
+    ctx.currentCaller = 42;
+    auto& w = ctx.world;
+    w.has_game = true;
+    w.game_year = 1257;
+    w.ground_level_z = 3.25f;
+    w.num_skins = 3;
+    w.attribute_limit = 63;
+    w.conversation_partner_troop_no = 1;
+    w.partner_faction_no = 2;
+    w.main_party_no = 0;
+    w.current_hours = 777;
+    w.skills[game::kSkillIronflesh].max_level = 10;
+    w.skills[game::kSkillInventoryManagement].max_level = 10;
+    w.skills[26].max_level = 10;
+
+    w.max_players = 4;
+    w.players.resize(3);
+    w.players[0].status = 2;
+    w.players[0].is_admin = true;
+    w.players[0].agent_no = 99;  // invalid -> cleared to -1 by 406
+    w.players[1].status = 2;
+    w.players[1].agent_no = 0;
+    w.players[2].status = 0;
+
+    w.agents.resize(1);
+    w.agents[0].active = true;
+
+    w.factions.resize(3);
+    w.quests.resize(3);
+    w.quests[1].template_flags = 2U;  // repeatable
+    w.sites.resize(2);
+
+    w.items.resize(3);
+    w.items[0].value = 100;
+    w.items[0].max_ammo = 30;
+    w.items[0].properties = 0ULL;
+    w.items[1].value = 250;
+    w.items[1].max_ammo = 1;
+    w.items[1].properties = (1ULL << 13);  // unique/always-lootable flag for 1539
+    w.items[2].value = 50;
+    w.items[2].max_ammo = 10;
+
+    w.troops.resize(3);
+    w.troops[0].flags = 0x10U;  // hero
+    w.troops[0].set_skill_raw(game::kSkillInventoryManagement, 2);  // raised to 3 -> 30 + 3*6 + 10 = 58
+    w.troops[0].set_skill_raw(26, 4);
+    w.troops[0].attributes = {10, 11, 12, 13};
+    w.troops[0].level = 14;
+    w.troops[0].faction_no = 1;
+    w.troops[0].hit_points = 45.0f;
+    w.troops[0].gold = 100;
+    w.troops[0].inventory[game::kNumTroopEquipmentSlots] = game::WseInventorySlot{0, 12, 25, 0};
+    w.troops[1].faction_no = 2;
+    w.troops[1].inventory[5] = game::WseInventorySlot{1, 1, 0, 1};
+
+    w.parties.resize(3);
+    w.parties[0].active = true;
+    w.parties[0].current_terrain = 3;
+    w.parties[0].battle_opponent_no = 1;
+    w.parties[0].position.o = {0.0f, 0.0f, 0.0f, 0.0f};
+    w.parties[0].stacks = {game::WsePartyStack{0, 1, 0, 0}, game::WsePartyStack{1, 4, 0, 1}};
+    w.parties[1].active = true;
+    w.parties[1].position.o = {3.0f, 4.0f, 0.0f, 0.0f};  // distance = 5.0
+    w.parties[2].active = true;
+
+    ctx.stringRegisters[0] = u"hello player";
+    ctx.stringRegisters[1] = u"Quest note";
+    ctx.stringRegisters[2] = u"NewOverlay";
+    ctx.stringRegisters[3] = u"RenamedWarband";
+
+    // Player/MP (47, 394-408, 430), Quests (200-204, 1113, 1280-1284, 1286),
+    // Audio/UI (599, 600, 791, 900-903, 910, 920-922, 925-927, 947, 1107),
+    // Sites/Factions (1232, 1261-1264, 1270).
+    StatementBlock blockA;
+    blockA.statements = {
+        make_stmt(47, {1}),
+        make_stmt(394, {0, 10}),
+        make_stmt(395, {0, 11, 1}),
+        make_stmt(396, {0, 12, 1, 2}),
+        make_stmt(397, {0, 13, 1, 2, 3}),
+        make_stmt(398, {0, 14, 1, 2, 3, 4}),
+        make_stmt(399, {0, 15, sreg(0)}),
+        make_stmt(400, {reg(38)}),
+        make_stmt(401, {0}),
+        make_stmt(kNegFlag | 401, {2}),
+        make_stmt(403, {1, 2}),
+        make_stmt(402, {reg(1), 1}),
+        make_stmt(405, {1, 2}),
+        make_stmt(404, {reg(2), 1}),
+        make_stmt(406, {reg(3), 0}),
+        make_stmt(406, {reg(4), 1}),
+        make_stmt(408, {1, 800, 500}),
+        make_stmt(407, {reg(5), 1}),
+        make_stmt(430, {0}),
+        make_stmt(kNegFlag | 430, {1}),
+
+        // Quests 200-204, 1113, 1280-1284, 1286
+        make_stmt(1280, {0, 2}),
+        make_stmt(200, {0}),
+        make_stmt(1113, {0, 0, sreg(1), 1}),
+        make_stmt(1282, {0}),
+        make_stmt(202, {0}),
+        make_stmt(1281, {0}),
+        make_stmt(201, {0}),
+        make_stmt(1286, {0}),
+        make_stmt(204, {0}),
+        make_stmt(1283, {2}),
+        make_stmt(203, {2}),
+        make_stmt(1284, {2}),
+        make_stmt(kNegFlag | 200, {2}),
+        make_stmt(1280, {1, 0}),
+        make_stmt(1281, {1}),
+        make_stmt(kNegFlag | 200, {1}),
+
+        // Audio / ground / presentations / overlays
+        make_stmt(core_op::kInitPosition, {0}),
+        make_stmt(core_op::kPositionSetX, {0, 150}),
+        make_stmt(core_op::kPositionSetY, {0, 250}),
+        make_stmt(599, {5, 0, 2}),
+        make_stmt(600, {6, 1}),
+        make_stmt(791, {0}),
+        make_stmt(900, {3}),
+        make_stmt(903, {3}),
+        make_stmt(902, {120, 3}),
+        make_stmt(910, {reg(6), sreg(2), 7}),
+        make_stmt(920, {reg(6), sreg(3)}),
+        make_stmt(921, {reg(6), 0x11223344}),
+        make_stmt(922, {reg(6), 128}),
+        make_stmt(925, {reg(6), 0}),
+        make_stmt(926, {reg(6), 0}),
+        make_stmt(927, {reg(6), 99}),
+        make_stmt(947, {reg(6), 0}),
+        make_stmt(1107, {0}),
+
+        // Sites & factions
+        make_stmt(1232, {2}),
+        make_stmt(1261, {1}),
+        make_stmt(1263, {5, 1, 2}),
+        make_stmt(1264, {6, 0, 2}),
+        make_stmt(1263, {5, -1, 0}),  // deletes entry 5, leaving entry 6 x2
+        make_stmt(1262, {}),          // resets visitors -> clear before re-adding
+        make_stmt(1263, {4, 1, 9}),
+        make_stmt(1270, {0, 2, 50}),
+    };
+
+    // Test 901 caller == 8 vs caller == 0 and preservation of ctx.currentCaller == 42.
+    StatementBlock presCallerBlock;
+    presCallerBlock.statements = {make_stmt(901, {7})};
+    StatementBlock presNonCallerBlock;
+    presNonCallerBlock.statements = {make_stmt(901, {9})};
+
+    // Troops (1505-1550, 2170-2176) & Parties (1601-1685, 2156-2158, 2201, 2270, 2281).
+    StatementBlock blockB;
+    blockB.statements = {
+        make_stmt(1505, {0, 2}),
+        make_stmt(1506, {reg(7), 0}),
+        make_stmt(1509, {0, 0}),
+        make_stmt(1517, {0, 4}),
+        make_stmt(1516, {reg(8), 0}),
+        make_stmt(1520, {0, 0, 3}),
+        make_stmt(2172, {reg(9), 0, 0}),
+        make_stmt(1521, {0, game::kSkillInventoryManagement, 1}),
+        make_stmt(2170, {reg(10), game::kSkillInventoryManagement, 0}),
+        make_stmt(2171, {reg(11), 0}),
+        make_stmt(1522, {0, 0, 50}),
+        make_stmt(1523, {0, 1, 25}),
+        make_stmt(2176, {reg(12), 0, 1}),
+        make_stmt(1528, {0, 50}),
+        make_stmt(1529, {0, 20}),
+        make_stmt(1537, {reg(13), 0, game::kNumTroopEquipmentSlots}),
+        make_stmt(1538, {reg(14), 0, game::kNumTroopEquipmentSlots}),
+        make_stmt(1540, {reg(15), 0}),
+        make_stmt(1541, {reg(16), 0, game::kNumTroopEquipmentSlots}),
+        make_stmt(1542, {reg(17), 0, game::kNumTroopEquipmentSlots}),
+        make_stmt(1530, {0, 2, 10}),
+        make_stmt(1535, {0, 0, 2}),
+        make_stmt(1536, {0, 0, 2}),  // removes 2x item 0 (value 100 each) -> reg0 = 200
+        make_stmt(core_op::kAssign, {reg(18), reg(0)}),
+        make_stmt(1532, {0}),
+        make_stmt(1539, {0, 1, 100}),  // guaranteed copies item 1 into slot 10
+        make_stmt(1550, {0, 2}),
+        make_stmt(2175, {reg(19), 0, 1}),  // raw HP = 45 + 3 (from str +3) = 48
+
+        // Parties
+        make_stmt(1610, {0, 2, 3}),
+        make_stmt(1601, {reg(20), 0}),  // 1 (leader) + 3 = 4 companions
+        make_stmt(1602, {reg(21), 0}),  // 4 prisoners
+        make_stmt(1603, {0, 0x20, 1}),
+        make_stmt(1603, {0, 0x10, 0}),
+        make_stmt(1608, {reg(22), 0}),
+        make_stmt(1615, {0, 2, 2}),
+        make_stmt(1620, {0, 1}),
+        make_stmt(core_op::kInitPosition, {1}),
+        make_stmt(core_op::kPositionSetX, {1, 600}),
+        make_stmt(1626, {1, 1}),
+        make_stmt(1625, {2, 1}),
+        make_stmt(core_op::kPositionGetX, {reg(23), 2}),
+        make_stmt(1640, {0, 8}),
+        make_stmt(1641, {0, 1}),
+        make_stmt(1665, {reg(24), 0}),  // behavior==8 -> returns 1
+        make_stmt(1650, {reg(25), 0}),
+        make_stmt(1651, {reg(26), 0}),
+        make_stmt(1652, {reg(27), 0, 0}),
+        make_stmt(1653, {reg(28), 0, 0}),
+        make_stmt(1660, {0, 1}),
+        make_stmt(1661, {0}),
+        make_stmt(1669, {0, sreg(3)}),
+        make_stmt(1676, {0, 19}),
+        make_stmt(1677, {0, 21}),
+        make_stmt(1681, {reg(29), 0}),
+        make_stmt(1680, {reg(30), 0}),
+        make_stmt(1685, {reg(31), 0, 26}),
+        make_stmt(2156, {reg(32), 0}),
+        make_stmt(2157, {reg(33), 0}),
+        make_stmt(2158, {reg(34), 2}),  // remaining count of troop 2 in main party = 1
+        make_stmt(2201, {reg(35)}),
+        make_stmt(2270, {reg(36)}),
+        make_stmt(2281, {reg(37), 0, 1}),  // distance from (0,0,0) to (6,0,0) = 6
+    };
+
+    const bool okA = execute_statement_block(blockA, 0, 0, {}, ctx);
+    const bool okNonCaller = execute_statement_block(presNonCallerBlock, 0, 0, {}, ctx);
+    const bool ignoredByZeroCaller = (w.active_presentation_no == 3);
+    const bool okCaller = execute_statement_block(presCallerBlock, 8, 0, {}, ctx);
+    const bool updatedByCaller8 = (w.active_presentation_no == 7 && w.presentation_background);
+    const bool callerRestored = (ctx.currentCaller == 42);
+    const bool okB = execute_statement_block(blockB, 0, 0, {}, ctx);
+
+    expect(okA && okNonCaller && ignoredByZeroCaller && okCaller && updatedByCaller8 &&
+               callerRestored && okB && ctx.errorCount == 0 && ctx.unimplementedCount == 0 &&
+               w.player_troop_no == 1 && w.multiplayer_messages.size() == 6U &&
+               ctx.registers[38] == 4 && ctx.registers[0] == 2 &&
+               ctx.registers[1] == 2 && ctx.registers[2] == 2 &&
+               ctx.registers[3] == -1 && ctx.registers[4] == 0 && ctx.registers[5] == 500 &&
+               w.quests[0].giver_troop_no == 2 && w.quests[0].notes[0].date == 1257 &&
+               w.played_sounds.size() == 2U && ctx.positions[0].o.z == 3.25f &&
+               w.presentation_duration == 120 && !w.show_messages && w.overlays.size() == 1U &&
+               w.overlays[0].text == u"RenamedWarband" && w.overlays[0].val == 99 &&
+               !w.overlays[0].visible && !w.parties[2].active &&
+               w.sites[1].visitors.size() == 1U && w.sites[1].visitors[0].dna == 9 &&
+               std::abs(w.factions[0].relations[2] - 0.5f) < 0.001f &&
+               ctx.registers[7] == 2 && !w.troops[0].auto_equip && ctx.registers[8] == 4 &&
+               ctx.registers[9] == 13 && ctx.registers[10] == 3 && ctx.registers[11] == 14 &&
+               ctx.registers[12] == 25 && w.troops[0].gold == 130 &&
+               ctx.registers[13] == 25 && ctx.registers[14] == 30 && ctx.registers[15] == 58 &&
+               ctx.registers[16] == 0 && ctx.registers[17] == 12 && ctx.registers[18] == 200 &&
+               w.troops[0].inventory[game::kNumTroopEquipmentSlots].item_no == 1 &&
+               ctx.registers[19] == 48 && ctx.registers[20] == 4 && ctx.registers[21] == 4 &&
+               ctx.registers[22] == 3 && ctx.registers[23] == 600 && ctx.registers[24] == 1 &&
+               ctx.registers[25] == 2 && ctx.registers[26] == 1 && ctx.registers[27] == 0 &&
+               ctx.registers[28] == 1 && w.parties[0].name == "RenamedWarband" &&
+               w.parties[0].banner_icon_no == 21 && ctx.registers[29] == 19 &&
+               ctx.registers[30] == 1 && ctx.registers[31] == 4 && ctx.registers[32] == 6 &&
+               ctx.registers[33] == 2 && ctx.registers[34] == 1 && ctx.registers[35] == 2 &&
+               ctx.registers[36] == 777 && ctx.registers[37] == 6,
+           "all 108 entity/player/quest/UI/site/troop/party native opcodes match v1.1.5.5");
+}
+
+void test_native_mission_ops() {
+    using namespace wse::vm;
+
+    VmContext ctx;
+    ctx.failOnUnimplemented = true;
+    ctx.fixedPointMultiplier = 100;
+    ctx.currentCaller = 99;
+    ctx.timersTotal = {500000LL, 250000LL, 100000LL};
+    auto& w = ctx.world;
+    w.has_game = true;
+    w.ground_level_z = 2.0f;
+    w.player_agent_no = 0;
+    w.main_party_side = 0;
+    w.player_agent_own_troop_kill_count = 3;
+    w.player_agent_own_troop_wound_count = 4;
+    w.mission_timers[0] = {0, 500000LL};
+    w.mission_timers[1] = {1, 50000LL};
+    w.mission_timers[2] = {0, 0LL};
+    w.mission_templates.resize(2);
+
+    w.items.resize(2);
+    w.items[0].max_ammo = 24;
+    w.items[1].max_ammo = 8;
+
+    w.teams[0].relations.fill(0);
+    w.teams[0].relations[1] = 1;
+    w.teams[1].relations.fill(0);
+    w.teams[1].relations[0] = 1;
+    w.teams[0].division_leaders[0] = 1;
+
+    w.agents.resize(2);
+    w.agents[0].active = true;
+    w.agents[0].status = 1;
+    w.agents[0].team_no = 0;
+    w.agents[0].troop_no = 2;
+    w.agents[0].party_no = 0;
+    w.agents[0].horse_agent_no = 1;
+    w.agents[0].hit_points = 80.0f;
+    w.agents[0].max_hit_points = 100.0f;
+    w.agents[0].kill_count = 5;
+    w.agents[0].wound_count = 2;
+    w.agents[0].equipped_items[0] = 0;
+    w.agents[0].item_ammo[0] = 5;
+    w.agents[0].equipped_items[1] = 1;
+    w.agents[0].item_ammo[1] = 3;
+    w.agents[0].wielded_items = {0, -1};
+    w.agents[0].attached_mission_object_nos[0] = 77;
+    w.agents[0].simple_behavior = 4;
+    w.agents[0].class_no = 1;
+
+    w.agents[1].active = true;
+    w.agents[1].status = 3;  // wounded
+    w.agents[1].is_non_player = true;
+    w.agents[1].team_no = 1;
+    w.agents[1].rider_agent_no = 0;
+
+    w.entry_points[3].position.o = {4.0f, 5.0f, -150.0f, 0.0f};
+    w.order_menu_open = true;
+
+    w.mission_objects.resize(2);
+    w.mission_objects[0].active = true;
+    w.mission_objects[0].scene_prop_no = 15;
+    w.mission_objects[0].hit_points = 50.0f;
+    w.mission_objects[0].max_hit_points = 100.0f;
+    w.mission_objects[1].active = true;
+    w.mission_objects[1].scene_prop_no = 15;
+
+    StatementBlock block;
+    block.statements = {
+        // Agents 1700-1804
+        make_stmt(1700, {reg(0)}),
+        make_stmt(1702, {0}),
+        make_stmt(1703, {1}),
+        make_stmt(1705, {reg(1), 0}),
+        make_stmt(1705, {reg(2), 1}),
+        make_stmt(1706, {1}),
+        make_stmt(1707, {1}),
+        make_stmt(1708, {1}),
+        make_stmt(1712, {0}),
+        make_stmt(core_op::kInitPosition, {0}),
+        make_stmt(core_op::kPositionSetX, {0, 900}),
+        make_stmt(1711, {0, 0}),
+        make_stmt(1710, {1, 0}),
+        make_stmt(core_op::kPositionGetX, {reg(3), 1}),
+        make_stmt(1714, {reg(4), 0}),
+        make_stmt(1715, {reg(5), 1}),
+        make_stmt(1716, {reg(6), 0}),
+        make_stmt(1718, {reg(7), 0}),
+        make_stmt(1720, {reg(8), 0, 1}),
+        make_stmt(1721, {0, 50, 0}),  // 50% of 100 -> 50
+        make_stmt(1723, {reg(9), 0, 0}),
+        make_stmt(1726, {reg(10), 0, 0}),
+        make_stmt(1727, {reg(11), 0, 0}),  // total ammo 5+3=8
+        make_stmt(1776, {0, 1, 20}),       // clamped to max_ammo=8
+        make_stmt(1728, {0}),
+        make_stmt(1727, {reg(12), 0, 1}),  // refilled wielded ammo = 24
+        make_stmt(1729, {0, 1}),
+        make_stmt(1747, {0, 1}),
+        make_stmt(1726, {reg(13), 0, 0}),  // now wielded == 1
+        make_stmt(1730, {0, 0, 1}),        // sets z to ground_level_z=2.0
+        make_stmt(1731, {2, 0}),
+        make_stmt(core_op::kPositionGetZ, {reg(14), 2}),
+        make_stmt(1732, {0}),
+        make_stmt(1735, {0}),
+        make_stmt(1736, {0, 36}),
+        make_stmt(1738, {reg(15), 0}),
+        make_stmt(1740, {0, 12, 0}),
+        make_stmt(1741, {0, 13}),
+        make_stmt(1750, {0, 44}),
+        make_stmt(1756, {reg(16), 0, 0}),
+        make_stmt(1766, {0, 3}),
+        make_stmt(1765, {reg(17), 0}),
+        make_stmt(1770, {reg(18), 0}),
+        make_stmt(1772, {reg(19), 0}),
+        make_stmt(1783, {0, 2}),
+        make_stmt(1773, {reg(20), 0}),
+        make_stmt(1804, {reg(21), 0, 1}),
+
+        // Entry points, orders, teams (1780, 1789-1796)
+        make_stmt(1780, {3, 3, 0}),
+        make_stmt(core_op::kPositionGetZ, {reg(22), 3}),
+        make_stmt(1789, {}),
+        make_stmt(1790, {0, -1, 5}),
+        make_stmt(1791, {0, 2, 0}),
+        make_stmt(1794, {4, 0, 2}),  // pos4 <- order pos div 2
+        make_stmt(core_op::kPositionGetX, {reg(23), 4}),
+        make_stmt(1792, {reg(24), 0}),
+        make_stmt(1793, {0, 0}),
+        make_stmt(1795, {0, 4}),
+        make_stmt(1796, {0, 1, -1}),
+
+        // Scene props & mission objects (1810-1820)
+        make_stmt(1810, {reg(25), 15}),
+        make_stmt(1811, {reg(26), 15, 1}),
+        make_stmt(kNegFlag | 1811, {reg(26), 15, 5}),
+        make_stmt(1813, {0, 0}),
+        make_stmt(1812, {reg(27), 0}),
+        make_stmt(1820, {0, 150}),
+        make_stmt(1815, {reg(28), 0}),
+        make_stmt(1818, {0, 2}),
+        make_stmt(1817, {reg(29), 0}),
+
+        // Mission / menu / trigger / timers (1906, 1907, 1911, 2060, 2075, 2370-2372)
+        make_stmt(1906, {1}),
+        make_stmt(1907, {4}),
+        make_stmt(1911, {1}),
+        make_stmt(2060, {9}),
+        make_stmt(2075, {12345}),
+        make_stmt(2370, {reg(30)}),  // (500000 - 500000)/100000 = 0
+        make_stmt(2371, {reg(31)}),  // (250000 - 50000)/100000 = 2
+        make_stmt(2372, {reg(32)}),  // (500000 - 0)/100000 = 5
+    };
+
+    StatementBlock replaceIgnored;
+    replaceIgnored.statements = {make_stmt(1890, {15, 25})};
+    StatementBlock replaceCallerM20;
+    replaceCallerM20.statements = {make_stmt(1890, {15, 25})};
+    StatementBlock replaceCallerM19;
+    replaceCallerM19.statements = {make_stmt(1890, {25, 35})};
+
+    const bool ok = execute_statement_block(block, 0, 0, {}, ctx);
+    const bool okIgn = execute_statement_block(replaceIgnored, 0, 0, {}, ctx);
+    const bool stayed15 = (w.mission_objects[0].scene_prop_no == 15);
+    const bool okM20 = execute_statement_block(replaceCallerM20, -20, 0, {}, ctx);
+    const bool became25 = (w.mission_objects[0].scene_prop_no == 25);
+    const bool okM19 = execute_statement_block(replaceCallerM19, -19, 0, {}, ctx);
+    const bool became35 = (w.mission_objects[1].scene_prop_no == 35);
+    const bool callerPreserved = (ctx.currentCaller == 99);
+
+    expect(ok && okIgn && stayed15 && okM20 && became25 && okM19 && became35 && callerPreserved &&
+               ctx.errorCount == 0 && ctx.unimplementedCount == 0 &&
+               ctx.registers[0] == 0 && ctx.registers[1] == 3 && ctx.registers[2] == 4 &&
+               ctx.registers[3] == 900 && ctx.registers[4] == 1 && ctx.registers[5] == 0 &&
+               ctx.registers[6] == 0 && ctx.registers[7] == 2 && ctx.registers[8] == 80 &&
+               w.agents[0].hit_points == 50.0f && ctx.registers[9] == 5 &&
+               ctx.registers[10] == 0 && ctx.registers[11] == 8 && ctx.registers[12] == 24 &&
+               ctx.registers[13] == 1 && ctx.registers[14] == 200 && ctx.registers[15] == 4 &&
+               w.agents[0].ai_alarmed && !w.agents[0].has_scripted_destination &&
+               std::abs(w.agents[0].speed_limit - 10.0f) < 0.001f &&
+               w.agents[0].animation == 12 && w.agents[0].stand_animation == 13 &&
+               !w.played_sounds.empty() && ctx.registers[16] == 77 && ctx.registers[17] == 3 &&
+               ctx.registers[18] == 0 && ctx.registers[19] == 1 && ctx.registers[20] == 2 &&
+               ctx.registers[21] == 1 && ctx.registers[22] == 0 && !w.order_menu_open &&
+               ctx.registers[23] == 900 && ctx.registers[24] == 1 && w.teams[0].leader_agent_no == 0 &&
+               w.teams[0].order_listener == 4 && w.teams[0].relations[1] == -1 &&
+               ctx.registers[25] == 2 && ctx.registers[26] == 1 && ctx.registers[27] == 0 &&
+               ctx.registers[28] == 150 && w.mission_objects[0].max_hit_points == 150.0f &&
+               ctx.registers[29] == 2 && w.mission_result == 1 && w.mission_finished &&
+               w.mission_finish_delay == 4.0f && w.jump_mission_no == 1 &&
+               w.jump_menu_no == 9 && w.trigger_result == 12345 &&
+               ctx.registers[30] == 0 && ctx.registers[31] == 2 && ctx.registers[32] == 5,
+           "all 66 agent/team/prop/mission/timer native opcodes match v1.1.5.5");
+}
+
 }  // namespace
 
 int main() {
@@ -1267,6 +1850,9 @@ int main() {
     test_native_arithmetic_registers_and_vars();
     test_native_positions_and_math();
     test_native_strings_and_entity_ops();
+    test_entity_iterators();
+    test_native_entity_ops();
+    test_native_mission_ops();
 
     if (failures != 0) {
         std::printf("block_vm tests: FAIL (%d)\n", failures);
