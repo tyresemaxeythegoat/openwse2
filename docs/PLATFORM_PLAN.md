@@ -38,7 +38,7 @@ layout has **not been inspected yet**; slice P4 starts by doing that.
 
 ```
 CMakeLists.txt                 root: engine (INTERFACE), tests (CTest), later platform + app
-engine/include/wse/platform/   vfs.h clock.h log.h (present) · rhi.h audio.h input.h (planned)
+engine/include/wse/platform/   vfs.h clock.h sleep.h log.h (present) · rhi.h audio.h input.h (planned)
 engine/include/wse/asset/      brf, dds, shader, sound decoders — portable, host-tested (planned)
 platform/sdl/                  SDL3 window / input / audio / clock implementations (planned)
 platform/vulkan/               RHI Vulkan backend + driver loader (planned)
@@ -58,7 +58,7 @@ Each slice is one milestone. "Done when" is the acceptance test, not a descripti
 | # | Slice | Contents | Done when |
 | --- | --- | --- | --- |
 | P0 | Build + gates | Root CMake + CTest, CI host job, CI NDK `aarch64-linux-android29` compile of every header (backlog B1) | CI green on `main` |
-| P1 | Platform seam + app shell | `wse/platform/{vfs,clock,log}.h` with host implementations and tests. Route the engine's direct `std::filesystem` / `fstream` / `chrono` / `thread` uses (`wse/vm/ops/{dict,array,string,system}.h`, `world_state.h`) through the seam. Gradle project with SDL3 `SDLActivity` and `libwse2.so` that runs the host suites as an on-device self-test screen. CI assembles a debug APK. | APK artifact from CI; self-test prints PASS on a device or emulator |
+| P1 | Platform seam + app shell | `wse/platform/{vfs,clock,sleep,log}.h` with host implementations and tests. Route the engine's direct `std::filesystem` / `fstream` / `chrono` / `thread` uses (`wse/vm/ops/{dict,array,string,system}.h`, `world_state.h`) through the seam. Gradle project with SDL3 `SDLActivity` and `libwse2.so` that runs the host suites as an on-device self-test screen. CI assembles a debug APK. | APK artifact from CI; self-test prints PASS on a device or emulator |
 | P2 | Launcher + SAF file system *(Phase 4)* | Kotlin launcher: `ACTION_OPEN_DOCUMENT_TREE` for the Warband folder, persisted URI permission, module list from `Modules/*/module.ini`, mod switcher, driver picker. Native `SafVfs` over `DocumentsContract`: one-time directory index (case-insensitive path → document ID), reads through `openFileDescriptor`; optional import to app storage. | Launcher lists modules from a user tree; `scripts.txt` parses through `SafVfs`; index build time recorded in `STATUS.md` |
 | P3 | Asset decoders (host-first) | Evidence exports, then `wse/asset/`: `.brf` (mesh, material, texture, skeleton, animation, collision), `.dds` (decode; transcode block-compressed data when the device lacks the format), module resource lists from `module.ini`. Closes the `.brf` bullet of Phase 2G. | Host tests on synthetic fixtures; a CLI reports counts for a user-supplied `CommonRes/` |
 | P4 | Vulkan bring-up + driver loader | Inspect both driver packages. `platform/vulkan/driver_loader`: system `libvulkan.so`; PanVK through the direct-ICD loader; Turnip through the custom-driver mechanism its package expects. Import a user-picked package into app-private storage. Minimal RHI (`rhi.h`: buffers, textures, pipelines, passes) with a Vulkan backend; CI renders on a software Vulkan driver. | Textured static mesh viewer: screenshot test on host, and on device with each driver path |

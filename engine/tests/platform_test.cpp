@@ -12,6 +12,7 @@
 #include "wse/io/text_stream.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/log.h"
+#include "wse/platform/sleep.h"
 #include "wse/platform/vfs.h"
 
 namespace {
@@ -142,6 +143,33 @@ void test_host_vfs() {
     }
     fs::remove_all(outside, ec);
     fs::remove_all(root, ec);
+
+    // A root that does not exist yet is created by the first write, not by
+    // construction or by a read.
+    const fs::path fresh = fs::temp_directory_path(ec) / "wse_platform_test_fresh" / "saves";
+    fs::remove_all(fresh.parent_path(), ec);
+    {
+        wse::platform::HostVfs fresh_vfs(fresh);
+        std::string text;
+        expect(!fresh_vfs.read_text("a.txt", text) && !fs::exists(fresh, ec),
+               "host read does not create a missing root");
+        expect(fresh_vfs.write_text("a.txt", "first") && fs::exists(fresh / "a.txt", ec),
+               "host write creates a missing root");
+        expect(fresh_vfs.read_text("A.TXT", text) && text == "first",
+               "host read_text fills a string directly");
+        // Names differing only in case are one file, as on Windows; the
+        // spelling on disk stays that of the first write.
+        expect(fresh_vfs.write_text("A.txt", "second") && fresh_vfs.read_text("a.txt", text) &&
+                   text == "second",
+               "host write to a differently-cased name overwrites the same file");
+        std::vector<wse::platform::VfsEntry> entries;
+        expect(fresh_vfs.list_dir("", entries) && entries.size() == 1 &&
+                   entries[0].name == "a.txt",
+               "case-colliding writes leave a single file");
+        expect(!fresh_vfs.write_text("sub/b.txt", "x"),
+               "host write still does not create parents below the root");
+    }
+    fs::remove_all(fresh.parent_path(), ec);
 }
 
 void test_vfs_feeds_text_stream() {
@@ -171,6 +199,22 @@ void test_clock() {
     const std::int64_t first = steady.ticks();
     const std::int64_t second = steady.ticks();
     expect(first >= 0 && second >= first, "steady clock is monotonic");
+
+    ManualWallClock manual_wall;
+    manual_wall.set(1'700'000'000, -18000);
+    expect(manual_wall.unix_seconds() == 1'700'000'000 &&
+               manual_wall.utc_offset_seconds(0) == -18000,
+           "manual wall clock returns what was set");
+    SystemWallClock system_wall;
+    const std::int64_t now = system_wall.unix_seconds();
+    const std::int32_t offset = system_wall.utc_offset_seconds(now);
+    expect(now > 1'600'000'000, "system wall clock is past 2020");
+    expect(offset > -24 * 3600 && offset < 24 * 3600 && offset % 60 == 0,
+           "system UTC offset is a whole number of minutes within a day");
+
+    sleep_ms(-5);
+    sleep_ms(0);
+    sleep_ms(1);
 }
 
 void test_log() {

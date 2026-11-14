@@ -39,7 +39,6 @@ using wse::core::wse_is_ascii_alpha;
 using wse::core::wse_is_ascii_digit;
 using wse::core::wse_is_ascii_space;
 using wse::core::wse_is_space;
-using wse::core::wse_local_epoch_seconds;
 using wse::core::wse_md5_hex;
 using wse::core::wse_parse_hex4;
 using wse::core::wse_parse_json_object;
@@ -505,6 +504,9 @@ struct WseObjectSlot {
 struct WseObjectManager {
     std::vector<WseObjectSlot> slots{};
     std::vector<std::int32_t> free_ids{};
+    // Storage root for the .wsedict/.ini/.json/.wsearray file opcodes; they
+    // are no-ops while this is null. Not owned: the embedder keeps the Vfs
+    // alive for as long as this manager is used.
     wse::platform::Vfs* vfs = nullptr;
 
     [[nodiscard]] std::int32_t create() {
@@ -650,6 +652,9 @@ struct WseVmState {
     // wse::platform::sleep_ms when null.
     WseSleepMsFn sleep_ms_fn = nullptr;
     void* sleep_ms_user = nullptr;
+    // Optional calendar-time source for get_time (3022); the system clock is
+    // read when null. Not owned: it must outlive this state.
+    wse::platform::WallClock* wall_clock = nullptr;
     // Game-world, mission, config, skill, and edit-mode state.
     wse::game::WseWorldState* world = nullptr;
 };
@@ -971,15 +976,10 @@ enum class WseDispatch : std::uint8_t {
 
 [[nodiscard]] inline bool wse_dict_read_file_bytes(
     wse::platform::Vfs* vfs, std::string_view rel_path, std::string& out) {
-    if (vfs == nullptr) {
-        return false;
-    }
-    std::vector<std::uint8_t> raw;
-    if (!vfs->read_file(rel_path, raw)) {
+    if (vfs == nullptr || !vfs->read_text(rel_path, out)) {
         out.clear();
         return false;
     }
-    out.assign(reinterpret_cast<const char*>(raw.data()), raw.size());
     return true;
 }
 

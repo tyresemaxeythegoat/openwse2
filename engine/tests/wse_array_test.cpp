@@ -479,6 +479,36 @@ void test_array_memory_vfs() {
                int_regs, state) == WseDispatch::handled_no_store &&
                !mem_vfs.is_file("mem_arr.wsearray"),
            "MemoryVfs: array_delete_file removes in-memory file");
+
+    // Without a Vfs the array file opcodes are no-ops and load yields no array.
+    objects.vfs = nullptr;
+    expect(run(opcode(WseOpcode::array_save_file), {a1, 0},
+               {static_cast<std::int32_t>(a1), 0}, effect, fp, int_regs,
+               state) == WseDispatch::handled_no_store &&
+               run(opcode(WseOpcode::array_load_file), {0, 0}, {0, 0}, effect,
+                   fp, int_regs, state) == WseDispatch::handled_no_store &&
+               run(opcode(WseOpcode::array_delete_file), {0}, {0}, effect, fp,
+                   int_regs, state) == WseDispatch::handled_no_store &&
+               !mem_vfs.is_file("mem_arr.wsearray"),
+           "array file opcodes are no-ops without a Vfs");
+
+    // A host directory that does not exist yet is created by the first save.
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path fresh =
+        fs::temp_directory_path() / "wse2_array_unit_test_fresh" / "arrays";
+    fs::remove_all(fresh.parent_path(), ec);
+    {
+        wse::platform::HostVfs fresh_vfs(fresh);
+        objects.vfs = &fresh_vfs;
+        expect(run(opcode(WseOpcode::array_save_file), {a1, 0},
+                   {static_cast<std::int32_t>(a1), 0}, effect, fp, int_regs,
+                   state) == WseDispatch::handled_no_store &&
+                   fs::exists(fresh / "mem_arr.wsearray", ec),
+               "array_save_file creates a missing host root");
+        objects.vfs = nullptr;
+    }
+    fs::remove_all(fresh.parent_path(), ec);
 }
 
 }  // namespace

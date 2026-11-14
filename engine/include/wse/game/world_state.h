@@ -1151,6 +1151,8 @@ struct WseWorldState {
         module_settings{};
     std::unordered_map<std::string, std::string> game_variables{};
     std::unordered_map<std::string, std::string> translations{};
+    // Savegame directory read by str_store_savegame_md5; null means "no
+    // savegames". Not owned: the embedder keeps the Vfs alive.
     wse::platform::Vfs* savegames_vfs = nullptr;
     std::vector<WseDisplayedMessage> displayed_messages{};
     bool is_multiplayer = false;
