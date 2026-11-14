@@ -453,6 +453,15 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     block.analyzed = true;
 }
 
+[[nodiscard]] inline NativeDispatch dispatch_native_statement_ext(
+    std::uint32_t opcode,
+    std::span<const std::int64_t> wide,
+    std::span<const std::int32_t> narrow,
+    std::span<const std::uint8_t> tags,
+    const Statement& statement,
+    VmContext& ctx,
+    std::span<std::int64_t> locals);
+
 [[nodiscard]] inline NativeDispatch dispatch_native_statement(
     std::uint32_t opcode,
     std::span<const std::int64_t> wide,
@@ -626,7 +635,7 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
         store_lvalue(dst, wide[1], ctx, locals);
         return NativeDispatch::handled;
     default:
-        return NativeDispatch::unimplemented;
+        return dispatch_native_statement_ext(opcode, wide, narrow, tags, statement, ctx, locals);
     }
 }
 
@@ -1352,3 +1361,5 @@ using vm::execute_trigger;
 using vm::execute_trigger_manager;
 
 }  // namespace wse::game
+
+#include "wse/vm/native_ops.h"

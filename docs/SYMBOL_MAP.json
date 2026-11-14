@@ -15,11 +15,11 @@
  "inputs": {
   "layouts": 58,
   "globals_scanned": 48658,
-  "symbols_curated": 2909,
+  "symbols_curated": 2914,
   "game_vtables": 76,
-  "function_ranges": 4152,
+  "function_ranges": 4157,
   "global_objects": 18,
-  "superseded_vas": 2503
+  "superseded_vas": 2508
  },
  "strings": [
   {
@@ -13471,6 +13471,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14006aac0"
+  },
+  {
+   "name": "?mupRadToDeg@@YAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f9a0"
+  },
+  {
+   "name": "?mupDegToRad@@YAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f990"
   },
   {
    "name": "?isClient@mbBasicGame@@QEBA_NXZ",
@@ -26955,6 +26967,18 @@
    "va": "0x140318950"
   },
   {
+   "name": "?getAngle@rglVector2@@QEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140318930"
+  },
+  {
+   "name": "?length@rglVector2@@QEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403188a0"
+  },
+  {
    "name": "?reset@rglTimer@@QEAAXXZ",
    "kind": "public",
    "source": "pdb-public",
@@ -27685,6 +27709,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140330280"
+  },
+  {
+   "name": "?rglRand@@YAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14032ffb0"
   },
   {
    "name": "?rglLerp@@YA?AVrglTransform@@AEBV1@0M@Z",
@@ -33231,6 +33261,18 @@
    "end": "0x14006f990",
    "va": "0x14006f980",
    "symbol": "?hasCursor@mbGameWindow@@UEAA_NXZ"
+  },
+  {
+   "start": "0x14006f990",
+   "end": "0x14006f9a0",
+   "va": "0x14006f990",
+   "symbol": "?mupDegToRad@@YAMM@Z"
+  },
+  {
+   "start": "0x14006f9a0",
+   "end": "0x14006f9b0",
+   "va": "0x14006f9a0",
+   "symbol": "?mupRadToDeg@@YAMM@Z"
   },
   {
    "start": "0x14006f9b0",
@@ -52163,6 +52205,18 @@
    "symbol": "?checkLineOfSight@rglTerrain@@QEAA_NAEBVrglVector4@@0@Z"
   },
   {
+   "start": "0x1403188a0",
+   "end": "0x1403188d0",
+   "va": "0x1403188a0",
+   "symbol": "?length@rglVector2@@QEBAMXZ"
+  },
+  {
+   "start": "0x140318930",
+   "end": "0x140318950",
+   "va": "0x140318930",
+   "symbol": "?getAngle@rglVector2@@QEBAMXZ"
+  },
+  {
    "start": "0x140318950",
    "end": "0x140318970",
    "va": "0x140318950",
@@ -52899,6 +52953,12 @@
    "end": "0x14032fe78",
    "va": "0x14032fdf0",
    "symbol": "?rglGetModuleFileName@@YA?AVrglString@@XZ"
+  },
+  {
+   "start": "0x14032ffb0",
+   "end": "0x14032ffe0",
+   "va": "0x14032ffb0",
+   "symbol": "?rglRand@@YAHH@Z"
   },
   {
    "start": "0x140330000",
@@ -54565,6 +54625,8 @@
   "0x14006f1b0",
   "0x14006f5a0",
   "0x14006f8c0",
+  "0x14006f8d0",
+  "0x14006f8e0",
   "0x14006f8f0",
   "0x14006fb60",
   "0x140070970",
@@ -56534,6 +56596,8 @@
   "0x1402fae50",
   "0x1402fbfd0",
   "0x1402fc590",
+  "0x1402fec50",
+  "0x1402fece0",
   "0x1402fed00",
   "0x1402fed20",
   "0x1402fed40",
@@ -56642,6 +56706,7 @@
   "0x140314e30",
   "0x140315710",
   "0x1403157d0",
+  "0x140315980",
   "0x1403159d0",
   "0x140315c50",
   "0x140315d40",

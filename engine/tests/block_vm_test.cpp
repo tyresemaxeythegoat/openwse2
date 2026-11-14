@@ -3,6 +3,9 @@
 //
 // Build/run: powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <span>
@@ -851,7 +854,7 @@ void test_unimplemented_histogram_and_loud_failure() {
                    describe(NativeDispatch::condition_false) == "false condition",
                "native false condition reports NativeDispatch::condition_false");
 
-        expect(dispatch_native_statement(520U, wide, narrow, tags, stmt, ctx, locals) ==
+        expect(dispatch_native_statement(1100U, wide, narrow, tags, stmt, ctx, locals) ==
                        NativeDispatch::unimplemented &&
                    describe(NativeDispatch::unimplemented) == "unimplemented native opcode" &&
                    ctx.unimplementedCount == 0,
@@ -863,11 +866,11 @@ void test_unimplemented_histogram_and_loud_failure() {
         VmContext ctx;
         StatementBlock compatBlock;
         compatBlock.statements = {
-            make_stmt(500U, {0, 1, 2}),
-            make_stmt(520U, {reg(0), 0, 1}),
-            make_stmt(500U, {0, 1, 3}),
-            make_stmt(3340U, {0, 100}),  // unimplemented WSE opcode
-            make_stmt(13U, {}),          // unused control-flow slot (<30)
+            make_stmt(1100U, {0, 1, 2}),  // unimplemented spawn_around_party
+            make_stmt(1103U, {5}),        // unimplemented set_spawn_radius
+            make_stmt(1100U, {0, 1, 3}),
+            make_stmt(3340U, {0, 100}),   // unimplemented WSE opcode
+            make_stmt(13U, {}),           // unused control-flow slot (<30)
             make_stmt(core_op::kAssign, {reg(1), 42}),
         };
         expect(execute_statement_block(compatBlock, ctx) && ctx.errorCount == 0 &&
@@ -875,8 +878,8 @@ void test_unimplemented_histogram_and_loud_failure() {
                    ctx.registers[1] == 42,
                "compatibility mode tracks unimplemented hits while falling through true");
         expect(ctx.unimplementedOpcodeCounts.size() == 4U &&
-                   ctx.unimplementedOpcodeCounts[500U] == 2U &&
-                   ctx.unimplementedOpcodeCounts[520U] == 1U &&
+                   ctx.unimplementedOpcodeCounts[1100U] == 2U &&
+                   ctx.unimplementedOpcodeCounts[1103U] == 1U &&
                    ctx.unimplementedOpcodeCounts[3340U] == 1U &&
                    ctx.unimplementedOpcodeCounts[13U] == 1U,
                "per-opcode histogram records exact native, WSE, and control-flow counts");
@@ -889,7 +892,7 @@ void test_unimplemented_histogram_and_loud_failure() {
         StatementBlock loudNativeBlock;
         loudNativeBlock.statements = {
             make_stmt(core_op::kTryBegin, {}),
-            make_stmt(540U, {0, 1, 2}),  // unimplemented troop_slot_eq condition
+            make_stmt(101U, {0}),  // unimplemented hero_can_join condition
             make_stmt(core_op::kAssign, {reg(0), 111}),
             make_stmt(core_op::kElseTry, {}),
             make_stmt(core_op::kAssign, {reg(0), 222}),  // must NEVER execute!
@@ -897,17 +900,17 @@ void test_unimplemented_histogram_and_loud_failure() {
         };
         expect(!execute_statement_block(loudNativeBlock, ctx) && ctx.registers[0] == 0 &&
                    ctx.errorCount == 1 && ctx.unimplementedCount == 1 &&
-                   ctx.unimplementedOpcodeCounts[540U] == 1U &&
-                   ctx.lastError.find("540") != std::string::npos,
+                   ctx.unimplementedOpcodeCounts[101U] == 1U &&
+                   ctx.lastError.find("101") != std::string::npos,
                "failOnUnimplemented aborts before else_try can recover");
 
         StatementBlock negBlock;
         negBlock.statements = {
-            make_stmt(kNegFlag | 540U, {0, 1, 2}),
+            make_stmt(kNegFlag | 101U, {0}),
             make_stmt(core_op::kAssign, {reg(1), 99}),
         };
         expect(!execute_statement_block(negBlock, ctx) && ctx.registers[1] == 0 &&
-                   ctx.unimplementedOpcodeCounts[540U] == 2U && ctx.errorCount == 2,
+                   ctx.unimplementedOpcodeCounts[101U] == 2U && ctx.errorCount == 2,
                "neg flag cannot invert failOnUnimplemented abort into true");
 
         StatementBlock tonBlock;
@@ -922,7 +925,7 @@ void test_unimplemented_histogram_and_loud_failure() {
         wse::game::ScriptManager mgr;
         wse::game::Script callee;
         callee.id = "missing_callee";
-        callee.block.statements = {make_stmt(2320U, {0, 0})};  // str_store_string (unimplemented)
+        callee.block.statements = {make_stmt(1105U, {0})};  // display_log_message (unimplemented)
         mgr.scripts.push_back(std::move(callee));
         ctx.scripts = &mgr;
 
@@ -935,9 +938,316 @@ void test_unimplemented_histogram_and_loud_failure() {
             make_stmt(core_op::kTryEnd, {}),
         };
         expect(!execute_statement_block(callBlock, ctx) && ctx.registers[3] == 0 &&
-                   ctx.unimplementedOpcodeCounts[2320U] == 1U && ctx.errorCount == 4,
+                   ctx.unimplementedOpcodeCounts[1105U] == 1U && ctx.errorCount == 4,
                "failOnUnimplemented inside call_script aborts outer try/else caller");
     }
+}
+
+void test_native_entity_slots() {
+    using namespace wse::vm;
+
+    VmContext ctx;
+    ctx.failOnUnimplemented = true;
+    ctx.world.has_game = true;
+    ctx.world.troops.resize(1);
+    ctx.world.parties.resize(1);
+    ctx.world.factions.resize(1);
+    ctx.world.sites.resize(1);
+    ctx.world.party_templates.resize(1);
+    ctx.world.agents.resize(1);
+    ctx.world.quests.resize(1);
+    ctx.world.items.resize(1);
+    ctx.world.players.resize(1);
+    ctx.world.mission_objects.resize(1);
+
+    StatementBlock block;
+    block.statements.push_back(make_stmt(core_op::kAssign, {reg(1), 0}));
+    for (std::uint32_t kind = 0; kind < 11U; ++kind) {
+        const std::int64_t val = 100LL + static_cast<std::int64_t>(kind);
+        block.statements.push_back(make_stmt(core_op::kTroopSetSlot + kind, {0, 7, val}));
+        block.statements.push_back(make_stmt(core_op::kTroopGetSlot + kind, {reg(0), 0, 7}));
+        block.statements.push_back(make_stmt(core_op::kEq, {reg(0), val}));
+        block.statements.push_back(make_stmt(core_op::kTroopSlotEq + kind, {0, 7, val}));
+        block.statements.push_back(make_stmt(core_op::kTroopSlotGe + kind, {0, 7, val}));
+        block.statements.push_back(make_stmt(core_op::kTryBegin, {}));
+        block.statements.push_back(make_stmt(core_op::kTroopSlotEq + kind, {0, 7, val + 1}));
+        block.statements.push_back(make_stmt(core_op::kElseTry, {}));
+        block.statements.push_back(make_stmt(core_op::kValAdd, {reg(1), 1}));
+        block.statements.push_back(make_stmt(core_op::kTryEnd, {}));
+        block.statements.push_back(make_stmt(core_op::kTryBegin, {}));
+        block.statements.push_back(make_stmt(core_op::kTroopSlotGe + kind, {0, 7, val + 1}));
+        block.statements.push_back(make_stmt(core_op::kElseTry, {}));
+        block.statements.push_back(make_stmt(core_op::kValAdd, {reg(1), 1}));
+        block.statements.push_back(make_stmt(core_op::kTryEnd, {}));
+    }
+
+    // Invalid entity / out-of-range slot: *_set_slot no-ops, *_get_slot writes 0, eq/ge evaluate false.
+    block.statements.push_back(make_stmt(core_op::kAssign, {reg(2), 999}));
+    block.statements.push_back(make_stmt(core_op::kAssign, {reg(3), 888}));
+    block.statements.push_back(make_stmt(core_op::kTroopSetSlot, {0, -1, 55}));
+    block.statements.push_back(make_stmt(core_op::kPartySetSlot, {-1, 0, 55}));
+    block.statements.push_back(make_stmt(core_op::kTroopGetSlot, {reg(2), 0, -1}));
+    block.statements.push_back(make_stmt(core_op::kPartyGetSlot, {reg(3), 99, 0}));
+    block.statements.push_back(make_stmt(core_op::kTryBegin, {}));
+    block.statements.push_back(make_stmt(core_op::kTroopSlotEq, {0, wse::game::kMaxSlotIndex + 1, 0}));
+    block.statements.push_back(make_stmt(core_op::kAssign, {reg(4), 1}));
+    block.statements.push_back(make_stmt(core_op::kElseTry, {}));
+    block.statements.push_back(make_stmt(core_op::kAssign, {reg(4), 2}));
+    block.statements.push_back(make_stmt(core_op::kTryEnd, {}));
+
+    expect(execute_statement_block(block, ctx) && ctx.errorCount == 0 &&
+               ctx.unimplementedCount == 0 && ctx.registers[1] == 22 &&
+               ctx.registers[2] == 0 && ctx.registers[3] == 0 && ctx.registers[4] == 2,
+           "all 44 native entity_slots opcodes read/write/compare and zero-fill invalid lookups");
+}
+
+void test_native_arithmetic_registers_and_vars() {
+    using namespace wse::vm;
+
+    VmContext ctx;
+    ctx.failOnUnimplemented = true;
+    ctx.randSeed = 42;
+    ctx.fixedPointMultiplier = 100;
+    ctx.world.has_game = true;
+    ctx.world.troops.resize(1);
+    ctx.world.troops[0].gold = 1234;
+
+    StatementBlock block;
+    block.statements = {
+        make_stmt(core_op::kAssign, {reg(0), 10}),
+        make_stmt(core_op::kAssign, {reg(1), 20}),
+        make_stmt(core_op::kAssign, {reg(2), 30}),
+        make_stmt(core_op::kAssign, {reg(3), 40}),
+        make_stmt(core_op::kAssign, {reg(4), 50}),
+        make_stmt(core_op::kAssign, {reg(5), 999}),
+        make_stmt(core_op::kShuffleRange, {0, 5}),
+        make_stmt(core_op::kShuffleRange, {4, 2}),  // degenerate no-op
+        make_stmt(core_op::kStoreRandom, {reg(10), 10}),
+        make_stmt(core_op::kStoreRandom, {reg(11), 1}),  // <=1 -> 0
+        make_stmt(core_op::kStoreRandomInRange, {reg(12), -5, 5}),
+        make_stmt(core_op::kStoreRandomInRange, {reg(13), 7, 7}),  // empty range -> lower
+        make_stmt(core_op::kStoreAsin, {reg(14), 100}),
+        make_stmt(core_op::kStoreAcos, {reg(15), 0}),
+        make_stmt(core_op::kStoreAtan, {reg(16), 100}),
+        make_stmt(core_op::kStoreAtan2, {reg(17), 100, -100}),
+        make_stmt(core_op::kStoreTroopGold, {reg(18), 0}),
+    };
+
+    const bool ok = execute_statement_block(block, ctx);
+    std::array<std::int64_t, 5> shuffled{ctx.registers[0], ctx.registers[1], ctx.registers[2],
+                                         ctx.registers[3], ctx.registers[4]};
+    std::sort(shuffled.begin(), shuffled.end());
+    const std::array<std::int64_t, 5> expectedShuffled{10, 20, 30, 40, 50};
+    expect(ok && ctx.errorCount == 0 && ctx.unimplementedCount == 0 &&
+               shuffled == expectedShuffled && ctx.registers[5] == 999 &&
+               ctx.registers[10] >= 0 && ctx.registers[10] < 10 && ctx.registers[11] == 0 &&
+               ctx.registers[12] >= -5 && ctx.registers[12] < 5 && ctx.registers[13] == 7 &&
+               std::abs(static_cast<double>(ctx.registers[14] - 9000)) <= 2.0 &&
+               std::abs(static_cast<double>(ctx.registers[15] - 9000)) <= 2.0 &&
+               std::abs(static_cast<double>(ctx.registers[16] - 4500)) <= 2.0 &&
+               std::abs(static_cast<double>(ctx.registers[17] - 13500)) <= 2.0 &&
+               ctx.registers[18] == 1234,
+           "shuffle_range, store_random*, trig stores, and store_troop_gold match v1.1.5.5");
+}
+
+void test_native_positions_and_math() {
+    using namespace wse::vm;
+
+    VmContext ctx;
+    ctx.failOnUnimplemented = true;
+    ctx.fixedPointMultiplier = 100;
+
+    StatementBlock block;
+    block.statements = {
+        make_stmt(core_op::kInitPosition, {0}),
+        make_stmt(core_op::kPositionSetX, {0, 300}),
+        make_stmt(core_op::kPositionSetY, {0, 400}),
+        make_stmt(core_op::kPositionSetZ, {0, 0}),
+        make_stmt(core_op::kPositionGetX, {reg(0), 0}),
+        make_stmt(core_op::kPositionGetY, {reg(1), 0}),
+        make_stmt(core_op::kPositionGetZ, {reg(2), 0}),
+
+        make_stmt(core_op::kInitPosition, {1}),
+        make_stmt(core_op::kGetDistanceBetweenPositions, {reg(3), 0, 1}),
+        make_stmt(core_op::kGetDistanceBetweenPositionsInMeters, {reg(4), 0, 1}),
+
+        make_stmt(core_op::kCopyPosition, {2, 0}),
+        make_stmt(core_op::kPositionNormalizeOrigin, {reg(5), 2}),
+        make_stmt(core_op::kPositionGetX, {reg(6), 2}),
+        make_stmt(core_op::kPositionGetY, {reg(7), 2}),
+
+        make_stmt(core_op::kInitPosition, {3}),
+        make_stmt(core_op::kPositionCopyOrigin, {3, 0}),
+        make_stmt(core_op::kPositionSetScaleX, {3, 150}),
+        make_stmt(core_op::kPositionSetScaleY, {3, 250}),
+        make_stmt(core_op::kPositionSetScaleZ, {3, 350}),
+        make_stmt(core_op::kPositionGetScaleX, {reg(8), 3}),
+        make_stmt(core_op::kPositionGetScaleY, {reg(9), 3}),
+        make_stmt(core_op::kPositionGetScaleZ, {reg(10), 3}),
+
+        // Local vs global moves and rotations on pos4/pos5.
+        make_stmt(core_op::kInitPosition, {4}),
+        make_stmt(core_op::kPositionRotateZ, {4, 90, 0}),
+        make_stmt(core_op::kPositionMoveY, {4, 200, 0}),   // +2m along rotated local Y
+        make_stmt(core_op::kPositionMoveX, {4, 100, 1}),   // +1m world X
+        make_stmt(core_op::kPositionMoveZ, {4, 50, 1}),    // +0.5m world Z
+        make_stmt(core_op::kPositionRotateZ, {4, -90, 0}),
+        make_stmt(core_op::kPositionRotateX, {4, 30, 0}),
+        make_stmt(core_op::kPositionRotateY, {4, 20, 0}),
+        make_stmt(core_op::kPositionRotateXFloating, {4, -3000, 0}),
+        make_stmt(core_op::kPositionRotateYFloating, {4, -2000, 0}),
+        make_stmt(core_op::kPositionRotateZFloating, {4, 9000, 0}),
+        make_stmt(core_op::kPositionGetRotationAroundX, {reg(11), 4}),
+        make_stmt(core_op::kPositionGetRotationAroundY, {reg(12), 4}),
+        make_stmt(core_op::kPositionGetRotationAroundZ, {reg(13), 4}),
+        make_stmt(core_op::kInitPosition, {5}),
+        make_stmt(core_op::kPositionCopyRotation, {5, 4}),
+
+        // Transform to parent & back to local round-trip.
+        make_stmt(core_op::kInitPosition, {6}),
+        make_stmt(core_op::kPositionSetX, {6, 100}),
+        make_stmt(core_op::kPositionTransformPositionToParent, {7, 4, 6}),
+        make_stmt(core_op::kPositionTransformPositionToLocal, {8, 4, 7}),
+        make_stmt(core_op::kPositionGetX, {reg(14), 8}),
+        make_stmt(core_op::kPositionGetY, {reg(15), 8}),
+
+        // Behind check and angle between positions.
+        make_stmt(core_op::kInitPosition, {9}),
+        make_stmt(core_op::kInitPosition, {10}),
+        make_stmt(core_op::kPositionSetY, {10, -200}),
+        make_stmt(core_op::kPositionIsBehindPosition, {10, 9}),
+        make_stmt(core_op::kInitPosition, {11}),
+        make_stmt(core_op::kPositionSetY, {11, 200}),
+        make_stmt(kNegFlag | core_op::kPositionIsBehindPosition, {11, 9}),
+        make_stmt(core_op::kGetAngleBetweenPositions, {reg(16), 9, 11}),
+    };
+
+    expect(execute_statement_block(block, ctx) && ctx.errorCount == 0 &&
+               ctx.unimplementedCount == 0 &&
+               ctx.registers[0] == 300 && ctx.registers[1] == 400 && ctx.registers[2] == 0 &&
+               ctx.registers[3] == 500 && ctx.registers[4] == 5 &&
+               ctx.registers[5] == 500 && ctx.registers[6] == 60 && ctx.registers[7] == 80 &&
+               ctx.registers[8] == 150 && ctx.registers[9] == 250 && ctx.registers[10] == 350 &&
+               ctx.registers[11] >= 0 && ctx.registers[11] < 360 &&
+               ctx.registers[12] >= 0 && ctx.registers[12] < 360 &&
+               ctx.registers[13] >= 0 && ctx.registers[13] < 360 &&
+               std::abs(static_cast<double>(ctx.registers[14] - 100)) <= 2.0 &&
+               std::abs(static_cast<double>(ctx.registers[15])) <= 2.0 &&
+               ctx.positions[5].f.y == ctx.positions[4].f.y &&
+               std::abs(static_cast<double>(ctx.registers[16])) <= 2,
+           "all 35 positions_and_math opcodes execute and satisfy geometric invariants");
+}
+
+void test_native_strings_and_entity_ops() {
+    using namespace wse::vm;
+
+    VmContext ctx;
+    ctx.failOnUnimplemented = true;
+    ctx.world.has_game = true;
+    ctx.world.skills[wse::game::kSkillIronflesh].max_level = 10;
+
+    ctx.world.troops.resize(2);
+    ctx.world.troops[0].flags = 0x10U;
+    ctx.world.troops[0].attributes[0] = 15;
+    ctx.world.troops[0].set_skill_raw(wse::game::kSkillIronflesh, 5);  // max_hp = 15+35+10 = 60
+    ctx.world.troops[0].name = "Knight";
+    ctx.world.troops[0].plural_name = "Knights";
+    ctx.world.troops[0].faction_no = 2;
+    ctx.world.troops[1].flags = 0U;
+
+    ctx.world.items.resize(1);
+    ctx.world.items[0].name = "Blade";
+    ctx.world.items[0].plural_name = "Blades";
+
+    ctx.world.parties.resize(1);
+    ctx.world.parties[0].name = "Scouts";
+    ctx.world.parties[0].faction_no = 4;
+
+    ctx.world.factions.resize(3);
+    ctx.world.factions[2].name = "Swadia";
+
+    ctx.world.quests.resize(1);
+    ctx.world.quests[0].title = "Aid {reg1} towns";
+
+    ctx.world.players.resize(1);
+    ctx.world.players[0].status = 2;
+    ctx.world.players[0].name = "Commander";
+
+    ctx.world.agents.resize(2);
+    ctx.world.agents[0].type = 0;
+    ctx.world.agents[1].type = 1;
+
+    ctx.stringRegisters[10] = u"hello {reg1}!";
+    ctx.stringRegisters[11] = u"hero world!";
+
+    StatementBlock block;
+    block.statements = {
+        make_stmt(core_op::kAssign, {reg(1), 7}),
+        make_stmt(core_op::kTroopIsHero, {0}),
+        make_stmt(kNegFlag | core_op::kTroopIsHero, {1}),
+        make_stmt(core_op::kTroopSetHealth, {0, 50, 0}),  // 50% of 60 -> 30
+        make_stmt(core_op::kAgentIsHuman, {0}),
+        make_stmt(kNegFlag | core_op::kAgentIsHuman, {1}),
+        make_stmt(core_op::kStoreTroopFaction, {reg(2), 0}),
+        make_stmt(core_op::kStoreFactionOfParty, {reg(3), 0}),
+
+        make_stmt(core_op::kStrStoreString, {sreg(0), sreg(10)}),
+        make_stmt(core_op::kStrStoreStringReg, {sreg(1), sreg(10)}),
+        make_stmt(core_op::kDisplayMessage, {sreg(0), 0}),
+        make_stmt(core_op::kDisplayMessage, {sreg(0), 0x00ff00ff}),
+        make_stmt(core_op::kStrClear, {sreg(10)}),
+        make_stmt(core_op::kStrIsEmpty, {sreg(10)}),
+        make_stmt(kNegFlag | core_op::kStrIsEmpty, {sreg(0)}),
+
+        make_stmt(core_op::kStrStoreTroopName, {sreg(2), 0}),
+        make_stmt(core_op::kStrStoreTroopNamePlural, {sreg(3), 0}),
+        make_stmt(core_op::kStrStoreTroopNameByCount, {sreg(4), 0, 1}),
+        make_stmt(core_op::kStrStoreTroopNameByCount, {sreg(5), 0, 2}),
+
+        make_stmt(core_op::kStrStoreItemName, {sreg(6), 0}),
+        make_stmt(core_op::kStrStoreItemNamePlural, {sreg(7), 0}),
+        make_stmt(core_op::kStrStoreItemNameByCount, {sreg(8), 0, 1}),
+        make_stmt(core_op::kStrStoreItemNameByCount, {sreg(9), 0, 3}),
+
+        make_stmt(core_op::kStrStorePartyName, {sreg(12), 0}),
+        make_stmt(core_op::kStrStoreFactionName, {sreg(13), 2}),
+        make_stmt(core_op::kStrStoreQuestName, {sreg(14), 0}),
+        make_stmt(core_op::kStrStoreTroopNameLink, {sreg(15), 0}),
+        make_stmt(core_op::kStrStorePartyNameLink, {sreg(16), 0}),
+        make_stmt(core_op::kStrStoreFactionNameLink, {sreg(17), 2}),
+        make_stmt(core_op::kStrStoreQuestNameLink, {sreg(18), 0}),
+        make_stmt(core_op::kStrStorePlayerUsername, {sreg(19), 0}),
+        make_stmt(core_op::kStrEncodeUrl, {sreg(11)}),
+    };
+
+    const bool ok = execute_statement_block(block, ctx);
+    StatementBlock clampHpBlock;
+    clampHpBlock.statements = {make_stmt(core_op::kTroopSetHealth, {0, 999, 1})};
+    const float halfHp = ctx.world.troops[0].hit_points;
+    const bool ok2 = execute_statement_block(clampHpBlock, ctx);
+
+    expect(ok && ok2 && ctx.errorCount == 0 && ctx.unimplementedCount == 0 &&
+               halfHp == 30.0f && ctx.world.troops[0].hit_points == 60.0f &&
+               ctx.registers[2] == 2 && ctx.registers[3] == 4 &&
+               ctx.world.displayed_messages.size() == 2U &&
+               ctx.world.displayed_messages[0].text == u"hello 7!" &&
+               ctx.world.displayed_messages[0].color == 0xffffffffu &&
+               ctx.world.displayed_messages[1].color == 0x00ff00ffu &&
+               ctx.stringRegisters[0] == u"hello 7!" && ctx.stringRegisters[1] == u"hello 7!" &&
+               ctx.stringRegisters[10].empty() &&
+               ctx.stringRegisters[2] == u"Knight" && ctx.stringRegisters[3] == u"Knights" &&
+               ctx.stringRegisters[4] == u"Knight" && ctx.stringRegisters[5] == u"Knights" &&
+               ctx.stringRegisters[6] == u"Blade" && ctx.stringRegisters[7] == u"Blades" &&
+               ctx.stringRegisters[8] == u"Blade" && ctx.stringRegisters[9] == u"Blades" &&
+               ctx.stringRegisters[12] == u"Scouts" && ctx.stringRegisters[13] == u"Swadia" &&
+               ctx.stringRegisters[14] == u"Aid 7 towns" &&
+               ctx.stringRegisters[15] == u"<trp=0>Knight</>" &&
+               ctx.stringRegisters[16] == u"<p=0>Scouts</>" &&
+               ctx.stringRegisters[17] == u"<fac=2>Swadia</>" &&
+               ctx.stringRegisters[18] == u"<qst=0>Aid {reg1} towns</>" &&
+               ctx.stringRegisters[19] == u"Commander" &&
+               ctx.stringRegisters[11] == u"hero%20world%21",
+           "all 25 strings/UI/entity native opcodes match v1.1.5.5 semantics");
 }
 
 }  // namespace
@@ -953,6 +1263,10 @@ int main() {
     test_feval_and_custom_array_sort();
     test_world_state_script_integration();
     test_unimplemented_histogram_and_loud_failure();
+    test_native_entity_slots();
+    test_native_arithmetic_registers_and_vars();
+    test_native_positions_and_math();
+    test_native_strings_and_entity_ops();
 
     if (failures != 0) {
         std::printf("block_vm tests: FAIL (%d)\n", failures);

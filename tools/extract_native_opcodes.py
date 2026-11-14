@@ -118,38 +118,55 @@ def parse_sdk_operations(sdk_path: Path) -> dict:
 
 
 def scan_implemented_from_block_vm(block_vm_path: Path) -> tuple[set[int], set[int]]:
-    """Scan block_vm.h for implemented control-flow (<30) and switch (30..2767) opcodes."""
-    text = block_vm_path.read_text(encoding="utf-8", errors="replace")
+    """Scan block_vm.h (and sibling native_ops.h) for implemented control-flow (<30) and switch (30..2767) opcodes."""
+    paths = [block_vm_path]
+    native_ops_path = block_vm_path.parent / "native_ops.h"
+    if native_ops_path.is_file():
+        paths.append(native_ops_path)
 
-    core_block_m = re.search(r"namespace\s+core_op\s*\{(.*?)\}\s*//\s*namespace\s+core_op", text, re.S)
-    if not core_block_m:
-        raise SystemExit(f"Could not find namespace core_op in {block_vm_path}")
+    texts = [p.read_text(encoding="utf-8", errors="replace") for p in paths]
     core_map: dict[str, int] = {}
-    for m in re.finditer(r"k([A-Za-z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)U?", core_block_m.group(1)):
-        core_map["k" + m.group(1)] = int(m.group(2), 0)
+    after_core_chunks: list[str] = []
+    for text in texts:
+        last_end = 0
+        for core_block_m in re.finditer(
+            r"namespace\s+core_op\s*\{(.*?)\}\s*//\s*namespace\s+core_op", text, re.S
+        ):
+            for m in re.finditer(
+                r"k([A-Za-z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)U?", core_block_m.group(1)
+            ):
+                core_map["k" + m.group(1)] = int(m.group(2), 0)
+            last_end = core_block_m.end()
+        if last_end:
+            after_core_chunks.append(text[last_end:])
 
-    # Extract dispatch_native_statement body up to unimplemented return.
-    disp_m = re.search(
-        r"dispatch_native_statement\s*\(.*?\n(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+NativeDispatch::unimplemented;)",
-        text,
+    if not core_map:
+        raise SystemExit(f"Could not find namespace core_op in {block_vm_path}")
+
+    disp_pattern = re.compile(
+        r"dispatch_native_statement(?:_ext)?\s*\([^)]*\)\s*\{(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+(?:NativeDispatch::unimplemented|dispatch_native_statement_ext\([^;]*\));)",
         re.S,
     )
-    if not disp_m:
-        raise SystemExit(f"Could not locate dispatch_native_statement in {block_vm_path}")
-    disp_body = disp_m.group(1)
-
     impl_switch: set[int] = set()
-    for m in re.finditer(r"case\s+core_op::(k[A-Za-z0-9_]+)\s*:", disp_body):
-        op = core_map.get(m.group(1))
-        if op is not None and NATIVE_MIN <= op <= NATIVE_MAX:
-            impl_switch.add(op)
-    for m in re.finditer(r"case\s+(0x[0-9A-Fa-f]+|\d+)U?\s*:", disp_body):
-        op = int(m.group(1), 0)
-        if NATIVE_MIN <= op <= NATIVE_MAX:
-            impl_switch.add(op)
+    found_dispatch = False
+    for text in texts:
+        for disp_m in disp_pattern.finditer(text):
+            found_dispatch = True
+            disp_body = disp_m.group(1)
+            for m in re.finditer(r"case\s+core_op::(k[A-Za-z0-9_]+)\s*:", disp_body):
+                op = core_map.get(m.group(1))
+                if op is not None and NATIVE_MIN <= op <= NATIVE_MAX:
+                    impl_switch.add(op)
+            for m in re.finditer(r"case\s+(0x[0-9A-Fa-f]+|\d+)U?\s*:", disp_body):
+                op = int(m.group(1), 0)
+                if NATIVE_MIN <= op <= NATIVE_MAX:
+                    impl_switch.add(op)
+
+    if not found_dispatch:
+        raise SystemExit(f"Could not locate dispatch_native_statement in {block_vm_path}")
 
     # Control-flow ops (<30): check references outside namespace core_op and outside entity stub comment.
-    after_core = text[core_block_m.end():]
+    after_core = "\n".join(after_core_chunks)
     impl_cf: set[int] = set()
     for name, op in core_map.items():
         if op < NATIVE_MIN and re.search(rf"\bcore_op::{re.escape(name)}\b", after_core):

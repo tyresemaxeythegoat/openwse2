@@ -108,31 +108,50 @@ def parse_simple_triggers_file(path: Path) -> list[list[int]]:
 
 
 def scan_implemented_native(block_vm_path: Path) -> set[int]:
-    text = block_vm_path.read_text(encoding="utf-8", errors="replace")
-    core_m = re.search(r"namespace\s+core_op\s*\{(.*?)\}\s*//\s*namespace\s+core_op", text, re.S)
-    if not core_m:
+    paths = [block_vm_path]
+    native_ops_path = block_vm_path.parent / "native_ops.h"
+    if native_ops_path.is_file():
+        paths.append(native_ops_path)
+
+    texts = [p.read_text(encoding="utf-8", errors="replace") for p in paths]
+    core_map: dict[str, int] = {}
+    after_core_chunks: list[str] = []
+    for text in texts:
+        last_end = 0
+        for core_m in re.finditer(
+            r"namespace\s+core_op\s*\{(.*?)\}\s*//\s*namespace\s+core_op", text, re.S
+        ):
+            for m in re.finditer(
+                r"k([A-Za-z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)U?", core_m.group(1)
+            ):
+                core_map["k" + m.group(1)] = int(m.group(2), 0)
+            last_end = core_m.end()
+        if last_end:
+            after_core_chunks.append(text[last_end:])
+
+    if not core_map:
         raise SystemExit(f"Could not locate core_op namespace in {block_vm_path}")
-    core_map = {
-        "k" + m.group(1): int(m.group(2), 0)
-        for m in re.finditer(r"k([A-Za-z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)U?", core_m.group(1))
-    }
-    disp_m = re.search(
-        r"dispatch_native_statement\s*\(.*?\n(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+NativeDispatch::unimplemented;)",
-        text,
+
+    disp_pattern = re.compile(
+        r"dispatch_native_statement(?:_ext)?\s*\([^)]*\)\s*\{(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+(?:NativeDispatch::unimplemented|dispatch_native_statement_ext\([^;]*\));)",
         re.S,
     )
-    if not disp_m:
-        raise SystemExit(f"Could not locate dispatch_native_statement in {block_vm_path}")
-    disp_body = disp_m.group(1)
-
     impl: set[int] = set()
-    for m in re.finditer(r"case\s+core_op::(k[A-Za-z0-9_]+)\s*:", disp_body):
-        if m.group(1) in core_map:
-            impl.add(core_map[m.group(1)])
-    for m in re.finditer(r"case\s+(0x[0-9A-Fa-f]+|\d+)U?\s*:", disp_body):
-        impl.add(int(m.group(1), 0))
+    found_dispatch = False
+    for text in texts:
+        for disp_m in disp_pattern.finditer(text):
+            found_dispatch = True
+            disp_body = disp_m.group(1)
+            for m in re.finditer(r"case\s+core_op::(k[A-Za-z0-9_]+)\s*:", disp_body):
+                if m.group(1) in core_map:
+                    impl.add(core_map[m.group(1)])
+            for m in re.finditer(r"case\s+(0x[0-9A-Fa-f]+|\d+)U?\s*:", disp_body):
+                impl.add(int(m.group(1), 0))
 
-    after_core = text[core_m.end():]
+    if not found_dispatch:
+        raise SystemExit(f"Could not locate dispatch_native_statement in {block_vm_path}")
+
+    after_core = "\n".join(after_core_chunks)
     for name, op in core_map.items():
         if op < 30 and re.search(rf"\bcore_op::{re.escape(name)}\b", after_core):
             impl.add(op)

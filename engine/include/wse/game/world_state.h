@@ -77,6 +77,25 @@ struct WseTroop {
     std::int32_t attribute_points = 0;
     std::int32_t proficiency_points = 0;
     wse::vm::Slots slots{};
+    std::string name{};
+    std::string plural_name{};
+    std::int32_t faction_no = 0;  // mbTroop::m_factionNo (0x1401dd9d8)
+    std::int32_t gold = 0;        // mbTroop::m_gold (0x1401dd5b3)
+
+    // Mirrors mbTroop::isHero (0x140245f60): (m_flags >> 4) & 1.
+    [[nodiscard]] constexpr bool is_hero() const noexcept {
+        return ((flags >> 4U) & 1U) != 0U;
+    }
+
+    // Mirrors mbTroop::getMaxHitPoints (0x140245aa0):
+    // m_attributes[0] + 35 + min(ironflesh, g_skills[36].m_maxLevel) * 2.
+    [[nodiscard]] std::int32_t max_hit_points(
+        std::int32_t ironflesh_max_level) const noexcept {
+        const std::int32_t upper = std::max<std::int32_t>(0, ironflesh_max_level);
+        const std::int32_t ironflesh =
+            std::clamp(get_skill_raw(kSkillIronflesh), 0, upper);
+        return attributes[0] + 35 + ironflesh * 2;
+    }
 
     [[nodiscard]] std::int32_t get_skill_raw(std::int32_t skill_no) const noexcept {
         if (skill_no < 0 || skill_no >= kMaxSkills) {
@@ -232,6 +251,7 @@ struct WseFaction {
 struct WseQuest {
     std::string id{};
     wse::vm::Slots slots{};
+    std::string title{};  // mbQuest::m_title (0x1401dec93 / 0x1401defc4)
 };
 
 struct WseSite {
@@ -246,6 +266,7 @@ struct WseParty {
     std::string id{};
     bool active = true;
     wse::vm::Slots slots{};
+    std::int32_t faction_no = 0;  // mbParty::m_factionNo (0x1401ddd7f)
 };
 
 struct WsePlayer {
@@ -262,11 +283,22 @@ struct WseAgent {
     bool active = true;
     std::int32_t status = 0;
     wse::vm::Slots slots{};
+    std::int32_t type = 0;  // mbAgent::m_type: 0 = human, 1 = horse (0x14002b910)
+
+    // Mirrors mbAgent::isHuman (0x14002b910): m_type == 0.
+    [[nodiscard]] constexpr bool is_human() const noexcept {
+        return type == 0;
+    }
 };
 
 struct WseMissionObject {
     bool active = true;
     wse::vm::Slots slots{};
+};
+
+struct WseDisplayedMessage {
+    std::u16string text{};
+    std::uint32_t color = 0xffffffffu;
 };
 
 struct WseEditModeState {
@@ -313,6 +345,7 @@ struct WseWorldState {
     std::unordered_map<std::string, std::string> game_variables{};
     std::unordered_map<std::string, std::string> translations{};
     std::filesystem::path savegames_dir{};
+    std::vector<WseDisplayedMessage> displayed_messages{};
 
     [[nodiscard]] bool is_valid_item(std::int32_t id) const noexcept {
         return id >= 0 && static_cast<std::size_t>(id) < items.size();

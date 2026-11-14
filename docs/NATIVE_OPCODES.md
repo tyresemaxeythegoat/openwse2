@@ -19,7 +19,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | Fallback to `executeWSE` (`execute_wse_fallback`) | 1695 | Jump to `0x1401e223e`; 1 SDK-named (`1004`), 1694 empty holes |
 | **Total live native handlers (`0–2767`)** | **1053** | 16 control-flow + 1037 switch |
 | SDK unique IDs in `0–2767` | 1057 | 1062 symbol definitions incl. aliases |
-| Implemented in `block_vm.h` (`control_flow` / `switch`) | 16 / 33 | Total implemented: **49** (4 entity iterators run 0 iterations until world containers load) |
+| Implemented in `block_vm.h` (`control_flow` / `switch`) | 16 / 145 | Total implemented: **161** (4 entity iterators run 0 iterations until world containers load) |
 
 ## Special slots
 
@@ -53,19 +53,19 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | Category | Live handlers | Implemented (`block_vm.h`) |
 | --- | ---: | ---: |
 | `other_native` | 145 | 0 |
-| `parties` | 118 | 0 |
-| `agents` | 117 | 0 |
+| `parties` | 118 | 1 |
+| `agents` | 117 | 1 |
 | `scenes_props_and_mission` | 88 | 0 |
-| `ui_presentations_and_menus` | 76 | 0 |
-| `troops` | 75 | 0 |
+| `ui_presentations_and_menus` | 76 | 1 |
+| `troops` | 75 | 3 |
 | `multiplayer_and_players` | 74 | 0 |
 | `game_state_and_stores` | 62 | 0 |
-| `entity_slots` | 50 | 0 |
-| `positions_and_math` | 43 | 0 |
-| `arithmetic_registers_and_vars` | 37 | 29 |
+| `entity_slots` | 50 | 44 |
+| `positions_and_math` | 43 | 35 |
+| `arithmetic_registers_and_vars` | 37 | 37 |
 | `items` | 33 | 0 |
 | `audio_particles_and_tableau` | 29 | 0 |
-| `strings` | 29 | 0 |
+| `strings` | 29 | 19 |
 | `mission_combat_and_teams` | 27 | 0 |
 | `control_flow` | 16 | 16 |
 | `face_keys` | 16 | 0 |
@@ -262,50 +262,50 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 497 | `0x1f1` | `server_get_friendly_fire_damage_friend_ratio` | `switch_handler` | `0x1401c96f0` | `multiplayer_and_players` | `unimplemented` |
 | 498 | `0x1f2` | `server_set_friendly_fire_damage_friend_ratio` | `switch_handler` | `0x1401c972b` | `multiplayer_and_players` | `unimplemented` |
 | 499 | `0x1f3` | `server_get_anti_cheat` | `switch_handler` | `0x1401c9765` | `multiplayer_and_players` | `unimplemented` |
-| 500 | `0x1f4` | `troop_set_slot` | `switch_handler` | `0x1401c9799` | `entity_slots` | `unimplemented` |
-| 501 | `0x1f5` | `party_set_slot` | `switch_handler` | `0x1401c97f1` | `entity_slots` | `unimplemented` |
-| 502 | `0x1f6` | `faction_set_slot` | `switch_handler` | `0x1401c9832` | `entity_slots` | `unimplemented` |
-| 503 | `0x1f7` | `scene_set_slot` | `switch_handler` | `0x1401c9876` | `entity_slots` | `unimplemented` |
-| 504 | `0x1f8` | `party_template_set_slot` | `switch_handler` | `0x1401c98ba` | `entity_slots` | `unimplemented` |
-| 505 | `0x1f9` | `agent_set_slot` | `switch_handler` | `0x1401c9905` | `entity_slots` | `unimplemented` |
-| 506 | `0x1fa` | `quest_set_slot` | `switch_handler` | `0x1401c9949` | `entity_slots` | `unimplemented` |
-| 507 | `0x1fb` | `item_set_slot` | `switch_handler` | `0x1401c998d` | `entity_slots` | `unimplemented` |
-| 508 | `0x1fc` | `player_set_slot` | `switch_handler` | `0x1401c99d8` | `entity_slots` | `unimplemented` |
-| 509 | `0x1fd` | `team_set_slot` | `switch_handler` | `0x1401c9a1c` | `entity_slots` | `unimplemented` |
-| 510 | `0x1fe` | `scene_prop_set_slot` | `switch_handler` | `0x1401c9a64` | `entity_slots` | `unimplemented` |
-| 520 | `0x208` | `troop_get_slot` | `switch_handler` | `0x1401c9aa8` | `entity_slots` | `unimplemented` |
-| 521 | `0x209` | `party_get_slot` | `switch_handler` | `0x1401c9b29` | `entity_slots` | `unimplemented` |
-| 522 | `0x20a` | `faction_get_slot` | `switch_handler` | `0x1401c9baa` | `entity_slots` | `unimplemented` |
-| 523 | `0x20b` | `scene_get_slot` | `switch_handler` | `0x1401c9c2b` | `entity_slots` | `unimplemented` |
-| 524 | `0x20c` | `party_template_get_slot` | `switch_handler` | `0x1401c9cac` | `entity_slots` | `unimplemented` |
-| 525 | `0x20d` | `agent_get_slot` | `switch_handler` | `0x1401c9d32` | `entity_slots` | `unimplemented` |
-| 526 | `0x20e` | `quest_get_slot` | `switch_handler` | `0x1401c9db3` | `entity_slots` | `unimplemented` |
-| 527 | `0x20f` | `item_get_slot` | `switch_handler` | `0x1401c9e34` | `entity_slots` | `unimplemented` |
-| 528 | `0x210` | `player_get_slot` | `switch_handler` | `0x1401c9eba` | `entity_slots` | `unimplemented` |
-| 529 | `0x211` | `team_get_slot` | `switch_handler` | `0x1401c9f3b` | `entity_slots` | `unimplemented` |
-| 530 | `0x212` | `scene_prop_get_slot` | `switch_handler` | `0x1401c9fbf` | `entity_slots` | `unimplemented` |
-| 540 | `0x21c` | `troop_slot_eq` | `switch_handler` | `0x1401ca040` | `entity_slots` | `unimplemented` |
-| 541 | `0x21d` | `party_slot_eq` | `switch_handler` | `0x1401ca09b` | `entity_slots` | `unimplemented` |
-| 542 | `0x21e` | `faction_slot_eq` | `switch_handler` | `0x1401ca0dd` | `entity_slots` | `unimplemented` |
-| 543 | `0x21f` | `scene_slot_eq` | `switch_handler` | `0x1401ca122` | `entity_slots` | `unimplemented` |
-| 544 | `0x220` | `party_template_slot_eq` | `switch_handler` | `0x1401ca167` | `entity_slots` | `unimplemented` |
-| 545 | `0x221` | `agent_slot_eq` | `switch_handler` | `0x1401ca1b1` | `entity_slots` | `unimplemented` |
-| 546 | `0x222` | `quest_slot_eq` | `switch_handler` | `0x1401ca1f6` | `entity_slots` | `unimplemented` |
-| 547 | `0x223` | `item_slot_eq` | `switch_handler` | `0x1401ca23b` | `entity_slots` | `unimplemented` |
-| 548 | `0x224` | `player_slot_eq` | `switch_handler` | `0x1401ca285` | `entity_slots` | `unimplemented` |
-| 549 | `0x225` | `team_slot_eq` | `switch_handler` | `0x1401ca2ca` | `entity_slots` | `unimplemented` |
-| 550 | `0x226` | `scene_prop_slot_eq` | `switch_handler` | `0x1401ca312` | `entity_slots` | `unimplemented` |
-| 560 | `0x230` | `troop_slot_ge` | `switch_handler` | `0x1401ca357` | `entity_slots` | `unimplemented` |
-| 561 | `0x231` | `party_slot_ge` | `switch_handler` | `0x1401ca3b2` | `entity_slots` | `unimplemented` |
-| 562 | `0x232` | `faction_slot_ge` | `switch_handler` | `0x1401ca3f4` | `entity_slots` | `unimplemented` |
-| 563 | `0x233` | `scene_slot_ge` | `switch_handler` | `0x1401ca439` | `entity_slots` | `unimplemented` |
-| 564 | `0x234` | `party_template_slot_ge` | `switch_handler` | `0x1401ca47e` | `entity_slots` | `unimplemented` |
-| 565 | `0x235` | `agent_slot_ge` | `switch_handler` | `0x1401ca4c8` | `entity_slots` | `unimplemented` |
-| 566 | `0x236` | `quest_slot_ge` | `switch_handler` | `0x1401ca50d` | `entity_slots` | `unimplemented` |
-| 567 | `0x237` | `item_slot_ge` | `switch_handler` | `0x1401ca552` | `entity_slots` | `unimplemented` |
-| 568 | `0x238` | `player_slot_ge` | `switch_handler` | `0x1401ca59c` | `entity_slots` | `unimplemented` |
-| 569 | `0x239` | `team_slot_ge` | `switch_handler` | `0x1401ca5e1` | `entity_slots` | `unimplemented` |
-| 570 | `0x23a` | `scene_prop_slot_ge` | `switch_handler` | `0x1401ca629` | `entity_slots` | `unimplemented` |
+| 500 | `0x1f4` | `troop_set_slot` | `switch_handler` | `0x1401c9799` | `entity_slots` | `implemented` |
+| 501 | `0x1f5` | `party_set_slot` | `switch_handler` | `0x1401c97f1` | `entity_slots` | `implemented` |
+| 502 | `0x1f6` | `faction_set_slot` | `switch_handler` | `0x1401c9832` | `entity_slots` | `implemented` |
+| 503 | `0x1f7` | `scene_set_slot` | `switch_handler` | `0x1401c9876` | `entity_slots` | `implemented` |
+| 504 | `0x1f8` | `party_template_set_slot` | `switch_handler` | `0x1401c98ba` | `entity_slots` | `implemented` |
+| 505 | `0x1f9` | `agent_set_slot` | `switch_handler` | `0x1401c9905` | `entity_slots` | `implemented` |
+| 506 | `0x1fa` | `quest_set_slot` | `switch_handler` | `0x1401c9949` | `entity_slots` | `implemented` |
+| 507 | `0x1fb` | `item_set_slot` | `switch_handler` | `0x1401c998d` | `entity_slots` | `implemented` |
+| 508 | `0x1fc` | `player_set_slot` | `switch_handler` | `0x1401c99d8` | `entity_slots` | `implemented` |
+| 509 | `0x1fd` | `team_set_slot` | `switch_handler` | `0x1401c9a1c` | `entity_slots` | `implemented` |
+| 510 | `0x1fe` | `scene_prop_set_slot` | `switch_handler` | `0x1401c9a64` | `entity_slots` | `implemented` |
+| 520 | `0x208` | `troop_get_slot` | `switch_handler` | `0x1401c9aa8` | `entity_slots` | `implemented` |
+| 521 | `0x209` | `party_get_slot` | `switch_handler` | `0x1401c9b29` | `entity_slots` | `implemented` |
+| 522 | `0x20a` | `faction_get_slot` | `switch_handler` | `0x1401c9baa` | `entity_slots` | `implemented` |
+| 523 | `0x20b` | `scene_get_slot` | `switch_handler` | `0x1401c9c2b` | `entity_slots` | `implemented` |
+| 524 | `0x20c` | `party_template_get_slot` | `switch_handler` | `0x1401c9cac` | `entity_slots` | `implemented` |
+| 525 | `0x20d` | `agent_get_slot` | `switch_handler` | `0x1401c9d32` | `entity_slots` | `implemented` |
+| 526 | `0x20e` | `quest_get_slot` | `switch_handler` | `0x1401c9db3` | `entity_slots` | `implemented` |
+| 527 | `0x20f` | `item_get_slot` | `switch_handler` | `0x1401c9e34` | `entity_slots` | `implemented` |
+| 528 | `0x210` | `player_get_slot` | `switch_handler` | `0x1401c9eba` | `entity_slots` | `implemented` |
+| 529 | `0x211` | `team_get_slot` | `switch_handler` | `0x1401c9f3b` | `entity_slots` | `implemented` |
+| 530 | `0x212` | `scene_prop_get_slot` | `switch_handler` | `0x1401c9fbf` | `entity_slots` | `implemented` |
+| 540 | `0x21c` | `troop_slot_eq` | `switch_handler` | `0x1401ca040` | `entity_slots` | `implemented` |
+| 541 | `0x21d` | `party_slot_eq` | `switch_handler` | `0x1401ca09b` | `entity_slots` | `implemented` |
+| 542 | `0x21e` | `faction_slot_eq` | `switch_handler` | `0x1401ca0dd` | `entity_slots` | `implemented` |
+| 543 | `0x21f` | `scene_slot_eq` | `switch_handler` | `0x1401ca122` | `entity_slots` | `implemented` |
+| 544 | `0x220` | `party_template_slot_eq` | `switch_handler` | `0x1401ca167` | `entity_slots` | `implemented` |
+| 545 | `0x221` | `agent_slot_eq` | `switch_handler` | `0x1401ca1b1` | `entity_slots` | `implemented` |
+| 546 | `0x222` | `quest_slot_eq` | `switch_handler` | `0x1401ca1f6` | `entity_slots` | `implemented` |
+| 547 | `0x223` | `item_slot_eq` | `switch_handler` | `0x1401ca23b` | `entity_slots` | `implemented` |
+| 548 | `0x224` | `player_slot_eq` | `switch_handler` | `0x1401ca285` | `entity_slots` | `implemented` |
+| 549 | `0x225` | `team_slot_eq` | `switch_handler` | `0x1401ca2ca` | `entity_slots` | `implemented` |
+| 550 | `0x226` | `scene_prop_slot_eq` | `switch_handler` | `0x1401ca312` | `entity_slots` | `implemented` |
+| 560 | `0x230` | `troop_slot_ge` | `switch_handler` | `0x1401ca357` | `entity_slots` | `implemented` |
+| 561 | `0x231` | `party_slot_ge` | `switch_handler` | `0x1401ca3b2` | `entity_slots` | `implemented` |
+| 562 | `0x232` | `faction_slot_ge` | `switch_handler` | `0x1401ca3f4` | `entity_slots` | `implemented` |
+| 563 | `0x233` | `scene_slot_ge` | `switch_handler` | `0x1401ca439` | `entity_slots` | `implemented` |
+| 564 | `0x234` | `party_template_slot_ge` | `switch_handler` | `0x1401ca47e` | `entity_slots` | `implemented` |
+| 565 | `0x235` | `agent_slot_ge` | `switch_handler` | `0x1401ca4c8` | `entity_slots` | `implemented` |
+| 566 | `0x236` | `quest_slot_ge` | `switch_handler` | `0x1401ca50d` | `entity_slots` | `implemented` |
+| 567 | `0x237` | `item_slot_ge` | `switch_handler` | `0x1401ca552` | `entity_slots` | `implemented` |
+| 568 | `0x238` | `player_slot_ge` | `switch_handler` | `0x1401ca59c` | `entity_slots` | `implemented` |
+| 569 | `0x239` | `team_slot_ge` | `switch_handler` | `0x1401ca5e1` | `entity_slots` | `implemented` |
+| 570 | `0x23a` | `scene_prop_slot_ge` | `switch_handler` | `0x1401ca629` | `entity_slots` | `implemented` |
 | 599 | `0x257` | `play_sound_at_position` | `switch_handler` | `0x1401ca66e` | `audio_particles_and_tableau` | `unimplemented` |
 | 600 | `0x258` | `play_sound` | `switch_handler` | `0x1401ca75d` | `audio_particles_and_tableau` | `unimplemented` |
 | 601 | `0x259` | `play_track` | `switch_handler` | `0x1401ca843` | `audio_particles_and_tableau` | `unimplemented` |
@@ -315,46 +315,46 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 609 | `0x261` | `stop_all_sounds` | `switch_handler` | `0x1401ca8ba` | `audio_particles_and_tableau` | `unimplemented` |
 | 615 | `0x267` | `store_last_sound_channel` | `switch_handler` | `0x1401ca8d1` | `game_state_and_stores` | `unimplemented` |
 | 616 | `0x268` | `stop_sound_channel` | `switch_handler` | `0x1401ca8f8` | `other_native` | `unimplemented` |
-| 700 | `0x2bc` | `copy_position` | `switch_handler` | `0x1401ca915` | `positions_and_math` | `unimplemented` |
-| 701 | `0x2bd` | `init_position` | `switch_handler` | `0x1401caa34` | `positions_and_math` | `unimplemented` |
+| 700 | `0x2bc` | `copy_position` | `switch_handler` | `0x1401ca915` | `positions_and_math` | `implemented` |
+| 701 | `0x2bd` | `init_position` | `switch_handler` | `0x1401caa34` | `positions_and_math` | `implemented` |
 | 702 | `0x2be` | `get_trigger_object_position` | `switch_handler` | `0x1401caa95` | `other_native` | `unimplemented` |
-| 705 | `0x2c1` | `get_angle_between_positions` | `switch_handler` | `0x1401cab9a` | `positions_and_math` | `unimplemented` |
+| 705 | `0x2c1` | `get_angle_between_positions` | `switch_handler` | `0x1401cab9a` | `positions_and_math` | `implemented` |
 | 707 | `0x2c3` | `position_has_line_of_sight_to_position` | `switch_handler` | `0x1401cac4c` | `positions_and_math` | `unimplemented` |
-| 710 | `0x2c6` | `get_distance_between_positions` | `switch_handler` | `0x1401cacbe` | `positions_and_math` | `unimplemented` |
-| 711 | `0x2c7` | `get_distance_between_positions_in_meters` | `switch_handler` | `0x1401cad58` | `positions_and_math` | `unimplemented` |
+| 710 | `0x2c6` | `get_distance_between_positions` | `switch_handler` | `0x1401cacbe` | `positions_and_math` | `implemented` |
+| 711 | `0x2c7` | `get_distance_between_positions_in_meters` | `switch_handler` | `0x1401cad58` | `positions_and_math` | `implemented` |
 | 712 | `0x2c8` | `get_sq_distance_between_positions` | `switch_handler` | `0x1401cadea` | `other_native` | `unimplemented` |
 | 713 | `0x2c9` | `get_sq_distance_between_positions_in_meters` | `switch_handler` | `0x1401cae84` | `other_native` | `unimplemented` |
-| 714 | `0x2ca` | `position_is_behind_position` | `switch_handler` | `0x1401caf16` | `positions_and_math` | `unimplemented` |
+| 714 | `0x2ca` | `position_is_behind_position` | `switch_handler` | `0x1401caf16` | `positions_and_math` | `implemented` |
 | 715 | `0x2cb` | `get_sq_distance_between_position_heights` | `switch_handler` | `0x1401caf8e` | `other_native` | `unimplemented` |
-| 716 | `0x2cc` | `position_transform_position_to_parent` | `switch_handler` | `0x1401cb024` | `positions_and_math` | `unimplemented` |
-| 717 | `0x2cd` | `position_transform_position_to_local` | `switch_handler` | `0x1401cb144` | `positions_and_math` | `unimplemented` |
-| 718 | `0x2ce` | `position_copy_rotation` | `switch_handler` | `0x1401cb264` | `positions_and_math` | `unimplemented` |
-| 719 | `0x2cf` | `position_copy_origin` | `switch_handler` | `0x1401cb2ae` | `positions_and_math` | `unimplemented` |
-| 720 | `0x2d0` | `position_move_x` | `switch_handler` | `0x1401cb2ed` | `positions_and_math` | `unimplemented` |
-| 721 | `0x2d1` | `position_move_y` | `switch_handler` | `0x1401cb375` | `positions_and_math` | `unimplemented` |
-| 722 | `0x2d2` | `position_move_z` | `switch_handler` | `0x1401cb3d8` | `positions_and_math` | `unimplemented` |
-| 723 | `0x2d3` | `position_rotate_x` | `switch_handler` | `0x1401cb43b` | `positions_and_math` | `unimplemented` |
-| 724 | `0x2d4` | `position_rotate_y` | `switch_handler` | `0x1401cb495` | `positions_and_math` | `unimplemented` |
-| 725 | `0x2d5` | `position_rotate_z` | `switch_handler` | `0x1401cb4ef` | `positions_and_math` | `unimplemented` |
-| 726 | `0x2d6` | `position_get_x` | `switch_handler` | `0x1401cb549` | `positions_and_math` | `unimplemented` |
-| 727 | `0x2d7` | `position_get_y` | `switch_handler` | `0x1401cb5a2` | `positions_and_math` | `unimplemented` |
-| 728 | `0x2d8` | `position_get_z` | `switch_handler` | `0x1401cb5fb` | `positions_and_math` | `unimplemented` |
-| 729 | `0x2d9` | `position_set_x` | `switch_handler` | `0x1401cb654` | `positions_and_math` | `unimplemented` |
-| 730 | `0x2da` | `position_set_y` | `switch_handler` | `0x1401cb69e` | `positions_and_math` | `unimplemented` |
-| 731 | `0x2db` | `position_set_z` | `switch_handler` | `0x1401cb6e8` | `positions_and_math` | `unimplemented` |
-| 734 | `0x2de` | `position_rotate_z_floating` | `switch_handler` | `0x1401cb89f` | `positions_and_math` | `unimplemented` |
-| 735 | `0x2df` | `position_get_scale_x` | `switch_handler` | `0x1401cb732` | `positions_and_math` | `unimplemented` |
-| 736 | `0x2e0` | `position_get_scale_y` | `switch_handler` | `0x1401cb78b` | `positions_and_math` | `unimplemented` |
-| 737 | `0x2e1` | `position_get_scale_z` | `switch_handler` | `0x1401cb7e4` | `positions_and_math` | `unimplemented` |
-| 738 | `0x2e2` | `position_rotate_x_floating` | `switch_handler` | `0x1401cb83d` | `positions_and_math` | `unimplemented` |
-| 739 | `0x2e3` | `position_rotate_y_floating` | `switch_handler` | `0x1401cb86e` | `positions_and_math` | `unimplemented` |
-| 740 | `0x2e4` | `position_get_rotation_around_z` | `switch_handler` | `0x1401cb8d0` | `positions_and_math` | `unimplemented` |
-| 741 | `0x2e5` | `position_normalize_origin` | `switch_handler` | `0x1401cb95e` | `positions_and_math` | `unimplemented` |
-| 742 | `0x2e6` | `position_get_rotation_around_x` | `switch_handler` | `0x1401cb9ba` | `positions_and_math` | `unimplemented` |
-| 743 | `0x2e7` | `position_get_rotation_around_y` | `switch_handler` | `0x1401cba89` | `positions_and_math` | `unimplemented` |
-| 744 | `0x2e8` | `position_set_scale_x` | `switch_handler` | `0x1401cbb5e` | `positions_and_math` | `unimplemented` |
-| 745 | `0x2e9` | `position_set_scale_y` | `switch_handler` | `0x1401cbba8` | `positions_and_math` | `unimplemented` |
-| 746 | `0x2ea` | `position_set_scale_z` | `switch_handler` | `0x1401cbbf2` | `positions_and_math` | `unimplemented` |
+| 716 | `0x2cc` | `position_transform_position_to_parent` | `switch_handler` | `0x1401cb024` | `positions_and_math` | `implemented` |
+| 717 | `0x2cd` | `position_transform_position_to_local` | `switch_handler` | `0x1401cb144` | `positions_and_math` | `implemented` |
+| 718 | `0x2ce` | `position_copy_rotation` | `switch_handler` | `0x1401cb264` | `positions_and_math` | `implemented` |
+| 719 | `0x2cf` | `position_copy_origin` | `switch_handler` | `0x1401cb2ae` | `positions_and_math` | `implemented` |
+| 720 | `0x2d0` | `position_move_x` | `switch_handler` | `0x1401cb2ed` | `positions_and_math` | `implemented` |
+| 721 | `0x2d1` | `position_move_y` | `switch_handler` | `0x1401cb375` | `positions_and_math` | `implemented` |
+| 722 | `0x2d2` | `position_move_z` | `switch_handler` | `0x1401cb3d8` | `positions_and_math` | `implemented` |
+| 723 | `0x2d3` | `position_rotate_x` | `switch_handler` | `0x1401cb43b` | `positions_and_math` | `implemented` |
+| 724 | `0x2d4` | `position_rotate_y` | `switch_handler` | `0x1401cb495` | `positions_and_math` | `implemented` |
+| 725 | `0x2d5` | `position_rotate_z` | `switch_handler` | `0x1401cb4ef` | `positions_and_math` | `implemented` |
+| 726 | `0x2d6` | `position_get_x` | `switch_handler` | `0x1401cb549` | `positions_and_math` | `implemented` |
+| 727 | `0x2d7` | `position_get_y` | `switch_handler` | `0x1401cb5a2` | `positions_and_math` | `implemented` |
+| 728 | `0x2d8` | `position_get_z` | `switch_handler` | `0x1401cb5fb` | `positions_and_math` | `implemented` |
+| 729 | `0x2d9` | `position_set_x` | `switch_handler` | `0x1401cb654` | `positions_and_math` | `implemented` |
+| 730 | `0x2da` | `position_set_y` | `switch_handler` | `0x1401cb69e` | `positions_and_math` | `implemented` |
+| 731 | `0x2db` | `position_set_z` | `switch_handler` | `0x1401cb6e8` | `positions_and_math` | `implemented` |
+| 734 | `0x2de` | `position_rotate_z_floating` | `switch_handler` | `0x1401cb89f` | `positions_and_math` | `implemented` |
+| 735 | `0x2df` | `position_get_scale_x` | `switch_handler` | `0x1401cb732` | `positions_and_math` | `implemented` |
+| 736 | `0x2e0` | `position_get_scale_y` | `switch_handler` | `0x1401cb78b` | `positions_and_math` | `implemented` |
+| 737 | `0x2e1` | `position_get_scale_z` | `switch_handler` | `0x1401cb7e4` | `positions_and_math` | `implemented` |
+| 738 | `0x2e2` | `position_rotate_x_floating` | `switch_handler` | `0x1401cb83d` | `positions_and_math` | `implemented` |
+| 739 | `0x2e3` | `position_rotate_y_floating` | `switch_handler` | `0x1401cb86e` | `positions_and_math` | `implemented` |
+| 740 | `0x2e4` | `position_get_rotation_around_z` | `switch_handler` | `0x1401cb8d0` | `positions_and_math` | `implemented` |
+| 741 | `0x2e5` | `position_normalize_origin` | `switch_handler` | `0x1401cb95e` | `positions_and_math` | `implemented` |
+| 742 | `0x2e6` | `position_get_rotation_around_x` | `switch_handler` | `0x1401cb9ba` | `positions_and_math` | `implemented` |
+| 743 | `0x2e7` | `position_get_rotation_around_y` | `switch_handler` | `0x1401cba89` | `positions_and_math` | `implemented` |
+| 744 | `0x2e8` | `position_set_scale_x` | `switch_handler` | `0x1401cbb5e` | `positions_and_math` | `implemented` |
+| 745 | `0x2e9` | `position_set_scale_y` | `switch_handler` | `0x1401cbba8` | `positions_and_math` | `implemented` |
+| 746 | `0x2ea` | `position_set_scale_z` | `switch_handler` | `0x1401cbbf2` | `positions_and_math` | `implemented` |
 | 750 | `0x2ee` | `position_get_screen_projection` | `switch_handler` | `0x1401cbc3c` | `positions_and_math` | `unimplemented` |
 | 751 | `0x2ef` | `mouse_get_world_projection` | `switch_handler` | `0x1401cbcc9` | `ui_presentations_and_menus` | `unimplemented` |
 | 791 | `0x317` | `position_set_z_to_ground_level` | `switch_handler` | `0x1401cbd9b` | `positions_and_math` | `unimplemented` |
@@ -443,7 +443,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 1103 | `0x44f` | `set_spawn_radius` | `switch_handler` | `0x1401cd9a5` | `other_native` | `unimplemented` |
 | 1104 | `0x450` | `display_debug_message` | `noop_true` | `0x1401e226b` | `ui_presentations_and_menus` | `noop_in_wse2` |
 | 1105 | `0x451` | `display_log_message` | `switch_handler` | `0x1401cd9ba` | `ui_presentations_and_menus` | `unimplemented` |
-| 1106 | `0x452` | `display_message` | `switch_handler` | `0x1401cdb54` | `ui_presentations_and_menus` | `unimplemented` |
+| 1106 | `0x452` | `display_message` | `switch_handler` | `0x1401cdb54` | `ui_presentations_and_menus` | `implemented` |
 | 1107 | `0x453` | `set_show_messages` | `switch_handler` | `0x1401cdbef` | `game_state_and_stores` | `unimplemented` |
 | 1108 | `0x454` | `add_troop_note_tableau_mesh` | `switch_handler` | `0x1401cdbfe` | `troops` | `unimplemented` |
 | 1109 | `0x455` | `add_faction_note_tableau_mesh` | `switch_handler` | `0x1401cdc3e` | `other_native` | `unimplemented` |
@@ -519,7 +519,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 1503 | `0x5df` | `troop_set_face_key_from_current_profile` | `switch_handler` | `0x1401d016f` | `troops` | `unimplemented` |
 | 1505 | `0x5e1` | `troop_set_type` | `switch_handler` | `0x1401d01f0` | `troops` | `unimplemented` |
 | 1506 | `0x5e2` | `troop_get_type` | `switch_handler` | `0x1401d0233` | `troops` | `unimplemented` |
-| 1507 | `0x5e3` | `troop_is_hero` | `switch_handler` | `0x1401d027e` | `troops` | `unimplemented` |
+| 1507 | `0x5e3` | `troop_is_hero` | `switch_handler` | `0x1401d027e` | `troops` | `implemented` |
 | 1508 | `0x5e4` | `troop_is_wounded` | `switch_handler` | `0x1401d02ab` | `troops` | `unimplemented` |
 | 1509 | `0x5e5` | `troop_set_auto_equip` | `switch_handler` | `0x1401d02d0` | `troops` | `unimplemented` |
 | 1510 | `0x5e6` | `troop_ensure_inventory_space` | `switch_handler` | `0x1401d0320` | `troops` | `unimplemented` |
@@ -553,7 +553,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 1544 | `0x608` | `troop_set_inventory_slot_modifier` | `switch_handler` | `0x1401d121c` | `entity_slots` | `unimplemented` |
 | 1550 | `0x60e` | `troop_set_faction` | `switch_handler` | `0x1401d12a0` | `troops` | `unimplemented` |
 | 1555 | `0x613` | `troop_set_age` | `switch_handler` | `0x1401d12e0` | `troops` | `unimplemented` |
-| 1560 | `0x618` | `troop_set_health` | `switch_handler` | `0x1401d132e` | `troops` | `unimplemented` |
+| 1560 | `0x618` | `troop_set_health` | `switch_handler` | `0x1401d132e` | `troops` | `implemented` |
 | 1561 | `0x619` | `troop_get_upgrade_troop` | `switch_handler` | `0x1401d13cb` | `troops` | `unimplemented` |
 | 1570 | `0x622` | `item_get_type` | `switch_handler` | `0x1401d145c` | `items` | `unimplemented` |
 | 1601 | `0x641` | `party_get_num_companions` | `switch_handler` | `0x1401d14a7` | `parties` | `unimplemented` |
@@ -645,7 +645,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 1701 | `0x6a5` | `get_player_agent_kill_count` | `switch_handler` | `0x1401d371c` | `other_native` | `unimplemented` |
 | 1702 | `0x6a6` | `agent_is_alive` | `switch_handler` | `0x1401d3779` | `agents` | `unimplemented` |
 | 1703 | `0x6a7` | `agent_is_wounded` | `switch_handler` | `0x1401d37a6` | `agents` | `unimplemented` |
-| 1704 | `0x6a8` | `agent_is_human` | `switch_handler` | `0x1401d37d3` | `agents` | `unimplemented` |
+| 1704 | `0x6a8` | `agent_is_human` | `switch_handler` | `0x1401d37d3` | `agents` | `implemented` |
 | 1705 | `0x6a9` | `get_player_agent_own_troop_kill_count` | `switch_handler` | `0x1401d3800` | `troops` | `unimplemented` |
 | 1706 | `0x6aa` | `agent_is_ally` | `switch_handler` | `0x1401d385d` | `agents` | `unimplemented` |
 | 1707 | `0x6ab` | `agent_is_non_player` | `switch_handler` | `0x1401d38b6` | `agents` | `unimplemented` |
@@ -955,14 +955,14 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 2130 | `0x852` | `convert_to_fixed_point` | `switch_handler` | `0x1401dd30a` | `arithmetic_registers_and_vars` | `implemented` |
 | 2131 | `0x853` | `convert_from_fixed_point` | `switch_handler` | `0x1401dd335` | `arithmetic_registers_and_vars` | `implemented` |
 | 2133 | `0x855` | `assign` | `switch_handler` | `0x1401dd364` | `arithmetic_registers_and_vars` | `implemented` |
-| 2134 | `0x856` | `shuffle_range` | `switch_handler` | `0x1401dd37c` | `arithmetic_registers_and_vars` | `unimplemented` |
-| 2135 | `0x857` | `store_random` | `switch_handler` | `0x1401dd3f2` | `arithmetic_registers_and_vars` | `unimplemented` |
-| 2136 | `0x858` | `store_random_in_range` | `switch_handler` | `0x1401dd41d` | `arithmetic_registers_and_vars` | `unimplemented` |
-| 2140 | `0x85c` | `store_asin` | `switch_handler` | `0x1401dd453` | `arithmetic_registers_and_vars` | `unimplemented` |
-| 2141 | `0x85d` | `store_acos` | `switch_handler` | `0x1401dd4a8` | `arithmetic_registers_and_vars` | `unimplemented` |
-| 2142 | `0x85e` | `store_atan` | `switch_handler` | `0x1401dd4fd` | `arithmetic_registers_and_vars` | `unimplemented` |
-| 2143 | `0x85f` | `store_atan2` | `switch_handler` | `0x1401dd552` | `arithmetic_registers_and_vars` | `unimplemented` |
-| 2149 | `0x865` | `store_troop_gold` | `switch_handler` | `0x1401dd5b3` | `arithmetic_registers_and_vars` | `unimplemented` |
+| 2134 | `0x856` | `shuffle_range` | `switch_handler` | `0x1401dd37c` | `arithmetic_registers_and_vars` | `implemented` |
+| 2135 | `0x857` | `store_random` | `switch_handler` | `0x1401dd3f2` | `arithmetic_registers_and_vars` | `implemented` |
+| 2136 | `0x858` | `store_random_in_range` | `switch_handler` | `0x1401dd41d` | `arithmetic_registers_and_vars` | `implemented` |
+| 2140 | `0x85c` | `store_asin` | `switch_handler` | `0x1401dd453` | `arithmetic_registers_and_vars` | `implemented` |
+| 2141 | `0x85d` | `store_acos` | `switch_handler` | `0x1401dd4a8` | `arithmetic_registers_and_vars` | `implemented` |
+| 2142 | `0x85e` | `store_atan` | `switch_handler` | `0x1401dd4fd` | `arithmetic_registers_and_vars` | `implemented` |
+| 2143 | `0x85f` | `store_atan2` | `switch_handler` | `0x1401dd552` | `arithmetic_registers_and_vars` | `implemented` |
+| 2149 | `0x865` | `store_troop_gold` | `switch_handler` | `0x1401dd5b3` | `arithmetic_registers_and_vars` | `implemented` |
 | 2154 | `0x86a` | `store_num_free_stacks` | `switch_handler` | `0x1401dd5fa` | `game_state_and_stores` | `unimplemented` |
 | 2155 | `0x86b` | `store_num_free_prisoner_stacks` | `switch_handler` | `0x1401dd61e` | `game_state_and_stores` | `unimplemented` |
 | 2156 | `0x86c` | `store_party_size` | `switch_handler` | `0x1401dd642` | `parties` | `unimplemented` |
@@ -976,7 +976,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 2170 | `0x87a` | `store_skill_level` | `switch_handler` | `0x1401dd8e0` | `game_state_and_stores` | `unimplemented` |
 | 2171 | `0x87b` | `store_character_level` | `switch_handler` | `0x1401dd92b` | `game_state_and_stores` | `unimplemented` |
 | 2172 | `0x87c` | `store_attribute_level` | `switch_handler` | `0x1401dd972` | `game_state_and_stores` | `unimplemented` |
-| 2173 | `0x87d` | `store_troop_faction` (`store_faction_of_troop`) | `switch_handler` | `0x1401dd9d8` | `troops` | `unimplemented` |
+| 2173 | `0x87d` | `store_troop_faction` (`store_faction_of_troop`) | `switch_handler` | `0x1401dd9d8` | `troops` | `implemented` |
 | 2175 | `0x87f` | `store_troop_health` | `switch_handler` | `0x1401dda1f` | `troops` | `unimplemented` |
 | 2176 | `0x880` | `store_proficiency_level` | `switch_handler` | `0x1401ddabf` | `game_state_and_stores` | `unimplemented` |
 | 2180 | `0x884` | *(unnamed)* | `switch_handler` | `0x1401ddb29` | `undocumented` | `unimplemented` |
@@ -988,7 +988,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 2201 | `0x899` | `store_partner_faction` | `switch_handler` | `0x1401ddcea` | `game_state_and_stores` | `unimplemented` |
 | 2202 | `0x89a` | `store_encountered_party` | `switch_handler` | `0x1401ddd23` | `parties` | `unimplemented` |
 | 2203 | `0x89b` | `store_encountered_party2` | `switch_handler` | `0x1401ddd51` | `parties` | `unimplemented` |
-| 2204 | `0x89c` | `store_faction_of_party` | `switch_handler` | `0x1401ddd7f` | `parties` | `unimplemented` |
+| 2204 | `0x89c` | `store_faction_of_party` | `switch_handler` | `0x1401ddd7f` | `parties` | `implemented` |
 | 2205 | `0x89d` | `set_encountered_party` | `switch_handler` | `0x1401dddc6` | `parties` | `unimplemented` |
 | 2211 | `0x8a3` | `store_current_scene` | `switch_handler` | `0x1401dddec` | `game_state_and_stores` | `unimplemented` |
 | 2220 | `0x8ac` | `store_zoom_amount` | `switch_handler` | `0x1401dde1a` | `game_state_and_stores` | `unimplemented` |
@@ -1023,33 +1023,33 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 2302 | `0x8fe` | `store_num_parties_destroyed_by_player` | `switch_handler` | `0x1401de605` | `game_state_and_stores` | `unimplemented` |
 | 2310 | `0x906` | `store_num_parties_of_template` | `switch_handler` | `0x1401de650` | `game_state_and_stores` | `unimplemented` |
 | 2311 | `0x907` | `store_random_party_of_template` | `switch_handler` | `0x1401de709` | `parties` | `unimplemented` |
-| 2318 | `0x90e` | `str_is_empty` | `switch_handler` | `0x1401de882` | `strings` | `unimplemented` |
-| 2319 | `0x90f` | `str_clear` | `switch_handler` | `0x1401de8b9` | `strings` | `unimplemented` |
-| 2320 | `0x910` | `str_store_string` | `switch_handler` | `0x1401de8ee` | `strings` | `unimplemented` |
-| 2321 | `0x911` | `str_store_string_reg` | `switch_handler` | `0x1401de97b` | `strings` | `unimplemented` |
-| 2322 | `0x912` | `str_store_troop_name` | `switch_handler` | `0x1401de9fa` | `strings` | `unimplemented` |
-| 2323 | `0x913` | `str_store_troop_name_plural` | `switch_handler` | `0x1401dea5b` | `strings` | `unimplemented` |
-| 2324 | `0x914` | `str_store_troop_name_by_count` | `switch_handler` | `0x1401dea96` | `strings` | `unimplemented` |
-| 2325 | `0x915` | `str_store_item_name` | `switch_handler` | `0x1401deadf` | `strings` | `unimplemented` |
-| 2326 | `0x916` | `str_store_item_name_plural` | `switch_handler` | `0x1401deb1d` | `strings` | `unimplemented` |
-| 2327 | `0x917` | `str_store_item_name_by_count` | `switch_handler` | `0x1401deb5b` | `strings` | `unimplemented` |
-| 2330 | `0x91a` | `str_store_party_name` | `switch_handler` | `0x1401deba4` | `strings` | `unimplemented` |
+| 2318 | `0x90e` | `str_is_empty` | `switch_handler` | `0x1401de882` | `strings` | `implemented` |
+| 2319 | `0x90f` | `str_clear` | `switch_handler` | `0x1401de8b9` | `strings` | `implemented` |
+| 2320 | `0x910` | `str_store_string` | `switch_handler` | `0x1401de8ee` | `strings` | `implemented` |
+| 2321 | `0x911` | `str_store_string_reg` | `switch_handler` | `0x1401de97b` | `strings` | `implemented` |
+| 2322 | `0x912` | `str_store_troop_name` | `switch_handler` | `0x1401de9fa` | `strings` | `implemented` |
+| 2323 | `0x913` | `str_store_troop_name_plural` | `switch_handler` | `0x1401dea5b` | `strings` | `implemented` |
+| 2324 | `0x914` | `str_store_troop_name_by_count` | `switch_handler` | `0x1401dea96` | `strings` | `implemented` |
+| 2325 | `0x915` | `str_store_item_name` | `switch_handler` | `0x1401deadf` | `strings` | `implemented` |
+| 2326 | `0x916` | `str_store_item_name_plural` | `switch_handler` | `0x1401deb1d` | `strings` | `implemented` |
+| 2327 | `0x917` | `str_store_item_name_by_count` | `switch_handler` | `0x1401deb5b` | `strings` | `implemented` |
+| 2330 | `0x91a` | `str_store_party_name` | `switch_handler` | `0x1401deba4` | `strings` | `implemented` |
 | 2332 | `0x91c` | `str_store_agent_name` | `switch_handler` | `0x1401debe2` | `strings` | `unimplemented` |
-| 2335 | `0x91f` | `str_store_faction_name` | `switch_handler` | `0x1401dec55` | `strings` | `unimplemented` |
-| 2336 | `0x920` | `str_store_quest_name` | `switch_handler` | `0x1401dec93` | `strings` | `unimplemented` |
+| 2335 | `0x91f` | `str_store_faction_name` | `switch_handler` | `0x1401dec55` | `strings` | `implemented` |
+| 2336 | `0x920` | `str_store_quest_name` | `switch_handler` | `0x1401dec93` | `strings` | `implemented` |
 | 2337 | `0x921` | `str_store_info_page_name` | `switch_handler` | `0x1401ded19` | `strings` | `unimplemented` |
 | 2340 | `0x924` | `str_store_date` | `switch_handler` | `0x1401ded9f` | `strings` | `unimplemented` |
-| 2341 | `0x925` | `str_store_troop_name_link` | `switch_handler` | `0x1401dee08` | `strings` | `unimplemented` |
-| 2342 | `0x926` | `str_store_party_name_link` | `switch_handler` | `0x1401dee9c` | `strings` | `unimplemented` |
-| 2343 | `0x927` | `str_store_faction_name_link` | `switch_handler` | `0x1401def30` | `strings` | `unimplemented` |
-| 2344 | `0x928` | `str_store_quest_name_link` | `switch_handler` | `0x1401defc4` | `strings` | `unimplemented` |
+| 2341 | `0x925` | `str_store_troop_name_link` | `switch_handler` | `0x1401dee08` | `strings` | `implemented` |
+| 2342 | `0x926` | `str_store_party_name_link` | `switch_handler` | `0x1401dee9c` | `strings` | `implemented` |
+| 2343 | `0x927` | `str_store_faction_name_link` | `switch_handler` | `0x1401def30` | `strings` | `implemented` |
+| 2344 | `0x928` | `str_store_quest_name_link` | `switch_handler` | `0x1401defc4` | `strings` | `implemented` |
 | 2345 | `0x929` | `str_store_info_page_name_link` | `switch_handler` | `0x1401df054` | `strings` | `unimplemented` |
 | 2346 | `0x92a` | `str_store_class_name` | `switch_handler` | `0x1401df0e8` | `strings` | `unimplemented` |
-| 2350 | `0x92e` | `str_store_player_username` | `switch_handler` | `0x1401df12c` | `strings` | `unimplemented` |
+| 2350 | `0x92e` | `str_store_player_username` | `switch_handler` | `0x1401df12c` | `strings` | `implemented` |
 | 2351 | `0x92f` | `str_store_server_password` | `switch_handler` | `0x1401df175` | `strings` | `unimplemented` |
 | 2352 | `0x930` | `str_store_server_name` | `switch_handler` | `0x1401df191` | `strings` | `unimplemented` |
 | 2353 | `0x931` | `str_store_welcome_message` | `switch_handler` | `0x1401df1ad` | `strings` | `unimplemented` |
-| 2355 | `0x933` | `str_encode_url` | `switch_handler` | `0x1401df1c9` | `strings` | `unimplemented` |
+| 2355 | `0x933` | `str_encode_url` | `switch_handler` | `0x1401df1c9` | `strings` | `implemented` |
 | 2360 | `0x938` | `store_remaining_team_no` | `switch_handler` | `0x1401df231` | `game_state_and_stores` | `unimplemented` |
 | 2365 | `0x93d` | `store_mission_timer_a_msec` | `switch_handler` | `0x1401df260` | `game_state_and_stores` | `unimplemented` |
 | 2366 | `0x93e` | `store_mission_timer_b_msec` | `switch_handler` | `0x1401df2a0` | `game_state_and_stores` | `unimplemented` |

@@ -85,8 +85,8 @@
    16,
    17
   ],
-  "implemented_switch": 33,
-  "implemented_total": 49
+  "implemented_switch": 145,
+  "implemented_total": 161
  },
  "categories": [
   {
@@ -97,12 +97,12 @@
   {
    "category": "parties",
    "live_handlers": 118,
-   "implemented": 0
+   "implemented": 1
   },
   {
    "category": "agents",
    "live_handlers": 117,
-   "implemented": 0
+   "implemented": 1
   },
   {
    "category": "scenes_props_and_mission",
@@ -112,12 +112,12 @@
   {
    "category": "ui_presentations_and_menus",
    "live_handlers": 76,
-   "implemented": 0
+   "implemented": 1
   },
   {
    "category": "troops",
    "live_handlers": 75,
-   "implemented": 0
+   "implemented": 3
   },
   {
    "category": "multiplayer_and_players",
@@ -132,17 +132,17 @@
   {
    "category": "entity_slots",
    "live_handlers": 50,
-   "implemented": 0
+   "implemented": 44
   },
   {
    "category": "positions_and_math",
    "live_handlers": 43,
-   "implemented": 0
+   "implemented": 35
   },
   {
    "category": "arithmetic_registers_and_vars",
    "live_handlers": 37,
-   "implemented": 29
+   "implemented": 37
   },
   {
    "category": "items",
@@ -157,7 +157,7 @@
   {
    "category": "strings",
    "live_handlers": 29,
-   "implemented": 0
+   "implemented": 19
   },
   {
    "category": "mission_combat_and_teams",
@@ -3562,8 +3562,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 239,
    "sdk_comment": "(troop_set_slot,<troop_id>,<slot_no>,<value>),"
   },
@@ -3580,8 +3580,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 240,
    "sdk_comment": "(party_set_slot,<party_id>,<slot_no>,<value>),"
   },
@@ -3598,8 +3598,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 241,
    "sdk_comment": "(faction_set_slot,<faction_id>,<slot_no>,<value>),"
   },
@@ -3616,8 +3616,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 242,
    "sdk_comment": "(scene_set_slot,<scene_id>,<slot_no>,<value>),"
   },
@@ -3634,8 +3634,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 243,
    "sdk_comment": "(party_template_set_slot,<party_template_id>,<slot_no>,<value>),"
   },
@@ -3652,8 +3652,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 244,
    "sdk_comment": "(agent_set_slot,<agent_id>,<slot_no>,<value>),"
   },
@@ -3670,8 +3670,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 245,
    "sdk_comment": "(quest_set_slot,<quest_id>,<slot_no>,<value>),"
   },
@@ -3688,8 +3688,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 246,
    "sdk_comment": "(item_set_slot,<item_id>,<slot_no>,<value>),"
   },
@@ -3706,8 +3706,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 247,
    "sdk_comment": "(player_set_slot,<player_id>,<slot_no>,<value>),"
   },
@@ -3724,8 +3724,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 248,
    "sdk_comment": "(team_set_slot,<team_id>,<slot_no>,<value>),"
   },
@@ -3742,8 +3742,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 249,
    "sdk_comment": "(scene_prop_set_slot,<scene_prop_instance_id>,<slot_no>,<value>),"
   },
@@ -3760,8 +3760,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 252,
    "sdk_comment": "(troop_get_slot,<destination>,<troop_id>,<slot_no>),"
   },
@@ -3778,8 +3778,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 253,
    "sdk_comment": "(party_get_slot,<destination>,<party_id>,<slot_no>),"
   },
@@ -3796,8 +3796,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 254,
    "sdk_comment": "(faction_get_slot,<destination>,<faction_id>,<slot_no>),"
   },
@@ -3814,8 +3814,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 255,
    "sdk_comment": "(scene_get_slot,<destination>,<scene_id>,<slot_no>),"
   },
@@ -3832,8 +3832,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 256,
    "sdk_comment": "(party_template_get_slot,<destination>,<party_template_id>,<slot_no>),"
   },
@@ -3850,8 +3850,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 257,
    "sdk_comment": "(agent_get_slot,<destination>,<agent_id>,<slot_no>),"
   },
@@ -3868,8 +3868,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 258,
    "sdk_comment": "(quest_get_slot,<destination>,<quest_id>,<slot_no>),"
   },
@@ -3886,8 +3886,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 259,
    "sdk_comment": "(item_get_slot,<destination>,<item_id>,<slot_no>),"
   },
@@ -3904,8 +3904,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 260,
    "sdk_comment": "(player_get_slot,<destination>,<player_id>,<slot_no>),"
   },
@@ -3922,8 +3922,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 261,
    "sdk_comment": "(team_get_slot,<destination>,<player_id>,<slot_no>),"
   },
@@ -3940,8 +3940,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 262,
    "sdk_comment": "(scene_prop_get_slot,<destination>,<scene_prop_instance_id>,<slot_no>),"
   },
@@ -3958,8 +3958,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 265,
    "sdk_comment": "(troop_slot_eq,<troop_id>,<slot_no>,<value>),"
   },
@@ -3976,8 +3976,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 266,
    "sdk_comment": "(party_slot_eq,<party_id>,<slot_no>,<value>),"
   },
@@ -3994,8 +3994,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 267,
    "sdk_comment": "(faction_slot_eq,<faction_id>,<slot_no>,<value>),"
   },
@@ -4012,8 +4012,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 268,
    "sdk_comment": "(scene_slot_eq,<scene_id>,<slot_no>,<value>),"
   },
@@ -4030,8 +4030,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 269,
    "sdk_comment": "(party_template_slot_eq,<party_template_id>,<slot_no>,<value>),"
   },
@@ -4048,8 +4048,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 270,
    "sdk_comment": "(agent_slot_eq,<agent_id>,<slot_no>,<value>),"
   },
@@ -4066,8 +4066,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 271,
    "sdk_comment": "(quest_slot_eq,<quest_id>,<slot_no>,<value>),"
   },
@@ -4084,8 +4084,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 272,
    "sdk_comment": "(item_slot_eq,<item_id>,<slot_no>,<value>),"
   },
@@ -4102,8 +4102,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 273,
    "sdk_comment": "(player_slot_eq,<player_id>,<slot_no>,<value>),"
   },
@@ -4120,8 +4120,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 274,
    "sdk_comment": "(team_slot_eq,<team_id>,<slot_no>,<value>),"
   },
@@ -4138,8 +4138,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 275,
    "sdk_comment": "(scene_prop_slot_eq,<scene_prop_instance_id>,<slot_no>,<value>),"
   },
@@ -4156,8 +4156,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 278,
    "sdk_comment": "(troop_slot_ge,<troop_id>,<slot_no>,<value>),"
   },
@@ -4174,8 +4174,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 279,
    "sdk_comment": "(party_slot_ge,<party_id>,<slot_no>,<value>),"
   },
@@ -4192,8 +4192,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 280,
    "sdk_comment": "(faction_slot_ge,<faction_id>,<slot_no>,<value>),"
   },
@@ -4210,8 +4210,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 281,
    "sdk_comment": "(scene_slot_ge,<scene_id>,<slot_no>,<value>),"
   },
@@ -4228,8 +4228,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 282,
    "sdk_comment": "(party_template_slot_ge,<party_template_id>,<slot_no>,<value>),"
   },
@@ -4246,8 +4246,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 283,
    "sdk_comment": "(agent_slot_ge,<agent_id>,<slot_no>,<value>),"
   },
@@ -4264,8 +4264,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 284,
    "sdk_comment": "(quest_slot_ge,<quest_id>,<slot_no>,<value>),"
   },
@@ -4282,8 +4282,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 285,
    "sdk_comment": "(item_slot_ge,<item_id>,<slot_no>,<value>),"
   },
@@ -4300,8 +4300,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 286,
    "sdk_comment": "(player_slot_ge,<player_id>,<slot_no>,<value>),"
   },
@@ -4318,8 +4318,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 287,
    "sdk_comment": "(team_slot_ge,<team_id>,<slot_no>,<value>),"
   },
@@ -4336,8 +4336,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 288,
    "sdk_comment": "(scene_prop_slot_ge,<scene_prop_instance_id>,<slot_no>,<value>),"
   },
@@ -4516,8 +4516,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 300,
    "sdk_comment": "copies position_no_2 to position_no_1"
   },
@@ -4534,8 +4534,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 302,
    "sdk_comment": "(init_position,<position_no>),"
   },
@@ -4570,8 +4570,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 305,
    "sdk_comment": "(get_angle_between_positions, <destination_fixed_point>, <position_no_1>, <position_no_2>),"
   },
@@ -4606,8 +4606,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 307,
    "sdk_comment": "gets distance in centimeters. # (get_distance_between_positions,<destination>,<position_no_1>,<position_no_2>),"
   },
@@ -4624,8 +4624,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 308,
    "sdk_comment": "gets distance in meters. # (get_distance_between_positions_in_meters,<destination>,<position_no_1>,<position_no_2>),"
   },
@@ -4678,8 +4678,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 311,
    "sdk_comment": "(position_is_behind_position,<position_no_1>,<position_no_2>),"
   },
@@ -4714,8 +4714,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 314,
    "sdk_comment": "(position_transform_position_to_parent,<dest_position_no>,<position_no>,<position_no_to_be_transformed>),"
   },
@@ -4732,8 +4732,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 315,
    "sdk_comment": "(position_transform_position_to_local, <dest_position_no>,<position_no>,<position_no_to_be_transformed>),"
   },
@@ -4750,8 +4750,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 317,
    "sdk_comment": "(position_copy_rotation,<position_no_1>,<position_no_2>), copies rotation of position_no_2 to position_no_1"
   },
@@ -4768,8 +4768,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 318,
    "sdk_comment": "(position_copy_origin,<position_no_1>,<position_no_2>), copies origin of position_no_2 to position_no_1"
   },
@@ -4786,8 +4786,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 319,
    "sdk_comment": "movement is in cms, [0 = local; 1=global]"
   },
@@ -4804,8 +4804,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 321,
    "sdk_comment": "(position_move_y,<position_no>,<movement>,[value]),"
   },
@@ -4822,8 +4822,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 322,
    "sdk_comment": "(position_move_z,<position_no>,<movement>,[value]),"
   },
@@ -4840,8 +4840,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 324,
    "sdk_comment": "(position_rotate_x,<position_no>,<angle>),"
   },
@@ -4858,8 +4858,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 325,
    "sdk_comment": "(position_rotate_y,<position_no>,<angle>),"
   },
@@ -4876,8 +4876,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 326,
    "sdk_comment": "(position_rotate_z,<position_no>,<angle>,[use_global_z_axis]), # set use_global_z_axis as 1 if needed, otherwise you don't have to give that."
   },
@@ -4894,8 +4894,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 328,
    "sdk_comment": "(position_get_x,<destination_fixed_point>,<position_no>), #x position in meters * fixed point multiplier is returned"
   },
@@ -4912,8 +4912,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 329,
    "sdk_comment": "(position_get_y,<destination_fixed_point>,<position_no>), #y position in meters * fixed point multiplier is returned"
   },
@@ -4930,8 +4930,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 330,
    "sdk_comment": "(position_get_z,<destination_fixed_point>,<position_no>), #z position in meters * fixed point multiplier is returned"
   },
@@ -4948,8 +4948,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 332,
    "sdk_comment": "(position_set_x,<position_no>,<value_fixed_point>), #meters / fixed point multiplier is set"
   },
@@ -4966,8 +4966,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 333,
    "sdk_comment": "(position_set_y,<position_no>,<value_fixed_point>), #meters / fixed point multiplier is set"
   },
@@ -4984,8 +4984,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 334,
    "sdk_comment": "(position_set_z,<position_no>,<value_fixed_point>), #meters / fixed point multiplier is set"
   },
@@ -5002,8 +5002,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 342,
    "sdk_comment": "(position_rotate_z_floating,<position_no>,<angle>), #angle in degree * fixed point multiplier"
   },
@@ -5020,8 +5020,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 336,
    "sdk_comment": "(position_get_scale_x,<destination_fixed_point>,<position_no>), #x scale in meters * fixed point multiplier is returned"
   },
@@ -5038,8 +5038,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 337,
    "sdk_comment": "(position_get_scale_y,<destination_fixed_point>,<position_no>), #y scale in meters * fixed point multiplier is returned"
   },
@@ -5056,8 +5056,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 338,
    "sdk_comment": "(position_get_scale_z,<destination_fixed_point>,<position_no>), #z scale in meters * fixed point multiplier is returned"
   },
@@ -5074,8 +5074,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 340,
    "sdk_comment": "(position_rotate_x_floating,<position_no>,<angle>), #angle in degree * fixed point multiplier"
   },
@@ -5092,8 +5092,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 341,
    "sdk_comment": "(position_rotate_y_floating,<position_no>,<angle>), #angle in degree * fixed point multiplier"
   },
@@ -5110,8 +5110,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 344,
    "sdk_comment": "(position_get_rotation_around_z,<destination>,<position_no>), #rotation around z axis is returned as angle"
   },
@@ -5128,8 +5128,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 345,
    "sdk_comment": "(position_normalize_origin,<destination_fixed_point>,<position_no>),"
   },
@@ -5146,8 +5146,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 349,
    "sdk_comment": "(position_get_rotation_around_x, <destination>, <position_no>), #rotation around x axis is returned as angle"
   },
@@ -5164,8 +5164,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 350,
    "sdk_comment": "(position_get_rotation_around_y, <destination>, <position_no>), #rotation around y axis is returned as angle"
   },
@@ -5182,8 +5182,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 352,
    "sdk_comment": "(position_set_scale_x, <position_no>, <value_fixed_point>), #x scale in meters / fixed point multiplier is set"
   },
@@ -5200,8 +5200,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 353,
    "sdk_comment": "(position_set_scale_y, <position_no>, <value_fixed_point>), #y scale in meters / fixed point multiplier is set"
   },
@@ -5218,8 +5218,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 354,
    "sdk_comment": "(position_set_scale_z, <position_no>, <value_fixed_point>), #z scale in meters / fixed point multiplier is set"
   },
@@ -6822,8 +6822,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 482,
    "sdk_comment": "(display_message,<string_id>,[hex_colour_code]),"
   },
@@ -8192,8 +8192,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 593,
    "sdk_comment": "(troop_is_hero,<troop_id>),"
   },
@@ -8804,8 +8804,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 633,
    "sdk_comment": "(troop_set_health,<troop_id>,<relative health (0-100)>),"
   },
@@ -10460,8 +10460,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 760,
    "sdk_comment": "(agent_is_human,<agent_id>),"
   },
@@ -16040,8 +16040,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1193,
    "sdk_comment": "(shuffle_range,<reg_no>,<reg_no>),"
   },
@@ -16058,8 +16058,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1195,
    "sdk_comment": "deprecated, use store_random_in_range instead."
   },
@@ -16076,8 +16076,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1196,
    "sdk_comment": "gets random number in range [range_low,range_high] excluding range_high"
   },
@@ -16094,8 +16094,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1199,
    "sdk_comment": "(store_asin, <destination_fixed_point>, <value_fixed_point>),"
   },
@@ -16112,8 +16112,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1200,
    "sdk_comment": "(store_acos, <destination_fixed_point>, <value_fixed_point>),"
   },
@@ -16130,8 +16130,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1201,
    "sdk_comment": "(store_atan, <destination_fixed_point>, <value_fixed_point>),"
   },
@@ -16148,8 +16148,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1202,
    "sdk_comment": "(store_atan2, <destination_fixed_point>, <value_fixed_point>, <value_fixed_point>), #first value is y, second is x"
   },
@@ -16166,8 +16166,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1204,
    "sdk_comment": "(store_troop_gold,<destination>,<troop_id>),"
   },
@@ -16420,8 +16420,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1224,
    "sdk_comment": "(store_troop_faction,<destination>,<troop_id>),"
   },
@@ -16636,8 +16636,8 @@
    "can_fail": false,
    "is_lhs": true,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1244,
    "sdk_comment": "(store_faction_of_party, <destination>, <party_id>),"
   },
@@ -17266,8 +17266,8 @@
    "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1297,
    "sdk_comment": "(str_is_empty, <string_register>),"
   },
@@ -17284,8 +17284,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1298,
    "sdk_comment": "(str_clear, <string_register>)"
   },
@@ -17302,8 +17302,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1299,
    "sdk_comment": "(str_store_string,<string_register>,<string_id>),"
   },
@@ -17320,8 +17320,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1300,
    "sdk_comment": "(str_store_string_reg,<string_register>,<string_no>), #copies one string register to another."
   },
@@ -17338,8 +17338,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1301,
    "sdk_comment": "(str_store_troop_name,<string_register>,<troop_id>),"
   },
@@ -17356,8 +17356,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1302,
    "sdk_comment": "(str_store_troop_name_plural,<string_register>,<troop_id>),"
   },
@@ -17374,8 +17374,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1303,
    "sdk_comment": "(str_store_troop_name_by_count,<string_register>,<troop_id>,<number>),"
   },
@@ -17392,8 +17392,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1304,
    "sdk_comment": "(str_store_item_name,<string_register>,<item_id>),"
   },
@@ -17410,8 +17410,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1305,
    "sdk_comment": "(str_store_item_name_plural,<string_register>,<item_id>),"
   },
@@ -17428,8 +17428,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1306,
    "sdk_comment": "(str_store_item_name_by_count,<string_register>,<item_id>),"
   },
@@ -17446,8 +17446,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1307,
    "sdk_comment": "(str_store_party_name,<string_register>,<party_id>),"
   },
@@ -17482,8 +17482,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1309,
    "sdk_comment": "(str_store_faction_name,<string_register>,<faction_id>),"
   },
@@ -17500,8 +17500,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1310,
    "sdk_comment": "(str_store_quest_name,<string_register>,<quest_id>),"
   },
@@ -17554,8 +17554,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1313,
    "sdk_comment": "(str_store_troop_name_link,<string_register>,<troop_id>),"
   },
@@ -17572,8 +17572,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1314,
    "sdk_comment": "(str_store_party_name_link,<string_register>,<party_id>),"
   },
@@ -17590,8 +17590,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1315,
    "sdk_comment": "(str_store_faction_name_link,<string_register>,<faction_id>),"
   },
@@ -17608,8 +17608,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1316,
    "sdk_comment": "(str_store_quest_name_link,<string_register>,<quest_id>),"
   },
@@ -17662,8 +17662,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1319,
    "sdk_comment": "(str_store_player_username,<string_register>,<player_id>), #used in multiplayer mode only"
   },
@@ -17734,8 +17734,8 @@
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
-   "implemented": false,
-   "status": "unimplemented",
+   "implemented": true,
+   "status": "implemented",
    "sdk_line": 1324,
    "sdk_comment": "(str_encode_url, <string_register>),"
   },
