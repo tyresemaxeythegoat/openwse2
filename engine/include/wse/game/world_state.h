@@ -114,6 +114,20 @@ struct WsePartyStack {
     }
 };
 
+// Safety deviation: script-supplied counts are added with saturation instead of
+// wrapping, so a hostile or buggy module cannot trigger signed overflow.
+[[nodiscard]] constexpr std::int32_t saturating_add_i32(std::int32_t a,
+                                                        std::int32_t b) noexcept {
+    const std::int64_t sum = static_cast<std::int64_t>(a) + static_cast<std::int64_t>(b);
+    return static_cast<std::int32_t>(
+        std::clamp<std::int64_t>(sum, std::numeric_limits<std::int32_t>::min(),
+                                 std::numeric_limits<std::int32_t>::max()));
+}
+
+// Safety deviation: upper bound on one site's visitor list, far above any
+// mission agent limit, so add_visitors_to_current_scene cannot exhaust memory.
+inline constexpr std::size_t kMaxSiteVisitors = 4096;
+
 struct WseSiteVisitor {
     std::int32_t entry_no = 0;
     std::int32_t troop_no = -1;
@@ -816,7 +830,7 @@ struct WseParty {
             }
         }
         if (target != nullptr) {
-            target->num_troops += count;
+            target->num_troops = saturating_add_i32(target->num_troops, count);
         } else {
             stacks.push_back(WsePartyStack{troop_no, count, 0, flag});
         }

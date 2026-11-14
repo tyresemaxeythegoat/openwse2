@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <string>
 
@@ -21,6 +22,22 @@ namespace wse::vm {
     const Statement& statement,
     VmContext& ctx,
     std::span<std::int64_t> locals);
+
+// Safety deviation: float results are converted with saturation (NaN -> 0)
+// instead of an out-of-range float-to-integer cast, which is undefined.
+[[nodiscard]] inline std::int64_t native_campaign_f2i_saturate(float value) noexcept {
+    if (std::isnan(value)) {
+        return 0;
+    }
+    constexpr float kLimit = 9.2233715e18F;  // largest float below 2^63
+    if (value >= kLimit) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+    if (value <= -kLimit) {
+        return std::numeric_limits<std::int64_t>::min();
+    }
+    return static_cast<std::int64_t>(value);
+}
 
 [[nodiscard]] inline bool native_campaign_check_entering_town(
     std::int32_t town_party_no,
@@ -525,7 +542,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             const float dx = a.x - b.x;
             const float dy = a.y - b.y;
             const float dz = a.z - b.z;
-            out = static_cast<std::int64_t>((dx * dx + dy * dy + dz * dz) * 100.0f);
+            out = native_campaign_f2i_saturate((dx * dx + dy * dy + dz * dz) * 100.0f);
         }
         store_lvalue(dst, out, ctx, locals);
         return NativeDispatch::handled;
@@ -538,7 +555,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             const float dx = a.x - b.x;
             const float dy = a.y - b.y;
             const float dz = a.z - b.z;
-            out = static_cast<std::int64_t>(dx * dx + dy * dy + dz * dz);
+            out = native_campaign_f2i_saturate(dx * dx + dy * dy + dz * dz);
         }
         store_lvalue(dst, out, ctx, locals);
         return NativeDispatch::handled;
@@ -593,7 +610,10 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         if (world.is_valid_troop(troop_no) && narrow[0] > 0) {
             const float mult =
                 0.5f + static_cast<float>(native_rgl_rand(ctx, 15817)) / 15817.0f;
-            const auto xp = static_cast<std::int32_t>(static_cast<float>(narrow[0]) * mult);
+            // Safety deviation: clamp before the cast; troop_add_xp caps a single
+            // award at 29999 anyway.
+            const auto xp = static_cast<std::int32_t>(
+                std::min(static_cast<double>(narrow[0]) * static_cast<double>(mult), 29999.0));
             game::troop_add_xp(world.troops[static_cast<std::size_t>(troop_no)], xp);
         }
         return NativeDispatch::handled;
@@ -813,7 +833,9 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
             auto& visitors =
                 world.sites[static_cast<std::size_t>(world.current_site_no)].visitors;
-            for (std::int32_t k = 0; k < narrow[2]; ++k) {
+            // Safety deviation: the visitor list is capped at kMaxSiteVisitors.
+            for (std::int32_t k = 0;
+                 k < narrow[2] && visitors.size() < game::kMaxSiteVisitors; ++k) {
                 visitors.push_back(game::WseSiteVisitor{narrow[0], narrow[1], -0xd0cd});
             }
         }
