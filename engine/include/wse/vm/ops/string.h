@@ -101,12 +101,10 @@ template <typename Predicate>
     const std::int32_t r = slot_no - q * 10;
     const std::string filename =
         "sg" + std::to_string(q) + std::to_string(r) + ".sav";
-    std::vector<std::uint8_t> raw;
-    if (!world->savegames_vfs->read_file(filename, raw) || raw.empty()) {
+    std::string bytes;
+    if (!world->savegames_vfs->read_text(filename, bytes) || bytes.empty()) {
         return WseDispatch::handled_no_store;
     }
-    const std::string_view bytes(reinterpret_cast<const char*>(raw.data()),
-                                 raw.size());
     (void)wse_store_string(strings, sreg, wse_md5_hex(bytes));
     return WseDispatch::handled_no_store;
 }

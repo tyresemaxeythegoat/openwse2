@@ -7,6 +7,8 @@
 #include <string>
 #include <utility>
 
+#include "wse/platform/clock.h"
+#include "wse/platform/sleep.h"
 #include "wse/vm/wse_state.h"
 
 namespace wse::vm {
@@ -311,12 +313,17 @@ namespace wse::vm {
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
-        const std::time_t now = std::time(nullptr);
-        std::int64_t seconds =
-            static_cast<std::int64_t>(static_cast<std::int32_t>(now));
+        // Local time mirrors _localtime64_s + _mkgmtime64: the UTC value
+        // plus the zone offset in effect at that instant.
+        wse::platform::SystemWallClock system_clock;
+        wse::platform::WallClock& wall =
+            operands.state.wall_clock != nullptr ? *operands.state.wall_clock
+                                                 : system_clock;
+        std::int64_t seconds = static_cast<std::int64_t>(
+            static_cast<std::int32_t>(wall.unix_seconds()));
         if (narrow.size() >= 2 && narrow[1] != 0) {
             seconds = static_cast<std::int64_t>(static_cast<std::int32_t>(
-                wse_local_epoch_seconds(static_cast<std::time_t>(seconds))));
+                seconds + wall.utc_offset_seconds(seconds)));
         }
         effect.value = seconds;
         effect.store_value = true;

@@ -15,6 +15,12 @@
 //   * HostVfs also refuses a path whose symbolic links resolve outside the
 //     root.
 //
+// Ownership: engine state (`WseObjectManager::vfs`,
+// `WseWorldState::savegames_vfs`) holds plain `Vfs*` pointers. The embedder
+// owns every Vfs and must keep it alive for as long as that state can run
+// script. A Vfs is not synchronised; share one between threads only with
+// external locking.
+//
 // No function throws: failures are reported through the return value.
 
 #pragma once
@@ -105,7 +111,9 @@ public:
     virtual bool is_file(std::string_view path) = 0;
     virtual bool is_dir(std::string_view path) = 0;
 
-    bool read_text(std::string_view path, std::string& out) {
+    // Same as `read_file`, into a string. Implementations override this to
+    // fill `out` directly; the default pays one extra copy.
+    virtual bool read_text(std::string_view path, std::string& out) {
         std::vector<std::uint8_t> bytes;
         if (!read_file(path, bytes)) return false;
         out.assign(bytes.begin(), bytes.end());
@@ -128,6 +136,15 @@ public:
         const auto it = files_.find(*key);
         if (it == files_.end()) return false;
         out = it->second.data;
+        return true;
+    }
+
+    bool read_text(std::string_view path, std::string& out) override {
+        const auto key = normalize_path(path);
+        if (!key) return false;
+        const auto it = files_.find(*key);
+        if (it == files_.end()) return false;
+        out.assign(it->second.data.begin(), it->second.data.end());
         return true;
     }
 
@@ -197,30 +214,34 @@ private:
 // A directory on the host file system. Each component is matched exactly
 // first and then case-insensitively by scanning its parent, so a module that
 // asks for `Resource\Foo.BRF` finds `resource/foo.brf` on a case-sensitive
-// volume. `write_file` does not create parent directories.
+// volume. `write_file` does not create parent directories below the root, but
+// it does create the root itself when that is missing, so a save directory
+// that has never been written to works on first use.
+//
+// The root is made absolute and its symlink-free form is computed once at
+// construction; a root that is later re-pointed through a symbolic link is
+// refused rather than followed.
 class HostVfs final : public Vfs {
 public:
-    explicit HostVfs(std::filesystem::path root) : root_(std::move(root)) {}
+    explicit HostVfs(std::filesystem::path root) : root_(std::move(root)) {
+        std::error_code ec;
+        auto absolute = std::filesystem::absolute(root_, ec);
+        if (!ec) root_ = std::move(absolute);
+        auto canonical = std::filesystem::weakly_canonical(root_, ec);
+        if (!ec) canonical_root_ = std::move(canonical);
+    }
 
     bool read_file(std::string_view path, std::vector<std::uint8_t>& out) override {
-        const auto real = resolve(path, false);
-        if (!real) return false;
-        std::error_code ec;
-        if (!std::filesystem::is_regular_file(*real, ec) || ec) return false;
-        std::FILE* file = open(*real, "rb");
-        if (file == nullptr) return false;
-        out.clear();
-        std::uint8_t chunk[16384];
-        std::size_t got = 0;
-        while ((got = std::fread(chunk, 1, sizeof chunk, file)) != 0) {
-            out.insert(out.end(), chunk, chunk + got);
-        }
-        const bool ok = std::ferror(file) == 0;
-        std::fclose(file);
-        return ok;
+        return read_into(path, out);
+    }
+
+    bool read_text(std::string_view path, std::string& out) override {
+        return read_into(path, out);
     }
 
     bool write_file(std::string_view path, std::span<const std::uint8_t> data) override {
+        std::error_code root_ec;
+        std::filesystem::create_directories(root_, root_ec);
         const auto real = resolve(path, true);
         if (!real) return false;
         std::FILE* file = open(*real, "wb");
@@ -270,6 +291,28 @@ public:
     }
 
 private:
+    // `Out` is a byte vector or a string; both are filled without a second
+    // buffer. `out` is left empty on failure.
+    template <typename Out>
+    bool read_into(std::string_view path, Out& out) const {
+        const auto real = resolve(path, false);
+        if (!real) return false;
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(*real, ec) || ec) return false;
+        std::FILE* file = open(*real, "rb");
+        if (file == nullptr) return false;
+        out.clear();
+        std::uint8_t chunk[16384];
+        std::size_t got = 0;
+        while ((got = std::fread(chunk, 1, sizeof chunk, file)) != 0) {
+            out.insert(out.end(), chunk, chunk + got);
+        }
+        const bool ok = std::ferror(file) == 0;
+        std::fclose(file);
+        if (!ok) out.clear();
+        return ok;
+    }
+
     static std::FILE* open(const std::filesystem::path& path, const char* mode) {
 #ifdef _WIN32
         const std::wstring wide_mode(mode, mode + std::char_traits<char>::length(mode));
@@ -319,8 +362,8 @@ private:
     // target to stay under the root.
     bool inside_root(const std::filesystem::path& target) const {
         std::error_code ec;
-        const auto root = std::filesystem::weakly_canonical(root_, ec);
-        if (ec) return false;
+        if (canonical_root_.empty()) return false;
+        const std::filesystem::path& root = canonical_root_;
         const auto real = std::filesystem::weakly_canonical(target, ec);
         if (ec) return false;
         auto r = root.begin();
@@ -333,6 +376,7 @@ private:
     }
 
     std::filesystem::path root_;
+    std::filesystem::path canonical_root_;  // empty when it could not be resolved
 };
 
 }  // namespace wse::platform
