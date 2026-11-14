@@ -3,6 +3,7 @@
  "target": "mb_warband_wse2_x64.exe",
  "release": "v1.1.5.5",
  "exe_sha256": "d4e97d56981a6dab3de0348e3a0513ae200e7b5701b86732a4654b0aa4e29709",
+ "community_name_source": "https://mbcommands.fandom.com/wiki/Operations",
  "function": {
   "symbol": "?execute@mbStatement@@QEAA_NH@Z",
   "switch_guard_va": "0x1401c63e0",
@@ -36,6 +37,34 @@
    53,
    2180,
    2749
+  ],
+  "community_named_handlers": [
+   {
+    "opcode": 53,
+    "name": "is_cheat_mode_enabled",
+    "handler_va": "0x1401c659c",
+    "signature": "(is_cheat_mode_enabled),"
+   },
+   {
+    "opcode": 2180,
+    "name": "store_main_party_wounded",
+    "handler_va": "0x1401ddb29",
+    "signature": "(store_main_party_wounded, <destination>),"
+   },
+   {
+    "opcode": 2749,
+    "name": "str_store_agent_face_keys",
+    "handler_va": "0x1401e1373",
+    "signature": "(str_store_agent_face_keys, <string_reg>, <agent_id>),"
+   }
+  ],
+  "community_named_unused_ids": [
+   {
+    "opcode": 15,
+    "name": "try_for_attached_parties",
+    "signature": "(try_for_attached_parties, <attached_party_no>, <root_party_no>),",
+    "note": "Deprecated vanilla loop; no mbStatementBlock handler in WSE2 v1.1.5.5"
+   }
   ],
   "noop_true_slots": [
    {
@@ -86,12 +115,12 @@
  "categories": [
   {
    "category": "other_native",
-   "live_handlers": 145,
+   "live_handlers": 146,
    "implemented": 65
   },
   {
    "category": "parties",
-   "live_handlers": 118,
+   "live_handlers": 119,
    "implemented": 104
   },
   {
@@ -145,14 +174,14 @@
    "implemented": 28
   },
   {
+   "category": "strings",
+   "live_handlers": 30,
+   "implemented": 22
+  },
+  {
    "category": "audio_particles_and_tableau",
    "live_handlers": 29,
    "implemented": 3
-  },
-  {
-   "category": "strings",
-   "live_handlers": 29,
-   "implemented": 22
   },
   {
    "category": "mission_combat_and_teams",
@@ -183,11 +212,6 @@
    "category": "comparisons_and_branching",
    "live_handlers": 4,
    "implemented": 4
-  },
-  {
-   "category": "undocumented",
-   "live_handlers": 3,
-   "implemented": 0
   }
  ],
  "sdk_modifiers_and_aliases": [
@@ -725,16 +749,18 @@
    "dispatch": "switch_handler",
    "handler_va": "0x1401c659c",
    "dispatch_function": "mbStatement::execute",
-   "name": null,
+   "name": "is_cheat_mode_enabled",
    "aliases": [],
-   "category": "undocumented",
-   "can_fail": false,
+   "category": "other_native",
+   "can_fail": true,
    "is_lhs": false,
    "is_global_lhs": false,
    "implemented": false,
    "status": "unimplemented",
    "sdk_line": null,
-   "sdk_comment": ""
+   "sdk_comment": "",
+   "name_source": "community_wiki",
+   "community_signature": "(is_cheat_mode_enabled),"
   },
   {
    "opcode": 55,
@@ -16463,16 +16489,18 @@
    "dispatch": "switch_handler",
    "handler_va": "0x1401ddb29",
    "dispatch_function": "mbStatement::execute",
-   "name": null,
+   "name": "store_main_party_wounded",
    "aliases": [],
-   "category": "undocumented",
+   "category": "parties",
    "can_fail": false,
-   "is_lhs": false,
+   "is_lhs": true,
    "is_global_lhs": false,
    "implemented": false,
    "status": "unimplemented",
    "sdk_line": null,
-   "sdk_comment": ""
+   "sdk_comment": "",
+   "name_source": "community_wiki",
+   "community_signature": "(store_main_party_wounded, <destination>),"
   },
   {
    "opcode": 2190,
@@ -18983,16 +19011,18 @@
    "dispatch": "switch_handler",
    "handler_va": "0x1401e1373",
    "dispatch_function": "mbStatement::execute",
-   "name": null,
+   "name": "str_store_agent_face_keys",
    "aliases": [],
-   "category": "undocumented",
+   "category": "strings",
    "can_fail": false,
    "is_lhs": false,
    "is_global_lhs": false,
    "implemented": false,
    "status": "unimplemented",
    "sdk_line": null,
-   "sdk_comment": ""
+   "sdk_comment": "",
+   "name_source": "community_wiki",
+   "community_signature": "(str_store_agent_face_keys, <string_reg>, <agent_id>),"
   },
   {
    "opcode": 2750,

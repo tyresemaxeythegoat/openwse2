@@ -6,6 +6,7 @@ Combines:
 - mbStatement::execute native jump table at 0x1401e22f0 (opcodes 30..2767)
 - Public Warband SDK constants/comments from header_operations.py
 - Implemented opcode scan from engine/include/wse/vm/block_vm.h
+- Community names (COMMUNITY_NAMES) for live handlers the SDK header does not define
 """
 
 from __future__ import annotations
@@ -16,8 +17,6 @@ import json
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
-
-import pefile
 
 
 IMAGE_BASE = 0x140000000
@@ -53,6 +52,44 @@ CONTROL_FLOW_VAS: dict[int, tuple[str, str]] = {
 }
 
 ENTITY_ITERATOR_STUBS: set[int] = set()
+
+# Names for opcodes that have no constant in the public header_operations.py.
+# Source: the community operations reference at COMMUNITY_SOURCE_URL, cross-checked on
+# 2026-11-14 against this map: all 1,059 native names it shares with the SDK header carry
+# the same opcode number, and its three extra names land exactly on the three live
+# handlers the SDK header leaves unnamed. The names are community-assigned, not retail
+# symbols; the handler VAs remain the only binary evidence. An SDK constant always wins.
+COMMUNITY_SOURCE_URL = "https://mbcommands.fandom.com/wiki/Operations"
+COMMUNITY_NAMES: dict[int, dict] = {
+    53: {
+        "name": "is_cheat_mode_enabled",
+        "signature": "(is_cheat_mode_enabled),",
+        "can_fail": True,
+        "is_lhs": False,
+    },
+    2180: {
+        "name": "store_main_party_wounded",
+        "signature": "(store_main_party_wounded, <destination>),",
+        "can_fail": False,
+        "is_lhs": True,
+    },
+    2749: {
+        "name": "str_store_agent_face_keys",
+        "signature": "(str_store_agent_face_keys, <string_reg>, <agent_id>),",
+        "can_fail": False,
+        "is_lhs": False,
+    },
+}
+
+# Community-documented opcodes that have no handler at all in WSE2 v1.1.5.5. Recorded so a
+# module that still compiles one in is recognised by name instead of as an unknown ID.
+COMMUNITY_DEAD_NAMES: dict[int, dict] = {
+    15: {
+        "name": "try_for_attached_parties",
+        "signature": "(try_for_attached_parties, <attached_party_no>, <root_party_no>),",
+        "note": "Deprecated vanilla loop; no mbStatementBlock handler in WSE2 v1.1.5.5",
+    },
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -238,6 +275,8 @@ def compress_ranges(nums: list[int]) -> list[list[int]]:
 
 
 def extract_map(exe_path: Path, sdk_path: Path, block_vm_path: Path) -> dict:
+    import pefile  # imported here so the renderer works without the PE dependency
+
     sha = sha256_file(exe_path)
     pe = pefile.PE(str(exe_path), fast_load=False)
     base = pe.OPTIONAL_HEADER.ImageBase
@@ -310,6 +349,7 @@ def extract_map(exe_path: Path, sdk_path: Path, block_vm_path: Path) -> dict:
 
     # 2. Switch-table slots 30..2767
     unnamed_live: list[int] = []
+    community_named: list[dict] = []
     noop_list: list[dict] = []
     fallback_named: list[dict] = []
 
@@ -321,8 +361,13 @@ def extract_map(exe_path: Path, sdk_path: Path, block_vm_path: Path) -> dict:
 
         sdk_defs = by_id.get(op, [])
         names = [d["name"] for d in sdk_defs]
-        primary = names[0] if names else None
+        community = None if sdk_defs else COMMUNITY_NAMES.get(op)
+        primary = names[0] if names else (community["name"] if community else None)
         aliases = names[1:]
+        if community and va in (FALLBACK_WSE_VA, NOOP_TRUE_VA):
+            raise SystemExit(
+                f"Community name {community['name']} ({op}) does not map to a live handler: {hex(va)}"
+            )
 
         if va == FALLBACK_WSE_VA:
             dispatch = "execute_wse_fallback"
@@ -340,6 +385,13 @@ def extract_map(exe_path: Path, sdk_path: Path, block_vm_path: Path) -> dict:
             dispatch_counts[dispatch] += 1
             if not sdk_defs:
                 unnamed_live.append(op)
+                if community:
+                    community_named.append({
+                        "opcode": op,
+                        "name": community["name"],
+                        "handler_va": hex(va),
+                        "signature": community["signature"],
+                    })
 
         implemented = op in impl_switch
         if dispatch == "execute_wse_fallback":
@@ -359,14 +411,23 @@ def extract_map(exe_path: Path, sdk_path: Path, block_vm_path: Path) -> dict:
             "name": primary,
             "aliases": aliases,
             "category": classify_category(op, primary),
-            "can_fail": op in sdk["can_fail"],
-            "is_lhs": op in sdk["lhs"],
+            "can_fail": op in sdk["can_fail"] or bool(community and community["can_fail"]),
+            "is_lhs": op in sdk["lhs"] or bool(community and community["is_lhs"]),
             "is_global_lhs": op in sdk["global_lhs"],
             "implemented": implemented,
             "status": status,
             "sdk_line": sdk_defs[0]["sdk_line"] if sdk_defs else None,
             "sdk_comment": sdk_defs[0]["sdk_comment"] if sdk_defs else "",
         })
+        if community:
+            entries[-1]["name_source"] = "community_wiki"
+            entries[-1]["community_signature"] = community["signature"]
+
+    community_dead: list[dict] = []
+    for op, dead in sorted(COMMUNITY_DEAD_NAMES.items()):
+        if op in by_id or op not in unused_control_flow_ids + unused_fallback_ids:
+            raise SystemExit(f"Community dead name {dead['name']} ({op}) is live or SDK-defined")
+        community_dead.append({"opcode": op, **dead})
 
     # Verify all SDK IDs in 0..2767 were captured.
     captured_ids = {e["opcode"] for e in entries}
@@ -402,6 +463,8 @@ def extract_map(exe_path: Path, sdk_path: Path, block_vm_path: Path) -> dict:
         "sdk_unique_ids_0_2767": len(by_id),
         "sdk_total_symbols_0_2767": sum(len(v) for v in by_id.values()),
         "unnamed_live_handlers": unnamed_live,
+        "community_named_handlers": community_named,
+        "community_named_unused_ids": community_dead,
         "noop_true_slots": noop_list,
         "fallback_named_slots": fallback_named,
         "implemented_control_flow": len(impl_cf),
@@ -415,6 +478,7 @@ def extract_map(exe_path: Path, sdk_path: Path, block_vm_path: Path) -> dict:
         "target": exe_path.name,
         "release": "v1.1.5.5",
         "exe_sha256": sha,
+        "community_name_source": COMMUNITY_SOURCE_URL,
         "function": {
             "symbol": "?execute@mbStatement@@QEAA_NH@Z",
             "switch_guard_va": hex(SWITCH_GUARD_VA),
@@ -453,7 +517,7 @@ def render_markdown(doc: dict) -> str:
         "| --- | ---: | --- |",
         f"| Control-flow range (`0–29`) live handlers | {s['control_flow_live']} | {s['control_flow_unused']} unused IDs |",
         f"| Native switch table (`30–2767`) total slots | {s['switch_total_slots']} | Indexed at `{doc['function']['jump_table_va']}` |",
-        f"| Live switch handlers (`switch_handler`) | {s['switch_handlers']} | Unique `.text` handlers (incl. {len(s['unnamed_live_handlers'])} unnamed) |",
+        f"| Live switch handlers (`switch_handler`) | {s['switch_handlers']} | Unique `.text` handlers (incl. {len(s['unnamed_live_handlers'])} without an SDK constant) |",
         f"| Shared no-op `return true` stubs (`noop_true`) | {s['noop_true']} | Jump directly to `{doc['function']['noop_va']}` |",
         f"| Fallback to `executeWSE` (`execute_wse_fallback`) | {s['execute_wse_fallback_total']} | Jump to `{doc['function']['fallback_va']}`; {s['execute_wse_fallback_named']} SDK-named (`1004`), {s['execute_wse_fallback_unused']} empty holes |",
         f"| **Total live native handlers (`0–2767`)** | **{s['total_live_native_handlers']}** | {s['control_flow_live']} control-flow + {s['switch_handlers']} switch |",
@@ -470,13 +534,28 @@ def render_markdown(doc: dict) -> str:
         "",
         "### Live native handlers without a public SDK constant",
         "",
-        "| Opcode | Hex | Handler VA | Notes |",
-        "| ---: | --- | --- | --- |",
+        f"Names and signatures come from the community reference <{doc['community_name_source']}>;",
+        "they are not retail symbols. The handler VA is the binary evidence.",
+        "",
+        "| Opcode | Hex | Handler VA | Community name | Community signature |",
+        "| ---: | --- | --- | --- | --- |",
     ]
     entry_by_id = {e["opcode"]: e for e in doc["entries"]}
     for op in s["unnamed_live_handlers"]:
         e = entry_by_id[op]
-        lines.append(f"| {op} | `{e['hex']}` | `{e['handler_va']}` | Live native handler with no `header_operations.py` constant |")
+        name_cell = f"`{e['name']}`" if e["name"] else "*(unnamed)*"
+        sig_cell = f"`{e['community_signature']}`" if e.get("community_signature") else ""
+        lines.append(f"| {op} | `{e['hex']}` | `{e['handler_va']}` | {name_cell} | {sig_cell} |")
+
+    lines.extend([
+        "",
+        "### Community-named opcodes with no handler in WSE2",
+        "",
+        "| Opcode | Hex | Community name | Notes |",
+        "| ---: | --- | --- | --- |",
+    ])
+    for item in s["community_named_unused_ids"]:
+        lines.append(f"| {item['opcode']} | `{hex(item['opcode'])}` | `{item['name']}` | {item['note']} |")
 
     lines.extend([
         "",
@@ -518,6 +597,8 @@ def render_markdown(doc: dict) -> str:
     ])
     for e in doc["entries"]:
         name_cell = f"`{e['name']}`" if e["name"] else "*(unnamed)*"
+        if e.get("name_source") == "community_wiki":
+            name_cell += " *(community name)*"
         if e["aliases"]:
             name_cell += " (" + ", ".join(f"`{a}`" for a in e["aliases"]) + ")"
         lines.append(
