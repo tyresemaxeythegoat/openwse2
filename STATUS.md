@@ -28,8 +28,8 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 30 standalone header checks, 12/12 test suites, `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
 | Android NDK `aarch64-linux-android29` | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all 30 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
-| Host ASan + UBSan | PASS (local) | `cmake -DWSE_SANITIZE=ON` + CTest, 12/12 suites, run locally with `g++ 13.3.0` (the session's clang has no sanitizer runtime). The CI job `host-sanitizers` (clang++) was added with this change and has not reported yet |
-| CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` (including `extract_wse_opcodes.py --check` and `check_citations.py --self-test`) and `android-arm64` on push and PR. As of the 2026-11-14 review fixes it triggers on pushes to every branch (previously `main` only), builds `RelWithDebInfo` (`-O2`) by default, and adds `host-sanitizers`; that revised workflow has not run yet |
+| Host ASan + UBSan | PASS (CI) | `.github/workflows/ci.yml` job `host-sanitizers` (`ubuntu-24.04`, clang++, `cmake -DWSE_SANITIZE=ON` + CTest): 12/12 suites on commit `a01ffb3`; also run locally with `g++ 13.3.0` |
+| CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` (including `extract_wse_opcodes.py --check` and `check_citations.py --self-test`) and `android-arm64` on push and PR. As of the 2026-11-14 review fixes it triggers on pushes to every branch (previously `main` only), builds `RelWithDebInfo` (`-O2`) by default, and adds `host-sanitizers`; all three jobs passed on commit `a01ffb3` (push and PR runs) |
 
 ## 3. Coverage
 
