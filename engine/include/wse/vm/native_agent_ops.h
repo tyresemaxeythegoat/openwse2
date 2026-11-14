@@ -327,7 +327,9 @@ namespace wse::vm {
     case 1748: // agent_set_scripted_destination_no_attack (0x1401d4b91)
         if (world.is_valid_agent(narrow[0]) && wse_register_ok(narrow[1])) {
             auto& ag = world.agents[static_cast<std::size_t>(narrow[0])];
-            auto& pos = ctx.positions[static_cast<std::size_t>(narrow[1])];
+            // Copy: the script's position register must not be modified.
+            wse::core::WseTransform pos =
+                ctx.positions[static_cast<std::size_t>(narrow[1])];
             if (wide[2] != 0) {
                 pos.o.z = world.ground_level_z;
             }
@@ -613,15 +615,18 @@ namespace wse::vm {
         }
         return NativeDispatch::condition_false;
     case 1827: // agent_deliver_damage_to_agent_advanced (0x1401d7155)
-        if (world.is_valid_agent(narrow[1]) && world.is_valid_agent(narrow[2]) &&
-            world.is_valid_item(narrow[4])) {
+        // The weapon item is optional (-1 / omitted): explicit damage or the
+        // deliverer's wielded weapon is used instead.
+        if (world.is_valid_agent(narrow[1]) && world.is_valid_agent(narrow[2])) {
+            const bool has_item =
+                statement.numOperands >= 5 && world.is_valid_item(narrow[4]);
             auto& deliverer = world.agents[static_cast<std::size_t>(narrow[1])];
             auto& target = world.agents[static_cast<std::size_t>(narrow[2])];
             if (target.is_alive()) {
                 std::int32_t base_damage = 0;
                 if (narrow[3] > 0) {
                     base_damage = std::min<std::int32_t>(narrow[3], 1000);
-                } else if (narrow[4] > 0) {
+                } else if (has_item) {
                     base_damage = native_campaign_item_weapon_damage(
                         world.items[static_cast<std::size_t>(narrow[4])]);
                 } else if (world.is_valid_item(deliverer.wielded_items[0])) {
@@ -634,7 +639,7 @@ namespace wse::vm {
                 std::int32_t inflicted = 0;
                 if (!world.is_multiplayer || rel != 1) {
                     native_campaign_deliver_damage(
-                        narrow[1], narrow[2], narrow[3], narrow[4], true, world);
+                        narrow[1], narrow[2], narrow[3], narrow[4], has_item, world);
                     inflicted = static_cast<std::int32_t>(raw_final);
                 } else if (world.m5.server_friendly_fire == 1) {
                     const float ff_scale = std::clamp(
@@ -664,7 +669,9 @@ namespace wse::vm {
         return NativeDispatch::handled;
     case 1973: // spawn_horse (0x1401d9fa6)
         ctx.registers[0] = -1;
-        if (world.is_valid_item(narrow[0])) {
+        // Safety deviation: capped at kMaxSpawnedAgents.
+        if (world.is_valid_item(narrow[0]) &&
+            world.agents.size() < game::kMaxSpawnedAgents) {
             game::WseAgent horse{};
             horse.active = true;
             horse.status = 1;

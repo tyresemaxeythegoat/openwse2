@@ -840,7 +840,15 @@ struct WseM6UiExt {
 };
 
 struct WseM6SkinExt {
-    std::uint32_t blood_color = 0xFF800000U;
+    static constexpr std::uint32_t kDefaultBloodColor = 0xFF800000U;
+    // Per-skin overrides written by skin_set_blood_color (5200).
+    std::unordered_map<std::int32_t, std::uint32_t> blood_colors{};
+
+    [[nodiscard]] std::uint32_t blood_color(std::int32_t skin_no) const {
+        const auto it = blood_colors.find(skin_no);
+        return it != blood_colors.end() ? it->second : kDefaultBloodColor;
+    }
+
     std::unordered_map<std::string, std::array<std::int32_t, 64>> bone_body_sections{};
 };
 
@@ -924,8 +932,29 @@ struct WseLuaState {
         return -1;
     }
 
-    void set_top(std::int32_t idx) {
+    // Safety deviation: the stack is capped at kMaxLuaStackSize (Lua 5.1
+    // LUAI_MAXCSTACK) and the error log at kMaxLuaErrors, so script operands
+    // cannot drive unbounded allocations.
+    static constexpr std::size_t kMaxLuaStackSize = 8000;
+    static constexpr std::size_t kMaxLuaErrors = 256;
+
+    void add_error(std::string message) {
+        if (errors.size() >= kMaxLuaErrors) {
+            errors.erase(errors.begin());
+        }
+        errors.push_back(std::move(message));
+    }
+
+    [[nodiscard]] bool has_room() const noexcept {
+        return stack.size() < kMaxLuaStackSize;
+    }
+
+    // Returns false (stack untouched) when idx exceeds kMaxLuaStackSize.
+    bool set_top(std::int32_t idx) {
         if (idx >= 0) {
+            if (static_cast<std::size_t>(idx) > kMaxLuaStackSize) {
+                return false;
+            }
             stack.resize(static_cast<std::size_t>(idx), WseLuaValue::make_nil());
         } else {
             const std::int32_t new_top = get_top() + idx + 1;
@@ -935,6 +964,7 @@ struct WseLuaState {
                 stack.clear();
             }
         }
+        return true;
     }
 
     void pop(std::int32_t n) {
@@ -1020,20 +1050,27 @@ struct WseLuaState {
         return v.is_pos ? &v.pos_val : nullptr;
     }
 
+    void push_value(WseLuaValue value) {
+        if (!has_room()) {
+            add_error("stack overflow");
+            return;
+        }
+        stack.push_back(std::move(value));
+    }
     void push_int(std::int64_t n) {
-        stack.push_back(WseLuaValue::make_int(n));
+        push_value(WseLuaValue::make_int(n));
     }
     void push_str(std::string s) {
-        stack.push_back(WseLuaValue::make_str(std::move(s)));
+        push_value(WseLuaValue::make_str(std::move(s)));
     }
     void push_pos(const wse::core::WseTransform& t) {
-        stack.push_back(WseLuaValue::make_pos(t));
+        push_value(WseLuaValue::make_pos(t));
     }
     void push_bool(bool b) {
-        stack.push_back(WseLuaValue::make_bool(b));
+        push_value(WseLuaValue::make_bool(b));
     }
     void push_nil() {
-        stack.push_back(WseLuaValue::make_nil());
+        push_value(WseLuaValue::make_nil());
     }
 };
 
@@ -1055,6 +1092,8 @@ struct WseM6WorldExt {
     std::unordered_map<std::int32_t, WseM6AgentExt> agents{};
     std::unordered_map<std::int32_t, WseM6SiteExt> sites{};
     std::unordered_map<std::int32_t, WseM6MissileExt> missiles{};
+    // Missile that fired the running ti_on_missile_hit (-52) trigger, or -1.
+    std::int32_t trigger_missile_no = -1;
     std::unordered_map<std::int32_t, WseM6MissionObjectExt> mission_objects{};
     std::vector<std::pair<std::int32_t, std::string>> chat_messages{};
 

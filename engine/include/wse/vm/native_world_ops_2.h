@@ -224,9 +224,10 @@ inline void native_world_push_tableau_mesh(
         }
         return NativeDispatch::handled;
     case 1490: { // set_merchandise_modifier_quality (0x1401cffb3)
-        const float quality =
+        // Kept as a float fraction: truncating to an integer turned 150 into 1
+        // and anything below 100 into 0.
+        world.misc.merchandise_modifier_quality =
             std::clamp(static_cast<float>(wide[0]) / 100.0f, 0.0f, 1000.0f);
-        world.misc.merchandise_modifier_quality = static_cast<std::int32_t>(quality);
         return NativeDispatch::handled;
     }
 

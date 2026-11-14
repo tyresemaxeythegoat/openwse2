@@ -1068,6 +1068,7 @@ inline void mission_burst_particle_system(WseWorldState& world,
     WseMissionObject obj{};
     obj.active = true;
     obj.is_item = true;
+    obj.m5.is_spawned_item = true;
     obj.scene_prop_no = item_no;
     obj.variation_id_no = (modifier >= 0 && modifier < 43) ? modifier : 0;
     obj.variation_id_2_no = refill_ammo ? 1 : 0;

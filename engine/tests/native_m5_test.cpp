@@ -559,7 +559,7 @@ void test_scenes_props_m5() {
     expect(w.mission_objects[0].scene_prop_no == 4, "1889 replaced scene_prop_no");
 
     // 1974 spawn_scene_prop
-    w.fx.trigger_transform = ctx.positions[1];
+    w.spawn_position = ctx.positions[1];
     expect(run_stmt(ctx, 1974U, {2, 3}), "1974 spawn_scene_prop");
     expect(ctx.registers[0] == 4 && w.mission_objects[4].scene_prop_no == 2 &&
                w.mission_objects[4].variation_id_no == 3,
@@ -721,9 +721,92 @@ void test_ui_menus_m5() {
     expect(run_stmt(ctx, 923U, {imin, imin}), "923 INT64_MIN safe");
 }
 
+// Regressions found in the Milestone 5 review.
+void test_m5_review_regressions() {
+    using wse::vm::VmContext;
+
+    // 1974 spawn_scene_prop spawns at the set_spawn_position (1970) transform.
+    {
+        VmContext ctx;
+        ctx.world.misc.num_scene_props = 5;
+        ctx.positions[1].o = {10.0f, 20.0f, 30.0f, 1.0f};
+        ctx.world.fx.trigger_transform.o = {-1.0f, -1.0f, -1.0f, 1.0f};
+        expect(run_stmt(ctx, 1970U, {1}), "1970 set_spawn_position");
+        expect(run_stmt(ctx, 1974U, {2}), "1974 spawn_scene_prop");
+        const auto& o = ctx.world.mission_objects[0].position.o;
+        expect(ctx.registers[0] == 0 && close(o.x, 10.0f) && close(o.y, 20.0f) &&
+                   close(o.z, 30.0f),
+               "1974 uses the spawn position, not the trigger transform");
+
+        // 1974 is capped like spawn_item.
+        ctx.world.mission_objects.resize(wse::game::kMaxSpawnedMissionObjects);
+        ctx.registers[0] = -7;
+        expect(run_stmt(ctx, 1974U, {2}), "1974 at cap");
+        expect(ctx.world.mission_objects.size() ==
+                       wse::game::kMaxSpawnedMissionObjects &&
+                   ctx.registers[0] == -7,
+               "1974 does not grow past kMaxSpawnedMissionObjects");
+    }
+
+    {
+        VmContext ctx;
+        auto& w = ctx.world;
+        w.items.resize(2);
+        w.agents.resize(2);
+        for (auto& ag : w.agents) {
+            ag.active = true;
+            ag.status = 1;
+            ag.hit_points = 100.0f;
+            ag.max_hit_points = 100.0f;
+            ag.damage_modifier = 1.0f;
+        }
+
+        // 1748 must not write the ground height back into the script register.
+        w.ground_level_z = 5.0f;
+        ctx.positions[3].o = {1.0f, 2.0f, 99.0f, 1.0f};
+        expect(run_stmt(ctx, 1748U, {0, 3, 1}), "1748 no-attack destination");
+        expect(close(ctx.positions[3].o.z, 99.0f) &&
+                   close(w.agents[0].target_position.o.z, 5.0f),
+               "1748 clamps the agent target, not the position register");
+
+        // 1827 with weapon -1 still applies the explicit damage.
+        ctx.registers[9] = -555;
+        expect(run_stmt(ctx, 1827U, {reg(9), 0, 1, 40, -1}), "1827 item -1");
+        expect(close(w.agents[1].hit_points, 60.0f) && ctx.registers[9] == 40,
+               "1827 delivers explicit damage without a weapon item");
+        ctx.registers[9] = -555;
+        expect(run_stmt(ctx, 1827U, {reg(9), 0, 1, 15}), "1827 item omitted");
+        expect(close(w.agents[1].hit_points, 45.0f) && ctx.registers[9] == 15,
+               "1827 delivers damage when the weapon operand is omitted");
+
+        // 1973 spawn_horse is capped.
+        w.agents.resize(wse::game::kMaxSpawnedAgents);
+        expect(run_stmt(ctx, 1973U, {0}), "1973 at cap");
+        expect(w.agents.size() == wse::game::kMaxSpawnedAgents &&
+                   ctx.registers[0] == -1,
+               "1973 does not grow past kMaxSpawnedAgents");
+    }
+
+    // 928 overlay_set_boundaries saturates out-of-range bounds.
+    {
+        VmContext ctx;
+        ctx.fixedPointMultiplier = 1;
+        ctx.world.overlays.resize(1);
+        ctx.world.overlays[0].type = 2;
+        ctx.world.overlays[0].val = 7;
+        expect(run_stmt(ctx, 928U,
+                        {0, 4000000000000000LL, 8000000000000000LL}),
+               "928 huge bounds");
+        expect(ctx.world.overlays[0].val ==
+                   std::numeric_limits<std::int32_t>::max(),
+               "928 clamps val to a saturated lower bound");
+    }
+}
+
 }  // namespace
 
 int main() {
+    test_m5_review_regressions();
     test_agents_m5();
     test_mp_players_m5();
     test_scenes_props_m5();

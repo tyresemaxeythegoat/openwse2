@@ -875,6 +875,7 @@ void test_scene_mission_group() {
                f.bank_regs, f.state(0)) == WseDispatch::ignored &&
                !w.m6.missiles[10].remove_on_hit,
            "3611 ignored outside ti_on_missile_hit (-52)");
+    w.m6.trigger_missile_no = 10;
     expect(run(opcode(WseOpcode::missile_remove_on_hit), {}, {}, eff, f.fp_regs,
                f.bank_regs, f.state(-52)) == WseDispatch::handled_no_store &&
                w.m6.missiles[10].remove_on_hit,
@@ -1304,7 +1305,7 @@ void test_ui_menu_group() {
                {1, static_cast<std::int64_t>(0xffaa0000U)},
                {1, static_cast<std::int32_t>(0xffaa0000U)}, eff, f.fp_regs,
                f.bank_regs, f.state()) == WseDispatch::handled_no_store &&
-               w.m6.skins.blood_color == 0xffaa0000U,
+               w.m6.skins.blood_color(1) == 0xffaa0000U,
            "5200 sets blood color");
     expect(run(opcode(WseOpcode::skeleton_model_set_bone_body_section),
                {16, 12, 2}, {16, 12, 2}, eff, f.fp_regs, f.bank_regs,
@@ -1488,9 +1489,135 @@ void test_guards_and_boundaries() {
            "INT64_MIN entity and index operands are safely ignored");
 }
 
+// Regressions found in the Milestone 6 review.
+void test_m6_review_regressions() {
+    M6Fixture f;
+    auto& w = f.world;
+    WseEffect eff;
+
+    // 5101 lua_set_top rejects indices beyond the stack cap instead of
+    // allocating a script-controlled amount of memory.
+    const std::int32_t int_max = std::numeric_limits<std::int32_t>::max();
+    expect(run(opcode(WseOpcode::lua_set_top), {int_max}, {int_max}, eff,
+               f.fp_regs, f.bank_regs, f.state()) == WseDispatch::ignored &&
+               w.m6.lua.stack.empty(),
+           "5101 ignores a set_top beyond kMaxLuaStackSize");
+    for (std::size_t i = 0; i < wse::game::WseLuaState::kMaxLuaStackSize + 10U;
+         ++i) {
+        (void)run(opcode(WseOpcode::lua_push_int), {1}, {1}, eff, f.fp_regs,
+                  f.bank_regs, f.state());
+    }
+    expect(w.m6.lua.stack.size() == wse::game::WseLuaState::kMaxLuaStackSize,
+           "5108 stops pushing at kMaxLuaStackSize");
+    w.m6.lua.stack.clear();
+
+    // 5112 failed calls do not grow the error log without bound.
+    f.str_regs[0] = u"missing_function";
+    for (int i = 0; i < 2000; ++i) {
+        (void)run(opcode(WseOpcode::lua_call), {0, 0}, {0, 0}, eff, f.fp_regs,
+                  f.bank_regs, f.state(), {3});
+    }
+    expect(w.m6.lua.errors.size() == wse::game::WseLuaState::kMaxLuaErrors,
+           "lua error log is capped at kMaxLuaErrors");
+
+    // 3019 timeout seconds -> ms saturates instead of overflowing.
+    f.str_regs[1] = u"http://example.invalid/";
+    f.str_regs[2] = u"agent";
+    expect(run(opcode(WseOpcode::send_message_to_url_advanced),
+               {1, 2, -1, -1, 0, 3000000}, {1, 2, -1, -1, 0, 3000000}, eff,
+               f.fp_regs, f.bank_regs, f.state(), {3, 3}) ==
+               WseDispatch::handled_no_store &&
+               !w.m6.ui.url_advanced_queue.empty() &&
+               w.m6.ui.url_advanced_queue.back().timeout_ms == int_max,
+           "3019 saturates an overflowing timeout");
+
+    // 3611 flags only the missile that fired the trigger.
+    w.m6.missiles[1];
+    w.m6.missiles[2];
+    w.m6.missiles[3];
+    w.m6.trigger_missile_no = -1;
+    expect(run(opcode(WseOpcode::missile_remove_on_hit), {}, {}, eff, f.fp_regs,
+               f.bank_regs, f.state(-52)) == WseDispatch::ignored &&
+               !w.m6.missiles[1].remove_on_hit,
+           "3611 ignored without a trigger missile");
+    w.m6.trigger_missile_no = 2;
+    expect(run(opcode(WseOpcode::missile_remove_on_hit), {}, {}, eff, f.fp_regs,
+               f.bank_regs, f.state(-52)) == WseDispatch::handled_no_store &&
+               !w.m6.missiles[1].remove_on_hit &&
+               w.m6.missiles[2].remove_on_hit && !w.m6.missiles[3].remove_on_hit,
+           "3611 flags only the trigger missile");
+
+    // 3308 returns the equipment slot, not the item kind.
+    w.agents[2].equipped_items[3] = 5;
+    w.agents[2].wielded_items[0] = 5;
+    w.agents[2].wielded_items[1] = -1;
+    expect(run(opcode(WseOpcode::agent_get_wielded_item_slot_no), {0, 2, 0},
+               {0, 2, 0}, eff, f.fp_regs, f.bank_regs, f.state()) ==
+               WseDispatch::handled &&
+               eff.value == 3 &&
+               run(opcode(WseOpcode::agent_get_wielded_item_slot_no), {0, 2, 1},
+                   {0, 2, 1}, eff, f.fp_regs, f.bank_regs, f.state()) ==
+                   WseDispatch::handled &&
+               eff.value == -1,
+           "3308 reports the slot of the wielded item, -1 for an empty hand");
+
+    // 3332 writes the vertical component and leaves horizontal speed alone.
+    w.agents[2].speed = {3.0f, 4.0f, 0.0f, 0.0f};
+    expect(run(opcode(WseOpcode::agent_set_current_vertical_speed), {2, 900},
+               {2, 900}, eff, f.fp_regs, f.bank_regs, f.state()) ==
+               WseDispatch::handled_no_store &&
+               close(w.agents[2].speed.x, 3.0f) &&
+               close(w.agents[2].speed.y, 4.0f) &&
+               close(w.agents[2].speed.z, 9.0f),
+           "3332 sets speed.z without touching horizontal speed");
+
+    // 5200 stores the colour per skin.
+    expect(run(opcode(WseOpcode::skin_set_blood_color), {2, 0x112233},
+               {2, 0x112233}, eff, f.fp_regs, f.bank_regs, f.state()) ==
+               WseDispatch::handled_no_store &&
+               w.m6.skins.blood_color(2) == 0x112233U &&
+               w.m6.skins.blood_color(1) ==
+                   wse::game::WseM6SkinExt::kDefaultBloodColor,
+           "5200 changes only the addressed skin");
+
+    // 3313 with an invalid new horse leaves the existing link intact.
+    w.agents[0].horse_agent_no = 3;
+    w.agents[3].rider_agent_no = 0;
+    expect(run(opcode(WseOpcode::agent_set_horse), {0, 99}, {0, 99}, eff,
+               f.fp_regs, f.bank_regs, f.state()) == WseDispatch::ignored &&
+               w.agents[0].horse_agent_no == 3 && w.agents[3].rider_agent_no == 0,
+           "3313 rejects an invalid horse without detaching the old one");
+
+    // 3613 returns an orthonormal basis for a missile flying along +Y.
+    {
+        auto& m = w.m6.missiles[7];
+        wse::core::WseTransform a = wse::core::WseTransform::identity();
+        wse::core::WseTransform b = wse::core::WseTransform::identity();
+        a.o = {0.0f, 0.0f, 1.0f, 1.0f};
+        b.o = {0.0f, 5.0f, 1.0f, 1.0f};
+        m.path_points = {a, b};
+        expect(run(opcode(WseOpcode::missile_get_cur_position), {3, 7}, {3, 7},
+                   eff, f.fp_regs, f.bank_regs, f.state()) ==
+                   WseDispatch::handled_no_store,
+               "3613 reads missile position");
+        const auto& p = f.pos_regs[3];
+        expect(close(p.f.y, 1.0f) && close(p.u.z, 1.0f) &&
+                   close(std::fabs(p.s.x), 1.0f),
+               "3613 basis is orthonormal for a +Y heading");
+    }
+
+    // 4518 saturates an out-of-range fog height.
+    expect(run(opcode(WseOpcode::scene_set_height_fog),
+               {1000000000000000000LL, 100, 100}, {0, 100, 100}, eff, f.fp_regs,
+               f.bank_regs, f.state()) == WseDispatch::handled_no_store &&
+               w.m6.scene.height_fog_height == int_max,
+           "4518 saturates the fog height");
+}
+
 }  // namespace
 
 int main() {
+    test_m6_review_regressions();
     test_player_mp_group();
     test_agent_ext_group();
     test_scene_mission_group();
