@@ -88,7 +88,7 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [~] `WseWorldState` containers and validators (`wse/game/world_state.h` + `wse/game/world_campaign_helpers.h`: players, troops, items,
       skills, factions, quests, sites/visitors, parties/stacks, agents, mission props/timers, teams,
       presentations/overlays, audio events) — in-memory model only
-- [ ] Loaders that populate it from a user-supplied module (depends on 2A)
+- [x] Loaders that populate it from a user-supplied module (depends on 2A) — clean-room module loaders across `wse/game/module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h` reading via `Vfs` / `TokenReader`, verified with `MemoryVfs`, `HostVfs`, and VM execution in `module_loaders_test.cpp`
 - [ ] Agent, party, mission-object, and player containers with real lifetimes
 
 **2F. Lua 5.1 layer**
@@ -158,6 +158,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-15 | — | Clean-room v1.1.5.5 module loaders (`wse/game/module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h`) routing exclusively through `wse::platform::Vfs` + `wse::io::TokenReader` to populate `WseWorldState`, owned `WseStringBanks`, `ScriptManager`, and trigger managers; PDB VA audit (`tools/build_symbol_map.py`, `docs/SYMBOL_MAP.json`); `MemoryVfs` + `HostVfs` + VM execution suite (`module_loaders_test.cpp`, `16/16` suites / `111` tests) |
 | 2026-11-15 | `245307b` | Platform P1 seam routing: route all direct `<filesystem>`/`<fstream>`/`<chrono>`/`<thread>` uses outside `wse/platform/` (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, `wse/vm/ops/{dict,array,string,system}.h`) through `wse::platform::{Vfs,sleep_ms}`, adding `HostVfs` + `MemoryVfs` coverage in `wse_dict`/`wse_array`/`wse_system` |
 | 2026-11-15 | `e6f4331` | Milestone 4–6 review fixes: `leave_encounter` no longer alters difficulty, `set_merchandise_modifier_quality` keeps its fraction, `spawn_item` objects are flagged as spawned, `spawn_scene_prop` uses the spawn position, `1748`/`1827`/`928` corrected, Lua stack/error log and spawn counts capped, URL timeout and fog height saturate, `3308`/`3313`/`3332`/`3611`/`3613`/`5200` corrected; regression tests in `native_world_test`, `native_m5_test`, `wse_m6_test` |
 | 2026-11-15 | `bcaf597` | Phase 2 Milestone 6: remaining `204` WSE extended opcodes (`ops/{player_mp,agent_ext,scene_mission,ui_menu,lua_bridge}.h`, `world_m6_types.h`, `wse_m6_test`) |

@@ -869,7 +869,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    types across `15,363` TPI records), generated cleanly with `tools/vtables.py`.
 8. ~~Handler-site addresses cited only in `engine/include` source comments~~ **Resolved (B7):**
    `tools/build_symbol_map.py` exports `function_ranges`, `global_objects`, and `superseded_vas`,
-   and `tools/check_citations.py` verifies all `794` unique header VAs (`989` VA refs) across `33` headers (plus REA `ev_*` IDs) in CI.
+   and `tools/check_citations.py` verifies all `1,494` unique header VAs (`1,714` VA refs) across `53` headers (plus REA `ev_*` IDs) in CI.
 
 ## 9. Evidence index
 

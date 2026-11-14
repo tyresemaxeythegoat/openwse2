@@ -96,6 +96,26 @@ SYMBOL_TOKENS = [
     "Parser@mu@@",
     "ParserBase@mu@@",
     "WSEDynMultiArray",
+    "rglHashVector@VmbParty@@",
+    "mbCoreGame",
+    "mbAction",
+    "mbActionSet",
+    "mbConversationManager",
+    "mbSentence",
+    "mbFloraKind",
+    "mbGroundSpec",
+    "mbMapIcon",
+    "mbMenu",
+    "mbMesh",
+    "mbMusicManager",
+    "mbMusicTrack",
+    "mbParticleSystem",
+    "mbPostEffect",
+    "mbPresentation",
+    "mbSkin",
+    "mbSkybox",
+    "mbSound",
+    "rglIni",
 ]
 
 GLOBAL_NAMES = {
@@ -116,6 +136,7 @@ GLOBAL_NAMES = {
     "g_windowManager",
     "g_languageManager",
     "g_skills",
+    "g_levelTable",
     "s_randSeed",
 }
 

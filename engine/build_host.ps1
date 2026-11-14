@@ -59,7 +59,8 @@ $tests = @(
     @{ Name = "native_world"; Source = Join-Path $here "tests\native_world_test.cpp" },
     @{ Name = "native_m5"; Source = Join-Path $here "tests\native_m5_test.cpp" },
     @{ Name = "wse_m6"; Source = Join-Path $here "tests\wse_m6_test.cpp" },
-    @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp" }
+    @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp" },
+    @{ Name = "module_loaders"; Source = Join-Path $here "tests\module_loaders_test.cpp" }
 )
 
 Write-Host "zig          $zig"
