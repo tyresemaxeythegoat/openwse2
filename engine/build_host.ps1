@@ -60,7 +60,8 @@ $tests = @(
     @{ Name = "native_m5"; Source = Join-Path $here "tests\native_m5_test.cpp" },
     @{ Name = "wse_m6"; Source = Join-Path $here "tests\wse_m6_test.cpp" },
     @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp" },
-    @{ Name = "module_loaders"; Source = Join-Path $here "tests\module_loaders_test.cpp" }
+    @{ Name = "module_loaders"; Source = Join-Path $here "tests\module_loaders_test.cpp" },
+    @{ Name = "headless"; Source = Join-Path $here "tests\headless_test.cpp" }
 )
 
 Write-Host "zig          $zig"
@@ -83,6 +84,14 @@ foreach ($test in $tests) {
     if ($LASTEXITCODE -ne 0) {
         throw ("{0} tests failed" -f $test.Name)
     }
+}
+
+$headlessTool = Join-Path $out "wse_headless.exe"
+Write-Host "building     wse_headless"
+& $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
+    -I $include -o $headlessTool (Join-Path $here "tools\wse_headless.cpp")
+if ($LASTEXITCODE -ne 0) {
+    throw "wse_headless build failed"
 }
 
 Write-Host "engine host tests: PASS"

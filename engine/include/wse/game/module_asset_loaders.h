@@ -64,10 +64,16 @@ struct LoadedSkinVoice {
     std::string sound_name{};
 };
 
+// mbFaceConstraint::readStream (0x140213d60): value, type, count of (weight, key_index) pairs.
+struct LoadedSkinConstraintPair {
+    float weight = 0.0f;
+    std::int32_t key_index = 0;
+};
+
 struct LoadedSkinConstraint {
     float value = 0.0f;
     std::int32_t type = 0;
-    std::vector<float> weights{};
+    std::vector<LoadedSkinConstraintPair> pairs{};
 };
 
 struct LoadedSkin {
@@ -123,7 +129,7 @@ struct LoadedParticleSystem {
     std::string id{};
     std::uint32_t flags = 0;
     std::string mesh_name{};
-    std::array<float, 30> params{};
+    std::array<float, 35> params{};
 };
 
 struct LoadedPostEffect {
@@ -162,7 +168,7 @@ struct LoadedSkybox {
     std::uint32_t flags = 0;
     float sun_heading = 0.0f;
     float sun_altitude = 0.0f;
-    std::array<float, 3> flare_strength{};
+    float flare_strength = 0.0f;
     std::string post_effect{};
     std::array<float, 3> sun_rgb{};
     std::array<float, 3> sky_rgb{};
@@ -387,7 +393,7 @@ namespace detail {
             std::int32_t n_fh = 0;
             std::int32_t n_grad = 0;
             if (!reader.read_string(ft.material_name) ||
-                !read_u32_token(reader, ft.color) ||
+                !read_wrapping_u32_token(reader, ft.color) ||
                 !read_count_token(reader, n_fh, kMaxModuleRecords, source,
                                   "face hair materials", err) ||
                 !read_count_token(reader, n_grad, kMaxModuleRecords, source,
@@ -399,7 +405,7 @@ namespace detail {
             }
             ft.gradient_colors.resize(static_cast<std::size_t>(n_grad));
             for (std::int32_t g = 0; g < n_grad; ++g) {
-                if (!read_u32_token(
+                if (!read_wrapping_u32_token(
                         reader, ft.gradient_colors[static_cast<std::size_t>(g)])) {
                     return make_load_error(source, "truncated skin gradient color",
                                            i, skin.name);
@@ -448,13 +454,14 @@ namespace detail {
                                                 i, skin.name)
                               : err;
             }
-            con.weights.resize(static_cast<std::size_t>(w_count));
+            con.pairs.resize(static_cast<std::size_t>(w_count));
             for (std::int32_t w = 0; w < w_count; ++w) {
-                if (!reader.read_f32(
-                        con.weights[static_cast<std::size_t>(w)])) {
+                auto& pair = con.pairs[static_cast<std::size_t>(w)];
+                if (!reader.read_f32(pair.weight) ||
+                    !read_i32_token(reader, pair.key_index)) {
                     return make_load_error(source,
-                                           "truncated skin constraint weight", i,
-                                           skin.name);
+                                           "truncated skin constraint weight pair",
+                                           i, skin.name);
                 }
             }
             skin.constraints.push_back(std::move(con));
@@ -818,7 +825,7 @@ namespace detail {
         });
 }
 
-// Optional Data/skyboxes.txt (0x140094400): zero header tokens.
+// Optional Data/skyboxes.txt (0x140094400 / mbSkybox::readStream 0x1402180c0): zero header tokens.
 [[nodiscard]] inline ModuleLoadError load_skyboxes(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -841,9 +848,7 @@ namespace detail {
         if (!reader.read_string(sky.id) || !read_u32_token(reader, sky.flags) ||
             !reader.read_f32(sky.sun_heading) ||
             !reader.read_f32(sky.sun_altitude) ||
-            !reader.read_f32(sky.flare_strength[0]) ||
-            !reader.read_f32(sky.flare_strength[1]) ||
-            !reader.read_f32(sky.flare_strength[2]) ||
+            !reader.read_f32(sky.flare_strength) ||
             !reader.read_string(sky.post_effect) ||
             !reader.read_f32(sky.sun_rgb[0]) || !reader.read_f32(sky.sun_rgb[1]) ||
             !reader.read_f32(sky.sun_rgb[2]) || !reader.read_f32(sky.sky_rgb[0]) ||
@@ -852,7 +857,7 @@ namespace detail {
             !reader.read_f32(sky.ambient_rgb[1]) ||
             !reader.read_f32(sky.ambient_rgb[2]) ||
             !reader.read_f32(sky.fog_start) ||
-            !read_u32_token(reader, sky.fog_color)) {
+            !read_wrapping_u32_token(reader, sky.fog_color)) {
             return make_load_error(source, "truncated skybox", i, sky.id);
         }
         if (i < world.m5.skybox_fog_colors.size()) {

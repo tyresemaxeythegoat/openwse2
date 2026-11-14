@@ -150,6 +150,36 @@ inline void underscores_to_spaces(std::string& text) noexcept {
     return true;
 }
 
+// Mirrors retail rglInputTextFileStream::readUint32 (0x1402afce0) modulo-2^32
+// decimal wrap (up to 15 chars), needed for retail color literals such as
+// `68451502092` in Native `skins.txt` while rejecting non-numeric garbage.
+[[nodiscard]] inline bool read_wrapping_u32_token(io::TokenReader& reader,
+                                                  std::uint32_t& out) noexcept {
+    const std::string_view token = reader.next_token();
+    if (token.empty()) {
+        return false;
+    }
+    std::size_t idx = 0;
+    bool neg = false;
+    if (token[0] == '-') {
+        neg = true;
+        idx = 1;
+    }
+    if (idx >= token.size() || token.size() > 15U) {
+        return false;
+    }
+    std::uint32_t acc = 0;
+    for (; idx < token.size(); ++idx) {
+        const char ch = token[idx];
+        if (ch < '0' || ch > '9') {
+            return false;
+        }
+        acc = static_cast<std::uint32_t>(acc * 10U + static_cast<std::uint32_t>(ch - '0'));
+    }
+    out = neg ? static_cast<std::uint32_t>(-static_cast<std::int32_t>(acc)) : acc;
+    return true;
+}
+
 [[nodiscard]] inline bool read_count_token(io::TokenReader& reader,
                                            std::int32_t& out,
                                            std::int32_t max_count,

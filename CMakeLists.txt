@@ -12,6 +12,7 @@ target_include_directories(wse_engine INTERFACE
 target_compile_features(wse_engine INTERFACE cxx_std_20)
 
 option(WSE_BUILD_TESTS "Build the engine C++20 unit test binaries" ON)
+option(WSE_BUILD_TOOLS "Build portable engine CLI tools" ON)
 option(WSE_BUILD_HEADER_CHECKS "Compile every engine header standalone" OFF)
 option(WSE_SANITIZE "Build tests with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
@@ -82,5 +83,12 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
     wse_add_host_test(wse_m6         engine/tests/wse_m6_test.cpp)
     wse_add_host_test(platform       engine/tests/platform_test.cpp)
     wse_add_host_test(module_loaders engine/tests/module_loaders_test.cpp)
-    set_tests_properties(wse_dict wse_array platform module_loaders PROPERTIES RUN_SERIAL TRUE)
+    wse_add_host_test(headless       engine/tests/headless_test.cpp)
+    set_tests_properties(wse_dict wse_array platform module_loaders headless PROPERTIES RUN_SERIAL TRUE)
+endif()
+
+if(WSE_BUILD_TOOLS)
+    add_executable(wse_headless engine/tools/wse_headless.cpp)
+    target_link_libraries(wse_headless PRIVATE wse_engine)
+    wse_apply_strict_warnings(wse_headless)
 endif()

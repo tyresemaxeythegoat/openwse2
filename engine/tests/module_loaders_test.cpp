@@ -243,7 +243,7 @@ std::string build_skins_fixture() {
            "1 face_man 4294967295 1 2 hair_blonde 4290000000 4285000000 "
            "1 0 snd_man_grunt "
            "skel_human 1.0 0 1 "
-           "1 0.5 1 2 0.25 0.75\n"
+           "1 0.5 1 2 0.25 1 0.75 2\n"
            "woman 1 woman_body woman_calf_l woman_hand_l woman_head "
            "0 0 0 0 0 0 0 skel_human 0.95 0 1 0\n";
 }
@@ -266,7 +266,7 @@ std::string build_music_fixture() {
 std::string build_particle_systems_fixture() {
     std::ostringstream oss;
     oss << "particlesystemsfile version 1\n1\nps_dust 0 prt_smoke";
-    for (int i = 0; i < 30; ++i) {
+    for (int i = 0; i < 35; ++i) {
         oss << " " << (static_cast<float>(i) * 0.5f);
     }
     oss << "\n";
@@ -349,7 +349,7 @@ std::string build_ground_specs_fixture() {
 
 std::string build_skyboxes_fixture() {
     return "1\n"
-           "sky_noon 0 1.0 0.5 0.1 0.2 0.3 pfx_vivid "
+           "sky_noon 0 1.0 0.5 0.85 pfx_vivid "
            "1.0 0.9 0.8 0.5 0.6 0.9 0.2 0.2 0.3 150.0 4286611584\n";
 }
 
@@ -471,7 +471,7 @@ void test_ini_and_token_helpers() {
                mod_ini.load_mod_resources.size() == 2U,
            "module.ini parses settings and ordered resource directives");
 
-    wse::io::TokenReader tok("-1 2147483648 4294967295 12x 99999999999999");
+    wse::io::TokenReader tok("-1 2147483648 4294967295 12x 99999999999999 68451502092");
     std::int32_t s = 0;
     std::uint32_t u = 0;
     expect(read_i32_token(tok, s) && s == -1, "signed negative token parses");
@@ -480,6 +480,9 @@ void test_ini_and_token_helpers() {
     expect(read_u32_token(tok, u) && u == 4294967295U, "max u32 parses");
     expect(!read_i32_token(tok, s), "trailing garbage rejected");
     expect(!read_i32_token(tok, s), "huge out-of-range integer rejected");
+    expect(read_wrapping_u32_token(tok, u) &&
+               u == static_cast<std::uint32_t>(68451502092ULL),
+           "wrapping u32 mirrors 0x1402afce0 for >32-bit retail colors");
 
     expect(initial_troop_xp(5, nullptr) == kCampaignLevelXpTable[4],
            "deterministic XP equals g_levelTable[level]");
@@ -758,7 +761,8 @@ void test_asset_mission_and_data_loaders() {
                        out[0].face_textures.size() == 1U &&
                        out[0].face_textures[0].gradient_colors.size() == 2U &&
                        out[0].constraints.size() == 1U &&
-                       out[0].constraints[0].weights.size() == 2U,
+                       out[0].constraints[0].pairs.size() == 2U &&
+                       out[0].constraints[0].pairs[1].key_index == 2,
                    "skins.txt loads deform keys, face gradients, voices, and constraints");
         }
     }
@@ -807,8 +811,8 @@ void test_asset_mission_and_data_loaders() {
                                   }),
                       "particle_systems.txt loads")) {
             expect(world.num_particle_systems == 1 && out.size() == 1U &&
-                       close(out[0].params[29], 14.5f),
-                   "particle_systems.txt reads 30 floats");
+                       close(out[0].params[34], 17.0f),
+                   "particle_systems.txt reads 35 floats");
         }
     }
     {
@@ -958,7 +962,7 @@ void test_asset_mission_and_data_loaders() {
                                       return load_skyboxes(r, world, &skies);
                                   }),
                       "skyboxes.txt loads")) {
-            expect(skies.size() == 1U &&
+            expect(skies.size() == 1U && close(skies[0].flare_strength, 0.85f) &&
                        world.m5.skybox_fog_colors[0] == 4286611584U,
                    "skyboxes.txt loads and seeds skybox_fog_colors");
         }

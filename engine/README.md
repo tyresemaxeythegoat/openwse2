@@ -18,10 +18,12 @@ engine/
                       wse_state.h, execute_wse.h              WSE VM state & top-level dispatcher
                       ops/{bitwise,system,world,string,fp_expr,fp,dict,array,position}.h
                       wse_opcodes.h (generated)               WSE extended opcode enum
-  include/wse/game/   script.h, trigger.h, world_state.h,    managers, module loaders, campaign helpers, and state model
+  include/wse/game/   script.h, trigger.h, world_state.h,    managers, module loaders, campaign helpers, headless runner, and state model
                       world_subsystem_types.h, world_campaign_helpers.h,
-                      module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h
+                      module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h,
+                      headless_runner.h
   include/wse/platform/ vfs.h, clock.h, sleep.h, log.h        platform seam (port infrastructure)
+  tools/              wse_headless.cpp                        headless module CLI validator (`Modules/Native`)
   tests/              one *_test.cpp per suite (+ wse_test_common.h), no framework
   fixtures/           hand-written module snippets (never retail files)
   build_host.ps1      Windows host gate
@@ -57,6 +59,8 @@ The engine is header-only and built through CMake (`../CMakeLists.txt`), CI (`.g
 | `include/wse/game/module_asset_loaders.h` | asset/visual loaders (`meshes`, `actions`, `skins` (`0x140213690`), `sounds` v2/v3, `music`, `particle_systems`, `postfx`, `Data/{flora_kinds,ground_specs,skyboxes}.txt`) | v1.1.5.5 stream readers cited in header |
 | `include/wse/game/module_mission_loaders.h` | interactive/mission loaders (`map_icons`, `scene_props`, `menus`, `presentations`, `mission_templates`, `tableau_materials`, `conversation` v1/v2) | v1.1.5.5 stream readers cited in header |
 | `include/wse/game/module_bundle.h` | `WseOwnedStringBanks`, `ModuleBundle`, `ModuleLoadOptions`, and `load_module()` orchestrator populating `WseWorldState`, `ScriptManager`, triggers, and `VmContext` string banks | `mbGame::readModuleFiles` cited in header |
+| `include/wse/game/headless_runner.h` | **port infrastructure:** `HeadlessRunOptions`, `HeadlessRunReport`, `HeadlessSession`, and `run_headless_module()` / `run_headless_session()` executing `load_module`, `game_start`, and simulated trigger frames via `Vfs` and `LogSink` | clean-room orchestration over `module_bundle.h`, `trigger.h`, `block_vm.h` |
+| `tools/wse_headless.cpp` | portable Phase 2H CLI runner (`<warband_root> [module_rel_dir] [--frames N] [--step-ticks T] [--allow-unimplemented]`) using `HostVfs` + `StderrLog` | Phase 2H headless `Native` exit runner |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
 | `include/wse/core/{math,encoding,json}.h` | pure STL math vectors/transforms/MT19937, UTF-8/UTF-16/MD5/URL/path/LE codecs, minimal JSON parser/serializer | `rglTransform`, `rglMersenneTwister`, `UrlEscapeA`/`UrlUnescapeA`, `Json::Reader`/`Writer` |
 | `include/wse/vm/wse_state.h` | opcode mask, operand/effect structs, `WseStringBanks`, `WseOptionsState`, `WseObjectManager`, `parseString`, shared file helpers | `executeWSE` `0x1401e4dc0`, `0x1400720b0`, `0x1401c6150` |
@@ -71,6 +75,7 @@ The engine is header-only and built through CMake (`../CMakeLists.txt`), CI (`.g
 | `tests/wse_test_common.h` + `tests/wse_{bitwise_fp,system,string,dict,array,world}_test.cpp` | host tests for opcode enum values, all implemented handlers (including `*_slot_gt`, scalar/config/skill/savegame MD5, troop HP cap/nibble/proficiency, item/cur_item, edit-mode selection/highlight, `agent_{set,get}_action_speed_modifier` `3340–3341`, party `3900–3911`, `feval`/`parseString`, `.wsedict`/INI/JSON/URL dict I/O, `.wsearray` binary I/O, path sandboxing, natural merge sort, and array relations), operand bounds, and opcode masking | local test doubles only |
 | `tests/block_vm_test.cpp` + `tests/native_world_test.cpp` | host tests for analyze/modifiers/loops (live entity iterators `11/12/16/17`, `try_for_dict_keys`), `currentCaller` preservation, default local-variable zeroing (`0x140617819`), core math/scripts/recursion/return values/positions/trigger VM integration/`feval`, `array_sort_custom` script callbacks, `WseWorldState` script integration, unimplemented histogram/`failOnUnimplemented`, Milestone 1 `entity_slots`/`arithmetic`/`positions_and_math`/`strings` suites, Milestone 2 `108` entity/player/quest/UI/site/troop/party + `66` agent/team/prop/mission/timer opcodes, Milestone 3 `284` campaign/mission/item/troop/party/face-key opcodes, and Milestone 4 `218` opcodes + `473/477/1004/1070/1104/1302/1491` non-switch/fallback + `1802/1930/1969` upgrades | local test doubles and module fixtures |
 | `tests/module_loaders_test.cpp` | host tests for INI/BOM/comment parsers, individual world/campaign/asset/mission/Data loaders, error diagnostics, and full `load_module()` + VM execution round-trips over `MemoryVfs` and `HostVfs` | in-memory + temp-directory fixtures |
+| `tests/headless_test.cpp` | host tests for `run_headless_module()` / `run_headless_session()` (`game_start` + multi-frame triggers over `MemoryVfs` and `HostVfs`, loud unimplemented-opcode failure, and missing `game_start` / load error diagnostics) | in-memory + temp-directory fixtures |
 
 ## Module text format
 
@@ -410,8 +415,18 @@ wse_array tests: PASS
 wse_world tests: PASS
 block_vm tests: PASS
 PASS  native_world_test
+PASS  native_m5_test
+PASS  wse_m6_test
 platform tests: PASS
 module_loaders tests: PASS
+headless tests: PASS
+engine host tests: PASS
+```
+
+To run the headless Phase 2H validator against a local Warband install:
+
+```powershell
+.\engine\build\host\wse_headless.exe "C:\Path\To\Warband" "Modules/Native" --frames 20 --step-ticks 2500000
 ```
 
 The Android NDK (`aarch64-linux-android29`) header checks and cross-compile build also run in

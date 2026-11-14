@@ -103,8 +103,12 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [ ] `rglString` semantics as a shared type; `.brf` mesh and texture loaders
 
 **2H. Phase exit: headless `Native` run**
-- [ ] Load a user-supplied `Native` module and execute `game_start` plus one simulated frame of
-      triggers with **zero** unimplemented-opcode hits, on host and on arm64
+- [x] Load a user-supplied `Native` module and execute `game_start` plus simulated frames of
+      triggers with **zero** unimplemented-opcode hits (`wse/game/headless_runner.h`,
+      `engine/tools/wse_headless.cpp`, `headless_test.cpp`): validated on Windows host against
+      user retail `Modules/Native` (`34` files, `game_start` + `20` frames, `0` errors / `0`
+      unimplemented opcodes under `failOnUnimplemented = true`) and compiled for `arm64-v8a` in
+      NDK CI; on-device Android runtime check remains tracked under `P1` / `P9`
 
 ### Phase 3 — Cross-Platform Replacement (Win32/DX9/FMOD → C++20/SDL3/Vulkan)
 
@@ -158,6 +162,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-15 | — | Phase 2H headless `Native` exit: fix `particle_systems.txt` (35 floats `0x140207d50`), `skins.txt` (wrapping u32 colors `0x1402afce0` and `(weight, key_index)` constraint pairs `0x140213d60`), and `Data/skyboxes.txt` (scalar `flare_strength` `0x1402180c0`); add `wse/game/headless_runner.h`, `engine/tools/wse_headless.cpp`, and `headless_test.cpp` (`17/17` suites / `116` tests + `wse_headless`); host run on real retail `Modules/Native` executes `game_start` + `20` trigger frames with `0` errors and `0` unimplemented opcodes |
 | 2026-11-15 | — | Clean-room v1.1.5.5 module loaders (`wse/game/module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h`) routing exclusively through `wse::platform::Vfs` + `wse::io::TokenReader` to populate `WseWorldState`, owned `WseStringBanks`, `ScriptManager`, and trigger managers; PDB VA audit (`tools/build_symbol_map.py`, `docs/SYMBOL_MAP.json`); `MemoryVfs` + `HostVfs` + VM execution suite (`module_loaders_test.cpp`, `16/16` suites / `112` tests) |
 | 2026-11-15 | `d64485c` | P1 seam review fixes: `HostVfs` creates a missing root on first write (saves into a fresh directory were dropped), caches its canonical root, and reads text without a second copy (`Vfs::read_text` is virtual); `get_time` (3022) reads the new `wse::platform::WallClock` (`WseVmState::wall_clock`), `sleep_ms` moves to `wse/platform/sleep.h`, `wse_local_epoch_seconds` leaves `wse/core/encoding.h`; case-insensitive save names and `Vfs` ownership documented; regression tests in `wse_dict`, `wse_array`, `wse_system`, `platform` |
 | 2026-11-15 | `245307b` | Platform P1 seam routing: route all direct `<filesystem>`/`<fstream>`/`<chrono>`/`<thread>` uses outside `wse/platform/` (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, `wse/vm/ops/{dict,array,string,system}.h`) through `wse::platform::{Vfs,sleep_ms}`, adding `HostVfs` + `MemoryVfs` coverage in `wse_dict`/`wse_array`/`wse_system` |
