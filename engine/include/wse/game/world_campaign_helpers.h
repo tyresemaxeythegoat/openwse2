@@ -287,7 +287,8 @@ inline void troop_add_xp(WseTroop& troop, std::int32_t amount) noexcept {
         return;
     }
     const std::int32_t clamped_add = std::min<std::int32_t>(amount, 29999);
-    troop.xp += clamped_add;
+    // Safety deviation: saturate instead of wrapping past INT32_MAX.
+    troop.xp = saturating_add_i32(troop.xp, clamped_add);
     while (troop.level < 62 && troop.xp >= troop_next_level_xp(troop.level)) {
         ++troop.level;
         ++troop.attribute_points;
@@ -327,7 +328,7 @@ inline void troop_add_xp(WseTroop& troop, std::int32_t amount) noexcept {
     const std::uint32_t flag = prisoner ? 1U : 0U;
     for (const auto& s : party.stacks) {
         if (s.troop_no == troop_no && (s.flags & 1U) == flag) {
-            total += s.num_troops;
+            total = saturating_add_i32(total, s.num_troops);
         }
     }
     return total;
@@ -339,7 +340,9 @@ inline std::int32_t party_add_members(WseWorldState& world,
                                       std::int32_t count,
                                       bool prisoner = false,
                                       std::int32_t wounded = 0) {
-    if (!world.is_valid_party(party_no) || count <= 0) {
+    // Safety deviation: an invalid troop id is rejected so no stack can ever
+    // carry an out-of-range troop_no.
+    if (!world.is_valid_party(party_no) || !world.is_valid_troop(troop_no) || count <= 0) {
         return 0;
     }
     auto& party = world.parties[static_cast<std::size_t>(party_no)];
@@ -354,8 +357,10 @@ inline std::int32_t party_add_members(WseWorldState& world,
         }
     }
     if (target != nullptr) {
-        target->num_troops += count;
-        target->num_wounded_troops += clamped_wounded;
+        target->num_troops = saturating_add_i32(target->num_troops, count);
+        target->num_wounded_troops = std::min(
+            saturating_add_i32(target->num_wounded_troops, clamped_wounded),
+            target->num_troops);
     } else {
         party.stacks.push_back(WsePartyStack{troop_no, count, clamped_wounded, flag});
     }
@@ -366,13 +371,15 @@ inline void party_add_leader(WseWorldState& world,
                              std::int32_t party_no,
                              std::int32_t troop_no,
                              std::int32_t count = 1) {
-    if (!world.is_valid_party(party_no) || count <= 0) {
+    // Safety deviation: an invalid troop id is rejected (see party_add_members).
+    if (!world.is_valid_party(party_no) || !world.is_valid_troop(troop_no) || count <= 0) {
         return;
     }
     auto& party = world.parties[static_cast<std::size_t>(party_no)];
     for (std::size_t i = 0; i < party.stacks.size(); ++i) {
         if (party.stacks[i].troop_no == troop_no && !party.stacks[i].is_prisoner()) {
-            party.stacks[i].num_troops += count;
+            party.stacks[i].num_troops =
+                saturating_add_i32(party.stacks[i].num_troops, count);
             if (i != 0) {
                 std::rotate(party.stacks.begin(),
                             party.stacks.begin() + static_cast<std::ptrdiff_t>(i),

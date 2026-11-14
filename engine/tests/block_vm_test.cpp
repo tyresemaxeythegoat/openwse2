@@ -2027,6 +2027,112 @@ void test_locals_zeroing_default() {
            "block execution initializes locals to zero by default");
 }
 
+void test_native_campaign_safety_deviations() {
+    using namespace wse::vm;
+
+    VmContext ctx;
+    ctx.failOnUnimplemented = true;
+    auto& world = ctx.world;
+    world.has_game = true;
+    world.troops.resize(4);
+    world.troops[0].flags = 0x10ULL;  // hero
+    world.troops[1].upgrade_troop_nos = {2, 3};
+    world.parties.resize(2);
+    world.parties[0].active = true;
+    world.parties[1].active = true;
+    world.main_party_no = 0;
+    world.player_troop_no = 0;
+    world.sites.resize(1);
+    world.current_site_no = 0;
+
+    constexpr std::int32_t kMax = std::numeric_limits<std::int32_t>::max();
+
+    // add_xp_to_troop saturates instead of wrapping past INT32_MAX.
+    world.troops[0].xp = kMax - 10;
+    StatementBlock xpBlock;
+    xpBlock.statements = {make_stmt(1062U, {20000, 0})};
+    expect(execute_statement_block(xpBlock, ctx) && world.troops[0].xp == kMax,
+           "add_xp_to_troop saturates troop xp at INT32_MAX");
+
+    // party_add_prisoners saturates the stack size and reports the real delta.
+    StatementBlock addBlock;
+    addBlock.statements = {
+        make_stmt(1611U, {1, 1, kMax}),
+        make_stmt(core_op::kAssign, {reg(5), reg(0)}),
+        make_stmt(1611U, {1, 1, kMax}),
+    };
+    expect(execute_statement_block(addBlock, ctx) && world.parties[1].stacks.size() == 1U &&
+               world.parties[1].stacks[0].num_troops == kMax && ctx.registers[5] == kMax &&
+               ctx.registers[0] == 0,
+           "party_add_prisoners saturates num_troops and returns the applied delta");
+
+    // party_force_add_members shares the saturating path in WseParty::add_members.
+    StatementBlock forceBlock;
+    forceBlock.statements = {
+        make_stmt(1613U, {1, 2, kMax}),
+        make_stmt(1613U, {1, 2, kMax}),
+    };
+    expect(execute_statement_block(forceBlock, ctx) && world.parties[1].stacks.size() == 2U &&
+               world.parties[1].stacks[1].num_troops == kMax,
+           "party_force_add_members saturates num_troops");
+
+    // Invalid troop ids never reach a party stack.
+    world.parties[1].stacks.clear();
+    StatementBlock badTroopBlock;
+    badTroopBlock.statements = {
+        make_stmt(1611U, {1, -7, 5}),   // party_add_prisoners
+        make_stmt(1612U, {1, 999, 1}),  // party_add_leader
+    };
+    expect(execute_statement_block(badTroopBlock, ctx) && world.parties[1].stacks.empty() &&
+               ctx.registers[0] == 0,
+           "party_add_prisoners and party_add_leader reject invalid troop ids");
+
+    StatementBlock leaderBlock;
+    leaderBlock.statements = {
+        make_stmt(1611U, {1, 1, 3}),
+        make_stmt(1612U, {1, 2, 1}),
+    };
+    expect(execute_statement_block(leaderBlock, ctx) && world.parties[1].stacks.size() == 2U &&
+               world.parties[1].stacks[0].troop_no == 2 &&
+               !world.parties[1].stacks[0].is_prisoner(),
+           "party_add_leader still inserts a valid leader at stack 0");
+
+    // add_visitors_to_current_scene is capped at kMaxSiteVisitors.
+    StatementBlock visitorBlock;
+    visitorBlock.statements = {make_stmt(1265U, {0, 1, kMax})};
+    expect(execute_statement_block(visitorBlock, ctx) &&
+               world.sites[0].visitors.size() == wse::game::kMaxSiteVisitors,
+           "add_visitors_to_current_scene caps the visitor list");
+
+    // Squared-distance and gold-as-xp conversions saturate instead of overflowing.
+    ctx.positions[1] = wse::core::WseTransform::identity();
+    ctx.positions[2] = wse::core::WseTransform::identity();
+    ctx.positions[1].o.x = 3.0e18F;
+    world.troops[0].xp = 0;
+    StatementBlock castBlock;
+    castBlock.statements = {
+        make_stmt(712U, {reg(6), 1, 2}),
+        make_stmt(713U, {reg(7), 1, 2}),
+        make_stmt(1063U, {2000000000, 0}),
+    };
+    expect(execute_statement_block(castBlock, ctx) &&
+               ctx.registers[6] == std::numeric_limits<std::int64_t>::max() &&
+               ctx.registers[7] == std::numeric_limits<std::int64_t>::max() &&
+               world.troops[0].xp == 29999,
+           "sq-distance and add_gold_as_xp saturate out-of-range float results");
+
+    // WSE party_stack_upgrade treats any nonzero path as path 1.
+    world.parties[1].stacks.clear();
+    world.parties[1].stacks.push_back({1, 4, 0, 0});
+    world.parties[1].stacks[0].num_upgradeable = 4;
+    StatementBlock upgradeBlock;
+    upgradeBlock.statements = {make_stmt(3905U, {1, 0, 4, 2})};
+    expect(execute_statement_block(upgradeBlock, ctx) && world.parties[1].stacks.size() == 1U &&
+               world.parties[1].stacks[0].troop_no == 3 &&
+               world.parties[1].stacks[0].num_troops == 4,
+           "party_stack_upgrade with path 2 upgrades along the second path");
+}
+
 void test_native_campaign_ops() {
     using namespace wse::vm;
 
@@ -2193,6 +2299,7 @@ int main() {
     test_script_mutation_safety();
     test_locals_zeroing_default();
     test_native_campaign_ops();
+    test_native_campaign_safety_deviations();
 
     if (failures != 0) {
         std::printf("block_vm tests: FAIL (%d)\n", failures);

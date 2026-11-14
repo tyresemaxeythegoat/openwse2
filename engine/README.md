@@ -43,8 +43,8 @@ The engine is header-only and built through CMake (`../CMakeLists.txt`), CI (`.g
 | `include/wse/vm/native_ops.h` | core + Milestone 1 native dispatcher (`dispatch_native_statement` + `dispatch_native_statement_ext`, `145` switch opcodes): `33` core comparisons/math/assign (`30–33`, `2100–2133`), `44` `entity_slots`, `35` `positions_and_math`, `8` arithmetic/RNG/trig/gold, `19` `strings`, `display_message`, `troop_is_hero`, `troop_set_health`, `agent_is_human`, `store_troop_faction`, `store_faction_of_party`, entity validity filters | `0x14006f990`–`0x14032ffb0` |
 | `include/wse/vm/native_entity_ops.h` | Milestone 2 entity/campaign native dispatcher (`dispatch_native_entity_statement`, `108` switch opcodes): player/MP (`47`, `394–408`, `430`), quests (`200–204`, `1113`, `1280–1286`), audio/ground/UI/overlays (`599–600`, `791`, `900–947`, `1107`), sites/factions (`1232`, `1261–1270`), troops (`1505–1550`, `2170–2176`), parties/campaign (`1601–1685`, `2156–2281`) | `0x1401c6548`–`0x1401de32d` |
 | `include/wse/vm/native_mission_ops.h` | Milestone 2 mission/combat native dispatcher (`dispatch_native_mission_statement`, `66` switch opcodes): agent getters/setters/predicates/AI/combat (`1700–1789`), team & division control (`1790–1796`), scene/props/mission control (`1804–2075`), and mission timers (`2370–2372`) | `0x1401d36ee`–`0x1401df390` |
-| `include/wse/vm/native_campaign_ops.h` | Milestone 3 campaign/world/troop/party native dispatcher (`dispatch_native_campaign_statement`, `156` switch opcodes): campaign state/menus/achievements/positions (`36–998`), mission/spawning/troops/factions (`1001–1562`), parties/stacks/morale (`1603–1694`) | `0x1401c6448`–`0x1401d5496` |
-| `include/wse/vm/native_campaign_ops_2.h` | Milestone 3 combat/item/mission/store/face-key native dispatcher (`dispatch_native_campaign_2_statement`, `128` switch opcodes): agent combat/items/teams/props (`1695–2095`), stores/relations/timers/strings (`2135–2388`), item getters/predicates & face keys (`2700–2751`) | `0x1401d3509`–`0x1401e1517` |
+| `include/wse/vm/native_campaign_ops.h` | Milestone 3 campaign/world/troop/party native dispatcher (`dispatch_native_campaign_statement`, `156` switch opcodes): campaign state/achievements/multiplayer/positions (`36–793`), mission/spawning/troops/items (`1003–1570`), parties/stacks/morale (`1604–1694`) | `0x1401c6448`–`0x1401d5496` |
+| `include/wse/vm/native_campaign_ops_2.h` | Milestone 3 combat/item/mission/store/face-key native dispatcher (`dispatch_native_campaign_2_statement`, `128` switch opcodes): agent combat/items/teams/props (`1695–2099`), stores/relations/timers/strings (`2154–2379`), item getters/predicates & face keys (`2700–2751`) | `0x1401d3509`–`0x1401e1517` |
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x140244810`, `0x140244540`, `0x14020fe60`, `0x14020fab0`, `0x1400ccf20`, `0x1400cd2d0`, `0x140244970`, `0x140244b60`, `0x14020ffa0`, `0x140244cd0`, `0x14020fb80`, `0x1402101a0` |
 | `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 65-entry name table, and script mapping | `0x14020f6a0`, `0x14020f7c0`, `0x14020f9a0`; globals `0x14069fac0`/`0x14069fac8`/`0x14069facc`; table `0x140615ad0`; formats `0x14055c680`/`0x14055c690` |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
@@ -272,6 +272,16 @@ one across script-visible execution:
 - `convert_to_fixed_point` (2130) wraps on overflow; `convert_from_fixed_point` (2131) reports
   `"Division by zero"` if a host zeroes `fixedPointMultiplier` (scripts cannot set it below 1).
 - `HostVfs` resolves symbolic links and refuses any path whose target lies outside its root.
+- Party and troop counters saturate instead of wrapping: `troop_add_xp` clamps `WseTroop::xp` at
+  `INT32_MAX`, and `party_add_members`, `party_add_leader`, and `WseParty::add_members` clamp
+  `num_troops` the same way (`saturating_add_i32`). `party_add_prisoners` (1611) then stores the
+  delta that was really applied in `reg0`.
+- `party_add_members` and `party_add_leader` reject an invalid troop id, so
+  `party_add_prisoners` (1611) and `party_add_leader` (1612) can no longer create a stack whose
+  `troop_no` is out of range. Whether retail checks this has not been verified.
+- `add_visitors_to_current_scene` (1265) stops at `kMaxSiteVisitors` (4096) entries per site.
+- `get_sq_distance_between_positions` (712/713) and `add_gold_as_xp` (1063) convert their float
+  results with saturation (`NaN` gives 0) instead of an out-of-range float-to-integer cast.
 
 ## Handler design decisions and limits
 
@@ -292,6 +302,27 @@ one across script-visible execution:
   intended.
 - **Serial file tests:** the `wse_dict`, `wse_array`, and `platform` tests write to temp-directory
   paths and are marked `RUN_SERIAL` in `CMakeLists.txt` so parallel `ctest` runs cannot collide.
+
+### Milestone 3 handlers that are approximations or stubs
+
+These are counted as implemented because they consume their operands and keep scripts running, but
+they are **not** verified reconstructions of the cited handlers. Treat their results as
+placeholders until each is checked against the v1.1.5.5 disassembly:
+
+- **No-op stubs:** `agent_clear_relations_with_agents` (1802), `add_reinforcements_to_entry`
+  (1930), `particle_system_burst` (1969). `store_num_free_stacks` (2154) always stores `10`.
+- **Simplified helpers in `world_campaign_helpers.h` (no VA evidence yet):** `party_add_template`
+  adds the midpoint of each stack's min/max instead of a random count and ignores
+  `set_party_creation_random_limits` (1080); `troop_add_merchandise` fills free slots round-robin
+  and ignores faction, abundance weighting, and item probability; `troop_equip_items`,
+  `troop_sort_inventory`, `troop_ensure_inventory_space`, `party_max_companions`,
+  `party_max_prisoners`, and the XP/upgrade helpers use simple local rules.
+- **Simplified combat:** `agent_deliver_damage_to_agent` (1722) applies weapon damage times the
+  deliverer's damage modifier with no armor, skill, or hit-location model.
+- **Semantics still to confirm:** `troop_is_mounted` (152) tests the horse equipment slot (the
+  module-system documentation describes a troop-flag test), `entering_town` (36) succeeds when the
+  main party is *farther* than `2.3 × radius` from the town, and
+  `get_sq_distance_between_positions` (712) scales square metres by `100`.
 
 ## Build and test
 

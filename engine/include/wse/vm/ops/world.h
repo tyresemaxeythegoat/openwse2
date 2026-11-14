@@ -704,7 +704,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
             return WseDispatch::ignored;
         }
         wse::game::party_stack_upgrade(*world, narrow[0], narrow[1], narrow[2],
-                                       narrow[3]);
+                                       static_cast<std::int32_t>(path));
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::party_stack_set_num_upgradeable: {
