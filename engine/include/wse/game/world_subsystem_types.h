@@ -30,6 +30,7 @@ inline constexpr std::size_t kMaxTableauOverrideItems = 128;
 inline constexpr std::size_t kMaxBans = 512;
 inline constexpr std::size_t kMaxUrlRequests = 128;
 inline constexpr std::size_t kMaxSpawnedMissionObjects = 8192;
+inline constexpr std::size_t kMaxSpawnedAgents = 8192;
 inline constexpr std::size_t kMaxRayObstacles = 1024;
 inline constexpr std::size_t kMaxReinforcementEvents = 512;
 inline constexpr std::size_t kMaxAiMeshFaces = 4096;
@@ -435,7 +436,8 @@ struct WseMiscRuntimeState {
     float viewport_height = 768.0f;
     float physics_delta_time = 0.025f;
     bool ironman_allowed = false;
-    std::int32_t merchandise_modifier_quality = 0;
+    float merchandise_modifier_quality = 0.0f;  // percent / 100
+    bool encounter_left = false;                // leave_encounter (1301)
     std::int32_t rest_hours = 0;
     std::int32_t rest_time_speed = 0;
     bool rest_interactive = false;

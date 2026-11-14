@@ -76,9 +76,14 @@ namespace wse::vm {
         (narrow.size() > base_idx + 1U) ? narrow[base_idx + 1U] : -1;
     req.skip_parsing =
         (narrow.size() > base_idx + 2U && narrow[base_idx + 2U] != 0);
+    // Safety deviation: the seconds -> milliseconds product saturates instead
+    // of overflowing a 32-bit signed multiply.
     req.timeout_ms =
         (narrow.size() > base_idx + 3U && narrow[base_idx + 3U] != 0)
-            ? (narrow[base_idx + 3U] * 1000)
+            ? static_cast<std::int32_t>(std::clamp<std::int64_t>(
+                  static_cast<std::int64_t>(narrow[base_idx + 3U]) * 1000,
+                  std::numeric_limits<std::int32_t>::min(),
+                  std::numeric_limits<std::int32_t>::max()))
             : -1;
 
     world->m6.ui.url_advanced_requests.push_back(std::move(url));
@@ -583,7 +588,8 @@ namespace wse::vm {
             narrow[0] >= world->num_skins) {
             return WseDispatch::ignored;
         }
-        world->m6.skins.blood_color = static_cast<std::uint32_t>(narrow[1]);
+        world->m6.skins.blood_colors[narrow[0]] =
+            static_cast<std::uint32_t>(narrow[1]);
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::skeleton_model_set_bone_body_section: {

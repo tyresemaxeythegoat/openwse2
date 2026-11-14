@@ -237,7 +237,7 @@ template <typename Fn>
         WseTransform out = WseTransform::identity();
         const WseVec4 raw_f = (pt_idx == 0) ? pt.f : (pt.o - pts[pt_idx - 1].o);
         out.f = wse_m6_safe_normalize(raw_f, WseVec4{0.0f, 1.0f, 0.0f, 0.0f});
-        out.u = WseVec4{0.0f, 1.0f, 0.0f, 0.0f};
+        out.u = WseVec4{0.0f, 0.0f, 1.0f, 0.0f};
         out.o = pt.o;
         out.orthonormalize();
         positions[static_cast<std::size_t>(narrow[0])] = out;
@@ -248,12 +248,11 @@ template <typename Fn>
         if (world == nullptr || operands.state.caller != -52) {
             return WseDispatch::ignored;
         }
-        for (auto& [id, missile] : world->m6.missiles) {
-            (void)id;
-            if (!missile.removed) {
-                missile.remove_on_hit = true;
-            }
+        // Only the missile that fired the trigger is flagged.
+        if (!world->m6.is_valid_missile(world->m6.trigger_missile_no)) {
+            return WseDispatch::ignored;
         }
+        world->m6.missiles[world->m6.trigger_missile_no].remove_on_hit = true;
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::missile_is_valid: {
@@ -286,7 +285,7 @@ template <typename Fn>
                 (pts.size() < 2) ? last.f
                                  : (last.o - pts[pts.size() - 2].o);
             out.f = wse_m6_safe_normalize(raw_f, WseVec4{0.0f, 1.0f, 0.0f, 0.0f});
-            out.u = WseVec4{0.0f, 1.0f, 0.0f, 0.0f};
+            out.u = WseVec4{0.0f, 0.0f, 1.0f, 0.0f};
             out.o = last.o;
             out.orthonormalize();
         }
@@ -709,8 +708,13 @@ template <typename Fn>
         if (world == nullptr) {
             return WseDispatch::ignored;
         }
+        // Safety deviation: saturating float -> int32 conversion.
         world->m6.scene.height_fog_height =
-            static_cast<std::int32_t>(static_cast<float>(wide[0]) / fp_mul);
+            static_cast<std::int32_t>(std::clamp<std::int64_t>(
+                wse::game::native_f2i_saturate(static_cast<float>(wide[0]) /
+                                               fp_mul),
+                std::numeric_limits<std::int32_t>::min(),
+                std::numeric_limits<std::int32_t>::max()));
         world->m6.scene.height_fog_density =
             std::max(static_cast<float>(wide[1]) / fp_mul, 0.1f);
         world->m6.scene.height_fog_strength =

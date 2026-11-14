@@ -57,7 +57,12 @@ namespace wse::vm {
         if (world == nullptr) {
             return WseDispatch::ignored;
         }
-        world->m6.lua.set_top(narrow[0]);
+        // Safety deviation: indices above kMaxLuaStackSize are rejected instead
+        // of resizing the stack to a script-controlled size.
+        if (!world->m6.lua.set_top(narrow[0])) {
+            world->m6.lua.add_error("lua_set_top: stack overflow");
+            return WseDispatch::ignored;
+        }
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::lua_insert: {
@@ -116,7 +121,7 @@ namespace wse::vm {
         }
         const std::string* s = world->m6.lua.to_string(narrow[1]);
         if (s == nullptr) {
-            world->m6.lua.errors.push_back(
+            world->m6.lua.add_error(
                 "value at index " + std::to_string(narrow[1]) +
                 " is not a valid string");
             return WseDispatch::handled_no_store;
@@ -137,7 +142,7 @@ namespace wse::vm {
         }
         const WseTransform* pos = world->m6.lua.to_pos(narrow[1]);
         if (pos == nullptr) {
-            world->m6.lua.errors.push_back(
+            world->m6.lua.add_error(
                 "value at index " + std::to_string(narrow[1]) +
                 " is not a valid position");
             return WseDispatch::handled_no_store;
@@ -210,23 +215,23 @@ namespace wse::vm {
         }
         auto& lua = world->m6.lua;
         if (lua.get_top() < num_args) {
-            lua.errors.emplace_back("not enough arguments on stack");
+            lua.add_error("not enough arguments on stack");
             return WseDispatch::handled_no_store;
         }
         lua.lua_context = operands.state.caller;
         std::replace(func_name.begin(), func_name.end(), ' ', '_');
         if (!wse_m6_valid_lua_dot_path(func_name)) {
-            lua.errors.push_back("bad func_name: '" + func_name + "'");
+            lua.add_error("bad func_name: '" + func_name + "'");
             return WseDispatch::handled_no_store;
         }
         const auto it = lua.functions.find(func_name);
         if (it == lua.functions.end() || !it->second) {
-            lua.errors.push_back("'_G." + func_name + "' is nil");
+            lua.add_error("'_G." + func_name + "' is nil");
             return WseDispatch::handled_no_store;
         }
         const int rc = it->second(lua, num_args);
         if (rc < 0) {
-            lua.errors.push_back("lua_call failed: " + func_name);
+            lua.add_error("lua_call failed: " + func_name);
             return WseDispatch::condition_false;
         }
         return WseDispatch::handled_no_store;
@@ -243,7 +248,7 @@ namespace wse::vm {
         lua.lua_context = (narrow.size() >= 3) ? narrow[2] : 0;
         const auto it = lua.callbacks.find(narrow[0]);
         if (it == lua.callbacks.end() || !it->second) {
-            lua.errors.push_back("missing lua callback " +
+            lua.add_error("missing lua callback " +
                                  std::to_string(narrow[0]));
             return WseDispatch::condition_false;
         }
@@ -251,7 +256,7 @@ namespace wse::vm {
         const int rc = it->second(lua, narrow[1]);
         if (rc < 0) {
             lua.stack.resize(before);
-            lua.errors.emplace_back("lua callback error");
+            lua.add_error("lua callback error");
             return WseDispatch::condition_false;
         }
         bool cond_ok = true;
