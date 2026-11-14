@@ -204,8 +204,21 @@ namespace wse::vm {
             hand < 0 || hand >= 2) {
             return WseDispatch::ignored;
         }
-        effect.value = world->agents[static_cast<std::size_t>(narrow[1])]
-                           .wielded_items[static_cast<std::size_t>(hand)];
+        // wielded_items holds item kinds; report the equipment slot carrying
+        // the wielded kind, or -1 when the hand is empty.
+        const auto& ag = world->agents[static_cast<std::size_t>(narrow[1])];
+        const std::int32_t wielded =
+            ag.wielded_items[static_cast<std::size_t>(hand)];
+        std::int32_t slot_no = -1;
+        if (wielded >= 0) {
+            for (std::size_t i = 0; i < 4U; ++i) {
+                if (ag.equipped_items[i] == wielded) {
+                    slot_no = static_cast<std::int32_t>(i);
+                    break;
+                }
+            }
+        }
+        effect.value = slot_no;
         effect.store_value = true;
         return WseDispatch::handled;
     }
@@ -285,6 +298,11 @@ namespace wse::vm {
         if (world == nullptr || !world->is_valid_agent(narrow[0])) {
             return WseDispatch::ignored;
         }
+        // Validate the new horse before detaching the old one, so a rejected
+        // call leaves both links intact.
+        if (narrow[1] >= 0 && !world->is_valid_agent(narrow[1])) {
+            return WseDispatch::ignored;
+        }
         auto& ag = world->agents[static_cast<std::size_t>(narrow[0])];
         if (world->is_valid_agent(ag.horse_agent_no)) {
             const std::int32_t old_horse_no = ag.horse_agent_no;
@@ -298,9 +316,6 @@ namespace wse::vm {
         if (narrow[1] < 0) {
             ag.horse_agent_no = -1;
             return WseDispatch::handled_no_store;
-        }
-        if (!world->is_valid_agent(narrow[1])) {
-            return WseDispatch::ignored;
         }
         world->agents[static_cast<std::size_t>(narrow[1])].rider_agent_no =
             narrow[0];
@@ -584,7 +599,7 @@ namespace wse::vm {
         }
         const auto& ag = world->agents[static_cast<std::size_t>(narrow[1])];
         effect.value = static_cast<std::int32_t>(
-            wse::core::wse_round64(ag.speed.y * 100.0f));
+            wse::core::wse_round64(ag.speed.z * 100.0f));
         effect.store_value = true;
         return WseDispatch::handled;
     }
@@ -597,7 +612,8 @@ namespace wse::vm {
             return WseDispatch::ignored;
         }
         const float vy = static_cast<float>(wide[1]) / 100.0f;
-        world->agents[static_cast<std::size_t>(narrow[0])].speed.y = vy;
+        // speed.x/.y are the horizontal components read by agent_get_speed.
+        world->agents[static_cast<std::size_t>(narrow[0])].speed.z = vy;
         world->m6.agent(narrow[0]).vertical_speed = vy;
         return WseDispatch::handled_no_store;
     }

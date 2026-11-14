@@ -253,6 +253,17 @@ binary savegames; none of these checks changes valid module behaviour. In `str_s
 empty delimiter cannot advance in retail and would loop indefinitely; the port stores the source as
 a single piece (respecting `skip_empty`) and terminates.
 
+Script operands never size an allocation directly (Milestone 4–6 review fixes):
+
+- The Lua bridge stack is capped at `WseLuaState::kMaxLuaStackSize` (`8000`): `lua_set_top` (5101)
+  beyond it is ignored and pushes past it are dropped with an error. The bridge error log keeps the
+  newest `kMaxLuaErrors` (`256`) entries.
+- `spawn_scene_prop` (1974) stops at `kMaxSpawnedMissionObjects` like `spawn_item`; `spawn_horse`
+  (1973) stops at `kMaxSpawnedAgents` and leaves `reg0 = -1`.
+- `overlay_set_boundaries` (928) and `scene_set_height_fog` (4518) convert float to `int32` with
+  saturation, and the `send_message_to_url_advanced` (3019/3033) seconds-to-milliseconds timeout
+  saturates instead of overflowing.
+
 Module scripts can mutate an object while the VM is using it, so the VM never keeps a pointer into
 one across script-visible execution:
 
@@ -286,6 +297,21 @@ one across script-visible execution:
 - `add_visitors_to_current_scene` (1265) stops at `kMaxSiteVisitors` (4096) entries per site.
 - `get_sq_distance_between_positions` (712/713) and `add_gold_as_xp` (1063) convert their float
   results with saturation (`NaN` gives 0) instead of an out-of-range float-to-integer cast.
+- Milestone 4–6 review fixes (portable-model decisions; none of these has been checked against
+  the retail handlers beyond the public operation semantics):
+  - `leave_encounter` (1301) sets `misc.encounter_left`; `misc.save_mode_flags` is read only by the
+    difficulty formula. `set_merchandise_modifier_quality` (1490) stores a float fraction.
+  - `spawn_item` (1971/1976) sets both `is_item` and `m5.is_spawned_item`, so
+    `scene_spawned_item_*` (1832/1833) see spawned items and `scene_item_*` (1830/1831) see only
+    scene-placed ones. `spawn_scene_prop` (1974) uses `world.spawn_position`.
+  - `agent_set_scripted_destination_no_attack` (1748) works on a copy of the position register.
+    `agent_deliver_damage_to_agent_advanced` (1827) treats the weapon item as optional.
+  - `agent_get_wielded_item_slot_no` (3308) returns the equipment slot `0..3` holding the wielded
+    item kind, or `-1`. `agent_{get,set}_current_vertical_speed` (3331/3332) use `speed.z`.
+    `agent_set_horse` (3313) validates the new horse before detaching the old one.
+  - `missile_remove_on_hit` (3611) flags only `m6.trigger_missile_no`, which the mission runtime
+    must set while `ti_on_missile_hit` runs. Missile positions (3609/3613) use world up `(0,0,1)`.
+  - `skin_set_blood_color` (5200) stores one colour per skin (`WseM6SkinExt::blood_color(skin)`).
 
 ## Handler design decisions and limits
 

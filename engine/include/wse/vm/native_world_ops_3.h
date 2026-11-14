@@ -654,7 +654,8 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
         return NativeDispatch::handled;
     }
     case 1301: // leave_encounter (0x1401cff1d)
-        world.misc.save_mode_flags |= 1;
+        // Own flag: save_mode_flags feeds native_world_current_difficulty.
+        world.misc.encounter_left = true;
         return NativeDispatch::handled;
     case 1303: // select_enemy (0x1401cff30)
         if (static_cast<std::uint32_t>(narrow[0]) < 2U) {
@@ -717,6 +718,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
                     obj.scene_prop_no == narrow[0]) {
                     obj.scene_prop_no = narrow[1];
                     obj.is_item = false;
+                    obj.m5.is_spawned_item = false;
                 }
             }
         }

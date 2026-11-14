@@ -256,8 +256,15 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             ov.m5.min_value = static_cast<double>(lo);
             ov.m5.max_value = static_cast<double>(hi);
             if (ov.type == 2 || ov.type == 3) {
-                const auto clo = static_cast<std::int32_t>(lo);
-                const auto chi = static_cast<std::int32_t>(hi);
+                // Safety deviation: saturating float -> int32 conversion.
+                const auto to_i32 = [](float v) noexcept {
+                    return static_cast<std::int32_t>(std::clamp<std::int64_t>(
+                        game::native_f2i_saturate(v),
+                        std::numeric_limits<std::int32_t>::min(),
+                        std::numeric_limits<std::int32_t>::max()));
+                };
+                const std::int32_t clo = to_i32(lo);
+                const std::int32_t chi = to_i32(hi);
                 if (ov.val < clo) {
                     ov.val = clo;
                 } else if (ov.val > chi) {

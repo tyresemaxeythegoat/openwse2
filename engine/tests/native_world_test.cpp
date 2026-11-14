@@ -542,7 +542,8 @@ void test_ops3_dialog_quests_encounters() {
 
     // 1301, 1303..1305, 1307
     expect(run_stmt(ctx, 1301U, {}), "1301 leave_encounter");
-    expect((ctx.world.misc.save_mode_flags & 1) != 0, "1301 sets bit 0");
+    expect(ctx.world.misc.encounter_left && ctx.world.misc.save_mode_flags == 0,
+           "1301 records encounter_left without touching save_mode_flags");
     expect(run_stmt(ctx, 1303U, {1}), "1303 select_enemy(1)");
     expect(ctx.world.main_party_side == 0, "1303 side=0");
     expect(run_stmt(ctx, 1304U, {2}), "1304 set_passage_menu");
@@ -670,9 +671,52 @@ void test_ops3_mission_fx_ui_and_lighting() {
            "1829 INT64_MIN safe");
 }
 
+// Regressions found in the Milestone 4 review.
+void test_m4_review_regressions() {
+    using wse::vm::VmContext;
+
+    // 1301 leave_encounter must not change the computed game difficulty.
+    {
+        VmContext ctx;
+        const std::int32_t before = wse::vm::native_world_current_difficulty(ctx);
+        expect(run_stmt(ctx, 1301U, {}), "1301 leave_encounter");
+        expect(wse::vm::native_world_current_difficulty(ctx) == before,
+               "1301 leaves game difficulty unchanged");
+    }
+
+    // 1490 set_merchandise_modifier_quality keeps the fraction.
+    {
+        VmContext ctx;
+        expect(run_stmt(ctx, 1490U, {150}), "1490 quality 150");
+        expect(close(ctx.world.misc.merchandise_modifier_quality, 1.5f),
+               "1490 stores 150 as 1.5, not 1");
+        expect(run_stmt(ctx, 1490U, {50}), "1490 quality 50");
+        expect(close(ctx.world.misc.merchandise_modifier_quality, 0.5f),
+               "1490 stores 50 as 0.5, not 0");
+    }
+
+    // 1971 spawn_item marks the object as a spawned item, so the spawned
+    // instance queries (1832/1833) see it and the scene-item ones (1830) do not.
+    {
+        VmContext ctx;
+        ctx.world.items.resize(3);
+        expect(run_stmt(ctx, 1971U, {1, 0, 0}), "1971 spawn_item");
+        const std::int64_t item_obj = ctx.registers[0];
+        expect(item_obj == 0 && ctx.world.mission_objects[0].m5.is_spawned_item,
+               "1971 flags the object as a spawned item");
+        expect(run_stmt(ctx, 1832U, {reg(5), 1}) && ctx.registers[5] == 1,
+               "1832 counts the spawned item");
+        expect(run_stmt(ctx, 1830U, {reg(6), 1}) && ctx.registers[6] == 0,
+               "1830 does not count it as a scene item");
+        expect(run_stmt(ctx, 1833U, {reg(7), 1, 0}) && ctx.registers[7] == item_obj,
+               "1833 finds the spawned item instance");
+    }
+}
+
 }  // namespace
 
 int main() {
+    test_m4_review_regressions();
     test_world_ops_1();
     test_world_ops_2_and_non_switch_and_m3_upgrades();
     test_ops3_options_profile_http_mod();
