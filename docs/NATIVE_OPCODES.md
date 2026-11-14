@@ -14,7 +14,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | --- | ---: | --- |
 | Control-flow range (`0–29`) live handlers | 16 | 14 unused IDs |
 | Native switch table (`30–2767`) total slots | 2738 | Indexed at `0x1401e22f0` |
-| Live switch handlers (`switch_handler`) | 1037 | Unique `.text` handlers (incl. 3 unnamed) |
+| Live switch handlers (`switch_handler`) | 1037 | Unique `.text` handlers (incl. 3 without an SDK constant) |
 | Shared no-op `return true` stubs (`noop_true`) | 6 | Jump directly to `0x1401e226b` |
 | Fallback to `executeWSE` (`execute_wse_fallback`) | 1695 | Jump to `0x1401e223e`; 1 SDK-named (`1004`), 1694 empty holes |
 | **Total live native handlers (`0–2767`)** | **1053** | 16 control-flow + 1037 switch |
@@ -25,11 +25,20 @@ Machine-readable copy: `docs/native_opcodes.json`.
 
 ### Live native handlers without a public SDK constant
 
-| Opcode | Hex | Handler VA | Notes |
+Names and signatures come from the community reference <https://mbcommands.fandom.com/wiki/Operations>;
+they are not retail symbols. The handler VA is the binary evidence.
+
+| Opcode | Hex | Handler VA | Community name | Community signature |
+| ---: | --- | --- | --- | --- |
+| 53 | `0x35` | `0x1401c659c` | `is_cheat_mode_enabled` | `(is_cheat_mode_enabled),` |
+| 2180 | `0x884` | `0x1401ddb29` | `store_main_party_wounded` | `(store_main_party_wounded, <destination>),` |
+| 2749 | `0xabd` | `0x1401e1373` | `str_store_agent_face_keys` | `(str_store_agent_face_keys, <string_reg>, <agent_id>),` |
+
+### Community-named opcodes with no handler in WSE2
+
+| Opcode | Hex | Community name | Notes |
 | ---: | --- | --- | --- |
-| 53 | `0x35` | `0x1401c659c` | Live native handler with no `header_operations.py` constant |
-| 2180 | `0x884` | `0x1401ddb29` | Live native handler with no `header_operations.py` constant |
-| 2749 | `0xabd` | `0x1401e1373` | Live native handler with no `header_operations.py` constant |
+| 15 | `0xf` | `try_for_attached_parties` | Deprecated vanilla loop; no mbStatementBlock handler in WSE2 v1.1.5.5 |
 
 ### Shared `noop_true` slots (`0x1401e226b`)
 
@@ -52,8 +61,8 @@ Machine-readable copy: `docs/native_opcodes.json`.
 
 | Category | Live handlers | Implemented (`block_vm.h` + `native_*.h`) |
 | --- | ---: | ---: |
-| `other_native` | 145 | 65 |
-| `parties` | 118 | 104 |
+| `other_native` | 146 | 65 |
+| `parties` | 119 | 104 |
 | `agents` | 117 | 67 |
 | `scenes_props_and_mission` | 88 | 32 |
 | `ui_presentations_and_menus` | 76 | 14 |
@@ -64,15 +73,14 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | `positions_and_math` | 43 | 39 |
 | `arithmetic_registers_and_vars` | 37 | 37 |
 | `items` | 33 | 28 |
+| `strings` | 30 | 22 |
 | `audio_particles_and_tableau` | 29 | 3 |
-| `strings` | 29 | 22 |
 | `mission_combat_and_teams` | 27 | 19 |
 | `control_flow` | 16 | 16 |
 | `face_keys` | 16 | 0 |
 | `input` | 6 | 0 |
 | `factions_quests_menus_options` | 5 | 1 |
 | `comparisons_and_branching` | 4 | 4 |
-| `undocumented` | 3 | 0 |
 
 ## Mapped & Live Operations (`0–2767`)
 
@@ -105,7 +113,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 44 | `0x2c` | `in_meta_mission` | `switch_handler` | `0x1401c653c` | `other_native` | `implemented` |
 | 47 | `0x2f` | `set_player_troop` | `switch_handler` | `0x1401c6548` | `troops` | `implemented` |
 | 50 | `0x32` | `store_repeat_object` | `switch_handler` | `0x1401c656e` | `game_state_and_stores` | `unimplemented` |
-| 53 | `0x35` | *(unnamed)* | `switch_handler` | `0x1401c659c` | `undocumented` | `unimplemented` |
+| 53 | `0x35` | `is_cheat_mode_enabled` *(community name)* | `switch_handler` | `0x1401c659c` | `other_native` | `unimplemented` |
 | 55 | `0x37` | `get_operation_set_version` | `switch_handler` | `0x1401c65a8` | `game_state_and_stores` | `unimplemented` |
 | 58 | `0x3a` | `set_physics_delta_time` | `switch_handler` | `0x1401c65cc` | `game_state_and_stores` | `unimplemented` |
 | 60 | `0x3c` | `set_result_string` | `switch_handler` | `0x1401c6660` | `game_state_and_stores` | `implemented` |
@@ -979,7 +987,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 2173 | `0x87d` | `store_troop_faction` (`store_faction_of_troop`) | `switch_handler` | `0x1401dd9d8` | `troops` | `implemented` |
 | 2175 | `0x87f` | `store_troop_health` | `switch_handler` | `0x1401dda1f` | `troops` | `implemented` |
 | 2176 | `0x880` | `store_proficiency_level` | `switch_handler` | `0x1401ddabf` | `game_state_and_stores` | `implemented` |
-| 2180 | `0x884` | *(unnamed)* | `switch_handler` | `0x1401ddb29` | `undocumented` | `unimplemented` |
+| 2180 | `0x884` | `store_main_party_wounded` *(community name)* | `switch_handler` | `0x1401ddb29` | `parties` | `unimplemented` |
 | 2190 | `0x88e` | `store_relation` | `switch_handler` | `0x1401ddbe1` | `game_state_and_stores` | `implemented` |
 | 2197 | `0x895` | `set_conversation_speaker_troop` | `switch_handler` | `0x1401ddc56` | `troops` | `unimplemented` |
 | 2198 | `0x896` | `set_conversation_speaker_agent` | `switch_handler` | `0x1401ddc75` | `other_native` | `unimplemented` |
@@ -1119,7 +1127,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | 2726 | `0xaa6` | `item_has_faction` | `switch_handler` | `0x1401e1216` | `items` | `unimplemented` |
 | 2747 | `0xabb` | `str_store_player_face_keys` | `switch_handler` | `0x1401e1258` | `strings` | `unimplemented` |
 | 2748 | `0xabc` | `player_set_face_keys` | `switch_handler` | `0x1401e12d4` | `multiplayer_and_players` | `unimplemented` |
-| 2749 | `0xabd` | *(unnamed)* | `switch_handler` | `0x1401e1373` | `undocumented` | `unimplemented` |
+| 2749 | `0xabd` | `str_store_agent_face_keys` *(community name)* | `switch_handler` | `0x1401e1373` | `strings` | `unimplemented` |
 | 2750 | `0xabe` | `str_store_troop_face_keys` | `switch_handler` | `0x1401e1438` | `strings` | `implemented` |
 | 2751 | `0xabf` | `troop_set_face_keys` | `switch_handler` | `0x1401e1517` | `troops` | `implemented` |
 | 2752 | `0xac0` | `face_keys_get_hair` | `switch_handler` | `0x1401e1621` | `face_keys` | `unimplemented` |
