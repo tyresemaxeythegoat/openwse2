@@ -531,11 +531,170 @@ void test_dictionary_memory_vfs() {
            "MemoryVfs: dict_delete_file{,_json} remove in-memory files");
 }
 
+// Storage edge cases of the Vfs routing: binary and .ini round trips, a store
+// with no Vfs, a host root that does not exist yet, and names that differ only
+// in case.
+void test_dictionary_storage_edges() {
+    namespace fs = std::filesystem;
+    std::u16string str_regs[128] = {};
+    str_regs[0] = u"edge";
+    str_regs[1] = u"greeting";
+    str_regs[2] = u"hello";
+    str_regs[4] = u"EDGE";
+    str_regs[5] = u"bye";
+    std::array<float, wse::vm::kFpRegisterCount> fp{};
+    std::array<std::int64_t, 128> int_regs{};
+    std::array<wse::vm::WseTransform, 128> positions{};
+
+    wse::platform::MemoryVfs mem_vfs;
+    wse::vm::WseDictionaryStore store;
+    store.vfs = &mem_vfs;
+
+    WseVmState state;
+    state.strings.registers = std::span<std::u16string>(str_regs);
+    state.positions = positions;
+    state.dictionaries = &store;
+
+    WseEffect effect{};
+    const auto op = [&](WseOpcode code, std::initializer_list<std::int64_t> args) {
+        const std::vector<std::int64_t> wide(args);
+        std::vector<std::int32_t> narrow;
+        for (const std::int64_t arg : wide) {
+            narrow.push_back(static_cast<std::int32_t>(arg));
+        }
+        wse::vm::WseOperands operands;
+        operands.wide = wide;
+        operands.narrow = narrow;
+        operands.fp = fp;
+        operands.registers = int_regs;
+        operands.state = state;
+        effect = WseEffect{0x1234, true};
+        return wse::vm::execute_wse(opcode(code), operands, effect);
+    };
+    const auto create = [&] {
+        expect(op(WseOpcode::dict_create, {0}) == WseDispatch::handled,
+               "storage edges: dict_create");
+        return effect.value;
+    };
+    const auto reads_back = [&](std::int64_t dict, const char16_t* want) {
+        str_regs[3] = u"stale";
+        return op(WseOpcode::dict_get_str, {3, dict, 1}) ==
+                   WseDispatch::handled_no_store &&
+               str_regs[3] == want;
+    };
+
+    const std::int64_t src = create();
+    expect(op(WseOpcode::dict_set_str, {src, 1, 2}) ==
+               WseDispatch::handled_no_store,
+           "storage edges: source dictionary populated");
+
+    // Binary (.wsedict) and .ini round trips through MemoryVfs.
+    for (const std::int64_t format : {std::int64_t{0}, std::int64_t{1}}) {
+        const char* file = format == 1 ? "edge.ini" : "edge.wsedict";
+        const std::int64_t dst = create();
+        expect(op(WseOpcode::dict_save, {src, 0, format}) ==
+                   WseDispatch::handled_no_store &&
+                   mem_vfs.is_file(file),
+               "MemoryVfs: dict_save writes the binary and .ini formats");
+        expect(op(WseOpcode::dict_load_file, {dst, 0, 0, format}) ==
+                   WseDispatch::handled_no_store &&
+                   reads_back(dst, u"hello"),
+               "MemoryVfs: dict_load_file reloads the binary and .ini formats");
+    }
+
+    // Names that differ only in case address one file, as on Windows.
+    {
+        const std::int64_t other = create();
+        const std::int64_t dst = create();
+        str_regs[2] = u"bye";
+        expect(op(WseOpcode::dict_set_str, {other, 1, 2}) ==
+                   WseDispatch::handled_no_store &&
+                   op(WseOpcode::dict_save, {other, 4}) ==
+                       WseDispatch::handled_no_store &&
+                   op(WseOpcode::dict_load_file, {dst, 0, 0}) ==
+                       WseDispatch::handled_no_store &&
+                   reads_back(dst, u"bye"),
+               "dict_save to a differently-cased name overwrites the same file");
+        std::vector<wse::platform::VfsEntry> entries;
+        std::size_t wsedict_files = 0;
+        if (mem_vfs.list_dir("", entries)) {
+            for (const auto& entry : entries) {
+                if (entry.name.ends_with(".wsedict")) ++wsedict_files;
+            }
+        }
+        expect(wsedict_files == 1, "case-colliding saves leave one .wsedict");
+        str_regs[2] = u"hello";
+    }
+
+    // Without a Vfs every file opcode is a harmless no-op.
+    {
+        store.vfs = nullptr;
+        const std::int64_t dst = create();
+        expect(op(WseOpcode::dict_set_str, {dst, 1, 5}) ==
+                   WseDispatch::handled_no_store,
+               "storage edges: no-Vfs dictionary populated");
+        expect(op(WseOpcode::dict_save, {dst, 0}) ==
+                   WseDispatch::handled_no_store &&
+                   op(WseOpcode::dict_save, {dst, 0, 1}) ==
+                       WseDispatch::handled_no_store &&
+                   op(WseOpcode::dict_save_json, {dst, 0}) ==
+                       WseDispatch::handled_no_store &&
+                   op(WseOpcode::dict_delete_file, {0}) ==
+                       WseDispatch::handled_no_store &&
+                   op(WseOpcode::dict_delete_file_json, {0}) ==
+                       WseDispatch::handled_no_store,
+               "dict save/delete opcodes are no-ops without a Vfs");
+        expect(op(WseOpcode::dict_load_file, {dst, 0, 0}) ==
+                   WseDispatch::handled_no_store &&
+                   op(WseOpcode::dict_load_file_json, {dst, 0, 0}) ==
+                       WseDispatch::handled_no_store &&
+                   reads_back(dst, u"bye"),
+               "dict load opcodes leave the dictionary alone without a Vfs");
+        expect(mem_vfs.is_file("edge.wsedict") && mem_vfs.is_file("edge.ini"),
+               "no-Vfs opcodes do not touch the detached store");
+        std::string stale = "stale";
+        expect(!wse::vm::wse_dict_read_file_bytes(nullptr, "edge.wsedict", stale) &&
+                   stale.empty(),
+               "wse_dict_read_file_bytes clears its output without a Vfs");
+        stale = "stale";
+        expect(!wse::vm::wse_dict_read_file_bytes(&mem_vfs, "absent.wsedict", stale) &&
+                   stale.empty(),
+               "wse_dict_read_file_bytes clears its output on a missing file");
+    }
+
+    // A host save directory that does not exist yet is created by the first
+    // save instead of the save being dropped.
+    {
+        std::error_code ec;
+        const fs::path fresh =
+            fs::temp_directory_path() / "wse2_dict_unit_test_fresh" / "dicts";
+        fs::remove_all(fresh.parent_path(), ec);
+        wse::platform::HostVfs fresh_vfs(fresh);
+        store.vfs = &fresh_vfs;
+        const std::int64_t dst = create();
+        expect(op(WseOpcode::dict_load_file, {dst, 0, 0}) ==
+                   WseDispatch::handled_no_store &&
+                   !fs::exists(fresh, ec),
+               "dict_load_file does not create a missing host root");
+        expect(op(WseOpcode::dict_save, {src, 0}) ==
+                   WseDispatch::handled_no_store &&
+                   fs::exists(fresh / "edge.wsedict", ec),
+               "dict_save creates a missing host root");
+        expect(op(WseOpcode::dict_load_file, {dst, 4, 0}) ==
+                   WseDispatch::handled_no_store &&
+                   reads_back(dst, u"hello"),
+               "dict_load_file finds a host file case-insensitively");
+        store.vfs = nullptr;
+        fs::remove_all(fresh.parent_path(), ec);
+    }
+}
+
 }  // namespace
 
 int main() {
     test_dictionary_group();
     test_dictionary_memory_vfs();
+    test_dictionary_storage_edges();
     if (failures != 0) {
         std::printf("%d failures\n", failures);
         return 1;

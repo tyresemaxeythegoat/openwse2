@@ -11,24 +11,24 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows (Zig clang++, 15 suites / 106 test functions) and Linux (`clang++ 18.1.3` local for Milestone 4–6 review fixes; CI on prior push) |
-| Android arm64 gate | **PASS (CI on prior push)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all headers standalone + CMake build via `CMakeLists.txt` glob; on-device runtime tests remain unrun |
+| Host gate | **PASS** on Linux (`clang++ 18.1.3`, 15 suites / 107 test functions, run locally for the P1 seam review fixes; CI green on `cb3d9fe`). Windows (Zig clang++) is recorded as PASS at `cb3d9fe` with 106 test functions and has not been re-run for the review fixes |
+| Android arm64 gate | **PASS (CI on `cb3d9fe`; review fixes verified by CI after push)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all headers standalone + CMake build via `CMakeLists.txt` glob; on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **440/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` live handlers `53, 2180, 2749` have no SDK constant and carry community names); **1,053/1,053 implemented (100%, 20/20 categories)** (`16` control-flow incl. 4 live entity iterators + `1,037` switch across `block_vm.h`, `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, `native_campaign_ops.h`, `native_campaign_ops_2.h`, `native_world_ops.h`, `native_world_ops_2.h`, `native_world_ops_3.h`, `native_agent_ops.h`, `native_mp_ops.h`, `native_scene_ops.h`, and `native_ui_ops.h`) |
 | Module loaders | `scripts.txt`, `triggers.txt`, `simple_triggers.txt` only |
 | World state | In-memory model (`WseWorldState`) exists; nothing loads it from module files yet |
 | Lua 5.1 layer | Not started (hook call sites documented only) |
-| Platform track (Phase 3/4) | Planned as slices P0–P9 in `docs/PLATFORM_PLAN.md`. P0 done; P1 seam (`wse/platform/{vfs,clock,log}.h`) is host-tested and all engine file/clock/thread uses outside `wse/platform/` (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, `wse/vm/ops/{dict,array,string,system}.h`) now route through it (`HostVfs` + `MemoryVfs` tested); Gradle + SDL3 app shell next. No app, renderer, audio, or input code yet (legacy PanVK loader work lives in `runtime/android/`) |
+| Platform track (Phase 3/4) | Planned as slices P0–P9 in `docs/PLATFORM_PLAN.md`. P0 done; P1 seam (`wse/platform/{vfs,clock,log}.h`) is host-tested and all engine file/clock/thread uses outside `wse/platform/` (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, `wse/vm/ops/{dict,array,string,system}.h`) now route through it (`HostVfs` + `MemoryVfs` tested; `sleep_ms` via `wse/platform/sleep.h`, `get_time` via `WallClock`); Gradle + SDL3 app shell next. No app, renderer, audio, or input code yet (legacy PanVK loader work lives in `runtime/android/`) |
 
 ## 2. Gates
 
 | Gate | Result | Detail |
 | --- | --- | --- |
-| Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: 15/15 suites / 106 test functions (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`), 48/48 standalone header checks (`x86_64-windows-gnu` and `aarch64-linux-musl`) |
-| Host C++20, Linux | PASS (local at PR #6; CI on prior push) | Milestone 4–6 review fixes run locally (`15/15` suites, 48 headers, ASan/UBSan with `g++`). `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): compiles all headers discovered by `CMakeLists.txt` glob, runs all registered CMake test suites (`CMakeLists.txt` now registers 15 suites), `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
-| Android NDK `aarch64-linux-android29` | PASS (CI, prior push) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
+| Host C++20, Windows | PASS (recorded at `cb3d9fe`, not re-run for the P1 seam review fixes) | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: 15/15 suites / 106 test functions (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`), 48/48 standalone header checks (`x86_64-windows-gnu` and `aarch64-linux-musl`) |
+| Host C++20, Linux | PASS (local, P1 seam review fixes; CI on `cb3d9fe`) | P1 seam review fixes run locally with the CI configuration: 15/15 suites / 107 test functions, 49 standalone header checks (adds `wse/platform/sleep.h`), `extract_wse_opcodes.py --check`, `check_citations.py --self-test`. `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): compiles all headers discovered by `CMakeLists.txt` glob, runs all registered CMake test suites (`CMakeLists.txt` now registers 15 suites), `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
+| Android NDK `aarch64-linux-android29` | PASS (CI on `cb3d9fe`) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
-| Host ASan + UBSan | PASS (CI) | `.github/workflows/ci.yml` job `host-sanitizers` (`ubuntu-24.04`, clang++, `cmake -DWSE_SANITIZE=ON` + CTest): 12/12 suites on commit `a01ffb3`; also run locally with `g++ 13.3.0` |
+| Host ASan + UBSan | PASS (CI) | `.github/workflows/ci.yml` job `host-sanitizers` (`ubuntu-24.04`, clang++, `cmake -DWSE_SANITIZE=ON` + CTest): 15/15 suites on commit `cb3d9fe`; the P1 seam review fixes were also run locally with `g++` (`-DCMAKE_CXX_FLAGS=-Wno-maybe-uninitialized`), 15/15 |
 | CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` (including `extract_wse_opcodes.py --check` and `check_citations.py --self-test`) and `android-arm64` on push and PR. As of the 2026-11-14 review fixes it triggers on pushes to every branch (previously `main` only), builds `RelWithDebInfo` (`-O2`) by default, and adds `host-sanitizers`; all three jobs passed on commit `a01ffb3` (push and PR runs) |
 
 ## 3. Coverage
@@ -100,7 +100,7 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `wse_bitwise_fp_test.cpp` | 11 |
 | `wse_system_test.cpp` | 8 |
 | `wse_string_test.cpp` | 3 |
-| `wse_dict_test.cpp` | 2 |
+| `wse_dict_test.cpp` | 3 |
 | `wse_array_test.cpp` | 2 |
 | `wse_world_test.cpp` | 5 |
 | `block_vm_test.cpp` | 21 |
@@ -108,7 +108,7 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `native_m5_test.cpp` | 5 |
 | `wse_m6_test.cpp` | 7 |
 | `platform_test.cpp` | 6 |
-| **Total (15 suites)** | **106** |
+| **Total (15 suites)** | **107** |
 
 ## 4. Blocked
 
@@ -123,7 +123,7 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 
 Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
 
-1. **Finish P1:** P1 seam routing is complete (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, and `wse/vm/ops/{dict,array,string,system}.h` now route all file and sleep calls through `wse::platform::{Vfs,sleep_ms}`); next is the Gradle + SDL3 app shell with the on-device self-test and a CI-built debug APK.
+1. **Finish P1:** P1 seam routing is complete (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, and `wse/vm/ops/{dict,array,string,system}.h` now route all file, sleep, and wall-clock calls through `wse::platform::{Vfs,sleep_ms,WallClock}`); next is the Gradle + SDL3 app shell with the on-device self-test and a CI-built debug APK.
 2. **P3 evidence exports** for the `.brf` and `.dds` loaders (`ARCHITECTURE.md` §8 gap 5) — needs
    the Windows REA machine; the decoders themselves are host-only work.
 3. **P2** launcher and `SafVfs` once the app shell exists.
@@ -144,7 +144,7 @@ Previously closed: the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vta
 | PDB parse (MSF 7.0/TPI/DBI) | PASS | 156,846 TPI records, 15,363 sized layouts |
 | PDB symbol map | PASS | 48,658 symbols with VAs (`globals_new.json`) |
 | Vtable scan | PASS | `tools/vtables.py`: 279 pointer runs `>= 4`; 207 class-identified; 73 `rgl*`/`mb*`/`WSE*` (byte-identical to `vtables_new.json`) |
-| Citation check (B7) | PASS | `tools/check_citations.py --self-test` validates every `0x14…` address and rejects superseded `ev_*` / synthetic addresses across all 48 headers (`1,650` VA refs / `1,433` unique VAs) under `engine/include/` (validated against committed maps and `v1155/` PDB/globals/PE ranges) |
+| Citation check (B7) | PASS | `tools/check_citations.py --self-test` validates every `0x14…` address and rejects superseded `ev_*` / synthetic addresses across all 49 headers (`1,650` VA refs / `1,433` unique VAs) under `engine/include/` (validated against committed maps and `v1155/` PDB/globals/PE ranges) |
 | Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (58 classes, 2,914 symbols, 76 vtables, 4,157 function ranges, 18 global objects, 2,508 curated superseded VAs), v1.1.5.5 target |
 | v1.1.5.5 REA VM/stream batches | PASS | 75 procedures across 9 `decompile_all` exports (`stmt_core` `ev_3ebcea85…` 4/4, `stmt_block` `ev_ffc38aa5…` 10/10, `script` `ev_8d37a0c8…` 4/4, `simple_trigger` `ev_3157906d…` 12/12, `trigger` `ev_f62843ac…` 12/12, `game_scripts` `ev_fc9bd1a4…` 4/4, `game_triggers` `ev_052f2d86…` 2/2, `streams_bin` `ev_8cc48986…` 9/9, `streams_txt` `ev_1e3c2566…` 18/18), plus `read_bytes`/`0x140615ad0` (`ev_f09662c6…`/`ev_2ddf7a62…`) and 6 single-procedure exports |
 | Superseded 2026-10-14 REA runs | PASS (superseded) | Historical 2026-10-14 entries kept for provenance only: `ev_7cd99ccc…157d7a` (`mbScript` 5), `ev_8d91b175…99b11` (`mbStatement` 14), `ev_25469ff4…84af8` (3), `ev_e3530f99…e8d05` (`Trigger` 52), `ev_cebc7ae0…e8c8d3` (`rglTextStream` 18), `ev_24eecfa4…f18c0b6` (`rglBinaryStream` 9), `ev_130d8023…2c62e6` (2) |

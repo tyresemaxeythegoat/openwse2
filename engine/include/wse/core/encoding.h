@@ -8,7 +8,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <ctime>
 #include <span>
 #include <string>
 #include <string_view>
@@ -505,28 +504,6 @@ inline void wse_trim(std::u16string& text) {
         (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
     const std::int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     return era * 146097 + doe - 719468;
-}
-
-// Mirrors 3022 local time conversion (_localtime64_s + _mkgmtime64).
-[[nodiscard]] inline std::int64_t wse_local_epoch_seconds(
-    std::time_t utc_time) noexcept {
-    std::tm local_tm{};
-#ifdef _WIN32
-    if (localtime_s(&local_tm, &utc_time) != 0) {
-        return static_cast<std::int64_t>(utc_time);
-    }
-#else
-    if (localtime_r(&utc_time, &local_tm) == nullptr) {
-        return static_cast<std::int64_t>(utc_time);
-    }
-#endif
-    const std::int64_t days = wse_days_from_civil(
-        static_cast<std::int64_t>(local_tm.tm_year) + 1900,
-        static_cast<std::int64_t>(local_tm.tm_mon) + 1,
-        static_cast<std::int64_t>(local_tm.tm_mday));
-    return days * 86400 + static_cast<std::int64_t>(local_tm.tm_hour) * 3600 +
-           static_cast<std::int64_t>(local_tm.tm_min) * 60 +
-           static_cast<std::int64_t>(local_tm.tm_sec);
 }
 
 [[nodiscard]] inline std::string_view wse_trim_ascii(

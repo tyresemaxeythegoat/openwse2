@@ -364,6 +364,24 @@ void test_script_state_and_position_group() {
                "get_time(local=1) applies local timezone offset");
     }
 
+    // With a WallClock installed the result is exact and host-independent.
+    {
+        wse::platform::ManualWallClock wall;
+        wall.set(1'700'000'000, 19800);
+        state.wall_clock = &wall;
+        expect(call(WseOpcode::get_time, {0}) == WseDispatch::handled &&
+                   effect.value == 1'700'000'000,
+               "get_time reads UTC seconds from the installed WallClock");
+        expect(call(WseOpcode::get_time, {0, 1}) == WseDispatch::handled &&
+                   effect.value == 1'700'019'800,
+               "get_time(local=1) adds the WallClock UTC offset");
+        wall.set(0x1'0000'0005LL, 0);
+        expect(call(WseOpcode::get_time, {0}) == WseDispatch::handled &&
+                   effect.value == 5,
+               "get_time truncates to 32 bits");
+        state.wall_clock = nullptr;
+    }
+
     // 3027 timer_reset & 3028 timer_get_elapsed_time (100kHz ticks).
     expect(call(WseOpcode::timer_reset, {}) ==
                WseDispatch::operand_count_out_of_range,
