@@ -47,6 +47,7 @@
 #include <vector>
 
 #include "wse/core/math.h"
+#include "wse/game/world_subsystem_types.h"
 #include "wse/vm/slots.h"
 
 namespace wse::game {
@@ -177,11 +178,14 @@ struct WseBattleEvent {
     std::int32_t agent_no = -1;
     std::int32_t flags = 0;
     wse::core::WseVec4 position{};
+    float simulation_time = 0.0f;
 };
 
 struct WseEntryPoint {
     bool valid = false;
     wse::core::WseTransform position = wse::core::WseTransform::identity();
+    std::int32_t num_x_moves = 0;
+    std::int32_t num_y_moves = 0;
 };
 
 // Mirrors rglTimer (0x1403189e0): elapsed seconds = (timersTotal[timer_no] - value) / 100000.0f.
@@ -225,6 +229,7 @@ struct WseTroop {
     float age = 0.0f;
     std::array<std::array<std::uint64_t, 4>, 2> face_keys{};
     bool note_available = true;
+    std::int32_t note_tableau_material_no = -1;
     std::array<WseQuestNote, kNumQuestNotes> notes{};
 
     void set_age(std::int32_t value) noexcept {
@@ -540,6 +545,8 @@ struct WseItemKind {
     std::uint32_t blood_color = 0;
     std::string skeleton_model{};
     std::uint64_t properties = 0;
+    std::uint64_t modifiers = 0;
+    std::vector<std::int32_t> factions{};
     std::int32_t max_ammo = 0;
     std::int32_t value = 0;
     std::uint64_t capabilities = 0;
@@ -622,6 +629,9 @@ struct WsePartyTemplate {
     std::int32_t menu_no = 0;
     std::uint32_t personality = 0;
     std::array<StackTemplate, 6> stacks{};
+    std::int32_t num_created = 0;
+    std::int32_t num_destroyed = 0;
+    std::int32_t num_destroyed_by_player = 0;
 };
 
 struct WseFaction {
@@ -631,6 +641,7 @@ struct WseFaction {
     std::uint32_t color = 0xffffffffu;
     std::vector<float> relations{};
     bool note_available = true;
+    std::int32_t note_tableau_material_no = -1;
     std::array<WseQuestNote, kNumQuestNotes> notes{};
 
     void set_relation(std::size_t other_idx, float relation) {
@@ -653,6 +664,8 @@ struct WseQuest {
     std::uint32_t template_flags = 0;
     std::int32_t giver_troop_no = -1;
     float start_date = 0.0f;
+    bool note_available = true;
+    std::int32_t note_tableau_material_no = -1;
     std::array<WseQuestNote, kNumQuestNotes> notes{};
     std::string text{};
     std::int32_t number = 0;
@@ -728,7 +741,14 @@ struct WseParty {
     float ignore_player_timer = 0.0f;
     bool in_battle = false;
     bool note_available = true;
+    std::int32_t note_tableau_material_no = -1;
     std::array<WseQuestNote, kNumQuestNotes> notes{};
+    std::vector<std::int32_t> particle_system_nos{};
+    float extra_icon_up_down_distance = 0.0f;
+    float extra_icon_up_down_frequency = 0.0f;
+    float extra_icon_rotate_frequency = 0.0f;
+    float extra_icon_fade_distance = 0.0f;
+    std::int32_t battle_event_index = -1;
 
     void set_aggressiveness(std::int32_t value) noexcept {
         const std::uint32_t clamped =
@@ -932,6 +952,8 @@ struct WsePlayer {
     std::array<std::int32_t, kNumTroopEquipmentSlots> item_ids{
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
     std::array<bool, kNumTroopEquipmentSlots> picked_up_slots{};
+    WseFaceKeys face_keys{};
+    std::int32_t privilege = 0;
 };
 
 struct WseTeam {
@@ -941,6 +963,7 @@ struct WseTeam {
     std::int32_t order_listener = -1;
     std::array<std::int32_t, kNumDivisions> order_types{};
     std::array<std::int32_t, kNumDivisions> order_subtypes{};
+    WseTeamDivisionSubOrders sub_orders{};
     std::array<wse::core::WseTransform, kNumDivisions> order_positions{};
     std::int32_t leader_agent_no = -1;
     std::array<std::int32_t, kNumDivisions> division_leaders{-1, -1, -1, -1, -1, -1, -1, -1, -1};
@@ -1001,17 +1024,24 @@ struct WseAgent {
     bool running_away = false;
     wse::core::WseVec4 run_away_target{};
     wse::core::WseTransform look_position = wse::core::WseTransform::identity();
+    std::int32_t skin_no = 0;
+    std::int32_t dna = -1;
+    std::int32_t banner_tableau_material_no = -1;
+    std::int32_t banner_tableau_param = 0;
+    bool show_banner = false;
+    bool has_relations = false;
+    std::vector<std::pair<std::int32_t, std::int32_t>> relations{};
+    bool camera_mode = false;
+    WseFaceKeys face_keys{};
 
     // Mirrors mbAgent::isHuman (0x14002b910): m_type == 0.
     [[nodiscard]] constexpr bool is_human() const noexcept {
         return type == 0;
     }
-
     // Mirrors mbAgent::isAlive (0x14002b8f0): m_status == 1.
     [[nodiscard]] constexpr bool is_alive() const noexcept {
         return active && status == 1;
     }
-
     // Mirrors mbAgent::isWounded (0x14002b900): m_status == 3.
     [[nodiscard]] constexpr bool is_wounded_state() const noexcept {
         return status == 3 || is_wounded;
@@ -1025,6 +1055,7 @@ struct WseMissionObject {
     std::int32_t scene_prop_no = -1;
     std::int32_t variation_id_no = 0;
     std::int32_t variation_id_2_no = 0;
+    bool is_item = false;
     float hit_points = 0.0f;
     float max_hit_points = 0.0f;
     std::int32_t parent_agent_no = -1;
@@ -1168,6 +1199,18 @@ struct WseWorldState {
         "Unnamed 3", "Unnamed 4", "Unnamed 5", "Unnamed 6"};
     std::unordered_map<std::int32_t, std::int32_t> achievement_stats{};
     std::unordered_map<std::int32_t, bool> unlocked_achievements{};
+    WseInputState input{};
+    WseMusicState music{};
+    WseTableauState tableau{};
+    WseLightingState lighting{};
+    WseDialogState dialog{};
+    WseUiPanelState ui{};
+    WseSceneFxState fx{};
+    WseMpSessionState mp{};
+    WseMiscRuntimeState misc{};
+    std::vector<WseInfoPage> info_pages{};
+    std::vector<WseBattleEvent> battle_events{};
+    std::vector<std::string> mesh_names{};
 
     [[nodiscard]] bool is_valid_item(std::int32_t id) const noexcept {
         return id >= 0 && static_cast<std::size_t>(id) < items.size();
@@ -1218,6 +1261,36 @@ struct WseWorldState {
     }
     [[nodiscard]] bool is_valid_particle_system(std::int32_t id) const noexcept {
         return id >= 0 && id < num_particle_systems;
+    }
+    [[nodiscard]] bool is_valid_info_page(std::int32_t id) const noexcept {
+        return has_game && id >= 0 && static_cast<std::size_t>(id) < info_pages.size();
+    }
+    [[nodiscard]] bool is_valid_music_track(std::int32_t id) const noexcept {
+        return id >= 0 && id < misc.num_music_tracks;
+    }
+    [[nodiscard]] bool is_valid_map_icon(std::int32_t id) const noexcept {
+        return id >= 0 && id < misc.num_map_icons;
+    }
+    [[nodiscard]] bool is_valid_tableau_material(std::int32_t id) const noexcept {
+        return id >= 0 && id < misc.num_tableau_materials;
+    }
+    [[nodiscard]] bool is_valid_mesh(std::int32_t id) const noexcept {
+        return id >= 0 && static_cast<std::size_t>(id) < mesh_names.size();
+    }
+    [[nodiscard]] bool is_valid_scene_prop(std::int32_t id) const noexcept {
+        return id >= 0 && id < misc.num_scene_props;
+    }
+    [[nodiscard]] bool is_valid_action(std::int32_t id) const noexcept {
+        return id >= 0 && id < misc.num_actions;
+    }
+    [[nodiscard]] bool is_valid_menu(std::int32_t id) const noexcept {
+        return id >= 0 && id < misc.num_menus;
+    }
+    [[nodiscard]] bool is_valid_post_effect(std::int32_t id) const noexcept {
+        return id >= 0 && id < misc.num_post_effects;
+    }
+    [[nodiscard]] bool is_valid_profile(std::int32_t id) const noexcept {
+        return id >= 0 && static_cast<std::size_t>(id) < mp.profiles.size();
     }
 };
 

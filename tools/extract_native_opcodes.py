@@ -178,7 +178,7 @@ def scan_implemented_from_block_vm(block_vm_path: Path) -> tuple[set[int], set[i
         raise SystemExit(f"Could not find namespace core_op in {block_vm_path}")
 
     disp_pattern = re.compile(
-        r"dispatch_native(?:_entity|_mission|_campaign(?:_\d+)?)?_statement(?:_ext)?\s*\([^)]*\)\s*\{(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+(?:NativeDispatch::unimplemented|dispatch_native(?:_entity|_mission|_campaign(?:_\d+)?)?_statement(?:_ext)?\([^;]*\));)",
+        r"dispatch_native(?:_[a-z0-9_]+)?_statement(?:_ext)?\s*\([^)]*\)\s*\{(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+(?:NativeDispatch::unimplemented|dispatch_native(?:_[a-z0-9_]+)?_statement(?:_ext)?\([^;]*\));)",
         re.S,
     )
     impl_switch: set[int] = set()

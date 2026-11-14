@@ -19,7 +19,7 @@ engine/
                       ops/{bitwise,system,world,string,fp_expr,fp,dict,array,position}.h
                       wse_opcodes.h (generated)               WSE extended opcode enum
   include/wse/game/   script.h, trigger.h, world_state.h,    managers, campaign helpers, and state model
-                      world_campaign_helpers.h
+                      world_subsystem_types.h, world_campaign_helpers.h
   include/wse/platform/ vfs.h, clock.h, log.h                 platform seam (port infrastructure)
   tests/              one *_test.cpp per suite (+ wse_test_common.h), no framework
   fixtures/           hand-written module snippets (never retail files)
@@ -44,7 +44,11 @@ The engine is header-only and built through CMake (`../CMakeLists.txt`), CI (`.g
 | `include/wse/vm/native_entity_ops.h` | Milestone 2 entity/campaign native dispatcher (`dispatch_native_entity_statement`, `108` switch opcodes): player/MP (`47`, `394–408`, `430`), quests (`200–204`, `1113`, `1280–1286`), audio/ground/UI/overlays (`599–600`, `791`, `900–947`, `1107`), sites/factions (`1232`, `1261–1270`), troops (`1505–1550`, `2170–2176`), parties/campaign (`1601–1685`, `2156–2281`) | `0x1401c6548`–`0x1401de32d` |
 | `include/wse/vm/native_mission_ops.h` | Milestone 2 mission/combat native dispatcher (`dispatch_native_mission_statement`, `66` switch opcodes): agent getters/setters/predicates/AI/combat (`1700–1789`), team & division control (`1790–1796`), scene/props/mission control (`1804–2075`), and mission timers (`2370–2372`) | `0x1401d36ee`–`0x1401df390` |
 | `include/wse/vm/native_campaign_ops.h` | Milestone 3 campaign/world/troop/party native dispatcher (`dispatch_native_campaign_statement`, `156` switch opcodes): campaign state/achievements/multiplayer/positions (`36–793`), mission/spawning/troops/items (`1003–1570`), parties/stacks/morale (`1604–1694`) | `0x1401c6448`–`0x1401d5496` |
+| `include/wse/game/world_subsystem_types.h` | PDB-backed subsystem structs (`WseFaceKeys`, `WseLightingState`, `WseSkyboxState`, `WsePostFxState`, `WseAudioRuntimeState`, `WseNetworkRuntimeState`, `WseDialogState`, `WseTableauRuntimeState`, `WseInputState`, `WseRayObstacle`, `WseMiscRuntimeState`) + `native_f2i_saturate` and `push_bounded` | `mbFaceKeys` `0x1400c5d10`–`0x1400c5dc0`, `mbGame`, `mbMission` |
 | `include/wse/vm/native_campaign_ops_2.h` | Milestone 3 combat/item/mission/store/face-key native dispatcher (`dispatch_native_campaign_2_statement`, `128` switch opcodes): agent combat/items/teams/props (`1695–2099`), stores/relations/timers/strings (`2154–2379`), item getters/predicates & face keys (`2700–2751`) | `0x1401d3509`–`0x1401e1517` |
+| `include/wse/vm/native_world_ops.h` | Milestone 4 world/face-key/input/troop/party native dispatcher (`dispatch_native_world_statement`, `69` switch opcodes incl. `53` `is_cheat_mode_enabled`, `2180` `store_main_party_wounded`, `2749` `str_store_agent_face_keys`) | `0x1401c659c`–`0x1401e2150` |
+| `include/wse/vm/native_world_ops_2.h` | Milestone 4 mission-combat/audio-tableau/store native dispatcher (`dispatch_native_world_2_statement`, `69` switch opcodes across `mission_combat_and_teams`, `audio_particles_and_tableau`, and `game_state_and_stores`) | `0x1401c6626`–`0x1401df605` |
+| `include/wse/vm/native_world_ops_3.h` | Milestone 4 `other_native` dispatcher (`dispatch_native_world_3_statement`, `80` switch opcodes covering input/options, spawn effectors/bans, MP/UI/difficulty, dialog/notes/quests/encounters, mission/tableau/talk, lighting/skybox/postfx) | `0x1401c69e2`–`0x1401dfbbb` |
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x140244810`, `0x140244540`, `0x14020fe60`, `0x14020fab0`, `0x1400ccf20`, `0x1400cd2d0`, `0x140244970`, `0x140244b60`, `0x14020ffa0`, `0x140244cd0`, `0x14020fb80`, `0x1402101a0` |
 | `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 65-entry name table, and script mapping | `0x14020f6a0`, `0x14020f7c0`, `0x14020f9a0`; globals `0x14069fac0`/`0x14069fac8`/`0x14069facc`; table `0x140615ad0`; formats `0x14055c680`/`0x14055c690` |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
@@ -59,7 +63,7 @@ The engine is header-only and built through CMake (`../CMakeLists.txt`), CI (`.g
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
 | `tests/script_test.cpp` + `fixtures/scripts.txt` | host tests for script records, header errors, duplicate mapping, and missing-name reporting | local fixture mirroring the retail grammar |
 | `tests/wse_test_common.h` + `tests/wse_{bitwise_fp,system,string,dict,array,world}_test.cpp` | host tests for opcode enum values, all implemented handlers (including `*_slot_gt`, scalar/config/skill/savegame MD5, troop HP cap/nibble/proficiency, item/cur_item, edit-mode selection/highlight, `agent_{set,get}_action_speed_modifier` `3340–3341`, party `3900–3911`, `feval`/`parseString`, `.wsedict`/INI/JSON/URL dict I/O, `.wsearray` binary I/O, path sandboxing, natural merge sort, and array relations), operand bounds, and opcode masking | local test doubles only |
-| `tests/block_vm_test.cpp` | host tests for analyze/modifiers/loops (live entity iterators `11/12/16/17`, `try_for_dict_keys`), `currentCaller` preservation, default local-variable zeroing (`0x140617819`), core math/scripts/recursion/return values/positions/trigger VM integration/`feval`, `array_sort_custom` script callbacks, `WseWorldState` script integration, unimplemented histogram/`failOnUnimplemented`, Milestone 1 `entity_slots`/`arithmetic`/`positions_and_math`/`strings` suites, Milestone 2 `108` entity/player/quest/UI/site/troop/party + `66` agent/team/prop/mission/timer opcodes, and Milestone 3 `284` campaign/mission/item/troop/party/face-key opcodes | local test doubles and module fixtures |
+| `tests/block_vm_test.cpp` + `tests/native_world_test.cpp` | host tests for analyze/modifiers/loops (live entity iterators `11/12/16/17`, `try_for_dict_keys`), `currentCaller` preservation, default local-variable zeroing (`0x140617819`), core math/scripts/recursion/return values/positions/trigger VM integration/`feval`, `array_sort_custom` script callbacks, `WseWorldState` script integration, unimplemented histogram/`failOnUnimplemented`, Milestone 1 `entity_slots`/`arithmetic`/`positions_and_math`/`strings` suites, Milestone 2 `108` entity/player/quest/UI/site/troop/party + `66` agent/team/prop/mission/timer opcodes, Milestone 3 `284` campaign/mission/item/troop/party/face-key opcodes, and Milestone 4 `218` opcodes + `473/477/1004/1070/1104/1302/1491` non-switch/fallback + `1802/1930/1969` upgrades | local test doubles and module fixtures |
 
 ## Module text format
 
@@ -309,8 +313,7 @@ These are counted as implemented because they consume their operands and keep sc
 they are **not** verified reconstructions of the cited handlers. Treat their results as
 placeholders until each is checked against the v1.1.5.5 disassembly:
 
-- **No-op stubs:** `agent_clear_relations_with_agents` (1802), `add_reinforcements_to_entry`
-  (1930), `particle_system_burst` (1969). `store_num_free_stacks` (2154) always stores `10`.
+- **Constant-value placeholder:** `store_num_free_stacks` (2154) still always stores `10` (the other M3 stubs `1802`/`1930`/`1969` were upgraded in Milestone 4).
 - **Simplified helpers in `world_campaign_helpers.h` (no VA evidence yet):** `party_add_template`
   adds the midpoint of each stack's min/max instead of a random count and ignores
   `set_party_creation_random_limits` (1080); `troop_add_merchandise` fills free slots round-robin
@@ -354,6 +357,7 @@ wse_dict tests: PASS
 wse_array tests: PASS
 wse_world tests: PASS
 block_vm tests: PASS
+PASS  native_world_test
 platform tests: PASS
 ```
 

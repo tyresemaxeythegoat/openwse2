@@ -14,6 +14,15 @@
 
 namespace wse::vm {
 
+[[nodiscard]] inline NativeDispatch dispatch_native_world_statement(
+    std::uint32_t opcode,
+    std::span<const std::int64_t> wide,
+    std::span<const std::int32_t> narrow,
+    std::span<const std::uint8_t> tags,
+    const Statement& statement,
+    VmContext& ctx,
+    std::span<std::int64_t> locals);
+
 [[nodiscard]] inline std::int32_t native_campaign_item_weapon_damage(
     const game::WseItemKind& item) noexcept {
     return std::max(item.get_thrust_damage(), item.get_swing_damage());
@@ -457,7 +466,11 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
         }
         return NativeDispatch::handled;
     case 1802: // agent_clear_relations_with_agents (0x1401d67f1)
-        (void)world.is_valid_agent(narrow[0]);
+        if (world.is_valid_agent(narrow[0])) {
+            auto& ag = world.agents[static_cast<std::size_t>(narrow[0])];
+            ag.has_relations = false;
+            ag.relations.clear();
+        }
         return NativeDispatch::handled;
     case 1814: // scene_prop_set_hit_points (0x1401d6c4a)
         if (world.is_valid_mission_object(narrow[0])) {
@@ -556,6 +569,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
         world.jump_entry_no = narrow[0];
         return NativeDispatch::handled;
     case 1930: // add_reinforcements_to_entry (0x1401d949c)
+        game::mission_add_reinforcements(world, narrow[0], narrow[1]);
         return NativeDispatch::handled;
     case 1935: // mission_enable_talk (0x1401d94b3)
         world.talk_enabled = true;
@@ -598,6 +612,12 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
         }
         return NativeDispatch::handled;
     case 1969: // particle_system_burst (0x1401d9cf8)
+        if (world.is_valid_particle_system(narrow[0]) && wse_register_ok(narrow[1])) {
+            const std::int32_t strength = (narrow[2] != 0) ? narrow[2] : 100;
+            game::mission_burst_particle_system(
+                world, narrow[0], ctx.positions[static_cast<std::size_t>(narrow[1])], strength,
+                true);
+        }
         return NativeDispatch::handled;
     case 1970: // set_spawn_position (0x1401d9ddd)
         if (wse_register_ok(narrow[0])) {
@@ -1193,7 +1213,9 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
     default:
         break;
     }
-    return NativeDispatch::unimplemented;
+    return dispatch_native_world_statement(opcode, wide, narrow, tags, statement, ctx, locals);
 }
 
 }  // namespace wse::vm
+
+#include "wse/vm/native_world_ops.h"

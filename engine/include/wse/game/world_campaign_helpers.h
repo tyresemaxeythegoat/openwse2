@@ -737,4 +737,346 @@ inline void party_collect_attachments(WseWorldState& world,
     }
 }
 
+[[nodiscard]] inline bool check_entering_town(std::int32_t town_party_no,
+                                              const WseWorldState& world) noexcept {
+    if (!world.is_valid_party(world.main_party_no) || !world.is_valid_party(town_party_no)) {
+        return false;
+    }
+    const auto& main_p = world.parties[static_cast<std::size_t>(world.main_party_no)];
+    if (main_p.behavior != 4 || main_p.behavior_object != town_party_no) {
+        return false;
+    }
+    const auto& town_p = world.parties[static_cast<std::size_t>(town_party_no)];
+    const float dx = town_p.position.o.x - main_p.position.o.x;
+    const float dy = town_p.position.o.y - main_p.position.o.y;
+    const float dz = town_p.position.o.z - main_p.position.o.z;
+    const float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+    return dist > main_p.radius * 2.3f;
+}
+
+[[nodiscard]] inline std::int32_t party_count_troop_type(const WseWorldState& world,
+                                                         std::int32_t party_no,
+                                                         std::int32_t troop_no,
+                                                         bool prisoner) noexcept {
+    if (!world.is_valid_party(party_no)) {
+        return 0;
+    }
+    std::int32_t total = 0;
+    for (const auto& st : world.parties[static_cast<std::size_t>(party_no)].stacks) {
+        if (st.troop_no == troop_no && st.is_prisoner() == prisoner) {
+            total = saturating_add_i32(total, st.num_troops);
+        }
+    }
+    return total;
+}
+
+[[nodiscard]] inline std::int32_t troop_free_inventory_capacity(
+    const WseWorldState& world,
+    std::int32_t troop_no) noexcept {
+    if (!world.is_valid_troop(troop_no)) {
+        return 0;
+    }
+    const auto& troop = world.troops[static_cast<std::size_t>(troop_no)];
+    const std::int32_t slots = troop_num_cargo_slots(world, troop);
+    std::int32_t free_count = 0;
+    for (std::int32_t i = 0; i < slots; ++i) {
+        const auto idx = static_cast<std::size_t>(kNumTroopEquipmentSlots + i);
+        if (idx < troop.inventory.size() && troop.inventory[idx].item_no == -1) {
+            ++free_count;
+        }
+    }
+    return free_count;
+}
+
+inline void party_attach_to_current_battle(WseWorldState& world,
+                                           std::int32_t party_no,
+                                           std::int32_t side) {
+    if (!world.is_valid_party(party_no)) {
+        return;
+    }
+    auto& p = world.parties[static_cast<std::size_t>(party_no)];
+    if (world.is_valid_party(p.attached_to_party_no)) {
+        auto& old_parent =
+            world.parties[static_cast<std::size_t>(p.attached_to_party_no)];
+        std::erase(old_parent.attached_party_nos, party_no);
+        p.attached_to_party_no = -1;
+    }
+    p.in_battle = true;
+    std::int32_t target_no = world.main_party_no;
+    if (side == 1) {
+        target_no = world.encountered_party_no;
+    } else if (side == 2) {
+        target_no = world.encountered_party_2_no;
+    }
+    if (world.is_valid_party(target_no) && target_no != party_no) {
+        auto& target = world.parties[static_cast<std::size_t>(target_no)];
+        p.attached_to_party_no = target_no;
+        if (std::find(target.attached_party_nos.begin(), target.attached_party_nos.end(),
+                      party_no) == target.attached_party_nos.end()) {
+            target.attached_party_nos.push_back(party_no);
+        }
+    }
+}
+
+inline void party_leave_cur_battle(WseWorldState& world, std::int32_t party_no) {
+    if (!world.is_valid_party(party_no)) {
+        return;
+    }
+    auto& p = world.parties[static_cast<std::size_t>(party_no)];
+    p.in_battle = false;
+    if (world.is_valid_party(p.attached_to_party_no)) {
+        auto& parent = world.parties[static_cast<std::size_t>(p.attached_to_party_no)];
+        std::erase(parent.attached_party_nos, party_no);
+        p.attached_to_party_no = -1;
+    } else if (party_no == world.main_party_no) {
+        world.misc.meta_mission_event_ended = true;
+    }
+}
+
+[[nodiscard]] inline std::vector<std::int32_t> party_group_members(
+    const WseWorldState& world,
+    std::int32_t leader_party_no) {
+    std::vector<std::int32_t> group;
+    if (!world.is_valid_party(leader_party_no)) {
+        return group;
+    }
+    group.push_back(leader_party_no);
+    for (const std::int32_t att :
+         world.parties[static_cast<std::size_t>(leader_party_no)].attached_party_nos) {
+        if (world.is_valid_party(att) &&
+            std::find(group.begin(), group.end(), att) == group.end()) {
+            group.push_back(att);
+        }
+    }
+    return group;
+}
+
+inline void party_inflict_casualties_group(WseWorldState& world,
+                                           std::int32_t leader_party_no,
+                                           std::int32_t num_casualties,
+                                           std::int32_t casualties_party_no,
+                                           std::uint32_t seed) {
+    if (num_casualties <= 0) {
+        return;
+    }
+    const auto group = party_group_members(world, leader_party_no);
+    if (group.empty()) {
+        return;
+    }
+    const bool record_casualties =
+        world.is_valid_party(casualties_party_no) &&
+        std::find(group.begin(), group.end(), casualties_party_no) == group.end();
+    auto count_able = [&]() -> std::int64_t {
+        std::int64_t total = 0;
+        for (const std::int32_t pid : group) {
+            for (const auto& st : world.parties[static_cast<std::size_t>(pid)].stacks) {
+                if (st.is_prisoner() || !world.is_valid_troop(st.troop_no)) {
+                    continue;
+                }
+                if (world.troops[static_cast<std::size_t>(st.troop_no)].is_hero()) {
+                    if (world.troops[static_cast<std::size_t>(st.troop_no)].hit_points > 0.0f) {
+                        ++total;
+                    }
+                } else {
+                    total += st.unwounded();
+                }
+            }
+        }
+        return total;
+    };
+    const std::int64_t cap = count_able();
+    const std::int64_t hits = std::min<std::int64_t>(num_casualties, cap);
+    std::uint32_t rng = seed ^ 0x9e3779b9U;
+    for (std::int64_t i = 0; i < hits; ++i) {
+        const std::int64_t rem = count_able();
+        if (rem <= 0) {
+            break;
+        }
+        rng = rng * 1664525U + 1013904223U;
+        std::int64_t target = static_cast<std::int64_t>(rng % static_cast<std::uint64_t>(rem));
+        bool applied = false;
+        for (const std::int32_t pid : group) {
+            auto& stacks = world.parties[static_cast<std::size_t>(pid)].stacks;
+            for (std::size_t s = 0; s < stacks.size(); ++s) {
+                auto& st = stacks[s];
+                if (st.is_prisoner() || !world.is_valid_troop(st.troop_no)) {
+                    continue;
+                }
+                auto& troop = world.troops[static_cast<std::size_t>(st.troop_no)];
+                const std::int64_t w =
+                    troop.is_hero() ? (troop.hit_points > 0.0f ? 1 : 0) : st.unwounded();
+                if (target >= w) {
+                    target -= w;
+                    continue;
+                }
+                if (troop.is_hero()) {
+                    troop.hit_points = std::max(0.0f, troop.hit_points - 15.0f);
+                } else {
+                    const std::int32_t tno = st.troop_no;
+                    rng = rng * 1664525U + 1013904223U;
+                    const bool kill = (rng % 100U) < 35U;
+                    if (kill) {
+                        --st.num_troops;
+                        if (st.num_wounded_troops > st.num_troops) {
+                            st.num_wounded_troops = st.num_troops;
+                        }
+                        if (st.num_troops <= 0) {
+                            stacks.erase(stacks.begin() + static_cast<std::ptrdiff_t>(s));
+                        }
+                    } else {
+                        ++st.num_wounded_troops;
+                    }
+                    if (record_casualties) {
+                        party_add_members(world, casualties_party_no, tno, 1, false,
+                                          kill ? 0 : 1);
+                    }
+                }
+                applied = true;
+                break;
+            }
+            if (applied) {
+                break;
+            }
+        }
+    }
+}
+
+inline void party_distribute_among_group(WseWorldState& world,
+                                         std::int32_t src_party_no,
+                                         std::int32_t dst_leader_party_no) {
+    if (!world.is_valid_party(src_party_no) || src_party_no == dst_leader_party_no) {
+        return;
+    }
+    const auto group = party_group_members(world, dst_leader_party_no);
+    if (group.empty()) {
+        return;
+    }
+    std::int64_t total_weight = 0;
+    for (const std::int32_t pid : group) {
+        total_weight += std::max<std::int32_t>(
+            1, world.parties[static_cast<std::size_t>(pid)].get_num_companions());
+    }
+    auto& src_stacks = world.parties[static_cast<std::size_t>(src_party_no)].stacks;
+    std::vector<WsePartyStack> kept;
+    for (const auto& st : src_stacks) {
+        if (st.is_prisoner() || !world.is_valid_troop(st.troop_no) ||
+            world.troops[static_cast<std::size_t>(st.troop_no)].is_hero() ||
+            st.num_troops <= 0) {
+            kept.push_back(st);
+            continue;
+        }
+        std::int32_t rem_t = st.num_troops;
+        std::int32_t rem_w = std::clamp(st.num_wounded_troops, 0, st.num_troops);
+        for (std::size_t idx = 0; idx < group.size() && rem_t > 0; ++idx) {
+            const std::int32_t pid = group[idx];
+            const std::int64_t w = std::max<std::int32_t>(
+                1, world.parties[static_cast<std::size_t>(pid)].get_num_companions());
+            const std::int32_t share =
+                (idx + 1 == group.size())
+                    ? rem_t
+                    : static_cast<std::int32_t>(
+                          std::min<std::int64_t>(rem_t, (static_cast<std::int64_t>(st.num_troops) * w) / total_weight));
+            if (share > 0) {
+                const std::int32_t w_share = std::min(rem_w, share);
+                party_add_members(world, pid, st.troop_no, share, false, w_share);
+                rem_t -= share;
+                rem_w -= w_share;
+            }
+        }
+    }
+    src_stacks = std::move(kept);
+}
+
+[[nodiscard]] inline std::int32_t mission_count_normalized_team_members(
+    const WseWorldState& world,
+    float battle_size,
+    std::int32_t team_no) noexcept {
+    if (!world.is_valid_team(team_no)) {
+        return 0;
+    }
+    std::array<std::int32_t, kNumTeams> alive_per_team{};
+    for (const auto& ag : world.agents) {
+        if (ag.is_alive() && world.is_valid_team(ag.team_no)) {
+            ++alive_per_team[static_cast<std::size_t>(ag.team_no)];
+        }
+    }
+    std::int32_t count = 0;
+    for (std::int32_t t = 0; t < kNumTeams; ++t) {
+        if (world.teams[static_cast<std::size_t>(team_no)]
+                .relations[static_cast<std::size_t>(t)] > 0) {
+            count += alive_per_team[static_cast<std::size_t>(t)];
+        }
+    }
+    if (count == 0 || !world.is_valid_agent(world.player_agent_no)) {
+        return 0;
+    }
+    const std::int32_t player_team =
+        world.agents[static_cast<std::size_t>(world.player_agent_no)].team_no;
+    if (!world.is_valid_team(player_team)) {
+        return 0;
+    }
+    std::int32_t adv = world.battle_advantage;
+    if (world.teams[static_cast<std::size_t>(team_no)]
+            .relations[static_cast<std::size_t>(player_team)] < 0) {
+        adv = -adv;
+    }
+    const float adv_mult = std::clamp((static_cast<float>(adv) + 15.0f) / 15.0f, 0.2f, 2.5f);
+    const float denom = (battle_size * 4.0f + 1.25f) * adv_mult;
+    if (denom <= 0.0f) {
+        return std::max<std::int32_t>(1, count);
+    }
+    const float ratio = static_cast<float>(count) / denom;
+    const float fl = std::floor(ratio);
+    const std::int32_t rounded =
+        static_cast<std::int32_t>(fl) + ((ratio - fl > 0.5f) ? 1 : 0);
+    return std::max<std::int32_t>(1, rounded);
+}
+
+inline void mission_add_reinforcements(WseWorldState& world,
+                                       std::int32_t entry_group_no,
+                                       std::int32_t num_troops) {
+    if (entry_group_no >= 0 && entry_group_no < kMaxEntryPoints) {
+        world.entry_points[static_cast<std::size_t>(entry_group_no)].num_x_moves = 0;
+        world.entry_points[static_cast<std::size_t>(entry_group_no)].num_y_moves = 0;
+    }
+    push_bounded(world.fx.reinforcement_events,
+                 WseReinforcementEvent{entry_group_no, num_troops},
+                 kMaxReinforcementEvents);
+}
+
+inline void mission_burst_particle_system(WseWorldState& world,
+                                          std::int32_t psys_no,
+                                          const wse::core::WseTransform& transform,
+                                          std::int32_t burst_strength,
+                                          bool synced) {
+    if (!world.is_valid_particle_system(psys_no)) {
+        return;
+    }
+    push_bounded(world.fx.particle_events,
+                 WseParticleSystemEntry{psys_no, 2, 0, transform, burst_strength, 0, synced},
+                 kMaxParticleEvents);
+}
+
+[[nodiscard]] inline std::int32_t mission_spawn_item(WseWorldState& world,
+                                                     std::int32_t item_no,
+                                                     std::int32_t modifier,
+                                                     bool refill_ammo) {
+    if (!world.is_valid_item(item_no) || !world.lighting.has_scene ||
+        world.mission_objects.size() >= kMaxSpawnedMissionObjects) {
+        return -1;
+    }
+    WseMissionObject obj{};
+    obj.active = true;
+    obj.is_item = true;
+    obj.scene_prop_no = item_no;
+    obj.variation_id_no = (modifier >= 0 && modifier < 43) ? modifier : 0;
+    obj.variation_id_2_no = refill_ammo ? 1 : 0;
+    obj.position = world.spawn_position;
+    obj.starting_position = world.spawn_position;
+    obj.target_position = world.spawn_position;
+    const auto idx = static_cast<std::int32_t>(world.mission_objects.size());
+    world.mission_objects.push_back(std::move(obj));
+    return idx;
+}
+
 }  // namespace wse::game

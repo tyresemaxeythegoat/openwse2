@@ -421,10 +421,36 @@ namespace wse::vm {
     case 1790: // team_give_order (0x1401d5ff8)
         if (world.is_valid_team(narrow[0]) && narrow[2] >= 0 && narrow[2] < 27) {
             auto& tm = world.teams[static_cast<std::size_t>(narrow[0])];
+            auto apply_div = [&](std::size_t d) noexcept {
+                tm.order_types[d] = narrow[2];
+                switch (narrow[2]) {
+                case 3: tm.sub_orders.riding[d] = 1; break;
+                case 4: tm.sub_orders.riding[d] = 2; break;
+                case 7:
+                    tm.sub_orders.gap_distance[d] = std::clamp(tm.sub_orders.gap_distance[d] - 1, 1, 6);
+                    break;
+                case 8:
+                    tm.sub_orders.gap_distance[d] = std::clamp(tm.sub_orders.gap_distance[d] + 1, 1, 6);
+                    break;
+                case 9: tm.sub_orders.weapon_usage[d] = 1; break;
+                case 10: tm.sub_orders.weapon_usage[d] = 0; break;
+                case 15:
+                    tm.sub_orders.weapon_usage[d] = 2;
+                    tm.sub_orders.hold_fire[d] = 0;
+                    break;
+                case 16:
+                    tm.sub_orders.weapon_usage[d] = 3;
+                    tm.sub_orders.hold_fire[d] = 1;
+                    break;
+                default: break;
+                }
+            };
             if (narrow[1] >= 0 && narrow[1] < game::kNumDivisions) {
-                tm.order_types[static_cast<std::size_t>(narrow[1])] = narrow[2];
+                apply_div(static_cast<std::size_t>(narrow[1]));
             } else {
-                tm.order_types.fill(narrow[2]);
+                for (std::size_t d = 0; d < static_cast<std::size_t>(game::kNumDivisions); ++d) {
+                    apply_div(d);
+                }
             }
         }
         return NativeDispatch::handled;

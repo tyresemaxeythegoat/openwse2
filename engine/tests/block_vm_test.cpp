@@ -855,7 +855,7 @@ void test_unimplemented_histogram_and_loud_failure() {
                    describe(NativeDispatch::condition_false) == "false condition",
                "native false condition reports NativeDispatch::condition_false");
 
-        expect(dispatch_native_statement(90U, wide, narrow, tags, stmt, ctx, locals) ==
+        expect(dispatch_native_statement(80U, wide, narrow, tags, stmt, ctx, locals) ==
                        NativeDispatch::unimplemented &&
                    describe(NativeDispatch::unimplemented) == "unimplemented native opcode" &&
                    ctx.unimplementedCount == 0,
@@ -867,9 +867,9 @@ void test_unimplemented_histogram_and_loud_failure() {
         VmContext ctx;
         StatementBlock compatBlock;
         compatBlock.statements = {
-            make_stmt(90U, {reg(3)}),   // unimplemented get_global_cloud_amount
-            make_stmt(91U, {5}),        // unimplemented set_global_cloud_amount
-            make_stmt(90U, {reg(4)}),
+            make_stmt(80U, {reg(3)}),   // unused native slot 80
+            make_stmt(81U, {5}),        // unused native slot 81
+            make_stmt(80U, {reg(4)}),
             make_stmt(5100U, {reg(5)}), // unimplemented WSE lua_get_top
             make_stmt(13U, {}),         // unused control-flow slot (<30)
             make_stmt(core_op::kAssign, {reg(1), 42}),
@@ -879,8 +879,8 @@ void test_unimplemented_histogram_and_loud_failure() {
                    ctx.registers[1] == 42,
                "compatibility mode tracks unimplemented hits while falling through true");
         expect(ctx.unimplementedOpcodeCounts.size() == 4U &&
-                   ctx.unimplementedOpcodeCounts[90U] == 2U &&
-                   ctx.unimplementedOpcodeCounts[91U] == 1U &&
+                   ctx.unimplementedOpcodeCounts[80U] == 2U &&
+                   ctx.unimplementedOpcodeCounts[81U] == 1U &&
                    ctx.unimplementedOpcodeCounts[5100U] == 1U &&
                    ctx.unimplementedOpcodeCounts[13U] == 1U,
                "per-opcode histogram records exact native, WSE, and control-flow counts");
@@ -893,7 +893,7 @@ void test_unimplemented_histogram_and_loud_failure() {
         StatementBlock loudNativeBlock;
         loudNativeBlock.statements = {
             make_stmt(core_op::kTryBegin, {}),
-            make_stmt(70U, {0}),  // unimplemented key_is_down condition
+            make_stmt(82U, {0}),  // unused native slot 82
             make_stmt(core_op::kAssign, {reg(0), 111}),
             make_stmt(core_op::kElseTry, {}),
             make_stmt(core_op::kAssign, {reg(0), 222}),  // must NEVER execute!
@@ -901,17 +901,17 @@ void test_unimplemented_histogram_and_loud_failure() {
         };
         expect(!execute_statement_block(loudNativeBlock, ctx) && ctx.registers[0] == 0 &&
                    ctx.errorCount == 1 && ctx.unimplementedCount == 1 &&
-                   ctx.unimplementedOpcodeCounts[70U] == 1U &&
-                   ctx.lastError.find("70") != std::string::npos,
+                   ctx.unimplementedOpcodeCounts[82U] == 1U &&
+                   ctx.lastError.find("82") != std::string::npos,
                "failOnUnimplemented aborts before else_try can recover");
 
         StatementBlock negBlock;
         negBlock.statements = {
-            make_stmt(kNegFlag | 70U, {0}),
+            make_stmt(kNegFlag | 82U, {0}),
             make_stmt(core_op::kAssign, {reg(1), 99}),
         };
         expect(!execute_statement_block(negBlock, ctx) && ctx.registers[1] == 0 &&
-                   ctx.unimplementedOpcodeCounts[70U] == 2U && ctx.errorCount == 2,
+                   ctx.unimplementedOpcodeCounts[82U] == 2U && ctx.errorCount == 2,
                "neg flag cannot invert failOnUnimplemented abort into true");
 
         StatementBlock tonBlock;
@@ -926,7 +926,7 @@ void test_unimplemented_histogram_and_loud_failure() {
         wse::game::ScriptManager mgr;
         wse::game::Script callee;
         callee.id = "missing_callee";
-        callee.block.statements = {make_stmt(75U, {reg(6)})};  // mouse_get_position (unimplemented)
+        callee.block.statements = {make_stmt(83U, {reg(6)})};  // unused native slot 83
         mgr.scripts.push_back(std::move(callee));
         ctx.scripts = &mgr;
 
@@ -939,7 +939,7 @@ void test_unimplemented_histogram_and_loud_failure() {
             make_stmt(core_op::kTryEnd, {}),
         };
         expect(!execute_statement_block(callBlock, ctx) && ctx.registers[3] == 0 &&
-                   ctx.unimplementedOpcodeCounts[75U] == 1U && ctx.errorCount == 4,
+                   ctx.unimplementedOpcodeCounts[83U] == 1U && ctx.errorCount == 4,
                "failOnUnimplemented inside call_script aborts outer try/else caller");
     }
 }

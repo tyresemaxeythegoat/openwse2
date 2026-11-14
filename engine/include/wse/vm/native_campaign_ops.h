@@ -23,40 +23,6 @@ namespace wse::vm {
     VmContext& ctx,
     std::span<std::int64_t> locals);
 
-// Safety deviation: float results are converted with saturation (NaN -> 0)
-// instead of an out-of-range float-to-integer cast, which is undefined.
-[[nodiscard]] inline std::int64_t native_campaign_f2i_saturate(float value) noexcept {
-    if (std::isnan(value)) {
-        return 0;
-    }
-    constexpr float kLimit = 9.2233715e18F;  // largest float below 2^63
-    if (value >= kLimit) {
-        return std::numeric_limits<std::int64_t>::max();
-    }
-    if (value <= -kLimit) {
-        return std::numeric_limits<std::int64_t>::min();
-    }
-    return static_cast<std::int64_t>(value);
-}
-
-[[nodiscard]] inline bool native_campaign_check_entering_town(
-    std::int32_t town_party_no,
-    const game::WseWorldState& world) noexcept {
-    if (!world.is_valid_party(world.main_party_no) || !world.is_valid_party(town_party_no)) {
-        return false;
-    }
-    const auto& main_p = world.parties[static_cast<std::size_t>(world.main_party_no)];
-    if (main_p.behavior != 4 || main_p.behavior_object != town_party_no) {
-        return false;
-    }
-    const auto& town_p = world.parties[static_cast<std::size_t>(town_party_no)];
-    const float dx = town_p.position.o.x - main_p.position.o.x;
-    const float dy = town_p.position.o.y - main_p.position.o.y;
-    const float dz = town_p.position.o.z - main_p.position.o.z;
-    const float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
-    return dist > main_p.radius * 2.3f;
-}
-
 [[nodiscard]] inline std::int32_t native_campaign_achievement_key(
     std::int32_t achievement_id,
     std::int32_t stat_index) noexcept {
@@ -204,7 +170,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
     switch (opcode) {
     // Campaign Conditions & Map State (36..154)
     case 36: // entering_town (0x1401c6448)
-        return native_campaign_check_entering_town(narrow[0], world)
+        return game::check_entering_town(narrow[0], world)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     case 37: // map_free (0x1401c64f0)
@@ -542,7 +508,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             const float dx = a.x - b.x;
             const float dy = a.y - b.y;
             const float dz = a.z - b.z;
-            out = native_campaign_f2i_saturate((dx * dx + dy * dy + dz * dz) * 100.0f);
+            out = game::native_f2i_saturate((dx * dx + dy * dy + dz * dz) * 100.0f);
         }
         store_lvalue(dst, out, ctx, locals);
         return NativeDispatch::handled;
@@ -555,7 +521,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             const float dx = a.x - b.x;
             const float dy = a.y - b.y;
             const float dz = a.z - b.z;
-            out = native_campaign_f2i_saturate(dx * dx + dy * dy + dz * dz);
+            out = game::native_f2i_saturate(dx * dx + dy * dy + dz * dz);
         }
         store_lvalue(dst, out, ctx, locals);
         return NativeDispatch::handled;

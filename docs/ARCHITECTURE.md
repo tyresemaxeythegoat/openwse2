@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h` + extended native dispatchers `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, `native_campaign_ops.h`, `native_campaign_ops_2.h`, including `NativeDispatch`/`failOnUnimplemented`, live entity iterators `11/12/16/17`, `try_for_dict_keys`, and `array_sort_custom` callback), world/entity/skill/item/quest/site/party/mission/edit-mode runtime state (`wse/game/world_state.h` + `wse/game/world_campaign_helpers.h`), pure STL helpers (`wse/core/{math,encoding,json}.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the per-family handler headers under `wse/vm/ops/` listed in `STATUS.md` §3 recovered.
+Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h` + extended native dispatchers `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, `native_campaign_ops.h`, `native_campaign_ops_2.h`, `native_world_ops.h`, `native_world_ops_2.h`, `native_world_ops_3.h`, including `NativeDispatch`/`failOnUnimplemented`, `dispatch_native_non_switch`, live entity iterators `11/12/16/17`, `try_for_dict_keys`, and `array_sort_custom` callback), world/entity/skill/item/quest/site/party/mission/edit-mode/subsystem runtime state (`wse/game/{world_state,world_subsystem_types,world_campaign_helpers}.h`), pure STL helpers (`wse/core/{math,encoding,json}.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the per-family handler headers under `wse/vm/ops/` listed in `STATUS.md` §3 recovered.
 Last updated: 2026-11-14.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -794,12 +794,15 @@ Verified supporting layouts added to `docs/SYMBOL_MAP.json` (58 classes, 2,914 s
 
 Portable reconstruction lives in `engine/include/wse/vm/block_vm.h` and `engine/include/wse/vm/native_*.h`: `VmContext`,
 `analyze_statement_block`, `execute_statement`, `execute_statement_block` (`DepthGuard` tracking `currentDepth` / preserving `currentCaller` + `wse_invoke_script_callback`), loop helpers
-(`start_loop`/`can_loop`/`end_loop` including live entity iterators `11/12/16/17` and `core_op::kTryForDictKeys` `0x12`), and `603` switch native handlers across
+(`start_loop`/`can_loop`/`end_loop` including live entity iterators `11/12/16/17` and `core_op::kTryForDictKeys` `0x12`), and `821` switch native handlers across
 `native_ops.h` (`33` core comparisons/shifts/math ops `30–33`, `2100–2133` + `112` Milestone 1 handlers across `entity_slots`, `positions_and_math`, `arithmetic_registers_and_vars`, `strings`, and entity helpers),
 `native_entity_ops.h` (`108` Milestone 2 player/MP, quest, audio/UI/overlay, site/faction, troop, and party ops),
 `native_mission_ops.h` (`66` Milestone 2 agent, team/mission combat, scene prop, and mission timer ops),
-`native_campaign_ops.h` (`156` Milestone 3 campaign/world/troop/party handlers `36–1694`), and
-`native_campaign_ops_2.h` (`128` Milestone 3 agent/mission/item/party/face-key handlers `1695–2751`), `call_script`,
+`native_campaign_ops.h` (`156` Milestone 3 campaign/world/troop/party handlers `36–1694`),
+`native_campaign_ops_2.h` (`128` Milestone 3 agent/mission/item/party/face-key handlers `1695–2751`),
+`native_world_ops.h` (`69` Milestone 4 handlers across input, ray/LOS, strings, troops, parties, face keys, and `53`/`2180`/`2749`),
+`native_world_ops_2.h` (`69` Milestone 4 handlers across teams, audio/particles/tableau, and game_state_and_stores`), and
+`native_world_ops_3.h` (`80` Milestone 4 `other_native` handlers) plus `dispatch_native_non_switch` (`473/477/1004/1070/1104/1302/1491`), `call_script`,
 `store_script_param*`, `this_or_next`/`neg`, `dispatch_wse_statement` (forwarding `outTag` for
 string operands and wiring `WseVmState` position, timer, RNG, profiler, object-manager, and script-callback state),
 and VM-backed `execute_script`, `execute_mapped_script`, `execute_trigger`,

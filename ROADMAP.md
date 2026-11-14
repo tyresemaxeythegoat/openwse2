@@ -64,13 +64,8 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [x] Operand tags, decode, and lvalue write-back (`wse/vm/operand.h`, `slots.h`)
 - [x] Statement record and reader (`wse/vm/statement.h`)
 - [x] `analyze` / `execute` / loop frames / `call_script` recursion (`wse/vm/block_vm.h`)
-- [~] Native opcodes: `619/1,053` implemented across `wse/vm/block_vm.h` and
-      `wse/vm/native_{ops,entity_ops,mission_ops,campaign_ops,campaign_ops_2}.h` (control flow,
-      comparisons, integer/fixed-point/trig/RNG math, `entity_slots` `500–510`/`520–530`/`540–550`/`560–570`,
-      `positions_and_math` `700–746`/`791`, `strings` `2318–2355`, player/MP, quest, audio/UI,
-      site/faction, troop/party ops in `native_entity_ops.h`, agent/team/prop/mission/timer
-      ops in `native_mission_ops.h`, and `284` Milestone 3 campaign/item/troop/party/mission ops in
-      `native_campaign_ops.h` & `native_campaign_ops_2.h`)
+- [~] Native opcodes: `837/1,053` implemented across `wse/vm/block_vm.h` and
+      `wse/vm/native_{ops,entity_ops,mission_ops,campaign_ops,campaign_ops_2,world_ops,world_ops_2,world_ops_3}.h` (plus `dispatch_native_non_switch` for `473/477/1004/1070/1104/1302/1491`, reaching 100% on 16/20 native categories leaving only `ui_presentations_and_menus`, `scenes_props_and_mission`, `agents`, and `multiplayer_and_players`)
 - [x] Native opcode map generated from the `0x1401e22f0` jump table (**B2**, `docs/native_opcodes.json`)
 - [x] Entity iterators (`try_for_parties`, `try_for_agents`, `try_for_prop_instances`,
       `try_for_players`) — live against `WseWorldState` containers and preserving `currentCaller`
@@ -163,6 +158,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-14 | — | Phase 2 Milestone 4: add `world_subsystem_types.h`, `url_encode_tokens` on `wse_parse_string`, `dispatch_native_non_switch` (`473/477/1004/1070/1104/1302/1491`), and `218` native opcodes across `native_world_ops{,_2,_3}.h` plus `1802/1930/1969` upgrades (`837/1,053` live handlers; `16/20` categories at 100%), raising `Native` `scripts.txt` coverage from `99.54%` to `99.78%` (`1,661/1,755` zero-unimplemented scripts) with `native_world_test` |
 | 2026-11-14 | — | Milestone 3 review fixes: saturating troop XP and party stack counts, invalid troop ids rejected by `party_add_prisoners`/`party_add_leader`, `add_visitors_to_current_scene` capped, saturating float conversions in `712`/`713`/`1063`, WSE `party_stack_upgrade` path normalised; approximated handlers and stubs listed in `engine/README.md` |
 | 2026-11-14 | `f4b663f` | Phase 2 Milestone 3: expand `WseWorldState` + `world_campaign_helpers.h`, implement `14` WSE party/agent opcodes (`3340–3341`, `3900–3911`; `236/440`) and `284` native campaign/mission/item/troop/party opcodes across `native_campaign_ops.h` and `native_campaign_ops_2.h` (`619/1,053` live handlers), default `VmContext::clearLocalsBetweenCalls` to `true` (`0x140617819`), raising `Native` `scripts.txt` coverage from `97.76%` to `99.54%` (`1,545/1,755` zero-unimplemented scripts, `0` unimplemented WSE calls) |
 | 2026-11-14 | — | Native opcode map cross-checked against the community operations reference (`0` number disagreements); handlers `53`, `2180`, `2749` gain community names and `try_for_attached_parties` `15` is recorded as handler-less (`STATUS.md` §3) |

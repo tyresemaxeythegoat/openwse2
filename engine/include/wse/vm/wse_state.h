@@ -95,8 +95,8 @@ struct WseStringBanks {
     std::span<const std::u16string_view> local{};
 };
 
-// Runtime option booleans queried and mutated by opcodes 4300..4305, 3619,
-// 3622, and 4606.
+// Runtime option values queried and mutated by native opcodes 260..271
+// and WSE opcodes 4300..4305, 3619, 3622, and 4606.
 struct WseOptionsState {
     bool verbose_casualties = false;   // 0x1406173b7
     bool cheat_mode = false;           // 0x14061ef50
@@ -104,6 +104,12 @@ struct WseOptionsState {
     bool show_crosshair = true;        // 0x14061781a
     bool horse_friendly_fire = false;  // 0x14061ef1a
     bool edit_mode_enabled = false;    // 0x14061efb8
+    float damage_to_player = 1.0f;     // rglConfig::Battle::fDamageToSelf
+    float damage_to_friends = 1.0f;    // rglConfig::Battle::fDamageToFriends
+    std::int32_t combat_ai = 1;        // rglConfig::BattleAi::iReduceBattleAi
+    std::int32_t campaign_ai = 1;      // rglConfig::CampaignAi::iReduceCampaignAi
+    std::int32_t combat_speed = 2;     // rglConfig::Battle::iCombatSpeed
+    float battle_size = 1.0f;          // rglConfig::Battle::fBattleSize
 };
 
 // 16-byte timer slot (0x140667b18 / 0x140667b20, stride 0x10).
@@ -829,7 +835,8 @@ enum class WseDispatch : std::uint8_t {
 [[nodiscard]] inline std::u16string wse_parse_string(
     std::u16string_view input,
     std::span<const std::int64_t> registers,
-    const WseStringBanks& banks);
+    const WseStringBanks& banks,
+    bool url_encode_tokens = false);
 
 // Mirrors mbBasicGame::parseToken / parseTokenReg / parseTokenStr
 // (0x1400723a0..0x140072b73): strips "!" / "***" comments, expands "reg<N>"
@@ -896,7 +903,8 @@ enum class WseDispatch : std::uint8_t {
 [[nodiscard]] inline std::u16string wse_parse_string(
     std::u16string_view input,
     std::span<const std::int64_t> registers,
-    const WseStringBanks& banks) {
+    const WseStringBanks& banks,
+    bool url_encode_tokens) {
     std::u16string out;
     out.reserve(input.size());
     std::size_t i = 0;
@@ -927,7 +935,13 @@ enum class WseDispatch : std::uint8_t {
             if (j > i + 1) {
                 const std::u16string_view token =
                     input.substr(i + 1, j - (i + 1));
-                out.append(wse_parse_token(token, registers, banks));
+                std::u16string expanded =
+                    wse_parse_token(token, registers, banks);
+                if (url_encode_tokens) {
+                    expanded = wse_utf8_to_utf16(
+                        wse_url_escape(wse_utf16_to_utf8(expanded)));
+                }
+                out.append(expanded);
             }
             i = j + 1;
             continue;

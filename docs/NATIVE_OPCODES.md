@@ -19,7 +19,7 @@ Machine-readable copy: `docs/native_opcodes.json`.
 | Fallback to `executeWSE` (`execute_wse_fallback`) | 1695 | Jump to `0x1401e223e`; 1 SDK-named (`1004`), 1694 empty holes |
 | **Total live native handlers (`0–2767`)** | **1053** | 16 control-flow + 1037 switch |
 | SDK unique IDs in `0–2767` | 1057 | 1062 symbol definitions incl. aliases |
-| Implemented in VM (`block_vm.h` + `native_*.h`) (`control_flow` / `switch`) | 16 / 603 | Total implemented: **619** |
+| Implemented in VM (`block_vm.h` + `native_*.h`) (`control_flow` / `switch`) | 16 / 821 | Total implemented: **837** |
 
 ## Special slots
 
@@ -61,25 +61,25 @@ they are not retail symbols. The handler VA is the binary evidence.
 
 | Category | Live handlers | Implemented (`block_vm.h` + `native_*.h`) |
 | --- | ---: | ---: |
-| `other_native` | 146 | 65 |
-| `parties` | 119 | 104 |
+| `other_native` | 146 | 146 |
+| `parties` | 119 | 119 |
 | `agents` | 117 | 67 |
 | `scenes_props_and_mission` | 88 | 32 |
 | `ui_presentations_and_menus` | 76 | 14 |
-| `troops` | 75 | 65 |
+| `troops` | 75 | 75 |
 | `multiplayer_and_players` | 74 | 26 |
-| `game_state_and_stores` | 62 | 27 |
+| `game_state_and_stores` | 62 | 62 |
 | `entity_slots` | 50 | 50 |
-| `positions_and_math` | 43 | 39 |
+| `positions_and_math` | 43 | 43 |
 | `arithmetic_registers_and_vars` | 37 | 37 |
-| `items` | 33 | 28 |
-| `strings` | 30 | 22 |
-| `audio_particles_and_tableau` | 29 | 3 |
-| `mission_combat_and_teams` | 27 | 19 |
+| `items` | 33 | 33 |
+| `strings` | 30 | 30 |
+| `audio_particles_and_tableau` | 29 | 29 |
+| `mission_combat_and_teams` | 27 | 27 |
 | `control_flow` | 16 | 16 |
-| `face_keys` | 16 | 0 |
-| `input` | 6 | 0 |
-| `factions_quests_menus_options` | 5 | 1 |
+| `face_keys` | 16 | 16 |
+| `input` | 6 | 6 |
+| `factions_quests_menus_options` | 5 | 5 |
 | `comparisons_and_branching` | 4 | 4 |
 
 ## Mapped & Live Operations (`0–2767`)
@@ -112,25 +112,25 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 42 | `0x2a` | `conversation_screen_is_active` | `switch_handler` | `0x1401c6526` | `other_native` | `implemented` |
 | 44 | `0x2c` | `in_meta_mission` | `switch_handler` | `0x1401c653c` | `other_native` | `implemented` |
 | 47 | `0x2f` | `set_player_troop` | `switch_handler` | `0x1401c6548` | `troops` | `implemented` |
-| 50 | `0x32` | `store_repeat_object` | `switch_handler` | `0x1401c656e` | `game_state_and_stores` | `unimplemented` |
-| 53 | `0x35` | `is_cheat_mode_enabled` *(community name)* | `switch_handler` | `0x1401c659c` | `other_native` | `unimplemented` |
-| 55 | `0x37` | `get_operation_set_version` | `switch_handler` | `0x1401c65a8` | `game_state_and_stores` | `unimplemented` |
-| 58 | `0x3a` | `set_physics_delta_time` | `switch_handler` | `0x1401c65cc` | `game_state_and_stores` | `unimplemented` |
+| 50 | `0x32` | `store_repeat_object` | `switch_handler` | `0x1401c656e` | `game_state_and_stores` | `implemented` |
+| 53 | `0x35` | `is_cheat_mode_enabled` *(community name)* | `switch_handler` | `0x1401c659c` | `other_native` | `implemented` |
+| 55 | `0x37` | `get_operation_set_version` | `switch_handler` | `0x1401c65a8` | `game_state_and_stores` | `implemented` |
+| 58 | `0x3a` | `set_physics_delta_time` | `switch_handler` | `0x1401c65cc` | `game_state_and_stores` | `implemented` |
 | 60 | `0x3c` | `set_result_string` | `switch_handler` | `0x1401c6660` | `game_state_and_stores` | `implemented` |
-| 61 | `0x3d` | `is_camera_in_first_person` | `switch_handler` | `0x1401c66cc` | `game_state_and_stores` | `unimplemented` |
-| 62 | `0x3e` | `set_camera_in_first_person` | `switch_handler` | `0x1401c66e4` | `game_state_and_stores` | `unimplemented` |
-| 65 | `0x41` | `game_key_get_mapped_key_name` | `switch_handler` | `0x1401c6752` | `input` | `unimplemented` |
-| 70 | `0x46` | `key_is_down` | `switch_handler` | `0x1401c67e5` | `input` | `unimplemented` |
-| 71 | `0x47` | `key_clicked` | `switch_handler` | `0x1401c683f` | `input` | `unimplemented` |
-| 72 | `0x48` | `game_key_is_down` | `switch_handler` | `0x1401c6899` | `input` | `unimplemented` |
-| 73 | `0x49` | `game_key_clicked` | `switch_handler` | `0x1401c68f1` | `input` | `unimplemented` |
+| 61 | `0x3d` | `is_camera_in_first_person` | `switch_handler` | `0x1401c66cc` | `game_state_and_stores` | `implemented` |
+| 62 | `0x3e` | `set_camera_in_first_person` | `switch_handler` | `0x1401c66e4` | `game_state_and_stores` | `implemented` |
+| 65 | `0x41` | `game_key_get_mapped_key_name` | `switch_handler` | `0x1401c6752` | `input` | `implemented` |
+| 70 | `0x46` | `key_is_down` | `switch_handler` | `0x1401c67e5` | `input` | `implemented` |
+| 71 | `0x47` | `key_clicked` | `switch_handler` | `0x1401c683f` | `input` | `implemented` |
+| 72 | `0x48` | `game_key_is_down` | `switch_handler` | `0x1401c6899` | `input` | `implemented` |
+| 73 | `0x49` | `game_key_clicked` | `switch_handler` | `0x1401c68f1` | `input` | `implemented` |
 | 75 | `0x4b` | `mouse_get_position` | `switch_handler` | `0x1401c6949` | `ui_presentations_and_menus` | `unimplemented` |
-| 77 | `0x4d` | `omit_key_once` | `switch_handler` | `0x1401c69b5` | `input` | `unimplemented` |
-| 78 | `0x4e` | `clear_omitted_keys` | `switch_handler` | `0x1401c69e2` | `other_native` | `unimplemented` |
-| 90 | `0x5a` | `get_global_cloud_amount` | `switch_handler` | `0x1401c69f3` | `game_state_and_stores` | `unimplemented` |
-| 91 | `0x5b` | `set_global_cloud_amount` | `switch_handler` | `0x1401c6a31` | `game_state_and_stores` | `unimplemented` |
-| 92 | `0x5c` | `get_global_haze_amount` | `switch_handler` | `0x1401c6a62` | `game_state_and_stores` | `unimplemented` |
-| 93 | `0x5d` | `set_global_haze_amount` | `switch_handler` | `0x1401c6aa0` | `game_state_and_stores` | `unimplemented` |
+| 77 | `0x4d` | `omit_key_once` | `switch_handler` | `0x1401c69b5` | `input` | `implemented` |
+| 78 | `0x4e` | `clear_omitted_keys` | `switch_handler` | `0x1401c69e2` | `other_native` | `implemented` |
+| 90 | `0x5a` | `get_global_cloud_amount` | `switch_handler` | `0x1401c69f3` | `game_state_and_stores` | `implemented` |
+| 91 | `0x5b` | `set_global_cloud_amount` | `switch_handler` | `0x1401c6a31` | `game_state_and_stores` | `implemented` |
+| 92 | `0x5c` | `get_global_haze_amount` | `switch_handler` | `0x1401c6a62` | `game_state_and_stores` | `implemented` |
+| 93 | `0x5d` | `set_global_haze_amount` | `switch_handler` | `0x1401c6aa0` | `game_state_and_stores` | `implemented` |
 | 101 | `0x65` | `hero_can_join` | `switch_handler` | `0x1401c6ad1` | `other_native` | `implemented` |
 | 102 | `0x66` | `hero_can_join_as_prisoner` | `switch_handler` | `0x1401c6b24` | `other_native` | `implemented` |
 | 103 | `0x67` | `party_can_join` | `switch_handler` | `0x1401c6b77` | `parties` | `implemented` |
@@ -139,7 +139,7 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 106 | `0x6a` | `troops_can_join_as_prisoner` | `switch_handler` | `0x1401c6bed` | `troops` | `implemented` |
 | 107 | `0x6b` | `party_can_join_party` | `switch_handler` | `0x1401c6c27` | `parties` | `implemented` |
 | 108 | `0x6c` | `party_end_battle` | `switch_handler` | `0x1401c6c7c` | `parties` | `implemented` |
-| 110 | `0x6e` | `main_party_has_troop` | `switch_handler` | `0x1401c6cd1` | `parties` | `unimplemented` |
+| 110 | `0x6e` | `main_party_has_troop` | `switch_handler` | `0x1401c6cd1` | `parties` | `implemented` |
 | 130 | `0x82` | `party_is_in_town` | `switch_handler` | `0x1401c6d3b` | `parties` | `implemented` |
 | 131 | `0x83` | `party_is_in_any_town` | `switch_handler` | `0x1401c6d82` | `parties` | `implemented` |
 | 132 | `0x84` | `party_is_active` | `switch_handler` | `0x1401c6db3` | `parties` | `implemented` |
@@ -155,24 +155,24 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 204 | `0xcc` | `check_quest_concluded` | `switch_handler` | `0x1401c7040` | `other_native` | `implemented` |
 | 250 | `0xfa` | `is_trial_version` | `switch_handler` | `0x1401d5496` | `other_native` | `implemented` |
 | 255 | `0xff` | `is_edit_mode_enabled` | `switch_handler` | `0x1401c706d` | `other_native` | `implemented` |
-| 260 | `0x104` | `options_get_damage_to_player` | `switch_handler` | `0x1401c7079` | `other_native` | `unimplemented` |
-| 261 | `0x105` | `options_set_damage_to_player` | `switch_handler` | `0x1401c70f5` | `other_native` | `unimplemented` |
-| 262 | `0x106` | `options_get_damage_to_friends` | `switch_handler` | `0x1401c7180` | `other_native` | `unimplemented` |
-| 263 | `0x107` | `options_set_damage_to_friends` | `switch_handler` | `0x1401c71fc` | `other_native` | `unimplemented` |
-| 264 | `0x108` | `options_get_combat_ai` | `switch_handler` | `0x1401c7287` | `other_native` | `unimplemented` |
-| 265 | `0x109` | `options_set_combat_ai` | `switch_handler` | `0x1401c72ae` | `other_native` | `unimplemented` |
-| 266 | `0x10a` | `options_get_campaign_ai` | `switch_handler` | `0x1401c72d3` | `other_native` | `unimplemented` |
-| 267 | `0x10b` | `options_set_campaign_ai` | `switch_handler` | `0x1401c72fa` | `other_native` | `unimplemented` |
-| 268 | `0x10c` | `options_get_combat_speed` | `switch_handler` | `0x1401c731f` | `other_native` | `unimplemented` |
-| 269 | `0x10d` | `options_set_combat_speed` | `switch_handler` | `0x1401c7346` | `other_native` | `unimplemented` |
-| 270 | `0x10e` | `options_get_battle_size` | `switch_handler` | `0x1401c736b` | `other_native` | `unimplemented` |
-| 271 | `0x10f` | `options_set_battle_size` | `switch_handler` | `0x1401c73a0` | `other_native` | `unimplemented` |
-| 350 | `0x15e` | `profile_get_banner_id` | `switch_handler` | `0x1401c73da` | `other_native` | `unimplemented` |
-| 351 | `0x15f` | `profile_set_banner_id` | `switch_handler` | `0x1401c742e` | `other_native` | `unimplemented` |
+| 260 | `0x104` | `options_get_damage_to_player` | `switch_handler` | `0x1401c7079` | `other_native` | `implemented` |
+| 261 | `0x105` | `options_set_damage_to_player` | `switch_handler` | `0x1401c70f5` | `other_native` | `implemented` |
+| 262 | `0x106` | `options_get_damage_to_friends` | `switch_handler` | `0x1401c7180` | `other_native` | `implemented` |
+| 263 | `0x107` | `options_set_damage_to_friends` | `switch_handler` | `0x1401c71fc` | `other_native` | `implemented` |
+| 264 | `0x108` | `options_get_combat_ai` | `switch_handler` | `0x1401c7287` | `other_native` | `implemented` |
+| 265 | `0x109` | `options_set_combat_ai` | `switch_handler` | `0x1401c72ae` | `other_native` | `implemented` |
+| 266 | `0x10a` | `options_get_campaign_ai` | `switch_handler` | `0x1401c72d3` | `other_native` | `implemented` |
+| 267 | `0x10b` | `options_set_campaign_ai` | `switch_handler` | `0x1401c72fa` | `other_native` | `implemented` |
+| 268 | `0x10c` | `options_get_combat_speed` | `switch_handler` | `0x1401c731f` | `other_native` | `implemented` |
+| 269 | `0x10d` | `options_set_combat_speed` | `switch_handler` | `0x1401c7346` | `other_native` | `implemented` |
+| 270 | `0x10e` | `options_get_battle_size` | `switch_handler` | `0x1401c736b` | `other_native` | `implemented` |
+| 271 | `0x10f` | `options_set_battle_size` | `switch_handler` | `0x1401c73a0` | `other_native` | `implemented` |
+| 350 | `0x15e` | `profile_get_banner_id` | `switch_handler` | `0x1401c73da` | `other_native` | `implemented` |
+| 351 | `0x15f` | `profile_set_banner_id` | `switch_handler` | `0x1401c742e` | `other_native` | `implemented` |
 | 370 | `0x172` | `get_achievement_stat` | `switch_handler` | `0x1401c746a` | `other_native` | `implemented` |
 | 371 | `0x173` | `set_achievement_stat` | `switch_handler` | `0x1401c749f` | `other_native` | `implemented` |
 | 372 | `0x174` | `unlock_achievement` | `switch_handler` | `0x1401c74b6` | `other_native` | `implemented` |
-| 380 | `0x17c` | `send_message_to_url` | `switch_handler` | `0x1401c74d7` | `other_native` | `unimplemented` |
+| 380 | `0x17c` | `send_message_to_url` | `switch_handler` | `0x1401c74d7` | `other_native` | `implemented` |
 | 388 | `0x184` | `multiplayer_send_message_to_server` | `switch_handler` | `0x1401c75cc` | `multiplayer_and_players` | `unimplemented` |
 | 389 | `0x185` | `multiplayer_send_int_to_server` | `switch_handler` | `0x1401c7659` | `multiplayer_and_players` | `unimplemented` |
 | 390 | `0x186` | `multiplayer_send_2_int_to_server` | `switch_handler` | `0x1401c76d1` | `multiplayer_and_players` | `unimplemented` |
@@ -211,8 +211,8 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 423 | `0x1a7` | `player_get_banner_id` | `switch_handler` | `0x1401c8564` | `multiplayer_and_players` | `implemented` |
 | 424 | `0x1a8` | `game_get_reduce_campaign_ai` | `switch_handler` | `0x1401c85ab` | `other_native` | `implemented` |
 | 425 | `0x1a9` | `multiplayer_find_spawn_point` | `switch_handler` | `0x1401c85d2` | `multiplayer_and_players` | `unimplemented` |
-| 426 | `0x1aa` | `set_spawn_effector_scene_prop_kind` | `switch_handler` | `0x1401c861a` | `other_native` | `unimplemented` |
-| 427 | `0x1ab` | `set_spawn_effector_scene_prop_id` | `switch_handler` | `0x1401c865e` | `other_native` | `unimplemented` |
+| 426 | `0x1aa` | `set_spawn_effector_scene_prop_kind` | `switch_handler` | `0x1401c861a` | `other_native` | `implemented` |
+| 427 | `0x1ab` | `set_spawn_effector_scene_prop_id` | `switch_handler` | `0x1401c865e` | `other_native` | `implemented` |
 | 429 | `0x1ad` | `player_set_is_admin` | `switch_handler` | `0x1401c86a8` | `multiplayer_and_players` | `unimplemented` |
 | 430 | `0x1ae` | `player_is_admin` | `switch_handler` | `0x1401c86ed` | `multiplayer_and_players` | `implemented` |
 | 431 | `0x1af` | `player_get_score` | `switch_handler` | `0x1401c8739` | `multiplayer_and_players` | `unimplemented` |
@@ -239,11 +239,11 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 459 | `0x1cb` | `player_save_picked_up_items_for_next_spawn` | `switch_handler` | `0x1401c8cc7` | `multiplayer_and_players` | `unimplemented` |
 | 460 | `0x1cc` | `player_get_value_of_original_items` | `switch_handler` | `0x1401c8d08` | `multiplayer_and_players` | `unimplemented` |
 | 461 | `0x1cd` | `player_item_slot_is_picked_up` | `switch_handler` | `0x1401c8d7d` | `entity_slots` | `implemented` |
-| 465 | `0x1d1` | `kick_player` | `switch_handler` | `0x1401c8dd9` | `other_native` | `unimplemented` |
-| 466 | `0x1d2` | `ban_player` | `switch_handler` | `0x1401c8e37` | `other_native` | `unimplemented` |
-| 467 | `0x1d3` | `save_ban_info_of_player` | `switch_handler` | `0x1401c8f02` | `other_native` | `unimplemented` |
-| 468 | `0x1d4` | `ban_player_using_saved_ban_info` | `switch_handler` | `0x1401c8f99` | `other_native` | `unimplemented` |
-| 470 | `0x1d6` | `start_multiplayer_mission` | `switch_handler` | `0x1401c9042` | `other_native` | `unimplemented` |
+| 465 | `0x1d1` | `kick_player` | `switch_handler` | `0x1401c8dd9` | `other_native` | `implemented` |
+| 466 | `0x1d2` | `ban_player` | `switch_handler` | `0x1401c8e37` | `other_native` | `implemented` |
+| 467 | `0x1d3` | `save_ban_info_of_player` | `switch_handler` | `0x1401c8f02` | `other_native` | `implemented` |
+| 468 | `0x1d4` | `ban_player_using_saved_ban_info` | `switch_handler` | `0x1401c8f99` | `other_native` | `implemented` |
+| 470 | `0x1d6` | `start_multiplayer_mission` | `switch_handler` | `0x1401c9042` | `other_native` | `implemented` |
 | 473 | `0x1d9` | `server_add_message_to_log` | `noop_true` | `0x1401e226b` | `multiplayer_and_players` | `noop_in_wse2` |
 | 475 | `0x1db` | `server_get_renaming_server_allowed` | `switch_handler` | `0x1401c909b` | `multiplayer_and_players` | `unimplemented` |
 | 476 | `0x1dc` | `server_get_changing_game_type_allowed` | `switch_handler` | `0x1401c90c2` | `multiplayer_and_players` | `unimplemented` |
@@ -316,24 +316,24 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 570 | `0x23a` | `scene_prop_slot_ge` | `switch_handler` | `0x1401ca629` | `entity_slots` | `implemented` |
 | 599 | `0x257` | `play_sound_at_position` | `switch_handler` | `0x1401ca66e` | `audio_particles_and_tableau` | `implemented` |
 | 600 | `0x258` | `play_sound` | `switch_handler` | `0x1401ca75d` | `audio_particles_and_tableau` | `implemented` |
-| 601 | `0x259` | `play_track` | `switch_handler` | `0x1401ca843` | `audio_particles_and_tableau` | `unimplemented` |
-| 602 | `0x25a` | `play_cue_track` | `switch_handler` | `0x1401ca883` | `audio_particles_and_tableau` | `unimplemented` |
-| 603 | `0x25b` | `music_set_situation` | `switch_handler` | `0x1401ca8a2` | `audio_particles_and_tableau` | `unimplemented` |
-| 604 | `0x25c` | `music_set_culture` | `switch_handler` | `0x1401ca8ae` | `audio_particles_and_tableau` | `unimplemented` |
-| 609 | `0x261` | `stop_all_sounds` | `switch_handler` | `0x1401ca8ba` | `audio_particles_and_tableau` | `unimplemented` |
-| 615 | `0x267` | `store_last_sound_channel` | `switch_handler` | `0x1401ca8d1` | `game_state_and_stores` | `unimplemented` |
-| 616 | `0x268` | `stop_sound_channel` | `switch_handler` | `0x1401ca8f8` | `other_native` | `unimplemented` |
+| 601 | `0x259` | `play_track` | `switch_handler` | `0x1401ca843` | `audio_particles_and_tableau` | `implemented` |
+| 602 | `0x25a` | `play_cue_track` | `switch_handler` | `0x1401ca883` | `audio_particles_and_tableau` | `implemented` |
+| 603 | `0x25b` | `music_set_situation` | `switch_handler` | `0x1401ca8a2` | `audio_particles_and_tableau` | `implemented` |
+| 604 | `0x25c` | `music_set_culture` | `switch_handler` | `0x1401ca8ae` | `audio_particles_and_tableau` | `implemented` |
+| 609 | `0x261` | `stop_all_sounds` | `switch_handler` | `0x1401ca8ba` | `audio_particles_and_tableau` | `implemented` |
+| 615 | `0x267` | `store_last_sound_channel` | `switch_handler` | `0x1401ca8d1` | `game_state_and_stores` | `implemented` |
+| 616 | `0x268` | `stop_sound_channel` | `switch_handler` | `0x1401ca8f8` | `other_native` | `implemented` |
 | 700 | `0x2bc` | `copy_position` | `switch_handler` | `0x1401ca915` | `positions_and_math` | `implemented` |
 | 701 | `0x2bd` | `init_position` | `switch_handler` | `0x1401caa34` | `positions_and_math` | `implemented` |
-| 702 | `0x2be` | `get_trigger_object_position` | `switch_handler` | `0x1401caa95` | `other_native` | `unimplemented` |
+| 702 | `0x2be` | `get_trigger_object_position` | `switch_handler` | `0x1401caa95` | `other_native` | `implemented` |
 | 705 | `0x2c1` | `get_angle_between_positions` | `switch_handler` | `0x1401cab9a` | `positions_and_math` | `implemented` |
-| 707 | `0x2c3` | `position_has_line_of_sight_to_position` | `switch_handler` | `0x1401cac4c` | `positions_and_math` | `unimplemented` |
+| 707 | `0x2c3` | `position_has_line_of_sight_to_position` | `switch_handler` | `0x1401cac4c` | `positions_and_math` | `implemented` |
 | 710 | `0x2c6` | `get_distance_between_positions` | `switch_handler` | `0x1401cacbe` | `positions_and_math` | `implemented` |
 | 711 | `0x2c7` | `get_distance_between_positions_in_meters` | `switch_handler` | `0x1401cad58` | `positions_and_math` | `implemented` |
 | 712 | `0x2c8` | `get_sq_distance_between_positions` | `switch_handler` | `0x1401cadea` | `other_native` | `implemented` |
 | 713 | `0x2c9` | `get_sq_distance_between_positions_in_meters` | `switch_handler` | `0x1401cae84` | `other_native` | `implemented` |
 | 714 | `0x2ca` | `position_is_behind_position` | `switch_handler` | `0x1401caf16` | `positions_and_math` | `implemented` |
-| 715 | `0x2cb` | `get_sq_distance_between_position_heights` | `switch_handler` | `0x1401caf8e` | `other_native` | `unimplemented` |
+| 715 | `0x2cb` | `get_sq_distance_between_position_heights` | `switch_handler` | `0x1401caf8e` | `other_native` | `implemented` |
 | 716 | `0x2cc` | `position_transform_position_to_parent` | `switch_handler` | `0x1401cb024` | `positions_and_math` | `implemented` |
 | 717 | `0x2cd` | `position_transform_position_to_local` | `switch_handler` | `0x1401cb144` | `positions_and_math` | `implemented` |
 | 718 | `0x2ce` | `position_copy_rotation` | `switch_handler` | `0x1401cb264` | `positions_and_math` | `implemented` |
@@ -363,7 +363,7 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 744 | `0x2e8` | `position_set_scale_x` | `switch_handler` | `0x1401cbb5e` | `positions_and_math` | `implemented` |
 | 745 | `0x2e9` | `position_set_scale_y` | `switch_handler` | `0x1401cbba8` | `positions_and_math` | `implemented` |
 | 746 | `0x2ea` | `position_set_scale_z` | `switch_handler` | `0x1401cbbf2` | `positions_and_math` | `implemented` |
-| 750 | `0x2ee` | `position_get_screen_projection` | `switch_handler` | `0x1401cbc3c` | `positions_and_math` | `unimplemented` |
+| 750 | `0x2ee` | `position_get_screen_projection` | `switch_handler` | `0x1401cbc3c` | `positions_and_math` | `implemented` |
 | 751 | `0x2ef` | `mouse_get_world_projection` | `switch_handler` | `0x1401cbcc9` | `ui_presentations_and_menus` | `unimplemented` |
 | 791 | `0x317` | `position_set_z_to_ground_level` | `switch_handler` | `0x1401cbd9b` | `positions_and_math` | `implemented` |
 | 792 | `0x318` | `position_get_distance_to_terrain` | `switch_handler` | `0x1401cbdf3` | `positions_and_math` | `implemented` |
@@ -416,15 +416,15 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 951 | `0x3b7` | `overlay_set_container_overlay` | `switch_handler` | `0x1401ccec2` | `ui_presentations_and_menus` | `unimplemented` |
 | 952 | `0x3b8` | `overlay_set_additional_render_height` | `switch_handler` | `0x1401ccf07` | `ui_presentations_and_menus` | `unimplemented` |
 | 956 | `0x3bc` | `overlay_set_material` | `switch_handler` | `0x1401ccf5d` | `ui_presentations_and_menus` | `unimplemented` |
-| 960 | `0x3c0` | `show_object_details_overlay` | `switch_handler` | `0x1401cd02b` | `other_native` | `unimplemented` |
-| 970 | `0x3ca` | `show_item_details` | `switch_handler` | `0x1401cd03a` | `other_native` | `unimplemented` |
-| 971 | `0x3cb` | `close_item_details` | `switch_handler` | `0x1401cd0e5` | `other_native` | `unimplemented` |
-| 972 | `0x3cc` | `show_item_details_with_modifier` | `switch_handler` | `0x1401cd0fb` | `other_native` | `unimplemented` |
-| 980 | `0x3d4` | `context_menu_add_item` | `switch_handler` | `0x1401cd1c7` | `other_native` | `unimplemented` |
-| 985 | `0x3d9` | `auto_save` | `switch_handler` | `0x1401cd27c` | `other_native` | `unimplemented` |
-| 988 | `0x3dc` | `allow_ironman` | `switch_handler` | `0x1401cd2d6` | `other_native` | `unimplemented` |
-| 990 | `0x3de` | `get_average_game_difficulty` | `switch_handler` | `0x1401cd2e9` | `other_native` | `unimplemented` |
-| 991 | `0x3df` | `get_level_boundary` | `switch_handler` | `0x1401cd326` | `other_native` | `unimplemented` |
+| 960 | `0x3c0` | `show_object_details_overlay` | `switch_handler` | `0x1401cd02b` | `other_native` | `implemented` |
+| 970 | `0x3ca` | `show_item_details` | `switch_handler` | `0x1401cd03a` | `other_native` | `implemented` |
+| 971 | `0x3cb` | `close_item_details` | `switch_handler` | `0x1401cd0e5` | `other_native` | `implemented` |
+| 972 | `0x3cc` | `show_item_details_with_modifier` | `switch_handler` | `0x1401cd0fb` | `other_native` | `implemented` |
+| 980 | `0x3d4` | `context_menu_add_item` | `switch_handler` | `0x1401cd1c7` | `other_native` | `implemented` |
+| 985 | `0x3d9` | `auto_save` | `switch_handler` | `0x1401cd27c` | `other_native` | `implemented` |
+| 988 | `0x3dc` | `allow_ironman` | `switch_handler` | `0x1401cd2d6` | `other_native` | `implemented` |
+| 990 | `0x3de` | `get_average_game_difficulty` | `switch_handler` | `0x1401cd2e9` | `other_native` | `implemented` |
+| 991 | `0x3df` | `get_level_boundary` | `switch_handler` | `0x1401cd326` | `other_native` | `implemented` |
 | 1003 | `0x3eb` | `all_enemies_defeated` | `switch_handler` | `0x1401cd37d` | `other_native` | `implemented` |
 | 1004 | `0x3ec` | `race_completed_by_player` (`is_vanilla_warband`) | `execute_wse_fallback` | `0x1401e223e` | `game_state_and_stores` | `fallback_returns_false` |
 | 1005 | `0x3ed` | `num_active_teams_le` | `switch_handler` | `0x1401cd391` | `other_native` | `implemented` |
@@ -432,39 +432,39 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1019 | `0x3fb` | `finish_party_battle_mode` | `switch_handler` | `0x1401cd3eb` | `parties` | `implemented` |
 | 1020 | `0x3fc` | `set_party_battle_mode` | `switch_handler` | `0x1401cd3f7` | `parties` | `implemented` |
 | 1021 | `0x3fd` | `set_camera_follow_party` | `switch_handler` | `0x1401cd403` | `parties` | `implemented` |
-| 1025 | `0x401` | `start_map_conversation` | `switch_handler` | `0x1401cd49d` | `other_native` | `unimplemented` |
-| 1030 | `0x406` | `rest_for_hours` | `switch_handler` | `0x1401cd4ef` | `game_state_and_stores` | `unimplemented` |
-| 1031 | `0x407` | `rest_for_hours_interactive` | `switch_handler` | `0x1401cd566` | `game_state_and_stores` | `unimplemented` |
+| 1025 | `0x401` | `start_map_conversation` | `switch_handler` | `0x1401cd49d` | `other_native` | `implemented` |
+| 1030 | `0x406` | `rest_for_hours` | `switch_handler` | `0x1401cd4ef` | `game_state_and_stores` | `implemented` |
+| 1031 | `0x407` | `rest_for_hours_interactive` | `switch_handler` | `0x1401cd566` | `game_state_and_stores` | `implemented` |
 | 1062 | `0x426` | `add_xp_to_troop` | `switch_handler` | `0x1401cd5c2` | `troops` | `implemented` |
 | 1063 | `0x427` | `add_gold_as_xp` | `switch_handler` | `0x1401cd5ec` | `troops` | `implemented` |
 | 1064 | `0x428` | `add_xp_as_reward` | `switch_handler` | `0x1401cd600` | `troops` | `implemented` |
 | 1070 | `0x42e` | `add_gold_to_party` | `noop_true` | `0x1401e226b` | `troops` | `noop_in_wse2` |
 | 1080 | `0x438` | `set_party_creation_random_limits` | `switch_handler` | `0x1401cd614` | `parties` | `implemented` |
-| 1090 | `0x442` | `add_info_page_note_tableau_mesh` | `switch_handler` | `0x1401cd653` | `other_native` | `unimplemented` |
-| 1091 | `0x443` | `add_info_page_note_from_dialog` | `switch_handler` | `0x1401cd693` | `other_native` | `unimplemented` |
-| 1092 | `0x444` | `add_info_page_note_from_sreg` | `switch_handler` | `0x1401cd787` | `other_native` | `unimplemented` |
+| 1090 | `0x442` | `add_info_page_note_tableau_mesh` | `switch_handler` | `0x1401cd653` | `other_native` | `implemented` |
+| 1091 | `0x443` | `add_info_page_note_from_dialog` | `switch_handler` | `0x1401cd693` | `other_native` | `implemented` |
+| 1092 | `0x444` | `add_info_page_note_from_sreg` | `switch_handler` | `0x1401cd787` | `other_native` | `implemented` |
 | 1095 | `0x447` | `troop_set_note_available` | `switch_handler` | `0x1401cd850` | `troops` | `implemented` |
 | 1096 | `0x448` | `faction_set_note_available` | `switch_handler` | `0x1401cd887` | `factions_quests_menus_options` | `implemented` |
 | 1097 | `0x449` | `party_set_note_available` | `switch_handler` | `0x1401cd8be` | `parties` | `implemented` |
-| 1098 | `0x44a` | `quest_set_note_available` | `switch_handler` | `0x1401cd8f5` | `factions_quests_menus_options` | `unimplemented` |
+| 1098 | `0x44a` | `quest_set_note_available` | `switch_handler` | `0x1401cd8f5` | `factions_quests_menus_options` | `implemented` |
 | 1100 | `0x44c` | `spawn_around_party` | `switch_handler` | `0x1401cd92c` | `parties` | `implemented` |
 | 1103 | `0x44f` | `set_spawn_radius` | `switch_handler` | `0x1401cd9a5` | `other_native` | `implemented` |
 | 1104 | `0x450` | `display_debug_message` | `noop_true` | `0x1401e226b` | `ui_presentations_and_menus` | `noop_in_wse2` |
 | 1105 | `0x451` | `display_log_message` | `switch_handler` | `0x1401cd9ba` | `ui_presentations_and_menus` | `implemented` |
 | 1106 | `0x452` | `display_message` | `switch_handler` | `0x1401cdb54` | `ui_presentations_and_menus` | `implemented` |
 | 1107 | `0x453` | `set_show_messages` | `switch_handler` | `0x1401cdbef` | `game_state_and_stores` | `implemented` |
-| 1108 | `0x454` | `add_troop_note_tableau_mesh` | `switch_handler` | `0x1401cdbfe` | `troops` | `unimplemented` |
-| 1109 | `0x455` | `add_faction_note_tableau_mesh` | `switch_handler` | `0x1401cdc3e` | `other_native` | `unimplemented` |
-| 1110 | `0x456` | `add_party_note_tableau_mesh` | `switch_handler` | `0x1401cdc7e` | `parties` | `unimplemented` |
-| 1111 | `0x457` | `add_quest_note_tableau_mesh` | `switch_handler` | `0x1401cdcbe` | `other_native` | `unimplemented` |
-| 1112 | `0x458` | `add_quest_note_from_dialog` | `switch_handler` | `0x1401cdcfe` | `other_native` | `unimplemented` |
+| 1108 | `0x454` | `add_troop_note_tableau_mesh` | `switch_handler` | `0x1401cdbfe` | `troops` | `implemented` |
+| 1109 | `0x455` | `add_faction_note_tableau_mesh` | `switch_handler` | `0x1401cdc3e` | `other_native` | `implemented` |
+| 1110 | `0x456` | `add_party_note_tableau_mesh` | `switch_handler` | `0x1401cdc7e` | `parties` | `implemented` |
+| 1111 | `0x457` | `add_quest_note_tableau_mesh` | `switch_handler` | `0x1401cdcbe` | `other_native` | `implemented` |
+| 1112 | `0x458` | `add_quest_note_from_dialog` | `switch_handler` | `0x1401cdcfe` | `other_native` | `implemented` |
 | 1113 | `0x459` | `add_quest_note_from_sreg` | `switch_handler` | `0x1401cdde9` | `other_native` | `implemented` |
-| 1114 | `0x45a` | `add_troop_note_from_dialog` | `switch_handler` | `0x1401cdeb2` | `troops` | `unimplemented` |
-| 1115 | `0x45b` | `add_faction_note_from_dialog` | `switch_handler` | `0x1401cdfa6` | `other_native` | `unimplemented` |
-| 1116 | `0x45c` | `add_party_note_from_dialog` | `switch_handler` | `0x1401ce097` | `parties` | `unimplemented` |
+| 1114 | `0x45a` | `add_troop_note_from_dialog` | `switch_handler` | `0x1401cdeb2` | `troops` | `implemented` |
+| 1115 | `0x45b` | `add_faction_note_from_dialog` | `switch_handler` | `0x1401cdfa6` | `other_native` | `implemented` |
+| 1116 | `0x45c` | `add_party_note_from_dialog` | `switch_handler` | `0x1401ce097` | `parties` | `implemented` |
 | 1117 | `0x45d` | `add_troop_note_from_sreg` | `switch_handler` | `0x1401ce18b` | `troops` | `implemented` |
-| 1118 | `0x45e` | `add_faction_note_from_sreg` | `switch_handler` | `0x1401ce254` | `other_native` | `unimplemented` |
-| 1119 | `0x45f` | `add_party_note_from_sreg` | `switch_handler` | `0x1401ce31d` | `parties` | `unimplemented` |
+| 1118 | `0x45e` | `add_faction_note_from_sreg` | `switch_handler` | `0x1401ce254` | `other_native` | `implemented` |
+| 1119 | `0x45f` | `add_party_note_from_sreg` | `switch_handler` | `0x1401ce31d` | `parties` | `implemented` |
 | 1120 | `0x460` | `tutorial_box` (`dialog_box`) | `switch_handler` | `0x1401ce3e6` | `ui_presentations_and_menus` | `unimplemented` |
 | 1121 | `0x461` | `question_box` | `switch_handler` | `0x1401ce52b` | `ui_presentations_and_menus` | `unimplemented` |
 | 1122 | `0x462` | `tutorial_message` | `switch_handler` | `0x1401ce783` | `ui_presentations_and_menus` | `unimplemented` |
@@ -472,7 +472,7 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1124 | `0x464` | `tutorial_message_set_size` | `switch_handler` | `0x1401ce882` | `ui_presentations_and_menus` | `unimplemented` |
 | 1125 | `0x465` | `tutorial_message_set_center_justify` | `switch_handler` | `0x1401ce8b7` | `ui_presentations_and_menus` | `unimplemented` |
 | 1126 | `0x466` | `tutorial_message_set_background` | `switch_handler` | `0x1401ce8c6` | `ui_presentations_and_menus` | `unimplemented` |
-| 1130 | `0x46a` | `set_tooltip_text` | `switch_handler` | `0x1401ce929` | `other_native` | `unimplemented` |
+| 1130 | `0x46a` | `set_tooltip_text` | `switch_handler` | `0x1401ce929` | `other_native` | `implemented` |
 | 1170 | `0x492` | `reset_price_rates` | `switch_handler` | `0x1401ce995` | `other_native` | `implemented` |
 | 1171 | `0x493` | `set_price_rate_for_item` | `switch_handler` | `0x1401ce9a6` | `other_native` | `implemented` |
 | 1172 | `0x494` | `set_price_rate_for_item_type` | `switch_handler` | `0x1401ce9e8` | `other_native` | `implemented` |
@@ -498,33 +498,33 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1265 | `0x4f1` | `add_visitors_to_current_scene` | `switch_handler` | `0x1401cf7d9` | `scenes_props_and_mission` | `implemented` |
 | 1266 | `0x4f2` | `scene_set_day_time` | `switch_handler` | `0x1401cf8bc` | `scenes_props_and_mission` | `implemented` |
 | 1270 | `0x4f6` | `set_relation` | `switch_handler` | `0x1401cf910` | `other_native` | `implemented` |
-| 1275 | `0x4fb` | `faction_set_name` | `switch_handler` | `0x1401cfb85` | `factions_quests_menus_options` | `unimplemented` |
-| 1276 | `0x4fc` | `faction_set_color` | `switch_handler` | `0x1401cfc10` | `factions_quests_menus_options` | `unimplemented` |
-| 1277 | `0x4fd` | `faction_get_color` | `switch_handler` | `0x1401cfc41` | `factions_quests_menus_options` | `unimplemented` |
+| 1275 | `0x4fb` | `faction_set_name` | `switch_handler` | `0x1401cfb85` | `factions_quests_menus_options` | `implemented` |
+| 1276 | `0x4fc` | `faction_set_color` | `switch_handler` | `0x1401cfc10` | `factions_quests_menus_options` | `implemented` |
+| 1277 | `0x4fd` | `faction_get_color` | `switch_handler` | `0x1401cfc41` | `factions_quests_menus_options` | `implemented` |
 | 1280 | `0x500` | `start_quest` | `switch_handler` | `0x1401cfc8b` | `other_native` | `implemented` |
 | 1281 | `0x501` | `complete_quest` | `switch_handler` | `0x1401cfccd` | `other_native` | `implemented` |
 | 1282 | `0x502` | `succeed_quest` | `switch_handler` | `0x1401cfcf2` | `other_native` | `implemented` |
 | 1283 | `0x503` | `fail_quest` | `switch_handler` | `0x1401cfd17` | `other_native` | `implemented` |
 | 1284 | `0x504` | `cancel_quest` | `switch_handler` | `0x1401cfd3c` | `other_native` | `implemented` |
-| 1285 | `0x505` | `set_quest_progression` | `switch_handler` | `0x1401cfd61` | `other_native` | `unimplemented` |
+| 1285 | `0x505` | `set_quest_progression` | `switch_handler` | `0x1401cfd61` | `other_native` | `implemented` |
 | 1286 | `0x506` | `conclude_quest` | `switch_handler` | `0x1401cfd92` | `other_native` | `implemented` |
-| 1290 | `0x50a` | `setup_quest_text` | `switch_handler` | `0x1401cfdb7` | `other_native` | `unimplemented` |
-| 1291 | `0x50b` | `setup_quest_giver` | `switch_handler` | `0x1401cfe5e` | `other_native` | `unimplemented` |
-| 1300 | `0x514` | `start_encounter` | `switch_handler` | `0x1401cfee9` | `other_native` | `unimplemented` |
-| 1301 | `0x515` | `leave_encounter` | `switch_handler` | `0x1401cff1d` | `other_native` | `unimplemented` |
+| 1290 | `0x50a` | `setup_quest_text` | `switch_handler` | `0x1401cfdb7` | `other_native` | `implemented` |
+| 1291 | `0x50b` | `setup_quest_giver` | `switch_handler` | `0x1401cfe5e` | `other_native` | `implemented` |
+| 1300 | `0x514` | `start_encounter` | `switch_handler` | `0x1401cfee9` | `other_native` | `implemented` |
+| 1301 | `0x515` | `leave_encounter` | `switch_handler` | `0x1401cff1d` | `other_native` | `implemented` |
 | 1302 | `0x516` | `encounter_attack` | `noop_true` | `0x1401e226b` | `game_state_and_stores` | `noop_in_wse2` |
-| 1303 | `0x517` | `select_enemy` | `switch_handler` | `0x1401cff30` | `other_native` | `unimplemented` |
-| 1304 | `0x518` | `set_passage_menu` | `switch_handler` | `0x1401cff56` | `other_native` | `unimplemented` |
-| 1305 | `0x519` | `auto_set_meta_mission_at_end_commited` | `switch_handler` | `0x1401cff75` | `other_native` | `unimplemented` |
-| 1307 | `0x51b` | `end_current_battle` | `switch_handler` | `0x1401cff81` | `other_native` | `unimplemented` |
-| 1320 | `0x528` | `set_mercenary_source_party` | `switch_handler` | `0x1401cff8d` | `parties` | `unimplemented` |
-| 1490 | `0x5d2` | `set_merchandise_modifier_quality` | `switch_handler` | `0x1401cffb3` | `game_state_and_stores` | `unimplemented` |
+| 1303 | `0x517` | `select_enemy` | `switch_handler` | `0x1401cff30` | `other_native` | `implemented` |
+| 1304 | `0x518` | `set_passage_menu` | `switch_handler` | `0x1401cff56` | `other_native` | `implemented` |
+| 1305 | `0x519` | `auto_set_meta_mission_at_end_commited` | `switch_handler` | `0x1401cff75` | `other_native` | `implemented` |
+| 1307 | `0x51b` | `end_current_battle` | `switch_handler` | `0x1401cff81` | `other_native` | `implemented` |
+| 1320 | `0x528` | `set_mercenary_source_party` | `switch_handler` | `0x1401cff8d` | `parties` | `implemented` |
+| 1490 | `0x5d2` | `set_merchandise_modifier_quality` | `switch_handler` | `0x1401cffb3` | `game_state_and_stores` | `implemented` |
 | 1491 | `0x5d3` | `set_merchandise_max_value` | `noop_true` | `0x1401e226b` | `game_state_and_stores` | `noop_in_wse2` |
 | 1492 | `0x5d4` | `reset_item_probabilities` | `switch_handler` | `0x1401cffe7` | `other_native` | `implemented` |
 | 1493 | `0x5d5` | `set_item_probability_in_merchandise` | `switch_handler` | `0x1401d0013` | `other_native` | `implemented` |
 | 1501 | `0x5dd` | `troop_set_name` | `switch_handler` | `0x1401d0059` | `troops` | `implemented` |
 | 1502 | `0x5de` | `troop_set_plural_name` | `switch_handler` | `0x1401d00e4` | `troops` | `implemented` |
-| 1503 | `0x5df` | `troop_set_face_key_from_current_profile` | `switch_handler` | `0x1401d016f` | `troops` | `unimplemented` |
+| 1503 | `0x5df` | `troop_set_face_key_from_current_profile` | `switch_handler` | `0x1401d016f` | `troops` | `implemented` |
 | 1505 | `0x5e1` | `troop_set_type` | `switch_handler` | `0x1401d01f0` | `troops` | `implemented` |
 | 1506 | `0x5e2` | `troop_get_type` | `switch_handler` | `0x1401d0233` | `troops` | `implemented` |
 | 1507 | `0x5e3` | `troop_is_hero` | `switch_handler` | `0x1401d027e` | `troops` | `implemented` |
@@ -588,8 +588,8 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1625 | `0x659` | `party_get_position` | `switch_handler` | `0x1401d1da8` | `parties` | `implemented` |
 | 1626 | `0x65a` | `party_set_position` | `switch_handler` | `0x1401d1e51` | `parties` | `implemented` |
 | 1627 | `0x65b` | `map_get_random_position_around_position` | `switch_handler` | `0x1401d1eec` | `positions_and_math` | `implemented` |
-| 1628 | `0x65c` | `map_get_land_position_around_position` | `switch_handler` | `0x1401d1f79` | `positions_and_math` | `unimplemented` |
-| 1629 | `0x65d` | `map_get_water_position_around_position` | `switch_handler` | `0x1401d2001` | `positions_and_math` | `unimplemented` |
+| 1628 | `0x65c` | `map_get_land_position_around_position` | `switch_handler` | `0x1401d1f79` | `positions_and_math` | `implemented` |
+| 1629 | `0x65d` | `map_get_water_position_around_position` | `switch_handler` | `0x1401d2001` | `positions_and_math` | `implemented` |
 | 1630 | `0x65e` | `party_count_members_of_type` | `switch_handler` | `0x1401d2089` | `parties` | `implemented` |
 | 1631 | `0x65f` | `party_count_companions_of_type` | `switch_handler` | `0x1401d2100` | `parties` | `implemented` |
 | 1632 | `0x660` | `party_count_prisoners_of_type` | `switch_handler` | `0x1401d215c` | `parties` | `implemented` |
@@ -619,10 +619,10 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1660 | `0x67c` | `party_attach_to_party` | `switch_handler` | `0x1401d2a10` | `parties` | `implemented` |
 | 1661 | `0x67d` | `party_detach` | `switch_handler` | `0x1401d2a62` | `parties` | `implemented` |
 | 1662 | `0x67e` | `party_collect_attachments_to_party` | `switch_handler` | `0x1401d2a87` | `parties` | `implemented` |
-| 1663 | `0x67f` | `party_quick_attach_to_current_battle` | `switch_handler` | `0x1401d2ad0` | `parties` | `unimplemented` |
+| 1663 | `0x67f` | `party_quick_attach_to_current_battle` | `switch_handler` | `0x1401d2ad0` | `parties` | `implemented` |
 | 1665 | `0x681` | `party_get_cur_town` | `switch_handler` | `0x1401d2afa` | `parties` | `implemented` |
-| 1666 | `0x682` | `party_leave_cur_battle` | `switch_handler` | `0x1401d2b68` | `parties` | `unimplemented` |
-| 1667 | `0x683` | `party_set_next_battle_simulation_time` | `switch_handler` | `0x1401d2b95` | `parties` | `unimplemented` |
+| 1666 | `0x682` | `party_leave_cur_battle` | `switch_handler` | `0x1401d2b68` | `parties` | `implemented` |
+| 1667 | `0x683` | `party_set_next_battle_simulation_time` | `switch_handler` | `0x1401d2b95` | `parties` | `implemented` |
 | 1669 | `0x685` | `party_set_name` | `switch_handler` | `0x1401d2be7` | `parties` | `implemented` |
 | 1670 | `0x686` | `party_add_xp_to_stack` | `switch_handler` | `0x1401d2cd4` | `parties` | `implemented` |
 | 1671 | `0x687` | `party_get_morale` | `switch_handler` | `0x1401d2d30` | `parties` | `implemented` |
@@ -632,11 +632,11 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1675 | `0x68b` | `party_add_template` | `switch_handler` | `0x1401d2f2c` | `parties` | `implemented` |
 | 1676 | `0x68c` | `party_set_icon` | `switch_handler` | `0x1401d2f70` | `parties` | `implemented` |
 | 1677 | `0x68d` | `party_set_banner_icon` | `switch_handler` | `0x1401d3022` | `parties` | `implemented` |
-| 1678 | `0x68e` | `party_add_particle_system` | `switch_handler` | `0x1401d306f` | `parties` | `unimplemented` |
-| 1679 | `0x68f` | `party_clear_particle_systems` | `switch_handler` | `0x1401d30b1` | `parties` | `unimplemented` |
+| 1678 | `0x68e` | `party_add_particle_system` | `switch_handler` | `0x1401d306f` | `parties` | `implemented` |
+| 1679 | `0x68f` | `party_clear_particle_systems` | `switch_handler` | `0x1401d30b1` | `parties` | `implemented` |
 | 1680 | `0x690` | `party_get_battle_opponent` | `switch_handler` | `0x1401d30de` | `parties` | `implemented` |
 | 1681 | `0x691` | `party_get_icon` | `switch_handler` | `0x1401d31d6` | `parties` | `implemented` |
-| 1682 | `0x692` | `party_set_extra_icon` | `switch_handler` | `0x1401d3221` | `parties` | `unimplemented` |
+| 1682 | `0x692` | `party_set_extra_icon` | `switch_handler` | `0x1401d3221` | `parties` | `implemented` |
 | 1685 | `0x695` | `party_get_skill_level` | `switch_handler` | `0x1401d3305` | `parties` | `implemented` |
 | 1689 | `0x699` | `agent_get_speed` | `switch_handler` | `0x1401d3383` | `agents` | `unimplemented` |
 | 1690 | `0x69a` | `get_battle_advantage` | `switch_handler` | `0x1401d33d0` | `other_native` | `implemented` |
@@ -646,8 +646,8 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1694 | `0x69e` | `party_get_attached_to` | `switch_handler` | `0x1401d34a2` | `parties` | `implemented` |
 | 1695 | `0x69f` | `party_get_num_attached_parties` | `switch_handler` | `0x1401d3509` | `parties` | `implemented` |
 | 1696 | `0x6a0` | `party_get_attached_party_with_rank` | `switch_handler` | `0x1401d3571` | `parties` | `implemented` |
-| 1697 | `0x6a1` | `inflict_casualties_to_party_group` | `switch_handler` | `0x1401d3603` | `parties` | `unimplemented` |
-| 1698 | `0x6a2` | `distribute_party_among_party_group` | `switch_handler` | `0x1401d3674` | `parties` | `unimplemented` |
+| 1697 | `0x6a1` | `inflict_casualties_to_party_group` | `switch_handler` | `0x1401d3603` | `parties` | `implemented` |
+| 1698 | `0x6a2` | `distribute_party_among_party_group` | `switch_handler` | `0x1401d3674` | `parties` | `implemented` |
 | 1699 | `0x6a3` | `agent_is_routed` | `switch_handler` | `0x1401d36be` | `agents` | `implemented` |
 | 1700 | `0x6a4` | `get_player_agent_no` | `switch_handler` | `0x1401d36ee` | `other_native` | `implemented` |
 | 1701 | `0x6a5` | `get_player_agent_kill_count` | `switch_handler` | `0x1401d371c` | `other_native` | `implemented` |
@@ -733,10 +733,10 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1781 | `0x6f5` | `entry_point_set_position` | `switch_handler` | `0x1401d5c4f` | `scenes_props_and_mission` | `unimplemented` |
 | 1782 | `0x6f6` | `entry_point_is_auto_generated` | `switch_handler` | `0x1401d5daf` | `scenes_props_and_mission` | `unimplemented` |
 | 1783 | `0x6f7` | `agent_set_division` | `switch_handler` | `0x1401d5deb` | `agents` | `implemented` |
-| 1784 | `0x6f8` | `team_get_hold_fire_order` | `switch_handler` | `0x1401d5e1c` | `mission_combat_and_teams` | `unimplemented` |
+| 1784 | `0x6f8` | `team_get_hold_fire_order` | `switch_handler` | `0x1401d5e1c` | `mission_combat_and_teams` | `implemented` |
 | 1785 | `0x6f9` | `team_get_movement_order` | `switch_handler` | `0x1401d5e64` | `mission_combat_and_teams` | `implemented` |
-| 1786 | `0x6fa` | `team_get_riding_order` | `switch_handler` | `0x1401d5eac` | `mission_combat_and_teams` | `unimplemented` |
-| 1787 | `0x6fb` | `team_get_weapon_usage_order` | `switch_handler` | `0x1401d5ef4` | `mission_combat_and_teams` | `unimplemented` |
+| 1786 | `0x6fa` | `team_get_riding_order` | `switch_handler` | `0x1401d5eac` | `mission_combat_and_teams` | `implemented` |
+| 1787 | `0x6fb` | `team_get_weapon_usage_order` | `switch_handler` | `0x1401d5ef4` | `mission_combat_and_teams` | `implemented` |
 | 1788 | `0x6fc` | `teams_are_enemies` | `switch_handler` | `0x1401d5f3c` | `other_native` | `implemented` |
 | 1789 | `0x6fd` | `close_order_menu` | `switch_handler` | `0x1401d5f8a` | `other_native` | `implemented` |
 | 1790 | `0x6fe` | `team_give_order` | `switch_handler` | `0x1401d5ff8` | `mission_combat_and_teams` | `implemented` |
@@ -754,7 +754,7 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1802 | `0x70a` | `agent_clear_relations_with_agents` | `switch_handler` | `0x1401d67f1` | `agents` | `implemented` |
 | 1803 | `0x70b` | `agent_add_relation_with_agent` | `switch_handler` | `0x1401d681e` | `agents` | `unimplemented` |
 | 1804 | `0x70c` | `agent_get_item_slot` | `switch_handler` | `0x1401d6880` | `agents` | `implemented` |
-| 1805 | `0x70d` | `ai_mesh_face_group_show_hide` | `switch_handler` | `0x1401d68e4` | `other_native` | `unimplemented` |
+| 1805 | `0x70d` | `ai_mesh_face_group_show_hide` | `switch_handler` | `0x1401d68e4` | `other_native` | `implemented` |
 | 1806 | `0x70e` | `agent_is_alarmed` | `switch_handler` | `0x1401d69c3` | `agents` | `unimplemented` |
 | 1807 | `0x70f` | `agent_set_is_alarmed` | `switch_handler` | `0x1401d6a0d` | `agents` | `unimplemented` |
 | 1808 | `0x710` | `agent_stop_sound` | `switch_handler` | `0x1401d6a63` | `agents` | `unimplemented` |
@@ -775,14 +775,14 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1825 | `0x721` | `agent_get_ammo_for_slot` | `switch_handler` | `0x1401d6f74` | `agents` | `unimplemented` |
 | 1826 | `0x722` | `agent_is_in_line_of_sight` | `switch_handler` | `0x1401d6fe3` | `agents` | `unimplemented` |
 | 1827 | `0x723` | `agent_deliver_damage_to_agent_advanced` | `switch_handler` | `0x1401d7155` | `agents` | `unimplemented` |
-| 1828 | `0x724` | `team_get_gap_distance` | `switch_handler` | `0x1401d737e` | `mission_combat_and_teams` | `unimplemented` |
-| 1829 | `0x725` | `add_missile` | `switch_handler` | `0x1401d73eb` | `other_native` | `unimplemented` |
+| 1828 | `0x724` | `team_get_gap_distance` | `switch_handler` | `0x1401d737e` | `mission_combat_and_teams` | `implemented` |
+| 1829 | `0x725` | `add_missile` | `switch_handler` | `0x1401d73eb` | `other_native` | `implemented` |
 | 1830 | `0x726` | `scene_item_get_num_instances` | `switch_handler` | `0x1401d75c4` | `scenes_props_and_mission` | `unimplemented` |
 | 1831 | `0x727` | `scene_item_get_instance` | `switch_handler` | `0x1401d7607` | `scenes_props_and_mission` | `unimplemented` |
 | 1832 | `0x728` | `scene_spawned_item_get_num_instances` | `switch_handler` | `0x1401d765c` | `scenes_props_and_mission` | `unimplemented` |
 | 1833 | `0x729` | `scene_spawned_item_get_instance` | `switch_handler` | `0x1401d769f` | `scenes_props_and_mission` | `unimplemented` |
 | 1834 | `0x72a` | `scene_allows_mounted_units` | `switch_handler` | `0x1401d76f4` | `scenes_props_and_mission` | `unimplemented` |
-| 1837 | `0x72d` | `class_set_name` | `switch_handler` | `0x1401d7744` | `mission_combat_and_teams` | `unimplemented` |
+| 1837 | `0x72d` | `class_set_name` | `switch_handler` | `0x1401d7744` | `mission_combat_and_teams` | `implemented` |
 | 1838 | `0x72e` | `prop_instance_is_valid` | `switch_handler` | `0x1401d77db` | `scenes_props_and_mission` | `unimplemented` |
 | 1840 | `0x730` | `prop_instance_get_variation_id` | `switch_handler` | `0x1401d7805` | `scenes_props_and_mission` | `unimplemented` |
 | 1841 | `0x731` | `prop_instance_get_variation_id_2` | `switch_handler` | `0x1401d784c` | `scenes_props_and_mission` | `unimplemented` |
@@ -813,14 +813,14 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1887 | `0x75f` | `prop_instance_stop_all_particle_systems` | `switch_handler` | `0x1401d8f09` | `scenes_props_and_mission` | `unimplemented` |
 | 1889 | `0x761` | `replace_prop_instance` | `switch_handler` | `0x1401d8f43` | `scenes_props_and_mission` | `unimplemented` |
 | 1890 | `0x762` | `replace_scene_props` | `switch_handler` | `0x1401d8fc1` | `other_native` | `implemented` |
-| 1891 | `0x763` | `replace_scene_items_with_scene_props` | `switch_handler` | `0x1401d9008` | `other_native` | `unimplemented` |
-| 1900 | `0x76c` | `cast_ray` | `switch_handler` | `0x1401d904f` | `mission_combat_and_teams` | `unimplemented` |
+| 1891 | `0x763` | `replace_scene_items_with_scene_props` | `switch_handler` | `0x1401d9008` | `other_native` | `implemented` |
+| 1900 | `0x76c` | `cast_ray` | `switch_handler` | `0x1401d904f` | `mission_combat_and_teams` | `implemented` |
 | 1906 | `0x772` | `set_mission_result` | `switch_handler` | `0x1401d93c1` | `other_native` | `implemented` |
 | 1907 | `0x773` | `finish_mission` | `switch_handler` | `0x1401d93d5` | `scenes_props_and_mission` | `implemented` |
 | 1910 | `0x776` | `jump_to_scene` | `switch_handler` | `0x1401d93e9` | `game_state_and_stores` | `implemented` |
 | 1911 | `0x777` | `set_jump_mission` | `switch_handler` | `0x1401d940f` | `scenes_props_and_mission` | `implemented` |
 | 1912 | `0x778` | `set_jump_entry` | `switch_handler` | `0x1401d944d` | `scenes_props_and_mission` | `implemented` |
-| 1920 | `0x780` | `start_mission_conversation` | `switch_handler` | `0x1401d947b` | `other_native` | `unimplemented` |
+| 1920 | `0x780` | `start_mission_conversation` | `switch_handler` | `0x1401d947b` | `other_native` | `implemented` |
 | 1930 | `0x78a` | `add_reinforcements_to_entry` | `switch_handler` | `0x1401d949c` | `other_native` | `implemented` |
 | 1935 | `0x78f` | `mission_enable_talk` | `switch_handler` | `0x1401d94b3` | `other_native` | `implemented` |
 | 1936 | `0x790` | `mission_disable_talk` | `switch_handler` | `0x1401d94cd` | `other_native` | `implemented` |
@@ -828,44 +828,44 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 1941 | `0x795` | `mission_tpl_entry_clear_override_items` | `switch_handler` | `0x1401d9541` | `other_native` | `implemented` |
 | 1942 | `0x796` | `mission_tpl_entry_add_override_item` | `switch_handler` | `0x1401d9598` | `other_native` | `implemented` |
 | 1943 | `0x797` | `mission_tpl_are_all_agents_spawned` | `switch_handler` | `0x1401d9616` | `other_native` | `implemented` |
-| 1950 | `0x79e` | `set_current_color` | `switch_handler` | `0x1401d96e5` | `other_native` | `unimplemented` |
-| 1955 | `0x7a3` | `set_position_delta` | `switch_handler` | `0x1401d975b` | `other_native` | `unimplemented` |
-| 1960 | `0x7a8` | `add_point_light` | `switch_handler` | `0x1401d97d1` | `audio_particles_and_tableau` | `unimplemented` |
-| 1961 | `0x7a9` | `add_point_light_to_entity` | `switch_handler` | `0x1401d98e6` | `audio_particles_and_tableau` | `unimplemented` |
-| 1964 | `0x7ac` | `cur_item_add_mesh` | `switch_handler` | `0x1401d9999` | `items` | `unimplemented` |
-| 1965 | `0x7ad` | `particle_system_add_new` | `switch_handler` | `0x1401d9ac1` | `audio_particles_and_tableau` | `unimplemented` |
-| 1968 | `0x7b0` | `particle_system_emit` | `switch_handler` | `0x1401d9c68` | `audio_particles_and_tableau` | `unimplemented` |
+| 1950 | `0x79e` | `set_current_color` | `switch_handler` | `0x1401d96e5` | `other_native` | `implemented` |
+| 1955 | `0x7a3` | `set_position_delta` | `switch_handler` | `0x1401d975b` | `other_native` | `implemented` |
+| 1960 | `0x7a8` | `add_point_light` | `switch_handler` | `0x1401d97d1` | `audio_particles_and_tableau` | `implemented` |
+| 1961 | `0x7a9` | `add_point_light_to_entity` | `switch_handler` | `0x1401d98e6` | `audio_particles_and_tableau` | `implemented` |
+| 1964 | `0x7ac` | `cur_item_add_mesh` | `switch_handler` | `0x1401d9999` | `items` | `implemented` |
+| 1965 | `0x7ad` | `particle_system_add_new` | `switch_handler` | `0x1401d9ac1` | `audio_particles_and_tableau` | `implemented` |
+| 1968 | `0x7b0` | `particle_system_emit` | `switch_handler` | `0x1401d9c68` | `audio_particles_and_tableau` | `implemented` |
 | 1969 | `0x7b1` | `particle_system_burst` | `switch_handler` | `0x1401d9cf8` | `audio_particles_and_tableau` | `implemented` |
 | 1970 | `0x7b2` | `set_spawn_position` | `switch_handler` | `0x1401d9ddd` | `agents` | `implemented` |
-| 1971 | `0x7b3` | `spawn_item` | `switch_handler` | `0x1401d9ee2` | `mission_combat_and_teams` | `unimplemented` |
+| 1971 | `0x7b3` | `spawn_item` | `switch_handler` | `0x1401d9ee2` | `mission_combat_and_teams` | `implemented` |
 | 1972 | `0x7b4` | `spawn_agent` | `switch_handler` | `0x1401d9f6c` | `agents` | `implemented` |
 | 1973 | `0x7b5` | `spawn_horse` | `switch_handler` | `0x1401d9fa6` | `agents` | `unimplemented` |
 | 1974 | `0x7b6` | `spawn_scene_prop` | `switch_handler` | `0x1401d9fe5` | `scenes_props_and_mission` | `unimplemented` |
-| 1975 | `0x7b7` | `particle_system_burst_no_sync` | `switch_handler` | `0x1401da023` | `audio_particles_and_tableau` | `unimplemented` |
-| 1976 | `0x7b8` | `spawn_item_without_refill` | `switch_handler` | `0x1401da07c` | `mission_combat_and_teams` | `unimplemented` |
+| 1975 | `0x7b7` | `particle_system_burst_no_sync` | `switch_handler` | `0x1401da023` | `audio_particles_and_tableau` | `implemented` |
+| 1976 | `0x7b8` | `spawn_item_without_refill` | `switch_handler` | `0x1401da07c` | `mission_combat_and_teams` | `implemented` |
 | 1977 | `0x7b9` | `agent_get_item_cur_ammo` | `switch_handler` | `0x1401da10d` | `agents` | `implemented` |
-| 1978 | `0x7ba` | `cur_item_set_material` | `switch_handler` | `0x1401da17c` | `items` | `unimplemented` |
-| 1980 | `0x7bc` | `cur_tableau_add_tableau_mesh` | `switch_handler` | `0x1401da29e` | `audio_particles_and_tableau` | `unimplemented` |
-| 1981 | `0x7bd` | `cur_item_set_tableau_material` | `switch_handler` | `0x1401da389` | `items` | `unimplemented` |
-| 1982 | `0x7be` | `cur_scene_prop_set_tableau_material` | `switch_handler` | `0x1401da411` | `other_native` | `unimplemented` |
-| 1983 | `0x7bf` | `cur_map_icon_set_tableau_material` | `switch_handler` | `0x1401da499` | `other_native` | `unimplemented` |
-| 1984 | `0x7c0` | `cur_tableau_render_as_alpha_mask` | `switch_handler` | `0x1401da4b9` | `audio_particles_and_tableau` | `unimplemented` |
-| 1985 | `0x7c1` | `cur_tableau_set_background_color` | `switch_handler` | `0x1401da4de` | `audio_particles_and_tableau` | `unimplemented` |
-| 1986 | `0x7c2` | `cur_agent_set_banner_tableau_material` | `switch_handler` | `0x1401da507` | `other_native` | `unimplemented` |
-| 1987 | `0x7c3` | `cur_tableau_set_ambient_light` | `switch_handler` | `0x1401da599` | `audio_particles_and_tableau` | `unimplemented` |
-| 1988 | `0x7c4` | `cur_tableau_set_camera_position` | `switch_handler` | `0x1401da60c` | `audio_particles_and_tableau` | `unimplemented` |
-| 1989 | `0x7c5` | `cur_tableau_set_camera_parameters` | `switch_handler` | `0x1401da654` | `audio_particles_and_tableau` | `unimplemented` |
-| 1990 | `0x7c6` | `cur_tableau_add_point_light` | `switch_handler` | `0x1401da6e0` | `audio_particles_and_tableau` | `unimplemented` |
-| 1991 | `0x7c7` | `cur_tableau_add_sun_light` | `switch_handler` | `0x1401da776` | `audio_particles_and_tableau` | `unimplemented` |
-| 1992 | `0x7c8` | `cur_tableau_add_mesh` | `switch_handler` | `0x1401da80c` | `audio_particles_and_tableau` | `unimplemented` |
-| 1993 | `0x7c9` | `cur_tableau_add_mesh_with_vertex_color` | `switch_handler` | `0x1401da8e0` | `audio_particles_and_tableau` | `unimplemented` |
-| 1994 | `0x7ca` | `cur_tableau_add_map_icon` | `switch_handler` | `0x1401da9b5` | `audio_particles_and_tableau` | `unimplemented` |
-| 1995 | `0x7cb` | `cur_tableau_add_troop` | `switch_handler` | `0x1401daa40` | `troops` | `unimplemented` |
-| 1996 | `0x7cc` | `cur_tableau_add_horse` | `switch_handler` | `0x1401daacc` | `audio_particles_and_tableau` | `unimplemented` |
-| 1997 | `0x7cd` | `cur_tableau_set_override_flags` | `switch_handler` | `0x1401dab4d` | `audio_particles_and_tableau` | `unimplemented` |
-| 1998 | `0x7ce` | `cur_tableau_clear_override_items` | `switch_handler` | `0x1401dab76` | `audio_particles_and_tableau` | `unimplemented` |
-| 1999 | `0x7cf` | `cur_tableau_add_override_item` | `switch_handler` | `0x1401dab9b` | `audio_particles_and_tableau` | `unimplemented` |
-| 2000 | `0x7d0` | `cur_tableau_add_mesh_with_scale_and_vertex_color` | `switch_handler` | `0x1401dabc4` | `audio_particles_and_tableau` | `unimplemented` |
+| 1978 | `0x7ba` | `cur_item_set_material` | `switch_handler` | `0x1401da17c` | `items` | `implemented` |
+| 1980 | `0x7bc` | `cur_tableau_add_tableau_mesh` | `switch_handler` | `0x1401da29e` | `audio_particles_and_tableau` | `implemented` |
+| 1981 | `0x7bd` | `cur_item_set_tableau_material` | `switch_handler` | `0x1401da389` | `items` | `implemented` |
+| 1982 | `0x7be` | `cur_scene_prop_set_tableau_material` | `switch_handler` | `0x1401da411` | `other_native` | `implemented` |
+| 1983 | `0x7bf` | `cur_map_icon_set_tableau_material` | `switch_handler` | `0x1401da499` | `other_native` | `implemented` |
+| 1984 | `0x7c0` | `cur_tableau_render_as_alpha_mask` | `switch_handler` | `0x1401da4b9` | `audio_particles_and_tableau` | `implemented` |
+| 1985 | `0x7c1` | `cur_tableau_set_background_color` | `switch_handler` | `0x1401da4de` | `audio_particles_and_tableau` | `implemented` |
+| 1986 | `0x7c2` | `cur_agent_set_banner_tableau_material` | `switch_handler` | `0x1401da507` | `other_native` | `implemented` |
+| 1987 | `0x7c3` | `cur_tableau_set_ambient_light` | `switch_handler` | `0x1401da599` | `audio_particles_and_tableau` | `implemented` |
+| 1988 | `0x7c4` | `cur_tableau_set_camera_position` | `switch_handler` | `0x1401da60c` | `audio_particles_and_tableau` | `implemented` |
+| 1989 | `0x7c5` | `cur_tableau_set_camera_parameters` | `switch_handler` | `0x1401da654` | `audio_particles_and_tableau` | `implemented` |
+| 1990 | `0x7c6` | `cur_tableau_add_point_light` | `switch_handler` | `0x1401da6e0` | `audio_particles_and_tableau` | `implemented` |
+| 1991 | `0x7c7` | `cur_tableau_add_sun_light` | `switch_handler` | `0x1401da776` | `audio_particles_and_tableau` | `implemented` |
+| 1992 | `0x7c8` | `cur_tableau_add_mesh` | `switch_handler` | `0x1401da80c` | `audio_particles_and_tableau` | `implemented` |
+| 1993 | `0x7c9` | `cur_tableau_add_mesh_with_vertex_color` | `switch_handler` | `0x1401da8e0` | `audio_particles_and_tableau` | `implemented` |
+| 1994 | `0x7ca` | `cur_tableau_add_map_icon` | `switch_handler` | `0x1401da9b5` | `audio_particles_and_tableau` | `implemented` |
+| 1995 | `0x7cb` | `cur_tableau_add_troop` | `switch_handler` | `0x1401daa40` | `troops` | `implemented` |
+| 1996 | `0x7cc` | `cur_tableau_add_horse` | `switch_handler` | `0x1401daacc` | `audio_particles_and_tableau` | `implemented` |
+| 1997 | `0x7cd` | `cur_tableau_set_override_flags` | `switch_handler` | `0x1401dab4d` | `audio_particles_and_tableau` | `implemented` |
+| 1998 | `0x7ce` | `cur_tableau_clear_override_items` | `switch_handler` | `0x1401dab76` | `audio_particles_and_tableau` | `implemented` |
+| 1999 | `0x7cf` | `cur_tableau_add_override_item` | `switch_handler` | `0x1401dab9b` | `audio_particles_and_tableau` | `implemented` |
+| 2000 | `0x7d0` | `cur_tableau_add_mesh_with_scale_and_vertex_color` | `switch_handler` | `0x1401dabc4` | `audio_particles_and_tableau` | `implemented` |
 | 2001 | `0x7d1` | `mission_cam_set_mode` | `switch_handler` | `0x1401daca6` | `scenes_props_and_mission` | `unimplemented` |
 | 2002 | `0x7d2` | `mission_get_time_speed` | `switch_handler` | `0x1401daec8` | `other_native` | `implemented` |
 | 2003 | `0x7d3` | `mission_set_time_speed` | `switch_handler` | `0x1401daf0a` | `other_native` | `implemented` |
@@ -883,11 +883,11 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 2017 | `0x7e1` | `mission_cam_set_target_agent` | `switch_handler` | `0x1401dbce5` | `scenes_props_and_mission` | `unimplemented` |
 | 2018 | `0x7e2` | `mission_cam_clear_target_agent` | `switch_handler` | `0x1401dbd15` | `scenes_props_and_mission` | `unimplemented` |
 | 2019 | `0x7e3` | `mission_cam_set_animation` | `switch_handler` | `0x1401dbd2b` | `scenes_props_and_mission` | `unimplemented` |
-| 2020 | `0x7e4` | `talk_info_show` | `switch_handler` | `0x1401dbd4a` | `other_native` | `unimplemented` |
-| 2021 | `0x7e5` | `talk_info_set_relation_bar` | `switch_handler` | `0x1401dbd62` | `other_native` | `unimplemented` |
-| 2022 | `0x7e6` | `talk_info_set_line` | `switch_handler` | `0x1401dbd75` | `other_native` | `unimplemented` |
-| 2031 | `0x7ef` | `set_background_mesh` | `switch_handler` | `0x1401dbe0a` | `other_native` | `unimplemented` |
-| 2032 | `0x7f0` | `set_game_menu_tableau_mesh` | `switch_handler` | `0x1401dbe5f` | `other_native` | `unimplemented` |
+| 2020 | `0x7e4` | `talk_info_show` | `switch_handler` | `0x1401dbd4a` | `other_native` | `implemented` |
+| 2021 | `0x7e5` | `talk_info_set_relation_bar` | `switch_handler` | `0x1401dbd62` | `other_native` | `implemented` |
+| 2022 | `0x7e6` | `talk_info_set_line` | `switch_handler` | `0x1401dbd75` | `other_native` | `implemented` |
+| 2031 | `0x7ef` | `set_background_mesh` | `switch_handler` | `0x1401dbe0a` | `other_native` | `implemented` |
+| 2032 | `0x7f0` | `set_game_menu_tableau_mesh` | `switch_handler` | `0x1401dbe5f` | `other_native` | `implemented` |
 | 2040 | `0x7f8` | `change_screen_return` | `switch_handler` | `0x1401dbefe` | `ui_presentations_and_menus` | `unimplemented` |
 | 2041 | `0x7f9` | `change_screen_loot` | `switch_handler` | `0x1401dbf1c` | `ui_presentations_and_menus` | `unimplemented` |
 | 2042 | `0x7fa` | `change_screen_trade` | `switch_handler` | `0x1401dbf4f` | `ui_presentations_and_menus` | `unimplemented` |
@@ -898,7 +898,7 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 2047 | `0x7ff` | `change_screen_training` | `switch_handler` | `0x1401dc024` | `ui_presentations_and_menus` | `unimplemented` |
 | 2048 | `0x800` | `change_screen_mission` | `switch_handler` | `0x1401dc03d` | `ui_presentations_and_menus` | `unimplemented` |
 | 2049 | `0x801` | `change_screen_map_conversation` | `switch_handler` | `0x1401dc056` | `ui_presentations_and_menus` | `unimplemented` |
-| 2050 | `0x802` | `change_screen_exchange_with_party` | `switch_handler` | `0x1401dc089` | `parties` | `unimplemented` |
+| 2050 | `0x802` | `change_screen_exchange_with_party` | `switch_handler` | `0x1401dc089` | `parties` | `implemented` |
 | 2051 | `0x803` | `change_screen_equip_other` | `switch_handler` | `0x1401dc0bc` | `ui_presentations_and_menus` | `unimplemented` |
 | 2052 | `0x804` | `change_screen_map` | `switch_handler` | `0x1401dc0ef` | `ui_presentations_and_menus` | `unimplemented` |
 | 2053 | `0x805` | `change_screen_notes` | `switch_handler` | `0x1401dc108` | `ui_presentations_and_menus` | `unimplemented` |
@@ -907,16 +907,16 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 2057 | `0x809` | `change_screen_controls` | `switch_handler` | `0x1401dc27f` | `ui_presentations_and_menus` | `unimplemented` |
 | 2058 | `0x80a` | `change_screen_options` | `switch_handler` | `0x1401dc298` | `ui_presentations_and_menus` | `unimplemented` |
 | 2060 | `0x80c` | `jump_to_menu` | `switch_handler` | `0x1401dc2b1` | `game_state_and_stores` | `implemented` |
-| 2061 | `0x80d` | `disable_menu_option` | `switch_handler` | `0x1401dc2f4` | `other_native` | `unimplemented` |
+| 2061 | `0x80d` | `disable_menu_option` | `switch_handler` | `0x1401dc2f4` | `other_native` | `implemented` |
 | 2065 | `0x811` | `agent_get_damage_modifier` | `switch_handler` | `0x1401dc307` | `agents` | `implemented` |
 | 2066 | `0x812` | `agent_get_accuracy_modifier` | `switch_handler` | `0x1401dc35f` | `agents` | `implemented` |
 | 2067 | `0x813` | `agent_get_speed_modifier` | `switch_handler` | `0x1401dc3b7` | `agents` | `implemented` |
 | 2068 | `0x814` | `agent_get_reload_speed_modifier` | `switch_handler` | `0x1401dc40f` | `agents` | `implemented` |
 | 2069 | `0x815` | `agent_get_use_speed_modifier` | `switch_handler` | `0x1401dc467` | `agents` | `implemented` |
-| 2070 | `0x816` | `store_trigger_param` | `switch_handler` | `0x1401dc4bf` | `game_state_and_stores` | `unimplemented` |
-| 2071 | `0x817` | `store_trigger_param_1` | `switch_handler` | `0x1401dc51a` | `game_state_and_stores` | `unimplemented` |
-| 2072 | `0x818` | `store_trigger_param_2` | `switch_handler` | `0x1401dc531` | `game_state_and_stores` | `unimplemented` |
-| 2073 | `0x819` | `store_trigger_param_3` | `switch_handler` | `0x1401dc548` | `game_state_and_stores` | `unimplemented` |
+| 2070 | `0x816` | `store_trigger_param` | `switch_handler` | `0x1401dc4bf` | `game_state_and_stores` | `implemented` |
+| 2071 | `0x817` | `store_trigger_param_1` | `switch_handler` | `0x1401dc51a` | `game_state_and_stores` | `implemented` |
+| 2072 | `0x818` | `store_trigger_param_2` | `switch_handler` | `0x1401dc531` | `game_state_and_stores` | `implemented` |
+| 2073 | `0x819` | `store_trigger_param_3` | `switch_handler` | `0x1401dc548` | `game_state_and_stores` | `implemented` |
 | 2075 | `0x81b` | `set_trigger_result` | `switch_handler` | `0x1401dc55f` | `other_native` | `implemented` |
 | 2076 | `0x81c` | `agent_get_bone_position` | `switch_handler` | `0x1401dc56b` | `agents` | `unimplemented` |
 | 2077 | `0x81d` | `agent_ai_set_interact_with_player` | `switch_handler` | `0x1401dc78b` | `agents` | `unimplemented` |
@@ -972,39 +972,39 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 2143 | `0x85f` | `store_atan2` | `switch_handler` | `0x1401dd552` | `arithmetic_registers_and_vars` | `implemented` |
 | 2149 | `0x865` | `store_troop_gold` | `switch_handler` | `0x1401dd5b3` | `arithmetic_registers_and_vars` | `implemented` |
 | 2154 | `0x86a` | `store_num_free_stacks` | `switch_handler` | `0x1401dd5fa` | `game_state_and_stores` | `implemented` |
-| 2155 | `0x86b` | `store_num_free_prisoner_stacks` | `switch_handler` | `0x1401dd61e` | `game_state_and_stores` | `unimplemented` |
+| 2155 | `0x86b` | `store_num_free_prisoner_stacks` | `switch_handler` | `0x1401dd61e` | `game_state_and_stores` | `implemented` |
 | 2156 | `0x86c` | `store_party_size` | `switch_handler` | `0x1401dd642` | `parties` | `implemented` |
 | 2157 | `0x86d` | `store_party_size_wo_prisoners` | `switch_handler` | `0x1401dd68d` | `parties` | `implemented` |
 | 2158 | `0x86e` | `store_troop_kind_count` | `switch_handler` | `0x1401dd6d8` | `troops` | `implemented` |
-| 2159 | `0x86f` | `store_num_regular_prisoners` | `switch_handler` | `0x1401dd736` | `game_state_and_stores` | `unimplemented` |
-| 2160 | `0x870` | `store_troop_count_companions` | `switch_handler` | `0x1401dd7b5` | `troops` | `unimplemented` |
-| 2161 | `0x871` | `store_troop_count_prisoners` | `switch_handler` | `0x1401dd800` | `troops` | `unimplemented` |
+| 2159 | `0x86f` | `store_num_regular_prisoners` | `switch_handler` | `0x1401dd736` | `game_state_and_stores` | `implemented` |
+| 2160 | `0x870` | `store_troop_count_companions` | `switch_handler` | `0x1401dd7b5` | `troops` | `implemented` |
+| 2161 | `0x871` | `store_troop_count_prisoners` | `switch_handler` | `0x1401dd800` | `troops` | `implemented` |
 | 2165 | `0x875` | `store_item_kind_count` | `switch_handler` | `0x1401dd84b` | `items` | `implemented` |
-| 2167 | `0x877` | `store_free_inventory_capacity` | `switch_handler` | `0x1401dd896` | `game_state_and_stores` | `unimplemented` |
+| 2167 | `0x877` | `store_free_inventory_capacity` | `switch_handler` | `0x1401dd896` | `game_state_and_stores` | `implemented` |
 | 2170 | `0x87a` | `store_skill_level` | `switch_handler` | `0x1401dd8e0` | `game_state_and_stores` | `implemented` |
 | 2171 | `0x87b` | `store_character_level` | `switch_handler` | `0x1401dd92b` | `game_state_and_stores` | `implemented` |
 | 2172 | `0x87c` | `store_attribute_level` | `switch_handler` | `0x1401dd972` | `game_state_and_stores` | `implemented` |
 | 2173 | `0x87d` | `store_troop_faction` (`store_faction_of_troop`) | `switch_handler` | `0x1401dd9d8` | `troops` | `implemented` |
 | 2175 | `0x87f` | `store_troop_health` | `switch_handler` | `0x1401dda1f` | `troops` | `implemented` |
 | 2176 | `0x880` | `store_proficiency_level` | `switch_handler` | `0x1401ddabf` | `game_state_and_stores` | `implemented` |
-| 2180 | `0x884` | `store_main_party_wounded` *(community name)* | `switch_handler` | `0x1401ddb29` | `parties` | `unimplemented` |
+| 2180 | `0x884` | `store_main_party_wounded` *(community name)* | `switch_handler` | `0x1401ddb29` | `parties` | `implemented` |
 | 2190 | `0x88e` | `store_relation` | `switch_handler` | `0x1401ddbe1` | `game_state_and_stores` | `implemented` |
-| 2197 | `0x895` | `set_conversation_speaker_troop` | `switch_handler` | `0x1401ddc56` | `troops` | `unimplemented` |
-| 2198 | `0x896` | `set_conversation_speaker_agent` | `switch_handler` | `0x1401ddc75` | `other_native` | `unimplemented` |
-| 2199 | `0x897` | `store_conversation_agent` | `switch_handler` | `0x1401ddc94` | `game_state_and_stores` | `unimplemented` |
-| 2200 | `0x898` | `store_conversation_troop` | `switch_handler` | `0x1401ddcc3` | `troops` | `unimplemented` |
+| 2197 | `0x895` | `set_conversation_speaker_troop` | `switch_handler` | `0x1401ddc56` | `troops` | `implemented` |
+| 2198 | `0x896` | `set_conversation_speaker_agent` | `switch_handler` | `0x1401ddc75` | `other_native` | `implemented` |
+| 2199 | `0x897` | `store_conversation_agent` | `switch_handler` | `0x1401ddc94` | `game_state_and_stores` | `implemented` |
+| 2200 | `0x898` | `store_conversation_troop` | `switch_handler` | `0x1401ddcc3` | `troops` | `implemented` |
 | 2201 | `0x899` | `store_partner_faction` | `switch_handler` | `0x1401ddcea` | `game_state_and_stores` | `implemented` |
 | 2202 | `0x89a` | `store_encountered_party` | `switch_handler` | `0x1401ddd23` | `parties` | `implemented` |
 | 2203 | `0x89b` | `store_encountered_party2` | `switch_handler` | `0x1401ddd51` | `parties` | `implemented` |
 | 2204 | `0x89c` | `store_faction_of_party` | `switch_handler` | `0x1401ddd7f` | `parties` | `implemented` |
 | 2205 | `0x89d` | `set_encountered_party` | `switch_handler` | `0x1401dddc6` | `parties` | `implemented` |
-| 2211 | `0x8a3` | `store_current_scene` | `switch_handler` | `0x1401dddec` | `game_state_and_stores` | `unimplemented` |
-| 2220 | `0x8ac` | `store_zoom_amount` | `switch_handler` | `0x1401dde1a` | `game_state_and_stores` | `unimplemented` |
+| 2211 | `0x8a3` | `store_current_scene` | `switch_handler` | `0x1401dddec` | `game_state_and_stores` | `implemented` |
+| 2220 | `0x8ac` | `store_zoom_amount` | `switch_handler` | `0x1401dde1a` | `game_state_and_stores` | `implemented` |
 | 2221 | `0x8ad` | `set_zoom_amount` | `switch_handler` | `0x1401dde5b` | `other_native` | `implemented` |
 | 2222 | `0x8ae` | `is_zoom_disabled` | `switch_handler` | `0x1401dde86` | `other_native` | `implemented` |
 | 2230 | `0x8b6` | `store_item_value` | `switch_handler` | `0x1401dde92` | `items` | `implemented` |
-| 2231 | `0x8b7` | `store_troop_value` | `switch_handler` | `0x1401ddedd` | `troops` | `unimplemented` |
-| 2240 | `0x8c0` | `store_partner_quest` | `switch_handler` | `0x1401ddf20` | `game_state_and_stores` | `unimplemented` |
+| 2231 | `0x8b7` | `store_troop_value` | `switch_handler` | `0x1401ddedd` | `troops` | `implemented` |
+| 2240 | `0x8c0` | `store_partner_quest` | `switch_handler` | `0x1401ddf20` | `game_state_and_stores` | `implemented` |
 | 2250 | `0x8ca` | `store_random_quest_in_range` | `switch_handler` | `0x1401ddfa0` | `game_state_and_stores` | `implemented` |
 | 2251 | `0x8cb` | `store_random_troop_to_raise` | `switch_handler` | `0x1401ddfd5` | `troops` | `implemented` |
 | 2252 | `0x8cc` | `store_random_troop_to_capture` | `switch_handler` | `0x1401de00a` | `troops` | `implemented` |
@@ -1017,7 +1017,7 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 2262 | `0x8d6` | `store_quest_item` | `switch_handler` | `0x1401de1df` | `game_state_and_stores` | `implemented` |
 | 2263 | `0x8d7` | `store_quest_troop` | `switch_handler` | `0x1401de226` | `troops` | `implemented` |
 | 2270 | `0x8de` | `store_current_hours` | `switch_handler` | `0x1401de26d` | `game_state_and_stores` | `implemented` |
-| 2271 | `0x8df` | `store_time_of_day` | `switch_handler` | `0x1401de29b` | `game_state_and_stores` | `unimplemented` |
+| 2271 | `0x8df` | `store_time_of_day` | `switch_handler` | `0x1401de29b` | `game_state_and_stores` | `implemented` |
 | 2272 | `0x8e0` | `store_current_day` | `switch_handler` | `0x1401de2ee` | `game_state_and_stores` | `implemented` |
 | 2273 | `0x8e1` | `is_currently_night` | `switch_handler` | `0x1401de31c` | `mission_combat_and_teams` | `implemented` |
 | 2281 | `0x8e9` | `store_distance_to_party_from_party` | `switch_handler` | `0x1401de32d` | `parties` | `implemented` |
@@ -1026,9 +1026,9 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 2292 | `0x8f4` | `party_get_ai_target_position` | `switch_handler` | `0x1401de452` | `parties` | `implemented` |
 | 2293 | `0x8f5` | `get_party_ai_current_behavior` | `switch_handler` | `0x1401de4e1` | `parties` | `implemented` |
 | 2294 | `0x8f6` | `get_party_ai_current_object` | `switch_handler` | `0x1401de528` | `parties` | `implemented` |
-| 2300 | `0x8fc` | `store_num_parties_created` | `switch_handler` | `0x1401de56f` | `game_state_and_stores` | `unimplemented` |
-| 2301 | `0x8fd` | `store_num_parties_destroyed` | `switch_handler` | `0x1401de5ba` | `game_state_and_stores` | `unimplemented` |
-| 2302 | `0x8fe` | `store_num_parties_destroyed_by_player` | `switch_handler` | `0x1401de605` | `game_state_and_stores` | `unimplemented` |
+| 2300 | `0x8fc` | `store_num_parties_created` | `switch_handler` | `0x1401de56f` | `game_state_and_stores` | `implemented` |
+| 2301 | `0x8fd` | `store_num_parties_destroyed` | `switch_handler` | `0x1401de5ba` | `game_state_and_stores` | `implemented` |
+| 2302 | `0x8fe` | `store_num_parties_destroyed_by_player` | `switch_handler` | `0x1401de605` | `game_state_and_stores` | `implemented` |
 | 2310 | `0x906` | `store_num_parties_of_template` | `switch_handler` | `0x1401de650` | `game_state_and_stores` | `implemented` |
 | 2311 | `0x907` | `store_random_party_of_template` | `switch_handler` | `0x1401de709` | `parties` | `implemented` |
 | 2318 | `0x90e` | `str_is_empty` | `switch_handler` | `0x1401de882` | `strings` | `implemented` |
@@ -1045,20 +1045,20 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 2332 | `0x91c` | `str_store_agent_name` | `switch_handler` | `0x1401debe2` | `strings` | `implemented` |
 | 2335 | `0x91f` | `str_store_faction_name` | `switch_handler` | `0x1401dec55` | `strings` | `implemented` |
 | 2336 | `0x920` | `str_store_quest_name` | `switch_handler` | `0x1401dec93` | `strings` | `implemented` |
-| 2337 | `0x921` | `str_store_info_page_name` | `switch_handler` | `0x1401ded19` | `strings` | `unimplemented` |
-| 2340 | `0x924` | `str_store_date` | `switch_handler` | `0x1401ded9f` | `strings` | `unimplemented` |
+| 2337 | `0x921` | `str_store_info_page_name` | `switch_handler` | `0x1401ded19` | `strings` | `implemented` |
+| 2340 | `0x924` | `str_store_date` | `switch_handler` | `0x1401ded9f` | `strings` | `implemented` |
 | 2341 | `0x925` | `str_store_troop_name_link` | `switch_handler` | `0x1401dee08` | `strings` | `implemented` |
 | 2342 | `0x926` | `str_store_party_name_link` | `switch_handler` | `0x1401dee9c` | `strings` | `implemented` |
 | 2343 | `0x927` | `str_store_faction_name_link` | `switch_handler` | `0x1401def30` | `strings` | `implemented` |
 | 2344 | `0x928` | `str_store_quest_name_link` | `switch_handler` | `0x1401defc4` | `strings` | `implemented` |
-| 2345 | `0x929` | `str_store_info_page_name_link` | `switch_handler` | `0x1401df054` | `strings` | `unimplemented` |
+| 2345 | `0x929` | `str_store_info_page_name_link` | `switch_handler` | `0x1401df054` | `strings` | `implemented` |
 | 2346 | `0x92a` | `str_store_class_name` | `switch_handler` | `0x1401df0e8` | `strings` | `implemented` |
 | 2350 | `0x92e` | `str_store_player_username` | `switch_handler` | `0x1401df12c` | `strings` | `implemented` |
-| 2351 | `0x92f` | `str_store_server_password` | `switch_handler` | `0x1401df175` | `strings` | `unimplemented` |
-| 2352 | `0x930` | `str_store_server_name` | `switch_handler` | `0x1401df191` | `strings` | `unimplemented` |
-| 2353 | `0x931` | `str_store_welcome_message` | `switch_handler` | `0x1401df1ad` | `strings` | `unimplemented` |
+| 2351 | `0x92f` | `str_store_server_password` | `switch_handler` | `0x1401df175` | `strings` | `implemented` |
+| 2352 | `0x930` | `str_store_server_name` | `switch_handler` | `0x1401df191` | `strings` | `implemented` |
+| 2353 | `0x931` | `str_store_welcome_message` | `switch_handler` | `0x1401df1ad` | `strings` | `implemented` |
 | 2355 | `0x933` | `str_encode_url` | `switch_handler` | `0x1401df1c9` | `strings` | `implemented` |
-| 2360 | `0x938` | `store_remaining_team_no` | `switch_handler` | `0x1401df231` | `game_state_and_stores` | `unimplemented` |
+| 2360 | `0x938` | `store_remaining_team_no` | `switch_handler` | `0x1401df231` | `game_state_and_stores` | `implemented` |
 | 2365 | `0x93d` | `store_mission_timer_a_msec` | `switch_handler` | `0x1401df260` | `game_state_and_stores` | `implemented` |
 | 2366 | `0x93e` | `store_mission_timer_b_msec` | `switch_handler` | `0x1401df2a0` | `game_state_and_stores` | `implemented` |
 | 2367 | `0x93f` | `store_mission_timer_c_msec` | `switch_handler` | `0x1401df2e0` | `game_state_and_stores` | `implemented` |
@@ -1069,23 +1069,23 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 2376 | `0x948` | `reset_mission_timer_b` | `switch_handler` | `0x1401df3e0` | `other_native` | `implemented` |
 | 2377 | `0x949` | `reset_mission_timer_c` | `switch_handler` | `0x1401df3f8` | `other_native` | `implemented` |
 | 2379 | `0x94b` | `set_cheer_at_no_enemy` | `switch_handler` | `0x1401df410` | `other_native` | `implemented` |
-| 2380 | `0x94c` | `store_enemy_count` | `switch_handler` | `0x1401df428` | `game_state_and_stores` | `unimplemented` |
-| 2381 | `0x94d` | `store_friend_count` | `switch_handler` | `0x1401df460` | `game_state_and_stores` | `unimplemented` |
-| 2382 | `0x94e` | `store_ally_count` | `switch_handler` | `0x1401df491` | `game_state_and_stores` | `unimplemented` |
-| 2383 | `0x94f` | `store_defender_count` | `switch_handler` | `0x1401df4b1` | `game_state_and_stores` | `unimplemented` |
-| 2384 | `0x950` | `store_attacker_count` | `switch_handler` | `0x1401df582` | `game_state_and_stores` | `unimplemented` |
-| 2385 | `0x951` | `store_normalized_team_count` | `switch_handler` | `0x1401df657` | `game_state_and_stores` | `unimplemented` |
-| 2386 | `0x952` | `set_postfx` | `switch_handler` | `0x1401df6bc` | `other_native` | `unimplemented` |
-| 2387 | `0x953` | `set_river_shader_to_mud` | `switch_handler` | `0x1401df6e6` | `other_native` | `unimplemented` |
-| 2388 | `0x954` | `show_troop_details` | `switch_handler` | `0x1401df780` | `troops` | `unimplemented` |
-| 2389 | `0x955` | `set_skybox` | `switch_handler` | `0x1401df800` | `other_native` | `unimplemented` |
-| 2390 | `0x956` | `set_startup_sun_light` | `switch_handler` | `0x1401df81d` | `other_native` | `unimplemented` |
-| 2391 | `0x957` | `set_startup_ambient_light` | `switch_handler` | `0x1401df8ef` | `other_native` | `unimplemented` |
-| 2392 | `0x958` | `set_startup_ground_ambient_light` | `switch_handler` | `0x1401df9c0` | `other_native` | `unimplemented` |
-| 2393 | `0x959` | `rebuild_shadow_map` | `switch_handler` | `0x1401dfa77` | `other_native` | `unimplemented` |
-| 2394 | `0x95a` | `get_startup_sun_light` | `switch_handler` | `0x1401dfa83` | `other_native` | `unimplemented` |
-| 2395 | `0x95b` | `get_startup_ambient_light` | `switch_handler` | `0x1401dfaf0` | `other_native` | `unimplemented` |
-| 2396 | `0x95c` | `get_startup_ground_ambient_light` | `switch_handler` | `0x1401dfb56` | `other_native` | `unimplemented` |
+| 2380 | `0x94c` | `store_enemy_count` | `switch_handler` | `0x1401df428` | `game_state_and_stores` | `implemented` |
+| 2381 | `0x94d` | `store_friend_count` | `switch_handler` | `0x1401df460` | `game_state_and_stores` | `implemented` |
+| 2382 | `0x94e` | `store_ally_count` | `switch_handler` | `0x1401df491` | `game_state_and_stores` | `implemented` |
+| 2383 | `0x94f` | `store_defender_count` | `switch_handler` | `0x1401df4b1` | `game_state_and_stores` | `implemented` |
+| 2384 | `0x950` | `store_attacker_count` | `switch_handler` | `0x1401df582` | `game_state_and_stores` | `implemented` |
+| 2385 | `0x951` | `store_normalized_team_count` | `switch_handler` | `0x1401df657` | `game_state_and_stores` | `implemented` |
+| 2386 | `0x952` | `set_postfx` | `switch_handler` | `0x1401df6bc` | `other_native` | `implemented` |
+| 2387 | `0x953` | `set_river_shader_to_mud` | `switch_handler` | `0x1401df6e6` | `other_native` | `implemented` |
+| 2388 | `0x954` | `show_troop_details` | `switch_handler` | `0x1401df780` | `troops` | `implemented` |
+| 2389 | `0x955` | `set_skybox` | `switch_handler` | `0x1401df800` | `other_native` | `implemented` |
+| 2390 | `0x956` | `set_startup_sun_light` | `switch_handler` | `0x1401df81d` | `other_native` | `implemented` |
+| 2391 | `0x957` | `set_startup_ambient_light` | `switch_handler` | `0x1401df8ef` | `other_native` | `implemented` |
+| 2392 | `0x958` | `set_startup_ground_ambient_light` | `switch_handler` | `0x1401df9c0` | `other_native` | `implemented` |
+| 2393 | `0x959` | `rebuild_shadow_map` | `switch_handler` | `0x1401dfa77` | `other_native` | `implemented` |
+| 2394 | `0x95a` | `get_startup_sun_light` | `switch_handler` | `0x1401dfa83` | `other_native` | `implemented` |
+| 2395 | `0x95b` | `get_startup_ambient_light` | `switch_handler` | `0x1401dfaf0` | `other_native` | `implemented` |
+| 2396 | `0x95c` | `get_startup_ground_ambient_light` | `switch_handler` | `0x1401dfb56` | `other_native` | `implemented` |
 | 2400 | `0x960` | `set_shader_param_int` | `switch_handler` | `0x1401dfbbc` | `scenes_props_and_mission` | `unimplemented` |
 | 2401 | `0x961` | `set_shader_param_float` | `switch_handler` | `0x1401dfcbd` | `scenes_props_and_mission` | `unimplemented` |
 | 2402 | `0x962` | `set_shader_param_float4` | `switch_handler` | `0x1401dfde2` | `scenes_props_and_mission` | `unimplemented` |
@@ -1123,26 +1123,26 @@ they are not retail symbols. The handler VA is the binary evidence.
 | 2722 | `0xaa2` | `item_get_horse_charge_damage` | `switch_handler` | `0x1401e1112` | `items` | `implemented` |
 | 2723 | `0xaa3` | `item_has_property` | `switch_handler` | `0x1401e115d` | `items` | `implemented` |
 | 2724 | `0xaa4` | `item_has_capability` | `switch_handler` | `0x1401e119a` | `items` | `implemented` |
-| 2725 | `0xaa5` | `item_has_modifier` | `switch_handler` | `0x1401e11d7` | `items` | `unimplemented` |
-| 2726 | `0xaa6` | `item_has_faction` | `switch_handler` | `0x1401e1216` | `items` | `unimplemented` |
-| 2747 | `0xabb` | `str_store_player_face_keys` | `switch_handler` | `0x1401e1258` | `strings` | `unimplemented` |
+| 2725 | `0xaa5` | `item_has_modifier` | `switch_handler` | `0x1401e11d7` | `items` | `implemented` |
+| 2726 | `0xaa6` | `item_has_faction` | `switch_handler` | `0x1401e1216` | `items` | `implemented` |
+| 2747 | `0xabb` | `str_store_player_face_keys` | `switch_handler` | `0x1401e1258` | `strings` | `implemented` |
 | 2748 | `0xabc` | `player_set_face_keys` | `switch_handler` | `0x1401e12d4` | `multiplayer_and_players` | `unimplemented` |
-| 2749 | `0xabd` | `str_store_agent_face_keys` *(community name)* | `switch_handler` | `0x1401e1373` | `strings` | `unimplemented` |
+| 2749 | `0xabd` | `str_store_agent_face_keys` *(community name)* | `switch_handler` | `0x1401e1373` | `strings` | `implemented` |
 | 2750 | `0xabe` | `str_store_troop_face_keys` | `switch_handler` | `0x1401e1438` | `strings` | `implemented` |
 | 2751 | `0xabf` | `troop_set_face_keys` | `switch_handler` | `0x1401e1517` | `troops` | `implemented` |
-| 2752 | `0xac0` | `face_keys_get_hair` | `switch_handler` | `0x1401e1621` | `face_keys` | `unimplemented` |
-| 2753 | `0xac1` | `face_keys_set_hair` | `switch_handler` | `0x1401e16c9` | `face_keys` | `unimplemented` |
-| 2754 | `0xac2` | `face_keys_get_beard` | `switch_handler` | `0x1401e1794` | `face_keys` | `unimplemented` |
-| 2755 | `0xac3` | `face_keys_set_beard` | `switch_handler` | `0x1401e183c` | `face_keys` | `unimplemented` |
-| 2756 | `0xac4` | `face_keys_get_face_texture` | `switch_handler` | `0x1401e1907` | `face_keys` | `unimplemented` |
-| 2757 | `0xac5` | `face_keys_set_face_texture` | `switch_handler` | `0x1401e19ae` | `face_keys` | `unimplemented` |
-| 2758 | `0xac6` | `face_keys_get_hair_texture` | `switch_handler` | `0x1401e1a77` | `face_keys` | `unimplemented` |
-| 2759 | `0xac7` | `face_keys_set_hair_texture` | `switch_handler` | `0x1401e1b1e` | `face_keys` | `unimplemented` |
-| 2760 | `0xac8` | `face_keys_get_hair_color` | `switch_handler` | `0x1401e1be7` | `face_keys` | `unimplemented` |
-| 2761 | `0xac9` | `face_keys_set_hair_color` | `switch_handler` | `0x1401e1c9a` | `face_keys` | `unimplemented` |
-| 2762 | `0xaca` | `face_keys_get_age` | `switch_handler` | `0x1401e1d70` | `face_keys` | `unimplemented` |
-| 2763 | `0xacb` | `face_keys_set_age` | `switch_handler` | `0x1401e1e23` | `face_keys` | `unimplemented` |
-| 2764 | `0xacc` | `face_keys_get_skin_color` | `switch_handler` | `0x1401e1ef9` | `face_keys` | `unimplemented` |
-| 2765 | `0xacd` | `face_keys_set_skin_color` | `switch_handler` | `0x1401e1fac` | `face_keys` | `unimplemented` |
-| 2766 | `0xace` | `face_keys_get_morph_key` | `switch_handler` | `0x1401e2082` | `face_keys` | `unimplemented` |
-| 2767 | `0xacf` | `face_keys_set_morph_key` | `switch_handler` | `0x1401e2150` | `face_keys` | `unimplemented` |
+| 2752 | `0xac0` | `face_keys_get_hair` | `switch_handler` | `0x1401e1621` | `face_keys` | `implemented` |
+| 2753 | `0xac1` | `face_keys_set_hair` | `switch_handler` | `0x1401e16c9` | `face_keys` | `implemented` |
+| 2754 | `0xac2` | `face_keys_get_beard` | `switch_handler` | `0x1401e1794` | `face_keys` | `implemented` |
+| 2755 | `0xac3` | `face_keys_set_beard` | `switch_handler` | `0x1401e183c` | `face_keys` | `implemented` |
+| 2756 | `0xac4` | `face_keys_get_face_texture` | `switch_handler` | `0x1401e1907` | `face_keys` | `implemented` |
+| 2757 | `0xac5` | `face_keys_set_face_texture` | `switch_handler` | `0x1401e19ae` | `face_keys` | `implemented` |
+| 2758 | `0xac6` | `face_keys_get_hair_texture` | `switch_handler` | `0x1401e1a77` | `face_keys` | `implemented` |
+| 2759 | `0xac7` | `face_keys_set_hair_texture` | `switch_handler` | `0x1401e1b1e` | `face_keys` | `implemented` |
+| 2760 | `0xac8` | `face_keys_get_hair_color` | `switch_handler` | `0x1401e1be7` | `face_keys` | `implemented` |
+| 2761 | `0xac9` | `face_keys_set_hair_color` | `switch_handler` | `0x1401e1c9a` | `face_keys` | `implemented` |
+| 2762 | `0xaca` | `face_keys_get_age` | `switch_handler` | `0x1401e1d70` | `face_keys` | `implemented` |
+| 2763 | `0xacb` | `face_keys_set_age` | `switch_handler` | `0x1401e1e23` | `face_keys` | `implemented` |
+| 2764 | `0xacc` | `face_keys_get_skin_color` | `switch_handler` | `0x1401e1ef9` | `face_keys` | `implemented` |
+| 2765 | `0xacd` | `face_keys_set_skin_color` | `switch_handler` | `0x1401e1fac` | `face_keys` | `implemented` |
+| 2766 | `0xace` | `face_keys_get_morph_key` | `switch_handler` | `0x1401e2082` | `face_keys` | `implemented` |
+| 2767 | `0xacf` | `face_keys_set_morph_key` | `switch_handler` | `0x1401e2150` | `face_keys` | `implemented` |

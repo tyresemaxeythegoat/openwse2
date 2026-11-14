@@ -533,6 +533,26 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     return dispatch != WseDispatch::condition_false;
 }
 
+[[nodiscard]] constexpr NativeDispatch dispatch_native_non_switch(
+    std::uint32_t opcode) noexcept {
+    // Retail v1.1.5.5 non-switch runtime opcodes outside mbStatement::execute's
+    // switch table: 473/477/1070/1104/1302/1491 fall through to bResult=1;
+    // 1004 falls into execute_wse and returns false when unhandled.
+    switch (opcode) {
+    case 473U:
+    case 477U:
+    case 1070U:
+    case 1104U:
+    case 1302U:
+    case 1491U:
+        return NativeDispatch::handled;
+    case 1004U:
+        return NativeDispatch::condition_false;
+    default:
+        return NativeDispatch::unimplemented;
+    }
+}
+
 // Executes one leaf statement (>= 30), honoring g_skipStatement (0x40000000
 // this_or_next) and negation (0x80000000 neg). Mirrors 0x1401c6150.
 [[nodiscard]] inline bool execute_statement(const Statement& statement,
@@ -574,9 +594,12 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     } else if (opcode >= kNativeOpcodeMin && opcode <= kNativeOpcodeMax) {
         const std::int32_t savedCaller = ctx.currentCaller;
         ctx.currentCaller = caller;
-        const NativeDispatch nativeResult =
+        NativeDispatch nativeResult =
             dispatch_native_statement(opcode, wide, narrow, tags, statement, ctx, locals);
         ctx.currentCaller = savedCaller;
+        if (nativeResult == NativeDispatch::unimplemented) {
+            nativeResult = dispatch_native_non_switch(opcode);
+        }
         if (nativeResult == NativeDispatch::unimplemented) {
             ctx.record_unimplemented(opcode);
             if (ctx.failOnUnimplemented) {

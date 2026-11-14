@@ -130,7 +130,7 @@ def scan_implemented_native(block_vm_path: Path) -> set[int]:
         raise SystemExit(f"Could not locate core_op namespace in {block_vm_path}")
 
     disp_pattern = re.compile(
-        r"dispatch_native(?:_entity|_mission|_campaign(?:_\d+)?)?_statement(?:_ext)?\s*\([^)]*\)\s*\{(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+(?:NativeDispatch::unimplemented|dispatch_native(?:_entity|_mission|_campaign(?:_\d+)?)?_statement(?:_ext)?\([^;]*\));)",
+        r"dispatch_native(?:_[a-z0-9_]+)?_statement(?:_ext)?\s*\([^)]*\)\s*\{(.*?)\n\s*(?:\+\+ctx\.unimplementedCount;|return\s+(?:NativeDispatch::unimplemented|dispatch_native(?:_[a-z0-9_]+)?_statement(?:_ext)?\([^;]*\));)",
         re.S,
     )
     impl: set[int] = set()
