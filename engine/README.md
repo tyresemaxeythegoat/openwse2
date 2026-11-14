@@ -127,7 +127,7 @@ pseudocode line and the handler's call extent. `tools/extract_wse_opcodes.py` re
 `include/wse/vm/wse_opcodes.h` from the 8,844-line WSE2 v1.1.5.5 pseudocode dump and the public
 `header_operations_addon.py` names.
 
-`execute_wse` masks the opcode with `0x0FFFFFFF` and currently implements six groups. The
+`execute_wse` masks the opcode with `0x0FFFFFFF` and dispatches across the handler groups below. The
 arithmetic/bitwise group 2800–2809 covers arithmetic right shift (`val_shr`/`store_shr`), logical
 right shift (`val_lshr`/`store_lshr`), left shift (`val_shl`/`store_shl`), xor (`val_xor`/`store_xor`),
 and complement (`val_not`/`store_not`); shift counts are masked with `& 0x3F`, and `store_*` reads
@@ -232,9 +232,10 @@ a failed comparison returns `WseDispatch::condition_false`; an invalid register 
 Every mapped opcode without a transcribed handler returns `WseDispatch::unimplemented`. The
 implemented/remaining tally per opcode family is in `STATUS.md` §3.
 
-Native (non-WSE) opcodes behave differently: `block_vm.h` returns `true` for an unimplemented native
-opcode and only increments `VmContext::unimplementedCount`, so a condition built on one passes
-silently. Check that counter after any run against real module scripts (`ROADMAP.md` backlog B6).
+Native (non-WSE) opcodes report the same way: an unimplemented native opcode yields
+`NativeDispatch::unimplemented` and is recorded in `VmContext::unimplementedCount` and the per-opcode
+`unimplementedOpcodeCounts` histogram. In compatibility mode the statement still evaluates `true`;
+with `failOnUnimplemented` the block aborts with an error (`ROADMAP.md` backlog B6).
 
 ## Safety deviations
 
@@ -243,6 +244,30 @@ negative counts, operands above 32, oversized arrays, out-of-range timer indices
 binary savegames; none of these checks changes valid module behaviour. In `str_split` (4213), an
 empty delimiter cannot advance in retail and would loop indefinitely; the port stores the source as
 a single piece (respecting `skip_empty`) and terminates.
+
+Module scripts can mutate an object while the VM is using it, so the VM never keeps a pointer into
+one across script-visible execution:
+
+- `try_for_dict_keys` (`0x12`) stores the dictionary id and the current key in its loop frame and
+  re-resolves both on every step (`upper_bound` of the last key). A body that frees or clears the
+  dictionary ends the loop; erasing the current key or inserting keys is safe, and keys inserted
+  after the current one are visited.
+- `array_sort_custom` (5016) sorts a detached copy and installs the result only if the id still
+  names an array of the same type and shape. A comparator that frees, pops, or resizes the array
+  therefore leaves its own edits in place and the sort result is dropped; element edits made by
+  the comparator to a same-shaped array are overwritten by the sorted copy.
+- Dynamic arrays are limited to `kWseArrayMaxElements` (2^24) leaf elements: `array_create` and
+  `array_load_file` store 0 and `array_resize_dim` is a no-op beyond that, instead of passing an
+  arbitrary dimension product to the allocator.
+- The statement, script, and trigger loaders allocate records as they are read and reserve only
+  what the unread input could hold, so a corrupt count cannot reserve hundreds of megabytes.
+- Control opcodes (`try_begin`, `try_end`, `else_try`, `break_loop`, `continue_loop`) are matched
+  after masking with `0x0FFFFFFF` in the executor, the same way `analyze` matches them. This is a
+  consistency fix, not an evidence-backed retail fact: the compiler never emits modifier bits on
+  these opcodes, and the retail handling of that case has not been checked.
+- `convert_to_fixed_point` (2130) wraps on overflow; `convert_from_fixed_point` (2131) reports
+  `"Division by zero"` if a host zeroes `fixedPointMultiplier` (scripts cannot set it below 1).
+- `HostVfs` resolves symbolic links and refuses any path whose target lies outside its root.
 
 ## Handler design decisions and limits
 

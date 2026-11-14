@@ -161,6 +161,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-14 | — | Code-review fixes: `try_for_dict_keys` and `array_sort_custom` no longer hold pointers into script-mutable objects (two ASan-confirmed use-after-frees), loaders allocate records incrementally, dynamic arrays capped at `kWseArrayMaxElements`, control opcodes masked consistently, `HostVfs` refuses symlink escapes; CMake defaults to `-O2`, CI adds an ASan/UBSan job and runs on every branch |
 | 2026-11-14 | `7a23109` | Phase 2 Milestone 2: expand `WseWorldState`, activate the 4 entity iterators (`11/12/16/17`) preserving `currentCaller`, and reconstruct `174` high-demand native opcodes (`108` in `native_entity_ops.h` + `66` in `native_mission_ops.h`, `335/1,053` live handlers), raising `Native` `scripts.txt` statement coverage from `93.0%` to `97.76%` (`1,041/1,755` zero-unimplemented scripts) |
 | 2026-11-14 | `025b06f` | Phase 2 Milestone 1: reconstruct `112` high-demand native Warband opcodes (`161/1,053` live native handlers across `block_vm.h` + `native_ops.h`), raising `Native` `scripts.txt` coverage from `66.2%` to `93.0%` (`685/1,755` zero-unimplemented scripts) |
 | 2026-11-14 | `4bd4066` | `tools/vtables.py` + `tools/check_citations.py --self-test` in CI + `SYMBOL_MAP.json` expansion (`B7`); non-`noexcept` `execute_wse*`, ASCII `"C"`-locale char helpers, and `WseVmState::sleep_ms_fn` hook (`B8`) |

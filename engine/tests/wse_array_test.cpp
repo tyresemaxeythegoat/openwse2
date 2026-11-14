@@ -101,6 +101,24 @@ void test_array_group() {
                effect.value == 0,
            "array_create stores 0 on invalid type_id, dims, or >14 dimensions");
 
+    // Safety deviation: element counts above kWseArrayMaxElements are refused.
+    expect(call(WseOpcode::array_create, {0, 0, 2000000000}) == WseDispatch::handled &&
+               effect.value == 0 &&
+               call(WseOpcode::array_create, {0, 0, 65536, 65536}) ==
+                   WseDispatch::handled &&
+               effect.value == 0,
+           "array_create stores 0 instead of allocating an oversized array");
+    expect(call(WseOpcode::array_create, {0, 0, 4, 4}) == WseDispatch::handled,
+           "array_create creates a small 2D array for the resize cap check");
+    const std::int64_t capArr = effect.value;
+    expect(call(WseOpcode::array_resize_dim, {capArr, 1, 2000000000}) ==
+                   WseDispatch::handled_no_store &&
+               call(WseOpcode::array_get_dim_size, {0, capArr, 1}) ==
+                   WseDispatch::handled &&
+               effect.value == 4 &&
+               call(WseOpcode::array_free, {capArr}) == WseDispatch::handled_no_store,
+           "array_resize_dim leaves the array unchanged when the new size exceeds the cap");
+
     expect(call(WseOpcode::array_create,
                 {0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}) ==
                WseDispatch::handled,

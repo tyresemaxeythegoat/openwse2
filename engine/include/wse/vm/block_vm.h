@@ -162,9 +162,12 @@ using VmErrorCallback = void (*)(void* user, std::string_view message);
 struct LoopFrame {
     std::int32_t statementNo = 0;
     std::int32_t value = 0;
-    const WseDictionary* dict = nullptr;
-    std::map<std::string, std::string>::const_iterator dictIt{};
-    std::map<std::string, std::string>::const_iterator dictEnd{};
+    // try_for_dict_keys cursor. Safety deviation: the frame holds the object
+    // id and the current key instead of a pointer/iterator into the map, and
+    // re-resolves the dictionary on every step, so a loop body that frees,
+    // clears, or erases from the dictionary cannot leave a dangling cursor.
+    std::int32_t dictId = -1;
+    std::string dictKey{};
 };
 
 struct VmContext {
@@ -600,7 +603,7 @@ inline void set_dict_loop_key(const Statement& stmt,
                               const LoopFrame& frame,
                               VmContext& ctx,
                               std::span<const std::int64_t> locals) {
-    if (stmt.numOperands <= 0 || frame.dict == nullptr || frame.dictIt == frame.dictEnd) {
+    if (stmt.numOperands <= 0 || frame.value == -1) {
         return;
     }
     std::uint8_t unusedTag = 0;
@@ -611,7 +614,7 @@ inline void set_dict_loop_key(const Statement& stmt,
         return;
     }
     ctx.stringRegisters[static_cast<std::size_t>(sregIdx)] =
-        wse_utf8_to_utf16(frame.dictIt->first);
+        wse_utf8_to_utf16(frame.dictKey);
 }
 
 [[nodiscard]] inline std::int32_t find_next_valid_party(const VmContext& ctx,
@@ -669,7 +672,7 @@ inline void set_dict_loop_key(const Statement& stmt,
         return top.value >= 0 && top.value < ctx.world.max_players &&
                static_cast<std::size_t>(top.value) < ctx.world.players.size();
     case core_op::kTryForDictKeys:
-        return top.value != -1 && top.dict != nullptr && top.dictIt != top.dictEnd;
+        return top.value != -1;
     default:
         return false;
     }
@@ -719,10 +722,10 @@ inline void start_loop(const StatementBlock& block,
                 ? static_cast<std::int32_t>(parse_operand(
                       static_cast<std::uint64_t>(stmt.operands[1]), ctx, locals, unusedTag))
                 : -1;
-        frame.dict = ctx.dictionaries.get(dictId);
-        if (frame.dict != nullptr && !frame.dict->empty()) {
-            frame.dictIt = frame.dict->entries.begin();
-            frame.dictEnd = frame.dict->entries.end();
+        const WseDictionary* dict = ctx.dictionaries.get(dictId);
+        if (dict != nullptr && !dict->empty()) {
+            frame.dictId = dictId;
+            frame.dictKey = dict->entries.begin()->first;
             frame.value = 1;
         }
     }
@@ -788,11 +791,17 @@ inline void end_loop(const StatementBlock& block,
         top.value = find_next_valid_player(ctx, top.value + 1);
     } else if (opcode == core_op::kTryForDictKeys) {
         isDictLoop = true;
-        if (top.value != -1 && top.dict != nullptr && top.dictIt != top.dictEnd) {
-            ++top.dictIt;
-            top.value = (top.dictIt != top.dictEnd) ? 1 : -1;
-        } else {
-            top.value = -1;
+        // Re-resolve the dictionary and step to the first key after the one
+        // just visited; a freed, cleared, or shrunk dictionary ends the loop.
+        const WseDictionary* dict =
+            top.value != -1 ? ctx.dictionaries.get(top.dictId) : nullptr;
+        top.value = -1;
+        if (dict != nullptr) {
+            const auto next = dict->entries.upper_bound(top.dictKey);
+            if (next != dict->entries.end()) {
+                top.dictKey = next->first;
+                top.value = 1;
+            }
         }
     } else {
         --numLoops;
@@ -969,27 +978,27 @@ inline bool execute_statement_block(StatementBlock& block,
                              params[static_cast<std::size_t>(zeroBased)], ctx, locals);
             }
             ++pc;
-        } else if (stmt.opcode == core_op::kBreakLoop) {
+        } else if (maskedOp == core_op::kBreakLoop) {
             std::int32_t i = numLoops - 1;
             bool found = false;
             while (i >= 0 && !found) {
                 numLoops = i;
                 const Statement& target =
                     block.statements[static_cast<std::size_t>(loops[static_cast<std::size_t>(i)].statementNo)];
-                if (target.opcode != core_op::kTryBegin) {
+                if ((target.opcode & kOpcodeMask) != core_op::kTryBegin) {
                     pc = target.endStatement;
                     found = true;
                 }
                 --i;
             }
             ++pc;
-        } else if (stmt.opcode == core_op::kContinueLoop) {
+        } else if (maskedOp == core_op::kContinueLoop) {
             std::int32_t i = numLoops - 1;
             bool found = false;
             while (i >= 0 && !found) {
                 const Statement& target =
                     block.statements[static_cast<std::size_t>(loops[static_cast<std::size_t>(i)].statementNo)];
-                if (target.opcode != core_op::kTryBegin) {
+                if ((target.opcode & kOpcodeMask) != core_op::kTryBegin) {
                     pc = target.endStatement;
                     numLoops = i + 1;
                     found = true;
@@ -999,10 +1008,10 @@ inline bool execute_statement_block(StatementBlock& block,
             if (!found) {
                 ++pc;
             }
-        } else if (stmt.opcode == core_op::kTryEnd) {
+        } else if (maskedOp == core_op::kTryEnd) {
             canEnterElse = true;
             end_loop(block, ctx, locals, loops, numLoops, pc);
-        } else if (stmt.opcode == core_op::kTryBegin) {
+        } else if (maskedOp == core_op::kTryBegin) {
             canEnterElse = true;
             if (static_cast<std::size_t>(numLoops) < loops.size()) {
                 loops[static_cast<std::size_t>(numLoops)] = LoopFrame{pc, 0};
@@ -1011,7 +1020,7 @@ inline bool execute_statement_block(StatementBlock& block,
                 ctx.report_error("Loop stack overflow on try_begin");
             }
             ++pc;
-        } else if (stmt.opcode == core_op::kElseTry) {
+        } else if (maskedOp == core_op::kElseTry) {
             if (!canEnterElse) {
                 canEnterElse = true;
                 ++pc;

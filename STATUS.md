@@ -11,7 +11,7 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows (Zig clang++, 12 suites / 79 test functions) and Linux CI (`clang++ 18.1.3` CMake/CTest) |
+| Host gate | **PASS** on Windows (Zig clang++, 12 suites / 80 test functions) and Linux CI (`clang++ 18.1.3` CMake/CTest) |
 | Android arm64 gate | **PASS (CI on last push)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all headers standalone + CMake build via `CMakeLists.txt` glob; on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **222/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` unnamed live handlers `53, 2180, 2749`); **335/1,053 implemented** (`16` control-flow incl. 4 live entity iterators + `319` switch across `block_vm.h`, `native_ops.h`, `native_entity_ops.h`, and `native_mission_ops.h`) |
@@ -28,7 +28,8 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 30 standalone header checks, 12/12 test suites, `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
 | Android NDK `aarch64-linux-android29` | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all 30 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
-| CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` (including `extract_wse_opcodes.py --check` and `check_citations.py --self-test`) and `android-arm64` on push and PR |
+| Host ASan + UBSan | PASS (local) | `cmake -DWSE_SANITIZE=ON` + CTest, 12/12 suites, run locally with `g++ 13.3.0` (the session's clang has no sanitizer runtime). The CI job `host-sanitizers` (clang++) was added with this change and has not reported yet |
+| CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` (including `extract_wse_opcodes.py --check` and `check_citations.py --self-test`) and `android-arm64` on push and PR. As of the 2026-11-14 review fixes it triggers on pushes to every branch (previously `main` only), builds `RelWithDebInfo` (`-O2`) by default, and adds `host-sanitizers`; that revised workflow has not run yet |
 
 ## 3. Coverage
 
@@ -143,7 +144,7 @@ Top categories by unimplemented native calls (`scripts.txt`): `parties` (**790**
 | `wse_dict_test.cpp` | 1 |
 | `wse_array_test.cpp` | 1 |
 | `wse_world_test.cpp` | 3 |
-| `block_vm_test.cpp` | 17 |
+| `block_vm_test.cpp` | 18 |
 | `platform_test.cpp` | 6 |
 | **Total (12 suites)** | **79** |
 
@@ -171,7 +172,9 @@ Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
 
 ## 6. Open documentation questions
 
-None open — the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vtables_x64` naming and SHA-256 hashes, 73/75/76 vtable tally, `docs/ARCHITECTURE.md` §2 v1.1.5.5 type counts, and automated `0x14…` citation checking) were resolved in B7 (`docs/ARCHITECTURE.md` §1–§3, §8–§9; `tools/check_citations.py`).
+One open question (2026-11-14 review): `mbStatementBlock::execute` (`0x1401f69d0`) is recorded as "optionally" zeroing `clamp(m_numLocalVariablesUsed, 0x20, 0x400)` locals (`docs/ARCHITECTURE.md` §Block execution), but the condition is not documented. The port defaults `VmContext::clearLocalsBetweenCalls` to `false`, so a block can read locals left by the previous block at the same call depth. The `stmt_block` export (`ev_ffc38aa5…`) needs re-reading to settle the condition and the default.
+
+Previously closed: the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vtables_x64` naming and SHA-256 hashes, 73/75/76 vtable tally, `docs/ARCHITECTURE.md` §2 v1.1.5.5 type counts, and automated `0x14…` citation checking) were resolved in B7 (`docs/ARCHITECTURE.md` §1–§3, §8–§9; `tools/check_citations.py`).
 
 ## 7. Evidence & analysis ledger
 

@@ -2,7 +2,6 @@ name: Engine CI
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -32,6 +31,24 @@ jobs:
 
       - name: Check evidence citations
         run: python3 tools/check_citations.py --self-test
+
+  host-sanitizers:
+    name: Host ASan + UBSan (Linux clang++)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure and build with sanitizers
+        run: |
+          CXX=clang++ cmake -S . -B build-san -DWSE_SANITIZE=ON
+          cmake --build build-san -j"$(nproc)"
+
+      - name: Run CTest suites under ASan/UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: |
+          ctest --test-dir build-san --output-on-failure --no-tests=error
 
   android-arm64:
     name: Android NDK (aarch64-linux-android29)

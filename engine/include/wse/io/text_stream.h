@@ -118,6 +118,19 @@ public:
 
     [[nodiscard]] std::size_t cursor() const noexcept { return cursor_; }
 
+    // Unread bytes. Loaders use it to reject a record count that the rest of
+    // the file cannot possibly hold before allocating storage for it.
+    [[nodiscard]] std::size_t remaining() const noexcept { return contents_.size() - cursor_; }
+
+    // Upper bound on how many of `count` records the unread input can hold
+    // when each record needs at least `minRecordBytes` bytes (tokens plus one
+    // separator). Loaders reserve this much instead of trusting the count.
+    [[nodiscard]] std::size_t plausible_count(std::size_t count,
+                                              std::size_t minRecordBytes) const noexcept {
+        const std::size_t fits = (remaining() + 1) / minRecordBytes;
+        return count < fits ? count : fits;
+    }
+
 private:
     static void skip_whitespace(std::size_t& position, std::string_view contents) noexcept {
         while (position < contents.size() &&

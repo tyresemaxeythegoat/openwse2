@@ -1102,10 +1102,21 @@ inline void native_store_name_link(std::int32_t reg_idx,
         return NativeDispatch::handled;
     }
     case core_op::kConvertToFixedPoint:
-        store_lvalue(dst, wide[0] * static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx, locals);
+        // Wraps like the retail imul instead of signed-overflow UB.
+        store_lvalue(dst,
+                     static_cast<std::int64_t>(
+                         static_cast<std::uint64_t>(wide[0]) *
+                         static_cast<std::uint64_t>(
+                             static_cast<std::int64_t>(ctx.fixedPointMultiplier))),
+                     ctx, locals);
         return NativeDispatch::handled;
     case core_op::kConvertFromFixedPoint:
-        store_lvalue(dst, wide[0] / static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx, locals);
+        // set_fixed_point_multiplier only accepts positive values; the checked
+        // divide also covers a host that zeroes the field directly.
+        store_lvalue(dst,
+                     checked_signed_div(
+                         wide[0], static_cast<std::int64_t>(ctx.fixedPointMultiplier), ctx),
+                     ctx, locals);
         return NativeDispatch::handled;
     case core_op::kAssign:
         store_lvalue(dst, wide[1], ctx, locals);
