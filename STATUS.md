@@ -25,8 +25,8 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Gate | Result | Detail |
 | --- | --- | --- |
 | Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: 12/12 suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `platform`), 30/30 standalone header checks (`x86_64-windows-gnu` and `aarch64-linux-musl`) |
-| Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 27 standalone header checks, 12/12 test suites, `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
-| Android NDK `aarch64-linux-android29` | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all 27 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
+| Host C++20, Linux | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): all 30 standalone header checks, 12/12 test suites, `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
+| Android NDK `aarch64-linux-android29` | PASS (CI) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all 30 headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
 | CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` (including `extract_wse_opcodes.py --check` and `check_citations.py --self-test`) and `android-arm64` on push and PR |
 
