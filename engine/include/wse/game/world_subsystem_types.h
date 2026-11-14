@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "wse/core/math.h"
+#include "wse/game/world_m5_types.h"
 
 namespace wse::game {
 

@@ -258,6 +258,7 @@ namespace wse::vm {
             }
             ag.target_position = pos;
             ag.has_scripted_destination = true;
+            ag.m5.scripted_mode = 2;
         }
         return NativeDispatch::handled;
     case 1731: // agent_get_scripted_destination (0x1401d4463)
@@ -273,7 +274,9 @@ namespace wse::vm {
         return NativeDispatch::handled;
     case 1735: // agent_clear_scripted_mode (0x1401d4688)
         if (world.is_valid_agent(narrow[0])) {
-            world.agents[static_cast<std::size_t>(narrow[0])].has_scripted_destination = false;
+            auto& ag = world.agents[static_cast<std::size_t>(narrow[0])];
+            ag.has_scripted_destination = false;
+            ag.m5.scripted_mode = 0;
         }
         return NativeDispatch::handled;
     case 1736: // agent_set_speed_limit (0x1401d46b4)
@@ -294,7 +297,9 @@ namespace wse::vm {
     case 1740: // agent_set_animation (0x1401d47b3)
         if (world.is_valid_agent(narrow[0]) && (wide[1] == -1 || narrow[1] >= 0) &&
             narrow[2] >= 0 && narrow[2] < 2) {
-            world.agents[static_cast<std::size_t>(narrow[0])].animation = narrow[1];
+            auto& ag = world.agents[static_cast<std::size_t>(narrow[0])];
+            ag.animation = narrow[1];
+            ag.m5.action_channels[static_cast<std::size_t>(narrow[2])].action_no = narrow[1];
         }
         return NativeDispatch::handled;
     case 1741: // agent_set_stand_animation (0x1401d481c)

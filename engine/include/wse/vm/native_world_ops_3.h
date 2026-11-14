@@ -27,6 +27,15 @@
 
 namespace wse::vm {
 
+[[nodiscard]] inline NativeDispatch dispatch_native_agent_statement(
+    std::uint32_t opcode,
+    std::span<const std::int64_t> wide,
+    std::span<const std::int32_t> narrow,
+    std::span<const std::uint8_t> tags,
+    const Statement& statement,
+    VmContext& ctx,
+    std::span<std::int64_t> locals);
+
 inline constexpr std::size_t kMaxNativeMissileSpawns = 1024;
 inline constexpr std::int32_t kMaxNativeItemModifier = 43;  // 0x2b
 
@@ -855,7 +864,10 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
     default:
         break;
     }
-    return NativeDispatch::unimplemented;
+    return dispatch_native_agent_statement(opcode, wide, narrow, tags, statement, ctx,
+                                           locals);
 }
 
 }  // namespace wse::vm
+
+#include "wse/vm/native_agent_ops.h"

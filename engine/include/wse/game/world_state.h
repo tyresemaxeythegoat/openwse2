@@ -150,6 +150,7 @@ struct WsePresentationOverlay {
     wse::core::WseVec2 size{1.0f, 1.0f};
     std::int32_t val = 0;
     bool visible = true;
+    WseOverlayM5Ext m5{};
 };
 
 struct WseMissionTemplate {
@@ -186,6 +187,7 @@ struct WseEntryPoint {
     wse::core::WseTransform position = wse::core::WseTransform::identity();
     std::int32_t num_x_moves = 0;
     std::int32_t num_y_moves = 0;
+    bool is_auto_generated = false;
 };
 
 // Mirrors rglTimer (0x1403189e0): elapsed seconds = (timersTotal[timer_no] - value) / 100000.0f.
@@ -676,21 +678,11 @@ struct WseQuest {
     std::int32_t target_faction_no = -1;
     float expiration_days = 0.0f;
 
-    [[nodiscard]] constexpr bool is_active() const noexcept {
-        return ((progression_flags >> 8U) & 1U) != 0U;
-    }
-    [[nodiscard]] constexpr bool is_completed() const noexcept {
-        return ((progression_flags >> 9U) & 1U) != 0U;
-    }
-    [[nodiscard]] constexpr bool is_succeeded() const noexcept {
-        return ((progression_flags >> 10U) & 1U) != 0U;
-    }
-    [[nodiscard]] constexpr bool is_failed() const noexcept {
-        return ((progression_flags >> 11U) & 1U) != 0U;
-    }
-    [[nodiscard]] constexpr bool is_concluded() const noexcept {
-        return ((progression_flags >> 12U) & 1U) != 0U;
-    }
+    [[nodiscard]] constexpr bool is_active() const noexcept { return ((progression_flags >> 8U) & 1U) != 0U; }
+    [[nodiscard]] constexpr bool is_completed() const noexcept { return ((progression_flags >> 9U) & 1U) != 0U; }
+    [[nodiscard]] constexpr bool is_succeeded() const noexcept { return ((progression_flags >> 10U) & 1U) != 0U; }
+    [[nodiscard]] constexpr bool is_failed() const noexcept { return ((progression_flags >> 11U) & 1U) != 0U; }
+    [[nodiscard]] constexpr bool is_concluded() const noexcept { return ((progression_flags >> 12U) & 1U) != 0U; }
 };
 
 struct WseSite {
@@ -699,6 +691,7 @@ struct WseSite {
     float water_level = 0.0f;
     wse::vm::Slots slots{};
     std::vector<WseSiteVisitor> visitors{};
+    std::uint32_t flags = 0;
 };
 
 struct WseParty {
@@ -954,6 +947,7 @@ struct WsePlayer {
     std::array<bool, kNumTroopEquipmentSlots> picked_up_slots{};
     WseFaceKeys face_keys{};
     std::int32_t privilege = 0;
+    WsePlayerM5Ext m5{};
 };
 
 struct WseTeam {
@@ -1046,6 +1040,7 @@ struct WseAgent {
     [[nodiscard]] constexpr bool is_wounded_state() const noexcept {
         return status == 3 || is_wounded;
     }
+    WseAgentM5Ext m5{};
 };
 
 struct WseMissionObject {
@@ -1070,6 +1065,7 @@ struct WseMissionObject {
     float animate_duration = 0.0f;
     bool physics_enabled = true;
     float enable_timer = 0.0f;
+    WseMissionObjectM5Ext m5{};
 };
 
 struct WseDisplayedMessage {
@@ -1208,6 +1204,7 @@ struct WseWorldState {
     WseSceneFxState fx{};
     WseMpSessionState mp{};
     WseMiscRuntimeState misc{};
+    WseM5WorldExt m5{};
     std::vector<WseInfoPage> info_pages{};
     std::vector<WseBattleEvent> battle_events{};
     std::vector<std::string> mesh_names{};
