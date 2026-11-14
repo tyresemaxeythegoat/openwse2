@@ -31,7 +31,12 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
       && ./script_test "$root/engine/fixtures/scripts.txt" && echo "engine host tests: PASS"
     ```
     Every suite must print `<name> tests: PASS`. `wse_string`, `wse_dict`, `wse_array`, and `block_vm` take ~5–15 s each to compile.
-- **Android NDK gate (CI-verified for every commit):**
+- **Sanitizer gate (CI job `host-sanitizers`, required when touching VM control flow, loaders, or object lifetimes):**
+  ```sh
+  cmake -S . -B build-san -DCMAKE_CXX_COMPILER=clang++ -DWSE_SANITIZE=ON && cmake --build build-san -j && ctest --test-dir build-san --output-on-failure
+  ```
+  Builds every suite with AddressSanitizer + UndefinedBehaviorSanitizer. If the local clang has no sanitizer runtime, `g++` works with `-DCMAKE_CXX_FLAGS=-Wno-maybe-uninitialized` (libstdc++ `<regex>` trips that warning under `-O2`).
+- **Android NDK gate (CI-verified for every pushed commit on any branch):**
   ```sh
   aarch64-linux-android29-clang++ -std=c++20 -O2 -Wall -Wextra -Werror ...
   ```

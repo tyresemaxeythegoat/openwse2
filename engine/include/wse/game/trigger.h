@@ -185,9 +185,11 @@ struct SimpleTriggerManager {
         return vm::ReadError::trigger_count_out_of_range;
     }
 
-    manager.triggers.assign(static_cast<std::size_t>(count), Trigger{});
+    // Shortest record: three intervals and two statement counts.
+    manager.triggers.clear();
+    manager.triggers.reserve(reader.plausible_count(static_cast<std::size_t>(count), 10));
     for (std::int32_t index = 0; index < count; ++index) {
-        Trigger& trigger = manager.triggers[static_cast<std::size_t>(index)];
+        Trigger& trigger = manager.triggers.emplace_back();
         vm::ReadError error =
             seed_timer(trigger.checkTimer, manager.defaultTimerNo, timersTotal);
         if (error == vm::ReadError::none) {
@@ -223,9 +225,11 @@ struct SimpleTriggerManager {
         return vm::ReadError::trigger_count_out_of_range;
     }
 
-    manager.triggers.assign(static_cast<std::size_t>(count), SimpleTrigger{});
+    // Shortest record: one interval and one statement count.
+    manager.triggers.clear();
+    manager.triggers.reserve(reader.plausible_count(static_cast<std::size_t>(count), 4));
     for (std::int32_t index = 0; index < count; ++index) {
-        SimpleTrigger& trigger = manager.triggers[static_cast<std::size_t>(index)];
+        SimpleTrigger& trigger = manager.triggers.emplace_back();
         const vm::ReadError error =
             seed_timer(trigger.timer, manager.defaultTimerNo, timersTotal);
         if (error != vm::ReadError::none) {

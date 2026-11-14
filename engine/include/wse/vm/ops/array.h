@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -990,16 +991,28 @@ template <typename BeforeOrEqual>
         if (!banks_ok) {
             return WseDispatch::handled_no_store;
         }
-        (void)wse_array_natural_merge_sort(
-            *arr, [&](std::size_t row_a, std::size_t row_b) -> bool {
+        // Safety deviation: the comparator is an arbitrary module script and
+        // may free, resize, or pop the array being sorted. Sort a detached
+        // copy so no pointer into the live object is held across a callback,
+        // then install the result only if the id still names an array of the
+        // same type and shape. Row indices passed to the script are positions
+        // in the unsorted array, which stays in place until the sort finishes.
+        const std::int32_t array_id = narrow[0];
+        const std::unique_ptr<WseDynArray> work = arr->clone();
+        arr = nullptr;
+        if (!work || !work->root) {
+            return WseDispatch::handled_no_store;
+        }
+        const bool sorted = wse_array_natural_merge_sort(
+            *work, [&](std::size_t row_a, std::size_t row_b) -> bool {
                 std::size_t leaf_a = 0;
                 std::size_t leaf_b = 0;
-                const auto* sa = arr->slice_along_dim0(row_a, subdims, leaf_a);
-                const auto* sb = arr->slice_along_dim0(row_b, subdims, leaf_b);
+                const auto* sa = work->slice_along_dim0(row_a, subdims, leaf_a);
+                const auto* sb = work->slice_along_dim0(row_b, subdims, leaf_b);
                 if (!sa || !sb) {
                     return false;
                 }
-                switch (arr->type) {
+                switch (work->type) {
                 case WseArrayType::integer:
                     registers[0] =
                         static_cast<std::int64_t>(sa->ints[leaf_a]);
@@ -1026,6 +1039,14 @@ template <typename BeforeOrEqual>
                 return *operands.state.num_return_values_out == 1 &&
                        operands.state.return_values_out[0] != 0;
             });
+        if (sorted) {
+            WseDynArray* live =
+                operands.state.dictionaries->get_array(array_id);
+            if (live && live->root && live->type == work->type &&
+                live->dim_sizes == work->dim_sizes) {
+                live->root = std::move(work->root);
+            }
+        }
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::array_eq:

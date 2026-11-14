@@ -244,6 +244,17 @@ void test_statement() {
     }
 
     {
+        // A count inside the cap but larger than the remaining input could
+        // encode fails on the first missing record without reserving storage
+        // for the claimed million statements.
+        TokenReader reader("1000000 30 0");
+        StatementBlock block;
+        expect(read_statement_block(reader, block) == ReadError::malformed_number &&
+                   block.statements.size() == 2 && block.statements.capacity() < 1000,
+               "statement count beyond the unread input does not pre-allocate");
+    }
+
+    {
         TokenReader reader("1 1 1 5");
         StatementBlock block;
         expect(read_statement_block(reader, block) == ReadError::none &&

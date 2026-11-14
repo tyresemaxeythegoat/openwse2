@@ -13,6 +13,20 @@ target_compile_features(wse_engine INTERFACE cxx_std_20)
 
 option(WSE_BUILD_TESTS "Build the engine C++20 unit test binaries" ON)
 option(WSE_BUILD_HEADER_CHECKS "Compile every engine header standalone" OFF)
+option(WSE_SANITIZE "Build tests with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+
+# The documented gate is -O2. Without a build type CMake passes no optimisation
+# flag at all, so default single-config generators to RelWithDebInfo (-O2 -g).
+get_property(_wse_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(NOT _wse_multi_config AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
+endif()
+
+if(WSE_SANITIZE AND NOT MSVC)
+    add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined
+                        -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 
 function(wse_apply_strict_warnings target)
     if(MSVC)

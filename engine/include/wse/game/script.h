@@ -215,9 +215,11 @@ inline void map_scripts(ScriptManager& manager,
         return vm::ReadError::script_count_out_of_range;
     }
 
-    manager.scripts.assign(static_cast<std::size_t>(count), Script{});
+    // Shortest record: "<id> <interval> <statementCount>" plus a separator.
+    manager.scripts.clear();
+    manager.scripts.reserve(reader.plausible_count(static_cast<std::size_t>(count), 6));
     for (std::int32_t index = 0; index < count; ++index) {
-        Script& script = manager.scripts[static_cast<std::size_t>(index)];
+        Script& script = manager.scripts.emplace_back();
         const vm::ReadError error = read_script(reader, script, index);
         if (error != vm::ReadError::none) {
             return error;

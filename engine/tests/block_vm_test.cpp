@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -1833,6 +1834,184 @@ void test_native_mission_ops() {
            "all 66 agent/team/prop/mission/timer native opcodes match v1.1.5.5");
 }
 
+// Module scripts can free or reshape an object while the VM is iterating or
+// sorting it. These cases crashed under AddressSanitizer before the loop frame
+// and array_sort_custom stopped holding pointers into the live object.
+void test_script_mutation_safety() {
+    using namespace wse::vm;
+    auto op = [](WseOpcode value) { return static_cast<std::uint32_t>(value); };
+
+    {
+        // dict_free inside try_for_dict_keys ends the loop after one pass.
+        VmContext ctx;
+        ctx.stringRegisters[1] = u"k1";
+        ctx.stringRegisters[2] = u"k2";
+        ctx.stringRegisters[3] = u"v";
+        StatementBlock block;
+        block.statements = {
+            make_stmt(op(WseOpcode::dict_create), {reg(1)}),
+            make_stmt(op(WseOpcode::dict_set_str), {reg(1), sreg(1), sreg(3)}),
+            make_stmt(op(WseOpcode::dict_set_str), {reg(1), sreg(2), sreg(3)}),
+            make_stmt(core_op::kTryForDictKeys, {sreg(10), reg(1)}),
+            make_stmt(core_op::kValAdd, {reg(2), 1}),
+            make_stmt(op(WseOpcode::dict_free), {reg(1)}),
+            make_stmt(core_op::kTryEnd, {}),
+        };
+        expect(execute_statement_block(block, ctx) && ctx.errorCount == 0 &&
+                   ctx.registers[2] == 1 && ctx.stringRegisters[10] == u"k1",
+               "try_for_dict_keys stops cleanly when the body frees the dictionary");
+    }
+
+    {
+        // Erasing the current key, and inserting keys, keeps the cursor valid:
+        // k1 (erased, inserts k0 behind and k3 ahead), then k2, then k3.
+        VmContext ctx;
+        ctx.stringRegisters[0] = u"k0";
+        ctx.stringRegisters[1] = u"k1";
+        ctx.stringRegisters[2] = u"k2";
+        ctx.stringRegisters[3] = u"k3";
+        ctx.stringRegisters[4] = u"v";
+        StatementBlock block;
+        block.statements = {
+            make_stmt(op(WseOpcode::dict_create), {reg(1)}),
+            make_stmt(op(WseOpcode::dict_set_str), {reg(1), sreg(1), sreg(4)}),
+            make_stmt(op(WseOpcode::dict_set_str), {reg(1), sreg(2), sreg(4)}),
+            make_stmt(core_op::kTryForDictKeys, {sreg(10), reg(1)}),
+            make_stmt(core_op::kValAdd, {reg(2), 1}),
+            make_stmt(op(WseOpcode::dict_erase), {reg(1), sreg(10)}),
+            make_stmt(op(WseOpcode::dict_set_str), {reg(1), sreg(0), sreg(4)}),
+            make_stmt(op(WseOpcode::dict_set_str), {reg(1), sreg(3), sreg(4)}),
+            make_stmt(core_op::kTryEnd, {}),
+            make_stmt(op(WseOpcode::dict_get_size), {reg(3), reg(1)}),
+        };
+        expect(execute_statement_block(block, ctx) && ctx.errorCount == 0 &&
+                   ctx.registers[2] == 3 && ctx.stringRegisters[10] == u"k3" &&
+                   ctx.registers[3] == 2,
+               "try_for_dict_keys survives erase of the current key and inserts");
+    }
+
+    {
+        // dict_clear inside the loop ends it.
+        VmContext ctx;
+        ctx.stringRegisters[1] = u"k1";
+        ctx.stringRegisters[2] = u"k2";
+        ctx.stringRegisters[3] = u"v";
+        StatementBlock block;
+        block.statements = {
+            make_stmt(op(WseOpcode::dict_create), {reg(1)}),
+            make_stmt(op(WseOpcode::dict_set_str), {reg(1), sreg(1), sreg(3)}),
+            make_stmt(op(WseOpcode::dict_set_str), {reg(1), sreg(2), sreg(3)}),
+            make_stmt(core_op::kTryForDictKeys, {sreg(10), reg(1)}),
+            make_stmt(core_op::kValAdd, {reg(2), 1}),
+            make_stmt(op(WseOpcode::dict_clear), {reg(1)}),
+            make_stmt(core_op::kTryEnd, {}),
+        };
+        expect(execute_statement_block(block, ctx) && ctx.errorCount == 0 &&
+                   ctx.registers[2] == 1,
+               "try_for_dict_keys stops cleanly when the body clears the dictionary");
+    }
+
+    {
+        // Comparator frees the array being sorted.
+        wse::game::ScriptManager scripts;
+        scripts.scripts.resize(1);
+        scripts.scripts[0].block.statements = {
+            make_stmt(op(WseOpcode::array_free), {reg(5)}),
+            make_stmt(op(WseOpcode::return_values), {1}),
+        };
+        VmContext ctx;
+        ctx.scripts = &scripts;
+        StatementBlock block;
+        block.statements = {
+            make_stmt(op(WseOpcode::array_create), {reg(5), 0, 4}),
+            make_stmt(op(WseOpcode::array_set_val), {reg(5), 9, 0}),
+            make_stmt(op(WseOpcode::array_set_val), {reg(5), 3, 1}),
+            make_stmt(op(WseOpcode::array_sort_custom), {reg(5), 0}),
+            make_stmt(core_op::kAssign, {reg(7), 1}),
+        };
+        expect(execute_statement_block(block, ctx) && ctx.errorCount == 0 &&
+                   ctx.registers[7] == 1 &&
+                   ctx.dictionaries.get_array(static_cast<std::int32_t>(ctx.registers[5])) ==
+                       nullptr,
+               "array_sort_custom survives a comparator that frees the array");
+    }
+
+    {
+        // Comparator shrinks the array: the sorted copy no longer matches the
+        // live shape, so the live array keeps the comparator's edits.
+        wse::game::ScriptManager scripts;
+        scripts.scripts.resize(1);
+        scripts.scripts[0].block.statements = {
+            make_stmt(core_op::kTryBegin, {}),
+            make_stmt(core_op::kEq, {reg(8), 0}),
+            make_stmt(core_op::kAssign, {reg(8), 1}),
+            make_stmt(op(WseOpcode::array_pop), {reg(6), reg(5)}),
+            make_stmt(core_op::kTryEnd, {}),
+            make_stmt(core_op::kStoreScriptParam1, {loc(0)}),
+            make_stmt(core_op::kStoreScriptParam2, {loc(1)}),
+            make_stmt(core_op::kTryBegin, {}),
+            make_stmt(core_op::kGe, {loc(1), loc(0)}),
+            make_stmt(op(WseOpcode::return_values), {1}),
+            make_stmt(core_op::kElseTry, {}),
+            make_stmt(op(WseOpcode::return_values), {0}),
+            make_stmt(core_op::kTryEnd, {}),
+        };
+        VmContext ctx;
+        ctx.scripts = &scripts;
+        StatementBlock block;
+        block.statements = {
+            make_stmt(op(WseOpcode::array_create), {reg(5), 0, 3}),
+            make_stmt(op(WseOpcode::array_set_val), {reg(5), 9, 0}),
+            make_stmt(op(WseOpcode::array_set_val), {reg(5), 3, 1}),
+            make_stmt(op(WseOpcode::array_set_val), {reg(5), 5, 2}),
+            make_stmt(op(WseOpcode::array_sort_custom), {reg(5), 0}),
+            make_stmt(op(WseOpcode::array_get_dim_size), {reg(9), reg(5), 0}),
+            make_stmt(op(WseOpcode::array_get_val), {reg(10), reg(5), 0}),
+            make_stmt(op(WseOpcode::array_get_val), {reg(11), reg(5), 1}),
+        };
+        expect(execute_statement_block(block, ctx) && ctx.errorCount == 0 &&
+                   ctx.registers[6] == 5 && ctx.registers[9] == 2 &&
+                   ctx.registers[10] == 9 && ctx.registers[11] == 3,
+               "array_sort_custom does not install a result over a reshaped array");
+    }
+
+    {
+        // Modifier bits on a control opcode are masked the same way analyze()
+        // masks them, so the try body still runs.
+        VmContext ctx;
+        StatementBlock block;
+        block.statements = {
+            make_stmt(core_op::kTryBegin | kNegFlag, {}),
+            make_stmt(core_op::kAssign, {reg(1), 5}),
+            make_stmt(core_op::kTryEnd | kNegFlag, {}),
+            make_stmt(core_op::kAssign, {reg(2), 6}),
+        };
+        expect(execute_statement_block(block, ctx) && ctx.unimplementedCount == 0 &&
+                   ctx.registers[1] == 5 && ctx.registers[2] == 6,
+               "control opcodes carrying modifier bits execute as their base opcode");
+    }
+
+    {
+        // convert_to_fixed_point wraps; a zeroed multiplier cannot divide.
+        VmContext ctx;
+        ctx.registers[1] = std::numeric_limits<std::int64_t>::min() + 1;
+        ctx.registers[2] = 500;
+        StatementBlock block;
+        block.statements = {
+            make_stmt(core_op::kConvertToFixedPoint, {reg(1)}),
+            make_stmt(core_op::kConvertFromFixedPoint, {reg(2)}),
+        };
+        expect(execute_statement_block(block, ctx) && ctx.registers[1] == 100 &&
+                   ctx.registers[2] == 5,
+               "fixed-point conversions wrap on overflow and divide normally");
+        ctx.fixedPointMultiplier = 0;
+        StatementBlock zero;
+        zero.statements = {make_stmt(core_op::kConvertFromFixedPoint, {reg(2)})};
+        expect(execute_statement_block(zero, ctx) && ctx.errorCount == 1,
+               "convert_from_fixed_point reports a zero multiplier instead of trapping");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -1853,6 +2032,7 @@ int main() {
     test_entity_iterators();
     test_native_entity_ops();
     test_native_mission_ops();
+    test_script_mutation_safety();
 
     if (failures != 0) {
         std::printf("block_vm tests: FAIL (%d)\n", failures);

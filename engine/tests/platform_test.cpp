@@ -112,6 +112,35 @@ void test_host_vfs() {
     expect(!vfs.write_text("Modules/Missing/file.txt", "x"),
            "host write does not create parents");
     check_contract(vfs, "HostVfs");
+
+    // A symbolic link inside the tree must not let a path leave the root.
+    // Skipped where the host cannot create links (e.g. unprivileged Windows).
+    const fs::path outside = fs::temp_directory_path(ec) / "wse_platform_test_outside";
+    fs::remove_all(outside, ec);
+    fs::create_directories(outside, ec);
+    {
+        std::FILE* secret = std::fopen((outside / "secret.txt").string().c_str(), "wb");
+        if (secret != nullptr) {
+            std::fputs("secret", secret);
+            std::fclose(secret);
+        }
+    }
+    std::error_code linkEc;
+    fs::create_directory_symlink(outside, root / "Modules" / "escape", linkEc);
+    if (!linkEc) {
+        std::string leaked;
+        expect(!vfs.read_text("Modules/escape/secret.txt", leaked) && leaked.empty(),
+               "host read through an escaping symlink is refused");
+        expect(!vfs.write_text("Modules/escape/new.txt", "x") &&
+                   !fs::exists(outside / "new.txt", ec),
+               "host write through an escaping symlink is refused");
+        expect(!vfs.is_file("Modules/escape/secret.txt") && !vfs.is_dir("Modules/escape"),
+               "escaping symlink is not reported as a file or directory");
+        expect(!vfs.remove_file("Modules/escape/secret.txt") &&
+                   fs::exists(outside / "secret.txt", ec),
+               "host remove through an escaping symlink is refused");
+    }
+    fs::remove_all(outside, ec);
     fs::remove_all(root, ec);
 }
 

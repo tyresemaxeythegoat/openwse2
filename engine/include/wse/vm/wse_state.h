@@ -154,6 +154,10 @@ enum class WseArrayType : std::int32_t {
 };
 
 inline constexpr std::int32_t kWseArrayMaxDims = 14;
+// Safety deviation: retail hands any dimension product to the allocator. The
+// port refuses arrays above this many leaf elements so a script (or a
+// .wsearray header) cannot exhaust memory with one statement.
+inline constexpr std::uint64_t kWseArrayMaxElements = 1ULL << 24;
 inline constexpr std::uint32_t kWseArrayBinaryMagic = 0x57534541U;
 inline constexpr std::int32_t kWseArrayBinaryVersion = 1;
 
@@ -236,6 +240,22 @@ struct WseDynArray {
         }
         for (std::size_t i = 1; i < dims.size(); ++i) {
             if (dims[i] < 1) {
+                return false;
+            }
+        }
+        return element_count_ok(dims);
+    }
+
+    // Product of all dimensions stays within kWseArrayMaxElements.
+    [[nodiscard]] static bool element_count_ok(
+        std::span<const std::int32_t> dims) noexcept {
+        std::uint64_t total = 1;
+        for (const std::int32_t dim : dims) {
+            if (dim <= 0) {
+                return dim == 0;
+            }
+            total *= static_cast<std::uint64_t>(dim);
+            if (total > kWseArrayMaxElements) {
                 return false;
             }
         }
@@ -386,6 +406,11 @@ struct WseDynArray {
             return false;
         }
         const auto target_dim = static_cast<std::size_t>(dim_index);
+        std::vector<std::int32_t> resized = dim_sizes;
+        resized[target_dim] = new_size;
+        if (!element_count_ok(resized)) {
+            return false;
+        }
         dim_sizes[target_dim] = new_size;
         resize_recursive(*root, 0, target_dim, static_cast<std::size_t>(new_size));
         return true;

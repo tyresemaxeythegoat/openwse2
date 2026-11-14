@@ -18,7 +18,8 @@
 // Safety deviation: the original passes the count straight to the allocator
 // and reads that many operands into the fixed 32-element array. This reader
 // rejects negative counts, counts above 32, and statement arrays above
-// kMaxStatements.
+// kMaxStatements, and allocates statements as they are read rather than
+// trusting the count.
 
 #pragma once
 
@@ -136,8 +137,14 @@ enum class ReadError : std::uint8_t {
         return ReadError::statement_count_out_of_range;
     }
 
-    block.statements.assign(static_cast<std::size_t>(count), Statement{});
-    for (auto& statement : block.statements) {
+    // Grow as records are read. The shortest statement is "0 0" plus a
+    // separator, so reserving only what the unread input can hold keeps a
+    // corrupt count from allocating kMaxStatements * 272 bytes up front.
+    const auto total = static_cast<std::size_t>(count);
+    block.statements.clear();
+    block.statements.reserve(reader.plausible_count(total, 4));
+    for (std::size_t index = 0; index < total; ++index) {
+        Statement& statement = block.statements.emplace_back();
         const ReadError error = read_statement(reader, statement);
         if (error != ReadError::none) {
             return error;

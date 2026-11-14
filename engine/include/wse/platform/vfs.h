@@ -12,6 +12,8 @@
 //   * Lookups are ASCII case-insensitive (modules rely on Windows semantics).
 //   * Paths are relative to the Vfs root; `.` is dropped, `..` may not climb
 //     above the root, and drive letters / empty paths are rejected.
+//   * HostVfs also refuses a path whose symbolic links resolve outside the
+//     root.
 //
 // No function throws: failures are reported through the return value.
 
@@ -303,10 +305,31 @@ private:
                 }
             }
             if (found) continue;
-            if (for_create && i + 1 == parts->size()) return exact;
+            if (for_create && i + 1 == parts->size()) {
+                return inside_root(exact) ? std::optional(exact) : std::nullopt;
+            }
             return std::nullopt;
         }
+        if (!inside_root(current)) return std::nullopt;
         return current;
+    }
+
+    // Component checks are lexical, so a symbolic link inside the tree could
+    // still point outside it. Resolve links on both sides and require the
+    // target to stay under the root.
+    bool inside_root(const std::filesystem::path& target) const {
+        std::error_code ec;
+        const auto root = std::filesystem::weakly_canonical(root_, ec);
+        if (ec) return false;
+        const auto real = std::filesystem::weakly_canonical(target, ec);
+        if (ec) return false;
+        auto r = root.begin();
+        auto t = real.begin();
+        for (; r != root.end(); ++r, ++t) {
+            if (r->empty()) break;  // trailing separator on the root
+            if (t == real.end() || *t != *r) return false;
+        }
+        return true;
     }
 
     std::filesystem::path root_;
