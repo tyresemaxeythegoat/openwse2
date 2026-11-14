@@ -39,7 +39,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -49,6 +48,7 @@
 #include "wse/core/math.h"
 #include "wse/game/world_subsystem_types.h"
 #include "wse/game/world_m6_types.h"
+#include "wse/platform/vfs.h"
 #include "wse/vm/slots.h"
 
 namespace wse::game {
@@ -1151,7 +1151,7 @@ struct WseWorldState {
         module_settings{};
     std::unordered_map<std::string, std::string> game_variables{};
     std::unordered_map<std::string, std::string> translations{};
-    std::filesystem::path savegames_dir{};
+    wse::platform::Vfs* savegames_vfs = nullptr;
     std::vector<WseDisplayedMessage> displayed_messages{};
     bool is_multiplayer = false;
     bool is_server = false;

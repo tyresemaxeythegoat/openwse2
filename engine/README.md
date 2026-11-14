@@ -290,9 +290,9 @@ one across script-visible execution:
 ## Handler design decisions and limits
 
 - **Exceptions (`execute_wse` / `DispatchFn`):** `execute_wse()` and all eight `execute_wse_*`
-  family dispatchers are **not** `noexcept`. Handlers perform dynamic allocation, file/stream I/O,
+  family dispatchers are **not** `noexcept`. Handlers perform dynamic allocation, VFS/stream I/O,
   and `std::regex` evaluation; while regex syntax/execution errors are caught at the opcode sites,
-  removing `noexcept` lets genuine `std::bad_alloc` or `std::filesystem::filesystem_error`
+  removing `noexcept` lets genuine `std::bad_alloc` or `std::filesystem::filesystem_error` (inside `HostVfs`)
   failures unwind instead of calling `std::terminate` across platforms.
 - **Character classes and case folding (`str_is_alpha`, `str_is_digit`, `str_is_whitespace`, trims, case folds):**
   `wse/core/encoding.h`, `wse/vm/wse_state.h`, `wse/vm/ops/string.h`, and `wse/vm/ops/fp_expr.h`
@@ -302,7 +302,7 @@ one across script-visible execution:
   MSVCRT, glibc, and Android Bionic regardless of host locale.
 - **`sleep_ms` (`3026`):** routes through optional `WseVmState::sleep_ms_fn(sleep_ms_user, ms)`
   (`WseSleepMsFn`) when registered by the embedder/platform layer, falling back to
-  `std::this_thread::sleep_for` when `nullptr` so headless/event-loop callers never stall unless
+  `wse::platform::sleep_ms` when `nullptr` so headless/event-loop callers never stall unless
   intended.
 - **Serial file tests:** the `wse_dict`, `wse_array`, and `platform` tests write to temp-directory
   paths and are marked `RUN_SERIAL` in `CMakeLists.txt` so parallel `ctest` runs cannot collide.

@@ -11,20 +11,20 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows (Zig clang++, 15 suites / 101 test functions) and Linux CI (`clang++ 18.1.3` CMake/CTest, prior push) |
+| Host gate | **PASS** on Windows (Zig clang++, 15 suites / 103 test functions) and Linux CI (`clang++ 18.1.3` CMake/CTest, prior push) |
 | Android arm64 gate | **PASS (CI on last push)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all headers standalone + CMake build via `CMakeLists.txt` glob; on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **440/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` live handlers `53, 2180, 2749` have no SDK constant and carry community names); **1,053/1,053 implemented (100%, 20/20 categories)** (`16` control-flow incl. 4 live entity iterators + `1,037` switch across `block_vm.h`, `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, `native_campaign_ops.h`, `native_campaign_ops_2.h`, `native_world_ops.h`, `native_world_ops_2.h`, `native_world_ops_3.h`, `native_agent_ops.h`, `native_mp_ops.h`, `native_scene_ops.h`, and `native_ui_ops.h`) |
 | Module loaders | `scripts.txt`, `triggers.txt`, `simple_triggers.txt` only |
 | World state | In-memory model (`WseWorldState`) exists; nothing loads it from module files yet |
 | Lua 5.1 layer | Not started (hook call sites documented only) |
-| Platform track (Phase 3/4) | Planned as slices P0–P9 in `docs/PLATFORM_PLAN.md`. P0 done; P1 seam headers `wse/platform/{vfs,clock,log}.h` landed and host-tested, nothing in the engine routed through them yet. No app, renderer, audio, or input code (legacy PanVK loader work lives in `runtime/android/`) |
+| Platform track (Phase 3/4) | Planned as slices P0–P9 in `docs/PLATFORM_PLAN.md`. P0 done; P1 seam (`wse/platform/{vfs,clock,log}.h`) is host-tested and all engine file/clock/thread uses outside `wse/platform/` (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, `wse/vm/ops/{dict,array,string,system}.h`) now route through it (`HostVfs` + `MemoryVfs` tested); Gradle + SDL3 app shell next. No app, renderer, audio, or input code yet (legacy PanVK loader work lives in `runtime/android/`) |
 
 ## 2. Gates
 
 | Gate | Result | Detail |
 | --- | --- | --- |
-| Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: 15/15 suites / 101 test functions (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`), 48/48 standalone header checks (`x86_64-windows-gnu` and `aarch64-linux-musl`) |
+| Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: 15/15 suites / 103 test functions (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`), 48/48 standalone header checks (`x86_64-windows-gnu` and `aarch64-linux-musl`) |
 | Host C++20, Linux | PASS (CI, prior push) | `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): compiles all headers discovered by `CMakeLists.txt` glob, runs all registered CMake test suites (`CMakeLists.txt` now registers 15 suites), `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
 | Android NDK `aarch64-linux-android29` | PASS (CI, prior push) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
@@ -100,15 +100,15 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `wse_bitwise_fp_test.cpp` | 11 |
 | `wse_system_test.cpp` | 8 |
 | `wse_string_test.cpp` | 3 |
-| `wse_dict_test.cpp` | 1 |
-| `wse_array_test.cpp` | 1 |
+| `wse_dict_test.cpp` | 2 |
+| `wse_array_test.cpp` | 2 |
 | `wse_world_test.cpp` | 5 |
 | `block_vm_test.cpp` | 21 |
 | `native_world_test.cpp` | 6 |
 | `native_m5_test.cpp` | 4 |
 | `wse_m6_test.cpp` | 6 |
 | `platform_test.cpp` | 6 |
-| **Total (15 suites)** | **101** |
+| **Total (15 suites)** | **103** |
 
 ## 4. Blocked
 
@@ -119,13 +119,11 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 
 ## 5. Next concrete tasks (ordered)
 
-1. **Module loaders & Lua 5.1 integration (post-Milestone 6):** Milestone 6 implemented the remaining `204` WSE extended opcodes across all 15 blocks (`2900`, `3000`, `3100`, `3300`, `3400`, `3500`, `3600`, `4100`, `4200`, `4500`, `4700`, `4800`, `4900`, `5100`, `5200`) using `world_m6_types.h` and `ops/{player_mp,agent_ext,scene_mission,ui_menu,lua_bridge}.h` (tested in `wse_m6_test.cpp`), reaching `440 / 440` (**100%**) WSE extended opcodes alongside `1,053 / 1,053` (**100%**) live native opcodes (`131,080 / 131,080` Retail `scripts.txt` statements across `1,755 / 1,755` zero-unimplemented scripts). Next, implement `troops.txt`/`item_kinds1.txt`/`factions.txt`/`parties.txt`/`strings.txt` module loaders feeding `WseWorldState` and wire full Lua 5.1 execution behind `lua_bridge.h`.
+1. **Module loaders & Lua 5.1 integration (post-Milestone 6):** Milestone 6 implemented the remaining `204` WSE extended opcodes across all 15 blocks (`2900`, `3000`, `3100`, `3300`, `3400`, `3500`, `3600`, `4100`, `4200`, `4500`, `4700`, `4800`, `4900`, `5100`, `5200`) using `world_m6_types.h` and `ops/{player_mp,agent_ext,scene_mission,ui_menu,lua_bridge}.h` (tested in `wse_m6_test.cpp`), reaching `440 / 440` (**100%**) WSE extended opcodes alongside `1,053 / 1,053` (**100%**) live native opcodes (`131,080 / 131,080` Retail `scripts.txt` statements across `1,755 / 1,755` zero-unimplemented scripts). Next, implement `troops.txt`/`item_kinds1.txt`/`factions.txt`/`parties.txt`/`strings.txt` module loaders reading via `wse::platform::Vfs` + `wse::io::TextStream` to populate `WseWorldState`, and wire full Lua 5.1 execution behind `lua_bridge.h`.
 
 Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
 
-1. **Finish P1:** route the direct `std::filesystem`/`fstream`/`chrono`/`thread` uses in
-   `wse/vm/ops/{dict,array,string,system}.h` and `world_state.h` through `wse/platform`, then the Gradle + SDL3 app shell with the on-device self-test and
-   a CI-built debug APK.
+1. **Finish P1:** P1 seam routing is complete (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, and `wse/vm/ops/{dict,array,string,system}.h` now route all file and sleep calls through `wse::platform::{Vfs,sleep_ms}`); next is the Gradle + SDL3 app shell with the on-device self-test and a CI-built debug APK.
 2. **P3 evidence exports** for the `.brf` and `.dds` loaders (`ARCHITECTURE.md` §8 gap 5) — needs
    the Windows REA machine; the decoders themselves are host-only work.
 3. **P2** launcher and `SafVfs` once the app shell exists.

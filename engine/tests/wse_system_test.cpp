@@ -714,7 +714,8 @@ void test_scalar_config_skill_savegame_group() {
         std::ofstream abc_sav(save_dir / "sg09.sav", std::ios::binary);
         abc_sav.write("abc", 3);
     }
-    world.savegames_dir = save_dir;
+    wse::platform::HostVfs save_vfs(save_dir);
+    world.savegames_vfs = &save_vfs;
 
     WseVmState state{};
     state.options = &options;
@@ -849,6 +850,17 @@ void test_scalar_config_skill_savegame_group() {
                    effect, {}, {}, state) == WseDispatch::handled_no_store &&
                registers[0] == u"900150983cd24fb0d6963f7d28e17f72",
            "str_store_savegame_md5 skips empty files and formats sg%d%d.sav MD5");
+
+    wse::platform::MemoryVfs mem_save_vfs;
+    expect(mem_save_vfs.write_text("sg12.sav", "abc"),
+           "MemoryVfs::write_text seeds sg12.sav");
+    world.savegames_vfs = &mem_save_vfs;
+    registers[0] = u"stale";
+    expect(run(opcode(WseOpcode::str_store_savegame_md5), {0, 12}, {0, 12},
+               effect, {}, {}, state) == WseDispatch::handled_no_store &&
+               registers[0] == u"900150983cd24fb0d6963f7d28e17f72",
+           "str_store_savegame_md5 reads sg12.sav through MemoryVfs");
+    world.savegames_vfs = nullptr;
 
     std::filesystem::remove_all(save_dir, ec);
 }

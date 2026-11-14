@@ -2,11 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <map>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 
 #include "wse/vm/wse_state.h"
@@ -14,10 +12,11 @@
 namespace wse::vm {
 
 [[nodiscard]] inline bool wse_dict_load_ini(
-    const std::filesystem::path& path,
+    wse::platform::Vfs* vfs,
+    std::string_view rel_path,
     std::map<std::string, std::string>& out) {
     std::string data;
-    if (!wse_dict_read_file_bytes(path, data)) {
+    if (!wse_dict_read_file_bytes(vfs, rel_path, data)) {
         return false;
     }
     std::string_view view(data);
@@ -55,7 +54,8 @@ namespace wse::vm {
 }
 
 inline void wse_dict_save_ini(
-    const std::filesystem::path& path,
+    wse::platform::Vfs* vfs,
+    std::string_view rel_path,
     const std::map<std::string, std::string>& entries) {
     std::string text;
     for (const auto& [key, value] : entries) {
@@ -64,7 +64,7 @@ inline void wse_dict_save_ini(
         text.append(value);
         text.push_back('\n');
     }
-    (void)wse_dict_write_file_bytes(path, text);
+    (void)wse_dict_write_file_bytes(vfs, rel_path, text);
 }
 
 
@@ -74,10 +74,11 @@ inline constexpr std::uint32_t kWseDictBinaryMagic = 0x57534544U;
 inline constexpr std::int32_t kWseDictBinaryVersion = 2;
 
 [[nodiscard]] inline bool wse_dict_load_binary(
-    const std::filesystem::path& path,
+    wse::platform::Vfs* vfs,
+    std::string_view rel_path,
     std::map<std::string, std::string>& out) {
     std::string bytes;
-    if (!wse_dict_read_file_bytes(path, bytes) || bytes.size() < 12) {
+    if (!wse_dict_read_file_bytes(vfs, rel_path, bytes) || bytes.size() < 12) {
         return false;
     }
     const auto* raw = reinterpret_cast<const std::uint8_t*>(bytes.data());
@@ -117,7 +118,8 @@ inline constexpr std::int32_t kWseDictBinaryVersion = 2;
 }
 
 inline void wse_dict_save_binary(
-    const std::filesystem::path& path,
+    wse::platform::Vfs* vfs,
+    std::string_view rel_path,
     const std::map<std::string, std::string>& entries) {
     std::string out;
     wse_append_le32(out, kWseDictBinaryMagic);
@@ -129,7 +131,7 @@ inline void wse_dict_save_binary(
         out.append(key);
         out.append(value);
     }
-    (void)wse_dict_write_file_bytes(path, out);
+    (void)wse_dict_write_file_bytes(vfs, rel_path, out);
 }
 
 // Shared loader applying 0x1401e6c18..0x1401e7f48 mode semantics:
@@ -255,21 +257,22 @@ inline void wse_dict_set_transform(WseDictionary& dict,
                                   ? operands.state.dictionaries->get(narrow[0])
                                   : nullptr;
         const std::int32_t format = narrow.size() >= 4 ? narrow[3] : 0;
-        std::filesystem::path target;
+        std::string target;
         if (!dict ||
             !wse_dict_target_path(operands.state.dictionaries, file_name,
                                   format == 1 ? ".ini" : ".wsedict", target)) {
             return WseDispatch::handled_no_store;
         }
+        wse::platform::Vfs* const vfs = operands.state.dictionaries->vfs;
         const std::int32_t mode = narrow.size() >= 3 ? narrow[2] : 0;
         if (mode == 0) {
             dict->clear();
         }
         std::map<std::string, std::string> loaded;
         if (format == 1) {
-            (void)wse_dict_load_ini(target, loaded);
+            (void)wse_dict_load_ini(vfs, target, loaded);
         } else {
-            (void)wse_dict_load_binary(target, loaded);
+            (void)wse_dict_load_binary(vfs, target, loaded);
         }
         wse_dict_apply_load(*dict, loaded, mode);
         return WseDispatch::handled_no_store;
@@ -308,16 +311,17 @@ inline void wse_dict_set_transform(WseDictionary& dict,
                 ? operands.state.dictionaries->get(narrow[0])
                 : nullptr;
         const std::int32_t format = narrow.size() >= 3 ? narrow[2] : 0;
-        std::filesystem::path target;
+        std::string target;
         if (!dict ||
             !wse_dict_target_path(operands.state.dictionaries, file_name,
                                   format == 1 ? ".ini" : ".wsedict", target)) {
             return WseDispatch::handled_no_store;
         }
+        wse::platform::Vfs* const vfs = operands.state.dictionaries->vfs;
         if (format == 1) {
-            wse_dict_save_ini(target, dict->entries);
+            wse_dict_save_ini(vfs, target, dict->entries);
         } else {
-            wse_dict_save_binary(target, dict->entries);
+            wse_dict_save_binary(vfs, target, dict->entries);
         }
         return WseDispatch::handled_no_store;
     }
@@ -390,11 +394,10 @@ inline void wse_dict_set_transform(WseDictionary& dict,
             return WseDispatch::ignored;
         }
         const std::int32_t format = narrow.size() >= 2 ? narrow[1] : 0;
-        std::filesystem::path target;
+        std::string target;
         if (wse_dict_target_path(operands.state.dictionaries, file_name,
                                  format == 1 ? ".ini" : ".wsedict", target)) {
-            std::error_code ec;
-            (void)std::filesystem::remove(target, ec);
+            (void)operands.state.dictionaries->vfs->remove_file(target);
         }
         return WseDispatch::handled_no_store;
     }
@@ -584,7 +587,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
         WseDictionary* dict = operands.state.dictionaries != nullptr
                                   ? operands.state.dictionaries->get(narrow[0])
                                   : nullptr;
-        std::filesystem::path target;
+        std::string target;
         if (!dict ||
             !wse_dict_target_path(operands.state.dictionaries, file_name,
                                   ".json", target)) {
@@ -596,7 +599,8 @@ inline void wse_dict_set_transform(WseDictionary& dict,
         }
         std::string raw_json;
         std::map<std::string, std::string> loaded;
-        if (wse_dict_read_file_bytes(target, raw_json)) {
+        if (wse_dict_read_file_bytes(operands.state.dictionaries->vfs, target,
+                                     raw_json)) {
             (void)wse_parse_json_object(raw_json, loaded);
         }
         wse_dict_apply_load(*dict, loaded, mode);
@@ -615,11 +619,12 @@ inline void wse_dict_set_transform(WseDictionary& dict,
             operands.state.dictionaries != nullptr
                 ? operands.state.dictionaries->get(narrow[0])
                 : nullptr;
-        std::filesystem::path target;
+        std::string target;
         if (dict && wse_dict_target_path(operands.state.dictionaries, file_name,
                                          ".json", target)) {
             (void)wse_dict_write_file_bytes(
-                target, wse_serialize_json_object(dict->entries, true));
+                operands.state.dictionaries->vfs, target,
+                wse_serialize_json_object(dict->entries, true));
         }
         return WseDispatch::handled_no_store;
     }
@@ -700,11 +705,10 @@ inline void wse_dict_set_transform(WseDictionary& dict,
         if (!wse_resolve_utf8_operand(0, operands, file_name)) {
             return WseDispatch::ignored;
         }
-        std::filesystem::path target;
+        std::string target;
         if (wse_dict_target_path(operands.state.dictionaries, file_name,
                                  ".json", target)) {
-            std::error_code ec;
-            (void)std::filesystem::remove(target, ec);
+            (void)operands.state.dictionaries->vfs->remove_file(target);
         }
         return WseDispatch::handled_no_store;
     }

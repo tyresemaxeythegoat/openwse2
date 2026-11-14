@@ -1,13 +1,10 @@
 #pragma once
 
 #include <algorithm>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <span>
 #include <string>
-#include <thread>
 #include <utility>
 
 #include "wse/vm/wse_state.h"
@@ -197,7 +194,7 @@ namespace wse::vm {
         if (operands.state.sleep_ms_fn != nullptr) {
             operands.state.sleep_ms_fn(operands.state.sleep_ms_user, narrow[0]);
         } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(narrow[0]));
+            wse::platform::sleep_ms(narrow[0]);
         }
         return WseDispatch::handled_no_store;
     }

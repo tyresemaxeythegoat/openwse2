@@ -94,27 +94,20 @@ template <typename Predicate>
     if (!wse_store_string(strings, sreg, u"")) {
         return WseDispatch::ignored;
     }
-    if (world == nullptr || world->savegames_dir.empty()) {
+    if (world == nullptr || world->savegames_vfs == nullptr) {
         return WseDispatch::handled_no_store;
     }
     const std::int32_t q = slot_no / 10;
     const std::int32_t r = slot_no - q * 10;
     const std::string filename =
         "sg" + std::to_string(q) + std::to_string(r) + ".sav";
-    std::ifstream in(world->savegames_dir / filename,
-                     std::ios::binary | std::ios::ate);
-    if (!in.is_open()) {
+    std::vector<std::uint8_t> raw;
+    if (!world->savegames_vfs->read_file(filename, raw) || raw.empty()) {
         return WseDispatch::handled_no_store;
     }
-    const std::streamoff byte_count = in.tellg();
-    if (byte_count <= 0) {
-        return WseDispatch::handled_no_store;
-    }
-    in.seekg(0, std::ios::beg);
-    std::string bytes(static_cast<std::size_t>(byte_count), '\0');
-    if (in.read(bytes.data(), byte_count)) {
-        (void)wse_store_string(strings, sreg, wse_md5_hex(bytes));
-    }
+    const std::string_view bytes(reinterpret_cast<const char*>(raw.data()),
+                                 raw.size());
+    (void)wse_store_string(strings, sreg, wse_md5_hex(bytes));
     return WseDispatch::handled_no_store;
 }
 

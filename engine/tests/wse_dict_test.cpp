@@ -35,8 +35,9 @@ void test_dictionary_group() {
     std::array<float, wse::vm::kFpRegisterCount> fp{};
     std::array<std::int64_t, 128> int_regs{};
     std::array<wse::vm::WseTransform, 128> positions{};
+    wse::platform::HostVfs host_vfs(temp_dir);
     wse::vm::WseDictionaryStore store;
-    store.root_dir = temp_dir;
+    store.vfs = &host_vfs;
 
     WseVmState state;
     state.strings.registers = std::span<std::u16string>(str_regs);
@@ -470,10 +471,71 @@ void test_dictionary_group() {
            "all 23 dictionary opcodes validate minimum operand count");
 }
 
+void test_dictionary_memory_vfs() {
+    std::u16string str_regs[128] = {};
+    str_regs[0] = u"mem_save";
+    str_regs[1] = u"greeting";
+    str_regs[2] = u"hello";
+    std::array<float, wse::vm::kFpRegisterCount> fp{};
+    std::array<std::int64_t, 128> int_regs{};
+    std::array<wse::vm::WseTransform, 128> positions{};
+
+    wse::platform::MemoryVfs mem_vfs;
+    wse::vm::WseDictionaryStore store;
+    store.vfs = &mem_vfs;
+
+    WseVmState state;
+    state.strings.registers = std::span<std::u16string>(str_regs);
+    state.positions = positions;
+    state.dictionaries = &store;
+
+    WseEffect effect{};
+    expect(run(opcode(WseOpcode::dict_create), {0}, {0}, effect, fp, int_regs,
+               state) == WseDispatch::handled,
+           "MemoryVfs: dict_create returns handle");
+    const std::int64_t d1 = effect.value;
+    expect(run(opcode(WseOpcode::dict_set_str), {d1, 1, 2},
+               {static_cast<std::int32_t>(d1), 1, 2}, effect, fp, int_regs,
+               state) == WseDispatch::handled_no_store,
+           "MemoryVfs: dict_set_str populates dictionary");
+    expect(run(opcode(WseOpcode::dict_save), {d1, 0},
+               {static_cast<std::int32_t>(d1), 0}, effect, fp, int_regs, state) ==
+                   WseDispatch::handled_no_store &&
+               mem_vfs.is_file("mem_save.wsedict"),
+           "MemoryVfs: dict_save writes .wsedict in memory");
+    expect(run(opcode(WseOpcode::dict_save_json), {d1, 0},
+               {static_cast<std::int32_t>(d1), 0}, effect, fp, int_regs, state) ==
+                   WseDispatch::handled_no_store &&
+               mem_vfs.is_file("mem_save.json"),
+           "MemoryVfs: dict_save_json writes .json in memory");
+
+    expect(run(opcode(WseOpcode::dict_create), {0}, {0}, effect, fp, int_regs,
+               state) == WseDispatch::handled,
+           "MemoryVfs: dict_create second handle");
+    const std::int64_t d2 = effect.value;
+    str_regs[3].clear();
+    expect(run(opcode(WseOpcode::dict_load_file_json), {d2, 0},
+               {static_cast<std::int32_t>(d2), 0}, effect, fp, int_regs, state) ==
+                   WseDispatch::handled_no_store &&
+               run(opcode(WseOpcode::dict_get_str), {3, d2, 1},
+                   {3, static_cast<std::int32_t>(d2), 1}, effect, fp, int_regs,
+                   state) == WseDispatch::handled_no_store &&
+               str_regs[3] == u"hello",
+           "MemoryVfs: dict_load_file_json reloads saved JSON");
+    expect(run(opcode(WseOpcode::dict_delete_file), {0}, {0}, effect, fp,
+               int_regs, state) == WseDispatch::handled_no_store &&
+               !mem_vfs.is_file("mem_save.wsedict") &&
+               run(opcode(WseOpcode::dict_delete_file_json), {0}, {0}, effect,
+                   fp, int_regs, state) == WseDispatch::handled_no_store &&
+               !mem_vfs.is_file("mem_save.json"),
+           "MemoryVfs: dict_delete_file{,_json} remove in-memory files");
+}
+
 }  // namespace
 
 int main() {
     test_dictionary_group();
+    test_dictionary_memory_vfs();
     if (failures != 0) {
         std::printf("%d failures\n", failures);
         return 1;

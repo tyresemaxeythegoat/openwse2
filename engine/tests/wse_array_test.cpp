@@ -38,8 +38,9 @@ void test_array_group() {
     for (auto& pos : positions) {
         pos = wse::vm::WseTransform::identity();
     }
+    wse::platform::HostVfs host_vfs(temp_dir);
     wse::vm::WseObjectManager objects;
-    objects.root_dir = temp_dir;
+    objects.vfs = &host_vfs;
 
     WseVmState state;
     state.strings.registers = str_regs;
@@ -435,10 +436,56 @@ void test_array_group() {
            "array ops validate operand counts");
 }
 
+void test_array_memory_vfs() {
+    std::array<std::u16string, 128> str_regs{};
+    str_regs[0] = u"mem_arr";
+    std::array<float, wse::vm::kFpRegisterCount> fp{};
+    std::array<std::int64_t, 128> int_regs{};
+    std::array<wse::vm::WseTransform, 128> positions{};
+
+    wse::platform::MemoryVfs mem_vfs;
+    wse::vm::WseObjectManager objects;
+    objects.vfs = &mem_vfs;
+
+    WseVmState state;
+    state.strings.registers = str_regs;
+    state.positions = positions;
+    state.dictionaries = &objects;
+
+    WseEffect effect{};
+    expect(run(opcode(WseOpcode::array_create), {0, 0, 3}, {0, 0, 3}, effect,
+               fp, int_regs, state) == WseDispatch::handled,
+           "MemoryVfs: array_create returns handle");
+    const std::int64_t a1 = effect.value;
+    expect(run(opcode(WseOpcode::array_set_val), {a1, 77, 1},
+               {static_cast<std::int32_t>(a1), 77, 1}, effect, fp, int_regs,
+               state) == WseDispatch::handled_no_store &&
+               run(opcode(WseOpcode::array_save_file), {a1, 0},
+                   {static_cast<std::int32_t>(a1), 0}, effect, fp, int_regs,
+                   state) == WseDispatch::handled_no_store &&
+               mem_vfs.is_file("mem_arr.wsearray"),
+           "MemoryVfs: array_save_file persists .wsearray in memory");
+    expect(run(opcode(WseOpcode::array_load_file), {0, 0}, {0, 0}, effect, fp,
+               int_regs, state) == WseDispatch::handled &&
+               effect.value > 0,
+           "MemoryVfs: array_load_file loads .wsearray from memory");
+    const std::int64_t a2 = effect.value;
+    expect(run(opcode(WseOpcode::array_get_val), {0, a2, 1},
+               {0, static_cast<std::int32_t>(a2), 1}, effect, fp, int_regs,
+               state) == WseDispatch::handled &&
+               effect.value == 77,
+           "MemoryVfs: loaded array preserves stored element");
+    expect(run(opcode(WseOpcode::array_delete_file), {0}, {0}, effect, fp,
+               int_regs, state) == WseDispatch::handled_no_store &&
+               !mem_vfs.is_file("mem_arr.wsearray"),
+           "MemoryVfs: array_delete_file removes in-memory file");
+}
+
 }  // namespace
 
 int main() {
     test_array_group();
+    test_array_memory_vfs();
     if (failures != 0) {
         std::printf("%d failures\n", failures);
         return 1;

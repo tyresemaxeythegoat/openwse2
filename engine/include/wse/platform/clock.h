@@ -10,10 +10,18 @@
 
 #include <chrono>
 #include <cstdint>
+#include <thread>
 
 namespace wse::platform {
 
 inline constexpr std::int64_t kTicksPerSecond = 100000;
+
+inline void sleep_ms(std::int32_t ms) {
+    if (ms <= 0) {
+        return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
 
 class Clock {
 public:

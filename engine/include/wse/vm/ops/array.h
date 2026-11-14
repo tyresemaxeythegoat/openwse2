@@ -5,11 +5,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -61,7 +59,7 @@ inline void wse_array_serialize_slice(const WseDynArray& arr,
 }
 
 [[nodiscard]] inline bool wse_array_save_binary(
-    const std::filesystem::path& path, const WseDynArray& arr) {
+    wse::platform::Vfs* vfs, std::string_view rel_path, const WseDynArray& arr) {
     if (!arr.root || arr.dim_sizes.empty()) {
         return false;
     }
@@ -74,7 +72,7 @@ inline void wse_array_serialize_slice(const WseDynArray& arr,
         wse_append_le32(out, static_cast<std::uint32_t>(dim));
     }
     wse_array_serialize_slice(arr, *arr.root, 0, out);
-    return wse_dict_write_file_bytes(path, out);
+    return wse_dict_write_file_bytes(vfs, rel_path, out);
 }
 
 [[nodiscard]] inline bool wse_array_deserialize_slice(
@@ -155,14 +153,15 @@ inline void wse_array_serialize_slice(const WseDynArray& arr,
 }
 
 [[nodiscard]] inline bool wse_array_load_binary(
-    const std::filesystem::path& path,
+    wse::platform::Vfs* vfs,
+    std::string_view rel_path,
     std::unique_ptr<WseDynArray>& out,
     bool& version_too_new,
     bool& bad_type_id) {
     version_too_new = false;
     bad_type_id = false;
     std::string bytes;
-    if (!wse_dict_read_file_bytes(path, bytes) || bytes.size() < 16U) {
+    if (!wse_dict_read_file_bytes(vfs, rel_path, bytes) || bytes.size() < 16U) {
         return false;
     }
     const auto* raw = reinterpret_cast<const std::uint8_t*>(bytes.data());
@@ -592,10 +591,11 @@ template <typename BeforeOrEqual>
             operands.state.dictionaries != nullptr
                 ? operands.state.dictionaries->get_array(narrow[0])
                 : nullptr;
-        std::filesystem::path target;
+        std::string target;
         if (arr && wse_dict_target_path(operands.state.dictionaries, file_name,
                                         ".wsearray", target)) {
-            (void)wse_array_save_binary(target, *arr);
+            (void)wse_array_save_binary(operands.state.dictionaries->vfs,
+                                        target, *arr);
         }
         return WseDispatch::handled_no_store;
     }
@@ -608,7 +608,7 @@ template <typename BeforeOrEqual>
         if (!wse_resolve_parsed_utf8_operand(1, operands, file_name)) {
             return WseDispatch::ignored;
         }
-        std::filesystem::path target;
+        std::string target;
         if (!wse_dict_target_path(operands.state.dictionaries, file_name,
                                   ".wsearray", target)) {
             return WseDispatch::handled_no_store;
@@ -616,8 +616,8 @@ template <typename BeforeOrEqual>
         std::unique_ptr<WseDynArray> loaded;
         bool version_too_new = false;
         bool bad_type_id = false;
-        if (!wse_array_load_binary(target, loaded, version_too_new,
-                                   bad_type_id)) {
+        if (!wse_array_load_binary(operands.state.dictionaries->vfs, target,
+                                   loaded, version_too_new, bad_type_id)) {
             if (bad_type_id) {
                 return WseDispatch::handled_no_store;
             }
@@ -639,11 +639,10 @@ template <typename BeforeOrEqual>
         if (!wse_resolve_parsed_utf8_operand(0, operands, file_name)) {
             return WseDispatch::ignored;
         }
-        std::filesystem::path target;
+        std::string target;
         if (wse_dict_target_path(operands.state.dictionaries, file_name,
                                  ".wsearray", target)) {
-            std::error_code ec;
-            (void)std::filesystem::remove(target, ec);
+            (void)operands.state.dictionaries->vfs->remove_file(target);
         }
         return WseDispatch::handled_no_store;
     }

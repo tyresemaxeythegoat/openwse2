@@ -3,15 +3,12 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
-#include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
 #include <span>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -19,6 +16,8 @@
 #include "wse/core/json.h"
 #include "wse/core/math.h"
 #include "wse/game/world_state.h"
+#include "wse/platform/clock.h"
+#include "wse/platform/vfs.h"
 #include "wse/vm/wse_opcodes.h"
 
 namespace wse::vm {
@@ -506,7 +505,7 @@ struct WseObjectSlot {
 struct WseObjectManager {
     std::vector<WseObjectSlot> slots{};
     std::vector<std::int32_t> free_ids{};
-    std::filesystem::path root_dir{};
+    wse::platform::Vfs* vfs = nullptr;
 
     [[nodiscard]] std::int32_t create() {
         WseObjectSlot slot{};
@@ -648,7 +647,7 @@ struct WseVmState {
     WseExecuteScriptFn execute_script_fn = nullptr;
     void* execute_script_user = nullptr;
     // Optional sleep_ms (3026) platform callback; falls back to blocking
-    // std::this_thread::sleep_for when null.
+    // wse::platform::sleep_ms when null.
     WseSleepMsFn sleep_ms_fn = nullptr;
     void* sleep_ms_user = nullptr;
     // Game-world, mission, config, skill, and edit-mode state.
@@ -971,53 +970,39 @@ enum class WseDispatch : std::uint8_t {
 }
 
 [[nodiscard]] inline bool wse_dict_read_file_bytes(
-    const std::filesystem::path& path, std::string& out) {
-    std::ifstream in(path, std::ios::binary | std::ios::ate);
-    if (!in.is_open()) {
+    wse::platform::Vfs* vfs, std::string_view rel_path, std::string& out) {
+    if (vfs == nullptr) {
         return false;
     }
-    const auto end_pos = in.tellg();
-    if (end_pos < 0) {
-        return false;
-    }
-    out.resize(static_cast<std::size_t>(end_pos));
-    in.seekg(0, std::ios::beg);
-    if (!out.empty() &&
-        !in.read(out.data(), static_cast<std::streamsize>(out.size()))) {
+    std::vector<std::uint8_t> raw;
+    if (!vfs->read_file(rel_path, raw)) {
         out.clear();
         return false;
     }
+    out.assign(reinterpret_cast<const char*>(raw.data()), raw.size());
     return true;
 }
 
 [[nodiscard]] inline bool wse_dict_write_file_bytes(
-    const std::filesystem::path& path, std::string_view data) {
-    std::error_code ec;
-    const auto parent = path.parent_path();
-    if (!parent.empty()) {
-        std::filesystem::create_directories(parent, ec);
-    }
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out.is_open()) {
+    wse::platform::Vfs* vfs, std::string_view rel_path, std::string_view data) {
+    if (vfs == nullptr) {
         return false;
     }
-    if (!data.empty()) {
-        out.write(data.data(), static_cast<std::streamsize>(data.size()));
-    }
-    return out.good();
+    const std::span<const std::uint8_t> raw(
+        reinterpret_cast<const std::uint8_t*>(data.data()), data.size());
+    return vfs->write_file(rel_path, raw);
 }
-
 
 [[nodiscard]] inline bool wse_dict_target_path(
     const WseDictionaryStore* store,
     std::string name,
     std::string_view ext,
-    std::filesystem::path& out_path) {
-    if (!store || store->root_dir.empty() || !wse_check_path(name)) {
+    std::string& out_path) {
+    if (!store || store->vfs == nullptr || !wse_check_path(name)) {
         return false;
     }
     name.append(ext);
-    out_path = store->root_dir / name;
+    out_path = std::move(name);
     return true;
 }
 

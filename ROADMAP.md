@@ -115,7 +115,7 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
       gates (`117436a`, backlog B1).
 - [~] **P1** Platform seam and app shell.
   - [x] `wse/platform/{vfs,clock,log}.h` with host implementations and the `platform` suite
-  - [ ] Route the engine's direct file, clock, and thread calls through the seam
+  - [x] Route the engine's direct file, clock, and thread calls through the seam (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, `wse/vm/ops/{dict,array,string,system}.h`)
   - [ ] Gradle + SDL3 `SDLActivity` + `libwse2.so` with an on-device self-test screen; CI builds the APK
 - [ ] **P3** Asset decoders: `.brf`, `.dds`, module resource lists (evidence exports first).
 - [ ] **P4** Vulkan RHI and runtime driver loader: system driver, PanVK (Mali), Turnip (Adreno) —
@@ -158,6 +158,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-15 | — | Platform P1 seam routing: route all direct `<filesystem>`/`<fstream>`/`<chrono>`/`<thread>` uses outside `wse/platform/` (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, `wse/vm/ops/{dict,array,string,system}.h`) through `wse::platform::{Vfs,sleep_ms}`, adding `HostVfs` + `MemoryVfs` coverage in `wse_dict`/`wse_array`/`wse_system` |
 | 2026-11-14 | — | Phase 2 Milestone 4: add `world_subsystem_types.h`, `url_encode_tokens` on `wse_parse_string`, `dispatch_native_non_switch` (`473/477/1004/1070/1104/1302/1491`), and `218` native opcodes across `native_world_ops{,_2,_3}.h` plus `1802/1930/1969` upgrades (`837/1,053` live handlers; `16/20` categories at 100%), raising `Native` `scripts.txt` coverage from `99.54%` to `99.78%` (`1,661/1,755` zero-unimplemented scripts) with `native_world_test` |
 | 2026-11-14 | — | Milestone 3 review fixes: saturating troop XP and party stack counts, invalid troop ids rejected by `party_add_prisoners`/`party_add_leader`, `add_visitors_to_current_scene` capped, saturating float conversions in `712`/`713`/`1063`, WSE `party_stack_upgrade` path normalised; approximated handlers and stubs listed in `engine/README.md` |
 | 2026-11-14 | `f4b663f` | Phase 2 Milestone 3: expand `WseWorldState` + `world_campaign_helpers.h`, implement `14` WSE party/agent opcodes (`3340–3341`, `3900–3911`; `236/440`) and `284` native campaign/mission/item/troop/party opcodes across `native_campaign_ops.h` and `native_campaign_ops_2.h` (`619/1,053` live handlers), default `VmContext::clearLocalsBetweenCalls` to `true` (`0x140617819`), raising `Native` `scripts.txt` coverage from `97.76%` to `99.54%` (`1,545/1,755` zero-unimplemented scripts, `0` unimplemented WSE calls) |
