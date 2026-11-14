@@ -556,6 +556,244 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
                    ? WseDispatch::handled_no_store
                    : WseDispatch::condition_false;
     }
+    // Agent action speed modifier (3340..3341).
+    case WseOpcode::agent_set_action_speed_modifier: {
+        // 3340 (0xd0c, L2863): requires active game, valid agent, [0, 1000]
+        // inclusive; stores (double)wide[1] / 100.0f on mbAgent.
+        if (narrow.size() < 2 || wide.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->has_game ||
+            !world->is_valid_agent(narrow[0]) || narrow[1] < 0 ||
+            narrow[1] > 1000) {
+            return WseDispatch::ignored;
+        }
+        world->agents[static_cast<std::size_t>(narrow[0])]
+            .action_speed_modifier = static_cast<float>(wide[1]) / 100.0f;
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::agent_get_action_speed_modifier: {
+        // 3341 (0xd0d, L2876): rounds m_actionSpeedModifier * 100.0f.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->has_game ||
+            !world->is_valid_agent(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        effect.value = static_cast<std::int64_t>(
+            std::llround(world->agents[static_cast<std::size_t>(narrow[1])]
+                             .action_speed_modifier *
+                         100.0f));
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    // Party extensions (3900..3911).
+    case WseOpcode::party_stack_get_experience: {
+        // 3900 (0xf3c, L3687): rounds mbPartyStack::m_xp.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        const auto& party = world->parties[static_cast<std::size_t>(narrow[1])];
+        if (narrow[2] < 0 ||
+            narrow[2] >= static_cast<std::int32_t>(party.stacks.size())) {
+            return WseDispatch::ignored;
+        }
+        effect.value = static_cast<std::int64_t>(
+            std::llround(party.stacks[static_cast<std::size_t>(narrow[2])].xp));
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::party_stack_get_num_upgradeable: {
+        // 3901 (0xf3d, L4701): stores mbPartyStack::m_numUpgradeable.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        const auto& party = world->parties[static_cast<std::size_t>(narrow[1])];
+        if (narrow[2] < 0 ||
+            narrow[2] >= static_cast<std::int32_t>(party.stacks.size())) {
+            return WseDispatch::ignored;
+        }
+        effect.value =
+            party.stacks[static_cast<std::size_t>(narrow[2])].num_upgradeable;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::party_has_flag: {
+        // 3902 (0xf3e, L4715): tests (mbParty::m_flags & wide[1]) != 0.
+        if (narrow.size() < 2 || wide.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        const auto flags =
+            world->parties[static_cast<std::size_t>(narrow[0])].flags;
+        return (flags & static_cast<std::uint64_t>(wide[1])) != 0
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::condition_false;
+    }
+    case WseOpcode::party_heal_members: {
+        // 3903 (0xf3f, L4722): heals up to <number> matching wounded troops.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[0]) ||
+            !world->is_valid_troop(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        wse::game::party_heal_members(
+            world->parties[static_cast<std::size_t>(narrow[0])], narrow[1],
+            narrow[2]);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::party_switch_stacks: {
+        // 3904 (0xf40, L4782): swaps two stacks if both are in bounds.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        auto& party = world->parties[static_cast<std::size_t>(narrow[0])];
+        const auto count = static_cast<std::int32_t>(party.stacks.size());
+        if (narrow[1] < 0 || narrow[1] >= count || narrow[2] < 0 ||
+            narrow[2] >= count) {
+            return WseDispatch::ignored;
+        }
+        wse::game::party_switch_stacks(party, narrow[1], narrow[2]);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::party_stack_upgrade: {
+        // 3905 (0xf41, L4827): requires amount > 0, valid stack & target.
+        if (narrow.size() < 4) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[0]) ||
+            narrow[2] <= 0) {
+            return WseDispatch::ignored;
+        }
+        auto& party = world->parties[static_cast<std::size_t>(narrow[0])];
+        if (narrow[1] < 0 ||
+            narrow[1] >= static_cast<std::int32_t>(party.stacks.size())) {
+            return WseDispatch::ignored;
+        }
+        const auto& stack = party.stacks[static_cast<std::size_t>(narrow[1])];
+        if (!world->is_valid_troop(stack.troop_no)) {
+            return WseDispatch::ignored;
+        }
+        const std::size_t path = (narrow[3] != 0) ? 1u : 0u;
+        const std::int32_t target_troop =
+            world->troops[static_cast<std::size_t>(stack.troop_no)]
+                .upgrade_troop_nos[path];
+        if (!world->is_valid_troop(target_troop)) {
+            return WseDispatch::ignored;
+        }
+        wse::game::party_stack_upgrade(*world, narrow[0], narrow[1], narrow[2],
+                                       narrow[3]);
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::party_stack_set_num_upgradeable: {
+        // 3906 (0xf42, L4974): stores raw value into m_numUpgradeable.
+        if (narrow.size() < 3) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        auto& party = world->parties[static_cast<std::size_t>(narrow[0])];
+        if (narrow[1] < 0 ||
+            narrow[1] >= static_cast<std::int32_t>(party.stacks.size())) {
+            return WseDispatch::ignored;
+        }
+        party.stacks[static_cast<std::size_t>(narrow[1])].num_upgradeable =
+            narrow[2];
+        return WseDispatch::handled_no_store;
+    }
+    case WseOpcode::party_get_banner_icon: {
+        // 3907 (0xf43, L4988): stores mbParty::m_bannerMapIconNo.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        effect.value =
+            world->parties[static_cast<std::size_t>(narrow[1])].banner_icon_no;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::party_get_extra_icon: {
+        // 3908 (0xf44, L4996): stores mbParty::m_extraMapIconNo.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        effect.value =
+            world->parties[static_cast<std::size_t>(narrow[1])].extra_icon_no;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::party_get_player_id: {
+        // 3909 (0xf45, L5004): stores mbParty::m_playerNo.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        effect.value =
+            world->parties[static_cast<std::size_t>(narrow[1])].player_no;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
+    case WseOpcode::party_is_non_player: {
+        // 3910 (0xf46, L5012): succeeds iff mbParty::isBot() is true.
+        if (narrow.size() < 1) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        return world->parties[static_cast<std::size_t>(narrow[0])].is_bot()
+                   ? WseDispatch::handled_no_store
+                   : WseDispatch::condition_false;
+    }
+    case WseOpcode::party_get_current_terrain_variant: {
+        // 3911 (0xf47, L5020): stores world map terrain texture variant.
+        if (narrow.size() < 2) {
+            return WseDispatch::operand_count_out_of_range;
+        }
+        const auto* const world = operands.state.world;
+        if (world == nullptr || !world->is_valid_party(narrow[1])) {
+            return WseDispatch::ignored;
+        }
+        effect.value =
+            world->parties[static_cast<std::size_t>(narrow[1])].terrain_variant;
+        effect.store_value = true;
+        return WseDispatch::handled;
+    }
     default:
         return WseDispatch::unimplemented;
     }

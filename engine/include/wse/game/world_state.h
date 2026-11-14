@@ -101,6 +101,9 @@ struct WsePartyStack {
     std::int32_t num_troops = 0;
     std::int32_t num_wounded_troops = 0;
     std::uint32_t flags = 0;  // bit 0 (0x1): prisoner stack
+    std::int32_t dna = 0;
+    std::int32_t num_upgradeable = 0;
+    float xp = 0.0f;
 
     [[nodiscard]] constexpr bool is_prisoner() const noexcept {
         return (flags & 1U) != 0U;
@@ -135,8 +138,15 @@ struct WsePresentationOverlay {
 };
 
 struct WseMissionTemplate {
+    struct EntryOverride {
+        std::uint32_t flags = 0;
+        std::vector<std::int32_t> override_items{};
+    };
+
     std::string id{};
     std::string name{};
+    std::array<EntryOverride, kMaxEntryPoints> entry_overrides{};
+    bool all_agents_spawned = true;
 };
 
 struct WseMultiplayerMessage {
@@ -194,6 +204,63 @@ struct WseTroop {
     std::int32_t level = 1;       // mbTroop::m_level (0x1401dd92b)
     bool auto_equip = false;      // mbTroop::m_flags bit / auto-equip (0x1401d02d0)
     std::array<WseInventorySlot, kTotalTroopInventoryCapacity> inventory{};
+    std::int32_t xp = 0;
+    std::array<std::int32_t, 2> upgrade_troop_nos{-1, -1};
+    std::int32_t home_site_no = -1;
+    std::int32_t home_entry_no = 0;
+    float age = 0.0f;
+    std::array<std::array<std::uint64_t, 4>, 2> face_keys{};
+    bool note_available = true;
+    std::array<WseQuestNote, kNumQuestNotes> notes{};
+
+    void set_age(std::int32_t value) noexcept {
+        const std::int32_t clamped = std::clamp(value, std::int32_t{0}, std::int32_t{99});
+        age = static_cast<float>(clamped) * 0.01f;
+    }
+
+    [[nodiscard]] std::string face_keys_to_string(std::int32_t slot) const {
+        if (slot < 0 || slot >= 2) {
+            return std::string(64, '0');
+        }
+        static constexpr char kHex[] = "0123456789abcdef";
+        std::string out(64, '0');
+        const auto& words = face_keys[static_cast<std::size_t>(slot)];
+        for (std::size_t w = 0; w < 4; ++w) {
+            std::uint64_t v = words[w];
+            for (std::size_t d = 0; d < 16; ++d) {
+                out[w * 16 + (15 - d)] = kHex[v & 0xfULL];
+                v >>= 4U;
+            }
+        }
+        return out;
+    }
+
+    void face_keys_from_string(std::int32_t slot, std::string_view hex) noexcept {
+        if (slot < 0 || slot >= 2) {
+            return;
+        }
+        auto hex_val = [](char ch) noexcept -> std::uint64_t {
+            if (ch >= '0' && ch <= '9') {
+                return static_cast<std::uint64_t>(ch - '0');
+            }
+            if (ch >= 'a' && ch <= 'f') {
+                return static_cast<std::uint64_t>(10 + (ch - 'a'));
+            }
+            if (ch >= 'A' && ch <= 'F') {
+                return static_cast<std::uint64_t>(10 + (ch - 'A'));
+            }
+            return 0ULL;
+        };
+        auto& words = face_keys[static_cast<std::size_t>(slot)];
+        for (std::size_t w = 0; w < 4; ++w) {
+            std::uint64_t acc = 0ULL;
+            for (std::size_t d = 0; d < 16; ++d) {
+                const std::size_t idx = w * 16 + d;
+                acc = (acc << 4U) | (idx < hex.size() ? hex_val(hex[idx]) : 0ULL);
+            }
+            words[w] = acc;
+        }
+    }
 
     // Mirrors mbTroop::isHero (0x140245f60): (m_flags >> 4) & 1.
     [[nodiscard]] constexpr bool is_hero() const noexcept {
@@ -461,12 +528,86 @@ struct WseItemKind {
     std::uint64_t properties = 0;
     std::int32_t max_ammo = 0;
     std::int32_t value = 0;
+    std::uint64_t capabilities = 0;
+    std::int32_t difficulty = 0;
+    std::int32_t hit_points = 0;
+    float weight = 0.0f;
+    std::int32_t weapon_length = 0;
+    std::int32_t accuracy = 0;
+    float shield_height = 0.0f;
+    float horse_scale = 0.0f;
+    std::int32_t horse_speed = 0;
+    std::int32_t horse_maneuver = 0;
+    std::int32_t food_quality = 0;
+    std::int32_t abundance = 100;
+    std::int32_t thrust_damage_type = 0;
+    std::int32_t swing_damage_type = 0;
+    std::int32_t horse_charge_damage = 0;
+    float price_rate = 1.0f;
+    float probability = 100.0f;
+
+    [[nodiscard]] constexpr std::int32_t get_type() const noexcept {
+        return static_cast<std::int32_t>(properties & 0xffULL);
+    }
+    [[nodiscard]] constexpr bool is_armor() const noexcept {
+        const std::int32_t t = get_type();
+        return t >= 12 && t <= 15;
+    }
+    [[nodiscard]] constexpr std::int32_t get_thrust_damage() const noexcept {
+        return thrust_damage & 0xff;
+    }
+    [[nodiscard]] constexpr std::int32_t get_thrust_damage_type() const noexcept {
+        return thrust_damage_type != 0 ? thrust_damage_type : ((thrust_damage >> 8) & 3);
+    }
+    [[nodiscard]] constexpr std::int32_t get_swing_damage() const noexcept {
+        return swing_damage & 0xff;
+    }
+    [[nodiscard]] constexpr std::int32_t get_swing_damage_type() const noexcept {
+        return swing_damage_type != 0 ? swing_damage_type : ((swing_damage >> 8) & 3);
+    }
+    [[nodiscard]] constexpr std::int32_t get_horse_charge() const noexcept {
+        return horse_charge_damage != 0 ? horse_charge_damage : (thrust_damage & 0xff);
+    }
+    [[nodiscard]] constexpr std::int32_t get_accuracy() const noexcept {
+        return accuracy != 0 ? accuracy : leg_armor;
+    }
+    [[nodiscard]] constexpr std::int32_t get_horse_speed() const noexcept {
+        return horse_speed != 0 ? horse_speed : missile_speed;
+    }
+    [[nodiscard]] constexpr std::int32_t get_horse_maneuver() const noexcept {
+        return horse_maneuver != 0 ? horse_maneuver : speed_rating;
+    }
+    [[nodiscard]] constexpr std::int32_t get_food_quality() const noexcept {
+        return food_quality != 0 ? food_quality : head_armor;
+    }
+    [[nodiscard]] constexpr float get_shield_height() const noexcept {
+        return shield_height > 0.0f ? shield_height : static_cast<float>(missile_speed) / 100.0f;
+    }
+    [[nodiscard]] constexpr float get_horse_scale() const noexcept {
+        if (horse_scale > 0.0f) {
+            return horse_scale;
+        }
+        return weapon_length == 0 ? 1.0f : static_cast<float>(weapon_length) / 100.0f;
+    }
 };
 
 struct WsePartyTemplate {
+    struct StackTemplate {
+        std::int32_t troop_no = -1;
+        std::int32_t min_troops = 0;
+        std::int32_t max_troops = 0;
+        std::uint32_t flags = 0;
+    };
+
     std::string name{};
     std::string id{};
     wse::vm::Slots slots{};
+    std::uint64_t flags = 0;
+    std::int32_t icon_no = 0;
+    std::int32_t faction_no = 0;
+    std::int32_t menu_no = 0;
+    std::uint32_t personality = 0;
+    std::array<StackTemplate, 6> stacks{};
 };
 
 struct WseFaction {
@@ -475,6 +616,8 @@ struct WseFaction {
     wse::vm::Slots slots{};
     std::uint32_t color = 0xffffffffu;
     std::vector<float> relations{};
+    bool note_available = true;
+    std::array<WseQuestNote, kNumQuestNotes> notes{};
 
     void set_relation(std::size_t other_idx, float relation) {
         if (relations.size() <= other_idx) {
@@ -497,6 +640,14 @@ struct WseQuest {
     std::int32_t giver_troop_no = -1;
     float start_date = 0.0f;
     std::array<WseQuestNote, kNumQuestNotes> notes{};
+    std::string text{};
+    std::int32_t number = 0;
+    std::int32_t item_no = -1;
+    std::int32_t troop_no = -1;
+    std::int32_t target_party_no = -1;
+    std::int32_t target_site_no = -1;
+    std::int32_t target_faction_no = -1;
+    float expiration_days = 0.0f;
 
     [[nodiscard]] constexpr bool is_active() const noexcept {
         return ((progression_flags >> 8U) & 1U) != 0U;
@@ -542,6 +693,52 @@ struct WseParty {
     wse::core::WseTransform position = wse::core::WseTransform::identity();
     std::vector<WsePartyStack> stacks{};
     std::array<std::int32_t, kMaxSkills> skill_levels{};
+    std::int32_t template_no = -1;
+    std::int32_t extra_icon_no = -1;
+    std::int32_t player_no = -1;
+    std::int32_t controller = 1;
+    std::int32_t terrain_variant = 0;
+    float morale = 0.5f;
+    bool is_marshall = false;
+    std::uint32_t personality = 0;
+    bool ignore_with_player_party = false;
+    std::int32_t bandit_attraction = 0;
+    float radius = 0.25f;
+    std::vector<std::int32_t> attached_party_nos{};
+    std::int32_t default_behavior = 0;
+    std::int32_t default_behavior_object = -1;
+    wse::core::WseVec2 default_behavior_position{};
+    float patrol_radius = 0.0f;
+    float ai_initiative = 1.0f;
+    float helpfulness = 1.0f;
+    float ignore_player_timer = 0.0f;
+    bool in_battle = false;
+    bool note_available = true;
+    std::array<WseQuestNote, kNumQuestNotes> notes{};
+
+    void set_aggressiveness(std::int32_t value) noexcept {
+        const std::uint32_t clamped =
+            static_cast<std::uint32_t>(std::clamp(value, std::int32_t{0}, std::int32_t{15}));
+        personality = (personality & 0xffffff0fU) | (clamped << 4U);
+    }
+
+    [[nodiscard]] constexpr std::int32_t get_aggressiveness() const noexcept {
+        return static_cast<std::int32_t>((personality >> 4U) & 0xfU);
+    }
+
+    void set_courage(std::int32_t value) noexcept {
+        const std::uint32_t clamped =
+            static_cast<std::uint32_t>(std::clamp(value, std::int32_t{0}, std::int32_t{15}));
+        personality = (personality & 0xfffffff0U) | clamped;
+    }
+
+    [[nodiscard]] constexpr std::int32_t get_courage() const noexcept {
+        return static_cast<std::int32_t>(personality & 0xfU);
+    }
+
+    [[nodiscard]] constexpr bool is_bot() const noexcept {
+        return controller == 1;
+    }
 
     [[nodiscard]] std::int32_t get_num_companions() const noexcept {
         std::int32_t total = 0;
@@ -717,6 +914,10 @@ struct WsePlayer {
     bool is_admin = false;
     std::int32_t unique_id = 0;
     std::int32_t profile_gender = 0;
+    std::int32_t banner_no = -1;
+    std::array<std::int32_t, kNumTroopEquipmentSlots> item_ids{
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+    std::array<bool, kNumTroopEquipmentSlots> picked_up_slots{};
 };
 
 struct WseTeam {
@@ -729,6 +930,10 @@ struct WseTeam {
     std::array<wse::core::WseTransform, kNumDivisions> order_positions{};
     std::int32_t leader_agent_no = -1;
     std::array<std::int32_t, kNumDivisions> division_leaders{-1, -1, -1, -1, -1, -1, -1, -1, -1};
+    std::int32_t bot_kill_count = 0;
+    std::int32_t bot_death_count = 0;
+    std::int32_t kill_count = 0;
+    std::int32_t score = 0;
 };
 
 struct WseAgent {
@@ -767,6 +972,21 @@ struct WseAgent {
     wse::core::WseTransform target_position = wse::core::WseTransform::identity();
     std::int32_t animation = -1;
     std::int32_t stand_animation = -1;
+    std::int32_t player_no = -1;
+    std::int32_t horse_item_no = -1;
+    float action_speed_modifier = 1.0f;
+    float damage_modifier = 1.0f;
+    float accuracy_modifier = 1.0f;
+    float speed_modifier = 1.0f;
+    float reload_speed_modifier = 1.0f;
+    float use_speed_modifier = 1.0f;
+    float ranged_damage_modifier = 1.0f;
+    bool visible = true;
+    std::int32_t crouch_mode = 0;
+    bool always_attack_in_melee = false;
+    bool running_away = false;
+    wse::core::WseVec4 run_away_target{};
+    wse::core::WseTransform look_position = wse::core::WseTransform::identity();
 
     // Mirrors mbAgent::isHuman (0x14002b910): m_type == 0.
     [[nodiscard]] constexpr bool is_human() const noexcept {
@@ -800,6 +1020,11 @@ struct WseMissionObject {
     wse::core::WseTransform position = wse::core::WseTransform::identity();
     wse::core::WseTransform target_position = wse::core::WseTransform::identity();
     wse::core::WseVec4 scale{1.0f, 1.0f, 1.0f, 1.0f};
+    wse::core::WseTransform starting_position = wse::core::WseTransform::identity();
+    bool animating = false;
+    float animate_duration = 0.0f;
+    bool physics_enabled = true;
+    float enable_timer = 0.0f;
 };
 
 struct WseDisplayedMessage {
@@ -886,6 +1111,49 @@ struct WseWorldState {
     std::unordered_map<std::string, std::string> translations{};
     std::filesystem::path savegames_dir{};
     std::vector<WseDisplayedMessage> displayed_messages{};
+    bool is_multiplayer = false;
+    bool is_server = false;
+    bool is_dedicated_server = false;
+    std::int32_t my_player_no = -1;
+    bool map_free_state = true;
+    bool in_meta_mission = false;
+    bool conversation_screen_active = false;
+    bool is_trial_version = false;
+    bool edit_mode_enabled = false;
+    std::int32_t reduce_campaign_ai = 2;
+    std::string result_string{};
+    std::int32_t encountered_party_no = -1;
+    std::int32_t encountered_party_2_no = -1;
+    bool encountered_party_is_attacker = false;
+    std::int32_t camera_follow_party_no = -1;
+    bool party_battle_mode = false;
+    std::int32_t party_creation_min_random = 0;
+    std::int32_t party_creation_max_random = 100;
+    float spawn_radius = 3.0f;
+    std::int32_t battle_advantage = 0;
+    std::int32_t current_day = 0;
+    bool currently_night = false;
+    float scene_day_time = 12.0f;
+    bool talk_enabled = true;
+    float mission_time_speed = 1.0f;
+    float mission_time_speed_target = 1.0f;
+    float mission_time_speed_duration = 0.0f;
+    bool mission_duel_mode = false;
+    bool cheer_at_no_enemy = true;
+    float zoom_amount = 0.0f;
+    bool zoom_disabled = false;
+    std::int32_t jump_scene_no = -1;
+    std::int32_t jump_entry_no = 0;
+    std::int32_t current_site_no = -1;
+    std::int32_t current_mission_template_no = -1;
+    wse::core::WseTransform spawn_position = wse::core::WseTransform::identity();
+    wse::core::WseVec2 scene_bound_min{-100.0f, -100.0f};
+    wse::core::WseVec2 scene_bound_max{100.0f, 100.0f};
+    std::array<std::string, kNumDivisions> class_names{
+        "Infantry", "Archers", "Cavalry", "Unnamed 1", "Unnamed 2",
+        "Unnamed 3", "Unnamed 4", "Unnamed 5", "Unnamed 6"};
+    std::unordered_map<std::int32_t, std::int32_t> achievement_stats{};
+    std::unordered_map<std::int32_t, bool> unlocked_achievements{};
 
     [[nodiscard]] bool is_valid_item(std::int32_t id) const noexcept {
         return id >= 0 && static_cast<std::size_t>(id) < items.size();
@@ -940,3 +1208,5 @@ struct WseWorldState {
 };
 
 }  // namespace wse::game
+
+#include "wse/game/world_campaign_helpers.h"

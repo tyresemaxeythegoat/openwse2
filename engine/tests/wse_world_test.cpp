@@ -334,12 +334,149 @@ void test_edit_mode_group() {
            "edit_mode deselect shifts highlighted_index and omitted set_highlighted clears it");
 }
 
+void test_agent_action_speed_group() {
+    WseEffect effect;
+    wse::game::WseWorldState world{};
+    world.has_game = false;
+    world.agents.push_back(wse::game::WseAgent{});
+
+    WseVmState state{};
+    state.world = &world;
+
+    expect(run(opcode(WseOpcode::agent_set_action_speed_modifier), {0, 150},
+               {0, 150}, effect, {}, {}, state) == WseDispatch::ignored &&
+               run(opcode(WseOpcode::agent_get_action_speed_modifier), {0, 0},
+                   {0, 0}, effect, {}, {}, state) == WseDispatch::ignored,
+           "agent_*_action_speed_modifier ignore when has_game is false");
+
+    world.has_game = true;
+    expect(run(opcode(WseOpcode::agent_set_action_speed_modifier), {0, -1},
+               {0, -1}, effect, {}, {}, state) == WseDispatch::ignored &&
+               run(opcode(WseOpcode::agent_set_action_speed_modifier), {0, 1001},
+                   {0, 1001}, effect, {}, {}, state) == WseDispatch::ignored &&
+               run(opcode(WseOpcode::agent_set_action_speed_modifier), {0, 150},
+                   {0, 150}, effect, {}, {}, state) ==
+                   WseDispatch::handled_no_store &&
+               close(world.agents[0].action_speed_modifier, 1.5f) &&
+               run(opcode(WseOpcode::agent_get_action_speed_modifier), {0, 0},
+                   {0, 0}, effect, {}, {}, state) == WseDispatch::handled &&
+               effect.store_value && effect.value == 150 &&
+               run(opcode(WseOpcode::agent_set_action_speed_modifier), {0, 1000},
+                   {0, 1000}, effect, {}, {}, state) ==
+                   WseDispatch::handled_no_store &&
+               run(opcode(WseOpcode::agent_get_action_speed_modifier), {0, 0},
+                   {0, 0}, effect, {}, {}, state) == WseDispatch::handled &&
+               effect.value == 1000,
+           "agent_*_action_speed_modifier validate [0,1000] and round *100");
+}
+
+void test_party_group() {
+    WseEffect effect;
+    wse::game::WseWorldState world{};
+    world.troops.resize(3);
+    world.troops[0].upgrade_troop_nos = {1, 2};
+
+    wse::game::WseParty party{};
+    party.id = "p_main";
+    party.flags = (1ULL << 35) | 0x4ULL;
+    party.banner_icon_no = 17;
+    party.extra_icon_no = 23;
+    party.player_no = 2;
+    party.controller = 0;  // 0 == player, 1 == bot
+    party.terrain_variant = 3;
+
+    wse::game::WsePartyStack s0{0, 4, 2, 0};
+    s0.xp = 124.6f;
+    s0.num_upgradeable = 3;
+    wse::game::WsePartyStack s1{1, 2, 1, 0};
+    s1.xp = 10.2f;
+    s1.num_upgradeable = 0;
+    party.stacks = {s0, s1};
+    world.parties.push_back(party);
+
+    WseVmState state{};
+    state.world = &world;
+
+    expect(run(opcode(WseOpcode::party_stack_get_experience), {0, 0, 0},
+               {0, 0, 0}, effect, {}, {}, state) == WseDispatch::handled &&
+               effect.store_value && effect.value == 125 &&
+               run(opcode(WseOpcode::party_stack_get_num_upgradeable), {0, 0, 0},
+                   {0, 0, 0}, effect, {}, {}, state) == WseDispatch::handled &&
+               effect.value == 3 &&
+               run(opcode(WseOpcode::party_stack_get_num_upgradeable), {0, 0, 9},
+                   {0, 0, 9}, effect, {}, {}, state) == WseDispatch::ignored,
+           "party_stack_get_{experience,num_upgradeable} read stack fields and check bounds");
+
+    expect(run(opcode(WseOpcode::party_has_flag),
+               {0, static_cast<std::int64_t>(1ULL << 35)}, {0, 0}, effect, {},
+               {}, state) == WseDispatch::handled_no_store &&
+               run(opcode(WseOpcode::party_has_flag), {0, 8}, {0, 8}, effect,
+                   {}, {}, state) == WseDispatch::condition_false,
+           "party_has_flag tests full 64-bit mask");
+
+    expect(run(opcode(WseOpcode::party_heal_members), {0, 0, 1}, {0, 0, 1},
+               effect, {}, {}, state) == WseDispatch::handled_no_store &&
+               world.parties[0].stacks[0].num_wounded_troops == 1 &&
+               run(opcode(WseOpcode::party_switch_stacks), {0, 0, 1}, {0, 0, 1},
+                   effect, {}, {}, state) == WseDispatch::handled_no_store &&
+               world.parties[0].stacks[0].troop_no == 1 &&
+               world.parties[0].stacks[1].troop_no == 0,
+           "party_heal_members heals partial count and party_switch_stacks swaps");
+
+    expect(run(opcode(WseOpcode::party_stack_set_num_upgradeable), {0, 1, 5},
+               {0, 1, 5}, effect, {}, {}, state) ==
+                   WseDispatch::handled_no_store &&
+               world.parties[0].stacks[1].num_upgradeable == 5 &&
+               run(opcode(WseOpcode::party_stack_upgrade), {0, 1, 2, 0},
+                   {0, 1, 2, 0}, effect, {}, {}, state) ==
+                   WseDispatch::handled_no_store &&
+               world.parties[0].stacks[0].num_troops == 4 &&
+               world.parties[0].stacks[1].num_troops == 2,
+           "party_stack_upgrade merges partial upgraded troops into existing target stack");
+
+    expect(run(opcode(WseOpcode::party_stack_upgrade), {0, 1, 10, 1},
+               {0, 1, 10, 1}, effect, {}, {}, state) ==
+                   WseDispatch::handled_no_store &&
+               world.parties[0].stacks[1].troop_no == 2 &&
+               world.parties[0].stacks[1].num_upgradeable == 0 &&
+               run(opcode(WseOpcode::party_stack_upgrade), {0, 1, 1, 0},
+                   {0, 1, 1, 0}, effect, {}, {}, state) ==
+                   WseDispatch::ignored,
+           "party_stack_upgrade converts stack in place when upgrading full stack and ignores invalid target");
+
+    expect(run(opcode(WseOpcode::party_get_banner_icon), {0, 0}, {0, 0}, effect,
+               {}, {}, state) == WseDispatch::handled &&
+               effect.value == 17 &&
+               run(opcode(WseOpcode::party_get_extra_icon), {0, 0}, {0, 0},
+                   effect, {}, {}, state) == WseDispatch::handled &&
+               effect.value == 23 &&
+               run(opcode(WseOpcode::party_get_player_id), {0, 0}, {0, 0},
+                   effect, {}, {}, state) == WseDispatch::handled &&
+               effect.value == 2 &&
+               run(opcode(WseOpcode::party_get_current_terrain_variant), {0, 0},
+                   {0, 0}, effect, {}, {}, state) == WseDispatch::handled &&
+               effect.value == 3,
+           "party_get_{banner_icon,extra_icon,player_id,current_terrain_variant} return fields");
+
+    world.parties[0].player_no = -1;
+    world.parties[0].controller = 1;
+    expect(run(opcode(WseOpcode::party_is_non_player), {0}, {0}, effect, {}, {},
+               state) == WseDispatch::handled_no_store,
+           "party_is_non_player reflects controller/bot state");
+    world.parties[0].controller = 0;
+    expect(run(opcode(WseOpcode::party_is_non_player), {0}, {0}, effect, {}, {},
+               state) == WseDispatch::condition_false,
+           "party_is_non_player returns condition_false for player controller");
+}
+
 }  // namespace
 
 int main() {
     test_troop_group();
     test_item_group();
     test_edit_mode_group();
+    test_agent_action_speed_group();
+    test_party_group();
     if (failures != 0) {
         std::printf("%d failures\n", failures);
         return 1;

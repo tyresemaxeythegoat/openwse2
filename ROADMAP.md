@@ -64,12 +64,13 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [x] Operand tags, decode, and lvalue write-back (`wse/vm/operand.h`, `slots.h`)
 - [x] Statement record and reader (`wse/vm/statement.h`)
 - [x] `analyze` / `execute` / loop frames / `call_script` recursion (`wse/vm/block_vm.h`)
-- [~] Native opcodes: `335/1,053` implemented across `wse/vm/block_vm.h` and
-      `wse/vm/native_{ops,entity_ops,mission_ops}.h` (control flow, comparisons,
-      integer/fixed-point/trig/RNG math, `entity_slots` `500–510`/`520–530`/`540–550`/`560–570`,
+- [~] Native opcodes: `619/1,053` implemented across `wse/vm/block_vm.h` and
+      `wse/vm/native_{ops,entity_ops,mission_ops,campaign_ops,campaign_ops_2}.h` (control flow,
+      comparisons, integer/fixed-point/trig/RNG math, `entity_slots` `500–510`/`520–530`/`540–550`/`560–570`,
       `positions_and_math` `700–746`/`791`, `strings` `2318–2355`, player/MP, quest, audio/UI,
-      site/faction, troop/party ops in `native_entity_ops.h`, and agent/team/prop/mission/timer
-      ops in `native_mission_ops.h`)
+      site/faction, troop/party ops in `native_entity_ops.h`, agent/team/prop/mission/timer
+      ops in `native_mission_ops.h`, and `284` Milestone 3 campaign/item/troop/party/mission ops in
+      `native_campaign_ops.h` & `native_campaign_ops_2.h`)
 - [x] Native opcode map generated from the `0x1401e22f0` jump table (**B2**, `docs/native_opcodes.json`)
 - [x] Entity iterators (`try_for_parties`, `try_for_agents`, `try_for_prop_instances`,
       `try_for_players`) — live against `WseWorldState` containers and preserving `currentCaller`
@@ -83,12 +84,13 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [x] Opcode map and generated enum (`docs/wse_opcodes.json`, `wse/vm/wse_opcodes.h`)
 - [x] Pure-computation families: shifts, registers, dictionaries, strings, options, floating point
       (incl. `feval`), position vectors, dynamic arrays
-- [x] State-backed families against the in-memory model: slots, troops, items, edit mode
-- [ ] Engine-backed families: agent, party, player, mission/props, scene, multiplayer/server,
+- [x] State-backed families against the in-memory model: slots, troops, items, parties (`3900–3911`, 12/12), edit mode
+- [~] Partial engine-backed families: agent (`3340–3341` `action_speed_modifier`), mission/props (`3600` etc.)
+- [ ] Remaining engine-backed families: agent (rest), player, mission/props (rest), scene, multiplayer/server,
       menus, overlays/presentations, input keys, reload, skins, Lua bridge
 
 **2E. Game-world state**
-- [~] `WseWorldState` containers and validators (`wse/game/world_state.h`: players, troops, items,
+- [~] `WseWorldState` containers and validators (`wse/game/world_state.h` + `wse/game/world_campaign_helpers.h`: players, troops, items,
       skills, factions, quests, sites/visitors, parties/stacks, agents, mission props/timers, teams,
       presentations/overlays, audio events) — in-memory model only
 - [ ] Loaders that populate it from a user-supplied module (depends on 2A)
@@ -161,6 +163,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-14 | — | Phase 2 Milestone 3: expand `WseWorldState` + `world_campaign_helpers.h`, implement `14` WSE party/agent opcodes (`3340–3341`, `3900–3911`; `236/440`) and `284` native campaign/mission/item/troop/party opcodes across `native_campaign_ops.h` and `native_campaign_ops_2.h` (`619/1,053` live handlers), default `VmContext::clearLocalsBetweenCalls` to `true` (`0x140617819`), raising `Native` `scripts.txt` coverage from `97.76%` to `99.54%` (`1,545/1,755` zero-unimplemented scripts, `0` unimplemented WSE calls) |
 | 2026-11-14 | — | Code-review fixes: `try_for_dict_keys` and `array_sort_custom` no longer hold pointers into script-mutable objects (two ASan-confirmed use-after-frees), loaders allocate records incrementally, dynamic arrays capped at `kWseArrayMaxElements`, control opcodes masked consistently, `HostVfs` refuses symlink escapes; CMake defaults to `-O2`, CI adds an ASan/UBSan job and runs on every branch |
 | 2026-11-14 | `7a23109` | Phase 2 Milestone 2: expand `WseWorldState`, activate the 4 entity iterators (`11/12/16/17`) preserving `currentCaller`, and reconstruct `174` high-demand native opcodes (`108` in `native_entity_ops.h` + `66` in `native_mission_ops.h`, `335/1,053` live handlers), raising `Native` `scripts.txt` statement coverage from `93.0%` to `97.76%` (`1,041/1,755` zero-unimplemented scripts) |
 | 2026-11-14 | `025b06f` | Phase 2 Milestone 1: reconstruct `112` high-demand native Warband opcodes (`161/1,053` live native handlers across `block_vm.h` + `native_ops.h`), raising `Native` `scripts.txt` coverage from `66.2%` to `93.0%` (`685/1,755` zero-unimplemented scripts) |

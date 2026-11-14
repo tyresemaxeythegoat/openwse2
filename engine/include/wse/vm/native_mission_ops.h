@@ -38,11 +38,20 @@ namespace wse::vm {
     return true;
 }
 
+[[nodiscard]] inline NativeDispatch dispatch_native_campaign_statement(
+    std::uint32_t opcode,
+    std::span<const std::int64_t> wide,
+    std::span<const std::int32_t> narrow,
+    std::span<const std::uint8_t> tags,
+    const Statement& statement,
+    VmContext& ctx,
+    std::span<std::int64_t> locals);
+
 [[nodiscard]] inline NativeDispatch dispatch_native_mission_statement(
     std::uint32_t opcode,
     std::span<const std::int64_t> wide,
     std::span<const std::int32_t> narrow,
-    std::span<const std::uint8_t> /*tags*/,
+    std::span<const std::uint8_t> tags,
     const Statement& statement,
     VmContext& ctx,
     std::span<std::int64_t> locals) {
@@ -602,7 +611,10 @@ namespace wse::vm {
     default:
         break;
     }
-    return NativeDispatch::unimplemented;
+    return dispatch_native_campaign_statement(opcode, wide, narrow, tags, statement, ctx,
+                                              locals);
 }
 
 }  // namespace wse::vm
+
+#include "wse/vm/native_campaign_ops.h"

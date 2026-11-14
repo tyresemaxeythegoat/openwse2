@@ -71,7 +71,7 @@
   "sdk_ops_in_range": 440,
   "sdk_ops_without_handler": 0,
   "unknown_opcodes": [],
-  "implemented_opcodes": 222,
+  "implemented_opcodes": 236,
   "implemented_blocks": [
    {
     "block": 2800,
@@ -120,7 +120,7 @@
    {
     "block": 3300,
     "family": "agent",
-    "done": 0,
+    "done": 2,
     "total": 61,
     "remaining_examples": [
      "agent_get_item_modifier",
@@ -174,12 +174,9 @@
    {
     "block": 3900,
     "family": "party",
-    "done": 0,
+    "done": 12,
     "total": 12,
-    "remaining_examples": [
-     "party_stack_get_experience",
-     "party_stack_get_num_upgradeable"
-    ]
+    "remaining_examples": []
    },
    {
     "block": 4100,
@@ -3100,7 +3097,7 @@
    "vtable_offsets": [],
    "name": "agent_set_action_speed_modifier",
    "sdk_comment": "(agent_set_action_speed_modifier, <agent_no>, <value>), #Sets <agent_no>'s action speed modifier to <value> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3341,
@@ -3121,7 +3118,7 @@
    "vtable_offsets": [],
    "name": "agent_get_action_speed_modifier",
    "sdk_comment": "(agent_get_action_speed_modifier, <destination>, <agent_no>), #Stores <agent_no>'s action speed modifier into <destination> (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3342,
@@ -5447,7 +5444,7 @@
    "vtable_offsets": [],
    "name": "party_stack_get_experience",
    "sdk_comment": "(party_stack_get_experience, <destination>, <party_no>, <party_stack_no>), #Stores the experience of <party_no>'s <party_stack_no> into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3901,
@@ -5469,7 +5466,7 @@
    "vtable_offsets": [],
    "name": "party_stack_get_num_upgradeable",
    "sdk_comment": "(party_stack_get_num_upgradeable, <destination>, <party_no>, <party_stack_no>), #Stores the amount of upgradeable troops in <party_no>'s <party_stack_no> into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3902,
@@ -5489,7 +5486,7 @@
    "vtable_offsets": [],
    "name": "party_has_flag",
    "sdk_comment": "(party_has_flag, <party_no>, <flag>), #Fails if <party_no> doesn't have <flag>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3903,
@@ -5516,7 +5513,7 @@
    "vtable_offsets": [],
    "name": "party_heal_members",
    "sdk_comment": "(party_heal_members, <party_no>, <troop_no>, <number>), #Heals <number> <troop_no> of <party_no>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3904,
@@ -5545,7 +5542,7 @@
    "vtable_offsets": [],
    "name": "party_switch_stacks",
    "sdk_comment": "(party_switch_stacks, <party_no>, <party_stack_no_1>, <party_stack_no_2>), #Switches <party_no>'s <party_stack_no_1> and <party_stack_no_2>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3905,
@@ -5580,7 +5577,7 @@
    "vtable_offsets": [],
    "name": "party_stack_upgrade",
    "sdk_comment": "(party_stack_upgrade, <party_no>, <party_stack_no>, <amount>, <upgrade_path>), #Upgrades <party_no>'s <party_stack_no>'s <amount> of troops (<upgrade_path> can be 0 or 1) (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3906,
@@ -5602,7 +5599,7 @@
    "vtable_offsets": [],
    "name": "party_stack_set_num_upgradeable",
    "sdk_comment": "(party_stack_set_num_upgradeable, <party_no>, <party_stack_no>, <value>), #Sets <party_no>'s <party_stack_no>'s amount of upgradeable troops to <value>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3907,
@@ -5622,7 +5619,7 @@
    "vtable_offsets": [],
    "name": "party_get_banner_icon",
    "sdk_comment": "(party_get_banner_icon, <destination>, <party_no>), #Stores <party_no>'s banner icon into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3908,
@@ -5642,7 +5639,7 @@
    "vtable_offsets": [],
    "name": "party_get_extra_icon",
    "sdk_comment": "(party_get_extra_icon, <destination>, <party_no>), #Stores <party_no>'s extra icon into <destination>",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3909,
@@ -5662,7 +5659,7 @@
    "vtable_offsets": [],
    "name": "party_get_player_id",
    "sdk_comment": "(party_get_player_id, <destination>, <party_no>), #Stores <party_no>'s player reference into <destination>. For multiplayer campaign mode (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3910,
@@ -5683,7 +5680,7 @@
    "vtable_offsets": [],
    "name": "party_is_non_player",
    "sdk_comment": "(party_is_non_player, <party_no>), #Fails if <party_no> is player. For multiplayer campaign mode (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 3911,
@@ -5704,7 +5701,7 @@
    "vtable_offsets": [],
    "name": "party_get_current_terrain_variant",
    "sdk_comment": "(party_get_current_terrain_variant, <destination>, <party_no>), #Stores the texture variant of the world map face under <party_no> into <destination> (0 = no variant). The face's terrain type in map.txt is terrain_type + 256 * variant; party_get_current_terrain returns terrain_type (requires WSE2)",
-   "implemented": false
+   "implemented": true
   },
   {
    "opcode": 4100,

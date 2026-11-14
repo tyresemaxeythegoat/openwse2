@@ -855,7 +855,7 @@ void test_unimplemented_histogram_and_loud_failure() {
                    describe(NativeDispatch::condition_false) == "false condition",
                "native false condition reports NativeDispatch::condition_false");
 
-        expect(dispatch_native_statement(1100U, wide, narrow, tags, stmt, ctx, locals) ==
+        expect(dispatch_native_statement(90U, wide, narrow, tags, stmt, ctx, locals) ==
                        NativeDispatch::unimplemented &&
                    describe(NativeDispatch::unimplemented) == "unimplemented native opcode" &&
                    ctx.unimplementedCount == 0,
@@ -867,11 +867,11 @@ void test_unimplemented_histogram_and_loud_failure() {
         VmContext ctx;
         StatementBlock compatBlock;
         compatBlock.statements = {
-            make_stmt(1100U, {0, 1, 2}),  // unimplemented spawn_around_party
-            make_stmt(1103U, {5}),        // unimplemented set_spawn_radius
-            make_stmt(1100U, {0, 1, 3}),
-            make_stmt(3340U, {0, 100}),   // unimplemented WSE opcode
-            make_stmt(13U, {}),           // unused control-flow slot (<30)
+            make_stmt(90U, {reg(3)}),   // unimplemented get_global_cloud_amount
+            make_stmt(91U, {5}),        // unimplemented set_global_cloud_amount
+            make_stmt(90U, {reg(4)}),
+            make_stmt(5100U, {reg(5)}), // unimplemented WSE lua_get_top
+            make_stmt(13U, {}),         // unused control-flow slot (<30)
             make_stmt(core_op::kAssign, {reg(1), 42}),
         };
         expect(execute_statement_block(compatBlock, ctx) && ctx.errorCount == 0 &&
@@ -879,9 +879,9 @@ void test_unimplemented_histogram_and_loud_failure() {
                    ctx.registers[1] == 42,
                "compatibility mode tracks unimplemented hits while falling through true");
         expect(ctx.unimplementedOpcodeCounts.size() == 4U &&
-                   ctx.unimplementedOpcodeCounts[1100U] == 2U &&
-                   ctx.unimplementedOpcodeCounts[1103U] == 1U &&
-                   ctx.unimplementedOpcodeCounts[3340U] == 1U &&
+                   ctx.unimplementedOpcodeCounts[90U] == 2U &&
+                   ctx.unimplementedOpcodeCounts[91U] == 1U &&
+                   ctx.unimplementedOpcodeCounts[5100U] == 1U &&
                    ctx.unimplementedOpcodeCounts[13U] == 1U,
                "per-opcode histogram records exact native, WSE, and control-flow counts");
     }
@@ -893,7 +893,7 @@ void test_unimplemented_histogram_and_loud_failure() {
         StatementBlock loudNativeBlock;
         loudNativeBlock.statements = {
             make_stmt(core_op::kTryBegin, {}),
-            make_stmt(101U, {0}),  // unimplemented hero_can_join condition
+            make_stmt(70U, {0}),  // unimplemented key_is_down condition
             make_stmt(core_op::kAssign, {reg(0), 111}),
             make_stmt(core_op::kElseTry, {}),
             make_stmt(core_op::kAssign, {reg(0), 222}),  // must NEVER execute!
@@ -901,32 +901,32 @@ void test_unimplemented_histogram_and_loud_failure() {
         };
         expect(!execute_statement_block(loudNativeBlock, ctx) && ctx.registers[0] == 0 &&
                    ctx.errorCount == 1 && ctx.unimplementedCount == 1 &&
-                   ctx.unimplementedOpcodeCounts[101U] == 1U &&
-                   ctx.lastError.find("101") != std::string::npos,
+                   ctx.unimplementedOpcodeCounts[70U] == 1U &&
+                   ctx.lastError.find("70") != std::string::npos,
                "failOnUnimplemented aborts before else_try can recover");
 
         StatementBlock negBlock;
         negBlock.statements = {
-            make_stmt(kNegFlag | 101U, {0}),
+            make_stmt(kNegFlag | 70U, {0}),
             make_stmt(core_op::kAssign, {reg(1), 99}),
         };
         expect(!execute_statement_block(negBlock, ctx) && ctx.registers[1] == 0 &&
-                   ctx.unimplementedOpcodeCounts[101U] == 2U && ctx.errorCount == 2,
+                   ctx.unimplementedOpcodeCounts[70U] == 2U && ctx.errorCount == 2,
                "neg flag cannot invert failOnUnimplemented abort into true");
 
         StatementBlock tonBlock;
         tonBlock.statements = {
-            make_stmt(kThisOrNextFlag | 3340U, {0, 100}),
+            make_stmt(kThisOrNextFlag | 5100U, {reg(4)}),
             make_stmt(core_op::kAssign, {reg(2), 77}),
         };
         expect(!execute_statement_block(tonBlock, ctx) && ctx.registers[2] == 0 &&
-                   ctx.unimplementedOpcodeCounts[3340U] == 1U && ctx.errorCount == 3,
+                   ctx.unimplementedOpcodeCounts[5100U] == 1U && ctx.errorCount == 3,
                "this_or_next flag cannot swallow loud unimplemented WSE abort");
 
         wse::game::ScriptManager mgr;
         wse::game::Script callee;
         callee.id = "missing_callee";
-        callee.block.statements = {make_stmt(1105U, {0})};  // display_log_message (unimplemented)
+        callee.block.statements = {make_stmt(75U, {reg(6)})};  // mouse_get_position (unimplemented)
         mgr.scripts.push_back(std::move(callee));
         ctx.scripts = &mgr;
 
@@ -939,7 +939,7 @@ void test_unimplemented_histogram_and_loud_failure() {
             make_stmt(core_op::kTryEnd, {}),
         };
         expect(!execute_statement_block(callBlock, ctx) && ctx.registers[3] == 0 &&
-                   ctx.unimplementedOpcodeCounts[1105U] == 1U && ctx.errorCount == 4,
+                   ctx.unimplementedOpcodeCounts[75U] == 1U && ctx.errorCount == 4,
                "failOnUnimplemented inside call_script aborts outer try/else caller");
     }
 }
@@ -2012,6 +2012,164 @@ void test_script_mutation_safety() {
     }
 }
 
+void test_locals_zeroing_default() {
+    using namespace wse::vm;
+
+    VmContext ctx;
+    StatementBlock block;
+    block.statements = {
+        make_stmt(core_op::kValAdd, {loc(0), 5}),
+        make_stmt(core_op::kAssign, {reg(0), loc(0)}),
+        make_stmt(core_op::kAssign, {reg(1), loc(17)}),
+    };
+    expect(execute_statement_block(block, ctx) && ctx.registers[0] == 5 &&
+               ctx.registers[1] == 0,
+           "block execution initializes locals to zero by default");
+}
+
+void test_native_campaign_ops() {
+    using namespace wse::vm;
+
+    VmContext ctx;
+    ctx.failOnUnimplemented = true;
+    auto& world = ctx.world;
+
+    // Troops: 0=player(hero), 1=peasant, 2=footman(upgraded from 1)
+    world.troops.resize(3);
+    world.troops[0].flags = 0x10ULL;  // hero
+    world.troops[0].level = 6;
+    world.troops[0].attributes = {12, 10, 10, 10};
+    world.troops[1].name = "Peasant";
+    world.troops[1].upgrade_troop_nos = {2, -1};
+    world.troops[2].name = "Footman";
+    world.troops[2].flags = (1ULL << 26U);  // guarantee_ranged
+
+    // Items: 0=horse, 1=sword, 2=helmet
+    world.items.resize(3);
+    world.items[0].properties = 1ULL;  // itp_type_horse
+    world.items[0].horse_speed = 45;
+    world.items[0].value = 500;
+    world.items[1].properties = 2ULL;  // itp_type_one_handed_wpn
+    world.items[1].weight = 2.5f;
+    world.items[1].thrust_damage = 28;
+    world.items[1].swing_damage = 34;
+    world.items[2].properties = 12ULL;  // itp_type_head_armor
+    world.items[2].head_armor = 40;
+
+    // Factions
+    world.factions.resize(2);
+    world.factions[0].set_relation(1, -0.5f);
+
+    // Party templates & parties: 0=main_party, 1=town
+    world.party_templates.resize(1);
+    world.party_templates[0].name = "Looters";
+    world.party_templates[0].stacks[0] = {1, 3, 5, 0};
+
+    world.parties.resize(2);
+    world.parties[0].name = "Player";
+    world.parties[0].radius = 1.0f;
+    world.parties[0].behavior = 4;
+    world.parties[0].behavior_object = 1;
+    world.parties[0].stacks.push_back({0, 1, 0, 0});
+    world.parties[1].name = "Suno";
+    world.parties[1].position.o = {10.0f, 0.0f, 0.0f, 1.0f};
+    world.encountered_party_no = 1;
+
+    // Scene props / mission objects & agents
+    world.mission_objects.resize(1);
+    world.mission_objects[0].scene_prop_no = 5;
+    world.agents.resize(2);
+    world.agents[0].troop_no = 0;
+    world.agents[0].team_no = 0;
+    world.agents[0].hit_points = 100.0f;
+    world.agents[0].max_hit_points = 100.0f;
+    world.agents[1].troop_no = 1;
+    world.agents[1].team_no = 1;
+    world.agents[1].hit_points = 50.0f;
+    world.agents[1].max_hit_points = 50.0f;
+    world.player_agent_no = 0;
+    world.teams[0].order_listener = 1;
+    world.teams[0].order_types[0] = 1;
+    world.teams[0].relations[1] = -1;
+    world.teams[1].relations[0] = -1;
+
+    // Local strings & positions
+    const std::array<std::u16string_view, 2> kLocalStrs{
+        u"Hero Face Result",
+        u"0000000100020003000400050006000700080009000a000b000c000d000e000f",
+    };
+    ctx.localStrings = kLocalStrs;
+    ctx.positions[1].o = {3.0f, 4.0f, 5.0f, 1.0f};
+    ctx.positions[2].o = {0.0f, 0.0f, 0.0f, 1.0f};
+    ctx.timersTotal = {250000, 500000, 0};  // 2.5s on timer A
+    world.mission_timers[0] = {0, 100000};  // 1.5s elapsed
+    world.ground_level_z = 1.0f;
+
+    StatementBlock b;
+    b.statements = {
+        make_stmt(36U, {1}),                              // entering_town(1) -> true
+        make_stmt(37U, {}),                               // map_free -> true
+        make_stmt(60U, {static_cast<std::int64_t>(tagged(0x16, 0))}),
+        make_stmt(153U, {2}),                             // troop_is_guarantee_ranged(2) -> true
+        make_stmt(371U, {2, 3, 42}),                      // set_achievement_stat
+        make_stmt(370U, {reg(17), 2, 3}),                 // get_achievement_stat -> 42
+        make_stmt(713U, {reg(1), 1, 2}),                  // sq_dist_meters = 50
+        make_stmt(792U, {reg(2), 1}),                     // (5 - 1) * 100 = 400
+        make_stmt(1005U, {2}),                            // num_active_teams_le(2) -> true
+        make_stmt(1062U, {250, 0}),                       // add_xp_to_troop
+        make_stmt(1515U, {reg(3), 0}),                    // troop_get_xp == 250
+        make_stmt(1103U, {4}),                            // set_spawn_radius
+        make_stmt(1100U, {1, 0}),                         // spawn_around_party -> reg0 = 2
+        make_stmt(core_op::kAssign, {reg(4), reg(0)}),    // save spawned party_no = 2
+        make_stmt(1543U, {0, 8, 0}),                      // give horse to slot 8
+        make_stmt(152U, {0}),                             // troop_is_mounted(0) -> true
+        make_stmt(151U, {0, 0}),                          // troop_has_item_equipped(0, 0) -> true
+        make_stmt(1561U, {reg(5), 1, 0}),                 // troop_get_upgrade_troop -> 2
+        make_stmt(1611U, {0, 1, 4}),                      // party_add_prisoners(main, 1, 4)
+        make_stmt(1656U, {reg(6), 0, 0}),                 // prisoner_stack troop == 1
+        make_stmt(1672U, {0, 75}),                        // party_set_morale
+        make_stmt(1671U, {reg(7), 0}),                    // party_get_morale == 75
+        make_stmt(1775U, {0, 1}),                         // class_is_listening_order -> true
+        make_stmt(1785U, {reg(8), 0, 0}),                 // team_get_movement_order -> 0
+        make_stmt(1788U, {0, 1}),                         // teams_are_enemies -> true
+        make_stmt(1779U, {0, 1, 1}),                      // agent_equip_item
+        make_stmt(1722U, {0, 1, 60}),                     // kill enemy agent 1 (50hp - 60)
+        make_stmt(1003U, {}),                             // all_enemies_defeated -> true!
+        make_stmt(1854U, {0, 200, 150, 100}),             // prop_instance_set_scale
+        make_stmt(1860U, {0, 1, 50}),                     // prop animate_to_position
+        make_stmt(1862U, {reg(9), 0}),                    // is_animating == 1
+        make_stmt(2091U, {0, 150}),                       // agent_set_damage_modifier
+        make_stmt(2065U, {reg(10), 0}),                   // agent_get_damage_modifier == 150
+        make_stmt(2154U, {reg(11), 0}),                   // store_num_free_stacks == 10
+        make_stmt(2190U, {reg(12), 0, 1}),                // store_relation == -50
+        make_stmt(2365U, {reg(13)}),                      // mission_timer_a_msec == 1500
+        make_stmt(2375U, {}),                             // reset_mission_timer_a
+        make_stmt(2365U, {reg(14)}),                      // mission_timer_a_msec == 0
+        make_stmt(2700U, {reg(15), 1}),                   // item_get_weight(1) == 250
+        make_stmt(2718U, {reg(16), 1}),                   // item_get_thrust_damage(1) == 28
+        make_stmt(2723U, {1, 2}),                         // item_has_property(1, 2) -> true
+        make_stmt(2751U, {0, static_cast<std::int64_t>(tagged(0x16, 1)), 0}),
+        make_stmt(2750U, {0, 0, 0}),                      // store into s0
+    };
+
+    expect(execute_statement_block(b, ctx) && ctx.errorCount == 0 &&
+               ctx.unimplementedCount == 0,
+           "M3 campaign opcodes execute without errors or unimplemented hits");
+    expect(world.result_string == "Hero Face Result" &&
+               ctx.registers[0] == 4 && ctx.registers[17] == 42 &&
+               ctx.registers[1] == 50 && ctx.registers[2] == 400 &&
+               ctx.registers[3] == 250 && ctx.registers[4] == 2 && ctx.registers[5] == 2 &&
+               ctx.registers[6] == 1 && ctx.registers[7] == 75 && ctx.registers[8] == 0 &&
+               ctx.registers[9] == 1 && ctx.registers[10] == 150 && ctx.registers[11] == 10 &&
+               ctx.registers[12] == -50 && ctx.registers[13] == 1500 &&
+               ctx.registers[14] == 0 && ctx.registers[15] == 250 &&
+               ctx.registers[16] == 28 && !world.agents[1].is_alive() &&
+               world.agents[0].equipped_items[0] == 1 &&
+               ctx.stringRegisters[0] ==
+                   u"0000000100020003000400050006000700080009000a000b000c000d000e000f",
+           "M3 campaign opcodes produce exact verified state and outputs");
+}
+
 }  // namespace
 
 int main() {
@@ -2033,6 +2191,8 @@ int main() {
     test_native_entity_ops();
     test_native_mission_ops();
     test_script_mutation_safety();
+    test_locals_zeroing_default();
+    test_native_campaign_ops();
 
     if (failures != 0) {
         std::printf("block_vm tests: FAIL (%d)\n", failures);

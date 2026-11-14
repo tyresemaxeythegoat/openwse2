@@ -13,7 +13,7 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | Metric | Value |
 | --- | ---: |
 | Handler opcodes | 440 |
-| Implemented in VM headers | 222/440 |
+| Implemented in VM headers | 236/440 |
 | Opcode range | 2800–5202 |
 | Switch-block handlers | 431 |
 | Equality-test handlers | 9 |
@@ -29,13 +29,13 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 3000 | registers, script context, slots, timers, misc | 36/46 | `set_forced_lod`, `send_message_to_url_advanced` |
 | 3100 | input keys | 0/3 | `game_key_get_key`, `key_released` |
 | 3200 | dictionaries | 23/23 | — |
-| 3300 | agent | 0/61 | `agent_get_item_modifier`, `agent_get_item_slot_modifier` |
+| 3300 | agent | 2/61 | `agent_get_item_modifier`, `agent_get_item_slot_modifier` |
 | 3400 | multiplayer messaging | 0/17 | `multiplayer_send_chat_message_to_player`, `multiplayer_send_composite_message_to_player` |
 | 3500 | server admin | 0/21 | `server_set_password_admin`, `server_set_password_private` |
 | 3600 | mission / props / particles | 6/26 | `set_ally_collision_threshold`, `particle_system_remove` |
 | 3700 | troop | 10/10 | — |
 | 3800 | item / cur_item | 14/14 | — |
-| 3900 | party | 0/12 | `party_stack_get_experience`, `party_stack_get_num_upgradeable` |
+| 3900 | party | 12/12 | — |
 | 4100 | position vectors | 4/5 | `position_align_to_ground` |
 | 4200 | strings | 41/47 | `str_store_multiplayer_profile_name`, `str_store_server_password_admin` |
 | 4300 | options | 6/6 | — |
@@ -199,8 +199,8 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 3337 | `0xd09` | `agent_kick` | no | switch | 2800 |  |  |
 | 3338 | `0xd0a` | `agent_set_dropped_items_prune_time` | no | switch | 2841 |  |  |
 | 3339 | `0xd0b` | `agent_set_missile_items_prune_time` | no | switch | 2852 |  |  |
-| 3340 | `0xd0c` | `agent_set_action_speed_modifier` | no | switch | 2863 |  |  |
-| 3341 | `0xd0d` | `agent_get_action_speed_modifier` | no | switch | 2876 |  |  |
+| 3340 | `0xd0c` | `agent_set_action_speed_modifier` | yes | switch | 2863 |  |  |
+| 3341 | `0xd0d` | `agent_get_action_speed_modifier` | yes | switch | 2876 |  |  |
 | 3342 | `0xd0e` | `agent_set_left_hand_weapon_collision` | no | switch | 2884 |  |  |
 | 3343 | `0xd0f` | `agent_ai_set_can_weapon_switch` | no | switch | 2893 |  |  |
 | 3344 | `0xd10` | `agent_ai_set_can_fight` | no | switch | 2902 |  |  |
@@ -308,18 +308,18 @@ arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode
 | 3811 | `0xee3` | `cur_item_mesh_set_color` | yes | switch | 4579 |  |  |
 | 3812 | `0xee4` | `cur_item_add_mesh_with_material` | yes | switch | 4602 |  |  |
 | 3813 | `0xee5` | `item_set_horse_skeleton_model` | yes | switch | 4645 |  |  |
-| 3900 | `0xf3c` | `party_stack_get_experience` | no | if-equality | 3687 |  |  |
-| 3901 | `0xf3d` | `party_stack_get_num_upgradeable` | no | switch | 4701 |  |  |
-| 3902 | `0xf3e` | `party_has_flag` | no | switch | 4715 |  |  |
-| 3903 | `0xf3f` | `party_heal_members` | no | switch | 4722 |  |  |
-| 3904 | `0xf40` | `party_switch_stacks` | no | switch | 4782 |  |  |
-| 3905 | `0xf41` | `party_stack_upgrade` | no | switch | 4827 |  |  |
-| 3906 | `0xf42` | `party_stack_set_num_upgradeable` | no | switch | 4974 |  |  |
-| 3907 | `0xf43` | `party_get_banner_icon` | no | switch | 4988 |  |  |
-| 3908 | `0xf44` | `party_get_extra_icon` | no | switch | 4996 |  |  |
-| 3909 | `0xf45` | `party_get_player_id` | no | switch | 5004 |  |  |
-| 3910 | `0xf46` | `party_is_non_player` | no | switch | 5012 |  |  |
-| 3911 | `0xf47` | `party_get_current_terrain_variant` | no | switch | 5020 |  |  |
+| 3900 | `0xf3c` | `party_stack_get_experience` | yes | if-equality | 3687 |  |  |
+| 3901 | `0xf3d` | `party_stack_get_num_upgradeable` | yes | switch | 4701 |  |  |
+| 3902 | `0xf3e` | `party_has_flag` | yes | switch | 4715 |  |  |
+| 3903 | `0xf3f` | `party_heal_members` | yes | switch | 4722 |  |  |
+| 3904 | `0xf40` | `party_switch_stacks` | yes | switch | 4782 |  |  |
+| 3905 | `0xf41` | `party_stack_upgrade` | yes | switch | 4827 |  |  |
+| 3906 | `0xf42` | `party_stack_set_num_upgradeable` | yes | switch | 4974 |  |  |
+| 3907 | `0xf43` | `party_get_banner_icon` | yes | switch | 4988 |  |  |
+| 3908 | `0xf44` | `party_get_extra_icon` | yes | switch | 4996 |  |  |
+| 3909 | `0xf45` | `party_get_player_id` | yes | switch | 5004 |  |  |
+| 3910 | `0xf46` | `party_is_non_player` | yes | switch | 5012 |  |  |
+| 3911 | `0xf47` | `party_get_current_terrain_variant` | yes | switch | 5020 |  |  |
 | 4100 | `0x1004` | `position_get_vector_to_position` | yes | switch | 5030 |  |  |
 | 4101 | `0x1005` | `position_align_to_ground` | no | switch | 5085 |  |  |
 | 4102 | `0x1006` | `position_get_length` | yes | switch | 5143 |  |  |

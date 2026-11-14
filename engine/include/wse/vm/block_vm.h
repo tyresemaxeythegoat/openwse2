@@ -197,7 +197,9 @@ struct VmContext {
     WseDictionaryStore dictionaries{};
     wse::game::WseWorldState world{};
 
-    bool clearLocalsBetweenCalls = false;
+    // 0x1401f6c59 checks rglConfig::General::bLocalVariablesZeroInitialization
+    // (loaded at 0x14026f716 via rglIni::getBool 0x1402a84d0; default true).
+    bool clearLocalsBetweenCalls = true;
     std::int32_t maxCallDepth = kMaxCallDepth;
     std::int32_t currentDepth = 0;
     std::int32_t currentCaller = 0;

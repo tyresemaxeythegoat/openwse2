@@ -1,6 +1,6 @@
 # WSE2 Architecture (Reconstructed)
 
-Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h` + extended native dispatchers `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, including `NativeDispatch`/`failOnUnimplemented`, live entity iterators `11/12/16/17`, `try_for_dict_keys`, and `array_sort_custom` callback), world/entity/skill/item/quest/site/party/mission/edit-mode runtime state (`wse/game/world_state.h`), pure STL helpers (`wse/core/{math,encoding,json}.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the per-family handler headers under `wse/vm/ops/` listed in `STATUS.md` §3 recovered.
+Status: Phase 2 (Phase 1 binary triage complete; live counts are in `STATUS.md`) — statement-block VM (`block_vm.h` + extended native dispatchers `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, `native_campaign_ops.h`, `native_campaign_ops_2.h`, including `NativeDispatch`/`failOnUnimplemented`, live entity iterators `11/12/16/17`, `try_for_dict_keys`, and `array_sort_custom` callback), world/entity/skill/item/quest/site/party/mission/edit-mode runtime state (`wse/game/world_state.h` + `wse/game/world_campaign_helpers.h`), pure STL helpers (`wse/core/{math,encoding,json}.h`), script statement parse, script manager, module text readers, trigger runtime, binary savegames, the 440-operation WSE extended opcode map, and the per-family handler headers under `wse/vm/ops/` listed in `STATUS.md` §3 recovered.
 Last updated: 2026-11-14.
 
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
@@ -302,8 +302,8 @@ Additional reconstructed handler groups:
   and `array_eq..array_le` (`0x1401f58a0`, `0x1401f5d30`–`0x1401f606b`) compare elements lexicographically (normalizing position copies and comparing all 12 floats `s, f, u, o`).
 - **Position vector group** (`4100`, `4102`–`4104` at `0x1401ecd5a`, `0x1401ed0c1`, `0x1401ed10f`, `0x1401ed158`):
   operates on `rglTransform[128]` (`0x140663030`, 64 B, `0x34ac`, four `rglVector4` `0x32d9`: `s, f, u, o`), computing fixed-point length/dot/cross products and `position_get_vector_to_position` orientation (`rotateZ`/`rotateX`).
-- **World entity slot predicates, scalars, config/skills/savegame MD5, troop, item, and edit-mode groups** (`3003`–`3013`, `3026`/`3030`–`3031`/`3036`–`3038`/`3045`, `3601`/`3608`/`3610`/`3619`/`3622`, `3700`–`3709`, `3800`–`3813`, `4226`/`4231`–`4232`/`4235`/`4239`/`4245`–`4246`, `4600`–`4609`):
-  backed by `WseWorldState` (`engine/include/wse/game/world_state.h`), wired into `VmContext::world` and `WseVmState::world`. Covers all 11 `*_slot_gt` validators (`0..0xfffff` slots, active party/agent/mission-object, `player.status == 2`, `team 0..7`); `mbTroop` point getters/setters, `m_flags` mask, packed 4-bit `m_skills[6]` + shared Ironflesh/Strength HP cap (`0x140246010`/`0x1402460b0`), and clamped `[0, 999]` proficiencies (`0x1400a61c0`); `mbItemKind` damage/type nibbles, armors/speeds, particle/blood color, `rglMetaMesh` `caller == -50` `cur_item_*` mesh/material helpers with `spacesToUnderscores` (`0x14030f270`), and horse skeleton validation; case-sensitive module settings/game variables (`0x1402a7da0`/`0x1402aa400`), skill `_desc` translations (`0x1401103d0`/`0x140213520`), `"sg%d%d.sav"` MD5 (`0x14024f4c0`); and `mbGame` edit-mode selection/highlight/mode/dialog queries + option flags (`0x14061ef1a`, `0x14061781a` default `true`, `0x14061efb8`).
+- **World entity slot predicates, agent/party/troop/item groups, scalars, config/skills/savegame MD5, and edit-mode groups** (`3003`–`3013`, `3026`/`3030`–`3031`/`3036`–`3038`/`3045`, `3340`–`3341`, `3601`/`3608`/`3610`/`3619`/`3622`, `3700`–`3709`, `3800`–`3813`, `3900`–`3911`, `4226`/`4231`–`4232`/`4235`/`4239`/`4245`–`4246`, `4600`–`4609`):
+  backed by `WseWorldState` (`engine/include/wse/game/world_state.h` + `wse/game/world_campaign_helpers.h`), wired into `VmContext::world` and `WseVmState::world`. Covers all 11 `*_slot_gt` validators (`0..0xfffff` slots, active party/agent/mission-object, `player.status == 2`, `team 0..7`); `agent_{set,get}_action_speed_modifier` (`3340`–`3341`); `party_stack_get_experience`..`party_get_current_terrain_variant` (`3900`–`3911`); `mbTroop` point getters/setters, `m_flags` mask, packed 4-bit `m_skills[6]` + shared Ironflesh/Strength HP cap (`0x140246010`/`0x1402460b0`), and clamped `[0, 999]` proficiencies (`0x1400a61c0`); `mbItemKind` damage/type nibbles, armors/speeds, particle/blood color, `rglMetaMesh` `caller == -50` `cur_item_*` mesh/material helpers with `spacesToUnderscores` (`0x14030f270`), and horse skeleton validation; case-sensitive module settings/game variables (`0x1402a7da0`/`0x1402aa400`), skill `_desc` translations (`0x1401103d0`/`0x140213520`), `"sg%d%d.sav"` MD5 (`0x14024f4c0`); and `mbGame` edit-mode selection/highlight/mode/dialog queries + option flags (`0x14061ef1a`, `0x14061781a` default `true`, `0x14061efb8`).
 
 Handlers that do not write operand 0 report
 `handled_no_store`; failed comparisons report `condition_false`; invalid registers are successful
@@ -757,8 +757,11 @@ Dispatch order:
 
 - Pushes a frame on the global call stack (`DAT_1405d0da0`); frame storage is `0x1C08` bytes with a
   128-entry loop stack of `0x38`-byte frames and a depth field at `+0x1C00`.
-- Calls `analyze()` on entry, then optionally zeroes `clamp(m_numLocalVariablesUsed, 0x20, 0x400)`
-  qwords of locals.
+- Calls `analyze()` on entry, then zeroes `clamp(m_numLocalVariablesUsed, 0x20, 0x400)`
+  qwords of locals when `rglConfig::General::bLocalVariablesZeroInitialization` (`0x140617819`,
+  checked at `0x1401f6c59`, loaded from `[General] bLocalVariablesZeroInitialization` at
+  `0x14026f716` via `rglIni::getBool` `0x1402a84d0` with `.data` default `true`) is enabled.
+  `VmContext::clearLocalsBetweenCalls` defaults to `true` to match retail.
 - If `m_luaHookRef` (`+0x14`) is not `-2`, calls `WSELuaManager::OnOperationMgrExecute` for a
   block-level Lua hook; a `false` return aborts the block.
 - Special opcodes handled in the loop:
@@ -791,10 +794,12 @@ Verified supporting layouts added to `docs/SYMBOL_MAP.json` (58 classes, 2,914 s
 
 Portable reconstruction lives in `engine/include/wse/vm/block_vm.h` and `engine/include/wse/vm/native_*.h`: `VmContext`,
 `analyze_statement_block`, `execute_statement`, `execute_statement_block` (`DepthGuard` tracking `currentDepth` / preserving `currentCaller` + `wse_invoke_script_callback`), loop helpers
-(`start_loop`/`can_loop`/`end_loop` including live entity iterators `11/12/16/17` and `core_op::kTryForDictKeys` `0x12`), and `319` switch native handlers across
+(`start_loop`/`can_loop`/`end_loop` including live entity iterators `11/12/16/17` and `core_op::kTryForDictKeys` `0x12`), and `603` switch native handlers across
 `native_ops.h` (`33` core comparisons/shifts/math ops `30–33`, `2100–2133` + `112` Milestone 1 handlers across `entity_slots`, `positions_and_math`, `arithmetic_registers_and_vars`, `strings`, and entity helpers),
-`native_entity_ops.h` (`108` Milestone 2 player/MP, quest, audio/UI/overlay, site/faction, troop, and party ops), and
-`native_mission_ops.h` (`66` Milestone 2 agent, team/mission combat, scene prop, and mission timer ops), `call_script`,
+`native_entity_ops.h` (`108` Milestone 2 player/MP, quest, audio/UI/overlay, site/faction, troop, and party ops),
+`native_mission_ops.h` (`66` Milestone 2 agent, team/mission combat, scene prop, and mission timer ops),
+`native_campaign_ops.h` (`156` Milestone 3 campaign/world/troop/party handlers `36–1694`), and
+`native_campaign_ops_2.h` (`128` Milestone 3 agent/mission/item/party/face-key handlers `1695–2751`), `call_script`,
 `store_script_param*`, `this_or_next`/`neg`, `dispatch_wse_statement` (forwarding `outTag` for
 string operands and wiring `WseVmState` position, timer, RNG, profiler, object-manager, and script-callback state),
 and VM-backed `execute_script`, `execute_mapped_script`, `execute_trigger`,
@@ -861,7 +866,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    types across `15,363` TPI records), generated cleanly with `tools/vtables.py`.
 8. ~~Handler-site addresses cited only in `engine/include` source comments~~ **Resolved (B7):**
    `tools/build_symbol_map.py` exports `function_ranges`, `global_objects`, and `superseded_vas`,
-   and `tools/check_citations.py` verifies all `507` unique header VAs (`702` VA refs) across `30` headers (plus REA `ev_*` IDs) in CI.
+   and `tools/check_citations.py` verifies all `794` unique header VAs (`989` VA refs) across `33` headers (plus REA `ev_*` IDs) in CI.
 
 ## 9. Evidence index
 
