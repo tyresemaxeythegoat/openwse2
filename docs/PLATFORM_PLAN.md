@@ -17,8 +17,10 @@ order, and the risks decided up front. The checklist and its tick marks live in
 | Assets and drivers | Bring-your-own, picked on device | `AGENTS.md` §1 and §3: no game files and no driver binaries in this repository |
 
 Driver packages the user has pointed at (to be imported at runtime, never committed):
-PanVK — `FristOneRR/FristOneRR-Panvk-Driver`; Turnip — `The412Banner/Banners-Turnip`. Their package
-layout has **not been inspected yet**; slice P4 starts by doing that.
+PanVK — `FristOneRR/FristOneRR-Panvk-Driver` (`v3.7.0`, AdrenoTools/Winlator `.zip` with `meta.json` +
+`libvulkan_panfrost.so` exporting ICD v5 entrypoints and `DT_NEEDED: libhardware.so`, rewritten in-place to
+`libpanvk_hw.so`); Turnip — `The412Banner/Banners-Turnip` (`v27.0.0-20261115`, AdrenoTools `.zip` with `meta.json`
+`schemaVersion: 1`, `libraryName: "libvulkan_freedreno.so"`, `minApi: 28`, `vendor: "Mesa"`).
 
 ## Design principles
 
@@ -38,10 +40,10 @@ layout has **not been inspected yet**; slice P4 starts by doing that.
 
 ```
 CMakeLists.txt                 root: engine (INTERFACE), tests (CTest), wse_selftest, Android libwse2.so
-engine/include/wse/platform/   vfs.h saf_vfs.h clock.h sleep.h log.h (present) · rhi.h audio.h input.h (planned)
+engine/include/wse/platform/   vfs.h saf_vfs.h clock.h sleep.h log.h rhi.h (present) · audio.h input.h (planned)
 engine/include/wse/asset/      brf.h, dds.h (portable, host-tested); shader, sound decoders (planned)
 platform/sdl/                  SDL3 on-device self-test shell (present); window / input / audio / clock (planned)
-platform/vulkan/               RHI Vulkan backend + driver loader (planned)
+platform/vulkan/               driver_loader.{h,cpp}: Vulkan loader, MockVulkanIcd v5, VulkanRhiDevice (present)
 platform/android/              saf_vfs_jni.cpp over JNI (present); thermal and frame-rate hooks (planned)
 android/                       Gradle project: Kotlin WseLauncherActivity (SAF + module/driver picker) + WseSafBridge + WseActivity (SDLActivity) + Prefab SDL3 arm64-v8a APK (present)
 third_party/                   SDL3 (Gradle Prefab), Lua 5.1 (CMake FetchContent), Bullet, volk/VMA — pinned by hash
@@ -61,7 +63,7 @@ Each slice is one milestone. "Done when" is the acceptance test, not a descripti
 | P1 | Platform seam + app shell | `wse/platform/{vfs,clock,sleep,log}.h` with host implementations and tests; engine file/clock/sleep routing through the seam; `wse_selftest` runner across all 18 core suites; Gradle `android/` + `platform/sdl/` SDL3 `SDLActivity` + `libwse2.so` on-device self-test screen + CI debug APK (`arm64-v8a`) | APK artifact built by CI (`android-apk`) and `selftest_host` passes on host; on-device run prints PASS when installed on a device or emulator |
 | P2 *(host + APK verified; device pending)* | Launcher + SAF file system *(Phase 4)* | `wse/platform/saf_vfs.h` (`SafVfs`, `MemorySafBackend`, `scan_warband_modules`, `verify_module_scripts`), `platform/android/saf_vfs_jni.cpp`, and Kotlin `WseSafBridge` + `WseLauncherActivity`: `ACTION_OPEN_DOCUMENT_TREE` for the Warband folder, persisted URI permission, module list from `Modules/*/module.ini`, mod switcher, GPU driver picker (`System`/`Turnip`/`PanVK`), one-time case-insensitive tree index, reads through `openFileDescriptor`, `scripts.txt` verification, and `import_to(Vfs&)` to app storage. | Host `SafVfs` tests (`platform_test.cpp`) and Android APK build pass in CI; on-device launcher lists modules from a user tree, parses `scripts.txt` through `SafVfs`, and records live index build time (`STATUS.md` §7) |
 | P3 *(complete)* | Asset decoders (host-first) | PE/PDB evidence exports (`docs/SYMBOL_MAP.json`) and `wse/asset/{brf,dds}.h`: `.brf` (mesh, material, texture, shader, skeleton, animation, collision body, physics material), `.dds` (BC1–BC5 + uncompressed RGBA/BGRA/BGR/16-bit/L8/L16/A8L8/A8 + DX10 + Warband texture search chain), and `module.ini` resource catalogs. Closes the `.brf`/`.dds` work of Phase 2G. | Host tests (`asset_test.cpp`) and `wse_brf` CLI pass on synthetic fixtures and 100% of retail Warband `CommonRes`, `WSE2 SDK`, `Textures`, and `Modules/Native` (`STATUS.md` §7) |
-| P4 | Vulkan bring-up + driver loader | Inspect both driver packages. `platform/vulkan/driver_loader`: system `libvulkan.so`; PanVK through the direct-ICD loader; Turnip through the custom-driver mechanism its package expects. Import a user-picked package into app-private storage. Minimal RHI (`rhi.h`: buffers, textures, pipelines, passes) with a Vulkan backend; CI renders on a software Vulkan driver. | Textured static mesh viewer: screenshot test on host, and on device with each driver path |
+| P4 *(host verified; CI & device pending)* | Vulkan bring-up + driver loader | Both driver packages inspected (`v3.7.0` PanVK + `v27.0.0-20261115` Turnip). `engine/include/wse/platform/rhi.h` (`RhiDevice`, `SoftwareRhiDevice`, `meta.json` parser, ELF `.dynstr` `libpanvk_hw.so` patcher, BRF/DDS textured mesh helper), `platform/vulkan/driver_loader.{h,cpp}` (`VulkanDriverLoader`, `MockVulkanIcd` v5, `VulkanRhiDevice`), `libpanvk_hw.so` (`runtime/android/src/hardware_stub.c`), and `nativeProbeVulkanAndRenderMesh` JNI/launcher probe. | Textured static mesh screenshot test (`SoftwareRhiDevice` vs `VulkanRhiDevice` over `MockVulkanIcd` v5 + `load_system` probe) PASS on host; on-device run with real drivers pending hardware |
 | P5 | Shaders + materials | Evidence: how v1.1.5.5 loads module effect files (`d3dx9_43` call sites) and which techniques materials name. Pipeline from the module's shaders to SPIR-V, run once at module import and cached. The translator is chosen by a spike on a real `Native` plus one large mod, not in advance. D3D9 conventions (half-pixel offset, clip-space depth, sRGB) are handled in the RHI. | `Native` core techniques render the viewer mesh correctly; second launch hits the cache |
 | P6 | Audio | Evidence: FMOD Ex call sites → required feature set. `AudioDevice` interface; SDL3 audio-stream backend with a small mixer (3D pan and attenuation, streamed music); decoders for the formats `sounds.txt` references. | Host test mixes deterministically to a buffer; device plays a module sound and a music track |
 | P7 | Input + touch overlay *(Phase 4)* | `Input` interface mapping SDL3 keyboard, mouse, gamepad, and touch onto the engine's game-key table (also needed by the WSE input-key family). Overlay: movement stick, look area, four-direction attack/block swipe zones, command radial. One `InputContext` (mission / map / menu / inventory / presentation) drives visibility; overlay hides when a gamepad connects. Layout editor, per-module profiles. | Overlay drives a free camera in the P4 viewer; hides in menu context and on controller attach |

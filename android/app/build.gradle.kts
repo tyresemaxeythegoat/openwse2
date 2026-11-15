@@ -176,7 +176,7 @@ android {
 
         externalNativeBuild {
             cmake {
-                targets += listOf("wse2")
+                targets += listOf("wse2", "panvk_hw")
                 arguments += listOf(
                     "-DANDROID_STL=c++_static",
                     "-DANDROID_PLATFORM=android-29",

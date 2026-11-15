@@ -168,13 +168,21 @@ if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
         engine/tests/headless_test.cpp
         engine/tests/lua_test.cpp
         engine/tests/asset_test.cpp
+        platform/vulkan/driver_loader.cpp
     )
     set_target_properties(wse_selftest PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_compile_definitions(wse_selftest PRIVATE WSE_SELF_TEST_LIBRARY=1)
     target_include_directories(wse_selftest PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests"
+        "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan"
+    )
+    target_include_directories(wse_selftest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/android/third_party"
     )
     target_link_libraries(wse_selftest PUBLIC wse_engine wse_lua)
+    if(NOT WIN32)
+        target_link_libraries(wse_selftest PUBLIC ${CMAKE_DL_LIBS})
+    endif()
     wse_apply_strict_warnings(wse_selftest)
 endif()
 
@@ -240,6 +248,11 @@ if(WSE_BUILD_ANDROID_APP)
         message(FATAL_ERROR "WSE_BUILD_ANDROID_APP=ON requires an Android toolchain build")
     endif()
     find_package(SDL3 REQUIRED CONFIG)
+    add_library(panvk_hw SHARED
+        runtime/android/src/hardware_stub.c
+    )
+    wse_apply_strict_warnings(panvk_hw)
+
     add_library(wse2 SHARED
         platform/sdl/sdl_selftest_main.cpp
         platform/android/saf_vfs_jni.cpp

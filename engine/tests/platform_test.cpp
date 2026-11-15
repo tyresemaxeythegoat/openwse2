@@ -2,18 +2,28 @@
 //
 // Build/run: see AGENTS.md section 2 (CMake/CTest or the shell loop).
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <system_error>
 #include <vector>
 
+#if __has_include("driver_loader.h")
+#include "driver_loader.h"
+#else
+#include "../../platform/vulkan/driver_loader.h"
+#endif
+
 #include "wse/io/text_stream.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/log.h"
+#include "wse/platform/rhi.h"
 #include "wse/platform/saf_vfs.h"
 #include "wse/platform/sleep.h"
 #include "wse/platform/vfs.h"
@@ -195,11 +205,15 @@ void test_host_vfs_dir_cache() {
     expect(vfs.is_file("textures/mixed_case.dds"), "case-insensitive hit through the index");
     const std::size_t after_first = vfs.directory_scans();
     for (int i = 0; i < 20; ++i) {
-        (void)vfs.is_file("Textures/languages/en/missing_" + std::to_string(i) + ".dds");
+        const std::string dir_case = (i % 2 == 0) ? "Textures" : "textures";
+        (void)vfs.is_file(dir_case + "/languages/en/missing_" + std::to_string(i) + ".dds");
         (void)vfs.is_file("TEXTURES/MIXED_CASE.dds");
     }
-    // At most the root and Textures listed once each across all lookups.
-    expect(after_first >= 1U && vfs.directory_scans() <= 2U,
+    // On case-sensitive filesystems, root and Textures are listed once each (2);
+    // on case-insensitive filesystems, the first miss under `Textures` lists it once (1)
+    // and `textures/...` misses reuse that case-folded cache entry.
+    expect(vfs.directory_scans() >= 1U && vfs.directory_scans() <= 2U &&
+               vfs.directory_scans() >= after_first,
            "repeated misses reuse the cached directory listing");
 
     // A file written through the Vfs is visible under another spelling at once.
@@ -418,6 +432,309 @@ void test_saf_vfs() {
     }
 }
 
+void test_rhi_and_driver_loader() {
+    using namespace wse::platform;
+
+    // 1. AdrenoTools meta.json parsing (`Banners-Turnip` and `FristOneRR-Panvk-Driver`).
+    {
+        const std::string turnip_json = R"({
+            "schemaVersion": 1,
+            "name": "Mesa Turnip Driver v27.0.0",
+            "description": "Custom Vulkan ICD for Adreno",
+            "author": "The412Banner",
+            "packageVersion": "1",
+            "vendor": "Mesa",
+            "driverVersion": "Vulkan 1.4.300",
+            "minApi": 28,
+            "libraryName": "libvulkan_freedreno.so"
+        })";
+        DriverPackageMeta meta{};
+        std::string err;
+        expect(parse_driver_meta_json(turnip_json, meta, &err), "parse Turnip meta.json");
+        expect(meta.schema_version == 1 && meta.min_api == 28 &&
+                   meta.library_name == "libvulkan_freedreno.so" &&
+                   meta.inferred_mode == DriverMode::turnip,
+               "Turnip metadata fields and mode inference");
+
+        const std::string panvk_json = R"({
+            "schemaVersion": 1,
+            "name": "PanVK FristOneRR v3.7.0",
+            "description": "PanVK ICD for Mali kbase",
+            "author": "FristOneRR",
+            "packageVersion": "1",
+            "vendor": "Mesa",
+            "driverVersion": "Vulkan 1.3.295",
+            "minApi": 29,
+            "libraryName": "libvulkan_panfrost.so"
+        })";
+        expect(parse_driver_meta_json(panvk_json, meta, &err), "parse PanVK meta.json");
+        expect(meta.schema_version == 1 && meta.min_api == 29 &&
+                   meta.library_name == "libvulkan_panfrost.so" &&
+                   meta.inferred_mode == DriverMode::panvk,
+               "PanVK metadata fields and mode inference");
+
+        // Unsafe / invalid payloads rejected.
+        expect(!parse_driver_meta_json(
+                   R"({"schemaVersion":1,"libraryName":"../evil.so"})", meta, &err),
+               "reject parent-traversal libraryName");
+        expect(!parse_driver_meta_json(
+                   R"({"schemaVersion":1,"libraryName":"sub/lib.so"})", meta, &err),
+               "reject slash in libraryName");
+        expect(!parse_driver_meta_json(
+                   R"({"schemaVersion":1,"libraryName":"driver.txt"})", meta, &err),
+               "reject non-.so/.dll libraryName");
+        expect(!parse_driver_meta_json(
+                   R"({"schemaVersion":2,"libraryName":"libvulkan_freedreno.so"})", meta, &err),
+               "reject unsupported schemaVersion");
+        expect(!parse_driver_meta_json("{not json", meta, &err), "reject malformed meta.json");
+
+        // 2. ELF .dynstr `libhardware.so\0` -> `libpanvk_hw.so\0` patching and VFS staging.
+        const std::string raw_dynstr(
+            "\0libc.so\0libhardware.so\0liblog.so\0libhardware.so\0libm.so\0", 53);
+        const std::string expected_dynstr(
+            "\0libc.so\0libpanvk_hw.so\0liblog.so\0libpanvk_hw.so\0libm.so\0", 53);
+        std::vector<std::uint8_t> elf_bytes(raw_dynstr.begin(), raw_dynstr.end());
+
+        MemoryVfs stage_vfs;
+        std::string staged_path;
+        std::size_t patched_refs = 0;
+        expect(stage_driver_package_to_vfs(stage_vfs, "drivers/panvk", panvk_json, elf_bytes,
+                                           meta, staged_path, &patched_refs, &err),
+               "stage PanVK driver package into Vfs");
+        expect(patched_refs == 2U, "two libhardware.so DT_NEEDED references rewritten");
+        expect(staged_path == "drivers/panvk/libvulkan_panfrost.so", "staged ICD path matches");
+        std::vector<std::uint8_t> staged_elf;
+        expect(stage_vfs.read_file(staged_path, staged_elf) &&
+                   staged_elf.size() == expected_dynstr.size() &&
+                   std::memcmp(staged_elf.data(), expected_dynstr.data(), expected_dynstr.size()) == 0,
+               "staged ICD rewrote libhardware.so in place preserving ELF offsets");
+    }
+
+    // 3. VulkanDriverLoader + VulkanRhiDevice against Mock ICD v5 (PanVK and Turnip).
+    {
+        auto panvk_loader = std::make_shared<VulkanDriverLoader>();
+        VulkanMockConfig panvk_cfg{};
+        panvk_cfg.mode = DriverMode::panvk;
+        panvk_cfg.device_name = "Mali-G610 (PanVK Mock ICD)";
+        panvk_cfg.vendor_id = 0x13B5U;
+        panvk_cfg.device_id = 0x0610U;
+        panvk_cfg.direct_icd = true;
+        expect(panvk_loader->load_mock_icd(panvk_cfg), "load mock PanVK ICD");
+
+        VulkanDriverProbeResult probe{};
+        expect(panvk_loader->probe_and_create_device(probe) && probe.ok &&
+                   probe.used_direct_icd && probe.negotiated_icd_version == 5U &&
+                   probe.mode == DriverMode::panvk &&
+                   probe.device_name == "Mali-G610 (PanVK Mock ICD)",
+               "PanVK direct ICD v5 handshake and device creation succeed");
+
+        {
+            VulkanRhiDevice vk_rhi(panvk_loader);
+            expect(vk_rhi.backend_name() == "vulkan" &&
+                       vk_rhi.driver_mode() == DriverMode::panvk &&
+                       vk_rhi.device_name() == "Mali-G610 (PanVK Mock ICD)",
+                   "VulkanRhiDevice reports probed PanVK device identity");
+            const std::array<std::uint8_t, 16> buf_data{1, 2, 3, 4};
+            const BufferHandle bh = vk_rhi.create_buffer(BufferUsage::vertex, buf_data);
+            const std::array<std::uint8_t, 16> tex_data{
+                255, 0, 0, 255,  0, 255, 0, 255,  0, 0, 255, 255,  255, 255, 255, 255};
+            const TextureHandle th = vk_rhi.create_texture_rgba8(2U, 2U, tex_data);
+            expect(bh != 0 && th != 0 && vk_rhi.live_vk_buffers() == 1U &&
+                       vk_rhi.live_vk_images() == 1U,
+                   "VulkanRhiDevice creates live VkBuffer and VkImage handles");
+            vk_rhi.destroy_texture(th);
+            vk_rhi.destroy_buffer(bh);
+            expect(vk_rhi.live_vk_buffers() == 0U && vk_rhi.live_vk_images() == 0U,
+                   "VulkanRhiDevice destroys live VkBuffer and VkImage handles");
+        }
+
+        // System Vulkan loader probe executes cleanly whether a host GPU is present or not.
+        VulkanDriverLoader sys_loader;
+        std::string sys_err;
+        if (sys_loader.load_system(&sys_err)) {
+            VulkanDriverProbeResult sys_probe{};
+            (void)sys_loader.probe_and_create_device(sys_probe);
+        } else {
+            expect(!sys_err.empty(), "missing system Vulkan loader yields diagnostic");
+        }
+    }
+
+    // 4. P4 textured static mesh viewer screenshot test (SoftwareRhiDevice vs VulkanRhiDevice).
+    {
+        auto build_bc1_dds = [](std::uint16_t color0_565, std::uint16_t color1_565,
+                                std::uint32_t indices_u32) {
+            std::vector<std::byte> buf(136U, std::byte{0});
+            const auto w16 = [&](std::size_t off, std::uint16_t v) {
+                buf[off + 0U] = static_cast<std::byte>(v & 0xFFU);
+                buf[off + 1U] = static_cast<std::byte>((v >> 8U) & 0xFFU);
+            };
+            const auto w32 = [&](std::size_t off, std::uint32_t v) {
+                buf[off + 0U] = static_cast<std::byte>(v & 0xFFU);
+                buf[off + 1U] = static_cast<std::byte>((v >> 8U) & 0xFFU);
+                buf[off + 2U] = static_cast<std::byte>((v >> 16U) & 0xFFU);
+                buf[off + 3U] = static_cast<std::byte>((v >> 24U) & 0xFFU);
+            };
+            buf[0] = std::byte{'D'};
+            buf[1] = std::byte{'D'};
+            buf[2] = std::byte{'S'};
+            buf[3] = std::byte{' '};
+            w32(4U, 124U);
+            w32(8U, 0x1007U);
+            w32(12U, 4U);
+            w32(16U, 4U);
+            w32(20U, 8U);
+            w32(76U, 32U);
+            w32(80U, 0x4U);
+            buf[84] = std::byte{'D'};
+            buf[85] = std::byte{'X'};
+            buf[86] = std::byte{'T'};
+            buf[87] = std::byte{'1'};
+            w32(108U, 0x1000U);
+            w16(128U, color0_565);
+            w16(130U, color1_565);
+            w32(132U, indices_u32);
+            return buf;
+        };
+
+        // Solid red BC1 4x4 texture (color0 = 0xF800 -> RGBA(255, 0, 0, 255), all indices = 0).
+        const auto dds_bytes = build_bc1_dds(0xF800U, 0x07E0U, 0x00000000U);
+        wse::asset::DdsImageView dds{};
+        std::string err;
+        expect(wse::asset::parse_dds(dds_bytes, dds, &err), "parse synthetic BC1 DDS texture");
+
+        wse::asset::BrfMesh mesh{};
+        mesh.name = "p4_viewer_quad";
+        mesh.positions = {
+            {-0.6f, -0.6f, 0.0f},
+            {0.6f, -0.6f, 0.0f},
+            {0.6f, 0.6f, 0.0f},
+            {-0.6f, 0.6f, 0.0f},
+        };
+        const std::array<wse::asset::Vec2f, 4> uvs{
+            wse::asset::Vec2f{0.0f, 1.0f},
+            wse::asset::Vec2f{1.0f, 1.0f},
+            wse::asset::Vec2f{1.0f, 0.0f},
+            wse::asset::Vec2f{0.0f, 0.0f},
+        };
+        for (std::size_t i = 0; i < 4U; ++i) {
+            wse::asset::BrfFaceCorner c{};
+            c.vertex_index = static_cast<std::int32_t>(i);
+            c.color = 0xFFFFFFFFU;
+            c.normal = {0.0f, 0.0f, 1.0f};
+            c.uv = uvs[i];
+            c.uv2 = uvs[i];
+            mesh.face_corners.push_back(c);
+        }
+        mesh.faces.push_back(wse::asset::BrfMeshFace{{0, 1, 2}});
+        mesh.faces.push_back(wse::asset::BrfMeshFace{{0, 2, 3}});
+
+        float mvp[16]{};
+        make_orbit_mvp_matrix(1.0f, 1.8f, 0.0f, 0.0f, mvp);
+
+        SoftwareRhiDevice sw_rhi;
+        std::vector<std::uint8_t> sw_frame;
+        expect(render_textured_brf_mesh_frame(sw_rhi, mesh, dds, 64U, 64U, mvp, sw_frame, &err),
+               "render textured BrfMesh through SoftwareRhiDevice");
+
+        auto vk_loader = std::make_shared<VulkanDriverLoader>();
+        VulkanMockConfig turnip_cfg{};
+        turnip_cfg.mode = DriverMode::turnip;
+        turnip_cfg.device_name = "Turnip Adreno (TM) 740 (Mock ICD)";
+        turnip_cfg.vendor_id = 0x5143U;
+        turnip_cfg.device_id = 0x0740U;
+        VulkanDriverProbeResult turnip_probe{};
+        expect(vk_loader->load_mock_icd(turnip_cfg) &&
+                   vk_loader->probe_and_create_device(turnip_probe),
+               "initialize Turnip mock ICD for RHI screenshot test");
+        VulkanRhiDevice vk_rhi(vk_loader);
+        std::vector<std::uint8_t> vk_frame;
+        expect(render_textured_brf_mesh_frame(vk_rhi, mesh, dds, 64U, 64U, mvp, vk_frame, &err),
+               "render textured BrfMesh through VulkanRhiDevice");
+
+        expect(sw_frame.size() == 64U * 64U * 4U && vk_frame.size() == sw_frame.size(),
+               "rendered frame dimensions match 64x64 RGBA8");
+        const std::size_t center_off = (32U * 64U + 32U) * 4U;
+        expect(vk_frame[0] == 18U && vk_frame[1] == 22U && vk_frame[2] == 30U && vk_frame[3] == 255U,
+               "corner pixel preserves render pass clear color");
+        expect(vk_frame[center_off + 0U] == 255U && vk_frame[center_off + 1U] == 0U &&
+                   vk_frame[center_off + 2U] == 0U && vk_frame[center_off + 3U] == 255U,
+               "center pixel shows decoded red BC1 texture modulated by white corner color");
+        const std::uint64_t sw_hash = hash_rgba8_frame(sw_frame);
+        const std::uint64_t vk_hash = hash_rgba8_frame(vk_frame);
+        expect(sw_hash != 0ULL && sw_hash == vk_hash,
+               "SoftwareRhiDevice and VulkanRhiDevice produce identical deterministic frame hash");
+
+        // Smoke helper succeeds across System / Turnip / PanVK modes.
+        std::uint64_t sys_smoke_hash = 0;
+        std::uint64_t turnip_smoke_hash = 0;
+        std::uint64_t panvk_smoke_hash = 0;
+        expect(run_vulkan_mesh_smoke_test(DriverMode::system, "", "", true, sys_smoke_hash).ok &&
+                   run_vulkan_mesh_smoke_test(DriverMode::turnip, "", "", true, turnip_smoke_hash).ok &&
+                   run_vulkan_mesh_smoke_test(DriverMode::panvk, "", "", true, panvk_smoke_hash).ok &&
+                   sys_smoke_hash != 0ULL && sys_smoke_hash == turnip_smoke_hash &&
+                   turnip_smoke_hash == panvk_smoke_hash,
+               "Vulkan mesh smoke test passes consistently across System, Turnip, and PanVK");
+
+        // Depth buffer occlusion test (near green z=0.3 occludes far red z=0.7 in either order).
+        const std::array<std::uint8_t, 4> white_tex{255, 255, 255, 255};
+        const TextureHandle white_th = sw_rhi.create_texture_rgba8(1U, 1U, white_tex);
+        const PipelineHandle pip = sw_rhi.create_pipeline(PipelineDesc{true, true, CullMode::back});
+        const std::array<MeshVertex, 3> far_verts{{
+            {-0.5f, 0.5f, 0.7f, 0, 0, 1, 0, 0, argb_to_rgba8(0xFFFF0000U)},
+            {0.5f, 0.5f, 0.7f, 0, 0, 1, 1, 0, argb_to_rgba8(0xFFFF0000U)},
+            {0.0f, -0.5f, 0.7f, 0, 0, 1, 0.5f, 1, argb_to_rgba8(0xFFFF0000U)},
+        }};
+        const std::array<MeshVertex, 3> near_verts{{
+            {-0.5f, 0.5f, 0.3f, 0, 0, 1, 0, 0, argb_to_rgba8(0xFF00FF00U)},
+            {0.5f, 0.5f, 0.3f, 0, 0, 1, 1, 0, argb_to_rgba8(0xFF00FF00U)},
+            {0.0f, -0.5f, 0.3f, 0, 0, 1, 0.5f, 1, argb_to_rgba8(0xFF00FF00U)},
+        }};
+        const std::array<std::uint16_t, 3> tri_idx{0, 1, 2};
+        const auto as_u8_span = [](const void* ptr, std::size_t bytes) noexcept {
+            return std::span<const std::uint8_t>(
+                static_cast<const std::uint8_t*>(ptr), bytes);
+        };
+        const BufferHandle far_vb =
+            sw_rhi.create_buffer(BufferUsage::vertex, as_u8_span(far_verts.data(), sizeof(far_verts)));
+        const BufferHandle near_vb = sw_rhi.create_buffer(
+            BufferUsage::vertex, as_u8_span(near_verts.data(), sizeof(near_verts)));
+        const BufferHandle ib =
+            sw_rhi.create_buffer(BufferUsage::index, as_u8_span(tri_idx.data(), sizeof(tri_idx)));
+
+        MeshDrawCall far_draw{};
+        far_draw.pipeline = pip;
+        far_draw.vertex_buffer = far_vb;
+        far_draw.index_buffer = ib;
+        far_draw.texture = white_th;
+        far_draw.index_count = 3U;
+
+        MeshDrawCall near_draw = far_draw;
+        near_draw.vertex_buffer = near_vb;
+
+        RenderPassDesc pass{};
+        pass.width = 64U;
+        pass.height = 64U;
+
+        std::vector<std::uint8_t> occ_a;
+        std::vector<std::uint8_t> occ_b;
+        const std::array<MeshDrawCall, 2> order_far_then_near{far_draw, near_draw};
+        const std::array<MeshDrawCall, 2> order_near_then_far{near_draw, far_draw};
+        expect(sw_rhi.render_pass_and_readback(pass, order_far_then_near, occ_a, &err) &&
+                   sw_rhi.render_pass_and_readback(pass, order_near_then_far, occ_b, &err),
+               "depth occlusion passes succeed");
+        expect(occ_a[center_off + 0U] == 0U && occ_a[center_off + 1U] == 255U &&
+                   occ_a[center_off + 2U] == 0U && occ_a[center_off + 3U] == 255U &&
+                   occ_a == occ_b,
+               "nearer triangle occludes farther triangle regardless of draw order");
+
+        sw_rhi.destroy_buffer(ib);
+        sw_rhi.destroy_buffer(near_vb);
+        sw_rhi.destroy_buffer(far_vb);
+        sw_rhi.destroy_pipeline(pip);
+        sw_rhi.destroy_texture(white_th);
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -433,6 +750,7 @@ int run_platform_suite(const char* fixture_path) {
     test_clock();
     test_log();
     test_saf_vfs();
+    test_rhi_and_driver_loader();
     if (failures != 0) {
         std::printf("platform tests: FAIL (%d)\n", failures);
         return 1;

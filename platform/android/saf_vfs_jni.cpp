@@ -8,6 +8,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -16,8 +17,10 @@
 #include <string_view>
 #include <vector>
 
+#include "driver_loader.h"
 #include "wse/core/json.h"
 #include "wse/platform/clock.h"
+#include "wse/platform/rhi.h"
 #include "wse/platform/saf_vfs.h"
 
 namespace {
@@ -507,6 +510,66 @@ Java_org_wse2_android_WseSafBridge_nativeVerifyModule(JNIEnv* env,
     summary.append("/65 mapped (");
     summary.append(cache_hit ? "cached index, " : ("index " + std::to_string(index_ms) + " ms, "));
     summary.append("parse " + std::to_string(parse_ms) + " ms)");
+    return utf8_to_jstring(env, summary);
+}
+
+JNIEXPORT jstring JNICALL
+Java_org_wse2_android_WseSafBridge_nativeProbeVulkanAndRenderMesh(JNIEnv* env,
+                                                                  jobject thiz,
+                                                                  jstring driver_mode_jstr,
+                                                                  jstring custom_icd_path_jstr,
+                                                                  jstring native_lib_dir_jstr) {
+    (void)thiz;
+    const std::string mode_str = jstring_to_utf8(env, driver_mode_jstr);
+    const std::string custom_icd = jstring_to_utf8(env, custom_icd_path_jstr);
+    const std::string native_lib_dir = jstring_to_utf8(env, native_lib_dir_jstr);
+
+    wse::platform::DriverMode mode = wse::platform::DriverMode::system;
+    (void)wse::platform::parse_driver_mode(mode_str, mode);
+
+    std::string hw_stub_path;
+    if (mode == wse::platform::DriverMode::panvk && !native_lib_dir.empty()) {
+        hw_stub_path = native_lib_dir;
+        if (hw_stub_path.back() != '/') {
+            hw_stub_path.push_back('/');
+        }
+        hw_stub_path.append("libpanvk_hw.so");
+    }
+
+    std::uint64_t frame_hash = 0;
+    std::string err;
+    const wse::platform::VulkanDriverProbeResult probe =
+        wse::platform::run_vulkan_mesh_smoke_test(
+            mode, custom_icd, hw_stub_path, /*allow_mock_fallback=*/true, frame_hash, &err);
+
+    if (!probe.ok) {
+        return utf8_to_jstring(env, "ERROR: " + (probe.error.empty() ? err : probe.error));
+    }
+
+    char hex_buf[24]{};
+    std::snprintf(hex_buf, sizeof(hex_buf), "0x%016llx",
+                  static_cast<unsigned long long>(frame_hash));
+
+    std::string summary = "VK ";
+    summary.append(wse::platform::driver_mode_name(probe.mode));
+    if (probe.is_mock) {
+        summary.append(" (mock");
+        if (!probe.error.empty()) {
+            summary.append(": ");
+            summary.append(probe.error);
+        }
+        summary.push_back(')');
+    } else if (probe.used_direct_icd) {
+        summary.append(" (direct ICD v");
+        summary.append(std::to_string(probe.negotiated_icd_version));
+        summary.push_back(')');
+    }
+    summary.append(": ");
+    summary.append(probe.device_name);
+    summary.append(" | API ");
+    summary.append(wse::platform::format_vulkan_version(probe.api_version));
+    summary.append(" | 64x64 mesh hash=");
+    summary.append(hex_buf);
     return utf8_to_jstring(env, summary);
 }
 

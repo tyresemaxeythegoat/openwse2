@@ -129,6 +129,11 @@ class WseSafBridge(
 
     external fun nativeScanTree(): String
     external fun nativeVerifyModule(moduleRelDir: String): String
+    external fun nativeProbeVulkanAndRenderMesh(
+        driverMode: String,
+        customIcdPath: String,
+        nativeLibDir: String
+    ): String
 
     companion object {
         init {

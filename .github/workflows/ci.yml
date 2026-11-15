@@ -144,6 +144,7 @@ jobs:
           contents="$(unzip -Z1 "${apk_path}")"
           echo "${contents}" | grep -Fx "lib/arm64-v8a/libwse2.so"
           echo "${contents}" | grep -Fx "lib/arm64-v8a/libSDL3.so"
+          echo "${contents}" | grep -Fx "lib/arm64-v8a/libpanvk_hw.so"
           echo "${contents}" | grep -Fx "assets/scripts.txt"
           # Only the self-test fixture may be packaged (BYOA: no other assets).
           extra_assets="$(echo "${contents}" | grep '^assets/' | grep -Fxv "assets/scripts.txt" || true)"

@@ -76,7 +76,7 @@ class WseLauncherActivity : Activity() {
         }
 
         container.addView(TextView(this).apply {
-            text = "WSE2 Android Launcher (Slice P2)"
+            text = "WSE2 Android Launcher (Slices P2 + P4)"
             textSize = 20f
             setPadding(0, 0, 0, px(8))
         })
@@ -140,6 +140,11 @@ class WseLauncherActivity : Activity() {
             )
         }
         container.addView(driverSpinner)
+
+        container.addView(Button(this).apply {
+            text = "Probe Vulkan Driver & Render Test Mesh"
+            setOnClickListener { probeVulkanDriver() }
+        })
 
         addSectionTitle("Runtime")
         container.addView(Button(this).apply {
@@ -350,6 +355,21 @@ class WseLauncherActivity : Activity() {
         executor.execute {
             val bridge = WseSafBridge(applicationContext, uri)
             val result = bridge.nativeVerifyModule(mod.modulePath)
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    outputStatusText.text = result
+                }
+            }
+        }
+    }
+
+    private fun probeVulkanDriver() {
+        val driver = driverOptions[driverSpinner.selectedItemPosition.coerceAtLeast(0)]
+        val nativeLibDir = applicationInfo.nativeLibraryDir ?: ""
+        outputStatusText.text = "Probing $driver Vulkan driver and rendering test mesh..."
+        executor.execute {
+            val bridge = WseSafBridge(applicationContext, selectedTreeUri ?: Uri.EMPTY)
+            val result = bridge.nativeProbeVulkanAndRenderMesh(driver, "", nativeLibDir)
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
                     outputStatusText.text = result

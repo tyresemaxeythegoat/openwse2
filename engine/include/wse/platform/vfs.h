@@ -423,16 +423,29 @@ private:
         return current;
     }
 
+    static std::filesystem::path::string_type cache_key(const std::filesystem::path& dir) {
+        std::filesystem::path::string_type key = dir.native();
+#ifdef _WIN32
+        for (auto& ch : key) {
+            if (ch >= L'A' && ch <= L'Z') {
+                ch = static_cast<wchar_t>(ch - L'A' + L'a');
+            }
+        }
+#endif
+        return key;
+    }
+
     // Looks `name` up in `dir`'s cached lower-case index, listing `dir` when
     // there is no index or the directory's last-write time moved. A listing
     // that fails part-way is used for this lookup but not cached.
     std::optional<std::filesystem::path> find_case_insensitive(
         const std::filesystem::path& dir, std::string_view name) const {
         const std::string wanted = ascii_lower(name);
+        const auto key = cache_key(dir);
         std::error_code time_ec;
         const auto mtime = std::filesystem::last_write_time(dir, time_ec);
         if (!time_ec) {
-            const auto cached = dir_cache_.find(dir.native());
+            const auto cached = dir_cache_.find(key);
             if (cached != dir_cache_.end() && cached->second.mtime == mtime) {
                 const auto hit = cached->second.by_lower.find(wanted);
                 if (hit == cached->second.by_lower.end()) return std::nullopt;
@@ -457,7 +470,7 @@ private:
         if (const auto hit = listing.by_lower.find(wanted); hit != listing.by_lower.end()) {
             result = hit->second;
         }
-        if (!ec && !time_ec) dir_cache_.insert_or_assign(dir.native(), std::move(listing));
+        if (!ec && !time_ec) dir_cache_.insert_or_assign(key, std::move(listing));
         return result;
     }
 

@@ -126,7 +126,7 @@ $tests = @(
     @{ Name = "native_world"; Source = Join-Path $here "tests\native_world_test.cpp" },
     @{ Name = "native_m5"; Source = Join-Path $here "tests\native_m5_test.cpp" },
     @{ Name = "wse_m6"; Source = Join-Path $here "tests\wse_m6_test.cpp" },
-    @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp" },
+    @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp"; LinkDriverLoader = $true },
     @{ Name = "module_loaders"; Source = Join-Path $here "tests\module_loaders_test.cpp" },
     @{ Name = "headless"; Source = Join-Path $here "tests\headless_test.cpp" },
     @{ Name = "lua"; Source = Join-Path $here "tests\lua_test.cpp"; LinkLua = $true },
@@ -136,12 +136,29 @@ $tests = @(
 Write-Host "zig          $zig"
 Write-Host "output       $out"
 
+$vulkanInclude = Join-Path $here "..\platform\vulkan"
+$vkHeadersInclude = Join-Path $here "..\runtime\android\third_party"
+$driverLoaderObj = Join-Path $out "driver_loader.o"
+Write-Host "building     driver_loader"
+& $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
+    -I $include -I $vulkanInclude -I $vkHeadersInclude `
+    -c (Join-Path $vulkanInclude "driver_loader.cpp") -o $driverLoaderObj
+if ($LASTEXITCODE -ne 0) {
+    throw "driver_loader build failed"
+}
+
 foreach ($test in $tests) {
     $binary = Join-Path $out ("{0}_test.exe" -f $test.Name)
     Write-Host ("building     {0}" -f $test.Name)
-    $extraLibs = if ($test.ContainsKey("LinkLua") -and $test.LinkLua) { @($wseLuaLib, $luaLib) } else { @() }
+    $extraLibs = @()
+    if ($test.ContainsKey("LinkLua") -and $test.LinkLua) {
+        $extraLibs += @($wseLuaLib, $luaLib)
+    }
+    if ($test.ContainsKey("LinkDriverLoader") -and $test.LinkDriverLoader) {
+        $extraLibs += @($driverLoaderObj)
+    }
     & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
-        -I $include -o $binary $test.Source @extraLibs
+        -I $include -I $vulkanInclude -o $binary $test.Source @extraLibs
     if ($LASTEXITCODE -ne 0) {
         throw ("{0} test build failed" -f $test.Name)
     }
@@ -165,7 +182,7 @@ foreach ($src in $selftestSources) {
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($src)
     $obj = Join-Path $selftestObjDir ("{0}.o" -f $stem)
     & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
-        -DWSE_SELF_TEST_LIBRARY=1 -I $include -c $src -o $obj
+        -DWSE_SELF_TEST_LIBRARY=1 -I $include -I $vulkanInclude -c $src -o $obj
     if ($LASTEXITCODE -ne 0) {
         throw ("selftest compile failed: {0}" -f $src)
     }
@@ -174,7 +191,7 @@ foreach ($src in $selftestSources) {
 $selftestBinary = Join-Path $out "selftest_host_test.exe"
 & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
     -I $include -o $selftestBinary (Join-Path $here "tests\selftest_host_test.cpp") `
-    @selftestObjs $wseLuaLib $luaLib
+    @selftestObjs $driverLoaderObj $wseLuaLib $luaLib
 if ($LASTEXITCODE -ne 0) {
     throw "selftest_host link failed"
 }

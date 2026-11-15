@@ -125,8 +125,8 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
   - [x] Route the engine's direct file, clock, and thread calls through the seam (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, `wse/vm/ops/{dict,array,string,system}.h`): files through `Vfs`, `sleep_ms` through `wse/platform/sleep.h`, `get_time` through `WallClock`
   - [x] Gradle + SDL3 `SDLActivity` + `libwse2.so` with an on-device self-test screen; CI builds the APK (`arm64-v8a`)
 - [x] **P3** Asset decoders: `.brf`, `.dds`, module resource lists (PE/PDB evidence + `wse/asset/{brf,dds}.h`, `asset` suite, and `wse_brf` CLI).
-- [ ] **P4** Vulkan RHI and runtime driver loader: system driver, PanVK (Mali), Turnip (Adreno) —
-      drivers are user-supplied, never bundled.
+- [~] **P4** Vulkan RHI (`rhi.h`) and runtime driver loader (`driver_loader.{h,cpp}`): system driver, PanVK (Mali), Turnip (Adreno) —
+      drivers are user-supplied, never bundled (host + APK build wired; on-device run pending hardware).
 - [ ] **P5** Module shaders → SPIR-V at import time, cached; D3D9 conventions handled in the RHI.
 - [ ] **P6** Audio: SDL3 audio-stream backend and mixer replacing FMOD Ex.
 - [ ] **P9** Convergence with Phase 2: scene/terrain/skeletal rendering, widgets, Bullet, Lua link,
@@ -165,6 +165,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-15 | — | Slice P4 (`rhi.h`, `driver_loader.{h,cpp}`, `libpanvk_hw.so`, Vulkan launcher probe, Windows `HostVfs` NTFS dir-cache case fix): `19/19` host suites (`135` tests, `selftest_host` `1717 ms`), retail `wse_brf.exe` (`221/221` + `1269` `.dds`). See `STATUS.md` §7. |
 | 2026-11-15 | — | Asset lookup/decode performance: `HostVfs` keeps a per-directory lower-case index (rebuilt on last-write-time change, dropped on writes) instead of rescanning a parent on every case-insensitive miss; `resolve_texture_path` skips missing directories with one `is_dir` and reuses one path buffer (500 lookups over a 2,500-file `Textures`: `4.69 s` -> `33 ms`); `decode_dds_mip_rgba8` stores whole 4x4 block rows and reuses the output buffer (`BC3` 1024² `5.29` -> `4.33 ms`); DX10 `TEXTURE3D` with `array_size > 1` or `TEXTURECUBE` rejected; regression tests in `platform`, `asset` |
 | 2026-11-15 | — | Slice P2 launcher & SAF file system: re-verified 100% of retail Warband corpus (`CommonRes` `221/221`, `WSE2 SDK` `3/3`, `Modules/Native` `221/221`, `Textures` `1,269/1,269`) after PR #12 (`0629bdf`); added portable `SafVfs`, `MemorySafBackend`, `scan_warband_modules`, and `verify_module_scripts` (`wse/platform/saf_vfs.h`), Android JNI bridge (`platform/android/saf_vfs_jni.cpp` linked into `wse2`), Kotlin `WseSafBridge` + `WseLauncherActivity` (`ACTION_OPEN_DOCUMENT_TREE` Warband tree picker, persisted URI grant, module switcher, GPU driver selector, `scripts.txt` verifier, SDL3 launch), and expanded `platform_test.cpp` (`7` test functions, `SafVfs` contract/index/import/module scanner) |
 | 2026-11-15 | `0629bdf` | P3 follow-up review fixes: `resolve_texture_path` probes base directories again when `warband_root` is empty (VFS root); `parse_dds` reads `dwDepth` only for volume textures (2D files with junk depth accepted) and accepts every single-slice volume, including DX10 `TEXTURE3D` and `DDSCAPS2_VOLUME` without `DDSD_DEPTH`; `asset_test.cpp` regression cases |
