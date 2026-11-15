@@ -24,7 +24,7 @@ void print_usage(const char* argv0) {
                  "Options:\n"
                  "  --frames N             Number of trigger frames to simulate (default: 1)\n"
                  "  --step-ticks T         Engine ticks added per frame (default: 200000 = 2.0s)\n"
-                 "  --allow-unimplemented  Continue past unimplemented opcodes instead of failing\n"
+                 "  --allow-unimplemented  Count and report unimplemented opcodes without failing the run\n"
                  "  -h, --help             Show this help\n",
                  argv0 != nullptr ? argv0 : "wse_headless");
 }

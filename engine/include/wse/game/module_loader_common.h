@@ -176,7 +176,8 @@ inline void underscores_to_spaces(std::string& text) noexcept {
         }
         acc = static_cast<std::uint32_t>(acc * 10U + static_cast<std::uint32_t>(ch - '0'));
     }
-    out = neg ? static_cast<std::uint32_t>(-static_cast<std::int32_t>(acc)) : acc;
+    // Negate in unsigned arithmetic: `-2147483648` must wrap, not overflow int32.
+    out = neg ? (0U - acc) : acc;
     return true;
 }
 
@@ -301,11 +302,14 @@ inline void parse_ini_sections(
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& out) {
     std::string current_section{};
     for_each_ini_line(text, [&](std::string_view line) {
-        if (line.size() >= 2U && line.front() == '[' && line.back() == ']') {
-            current_section = trim_ascii(line.substr(1U, line.size() - 2U));
+        // Comments are stripped before the header test so `[section] ; note`
+        // still opens the section instead of leaking keys into the previous one.
+        const std::string stripped = trim_ascii(truncate_ini_comments(line));
+        const std::string_view body = stripped;
+        if (body.size() >= 2U && body.front() == '[' && body.back() == ']') {
+            current_section = trim_ascii(body.substr(1U, body.size() - 2U));
             return;
         }
-        const std::string_view body = truncate_ini_comments(line);
         const std::size_t eq = body.find('=');
         if (eq == std::string_view::npos) {
             return;
