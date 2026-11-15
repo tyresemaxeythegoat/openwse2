@@ -11,9 +11,9 @@
 #pragma once
 
 #include <array>
-#include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
 #include <limits>
 #include <span>
 #include <string>
@@ -254,21 +254,71 @@ inline bool read_vec3(wse::io::BinaryReader& r, Vec3f& out) noexcept {
     return r.read_f32(out.x) && r.read_f32(out.y) && r.read_f32(out.z);
 }
 
+// Upper bound on elements reserved before they are read. Counts are only
+// validated against the remaining stream bytes (at the record's minimum wire
+// size), and in-memory records are much larger than that minimum (BrfMesh is
+// ~200 B against 4 B on the wire), so reserving the full declared count let a
+// corrupt header allocate ~50x the file size. Vectors grow normally past this.
+inline constexpr std::size_t kMaxReserveElements = 4096U;
+
+inline std::string count_label(std::string_view what, std::string_view owner) {
+    std::string label(what);
+    if (!owner.empty()) {
+        label += " in ";
+        label += owner;
+    }
+    return label;
+}
+
 template <typename T>
 bool check_count_and_reserve(std::vector<T>& vec,
                              std::uint64_t count,
                              const wse::io::BinaryReader& r,
                              std::size_t min_bytes_per_elem,
                              std::string* error_out,
-                             const char* what) {
+                             std::string_view what,
+                             std::string_view owner = {}) {
     if (min_bytes_per_elem > 0 && count > r.remaining() / min_bytes_per_elem) {
-        return set_error(error_out, std::string(what) + " count exceeds remaining stream bytes");
+        return set_error(error_out, count_label(what, owner) + ": count " + std::to_string(count) +
+                                        " exceeds remaining stream bytes");
     }
-    if (count > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
-        return set_error(error_out, std::string(what) + " count overflow");
-    }
-    vec.reserve(static_cast<std::size_t>(count));
+    vec.reserve(static_cast<std::size_t>((std::min)(count, static_cast<std::uint64_t>(kMaxReserveElements))));
     return true;
+}
+
+// Reads an unsigned 32-bit element count and validates it (see check_count_and_reserve).
+template <typename T>
+bool read_count_u32(wse::io::BinaryReader& r,
+                    std::vector<T>& vec,
+                    std::size_t min_bytes_per_elem,
+                    std::uint32_t& count_out,
+                    std::string* error_out,
+                    std::string_view what,
+                    std::string_view owner = {}) {
+    if (!r.read_u32(count_out)) {
+        return set_error(error_out, "truncated " + count_label(what, owner) + " count");
+    }
+    return check_count_and_reserve(vec, count_out, r, min_bytes_per_elem, error_out, what, owner);
+}
+
+// Reads a signed 32-bit element count, rejecting negatives.
+template <typename T>
+bool read_count_i32(wse::io::BinaryReader& r,
+                    std::vector<T>& vec,
+                    std::size_t min_bytes_per_elem,
+                    std::int32_t& count_out,
+                    std::string* error_out,
+                    std::string_view what,
+                    std::string_view owner = {}) {
+    if (!r.read_i32(count_out)) {
+        return set_error(error_out, "truncated " + count_label(what, owner) + " count");
+    }
+    if (count_out < 0) {
+        return set_error(error_out, count_label(what, owner) + ": negative count " +
+                                        std::to_string(count_out));
+    }
+    return check_count_and_reserve(vec, static_cast<std::uint64_t>(count_out), r,
+                                   min_bytes_per_elem, error_out, what, owner);
 }
 
 inline bool read_mesh(wse::io::BinaryReader& r,
@@ -280,9 +330,8 @@ inline bool read_mesh(wse::io::BinaryReader& r,
     }
 
     std::uint32_t num_positions = 0;
-    if (!r.read_u32(num_positions) ||
-        !check_count_and_reserve(out.positions, num_positions, r, 12, error_out, "mesh positions")) {
-        return set_error(error_out, "invalid mesh position count in " + out.name);
+    if (!read_count_u32(r, out.positions, 12, num_positions, error_out, "mesh positions", out.name)) {
+        return false;
     }
     for (std::uint32_t i = 0; i < num_positions; ++i) {
         Vec3f p{};
@@ -291,11 +340,9 @@ inline bool read_mesh(wse::io::BinaryReader& r,
     }
 
     std::uint32_t num_groups = 0;
-    if (!r.read_u32(num_groups) ||
-        !check_count_and_reserve(out.vertex_groups, num_groups, r, 8, error_out, "mesh vertex groups")) {
-        return set_error(error_out, "invalid mesh vertex group count in " + out.name);
+    if (!read_count_u32(r, out.vertex_groups, 8, num_groups, error_out, "mesh vertex groups", out.name)) {
+        return false;
     }
-    std::int32_t max_bone = -1;
     for (std::uint32_t g = 0; g < num_groups; ++g) {
         std::int32_t bone_no = 0;
         std::uint32_t num_pairs = 0;
@@ -307,10 +354,9 @@ inline bool read_mesh(wse::io::BinaryReader& r,
         if (bone_no < 0 || bone_no >= 64) {
             return set_error(error_out, "bone index out of range [0, 64) in mesh " + out.name);
         }
-        if (bone_no > max_bone) max_bone = bone_no;
         BrfVertexGroup grp{};
         grp.bone_no = static_cast<std::uint8_t>(bone_no);
-        if (!check_count_and_reserve(grp.pairs, num_pairs, r, 8, error_out, "vertex group pairs")) {
+        if (!check_count_and_reserve(grp.pairs, num_pairs, r, 8, error_out, "vertex group pairs", out.name)) {
             return false;
         }
         for (std::uint32_t p = 0; p < num_pairs; ++p) {
@@ -322,22 +368,20 @@ inline bool read_mesh(wse::io::BinaryReader& r,
         }
         out.vertex_groups.push_back(std::move(grp));
     }
-    if (max_bone + 1 > 64) {
-        return set_error(error_out, "Too many bones in mesh " + out.name);
-    }
 
     // rglIpo<rglMeshVertexKey>::readStream (0x1402c3e00) -> rglMeshVertexKey::readStream (0x1402b7ce0)
     std::int32_t num_keys = 0;
-    if (!r.read_i32(num_keys) || num_keys < 0 ||
-        !check_count_and_reserve(out.vertex_keys, static_cast<std::uint64_t>(num_keys), r, 12, error_out, "vertex keys")) {
-        return set_error(error_out, "invalid vertex key count in " + out.name);
+    if (!read_count_i32(r, out.vertex_keys, 12, num_keys, error_out, "vertex keys", out.name)) {
+        return false;
     }
     for (std::int32_t k = 0; k < num_keys; ++k) {
         BrfVertexKeyFrame kf{};
         std::uint32_t npos = 0;
-        if (!r.read_i32(kf.time_frame) || !r.read_u32(npos) ||
-            !check_count_and_reserve(kf.positions, npos, r, 12, error_out, "keyframe positions")) {
-            return set_error(error_out, "truncated vertex keyframe positions in " + out.name);
+        if (!r.read_i32(kf.time_frame)) {
+            return set_error(error_out, "truncated vertex keyframe time in " + out.name);
+        }
+        if (!read_count_u32(r, kf.positions, 12, npos, error_out, "keyframe positions", out.name)) {
+            return false;
         }
         for (std::uint32_t i = 0; i < npos; ++i) {
             Vec3f p{};
@@ -345,9 +389,8 @@ inline bool read_mesh(wse::io::BinaryReader& r,
             kf.positions.push_back(p);
         }
         std::uint32_t nnorm = 0;
-        if (!r.read_u32(nnorm) ||
-            !check_count_and_reserve(kf.normals, nnorm, r, 12, error_out, "keyframe normals")) {
-            return set_error(error_out, "truncated vertex keyframe normals in " + out.name);
+        if (!read_count_u32(r, kf.normals, 12, nnorm, error_out, "keyframe normals", out.name)) {
+            return false;
         }
         for (std::uint32_t i = 0; i < nnorm; ++i) {
             Vec3f n{};
@@ -362,9 +405,8 @@ inline bool read_mesh(wse::io::BinaryReader& r,
     const std::size_t corner_min_bytes = 4U + 4U + 12U + (out.has_tangents ? 13U : 0U) + 8U + (out.single_uv ? 0U : 8U);
 
     std::uint32_t num_corners = 0;
-    if (!r.read_u32(num_corners) ||
-        !check_count_and_reserve(out.face_corners, num_corners, r, corner_min_bytes, error_out, "face corners")) {
-        return set_error(error_out, "invalid face corner count in " + out.name);
+    if (!read_count_u32(r, out.face_corners, corner_min_bytes, num_corners, error_out, "face corners", out.name)) {
+        return false;
     }
     for (std::uint32_t c = 0; c < num_corners; ++c) {
         BrfFaceCorner corner{};
@@ -372,8 +414,12 @@ inline bool read_mesh(wse::io::BinaryReader& r,
             return set_error(error_out, "truncated face corner in " + out.name);
         }
         // "Invalid vertex index %d in mesh %s" (0x1405657e8) checked in rglMesh::readStream (0x1402b84b0).
-        if (corner.vertex_index < 0 || static_cast<std::size_t>(corner.vertex_index) >= out.positions.size()) {
-            return set_error(error_out, "Invalid vertex index in mesh " + out.name);
+        // Safety deviation: rglMeshFaceCorner::m_vertexNo (+0x40, PDB 0x75b6) is an unsigned short,
+        // so an index above 65535 cannot be represented and is rejected instead of truncated.
+        if (corner.vertex_index < 0 || static_cast<std::size_t>(corner.vertex_index) >= out.positions.size() ||
+            corner.vertex_index > 65535) {
+            return set_error(error_out, "Invalid vertex index " + std::to_string(corner.vertex_index) +
+                                            " in mesh " + out.name);
         }
         if (out.has_tangents) {
             if (!read_vec3(r, corner.tangent) || !r.read_bool(corner.binormal_sign)) {
@@ -394,9 +440,8 @@ inline bool read_mesh(wse::io::BinaryReader& r,
     }
 
     std::uint32_t num_faces = 0;
-    if (!r.read_u32(num_faces) ||
-        !check_count_and_reserve(out.faces, num_faces, r, 12, error_out, "mesh faces")) {
-        return set_error(error_out, "invalid face count in " + out.name);
+    if (!read_count_u32(r, out.faces, 12, num_faces, error_out, "mesh faces", out.name)) {
+        return false;
     }
     for (std::uint32_t f = 0; f < num_faces; ++f) {
         BrfMeshFace face{};
@@ -439,9 +484,8 @@ inline bool read_shader(wse::io::BinaryReader& r, BrfShader& out, std::string* e
         out.alternatives.push_back(std::move(alt));
     }
     std::int32_t num_techniques = 0;
-    if (!r.read_i32(num_techniques) || num_techniques < 0 ||
-        !check_count_and_reserve(out.techniques, static_cast<std::uint64_t>(num_techniques), r, 16, error_out, "shader techniques")) {
-        return set_error(error_out, "invalid shader technique count in " + out.name);
+    if (!read_count_i32(r, out.techniques, 16, num_techniques, error_out, "shader techniques", out.name)) {
+        return false;
     }
     for (std::int32_t t = 0; t < num_techniques; ++t) {
         BrfShaderTechnique tech{};
@@ -505,9 +549,8 @@ inline bool read_body_part(wse::io::BinaryReader& r,
         // rglQuad::readStream (0x1402d5070): int32 num_verts * Vec3f, then uint32 flags.
         out.kind = BrfBodyPartKind::Face;
         std::int32_t num_verts = 0;
-        if (!r.read_i32(num_verts) || num_verts < 0 ||
-            !check_count_and_reserve(out.vertices, static_cast<std::uint64_t>(num_verts), r, 12, error_out, "quad vertices")) {
-            return set_error(error_out, "invalid face body vertex count");
+        if (!read_count_i32(r, out.vertices, 12, num_verts, error_out, "face body vertices")) {
+            return false;
         }
         for (std::int32_t i = 0; i < num_verts; ++i) {
             Vec3f v{};
@@ -521,9 +564,8 @@ inline bool read_body_part(wse::io::BinaryReader& r,
         // rglManifoldBody::readStream (0x1402b4710)
         out.kind = BrfBodyPartKind::Manifold;
         std::int32_t num_positions = 0;
-        if (!r.read_i32(num_positions) || num_positions < 0 ||
-            !check_count_and_reserve(out.vertices, static_cast<std::uint64_t>(num_positions), r, 12, error_out, "manifold vertices")) {
-            return set_error(error_out, "invalid manifold position count");
+        if (!read_count_i32(r, out.vertices, 12, num_positions, error_out, "manifold positions")) {
+            return false;
         }
         for (std::int32_t i = 0; i < num_positions; ++i) {
             Vec3f v{};
@@ -531,16 +573,17 @@ inline bool read_body_part(wse::io::BinaryReader& r,
             out.vertices.push_back(v);
         }
         std::int32_t num_faces = 0;
-        if (!r.read_i32(num_faces) || num_faces < 0 ||
-            !check_count_and_reserve(out.manifold_faces, static_cast<std::uint64_t>(num_faces), r, 12, error_out, "manifold faces")) {
-            return set_error(error_out, "invalid manifold face count");
+        if (!read_count_i32(r, out.manifold_faces, 12, num_faces, error_out, "manifold faces")) {
+            return false;
         }
         for (std::int32_t f = 0; f < num_faces; ++f) {
             BrfManifoldFace face{};
             std::int32_t num_verts = 0;
-            if (!r.read_i32(face.orientation) || !r.read_u32(face.flags) || !r.read_i32(num_verts) || num_verts < 0 ||
-                !check_count_and_reserve(face.vertex_indices, static_cast<std::uint64_t>(num_verts), r, 4, error_out, "manifold face vertices")) {
+            if (!r.read_i32(face.orientation) || !r.read_u32(face.flags)) {
                 return set_error(error_out, "truncated manifold face header");
+            }
+            if (!read_count_i32(r, face.vertex_indices, 4, num_verts, error_out, "manifold face vertices")) {
+                return false;
             }
             for (std::int32_t v = 0; v < num_verts; ++v) {
                 std::int32_t vi = 0;
@@ -555,9 +598,8 @@ inline bool read_body_part(wse::io::BinaryReader& r,
         // rglCompositeBody::readStream (0x140263c30)
         out.kind = BrfBodyPartKind::Composite;
         std::int32_t num_parts = 0;
-        if (!r.read_i32(num_parts) || num_parts < 0 ||
-            !check_count_and_reserve(out.children, static_cast<std::uint64_t>(num_parts), r, 4, error_out, "composite children")) {
-            return set_error(error_out, "invalid composite child count");
+        if (!read_count_i32(r, out.children, 4, num_parts, error_out, "composite children")) {
+            return false;
         }
         for (std::int32_t p = 0; p < num_parts; ++p) {
             BrfBodyPart child{};
@@ -576,9 +618,11 @@ inline bool read_body(wse::io::BinaryReader& r, BrfBody& out, std::string* error
 
 inline bool read_skeleton(wse::io::BinaryReader& r, BrfSkeleton& out, std::string* error_out) {
     std::int32_t num_bones = 0;
-    if (!r.read_string(out.name) || !r.read_i32(num_bones) || num_bones < 0 ||
-        !check_count_and_reserve(out.bones, static_cast<std::uint64_t>(num_bones), r, 60, error_out, "skeleton bones")) {
-        return set_error(error_out, "invalid skeleton header");
+    if (!r.read_string(out.name)) {
+        return set_error(error_out, "truncated skeleton name");
+    }
+    if (!read_count_i32(r, out.bones, 60, num_bones, error_out, "skeleton bones", out.name)) {
+        return false;
     }
     for (std::int32_t i = 0; i < num_bones; ++i) {
         BrfSkeletonBone bone{};
@@ -594,17 +638,16 @@ inline bool read_skeleton(wse::io::BinaryReader& r, BrfSkeleton& out, std::strin
 
 inline bool read_skeleton_anim(wse::io::BinaryReader& r, BrfSkeletonAnimation& out, std::string* error_out) {
     std::uint32_t num_bones = 0;
-    if (!r.read_string(out.name) || !r.read_u32(num_bones) ||
-        !check_count_and_reserve(out.bone_rotations, num_bones, r, 4, error_out, "animation bones")) {
-        return set_error(error_out, "invalid skeleton animation header");
+    if (!r.read_string(out.name)) {
+        return set_error(error_out, "truncated skeleton animation name");
+    }
+    if (!read_count_u32(r, out.bone_rotations, 4, num_bones, error_out, "animation bones", out.name)) {
+        return false;
     }
     for (std::uint32_t b = 0; b < num_bones; ++b) {
         std::int32_t num_keys = 0;
-        if (!r.read_i32(num_keys) || num_keys < 0) {
-            return set_error(error_out, "invalid rotation keyframe count in " + out.name);
-        }
         std::vector<BrfQuatKey> keys;
-        if (!check_count_and_reserve(keys, static_cast<std::uint64_t>(num_keys), r, 20, error_out, "rotation keys")) {
+        if (!read_count_i32(r, keys, 20, num_keys, error_out, "rotation keys", out.name)) {
             return false;
         }
         // rglIpo<rglQuaternion>::readStream (0x14030c320) writes stream order: qy, qz, qw, qx.
@@ -621,9 +664,8 @@ inline bool read_skeleton_anim(wse::io::BinaryReader& r, BrfSkeletonAnimation& o
     }
 
     std::int32_t num_pos_keys = 0;
-    if (!r.read_i32(num_pos_keys) || num_pos_keys < 0 ||
-        !check_count_and_reserve(out.root_positions, static_cast<std::uint64_t>(num_pos_keys), r, 16, error_out, "position keys")) {
-        return set_error(error_out, "invalid position key count in " + out.name);
+    if (!read_count_i32(r, out.root_positions, 16, num_pos_keys, error_out, "position keys", out.name)) {
+        return false;
     }
     for (std::int32_t k = 0; k < num_pos_keys; ++k) {
         BrfPosKey pk{};
@@ -649,9 +691,8 @@ bool read_section(wse::io::BinaryReader& r,
                   std::string* error_out,
                   const char* kind_name) {
     std::int32_t count = 0;
-    if (!r.read_i32(count) || count < 0 ||
-        !check_count_and_reserve(target, static_cast<std::uint64_t>(count), r, 4, error_out, kind_name)) {
-        return set_error(error_out, std::string("invalid ") + kind_name + " section count");
+    if (!read_count_i32(r, target, 4, count, error_out, std::string(kind_name) + " section")) {
+        return false;
     }
     for (std::int32_t i = 0; i < count; ++i) {
         Elem elem{};
@@ -665,12 +706,10 @@ inline int parse_lod_suffix(std::string_view suffix) noexcept {
     // Matches rglResourceManager::createMetaMesh (0x1402f29a0) suffix rule:
     // suffix[0] == '.' followed case-insensitively by "lod" and digit '1'..'4'.
     if (suffix.size() >= 5 && suffix[0] == '.') {
-        const auto lower_ascii = [](char ch) noexcept {
-            return static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-        };
-        if (lower_ascii(suffix[1]) == 'l' &&
-            lower_ascii(suffix[2]) == 'o' &&
-            lower_ascii(suffix[3]) == 'd' &&
+        using wse::platform::ascii_lower;
+        if (ascii_lower(suffix[1]) == 'l' &&
+            ascii_lower(suffix[2]) == 'o' &&
+            ascii_lower(suffix[3]) == 'd' &&
             suffix[4] >= '1' && suffix[4] <= '4') {
             return suffix[4] - '0';
         }
@@ -761,6 +800,10 @@ inline bool load_brf(wse::platform::Vfs& vfs,
 
 // Groups mesh records into MetaMesh LOD buckets [0..4] per
 // rglResourceManager::createMetaMesh (0x1402f29a0).
+// Open verification item: the base name is the text before the *first* '.', and
+// parse_lod_suffix accepts any suffix that starts with ".lod1".."lod4" (".lod1x" is
+// LOD 1), so a dotted non-LOD name such as "tree.1" lands in "tree"'s LOD 0 bucket.
+// Both rules still need confirming against createMetaMesh's control flow.
 inline std::vector<BrfMetaMeshGroup> group_meta_meshes(std::span<const BrfMesh> meshes) {
     std::vector<BrfMetaMeshGroup> groups;
     std::unordered_map<std::string, std::size_t> index_by_base;

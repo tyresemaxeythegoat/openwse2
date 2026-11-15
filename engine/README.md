@@ -276,6 +276,25 @@ binary savegames; none of these checks changes valid module behaviour. In `str_s
 empty delimiter cannot advance in retail and would loop indefinitely; the port stores the source as
 a single piece (respecting `skip_empty`) and terminates.
 
+Asset decoders (`wse/asset/{brf,dds}.h`, P3 review fixes):
+
+- `.brf` element counts are checked against the remaining stream bytes at each record's minimum
+  wire size, and at most `detail::kMaxReserveElements` (`4096`) elements are reserved before they
+  are read, so a corrupt count cannot allocate many times the file size. Count errors keep their
+  specific message (`truncated … count`, `negative count`, `count N exceeds remaining stream bytes`).
+- A face-corner vertex index above `65535` is rejected: retail `rglMeshFaceCorner::m_vertexNo`
+  (`+0x40`) is an `unsigned short`, so such an index would be truncated.
+- Composite bodies nest at most 8 levels.
+- `.dds` volume textures (`DDSCAPS2_VOLUME`, `DDSD_DEPTH` with depth > 1, DX10 `TEXTURE3D`) are
+  rejected rather than decoded as their first slice; DX10 `array_size` is capped at 64.
+  DX10 cube maps count `6 × array_size` faces; legacy cube maps count their `dwCaps2` face bits.
+  `DdsImageView::is_srgb` marks the DXGI `*_SRGB` formats, whose `format` is the UNORM equivalent.
+- `decode_dds_mip_rgba8` re-validates the slice index and that the slice payload covers its
+  dimensions. `DdsImageView` slices are non-owning views into the buffer given to `parse_dds`.
+- Unverified against the retail control flow: the `MetaMesh` base-name split and `.lodN` rule,
+  and the texture probe order in `resolve_texture_path`; extension-less texture names fall back to
+  `.jpg`/`.tga`, which `parse_dds` cannot decode.
+
 Script operands never size an allocation directly (Milestone 4–6 review fixes):
 
 - The Lua bridge stack is capped at `WseLuaState::kMaxLuaStackSize` (`8000`): `lua_set_top` (5101)

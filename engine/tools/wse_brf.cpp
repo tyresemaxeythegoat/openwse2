@@ -10,6 +10,8 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
+#include <new>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -167,14 +169,14 @@ int run_dds_file(const std::filesystem::path& p, bool json) {
         std::printf("{\"path\":");
         print_json_escaped(p.string());
         std::printf(",\"width\":%u,\"height\":%u,\"mips\":%u,\"faces\":%u,"
-                    "\"cubemap\":%s,\"dx10\":%s,\"format\":\"%s\",\"mip0_rgba_bytes\":%zu}\n",
+                    "\"cubemap\":%s,\"dx10\":%s,\"format\":\"%s\",\"srgb\":%s,\"mip0_rgba_bytes\":%zu}\n",
                     img.width, img.height, img.mip_count, img.face_count,
                     img.is_cubemap ? "true" : "false", img.has_dx10_header ? "true" : "false",
-                    dds_format_name(img.format), rgba.size());
+                    dds_format_name(img.format), img.is_srgb ? "true" : "false", rgba.size());
     } else {
-        std::printf("DDS %s: %ux%u format=%s mips=%u faces=%u cubemap=%s dx10=%s decoded=%zu B\n",
+        std::printf("DDS %s: %ux%u format=%s%s mips=%u faces=%u cubemap=%s dx10=%s decoded=%zu B\n",
                     p.string().c_str(), img.width, img.height, dds_format_name(img.format),
-                    img.mip_count, img.face_count,
+                    img.is_srgb ? " (sRGB)" : "", img.mip_count, img.face_count,
                     img.is_cubemap ? "yes" : "no", img.has_dx10_header ? "yes" : "no",
                     rgba.size());
     }
@@ -290,11 +292,20 @@ int run_module_catalog(const std::filesystem::path& root,
             totals.add(entry.file);
         }
     }
+    for (const std::string& warning : cat.warnings) {
+        std::fprintf(stderr, "WARN  %s\n", warning.c_str());
+    }
     if (json) {
         std::printf("{\"root\":");
         print_json_escaped(root.string());
         std::printf(",\"module\":");
         print_json_escaped(mod_rel);
+        std::printf(",\"warning_list\":[");
+        for (std::size_t i = 0; i < cat.warnings.size(); ++i) {
+            if (i != 0U) std::putchar(',');
+            print_json_escaped(cat.warnings[i]);
+        }
+        std::printf("]");
         std::printf(",\"entries\":%zu,\"loaded\":%zu,\"warnings\":%zu,"
                     "\"meshes\":%zu,\"meta_meshes\":%zu,\"textures\":%zu,\"shaders\":%zu,"
                     "\"materials\":%zu,\"bodies\":%zu,\"skeletons\":%zu,\"animations\":%zu,"
@@ -314,9 +325,7 @@ int run_module_catalog(const std::filesystem::path& root,
     return 0;
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
+int run_cli(int argc, char** argv) {
     std::string brf_path;
     std::string dds_path;
     std::string dir_path;
@@ -372,4 +381,17 @@ int main(int argc, char** argv) {
     if (!dds_path.empty()) return run_dds_file(dds_path, json);
     if (!dir_path.empty()) return run_dir(dir_path, json);
     return run_module_catalog(root_path, module_name, json);
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    try {
+        return run_cli(argc, argv);
+    } catch (const std::bad_alloc&) {
+        std::fprintf(stderr, "ERROR out of memory\n");
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "ERROR %s\n", e.what());
+    }
+    return 1;
 }
