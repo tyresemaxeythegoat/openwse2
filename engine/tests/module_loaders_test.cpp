@@ -1177,7 +1177,11 @@ void test_reload_resets_module_state_and_storage_moves() {
 
 } // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_module_loaders_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_reload_resets_module_state_and_storage_moves();
     test_ini_and_token_helpers();
     test_individual_world_loaders();
@@ -1192,3 +1196,11 @@ int main() {
     std::printf("module_loaders tests: FAIL (%d)\n", failures);
     return 1;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_module_loaders_suite(nullptr);
+}
+#endif

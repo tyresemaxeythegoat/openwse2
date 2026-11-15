@@ -1616,7 +1616,11 @@ void test_m6_review_regressions() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_wse_m6_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_m6_review_regressions();
     test_player_mp_group();
     test_agent_ext_group();
@@ -1632,3 +1636,11 @@ int main() {
     std::printf("FAIL  wse_m6_test (%d failures)\n", failures);
     return 1;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_wse_m6_suite(nullptr);
+}
+#endif

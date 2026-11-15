@@ -571,7 +571,11 @@ void test_feval() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_wse_bitwise_fp_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_enum_values();
     test_shift_group();
     test_bitwise_group();
@@ -590,3 +594,11 @@ int main() {
     std::printf("wse_bitwise_fp tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_wse_bitwise_fp_suite(nullptr);
+}
+#endif

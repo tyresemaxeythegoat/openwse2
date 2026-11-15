@@ -929,7 +929,11 @@ void test_sleep_and_dispatch_b8() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_wse_system_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_register_group();
     test_script_context_group();
     test_options_group();
@@ -945,3 +949,11 @@ int main() {
     std::printf("wse_system tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_wse_system_suite(nullptr);
+}
+#endif

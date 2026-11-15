@@ -612,7 +612,11 @@ void test_sandbox_require_and_headless_host_vfs() {
 
 } // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_lua_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_stdlib_bit_table_string_vector_pos();
     test_ops_constants_variables_and_exec();
     test_hooks_triggers_and_iterators();
@@ -626,3 +630,11 @@ int main() {
     std::printf("lua tests: FAIL (%d)\n", failures);
     return 1;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_lua_suite(nullptr);
+}
+#endif
