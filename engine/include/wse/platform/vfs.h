@@ -111,6 +111,12 @@ public:
     virtual bool is_file(std::string_view path) = 0;
     virtual bool is_dir(std::string_view path) = 0;
 
+    // Optional directory creation/removal (non-pure default so custom mock Vfs
+    // subclasses stay valid). Creates/removes a single directory whose parent
+    // exists; remove_dir refuses non-empty directories.
+    virtual bool make_dir(std::string_view /*path*/) { return false; }
+    virtual bool remove_dir(std::string_view /*path*/) { return false; }
+
     // Same as `read_file`, into a string. Implementations override this to
     // fill `out` directly; the default pays one extra copy.
     virtual bool read_text(std::string_view path, std::string& out) {
@@ -202,6 +208,37 @@ public:
         return key && (key->empty() || dirs_.count(*key) != 0);
     }
 
+    bool make_dir(std::string_view path) override {
+        const auto parts = split_path(path);
+        if (!parts || parts->empty()) return false;
+        std::string key;
+        for (std::size_t i = 0; i < parts->size(); ++i) {
+            if (i != 0) key.push_back('/');
+            key += ascii_lower((*parts)[i]);
+            if (files_.count(key) != 0) return false;
+            if (i + 1 == parts->size()) {
+                if (dirs_.count(key) != 0) return false;  // already exists
+                dirs_.emplace(key, (*parts)[i]);
+                return true;
+            }
+            if (dirs_.count(key) == 0) return false;  // missing parent
+        }
+        return false;
+    }
+
+    bool remove_dir(std::string_view path) override {
+        const auto key = normalize_path(path);
+        if (!key || key->empty() || dirs_.count(*key) == 0) return false;
+        const std::string prefix = *key + "/";
+        for (const auto& [fk, _] : files_) {
+            if (fk.compare(0, prefix.size(), prefix) == 0) return false;
+        }
+        for (const auto& [dk, _] : dirs_) {
+            if (dk.compare(0, prefix.size(), prefix) == 0) return false;
+        }
+        return dirs_.erase(*key) != 0;
+    }
+
 private:
     struct File {
         std::string name;
@@ -288,6 +325,23 @@ public:
         const auto real = resolve(path, false);
         std::error_code ec;
         return real && std::filesystem::is_directory(*real, ec) && !ec;
+    }
+
+    bool make_dir(std::string_view path) override {
+        std::error_code root_ec;
+        std::filesystem::create_directories(root_, root_ec);
+        const auto real = resolve(path, true);
+        if (!real) return false;
+        std::error_code ec;
+        return std::filesystem::create_directory(*real, ec) && !ec;
+    }
+
+    bool remove_dir(std::string_view path) override {
+        const auto real = resolve(path, false);
+        if (!real) return false;
+        std::error_code ec;
+        if (!std::filesystem::is_directory(*real, ec) || ec) return false;
+        return std::filesystem::remove(*real, ec) && !ec;
     }
 
 private:

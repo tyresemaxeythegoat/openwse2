@@ -43,6 +43,70 @@ function Resolve-Zig([string]$explicit) {
 $zig = Resolve-Zig $Zig
 $include = Join-Path $here "include"
 
+# Ensure stock MIT Lua 5.1.5 is cached and verified under engine/build/third_party/.
+$thirdParty = Join-Path $here "build\third_party"
+$luaRoot = Join-Path $thirdParty "lua-5.1.5"
+$luaSrc = Join-Path $luaRoot "src"
+$luaTar = Join-Path $thirdParty "lua-5.1.5.tar.gz"
+$luaExpectedHash = "2640FC56A795F29D28EF15E13C34A47E223960B0240E8CB0A82D9B0738695333"
+if (-not (Test-Path (Join-Path $luaSrc "lua.h"))) {
+    New-Item -ItemType Directory -Force -Path $thirdParty | Out-Null
+    if (-not (Test-Path $luaTar)) {
+        Write-Host "downloading  lua-5.1.5.tar.gz"
+        Invoke-WebRequest -Uri "https://www.lua.org/ftp/lua-5.1.5.tar.gz" -OutFile $luaTar -UseBasicParsing
+    }
+    $actualHash = (Get-FileHash -Path $luaTar -Algorithm SHA256).Hash
+    if ($actualHash -ne $luaExpectedHash) {
+        throw "lua-5.1.5.tar.gz SHA-256 mismatch: expected $luaExpectedHash, got $actualHash"
+    }
+    & tar -xf $luaTar -C $thirdParty
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $luaSrc "lua.h"))) {
+        throw "failed to extract lua-5.1.5.tar.gz"
+    }
+}
+
+$luaCoreFiles = @(
+    "lapi.c", "lauxlib.c", "lbaselib.c", "lcode.c", "ldblib.c", "ldebug.c",
+    "ldo.c", "ldump.c", "lfunc.c", "lgc.c", "linit.c", "liolib.c", "llex.c",
+    "lmathlib.c", "lmem.c", "loadlib.c", "lobject.c", "lopcodes.c", "loslib.c",
+    "lparser.c", "lstate.c", "lstring.c", "lstrlib.c", "ltable.c", "ltablib.c",
+    "ltm.c", "lundump.c", "lvm.c", "lzio.c"
+)
+$luaObjDir = Join-Path $out "lua51_obj"
+New-Item -ItemType Directory -Force -Path $luaObjDir | Out-Null
+$luaLib = Join-Path $out "liblua51.a"
+if (-not (Test-Path $luaLib)) {
+    Write-Host "building     lua51"
+    $luaObjs = @()
+    foreach ($cf in $luaCoreFiles) {
+        $obj = Join-Path $luaObjDir ($cf -replace '\.c$', '.o')
+        & $zig cc -target x86_64-windows-gnu -std=c99 -O2 -w -I $luaSrc -c (Join-Path $luaSrc $cf) -o $obj
+        if ($LASTEXITCODE -ne 0) { throw "lua51 compile failed: $cf" }
+        $luaObjs += $obj
+    }
+    & $zig ar rcs $luaLib @luaObjs
+    if ($LASTEXITCODE -ne 0) { throw "lua51 archive failed" }
+}
+
+$wseLuaFiles = @(
+    "lua_bitop.cpp", "wse_lua_callbacks.cpp", "wse_lua_manager.cpp", "wse_lua_ops.cpp"
+)
+$wseLuaObjDir = Join-Path $out "wse_lua_obj"
+New-Item -ItemType Directory -Force -Path $wseLuaObjDir | Out-Null
+$wseLuaLib = Join-Path $out "libwse_lua.a"
+if (Test-Path $wseLuaLib) { Remove-Item -Force $wseLuaLib }
+Write-Host "building     wse_lua"
+$wseLuaObjs = @()
+foreach ($cpp in $wseLuaFiles) {
+    $obj = Join-Path $wseLuaObjDir ($cpp -replace '\.cpp$', '.o')
+    & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
+        -I $include -I $luaSrc -c (Join-Path $here "src\lua\$cpp") -o $obj
+    if ($LASTEXITCODE -ne 0) { throw "wse_lua compile failed: $cpp" }
+    $wseLuaObjs += $obj
+}
+& $zig ar rcs $wseLuaLib @wseLuaObjs
+if ($LASTEXITCODE -ne 0) { throw "wse_lua archive failed" }
+
 $tests = @(
     @{ Name = "operand"; Source = Join-Path $here "tests\operand_test.cpp" },
     @{ Name = "trigger"; Source = Join-Path $here "tests\trigger_test.cpp" },
@@ -61,7 +125,8 @@ $tests = @(
     @{ Name = "wse_m6"; Source = Join-Path $here "tests\wse_m6_test.cpp" },
     @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp" },
     @{ Name = "module_loaders"; Source = Join-Path $here "tests\module_loaders_test.cpp" },
-    @{ Name = "headless"; Source = Join-Path $here "tests\headless_test.cpp" }
+    @{ Name = "headless"; Source = Join-Path $here "tests\headless_test.cpp" },
+    @{ Name = "lua"; Source = Join-Path $here "tests\lua_test.cpp"; LinkLua = $true }
 )
 
 Write-Host "zig          $zig"
@@ -70,8 +135,9 @@ Write-Host "output       $out"
 foreach ($test in $tests) {
     $binary = Join-Path $out ("{0}_test.exe" -f $test.Name)
     Write-Host ("building     {0}" -f $test.Name)
+    $extraLibs = if ($test.ContainsKey("LinkLua") -and $test.LinkLua) { @($wseLuaLib, $luaLib) } else { @() }
     & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
-        -I $include -o $binary $test.Source
+        -I $include -o $binary $test.Source @extraLibs
     if ($LASTEXITCODE -ne 0) {
         throw ("{0} test build failed" -f $test.Name)
     }
@@ -89,7 +155,7 @@ foreach ($test in $tests) {
 $headlessTool = Join-Path $out "wse_headless.exe"
 Write-Host "building     wse_headless"
 & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
-    -I $include -o $headlessTool (Join-Path $here "tools\wse_headless.cpp")
+    -I $include -o $headlessTool (Join-Path $here "tools\wse_headless.cpp") $wseLuaLib $luaLib
 if ($LASTEXITCODE -ne 0) {
     throw "wse_headless build failed"
 }

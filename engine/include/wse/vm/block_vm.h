@@ -54,6 +54,7 @@
 #include "wse/game/trigger.h"
 #include "wse/game/world_state.h"
 #include "wse/vm/execute_wse.h"
+#include "wse/vm/lua_runtime.h"
 #include "wse/vm/operand.h"
 #include "wse/vm/slots.h"
 #include "wse/vm/statement.h"
@@ -205,6 +206,7 @@ struct VmContext {
     std::int32_t currentCaller = 0;
     bool skipStatement = false;
     game::ScriptManager* scripts = nullptr;
+    std::shared_ptr<WseLuaRuntime> luaRuntime{};
 
     NativeOpHook nativeHook = nullptr;
     void* nativeHookUser = nullptr;
@@ -510,6 +512,7 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     operands.state.profiler_recording = &ctx.profilerRecording;
     operands.state.profiler_markers = &ctx.profilerMarkers;
     operands.state.dictionaries = &ctx.dictionaries;
+    operands.state.lua_runtime = ctx.luaRuntime.get();
     operands.state.world = &ctx.world;
     if (ctx.scripts != nullptr) {
         operands.state.num_scripts = ctx.scripts->scripts.size();
@@ -558,7 +561,8 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
 [[nodiscard]] inline bool execute_statement(const Statement& statement,
                                             std::int32_t caller,
                                             VmContext& ctx,
-                                            std::span<std::int64_t> locals) {
+                                            std::span<std::int64_t> locals,
+                                            bool allowLuaHook = true) {
     const bool thisOrNext = (statement.opcode & kThisOrNextFlag) != 0;
     const bool neg = (statement.opcode & kNegFlag) != 0;
     const std::uint32_t opcode = statement.opcode & kOpcodeMask;
@@ -582,6 +586,33 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
             parse_operand(static_cast<std::uint64_t>(statement.operands[i]), ctx, locals, tags[i]);
         wide[i] = value;
         narrow[i] = static_cast<std::int32_t>(value);
+    }
+
+    if (allowLuaHook && ctx.luaRuntime != nullptr && ctx.luaRuntime->is_ready() &&
+        ctx.luaRuntime->has_operation_hook(opcode)) {
+        const auto hookRes = ctx.luaRuntime->on_operation_execute(
+            opcode,
+            std::span<const std::int64_t>(wide.data(), count),
+            std::span<const std::uint8_t>(tags.data(), count),
+            ctx);
+        if (!hookRes.execute) {
+            if (hookRes.has_lhs && count > 0) {
+                store_lvalue(static_cast<std::uint64_t>(statement.operands[0]),
+                             hookRes.lhs_value, ctx, locals);
+            }
+            bool hookResult = hookRes.has_cf ? hookRes.cf_result : true;
+            if (neg) {
+                hookResult = !hookResult;
+            }
+            if (thisOrNext) {
+                if (hookResult) {
+                    ctx.skipStatement = true;
+                } else {
+                    hookResult = true;
+                }
+            }
+            return hookResult;
+        }
     }
 
     bool result = true;
@@ -916,6 +947,18 @@ inline bool execute_statement_block(StatementBlock& block,
     };
     const DepthGuard depthGuard(ctx.currentDepth, depth);
 
+    std::vector<std::int64_t> hookedParamsStorage;
+    if (block.luaHookRef != kNoLuaHook && ctx.luaRuntime != nullptr && ctx.luaRuntime->is_ready()) {
+        auto hookRes = ctx.luaRuntime->on_script_execute(block.luaHookRef, params, ctx);
+        if (!hookRes.execute) {
+            return hookRes.cf_result;
+        }
+        if (hookRes.replace_params) {
+            hookedParamsStorage = std::move(hookRes.replacement_params);
+            params = std::span<const std::int64_t>(hookedParamsStorage);
+        }
+    }
+
     analyze_statement_block(block, &ctx);
     if (depth > ctx.maxObservedDepth) {
         ctx.maxObservedDepth = depth;
@@ -1146,17 +1189,24 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
                                           std::span<const std::int64_t> timersTotal,
                                           VmContext& ctx) {
     std::int64_t now = 0;
+    auto timer_elapsed = [&](const game::AppTimer& t, double interval,
+                             bool& out_elapsed) -> bool {
+        if (!game::timer_now(timersTotal, t, now)) return false;
+        out_elapsed = interval <= game::timer_elapsed(now, t.value);
+        return true;
+    };
+    auto reset_timer = [&](game::AppTimer& t) -> bool {
+        if (!game::timer_now(timersTotal, t, now)) return false;
+        t.value = now;
+        return true;
+    };
 
     if (trigger.status == 2) {
-        if (!game::timer_now(timersTotal, trigger.rearmTimer, now)) {
-            return false;
-        }
-        if (trigger.rearmInterval <= game::timer_elapsed(now, trigger.rearmTimer.value)) {
+        bool elapsed = false;
+        if (!timer_elapsed(trigger.rearmTimer, trigger.rearmInterval, elapsed)) return false;
+        if (elapsed) {
             trigger.status = 0;
-            if (!game::timer_now(timersTotal, trigger.checkTimer, now)) {
-                return false;
-            }
-            trigger.checkTimer.value = now;
+            if (!reset_timer(trigger.checkTimer)) return false;
         }
     }
 
@@ -1165,39 +1215,28 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
             if (game::interval_key(trigger.checkInterval) == eventKey &&
                 execute_statement_block(trigger.conditions, eventKey, 0, {}, ctx)) {
                 trigger.status = 2;
-                if (!game::timer_now(timersTotal, trigger.rearmTimer, now)) {
-                    return false;
-                }
-                trigger.rearmTimer.value = now;
+                if (!reset_timer(trigger.rearmTimer)) return false;
                 (void)execute_statement_block(trigger.consequences, eventKey, 0, {}, ctx);
             }
         } else if (eventKey >= 0) {
-            if (!game::timer_now(timersTotal, trigger.checkTimer, now)) {
-                return false;
-            }
-            if (trigger.checkInterval <= game::timer_elapsed(now, trigger.checkTimer.value)) {
+            bool elapsed = false;
+            if (!timer_elapsed(trigger.checkTimer, trigger.checkInterval, elapsed)) return false;
+            if (elapsed) {
                 trigger.checkTimer.value = now;
                 if (execute_statement_block(trigger.conditions, eventKey, 0, {}, ctx)) {
                     trigger.status = 1;
-                    if (!game::timer_now(timersTotal, trigger.delayTimer, now)) {
-                        return false;
-                    }
-                    trigger.delayTimer.value = now;
+                    if (!reset_timer(trigger.delayTimer)) return false;
                 }
             }
         }
     }
 
     if (trigger.status == 1) {
-        if (!game::timer_now(timersTotal, trigger.delayTimer, now)) {
-            return false;
-        }
-        if (trigger.delayInterval <= game::timer_elapsed(now, trigger.delayTimer.value)) {
+        bool elapsed = false;
+        if (!timer_elapsed(trigger.delayTimer, trigger.delayInterval, elapsed)) return false;
+        if (elapsed) {
             trigger.status = 2;
-            if (!game::timer_now(timersTotal, trigger.rearmTimer, now)) {
-                return false;
-            }
-            trigger.rearmTimer.value = now;
+            if (!reset_timer(trigger.rearmTimer)) return false;
             (void)execute_statement_block(trigger.consequences, eventKey, 0, {}, ctx);
         }
     }
@@ -1210,9 +1249,7 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
                                                   std::span<const std::int64_t> timersTotal,
                                                   VmContext& ctx) {
     for (auto& trigger : manager.triggers) {
-        if (!execute_trigger(trigger, eventKey, timersTotal, ctx)) {
-            return false;
-        }
+        if (!execute_trigger(trigger, eventKey, timersTotal, ctx)) return false;
     }
     return true;
 }
@@ -1222,20 +1259,12 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
                                                  std::span<const std::int64_t> timersTotal,
                                                  VmContext& ctx) {
     if (trigger.interval < game::kSimpleEventThreshold) {
-        if (game::interval_key(trigger.interval) != eventKey) {
-            return true;
-        }
+        if (game::interval_key(trigger.interval) != eventKey) return true;
     } else {
-        if (eventKey < 0) {
-            return true;
-        }
+        if (eventKey < 0) return true;
         std::int64_t now = 0;
-        if (!game::timer_now(timersTotal, trigger.timer, now)) {
-            return false;
-        }
-        if (game::timer_elapsed(now, trigger.timer.value) < trigger.interval) {
-            return true;
-        }
+        if (!game::timer_now(timersTotal, trigger.timer, now)) return false;
+        if (game::timer_elapsed(now, trigger.timer.value) < trigger.interval) return true;
         trigger.timer.value = now;
     }
 
@@ -1248,9 +1277,7 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
                                                          std::span<const std::int64_t> timersTotal,
                                                          VmContext& ctx) {
     for (auto& trigger : manager.triggers) {
-        if (!execute_simple_trigger(trigger, eventKey, timersTotal, ctx)) {
-            return false;
-        }
+        if (!execute_simple_trigger(trigger, eventKey, timersTotal, ctx)) return false;
     }
     return true;
 }

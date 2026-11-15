@@ -33,14 +33,27 @@ namespace wse::vm {
     const auto wide = operands.wide;
     const auto narrow = operands.narrow;
     auto* world = operands.state.world;
+    auto* rt = (operands.state.lua_runtime != nullptr && operands.state.lua_runtime->is_ready())
+                   ? operands.state.lua_runtime
+                   : nullptr;
     auto strings = operands.state.strings;
     const auto positions = operands.state.positions;
+    const auto report_lua_err = [&](std::string msg) {
+        if (world != nullptr) {
+            world->m6.lua.add_error(std::move(msg));
+        }
+    };
 
     switch (static_cast<WseOpcode>(opcode)) {
     case WseOpcode::lua_get_top: {
         // 5100 (0x1401f409c)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
+        }
+        if (rt != nullptr) {
+            effect.value = rt->lua_get_top();
+            effect.store_value = true;
+            return WseDispatch::handled;
         }
         if (world == nullptr) {
             return WseDispatch::ignored;
@@ -53,6 +66,13 @@ namespace wse::vm {
         // 5101 (0x1401f40ae)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
+        }
+        if (rt != nullptr) {
+            if (!rt->lua_set_top(narrow[0])) {
+                report_lua_err("lua_set_top: stack overflow");
+                return WseDispatch::ignored;
+            }
+            return WseDispatch::handled_no_store;
         }
         if (world == nullptr) {
             return WseDispatch::ignored;
@@ -70,6 +90,13 @@ namespace wse::vm {
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
+        if (rt != nullptr) {
+            if (rt->lua_value_type(narrow[0]) == -1) {
+                return WseDispatch::ignored;
+            }
+            rt->lua_insert(narrow[0]);
+            return WseDispatch::handled_no_store;
+        }
         if (world == nullptr || world->m6.lua.resolve_index(narrow[0]) < 0) {
             return WseDispatch::ignored;
         }
@@ -80,6 +107,13 @@ namespace wse::vm {
         // 5103 (0x1401f40e7)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
+        }
+        if (rt != nullptr) {
+            if (rt->lua_value_type(narrow[0]) == -1) {
+                return WseDispatch::ignored;
+            }
+            rt->lua_remove(narrow[0]);
+            return WseDispatch::handled_no_store;
         }
         if (world == nullptr || world->m6.lua.resolve_index(narrow[0]) < 0) {
             return WseDispatch::ignored;
@@ -92,6 +126,10 @@ namespace wse::vm {
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
+        if (rt != nullptr) {
+            rt->lua_pop(narrow[0]);
+            return WseDispatch::handled_no_store;
+        }
         if (world == nullptr) {
             return WseDispatch::ignored;
         }
@@ -102,6 +140,14 @@ namespace wse::vm {
         // 5105 (0x1401f4124)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
+        }
+        if (rt != nullptr) {
+            if (rt->lua_value_type(narrow[1]) == -1) {
+                return WseDispatch::ignored;
+            }
+            effect.value = rt->lua_to_int(narrow[1]);
+            effect.store_value = true;
+            return WseDispatch::handled;
         }
         if (world == nullptr || world->m6.lua.resolve_index(narrow[1]) < 0) {
             return WseDispatch::ignored;
@@ -115,8 +161,24 @@ namespace wse::vm {
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
-        if (world == nullptr || !wse_register_ok(narrow[0]) ||
-            world->m6.lua.resolve_index(narrow[1]) < 0) {
+        if (!wse_register_ok(narrow[0])) {
+            return WseDispatch::ignored;
+        }
+        if (rt != nullptr) {
+            if (rt->lua_value_type(narrow[1]) == -1) {
+                return WseDispatch::ignored;
+            }
+            std::string s;
+            if (!rt->lua_to_string(narrow[1], s)) {
+                report_lua_err("value at index " + std::to_string(narrow[1]) +
+                               " is not a valid string");
+                return WseDispatch::handled_no_store;
+            }
+            return wse_store_string(strings, narrow[0], wse_utf8_to_utf16(s))
+                       ? WseDispatch::handled_no_store
+                       : WseDispatch::ignored;
+        }
+        if (world == nullptr || world->m6.lua.resolve_index(narrow[1]) < 0) {
             return WseDispatch::ignored;
         }
         const std::string* s = world->m6.lua.to_string(narrow[1]);
@@ -135,9 +197,24 @@ namespace wse::vm {
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
-        if (world == nullptr || !wse_register_ok(narrow[0]) ||
-            static_cast<std::size_t>(narrow[0]) >= positions.size() ||
-            world->m6.lua.resolve_index(narrow[1]) < 0) {
+        if (!wse_register_ok(narrow[0]) ||
+            static_cast<std::size_t>(narrow[0]) >= positions.size()) {
+            return WseDispatch::ignored;
+        }
+        if (rt != nullptr) {
+            if (rt->lua_value_type(narrow[1]) == -1) {
+                return WseDispatch::ignored;
+            }
+            WseTransform pos = WseTransform::identity();
+            if (!rt->lua_to_pos(narrow[1], pos)) {
+                report_lua_err("value at index " + std::to_string(narrow[1]) +
+                               " is not a valid position");
+                return WseDispatch::handled_no_store;
+            }
+            positions[static_cast<std::size_t>(narrow[0])] = pos;
+            return WseDispatch::handled_no_store;
+        }
+        if (world == nullptr || world->m6.lua.resolve_index(narrow[1]) < 0) {
             return WseDispatch::ignored;
         }
         const WseTransform* pos = world->m6.lua.to_pos(narrow[1]);
@@ -155,6 +232,10 @@ namespace wse::vm {
         if (wide.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
+        if (rt != nullptr) {
+            rt->lua_push_int(wide[0]);
+            return WseDispatch::handled_no_store;
+        }
         if (world == nullptr) {
             return WseDispatch::ignored;
         }
@@ -167,8 +248,14 @@ namespace wse::vm {
             return WseDispatch::operand_count_out_of_range;
         }
         std::string parsed;
-        if (world == nullptr ||
-            !wse_resolve_parsed_utf8_operand(0, operands, parsed)) {
+        if (!wse_resolve_parsed_utf8_operand(0, operands, parsed)) {
+            return WseDispatch::ignored;
+        }
+        if (rt != nullptr) {
+            rt->lua_push_str(parsed);
+            return WseDispatch::handled_no_store;
+        }
+        if (world == nullptr) {
             return WseDispatch::ignored;
         }
         world->m6.lua.push_str(std::move(parsed));
@@ -179,8 +266,15 @@ namespace wse::vm {
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
-        if (world == nullptr || !wse_register_ok(narrow[0]) ||
+        if (!wse_register_ok(narrow[0]) ||
             static_cast<std::size_t>(narrow[0]) >= positions.size()) {
+            return WseDispatch::ignored;
+        }
+        if (rt != nullptr) {
+            rt->lua_push_pos(positions[static_cast<std::size_t>(narrow[0])]);
+            return WseDispatch::handled_no_store;
+        }
+        if (world == nullptr) {
             return WseDispatch::ignored;
         }
         world->m6.lua.push_pos(
@@ -191,6 +285,15 @@ namespace wse::vm {
         // 5111 (0x1401f4389)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
+        }
+        if (rt != nullptr) {
+            const std::int32_t t = rt->lua_value_type(narrow[1]);
+            if (t == -1) {
+                return WseDispatch::ignored;
+            }
+            effect.value = t;
+            effect.store_value = true;
+            return WseDispatch::handled;
         }
         if (world == nullptr || world->m6.lua.resolve_index(narrow[1]) < 0) {
             return WseDispatch::ignored;
@@ -205,12 +308,32 @@ namespace wse::vm {
             return WseDispatch::operand_count_out_of_range;
         }
         std::string func_name;
-        if (world == nullptr ||
-            !wse_resolve_parsed_utf8_operand(0, operands, func_name)) {
+        if (!wse_resolve_parsed_utf8_operand(0, operands, func_name)) {
             return WseDispatch::ignored;
         }
         const std::int32_t num_args = narrow[1];
         if (num_args < 0) {
+            return WseDispatch::ignored;
+        }
+        std::replace(func_name.begin(), func_name.end(), ' ', '_');
+        if (rt != nullptr) {
+            if (!wse_m6_valid_lua_dot_path(func_name)) {
+                report_lua_err("bad func_name: '" + func_name + "'");
+                return WseDispatch::handled_no_store;
+            }
+            if (rt->lua_get_top() < num_args) {
+                report_lua_err("not enough arguments on stack");
+                return WseDispatch::handled_no_store;
+            }
+            const bool ok =
+                rt->lua_call(func_name, num_args, operands.state.caller);
+            if (!ok) {
+                report_lua_err("lua_call failed: " + func_name);
+                return WseDispatch::condition_false;
+            }
+            return WseDispatch::handled_no_store;
+        }
+        if (world == nullptr) {
             return WseDispatch::ignored;
         }
         auto& lua = world->m6.lua;
@@ -219,7 +342,6 @@ namespace wse::vm {
             return WseDispatch::handled_no_store;
         }
         lua.lua_context = operands.state.caller;
-        std::replace(func_name.begin(), func_name.end(), ' ', '_');
         if (!wse_m6_valid_lua_dot_path(func_name)) {
             lua.add_error("bad func_name: '" + func_name + "'");
             return WseDispatch::handled_no_store;
@@ -240,6 +362,13 @@ namespace wse::vm {
         // 5113 (0x1401f4686)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
+        }
+        const std::int32_t cb_ctx =
+            (narrow.size() >= 3) ? narrow[2] : operands.state.caller;
+        if (rt != nullptr) {
+            return rt->lua_trigger_callback(narrow[0], narrow[1], cb_ctx)
+                       ? WseDispatch::handled_no_store
+                       : WseDispatch::condition_false;
         }
         if (world == nullptr) {
             return WseDispatch::ignored;
@@ -272,6 +401,10 @@ namespace wse::vm {
         // 5114 (0x1401f4757)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
+        }
+        if (rt != nullptr) {
+            return rt->lua_test(narrow[0]) ? WseDispatch::handled_no_store
+                                           : WseDispatch::condition_false;
         }
         if (world == nullptr || world->m6.lua.resolve_index(narrow[0]) < 0) {
             return WseDispatch::condition_false;

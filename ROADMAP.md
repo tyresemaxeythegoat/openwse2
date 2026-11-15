@@ -92,8 +92,11 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [ ] Agent, party, mission-object, and player containers with real lifetimes
 
 **2F. Lua 5.1 layer**
-- [ ] Link stock Lua 5.1 for arm64; reconstruct `WSELuaManager`, the `gameOperation` registry, and
-      the statement/operation hooks
+- [x] Link stock Lua 5.1.5 (`lua51` + `wse_lua`) for host and arm64; reconstruct
+      `WseLuaRuntime` (`wse/vm/lua_runtime.h`, `wse/vm/lua_manager.h`, `engine/src/lua/`),
+      sandboxed `Vfs`/`Clock`/`LogSink` integration, `msfiles/` + `variables.txt` loaders,
+      callbacks/hooks/iterators/events, and VM opcodes `5100`–`5114` (`lua_test.cpp`,
+      wired into `headless_runner.h` and `wse_headless`)
 
 **2G. Core RGL value types**
 - [~] Transform / vector math (`WseVec2` length/`get_angle`, `WseVec4`, and `WseTransform`
@@ -162,6 +165,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-15 | — | Phase 2F Lua 5.1 layer: wire stock MIT Lua 5.1.5 (`lua51`) + `wse_lua` runtime (`engine/src/lua/*.cpp`, `wse/vm/lua_{runtime,manager}.h`) behind `block_vm.h`, `lua_bridge.h` (`5100`–`5114`), `headless_runner.h`, and `wse_headless`; sandbox `io`/`os`/`package`/`load*` via `Vfs`, reconstruct `bit`, `LuaGlobals`, `msfiles/` + `variables.txt` parsers, 36 `game.*` + 7 `_G.*` callbacks, hooks, and 9 `On*` events (`lua_test.cpp`, `18/18` suites / `121` tests) |
 | 2026-11-15 | — | Phase 2H headless `Native` exit: fix `particle_systems.txt` (35 floats `0x140207d50`), `skins.txt` (wrapping u32 colors `0x1402afce0` and `(weight, key_index)` constraint pairs `0x140213d60`), and `Data/skyboxes.txt` (scalar `flare_strength` `0x1402180c0`); add `wse/game/headless_runner.h`, `engine/tools/wse_headless.cpp`, and `headless_test.cpp` (`17/17` suites / `116` tests + `wse_headless`); host run on real retail `Modules/Native` executes `game_start` + `20` trigger frames with `0` errors and `0` unimplemented opcodes |
 | 2026-11-15 | — | Clean-room v1.1.5.5 module loaders (`wse/game/module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h`) routing exclusively through `wse::platform::Vfs` + `wse::io::TokenReader` to populate `WseWorldState`, owned `WseStringBanks`, `ScriptManager`, and trigger managers; PDB VA audit (`tools/build_symbol_map.py`, `docs/SYMBOL_MAP.json`); `MemoryVfs` + `HostVfs` + VM execution suite (`module_loaders_test.cpp`, `16/16` suites / `112` tests) |
 | 2026-11-15 | `d64485c` | P1 seam review fixes: `HostVfs` creates a missing root on first write (saves into a fresh directory were dropped), caches its canonical root, and reads text without a second copy (`Vfs::read_text` is virtual); `get_time` (3022) reads the new `wse::platform::WallClock` (`WseVmState::wall_clock`), `sleep_ms` moves to `wse/platform/sleep.h`, `wse_local_epoch_seconds` leaves `wse/core/encoding.h`; case-insensitive save names and `Vfs` ownership documented; regression tests in `wse_dict`, `wse_array`, `wse_system`, `platform` |

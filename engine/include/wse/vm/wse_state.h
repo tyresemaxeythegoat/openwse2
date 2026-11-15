@@ -18,6 +18,7 @@
 #include "wse/game/world_state.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/vfs.h"
+#include "wse/vm/lua_runtime.h"
 #include "wse/vm/wse_opcodes.h"
 
 namespace wse::vm {
@@ -655,6 +656,9 @@ struct WseVmState {
     // Optional calendar-time source for get_time (3022); the system clock is
     // read when null. Not owned: it must outlive this state.
     wse::platform::WallClock* wall_clock = nullptr;
+    // Active WSELuaManager runtime backend for opcodes 5100..5114; falls back
+    // to world->m6.lua when null or uninitialized.
+    WseLuaRuntime* lua_runtime = nullptr;
     // Game-world, mission, config, skill, and edit-mode state.
     wse::game::WseWorldState* world = nullptr;
 };

@@ -34,6 +34,9 @@ struct HeadlessRunOptions {
     std::int32_t event_key = 0;
     bool fail_on_unimplemented = true;
     bool stop_on_error = true;
+    bool enable_lua = true;
+    std::string lua_storage_dir = "lua_storage";
+    std::string lua_savegames_dir = "savegames";
     platform::LogSink* log = nullptr;
 };
 
@@ -166,6 +169,19 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
         return report;
     }
 
+    if (options.enable_lua && ctx.luaRuntime != nullptr) {
+        vm::WseLuaInitConfig lua_cfg{};
+        lua_cfg.module_dir = options.module_dir;
+        lua_cfg.storage_dir = options.lua_storage_dir;
+        lua_cfg.savegames_dir = options.lua_savegames_dir;
+        lua_cfg.vfs = &vfs;
+        lua_cfg.bundle = &bundle;
+        lua_cfg.log = options.log;
+        if (ctx.luaRuntime->initialize(ctx, lua_cfg) && ctx.luaRuntime->is_ready()) {
+            ctx.luaRuntime->on_game_load();
+        }
+    }
+
     report.game_start_script_index = bundle.scripts.mappedScripts[0];
     if (options.run_game_start) {
         if (report.game_start_script_index >= 0) {
@@ -199,6 +215,11 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
             bundle.game_triggers, options.event_key, ctx.timersTotal, ctx);
         const bool strig_ok = vm::execute_simple_trigger_manager(
             bundle.simple_triggers, options.event_key, ctx.timersTotal, ctx);
+        if (options.enable_lua && ctx.luaRuntime != nullptr &&
+            ctx.luaRuntime->is_ready()) {
+            ctx.luaRuntime->on_world_trigger(
+                static_cast<float>(ctx.appTimeSeconds / 3600.0));
+        }
         report.triggers_ok = report.triggers_ok && trig_ok;
         report.simple_triggers_ok = report.simple_triggers_ok && strig_ok;
         ++report.frames_executed;

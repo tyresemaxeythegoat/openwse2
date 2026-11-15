@@ -16,20 +16,23 @@ engine/
   include/wse/vm/     operand.h, slots.h, statement.h         statement encoding
                       block_vm.h, native_*.h                  block interpreter + native opcodes
                       wse_state.h, execute_wse.h              WSE VM state & top-level dispatcher
-                      ops/{bitwise,system,world,string,fp_expr,fp,dict,array,position}.h
+                      lua_runtime.h, lua_manager.h            abstract Lua runtime & factory interface
+                      ops/{bitwise,system,world,string,fp_expr,fp,dict,array,position,lua_bridge}.h
                       wse_opcodes.h (generated)               WSE extended opcode enum
   include/wse/game/   script.h, trigger.h, world_state.h,    managers, module loaders, campaign helpers, headless runner, and state model
                       world_subsystem_types.h, world_campaign_helpers.h,
                       module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h,
                       headless_runner.h
   include/wse/platform/ vfs.h, clock.h, sleep.h, log.h        platform seam (port infrastructure)
+  src/lua/            lua_bitop.*, lua_globals_script.hpp,    stock MIT Lua 5.1.5 WSE runtime (`wse_lua`, `<lua.h>` isolated here)
+                      wse_lua_{internal.hpp,ops,callbacks,manager}.cpp
   tools/              wse_headless.cpp                        headless module CLI validator (`Modules/Native`)
   tests/              one *_test.cpp per suite (+ wse_test_common.h), no framework
   fixtures/           hand-written module snippets (never retail files)
   build_host.ps1      Windows host gate
 ```
 
-The engine is header-only and built through CMake (`../CMakeLists.txt`), CI (`.github/workflows/ci.yml`), or `engine/build_host.ps1`.
+The core engine headers under `include/wse/` remain header-only; the Lua runtime (`src/lua/`) compiles into static library `wse_lua` + stock MIT `lua51` via CMake (`../CMakeLists.txt`), CI (`.github/workflows/ci.yml`), or `engine/build_host.ps1`.
 
 ## Current modules
 
@@ -65,6 +68,7 @@ The engine is header-only and built through CMake (`../CMakeLists.txt`), CI (`.g
 | `include/wse/core/{math,encoding,json}.h` | pure STL math vectors/transforms/MT19937, UTF-8/UTF-16/MD5/URL/path/LE codecs, minimal JSON parser/serializer | `rglTransform`, `rglMersenneTwister`, `UrlEscapeA`/`UrlUnescapeA`, `Json::Reader`/`Writer` |
 | `include/wse/vm/wse_state.h` | opcode mask, operand/effect structs, `WseStringBanks`, `WseOptionsState`, `WseObjectManager`, `parseString`, shared file helpers | `executeWSE` `0x1401e4dc0`, `0x1400720b0`, `0x1401c6150` |
 | `include/wse/vm/ops/{bitwise,system,world,string,fp_expr,fp,dict,array,position}.h` | per-family `executeWSE` dispatch handlers (2800–2809, 3000–3045/3619/3622/4300–4305/4606, 3340–3341, 3600–3911/4600–4609, 4200–4246, `feval` 4400–4438, dict 3200–3222, array 5000–5022, pos vec 4100–4104) | `executeWSE` `0x1401e4dc0`; `0x1400a6c10`–`0x1400ad5a0`; `0x1401e55c5`–`0x1401ec52b`; `0x1401ef0ef`–`0x1401efc8d`; `0x1401f198c`–`0x1401f1c2c`; `0x1401f58a0`–`0x1401fdd80`; `0x140246010`–`0x1402461d7`; `0x14024f4c0`; `0x1402a24f0`–`0x1402b64b0`; `0x14034e340`–`0x1403508a0` |
+| `include/wse/vm/lua_{runtime,manager}.h`, `src/lua/` | isolated stock MIT Lua 5.1.5 `WseLuaRuntime` implementing sandboxed `io`/`os`/`package`/`load*` over `Vfs`/`Clock`/`LogSink`, `bit` module, clean-room `LuaGlobals`, `msfiles/` + `variables.txt` parsers, 36 `game.*` + 7 `_G.*` callbacks, op/script/event hooks, and `lua_bridge.h` (`5100`–`5114`) integration | `WSELuaManager` (`0x14033cdd0`, `0x14033d090`; see `lua_runtime.h`, `lua_manager.h`) |
 | `include/wse/vm/execute_wse.h` | top-level `execute_wse()` umbrella dispatching across `wse/vm/ops/*.h` | `executeWSE` `0x1401e4dc0` |
 | `include/wse/platform/{vfs,clock,sleep,log}.h` | **port infrastructure, not a reconstruction:** `Vfs` (case-insensitive, `/` and `\\` separators, root-confined) with `MemoryVfs` and `HostVfs`; `Clock` in the engine's 100,000-per-second ticks with `SteadyClock`/`ManualClock`; `WallClock` (Unix seconds + UTC offset) with `SystemWallClock`/`ManualWallClock`; blocking `sleep_ms`; `LogSink` with stderr, capture, and null sinks | none — mirrors no retail layout; replaces the Win32 file/timer imports listed in `docs/ARCHITECTURE.md` §6 (design in `docs/PLATFORM_PLAN.md`) |
 | `tests/platform_test.cpp` | host tests for path normalisation and escape rejection, one `Vfs` contract run against both implementations, `Vfs` → `TokenReader`, clocks, and log sinks | temp directory + in-memory tree |
@@ -76,6 +80,7 @@ The engine is header-only and built through CMake (`../CMakeLists.txt`), CI (`.g
 | `tests/block_vm_test.cpp` + `tests/native_world_test.cpp` | host tests for analyze/modifiers/loops (live entity iterators `11/12/16/17`, `try_for_dict_keys`), `currentCaller` preservation, default local-variable zeroing (`0x140617819`), core math/scripts/recursion/return values/positions/trigger VM integration/`feval`, `array_sort_custom` script callbacks, `WseWorldState` script integration, unimplemented histogram/`failOnUnimplemented`, Milestone 1 `entity_slots`/`arithmetic`/`positions_and_math`/`strings` suites, Milestone 2 `108` entity/player/quest/UI/site/troop/party + `66` agent/team/prop/mission/timer opcodes, Milestone 3 `284` campaign/mission/item/troop/party/face-key opcodes, and Milestone 4 `218` opcodes + `473/477/1004/1070/1104/1302/1491` non-switch/fallback + `1802/1930/1969` upgrades | local test doubles and module fixtures |
 | `tests/module_loaders_test.cpp` | host tests for INI/BOM/comment parsers, individual world/campaign/asset/mission/Data loaders, error diagnostics, and full `load_module()` + VM execution round-trips over `MemoryVfs` and `HostVfs` | in-memory + temp-directory fixtures |
 | `tests/headless_test.cpp` | host tests for `run_headless_module()` / `run_headless_session()` (`game_start` + multi-frame triggers over `MemoryVfs` and `HostVfs`, loud unimplemented-opcode failure, and missing `game_start` / load error diagnostics) | in-memory + temp-directory fixtures |
+| `tests/lua_test.cpp` | host tests for Lua 5.1.5 stdlib/`bit`/`vector3`/`pos`, `msfiles/` + `variables.txt` parsers, `game.*` / `_G.*` callbacks, trigger/item/prop/prsnt/psys/iterator/hook paths, opcodes `5100`–`5114` + 9 `On*` events, and sandboxed `HostVfs` headless `main.lua` execution | `MemoryVfs` + temp-directory `HostVfs` fixtures |
 
 ## Module text format
 
@@ -270,6 +275,10 @@ Script operands never size an allocation directly (Milestone 4–6 review fixes)
 - The Lua bridge stack is capped at `WseLuaState::kMaxLuaStackSize` (`8000`): `lua_set_top` (5101)
   beyond it is ignored and pushes past it are dropped with an error. The bridge error log keeps the
   newest `kMaxLuaErrors` (`256`) entries.
+- The Lua 5.1.5 runtime (`engine/src/lua/`) removes `os.execute`/`os.getenv`/`os.exit`/`os.tmpname`/`os.setlocale`,
+  `package.loadlib`, and `io.popen`; replaces `io.*` and `os.remove`/`os.rename`/`load*`/`dofile`/`require`
+  with `Vfs`-confined equivalents (`%storage%` / `%savegames%` tokens, no upward writes outside
+  `<module>/lua/`), and rejects precompiled `\x1b` bytecode chunks.
 - `spawn_scene_prop` (1974) stops at `kMaxSpawnedMissionObjects` like `spawn_item`; `spawn_horse`
   (1973) stops at `kMaxSpawnedAgents` and leaves `reg0 = -1`.
 - `overlay_set_boundaries` (928) and `scene_set_height_fog` (4518) convert float to `int32` with
@@ -420,6 +429,7 @@ PASS  wse_m6_test
 platform tests: PASS
 module_loaders tests: PASS
 headless tests: PASS
+lua tests: PASS
 engine host tests: PASS
 ```
 

@@ -15,6 +15,7 @@
 #include "wse/game/headless_runner.h"
 #include "wse/platform/log.h"
 #include "wse/platform/vfs.h"
+#include "wse/vm/lua_manager.h"
 
 namespace {
 
@@ -111,7 +112,10 @@ int main(int argc, char** argv) {
     std::printf("Loading module '%s' from '%s'...\n",
                 opts.module_dir.c_str(), root_arg.c_str());
 
-    const auto session = wse::game::run_headless_session(vfs, opts);
+    wse::game::HeadlessSession session{};
+    session.ctx->luaRuntime = wse::lua::create_lua_runtime();
+    session.report =
+        wse::game::run_headless_module(vfs, *session.ctx, *session.bundle, opts);
     const auto& r = session.report;
     const auto& b = *session.bundle;
     const auto& c = *session.ctx;

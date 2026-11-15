@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(wse2_android LANGUAGES CXX)
+project(wse2_android LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -54,6 +54,80 @@ if(WSE_BUILD_HEADER_CHECKS)
     wse_apply_strict_warnings(wse_header_checks)
 endif()
 
+if(NOT DEFINED WSE_LUA_SOURCE_DIR AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/build/third_party/lua-5.1.5/src/lua.h")
+    set(WSE_LUA_SOURCE_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/engine/build/third_party/lua-5.1.5")
+endif()
+
+if(DEFINED WSE_LUA_SOURCE_DIR)
+    set(wse_lua51_src_dir "${WSE_LUA_SOURCE_DIR}/src")
+else()
+    if(POLICY CMP0135)
+        cmake_policy(SET CMP0135 NEW)
+    endif()
+    include(FetchContent)
+    FetchContent_Declare(
+        lua51
+        URL https://www.lua.org/ftp/lua-5.1.5.tar.gz
+        URL_HASH SHA256=2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(lua51)
+    set(wse_lua51_src_dir "${lua51_SOURCE_DIR}/src")
+endif()
+
+add_library(lua51 STATIC
+    "${wse_lua51_src_dir}/lapi.c"
+    "${wse_lua51_src_dir}/lauxlib.c"
+    "${wse_lua51_src_dir}/lbaselib.c"
+    "${wse_lua51_src_dir}/lcode.c"
+    "${wse_lua51_src_dir}/ldblib.c"
+    "${wse_lua51_src_dir}/ldebug.c"
+    "${wse_lua51_src_dir}/ldo.c"
+    "${wse_lua51_src_dir}/ldump.c"
+    "${wse_lua51_src_dir}/lfunc.c"
+    "${wse_lua51_src_dir}/lgc.c"
+    "${wse_lua51_src_dir}/linit.c"
+    "${wse_lua51_src_dir}/liolib.c"
+    "${wse_lua51_src_dir}/llex.c"
+    "${wse_lua51_src_dir}/lmathlib.c"
+    "${wse_lua51_src_dir}/lmem.c"
+    "${wse_lua51_src_dir}/loadlib.c"
+    "${wse_lua51_src_dir}/lobject.c"
+    "${wse_lua51_src_dir}/lopcodes.c"
+    "${wse_lua51_src_dir}/loslib.c"
+    "${wse_lua51_src_dir}/lparser.c"
+    "${wse_lua51_src_dir}/lstate.c"
+    "${wse_lua51_src_dir}/lstring.c"
+    "${wse_lua51_src_dir}/lstrlib.c"
+    "${wse_lua51_src_dir}/ltable.c"
+    "${wse_lua51_src_dir}/ltablib.c"
+    "${wse_lua51_src_dir}/ltm.c"
+    "${wse_lua51_src_dir}/lundump.c"
+    "${wse_lua51_src_dir}/lvm.c"
+    "${wse_lua51_src_dir}/lzio.c"
+)
+set_target_properties(lua51 PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
+target_include_directories(lua51 PRIVATE "${wse_lua51_src_dir}")
+if(NOT WIN32)
+    target_compile_definitions(lua51 PRIVATE LUA_USE_MKSTEMP LUA_USE_ISATTY)
+    target_link_libraries(lua51 INTERFACE m)
+endif()
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lua51 PRIVATE -w)
+endif()
+
+add_library(wse_lua STATIC
+    engine/src/lua/lua_bitop.cpp
+    engine/src/lua/wse_lua_callbacks.cpp
+    engine/src/lua/wse_lua_manager.cpp
+    engine/src/lua/wse_lua_ops.cpp
+)
+target_include_directories(wse_lua PRIVATE "${wse_lua51_src_dir}")
+target_link_libraries(wse_lua PRIVATE wse_engine lua51)
+wse_apply_strict_warnings(wse_lua)
+
 include(CTest)
 if(WSE_BUILD_TESTS AND BUILD_TESTING)
     function(wse_add_host_test name source)
@@ -84,11 +158,13 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
     wse_add_host_test(platform       engine/tests/platform_test.cpp)
     wse_add_host_test(module_loaders engine/tests/module_loaders_test.cpp)
     wse_add_host_test(headless       engine/tests/headless_test.cpp)
-    set_tests_properties(wse_dict wse_array platform module_loaders headless PROPERTIES RUN_SERIAL TRUE)
+    wse_add_host_test(lua            engine/tests/lua_test.cpp)
+    target_link_libraries(lua_test PRIVATE wse_lua)
+    set_tests_properties(wse_dict wse_array platform module_loaders headless lua PROPERTIES RUN_SERIAL TRUE)
 endif()
 
 if(WSE_BUILD_TOOLS)
     add_executable(wse_headless engine/tools/wse_headless.cpp)
-    target_link_libraries(wse_headless PRIVATE wse_engine)
+    target_link_libraries(wse_headless PRIVATE wse_engine wse_lua)
     wse_apply_strict_warnings(wse_headless)
 endif()

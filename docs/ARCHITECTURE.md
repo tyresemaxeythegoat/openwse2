@@ -499,8 +499,41 @@ deviations for malformed input.
 | 0x539c | `luaStateIsReady` | `bool` |
 | 0x53a0 | `user_dir` | `std::string` |
 
-The `operationHookLuaRefs[5300]` array proves the extended opcode space has at least 5,300 slots.
+The `operationHookLuaRefs[5300]` array proves the extended opcode space has at least 5,300 slots,
+all initialized to `-2` (`LUA_NOREF`) in `WSELuaManager::WSELuaManager` (`0x14033c3d0`).
 Global instance `g_luaManager` at `0x14069a6c0`.
+
+Runtime startup (`WSELuaManager::initialize @ 0x14033ca80`):
+- Creates `lua_State*` via `luaL_newstate()`, installs path sandbox (`sandbox_path @ 0x140341740`,
+  allowing `%storage%` / `%savegames%`, Warband read-only traversal up to module/game root,
+  and restricting writes to `lua\`), opens Lua stdlibs, and registers `wse_require_loader @ 0x14034adf0`
+  via `registerWseRequireLoader @ 0x140340fc0`.
+- `loadOperations @ 0x14033dff0`: parses `<module>\lua\msfiles\header_operations.py` into `operationMap`
+  with 8-byte `gameOperation` entries (`uint32_t opcode` + flag bits `0x1` = LHS / `lhs_operations` /
+  `global_lhs_operations`, `0x2` = CF / `can_fail_operations`).
+- `loadGameConstants @ 0x14033f630`: parses `header_*.py` and `ID_*.py` into `gameConstTables`
+  (`56`-byte `gameConstTable` = 32B `std::string` name + `std::vector<gameConst>` where `gameConst`
+  is `40` bytes: 32B string name + float value + padding).
+- `loadGlobalVars @ 0x14033f400`: parses `<module>\variables.txt` into `gvarMap` (`0`-based index).
+- `initLGameTable @ 0x140340920`: creates `_G.game`, registers 36 `_G_game_callbacks` (`execOperation`,
+  `getOperationFlags`, `getReg`, `setReg`, `getGvar`, `setGvar`, `getScriptNo`, `getString`,
+  `getStringId`, `getCurTemplateNo`, `getCurTemplateId`, `getNumTemplates`, `getTemplateId`,
+  `addTrigger`, `removeTrigger`, `getNumTriggers`, `addItemTrigger`, `removeItemTrigger`,
+  `getNumItemTriggers`, `addScenePropTrigger`, `removeScenePropTrigger`, `getNumScenePropTriggers`,
+  `addPrsnt`, `removePrsnt`, `addPsys`, `removePsys`, `getMeshId`, `getNumMeshes`, `partiesIt`,
+  `agentsIt`, `propInstIt`, `playersIt`, `hookOperation`, `unhookOperation`, `hookScript`, `fail`)
+  plus 7 `_G_callbacks` (`lsdir`, `mkdir`, `rmdir`, `printStack`, `_print`, `log_rgl`, `getTime`),
+  populates `game.const` via `addGameConstantsToLState @ 0x140341d60`, and loads embedded resource
+  `LuaGlobals` (PE resource `256/105`: `bit`, `table.*`, `string.*`, `game.mt`, `game.op`,
+  `game.reg`/`sreg`/`preg`/`gvar`, `game.const.mt`, `game.script`/`string`/`qstring`, `vector3`,
+  `game.rotation`, `game.pos`).
+- `doMainScript @ 0x140341f10`: executes `<module>\lua\main.lua` if present, then sets `luaStateIsReady`.
+- Hook and event dispatch: `OnOperationExecute @ 0x14033cdd0` (returns execute/CF/LHS overrides),
+  `OnOperationMgrExecute @ 0x14033d090` (script hook / `game_fail_stack` / param replacement),
+  `lc_execOperation @ 0x140344630` (bypasses op hooks via `isLua=true`, allocates string/pos temp
+  args downward from register `127`, handles `call_script` directly), `OnPostWorldTriggers @ 0x14033d3c0`,
+  `onRglLogMsg @ 0x14033d500`, `onChatMessageReceived @ 0x14033d650`, `onGameLoad @ 0x14033d840`,
+  `onSave @ 0x14033d920`, `onLoadSave @ 0x14033da20`, and `onConversation{Start,Line,End} @ 0x14033dbd0/33dc80/33dd70`.
 
 WSESDK cross-reference: `header_operations.py` declares 1,535 operation names (1,489 unique numeric
 IDs, 0–5,202), and `header_operations_addon.py` adds 477 declarations (472 unique). The maximum SDK
@@ -856,9 +889,15 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    (header/version) are documented only at the trigger-record level.
 2. `mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state
    (`DAT_1405d0f28 + 0x4a0/0x4a8`, tail int `0x12`); the queue lifecycle is not reconstructed.
-3. Locate `gameOperation` table construction in `WSELuaManager`. (Both `executeWSE` and the
-   2,738-slot native jump table at `0x1401e22f0` are now mapped in `docs/wse_opcodes.json` and
-   `docs/native_opcodes.json`.)
+3. ~~Locate `gameOperation` table construction in `WSELuaManager`.~~ **Resolved (2F):** Disassembly of
+   `WSELuaManager::initialize` (`0x14033ca80`), `loadOperations` (`0x14033dff0`), `loadGameConstants`
+   (`0x14033f630`), `loadGlobalVars` (`0x14033f400`), `initLGameTable` (`0x140340920`), `doMainScript`
+   (`0x140341f10`), `lc_execOperation` (`0x140344630`), `OnOperationExecute` (`0x14033cdd0`),
+   `OnOperationMgrExecute` (`0x14033d090`), and PE resource `LuaGlobals` (`256/105`) mapped all 36
+   `game.*` C callbacks, 7 `_G.*` callbacks, `gameOperation` (`0x1`/`0x2` LHS/CF flags),
+   `gameConstTable`, `sandbox_path` (`0x140341740`), and event callbacks; both `executeWSE` and the
+   2,738-slot native jump table at `0x1401e22f0` are mapped in `docs/wse_opcodes.json` and
+   `docs/native_opcodes.json`.
 4. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
 5. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
    writing asset code.
