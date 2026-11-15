@@ -407,18 +407,11 @@ inline bool parse_dds(std::span<const std::byte> data,
     }
     (void)dwPitchOrLinearSize;
     (void)dwCaps;
-    // Multi-slice volume textures (depth > 1, or DDSCAPS2_VOLUME without an explicit
-    // single-slice depth == 1) are not 2D/cube images; rejecting them avoids silently
-    // decoding only the first depth slice while accepting retail Warband's single-slice
-    // Textures\languages\cnt\font.dds (DDSCAPS2_VOLUME with DDSD_DEPTH and dwDepth == 1).
-    const bool has_explicit_depth_1 = ((dwFlags & 0x800000U) != 0U && dwDepth == 1U);
-    if (dwDepth > 1U || ((dwCaps2 & 0x200000U) != 0U && !has_explicit_depth_1)) {
-        return dds_detail::set_error(error_out, "unsupported DDS volume texture");
-    }
 
     std::uint32_t dxgi_format = 0;
     std::uint32_t dxt10_misc = 0;
     std::uint32_t array_size = 1U;
+    bool is_texture3d = false;
     const bool has_dx10 = (pf_flags & 0x4U) != 0U && pf_fourcc == dds_detail::fourcc('D', 'X', '1', '0');
     if (has_dx10) {
         std::uint32_t res_dim = 0, misc2 = 0;
@@ -427,13 +420,21 @@ inline bool parse_dds(std::span<const std::byte> data,
             return dds_detail::set_error(error_out, "truncated DDS_HEADER_DXT10");
         }
         (void)misc2;
-        if (res_dim == 4U) {  // D3D10_RESOURCE_DIMENSION_TEXTURE3D
-            return dds_detail::set_error(error_out, "unsupported DDS volume texture");
-        }
+        is_texture3d = (res_dim == 4U);  // D3D10_RESOURCE_DIMENSION_TEXTURE3D
         if (array_size == 0U) array_size = 1U;
         if (array_size > 64U) {
             return dds_detail::set_error(error_out, "unsupported DDS face or mip count");
         }
+    }
+
+    // dwDepth is meaningful only for volume textures (DDSD_DEPTH, DDSCAPS2_VOLUME, or DX10
+    // TEXTURE3D); other files may carry junk there and are 2D/cube images. A volume with
+    // more than one slice is rejected rather than decoded as its first slice; a single-slice
+    // volume (retail Warband Textures\languages\cnt\font.dds: DDSCAPS2_VOLUME + DDSD_DEPTH,
+    // dwDepth == 1; dwDepth == 0 is read as 1) is a 2D image.
+    const bool is_volume = (dwFlags & 0x800000U) != 0U || (dwCaps2 & 0x200000U) != 0U || is_texture3d;
+    if (is_volume && dwDepth > 1U) {
+        return dds_detail::set_error(error_out, "unsupported DDS volume texture");
     }
 
     out.width = dwWidth;
@@ -844,20 +845,20 @@ inline std::string resolve_texture_path(wse::platform::Vfs& vfs,
             return hit;
         }
     }
-    if (!warband_root.empty()) {
-        if (use_textures_hd && frame_index < 0) {
-            if (auto hit = probe_dir(wse::game::vfs_join_path(warband_root, "TexturesHD")); !hit.empty()) {
-                return hit;
-            }
-        }
-        if (!language.empty()) {
-            const std::string base_lang = wse::game::vfs_join_path(
-                wse::game::vfs_join_path(warband_root, "Textures/languages"), language);
-            if (auto hit = probe_dir(base_lang); !hit.empty()) return hit;
-        }
-        if (auto hit = probe_dir(wse::game::vfs_join_path(warband_root, "Textures")); !hit.empty()) {
+    // An empty warband_root means the VFS root (vfs_join_path("", x) == x), as in
+    // load_module_brf_catalog's CommonRes lookup.
+    if (use_textures_hd && frame_index < 0) {
+        if (auto hit = probe_dir(wse::game::vfs_join_path(warband_root, "TexturesHD")); !hit.empty()) {
             return hit;
         }
+    }
+    if (!language.empty()) {
+        const std::string base_lang = wse::game::vfs_join_path(
+            wse::game::vfs_join_path(warband_root, "Textures/languages"), language);
+        if (auto hit = probe_dir(base_lang); !hit.empty()) return hit;
+    }
+    if (auto hit = probe_dir(wse::game::vfs_join_path(warband_root, "Textures")); !hit.empty()) {
+        return hit;
     }
     return {};
 }
