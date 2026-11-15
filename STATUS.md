@@ -170,6 +170,50 @@ environment cannot make.
    non-ASCII directory that differ only in case (on a case-insensitive volume) get separate
    listings: correct, one extra scan each. Unicode case folding was not worth a dependency.
 
+### P5 review: items not fixed yet
+
+Found in the review of `6be524d` and still open after the fixes in §7 ("Slice P5 review fixes").
+Each needs a translator choice, the retail PDB/binary, hardware, or a change to pushed history.
+
+1. **No GLSL → SPIR-V translator.** `emit_placeholder_spirv_module` (formerly
+   `compile_glsl_to_spirv`) emits a valid but empty `void main()`; the GLSL only feeds a hash and
+   feature flags, so a Vulkan pipeline built from these modules draws nothing. P5 is unticked in
+   `ROADMAP.md` for this. Way out: pick the translator by the spike `docs/PLATFORM_PLAN.md` asks for
+   (retail `Native` + one large mod), keep `SpirvShaderCache` keyed by
+   `kPlaceholderSpirvGeneratorVersion` (bump it, or replace it with the translator's version),
+   and validate output with `spirv-val` in CI.
+2. **Unconfirmed `rglMaterial` decoding.** The render-order nibble (bits 24..27) is decoded as
+   signed (`0xF` → `-1`), `MaterialRenderState::srgb_diffuse` is "diffuse slot names a texture",
+   and blend values 5..7 map to opaque. None is confirmed in `rglRenderer::renderMesh`
+   (`0x1402e7f50`) or `createBlendStates` (`0x14029f590`); needs the v1.1.5.5 binary in Ghidra/REA.
+3. **`make_pipeline_desc` assumes clockwise front faces** for Warband materials, which is P4
+   item 4 above: unconfirmed until a real `.brf` mesh is GPU-rendered with culling on.
+4. **Retail technique count.** The XML root-element fix can only add techniques the old parser
+   skipped, so the retail check now asserts `>= 271` instead of `== 271`. Re-run `wse_brf` /
+   `asset_test` with `WSE_WARBAND_ROOT` on the retail install and record the exact count (and the
+   `Native` / `Phantasy Calradia` suitable/fallback/resolved numbers, which the
+   `require_hlsl_technique` and resolution changes can also move).
+5. **Lighting is still an approximation.** `MeshVertex` carries no tangents, so the software
+   rasterizer derives one flat UV tangent per triangle (no smoothing across vertices), and the
+   key light, ambient term, and Blinn-Phong model are port choices, not retail shader behaviour.
+   The GPU path with translated shaders replaces this.
+6. **`docs/SYMBOL_MAP.json` churn and date.** `6be524d` re-sorted the `strings` list (a
+   17k-line diff for 45 new records) and left `"generated": "2026-11-15"`. Fixing either means
+   regenerating with `tools/build_symbol_map.py`, which needs the v1.1.5.5 PDB/PE not present in
+   cloud sessions; never hand-edit the file.
+7. **`6be524d` author `Dev <dev@localhost>`.** The commit is pushed and merged into this branch;
+   correcting it would rewrite shared history. Set `git config user.name/user.email` on that
+   machine for future commits.
+8. **Doc citation baseline.** `tools/docs_citation_baseline.txt` tolerates `36` pre-existing doc VAs
+   that `SYMBOL_MAP.json` does not curate (image base `0x140000000`, `.data` globals such as
+   `0x140617819`, labeled historical/superseded sections). Curating them (as `global_objects` or
+   strings) would let the baseline shrink; and because the checker accepts any VA inside a known
+   function, a mislabeled interior VA still passes — only review catches that.
+9. **Windows, CI, and device runs.** The fixes were verified on Linux only (standalone gate,
+   CMake CTest, g++ ASan/UBSan). `engine/build_host.ps1`, the `Engine CI` jobs (including the new
+   `check_citations.py --docs` step), and an on-device WSI probe (`VK_KHR_swapchain` enablement)
+   are still to run.
+
 ## 6. Open documentation questions
 
 ~~One open question (2026-11-14 review): `mbStatementBlock::execute` (`0x1401f69d0`) local-variable zeroing condition.~~ **Resolved:** At `0x1401f6c59` (inside `mbStatementBlock::execute` `0x1401f69d0`), the VM checks `rglConfig::General::bLocalVariablesZeroInitialization` (`0x140617819`, loaded from `[General] bLocalVariablesZeroInitialization` in `rglConfig::load` at `0x14026f716` via `rglIni::getBool` `0x1402a84d0`), whose `.data` default is `1` (`true`). `VmContext::clearLocalsBetweenCalls` now defaults to `true` (`docs/ARCHITECTURE.md` §5 Block execution).
