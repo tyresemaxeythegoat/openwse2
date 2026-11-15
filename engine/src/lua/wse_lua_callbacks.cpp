@@ -689,6 +689,9 @@ int lc_addPrsnt(lua_State* L) {
     }
     c_lua_pop(L, 1);
 
+    if (mgr.edits_deferred()) {
+        mgr.pending_presentation_ids().push_back(prsnt.id);
+    }
     lua_pushinteger(L, static_cast<lua_Integer>(append_or_defer(
                            mgr, mgr.cfg_.bundle->presentations, std::move(prsnt))));
     return 1;
@@ -712,14 +715,30 @@ int lc_removePrsnt(lua_State* L) {
         }
         return -1;
     };
+    // While edits are queued, lookups go through the id list as it will be
+    // once they are applied, so a presentation added earlier in the same
+    // trigger can be removed and one already removed is not found again.
+    const bool deferred = mgr.edits_deferred();
     bool removed = false;
     if (lua_isnumber(L, 1)) {
-        removed = remove_at_or_defer(mgr, vec, static_cast<std::int32_t>(check_i64(L, 1)), unref);
+        const auto idx = static_cast<std::int32_t>(check_i64(L, 1));
+        removed = remove_at_or_defer(mgr, vec, idx, unref);
+        if (removed && deferred) {
+            auto& ids = mgr.pending_presentation_ids();
+            ids.erase(ids.begin() + idx);
+        }
     } else if (lua_isstring(L, 1)) {
         // An id is resolved when the edit is applied, so removals queued ahead
         // of it cannot shift it onto a different presentation.
         std::string id(to_sv(L, 1));
-        removed = find_id(vec, id) >= 0;
+        if (deferred) {
+            auto& ids = mgr.pending_presentation_ids();
+            const auto it = std::find(ids.begin(), ids.end(), id);
+            removed = it != ids.end();
+            if (removed) ids.erase(it);
+        } else {
+            removed = find_id(vec, id) >= 0;
+        }
         if (removed) {
             auto* target = &vec;
             mgr.run_or_defer_edit(target, -1, [target, id = std::move(id), unref, find_id] {
@@ -867,7 +886,7 @@ int parties_next(lua_State* L) {
 
 int lc_partiesIt(lua_State* L) {
     lua_pushinteger(L, 0);
-    lua_pushcclosure(L, parties_next, 1);
+    lua_pushcclosure(L, guarded<parties_next>, 1);
     return 1;
 }
 
@@ -921,7 +940,7 @@ int lc_agentsIt(lua_State* L) {
     lua_pushnumber(L, cy);
     lua_pushnumber(L, cz);
     lua_pushnumber(L, radius_sq);
-    lua_pushcclosure(L, agents_next, 6);
+    lua_pushcclosure(L, guarded<agents_next>, 6);
     return 1;
 }
 
@@ -957,7 +976,7 @@ int lc_propInstIt(lua_State* L) {
     lua_pushinteger(L, 0);
     lua_pushinteger(L, sub_kind);
     lua_pushinteger(L, meta_type);
-    lua_pushcclosure(L, prop_inst_next, 3);
+    lua_pushcclosure(L, guarded<prop_inst_next>, 3);
     return 1;
 }
 
@@ -984,7 +1003,7 @@ int lc_playersIt(lua_State* L) {
     const bool skip_server = lua_toboolean(L, 1) != 0;
     lua_pushinteger(L, 0);
     lua_pushboolean(L, skip_server ? 1 : 0);
-    lua_pushcclosure(L, players_next, 2);
+    lua_pushcclosure(L, guarded<players_next>, 2);
     return 1;
 }
 
@@ -1278,42 +1297,42 @@ void WseLuaManagerImpl::register_callbacks() {
     LuaStackGuard guard(L_);
 
     static const luaL_Reg kGameCallbacks[] = {
-        {"execOperation", lc_execOperation},
-        {"getOperationFlags", lc_getOperationFlags},
-        {"getReg", lc_getReg},
-        {"setReg", lc_setReg},
-        {"getGvar", lc_getGvar},
-        {"setGvar", lc_setGvar},
-        {"getScriptNo", lc_getScriptNo},
-        {"getString", lc_getString},
-        {"getStringId", lc_getStringId},
-        {"getCurTemplateNo", lc_getCurTemplateNo},
-        {"getCurTemplateId", lc_getCurTemplateId},
-        {"getNumTemplates", lc_getNumTemplates},
-        {"getTemplateId", lc_getTemplateId},
-        {"addTrigger", lc_addTrigger},
-        {"removeTrigger", lc_removeTrigger},
-        {"getNumTriggers", lc_getNumTriggers},
-        {"addItemTrigger", lc_addItemTrigger},
-        {"removeItemTrigger", lc_removeItemTrigger},
-        {"getNumItemTriggers", lc_getNumItemTriggers},
-        {"addScenePropTrigger", lc_addScenePropTrigger},
-        {"removeScenePropTrigger", lc_removeScenePropTrigger},
-        {"getNumScenePropTriggers", lc_getNumScenePropTriggers},
-        {"addPrsnt", lc_addPrsnt},
-        {"removePrsnt", lc_removePrsnt},
-        {"addPsys", lc_addPsys},
-        {"removePsys", lc_removePsys},
-        {"getMeshId", lc_getMeshId},
-        {"getNumMeshes", lc_getNumMeshes},
-        {"partiesIt", lc_partiesIt},
-        {"agentsIt", lc_agentsIt},
-        {"propInstIt", lc_propInstIt},
-        {"playersIt", lc_playersIt},
-        {"hookOperation", lc_hookOperation},
-        {"unhookOperation", lc_unhookOperation},
-        {"hookScript", lc_hookScript},
-        {"fail", lc_fail},
+        {"execOperation", guarded<lc_execOperation>},
+        {"getOperationFlags", guarded<lc_getOperationFlags>},
+        {"getReg", guarded<lc_getReg>},
+        {"setReg", guarded<lc_setReg>},
+        {"getGvar", guarded<lc_getGvar>},
+        {"setGvar", guarded<lc_setGvar>},
+        {"getScriptNo", guarded<lc_getScriptNo>},
+        {"getString", guarded<lc_getString>},
+        {"getStringId", guarded<lc_getStringId>},
+        {"getCurTemplateNo", guarded<lc_getCurTemplateNo>},
+        {"getCurTemplateId", guarded<lc_getCurTemplateId>},
+        {"getNumTemplates", guarded<lc_getNumTemplates>},
+        {"getTemplateId", guarded<lc_getTemplateId>},
+        {"addTrigger", guarded<lc_addTrigger>},
+        {"removeTrigger", guarded<lc_removeTrigger>},
+        {"getNumTriggers", guarded<lc_getNumTriggers>},
+        {"addItemTrigger", guarded<lc_addItemTrigger>},
+        {"removeItemTrigger", guarded<lc_removeItemTrigger>},
+        {"getNumItemTriggers", guarded<lc_getNumItemTriggers>},
+        {"addScenePropTrigger", guarded<lc_addScenePropTrigger>},
+        {"removeScenePropTrigger", guarded<lc_removeScenePropTrigger>},
+        {"getNumScenePropTriggers", guarded<lc_getNumScenePropTriggers>},
+        {"addPrsnt", guarded<lc_addPrsnt>},
+        {"removePrsnt", guarded<lc_removePrsnt>},
+        {"addPsys", guarded<lc_addPsys>},
+        {"removePsys", guarded<lc_removePsys>},
+        {"getMeshId", guarded<lc_getMeshId>},
+        {"getNumMeshes", guarded<lc_getNumMeshes>},
+        {"partiesIt", guarded<lc_partiesIt>},
+        {"agentsIt", guarded<lc_agentsIt>},
+        {"propInstIt", guarded<lc_propInstIt>},
+        {"playersIt", guarded<lc_playersIt>},
+        {"hookOperation", guarded<lc_hookOperation>},
+        {"unhookOperation", guarded<lc_unhookOperation>},
+        {"hookScript", guarded<lc_hookScript>},
+        {"fail", guarded<lc_fail>},
         {nullptr, nullptr},
     };
     luaL_register(L_, "game", kGameCallbacks);
@@ -1324,9 +1343,9 @@ void WseLuaManagerImpl::register_callbacks() {
     c_lua_pop(L_, 1);
 
     static const luaL_Reg kGlobalCallbacks[] = {
-        {"lsdir", lc_lsdir},   {"mkdir", lc_mkdir},   {"rmdir", lc_rmdir},
-        {"printStack", lc_printStack}, {"_print", lc_print},
-        {"log_rgl", lc_log_rgl}, {"getTime", lc_getTime}, {nullptr, nullptr},
+        {"lsdir", guarded<lc_lsdir>},   {"mkdir", guarded<lc_mkdir>},   {"rmdir", guarded<lc_rmdir>},
+        {"printStack", guarded<lc_printStack>}, {"_print", guarded<lc_print>},
+        {"log_rgl", guarded<lc_log_rgl>}, {"getTime", guarded<lc_getTime>}, {nullptr, nullptr},
     };
     lua_pushvalue(L_, LUA_GLOBALSINDEX);
     luaL_register(L_, nullptr, kGlobalCallbacks);

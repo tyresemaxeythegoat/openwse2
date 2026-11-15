@@ -113,26 +113,29 @@ jobs:
           gradle-version: '8.12'
 
       - name: Build arm64-v8a debug APK
+        env:
+          WSE_NDK_VERSION: '30.0.16248370'
+          WSE_CMAKE_VERSION: '3.31.6'
         run: |
           set -euo pipefail
           sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           export ANDROID_HOME="${sdk_root}"
           export ANDROID_SDK_ROOT="${sdk_root}"
 
-          extra_props=()
-          if [ -d "${sdk_root}/ndk" ]; then
-            ndk_ver="$(ls -1 "${sdk_root}/ndk" | sort -V | tail -n 1)"
-            if [ -n "${ndk_ver}" ]; then
-              extra_props+=("-Pwse.ndkVersion=${ndk_ver}")
-            fi
+          # Pinned toolchain: the build must not change because the runner
+          # image gained a newer NDK or CMake. Installed on demand if absent.
+          sdkmanager="${sdk_root}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -d "${sdk_root}/ndk/${WSE_NDK_VERSION}" ]; then
+            (yes || true) | "${sdkmanager}" --install "ndk;${WSE_NDK_VERSION}" > /dev/null
           fi
-          if [ -d "${sdk_root}/cmake" ]; then
-            cmake_ver="$(ls -1 "${sdk_root}/cmake" | sort -V | tail -n 1)"
-            if [ -n "${cmake_ver}" ]; then
-              extra_props+=("-Pwse.cmakeVersion=${cmake_ver}")
-            fi
+          if [ ! -d "${sdk_root}/cmake/${WSE_CMAKE_VERSION}" ]; then
+            (yes || true) | "${sdkmanager}" --install "cmake;${WSE_CMAKE_VERSION}" > /dev/null
           fi
-          echo "Gradle props: ${extra_props[*]:-(defaults)}"
+          extra_props=(
+            "-Pwse.ndkVersion=${WSE_NDK_VERSION}"
+            "-Pwse.cmakeVersion=${WSE_CMAKE_VERSION}"
+          )
+          echo "Gradle props: ${extra_props[*]}"
 
           gradle -p android assembleDebug --no-daemon "${extra_props[@]}"
 
@@ -142,6 +145,13 @@ jobs:
           echo "${contents}" | grep -Fx "lib/arm64-v8a/libwse2.so"
           echo "${contents}" | grep -Fx "lib/arm64-v8a/libSDL3.so"
           echo "${contents}" | grep -Fx "assets/scripts.txt"
+          # Only the self-test fixture may be packaged (BYOA: no other assets).
+          extra_assets="$(echo "${contents}" | grep '^assets/' | grep -Fxv "assets/scripts.txt" || true)"
+          if [ -n "${extra_assets}" ]; then
+            echo "Unexpected APK assets:" >&2
+            echo "${extra_assets}" >&2
+            exit 1
+          fi
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

@@ -1192,6 +1192,12 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
 // the Lua runtime queues those edits and this scope applies them once the
 // outermost trigger execution has unwound. Safety deviation: retail edits the
 // arrays in place.
+//
+// The edits run when the outermost scope ends, and they may resize
+// ModuleBundle::presentations and the per-template / per-item / per-prop
+// trigger vectors. A caller that walks one of those containers and runs a
+// trigger manager per element must therefore hold its own TriggerIterationScope
+// around the whole walk, so the edits wait until the walk is finished.
 class TriggerIterationScope {
 public:
     explicit TriggerIterationScope(VmContext& ctx) noexcept : ctx_(ctx) {
@@ -1199,7 +1205,16 @@ public:
     }
     ~TriggerIterationScope() {
         if (--ctx_.triggerIterationDepth == 0 && ctx_.luaRuntime != nullptr) {
-            ctx_.luaRuntime->apply_deferred_edits();
+            // A destructor must not throw (it may run during unwinding); an
+            // edit that fails to allocate is dropped rather than terminating.
+            try {
+                ctx_.luaRuntime->apply_deferred_edits();
+            } catch (...) {
+                try {
+                    ctx_.report_error("Lua deferred trigger edit failed");
+                } catch (...) {
+                }
+            }
         }
     }
     TriggerIterationScope(const TriggerIterationScope&) = delete;

@@ -127,10 +127,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(lua51 PRIVATE -w)
 endif()
 if(WSE_SANITIZE AND NOT MSVC)
-    # Stock unmodified Lua 5.1.5 triggers Clang UBSan on C89 float-to-int table
-    # probes (ltable.c) and 1/0 constant folding; keep ASan on lua51 and full
-    # ASan+UBSan on all first-party engine/wse_lua/test targets.
-    target_compile_options(lua51 PRIVATE -fno-sanitize=undefined)
+    # Stock Lua 5.1.5 casts arbitrary doubles to int when probing a table's
+    # array part (lua_number2int in ltable.c), which Clang's UBSan reports as
+    # float-cast-overflow for any number key outside the int range. Only that
+    # one check is disabled, and only for the unmodified third-party sources.
+    target_compile_options(lua51 PRIVATE -fno-sanitize=float-cast-overflow)
 endif()
 
 add_library(wse_lua STATIC
@@ -177,40 +178,46 @@ if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
 endif()
 
 if(WSE_BUILD_TESTS AND BUILD_TESTING)
-    function(wse_add_host_test name source)
+    # Each suite is compiled once, into wse_selftest. A host test executable is
+    # engine/tests/suite_main.cpp plus that library, so the linker pulls in just
+    # the one suite it names. (The standalone `clang++ engine/tests/<name>_test.cpp`
+    # gate in AGENTS.md still works: every suite keeps its own main().)
+    function(wse_add_host_test name)
         set(target "${name}_test")
-        add_executable("${target}" "${source}")
-        target_link_libraries("${target}" PRIVATE wse_engine)
+        add_executable("${target}" engine/tests/suite_main.cpp)
+        target_compile_definitions("${target}" PRIVATE "WSE_SUITE_FN=run_${name}_suite")
+        target_link_libraries("${target}" PRIVATE wse_selftest)
         wse_apply_strict_warnings("${target}")
         add_test(NAME "${name}"
                  COMMAND "${target}" ${ARGN}
                  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     endfunction()
 
-    wse_add_host_test(operand  engine/tests/operand_test.cpp)
-    wse_add_host_test(trigger  engine/tests/trigger_test.cpp)
-    wse_add_host_test(savegame engine/tests/savegame_test.cpp)
-    wse_add_host_test(script   engine/tests/script_test.cpp
-                      "${CMAKE_CURRENT_SOURCE_DIR}/engine/fixtures/scripts.txt")
-    wse_add_host_test(wse_bitwise_fp engine/tests/wse_bitwise_fp_test.cpp)
-    wse_add_host_test(wse_system     engine/tests/wse_system_test.cpp)
-    wse_add_host_test(wse_string     engine/tests/wse_string_test.cpp)
-    wse_add_host_test(wse_dict       engine/tests/wse_dict_test.cpp)
-    wse_add_host_test(wse_array      engine/tests/wse_array_test.cpp)
-    wse_add_host_test(wse_world      engine/tests/wse_world_test.cpp)
-    wse_add_host_test(block_vm       engine/tests/block_vm_test.cpp)
-    wse_add_host_test(native_world   engine/tests/native_world_test.cpp)
-    wse_add_host_test(native_m5      engine/tests/native_m5_test.cpp)
-    wse_add_host_test(wse_m6         engine/tests/wse_m6_test.cpp)
-    wse_add_host_test(platform       engine/tests/platform_test.cpp)
-    wse_add_host_test(module_loaders engine/tests/module_loaders_test.cpp)
-    wse_add_host_test(headless       engine/tests/headless_test.cpp)
-    wse_add_host_test(lua            engine/tests/lua_test.cpp)
-    target_link_libraries(lua_test PRIVATE wse_lua)
+    wse_add_host_test(operand)
+    wse_add_host_test(trigger)
+    wse_add_host_test(savegame)
+    wse_add_host_test(script "${CMAKE_CURRENT_SOURCE_DIR}/engine/fixtures/scripts.txt")
+    wse_add_host_test(wse_bitwise_fp)
+    wse_add_host_test(wse_system)
+    wse_add_host_test(wse_string)
+    wse_add_host_test(wse_dict)
+    wse_add_host_test(wse_array)
+    wse_add_host_test(wse_world)
+    wse_add_host_test(block_vm)
+    wse_add_host_test(native_world)
+    wse_add_host_test(native_m5)
+    wse_add_host_test(wse_m6)
+    wse_add_host_test(platform)
+    wse_add_host_test(module_loaders)
+    wse_add_host_test(headless)
+    wse_add_host_test(lua)
 
-    wse_add_host_test(selftest_host  engine/tests/selftest_host_test.cpp
-                      "${CMAKE_CURRENT_SOURCE_DIR}/engine/fixtures/scripts.txt")
+    add_executable(selftest_host_test engine/tests/selftest_host_test.cpp)
     target_link_libraries(selftest_host_test PRIVATE wse_selftest)
+    wse_apply_strict_warnings(selftest_host_test)
+    add_test(NAME selftest_host
+             COMMAND selftest_host_test "${CMAKE_CURRENT_SOURCE_DIR}/engine/fixtures/scripts.txt"
+             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     set_tests_properties(wse_dict wse_array platform module_loaders headless lua selftest_host
                          PROPERTIES RUN_SERIAL TRUE)

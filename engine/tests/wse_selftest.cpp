@@ -37,7 +37,8 @@ constexpr std::array<SuiteEntry, 18> kSuites = {{
 }  // namespace
 
 SuiteSummary run_all_suites(const char* scripts_fixture_path,
-                            const ProgressCallback& progress) {
+                            const ProgressCallback& progress,
+                            const StopCallback& should_stop) {
     SuiteSummary summary;
     summary.total_count = static_cast<int>(kSuites.size());
     summary.results.reserve(kSuites.size());
@@ -45,6 +46,10 @@ SuiteSummary run_all_suites(const char* scripts_fixture_path,
     const auto total_start = std::chrono::steady_clock::now();
     for (int i = 0; i < summary.total_count; ++i) {
         const SuiteEntry& entry = kSuites[static_cast<std::size_t>(i)];
+        if (should_stop && should_stop()) {
+            summary.cancelled = true;
+            break;
+        }
         if (progress) {
             progress(i, summary.total_count, entry.name, nullptr);
         }
