@@ -84,6 +84,29 @@ enum class DriverMode : std::uint8_t {
     return false;
 }
 
+// Presentation strategy chosen by the Vulkan driver loader for WSI vs direct
+// custom ICD `dlopen` (`docs/PLATFORM_PLAN.md` §P5):
+// - System `libvulkan.so` (or a WSI-capable driver exposing `VK_KHR_surface` +
+//   `VK_KHR_android_surface`) presents directly to an `ANativeWindow` surface.
+// - Bare Adreno Turnip / PanVK `.so` files loaded directly via `dlopen` bypass
+//   Android's loader and lack WSI extensions, so frames render offscreen into a
+//   GPU image / `AHardwareBuffer` bridge for Android Surface presentation.
+enum class PresentationPath : std::uint8_t {
+    android_surface_wsi = 0,
+    offscreen_hardware_buffer_bridge = 1,
+};
+
+[[nodiscard]] inline std::string_view presentation_path_name(
+    PresentationPath path) noexcept {
+    switch (path) {
+        case PresentationPath::android_surface_wsi:
+            return "android_surface_wsi";
+        case PresentationPath::offscreen_hardware_buffer_bridge:
+            return "offscreen_hardware_buffer_bridge";
+    }
+    return "offscreen_hardware_buffer_bridge";
+}
+
 namespace rhi_detail {
 
 inline bool set_error(std::string* error_out, std::string message) {
@@ -102,12 +125,110 @@ inline std::uint32_t pack_rgba8(std::uint8_t r, std::uint8_t g, std::uint8_t b, 
 
 }  // namespace rhi_detail
 
+// D3D9 -> Vulkan math & color helpers (`docs/PLATFORM_PLAN.md` §P5):
+// - Both D3D9 (`D3DXMatrix*RH`) and Vulkan natively use [0, 1] NDC depth (unlike
+//   OpenGL's [-1, 1]), so only optional Vulkan Y-flip and the D3D9 half-pixel
+//   screen offset differ.
+// - Column-major 4x4 matrices (`col * 4 + row`), matching `MeshDrawCall::mvp`.
+
+inline void make_d3d9_perspective_off_center_rh(float left,
+                                                float right,
+                                                float bottom,
+                                                float top,
+                                                float z_near,
+                                                float z_far,
+                                                float out_m[16],
+                                                bool vulkan_flip_y = false) noexcept {
+    std::memset(out_m, 0, sizeof(float) * 16U);
+    const float inv_w = 1.0f / (right - left);
+    const float inv_h = 1.0f / (top - bottom);
+    const float inv_d = 1.0f / (z_near - z_far);
+    const float y_sign = vulkan_flip_y ? -1.0f : 1.0f;
+
+    out_m[0] = 2.0f * z_near * inv_w;
+    out_m[8] = (left + right) * inv_w;
+    out_m[5] = y_sign * 2.0f * z_near * inv_h;
+    out_m[9] = y_sign * (top + bottom) * inv_h;
+    out_m[10] = z_far * inv_d;
+    out_m[11] = -1.0f;
+    out_m[14] = (z_near * z_far) * inv_d;
+}
+
+inline void make_d3d9_ortho_off_center_rh(float left,
+                                          float right,
+                                          float bottom,
+                                          float top,
+                                          float z_near,
+                                          float z_far,
+                                          float out_m[16],
+                                          bool vulkan_flip_y = false) noexcept {
+    std::memset(out_m, 0, sizeof(float) * 16U);
+    const float inv_w = 1.0f / (right - left);
+    const float inv_h = 1.0f / (top - bottom);
+    const float inv_d = 1.0f / (z_near - z_far);
+    const float y_sign = vulkan_flip_y ? -1.0f : 1.0f;
+
+    out_m[0] = 2.0f * inv_w;
+    out_m[12] = -(right + left) * inv_w;
+    out_m[5] = y_sign * 2.0f * inv_h;
+    out_m[13] = -y_sign * (top + bottom) * inv_h;
+    out_m[10] = inv_d;
+    out_m[14] = z_near * inv_d;
+    out_m[15] = 1.0f;
+}
+
+// Converts D3D9 pixel-center coordinates `(0, 0) .. (W-1, H-1)` (whose quads
+// are pre-shifted by `(-0.5, -0.5)` in D3D9) into Vulkan pixel-center
+// coordinates `(0.5, 0.5)` in screen pixels or clip-space NDC.
+inline void apply_d3d9_half_pixel_offset_px(float x_px,
+                                            float y_px,
+                                            float& out_x_px,
+                                            float& out_y_px) noexcept {
+    out_x_px = x_px + 0.5f;
+    out_y_px = y_px + 0.5f;
+}
+
+inline void apply_d3d9_half_pixel_offset_clip(float x_ndc,
+                                              float y_ndc,
+                                              std::uint32_t width,
+                                              std::uint32_t height,
+                                              float& out_x_ndc,
+                                              float& out_y_ndc) noexcept {
+    const float dx = (width > 0U) ? (1.0f / static_cast<float>(width)) : 0.0f;
+    const float dy = (height > 0U) ? (1.0f / static_cast<float>(height)) : 0.0f;
+    out_x_ndc = x_ndc + dx;
+    out_y_ndc = y_ndc + dy;
+}
+
+// IEC 61966-2-1 sRGB <-> linear float conversions matching D3D9 `D3DRS_SRGBWRITEENABLE`
+// and `D3DSAMP_SRGBTEXTURE`.
+[[nodiscard]] inline float srgb_to_linear_f32(float c) noexcept {
+    const float clamped = std::clamp(c, 0.0f, 1.0f);
+    if (clamped <= 0.04045f) {
+        return clamped / 12.92f;
+    }
+    return std::pow((clamped + 0.055f) / 1.055f, 2.4f);
+}
+
+[[nodiscard]] inline float linear_to_srgb_f32(float c) noexcept {
+    const float clamped = std::clamp(c, 0.0f, 1.0f);
+    if (clamped <= 0.0031308f) {
+        return clamped * 12.92f;
+    }
+    return 1.055f * std::pow(clamped, 1.0f / 2.4f) - 0.055f;
+}
+
+[[nodiscard]] inline std::uint8_t linear_to_srgb_u8(float c) noexcept {
+    return static_cast<std::uint8_t>(std::lround(linear_to_srgb_f32(c) * 255.0f));
+}
+
 // -----------------------------------------------------------------------------
 // Minimal RHI interface & types
 // -----------------------------------------------------------------------------
 
 using BufferHandle = std::uint32_t;
 using TextureHandle = std::uint32_t;
+using ShaderModuleHandle = std::uint32_t;
 using PipelineHandle = std::uint32_t;
 
 enum class BufferUsage : std::uint8_t {
@@ -130,6 +251,31 @@ enum class FrontFace : std::uint8_t {
     clockwise = 1,
 };
 
+enum class RhiShaderStage : std::uint8_t {
+    vertex = 0,
+    fragment = 1,
+};
+
+struct ShaderModuleDesc {
+    RhiShaderStage stage = RhiShaderStage::vertex;
+    std::string entry_point = "main";
+    std::string name{};
+    std::vector<std::uint32_t> spirv_words{};
+};
+
+[[nodiscard]] inline bool is_valid_spirv_module(
+    std::span<const std::uint32_t> words) noexcept {
+    return words.size() >= 5U && words[0] == 0x07230203U && words[3] > 0U;
+}
+
+enum class BlendMode : std::uint8_t {
+    opaque = 0,
+    alpha = 1,          // SRCALPHA / INVSRCALPHA
+    additive_alpha = 2, // SRCALPHA / ONE
+    multiply = 3,       // ZERO / SRCCOLOR
+    additive = 4,       // ONE / ONE
+};
+
 // Interleaved vertex format fed to the minimal RHI.
 // `color_rgba` uses little-endian packed RGBA bytes: R=(c&0xFF), G=((c>>8)&0xFF),
 // B=((c>>16)&0xFF), A=((c>>24)&0xFF).
@@ -145,10 +291,26 @@ struct MeshVertex {
     std::uint32_t color_rgba = 0xFFFFFFFFU;
 };
 
+// Keep `depth_test`, `depth_write`, `cull_mode` first so existing aggregate
+// initializers `PipelineDesc{true, true, CullMode::back}` continue to compile.
 struct PipelineDesc {
     bool depth_test = true;
     bool depth_write = true;
     CullMode cull_mode = CullMode::back;
+    ShaderModuleHandle vertex_shader = 0;
+    ShaderModuleHandle fragment_shader = 0;
+    BlendMode blend_mode = BlendMode::opaque;
+    bool alpha_test = false;
+    std::uint8_t alpha_ref = 0;
+    bool srgb_texture = false;
+    bool srgb_framebuffer = false;
+    bool enable_lighting = false;
+    bool use_normal_map = false;
+    bool use_specular_map = false;
+    bool compensate_d3d9_half_pixel = false;
+    float specular_coefficient = 0.0f;
+    float specular_power = 16.0f;
+    // Last, so positional aggregate initializers of the fields above still compile.
     FrontFace front_face = FrontFace::counter_clockwise;
 };
 
@@ -176,6 +338,8 @@ struct MeshDrawCall {
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f,
     };
+    TextureHandle normal_texture = 0;
+    TextureHandle specular_texture = 0;
 };
 
 class RhiDevice {
@@ -199,6 +363,11 @@ public:
         std::string* error_out = nullptr) = 0;
     virtual void destroy_texture(TextureHandle handle) = 0;
 
+    [[nodiscard]] virtual ShaderModuleHandle create_shader_module(
+        const ShaderModuleDesc& desc,
+        std::string* error_out = nullptr) = 0;
+    virtual void destroy_shader_module(ShaderModuleHandle handle) = 0;
+
     [[nodiscard]] virtual PipelineHandle create_pipeline(const PipelineDesc& desc,
                                                          std::string* error_out = nullptr) = 0;
     virtual void destroy_pipeline(PipelineHandle handle) = 0;
@@ -212,8 +381,7 @@ public:
 
 // Deterministic CPU reference implementation of `RhiDevice`.
 // Used both as the host-only golden reference and as the deterministic readback
-// rasterizer inside `VulkanRhiDevice` for P4 headless verification until P5
-// introduces compiled SPIR-V shaders.
+// rasterizer inside `VulkanRhiDevice` for P4/P5 headless verification.
 class SoftwareRhiDevice final : public RhiDevice {
 public:
     explicit SoftwareRhiDevice(std::string dev_name = "WSE2 Software Reference Rasterizer",
@@ -282,9 +450,41 @@ public:
         }
     }
 
+    [[nodiscard]] ShaderModuleHandle create_shader_module(
+        const ShaderModuleDesc& desc,
+        std::string* error_out = nullptr) override {
+        if (!is_valid_spirv_module(desc.spirv_words)) {
+            (void)rhi_detail::set_error(error_out, "invalid SPIR-V shader module payload");
+            return 0;
+        }
+        const ShaderModuleHandle id = allocate_handle();
+        ShaderModuleRec rec{};
+        rec.stage = desc.stage;
+        rec.entry_point = desc.entry_point;
+        rec.name = desc.name;
+        rec.word_count = desc.spirv_words.size();
+        shader_modules_.emplace(id, std::move(rec));
+        return id;
+    }
+
+    void destroy_shader_module(ShaderModuleHandle handle) override {
+        if (handle != 0) {
+            shader_modules_.erase(handle);
+        }
+    }
+
     [[nodiscard]] PipelineHandle create_pipeline(const PipelineDesc& desc,
                                                  std::string* error_out = nullptr) override {
-        (void)error_out;
+        if (desc.vertex_shader != 0 &&
+            shader_modules_.find(desc.vertex_shader) == shader_modules_.end()) {
+            (void)rhi_detail::set_error(error_out, "pipeline references invalid vertex shader");
+            return 0;
+        }
+        if (desc.fragment_shader != 0 &&
+            shader_modules_.find(desc.fragment_shader) == shader_modules_.end()) {
+            (void)rhi_detail::set_error(error_out, "pipeline references invalid fragment shader");
+            return 0;
+        }
         const PipelineHandle id = allocate_handle();
         pipelines_.emplace(id, desc);
         return id;
@@ -337,17 +537,40 @@ public:
             if (pip_it == pipelines_.end() || vb_it == buffers_.end() || ib_it == buffers_.end()) {
                 return fail("draw call references invalid RHI handle");
             }
+            if (pip_it->second.vertex_shader != 0 &&
+                shader_modules_.find(pip_it->second.vertex_shader) == shader_modules_.end()) {
+                return fail("pipeline vertex shader handle was destroyed");
+            }
+            if (pip_it->second.fragment_shader != 0 &&
+                shader_modules_.find(pip_it->second.fragment_shader) == shader_modules_.end()) {
+                return fail("pipeline fragment shader handle was destroyed");
+            }
             if (vb_it->second.usage != BufferUsage::vertex ||
                 ib_it->second.usage != BufferUsage::index) {
                 return fail("draw call buffer usage mismatch");
             }
-            const TextureRec* tex = nullptr;
-            if (draw.texture != 0) {
-                const auto tex_it = textures_.find(draw.texture);
-                if (tex_it == textures_.end()) {
-                    return fail("draw call references invalid texture");
+            const auto find_tex = [&](TextureHandle h, const char* err_msg,
+                                      const TextureRec*& out_rec) -> bool {
+                out_rec = nullptr;
+                if (h == 0) {
+                    return true;
                 }
-                tex = &tex_it->second;
+                const auto it = textures_.find(h);
+                if (it == textures_.end()) {
+                    return fail(err_msg);
+                }
+                out_rec = &it->second;
+                return true;
+            };
+            const TextureRec* tex = nullptr;
+            const TextureRec* normal_tex = nullptr;
+            const TextureRec* spec_tex = nullptr;
+            if (!find_tex(draw.texture, "draw call references invalid texture", tex) ||
+                !find_tex(draw.normal_texture, "draw call references invalid normal texture",
+                          normal_tex) ||
+                !find_tex(draw.specular_texture, "draw call references invalid specular texture",
+                          spec_tex)) {
+                return false;
             }
 
             const std::vector<std::uint8_t>& vb = vb_it->second.bytes;
@@ -379,7 +602,8 @@ public:
                 if (!a.finite || !b.finite || !c.finite) {
                     continue;
                 }
-                clip_and_rasterize(pass, pip_it->second, a, b, c, tex, out_rgba8, depth_scratch_);
+                clip_and_rasterize(pass, pip_it->second, a, b, c, tex, normal_tex, spec_tex,
+                                   out_rgba8, depth_scratch_);
             }
         }
 
@@ -398,6 +622,13 @@ private:
         std::vector<std::uint8_t> rgba8{};
     };
 
+    struct ShaderModuleRec {
+        RhiShaderStage stage = RhiShaderStage::vertex;
+        std::string entry_point{};
+        std::string name{};
+        std::size_t word_count = 0;
+    };
+
     // Clip-space vertex plus the varyings interpolated across a triangle.
     struct ClipVert {
         float x = 0.0f;
@@ -406,6 +637,9 @@ private:
         float w = 1.0f;
         float u = 0.0f;
         float v = 0.0f;
+        float nx = 0.0f;
+        float ny = 0.0f;
+        float nz = 1.0f;
         float r = 1.0f;
         float g = 1.0f;
         float b = 1.0f;
@@ -423,6 +657,9 @@ private:
         float inv_w = 1.0f;
         float u_over_w = 0.0f;
         float v_over_w = 0.0f;
+        float nx_over_w = 0.0f;
+        float ny_over_w = 0.0f;
+        float nz_over_w = 0.0f;
         float r_over_w = 0.0f;
         float g_over_w = 0.0f;
         float b_over_w = 0.0f;
@@ -448,6 +685,9 @@ private:
                     std::isfinite(cv.w) && std::isfinite(v.u) && std::isfinite(v.v);
         cv.u = v.u;
         cv.v = v.v;
+        cv.nx = v.nx;
+        cv.ny = v.ny;
+        cv.nz = v.nz;
         cv.r = static_cast<float>(v.color_rgba & 0xFFU) / 255.0f;
         cv.g = static_cast<float>((v.color_rgba >> 8U) & 0xFFU) / 255.0f;
         cv.b = static_cast<float>((v.color_rgba >> 16U) & 0xFFU) / 255.0f;
@@ -483,6 +723,9 @@ private:
         o.w = mix(p.w, q.w);
         o.u = mix(p.u, q.u);
         o.v = mix(p.v, q.v);
+        o.nx = mix(p.nx, q.nx);
+        o.ny = mix(p.ny, q.ny);
+        o.nz = mix(p.nz, q.nz);
         o.r = mix(p.r, q.r);
         o.g = mix(p.g, q.g);
         o.b = mix(p.b, q.b);
@@ -490,17 +733,26 @@ private:
         return o;
     }
 
-    static ScreenVert to_screen(const ClipVert& v, std::uint32_t width, std::uint32_t height) noexcept {
+    static ScreenVert to_screen(const ClipVert& v,
+                                std::uint32_t width,
+                                std::uint32_t height,
+                                bool compensate_d3d9_half_pixel) noexcept {
         ScreenVert s{};
         const float inv_w = 1.0f / v.w;
-        const float sx = (v.x * inv_w * 0.5f + 0.5f) * static_cast<float>(width);
-        const float sy = (v.y * inv_w * 0.5f + 0.5f) * static_cast<float>(height);
+        float sx = (v.x * inv_w * 0.5f + 0.5f) * static_cast<float>(width);
+        float sy = (v.y * inv_w * 0.5f + 0.5f) * static_cast<float>(height);
+        if (compensate_d3d9_half_pixel) {
+            apply_d3d9_half_pixel_offset_px(sx, sy, sx, sy);
+        }
         s.fx = static_cast<std::int64_t>(std::llround(sx * static_cast<float>(kSubpixel)));
         s.fy = static_cast<std::int64_t>(std::llround(sy * static_cast<float>(kSubpixel)));
         s.z_ndc = v.z * inv_w;
         s.inv_w = inv_w;
         s.u_over_w = v.u * inv_w;
         s.v_over_w = v.v * inv_w;
+        s.nx_over_w = v.nx * inv_w;
+        s.ny_over_w = v.ny * inv_w;
+        s.nz_over_w = v.nz * inv_w;
         s.r_over_w = v.r * inv_w;
         s.g_over_w = v.g * inv_w;
         s.b_over_w = v.b * inv_w;
@@ -549,6 +801,8 @@ private:
                                    const ClipVert& b,
                                    const ClipVert& c,
                                    const TextureRec* tex,
+                                   const TextureRec* normal_tex,
+                                   const TextureRec* spec_tex,
                                    std::vector<std::uint8_t>& color_buf,
                                    std::vector<float>& depth_buf) noexcept {
         std::array<ClipVert, kMaxClipVerts> poly{a, b, c};
@@ -585,11 +839,12 @@ private:
 
         std::array<ScreenVert, kMaxClipVerts> screen{};
         for (std::size_t i = 0; i < count; ++i) {
-            screen[i] = to_screen(poly[i], pass.width, pass.height);
+            screen[i] = to_screen(poly[i], pass.width, pass.height,
+                                  pip.compensate_d3d9_half_pixel);
         }
         for (std::size_t i = 1; i + 1U < count; ++i) {
-            rasterize_triangle(pass, pip, screen[0], screen[i], screen[i + 1U], tex, color_buf,
-                               depth_buf);
+            rasterize_triangle(pass, pip, screen[0], screen[i], screen[i + 1U], tex,
+                               normal_tex, spec_tex, color_buf, depth_buf);
         }
     }
 
@@ -607,6 +862,8 @@ private:
                                    ScreenVert s1,
                                    ScreenVert s2,
                                    const TextureRec* tex,
+                                   const TextureRec* normal_tex,
+                                   const TextureRec* spec_tex,
                                    std::vector<std::uint8_t>& color_buf,
                                    std::vector<float>& depth_buf) noexcept {
         // E(a, b, p) = (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x).
@@ -666,6 +923,8 @@ private:
         const std::int64_t step_x0 = (s2.fy - s1.fy) * kSubpixel;
         const std::int64_t step_x1 = (s0.fy - s2.fy) * kSubpixel;
         const std::int64_t step_x2 = (s1.fy - s0.fy) * kSubpixel;
+        const bool fast_p4_path = !pip.alpha_test && !pip.srgb_texture && !pip.srgb_framebuffer &&
+                                  !pip.enable_lighting && pip.blend_mode == BlendMode::opaque;
 
         for (std::int64_t py = y_begin; py <= y_end; ++py) {
             const std::int64_t cy = py * kSubpixel + half;
@@ -691,9 +950,6 @@ private:
                 if (pip.depth_test && z >= depth_buf[pix]) {
                     continue;
                 }
-                if (pip.depth_write) {
-                    depth_buf[pix] = z;
-                }
 
                 const float inv_w = w0 * s0.inv_w + w1 * s1.inv_w + w2 * s2.inv_w;
                 const float persp = (inv_w > 1.0e-12f) ? 1.0f / inv_w : 0.0f;
@@ -714,18 +970,162 @@ private:
                 const float vb = std::clamp(interp(s0.b_over_w, s1.b_over_w, s2.b_over_w), 0.0f, 1.0f);
                 const float va = std::clamp(interp(s0.a_over_w, s1.a_over_w, s2.a_over_w), 0.0f, 1.0f);
 
+                const float src_a = (static_cast<float>(ta) / 255.0f) * va;
+                const std::uint8_t out_a_u8 = static_cast<std::uint8_t>(std::lround(ta * va));
+                if (pip.alpha_test && out_a_u8 < pip.alpha_ref) {
+                    continue;
+                }
+                if (pip.depth_write) {
+                    depth_buf[pix] = z;
+                }
+
                 std::uint8_t* dst = color_buf.data() + pix * 4U;
-                dst[0] = static_cast<std::uint8_t>(std::lround(tr * vr));
-                dst[1] = static_cast<std::uint8_t>(std::lround(tg * vg));
-                dst[2] = static_cast<std::uint8_t>(std::lround(tb * vb));
-                dst[3] = static_cast<std::uint8_t>(std::lround(ta * va));
+                if (fast_p4_path) {
+                    dst[0] = static_cast<std::uint8_t>(std::lround(tr * vr));
+                    dst[1] = static_cast<std::uint8_t>(std::lround(tg * vg));
+                    dst[2] = static_cast<std::uint8_t>(std::lround(tb * vb));
+                    dst[3] = out_a_u8;
+                    continue;
+                }
+
+                float tr_f = static_cast<float>(tr) / 255.0f;
+                float tg_f = static_cast<float>(tg) / 255.0f;
+                float tb_f = static_cast<float>(tb) / 255.0f;
+                if (pip.srgb_texture) {
+                    tr_f = srgb_to_linear_f32(tr_f);
+                    tg_f = srgb_to_linear_f32(tg_f);
+                    tb_f = srgb_to_linear_f32(tb_f);
+                }
+
+                float sr = tr_f * vr;
+                float sg = tg_f * vg;
+                float sb = tb_f * vb;
+
+                if (pip.enable_lighting) {
+                    auto norm3 = [](float& x, float& y, float& z_c) noexcept {
+                        const float len = std::sqrt(x * x + y * y + z_c * z_c);
+                        if (len > 1.0e-6f) {
+                            x /= len;
+                            y /= len;
+                            z_c /= len;
+                        } else {
+                            x = 0.0f;
+                            y = 0.0f;
+                            z_c = 1.0f;
+                        }
+                    };
+                    float nx = interp(s0.nx_over_w, s1.nx_over_w, s2.nx_over_w);
+                    float ny = interp(s0.ny_over_w, s1.ny_over_w, s2.ny_over_w);
+                    float nz = interp(s0.nz_over_w, s1.nz_over_w, s2.nz_over_w);
+                    norm3(nx, ny, nz);
+
+                    if (pip.use_normal_map && normal_tex != nullptr) {
+                        std::uint8_t nr = 128U, ng = 128U, nb = 255U, na = 255U;
+                        sample_texture(normal_tex, u, v, nr, ng, nb, na);
+                        const float tnx = (static_cast<float>(nr) / 255.0f) * 2.0f - 1.0f;
+                        const float tny = (static_cast<float>(ng) / 255.0f) * 2.0f - 1.0f;
+                        const float tnz = (static_cast<float>(nb) / 255.0f) * 2.0f - 1.0f;
+                        const float ux = (std::fabs(ny) < 0.99f) ? 0.0f : 1.0f;
+                        const float uy = (std::fabs(ny) < 0.99f) ? 1.0f : 0.0f;
+                        const float uz = 0.0f;
+                        float tx = uy * nz - uz * ny;
+                        float ty = uz * nx - ux * nz;
+                        float tz = ux * ny - uy * nx;
+                        norm3(tx, ty, tz);
+                        const float bx = ny * tz - nz * ty;
+                        const float by = nz * tx - nx * tz;
+                        const float bz = nx * ty - ny * tx;
+                        nx = tx * tnx + bx * tny + nx * tnz;
+                        ny = ty * tnx + by * tny + ny * tnz;
+                        nz = tz * tnx + bz * tny + nz * tnz;
+                        norm3(nx, ny, nz);
+                    }
+
+                    // Key light normalized from (0.45, 0.70, 0.55) + view (0, 0, 1).
+                    constexpr float lx = 0.451129f;
+                    constexpr float ly = 0.701757f;
+                    constexpr float lz = 0.551380f;
+                    const float ndotl = std::max(0.0f, nx * lx + ny * ly + nz * lz);
+                    const float diffuse = 0.28f + 0.72f * ndotl;
+
+                    float spec = 0.0f;
+                    if (pip.specular_coefficient > 0.0f) {
+                        float hx = lx;
+                        float hy = ly;
+                        float hz = lz + 1.0f;
+                        norm3(hx, hy, hz);
+                        const float ndoth = std::max(0.0f, nx * hx + ny * hy + nz * hz);
+                        float spec_mask = 1.0f;
+                        if (pip.use_specular_map && spec_tex != nullptr) {
+                            std::uint8_t mr = 255U, mg = 255U, mb = 255U, ma = 255U;
+                            sample_texture(spec_tex, u, v, mr, mg, mb, ma);
+                            spec_mask = static_cast<float>(mr) / 255.0f;
+                        }
+                        spec = pip.specular_coefficient * spec_mask *
+                               std::pow(ndoth, std::max(1.0f, pip.specular_power));
+                    }
+
+                    sr = sr * diffuse + spec;
+                    sg = sg * diffuse + spec;
+                    sb = sb * diffuse + spec;
+                }
+
+                float dst_r = static_cast<float>(dst[0]) / 255.0f;
+                float dst_g = static_cast<float>(dst[1]) / 255.0f;
+                float dst_b = static_cast<float>(dst[2]) / 255.0f;
+                if (pip.srgb_framebuffer) {
+                    dst_r = srgb_to_linear_f32(dst_r);
+                    dst_g = srgb_to_linear_f32(dst_g);
+                    dst_b = srgb_to_linear_f32(dst_b);
+                }
+
+                float out_r = sr;
+                float out_g = sg;
+                float out_b = sb;
+                switch (pip.blend_mode) {
+                    case BlendMode::opaque:
+                        break;
+                    case BlendMode::alpha:
+                        out_r = sr * src_a + dst_r * (1.0f - src_a);
+                        out_g = sg * src_a + dst_g * (1.0f - src_a);
+                        out_b = sb * src_a + dst_b * (1.0f - src_a);
+                        break;
+                    case BlendMode::additive_alpha:
+                        out_r = dst_r + sr * src_a;
+                        out_g = dst_g + sg * src_a;
+                        out_b = dst_b + sb * src_a;
+                        break;
+                    case BlendMode::multiply:
+                        out_r = sr * dst_r;
+                        out_g = sg * dst_g;
+                        out_b = sb * dst_b;
+                        break;
+                    case BlendMode::additive:
+                        out_r = dst_r + sr;
+                        out_g = dst_g + sg;
+                        out_b = dst_b + sb;
+                        break;
+                }
+
+                if (pip.srgb_framebuffer) {
+                    dst[0] = linear_to_srgb_u8(out_r);
+                    dst[1] = linear_to_srgb_u8(out_g);
+                    dst[2] = linear_to_srgb_u8(out_b);
+                } else {
+                    dst[0] = static_cast<std::uint8_t>(std::lround(std::clamp(out_r, 0.0f, 1.0f) * 255.0f));
+                    dst[1] = static_cast<std::uint8_t>(std::lround(std::clamp(out_g, 0.0f, 1.0f) * 255.0f));
+                    dst[2] = static_cast<std::uint8_t>(std::lround(std::clamp(out_b, 0.0f, 1.0f) * 255.0f));
+                }
+                dst[3] = (pip.blend_mode == BlendMode::alpha)
+                             ? static_cast<std::uint8_t>(std::max<int>(dst[3], out_a_u8))
+                             : out_a_u8;
             }
         }
     }
 
     // Handle 0 is reserved for "invalid". After the 32-bit counter wraps, skip
-    // 0 and every value still owned by a live buffer, texture, or pipeline so a
-    // new object never aliases an old one.
+    // 0 and every value still owned by a live buffer, texture, shader module, or
+    // pipeline so a new object never aliases an old one.
     std::uint32_t allocate_handle() noexcept {
         for (;;) {
             const std::uint32_t id = next_handle_++;
@@ -738,7 +1138,8 @@ private:
                 }
                 return id;
             }
-            if (buffers_.count(id) == 0 && textures_.count(id) == 0 && pipelines_.count(id) == 0) {
+            if (buffers_.count(id) == 0 && textures_.count(id) == 0 &&
+                shader_modules_.count(id) == 0 && pipelines_.count(id) == 0) {
                 return id;
             }
         }
@@ -761,6 +1162,7 @@ private:
     bool wrapped_ = false;
     std::unordered_map<BufferHandle, BufferRec> buffers_{};
     std::unordered_map<TextureHandle, TextureRec> textures_{};
+    std::unordered_map<ShaderModuleHandle, ShaderModuleRec> shader_modules_{};
     std::unordered_map<PipelineHandle, PipelineDesc> pipelines_{};
     // Per-pass scratch reused across frames (no per-draw allocations once warm).
     std::vector<ClipVert> clip_scratch_{};
@@ -775,6 +1177,7 @@ private:
     const std::uint8_t b = static_cast<std::uint8_t>(argb & 0xFFU);
     return rhi_detail::pack_rgba8(r, g, b, a);
 }
+
 
 // Builds a column-major 4x4 perspective * view matrix targeting the origin `(0, 0, 0)`
 // using Vulkan `[0, 1]` clip-space depth and `-Y` up screen coordinates.

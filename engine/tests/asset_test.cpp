@@ -5,14 +5,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "wse/asset/brf.h"
 #include "wse/asset/dds.h"
+#include "wse/asset/shader.h"
 #include "wse/game/module_loader_common.h"
 #include "wse/io/binary_stream.h"
 #include "wse/platform/vfs.h"
@@ -1151,6 +1156,348 @@ void test_dds_decode_blocks_and_resolver_probes() {
     }
 }
 
+void test_p5_shaders_materials_and_spirv_cache() {
+    using namespace wse::asset;
+
+    // 1. Retail v1.1.5.5 effect search order (`rglEffectManager::initDeviceObjects`,
+    //    `rglRenderer::initPostFxShaders`, `rglGraphicsContext::checkLoadingPostEffects`).
+    {
+        wse::platform::MemoryVfs vfs;
+        vfs.write_text("wb/mb_wse2_3_0.fxo", "root_30");
+        vfs.write_text("wb/mb_2a.fxo", "root_2a");
+        vfs.write_text("wb/earlyz_wse2.fxo", "root_ez_wse2");
+        vfs.write_text("wb/earlyZ.fxo", "root_ez");
+        vfs.write_text("wb/PostFx.fx", "float4 ps_main() : COLOR0 { return 1; }");
+        vfs.write_text("wb/postFX_WSE2.fx", "// root wse2");
+
+        EffectConfig cfg3{true, 3, true};
+        expect(resolve_module_effect_path(vfs, "wb", "wb/Modules/Mod", cfg3) ==
+                   "wb/mb_wse2_3_0.fxo",
+               "effect search finds root mb_wse2_3_0.fxo when module overrides are absent");
+
+        vfs.write_text("wb/Modules/Mod/mb.fx", "mod_fx");
+        vfs.write_text("wb/Modules/Mod/mb_wse2_2a.fxo", "mod_2a");
+        vfs.write_text("wb/Modules/Mod/mb_wse2_3_0.fxo", "mod_30");
+        expect(resolve_module_effect_path(vfs, "wb", "wb/Modules/Mod", cfg3) ==
+                   "wb/Modules/Mod/mb_wse2_3_0.fxo",
+               "module mb_wse2_3_0.fxo takes highest priority at SM3");
+
+        EffectConfig cfg2{true, 2, true};
+        expect(resolve_module_effect_path(vfs, "wb", "wb/Modules/Mod", cfg2) ==
+                   "wb/Modules/Mod/mb_wse2_2a.fxo",
+               "SM2 skips mb_wse2_3_0.fxo and selects mb_wse2_2a.fxo");
+
+        EffectConfig cfg_nowse2{false, 3, true};
+        expect(resolve_module_effect_path(vfs, "wb", "wb/Modules/Mod", cfg_nowse2) ==
+                   "wb/Modules/Mod/mb.fx",
+               "bUseWSE2Effect=false skips mb_wse2_* and falls back to module mb.fx");
+
+        expect(resolve_earlyz_effect_path(vfs, "wb", "wb/Modules/Mod", true) ==
+                   "wb/earlyz_wse2.fxo",
+               "earlyZ search picks root earlyz_wse2.fxo before earlyZ.fxo");
+        vfs.write_text("wb/Modules/Mod/earlyz_wse2.fxo", "mod_ez_wse2");
+        expect(resolve_earlyz_effect_path(vfs, "wb", "wb/Modules/Mod", true) ==
+                   "wb/Modules/Mod/earlyz_wse2.fxo",
+               "module earlyz_wse2.fxo shadows root earlyz_wse2.fxo");
+        expect(resolve_earlyz_effect_path(vfs, "wb", "wb/Modules/Mod", false) ==
+                   "wb/earlyZ.fxo",
+               "use_wse2_effect=false skips earlyz_wse2.fxo and picks root earlyZ.fxo");
+
+        PostFxResolveResult pfx{};
+        std::string err;
+        expect(resolve_postfx_effect_source(vfs, "wb", "wb/Modules/Mod", true, pfx, &err) &&
+                   pfx.resolved_path == "wb/PostFx.fx" && pfx.appended_wse2_include &&
+                   !pfx.module_wse2_shadows_root &&
+                   pfx.source_text.find("#if WSE2\n#include \"postFX_WSE2.fx\"\n#endif") !=
+                       std::string::npos,
+               "PostFx.fx auto-appends #if WSE2 include when absent");
+
+        vfs.write_text("wb/Modules/Mod/postFX_WSE2.fx", "// mod wse2");
+        vfs.write_text("wb/Modules/Mod/PostFx.fx", "#if WSE2\n#include \"postFX_WSE2.fx\"\n#endif\n");
+        expect(resolve_postfx_effect_source(vfs, "wb", "wb/Modules/Mod", true, pfx, &err) &&
+                   pfx.resolved_path == "wb/Modules/Mod/PostFx.fx" &&
+                   !pfx.appended_wse2_include && pfx.module_wse2_shadows_root,
+               "explicit #if WSE2 avoids duplicate append and flags module postFX_WSE2.fx shadow");
+    }
+
+    // 2. Optional `wse2_shaders.brf` + `wse2_shaders.ini` [SkinFallback]/[NoSkinFallback].
+    {
+        auto build_single_shader_brf = [](std::string_view name, std::uint32_t flags,
+                                          std::string_view tech) {
+            wse::io::BinaryWriter w;
+            w.write_string("shader");
+            w.write_i32(1);
+            w.write_string(name);
+            w.write_u32(flags);
+            w.write_u32(0U);
+            w.write_string(tech);
+            w.write_i32(0);  // alternatives
+            w.write_i32(0);  // techniques
+            w.write_string("end");
+            return to_u8(w.bytes());
+        };
+
+        wse::platform::MemoryVfs vfs;
+        vfs.write_file("wb/CommonRes/wse2_shaders.brf",
+                       build_single_shader_brf("root_wse2_sh", kShaderFlagUsesHlsl, "t"));
+        vfs.write_file("wb/Modules/M/Resource/wse2_shaders.brf",
+                       build_single_shader_brf("mod_wse2_sh", kShaderFlagUsesHlsl, "t"));
+        BrfFile opt_brf{};
+        std::string resolved_path;
+        std::string err;
+        expect(load_optional_wse2_shaders_brf(vfs, "wb", "wb/Modules/M", opt_brf,
+                                              &resolved_path, &err) &&
+                   resolved_path == "wb/Modules/M/Resource/wse2_shaders.brf" &&
+                   opt_brf.shaders.size() == 1U && opt_brf.shaders[0].name == "mod_wse2_sh",
+               "module Resource/wse2_shaders.brf shadows CommonRes/wse2_shaders.brf");
+
+        ShaderPairTable raw_pairs{};
+        parse_wse2_shaders_ini(
+            "[SkinFallback]\n"
+            "plain_sh = skinned_sh ; inline comment\n"
+            "missing_src = skinned_sh # hash comment\n"
+            "[NoSkinFallback]\n"
+            "skinned_sh = plain_sh\n"
+            "bad_flags = skinned_sh\n",
+            raw_pairs);
+        expect(raw_pairs.entries.size() == 4U &&
+                   raw_pairs.skin_fallback_map["plain_sh"] == "skinned_sh" &&
+                   raw_pairs.noskin_fallback_map["skinned_sh"] == "plain_sh",
+               "parse_wse2_shaders_ini handles sections and strips inline comments");
+
+        std::unordered_map<std::string, BrfShader> shaders;
+        shaders["plain_sh"] = BrfShader{"plain_sh", kShaderFlagUsesHlsl, 0U, "tech_a", {}, {}};
+        shaders["skinned_sh"] =
+            BrfShader{"skinned_sh", kShaderFlagUsesHlsl | kShaderFlagUsesSkinning, 0U, "tech_b", {}, {}};
+        shaders["bad_flags"] = BrfShader{"bad_flags", kShaderFlagUsesHlsl, 0U, "tech_a", {}, {}};
+
+        ShaderPairTable valid_pairs{};
+        ShaderQualityConfig qcfg{3, true, false};
+        validate_shader_pairs(raw_pairs, shaders, qcfg, valid_pairs);
+        expect(valid_pairs.entries.size() == 2U && valid_pairs.warnings.size() == 2U,
+               "validate_shader_pairs accepts valid pairs and warns on missing/invalid-flag pairs");
+    }
+
+    // 3. Suitability, shortest-hop alternative resolution, def_shader fallback, VertexDeclType 0..4.
+    {
+        BrfShader hi_sh{"hi_sh", kShaderFlagUsesHlsl, kShaderReqHiQuality, "tech_ok", {"deep_a", "shallow_ok"}, {}};
+        BrfShader disabled_sh{"disabled_sh", kShaderFlagUsesHlsl | kShaderFlagRuntimeDisabled, 0U, "tech_ok", {}, {}};
+        BrfShader no_hlsl{"no_hlsl", 0U, 0U, "tech_ok", {}, {}};
+        BrfShader inst_sh{"inst_sh", kShaderFlagUsesHlsl | kShaderFlagUsesInstancing, 0U, "tech_ok", {}, {}};
+
+        expect(!is_shader_suitable(disabled_sh) && !is_shader_suitable(no_hlsl),
+               "is_shader_suitable requires HLSL flag and rejects disabled shaders");
+        expect(!is_shader_suitable(hi_sh, {2, true, true}, true) &&
+                   is_shader_suitable(hi_sh, {3, true, true}, true),
+               "is_shader_suitable checks shader_quality against m_requirementFlags");
+        expect(!is_shader_suitable(hi_sh, {3, true, true}, false),
+               "is_shader_suitable checks HLSL technique presence when required");
+        expect(!is_shader_suitable(inst_sh, {3, false, false}, true),
+               "is_shader_suitable checks instancing support");
+
+        std::unordered_map<std::string, BrfShader> map;
+        map["hi_sh"] = hi_sh;
+        map["deep_a"] = BrfShader{"deep_a", kShaderFlagUsesHlsl | kShaderFlagRuntimeDisabled, 0U, "tech_ok", {"deep_b"}, {}};
+        map["deep_b"] = BrfShader{"deep_b", kShaderFlagUsesHlsl, 0U, "tech_ok", {}, {}};
+        map["shallow_ok"] = BrfShader{"shallow_ok", kShaderFlagUsesHlsl, 0U, "tech_ok", {}, {}};
+        map["cyc_a"] = BrfShader{"cyc_a", 0U, 0U, "tech_ok", {"cyc_b"}, {}};
+        map["cyc_b"] = BrfShader{"cyc_b", 0U, 0U, "tech_ok", {"cyc_a"}, {}};
+        map["def_shader"] = BrfShader{"def_shader", kShaderFlagUsesHlsl, 0U, "tech_ok", {}, {}};
+
+        const ShaderResolutionResult short_res =
+            resolve_suitable_shader("hi_sh", map, {2, true, false});
+        expect(short_res.shader != nullptr && short_res.shader->name == "shallow_ok" &&
+                   short_res.hop_depth == 1 && !short_res.used_default_fallback,
+               "resolve_suitable_shader picks shortest-hop suitable alternative");
+
+        const ShaderResolutionResult cyc_res =
+            resolve_suitable_shader("cyc_a", map, {3, true, false});
+        expect(cyc_res.shader != nullptr && cyc_res.shader->name == "def_shader" &&
+                   cyc_res.used_default_fallback,
+               "cycle in alternatives safely falls back to def_shader");
+
+        const BrfShader sh_std{"s0", kShaderFlagUsesHlsl, 0U, "t", {}, {}};
+        const BrfShader sh_bump{"s1", kShaderFlagUsesHlsl | kShaderFlagUsesNormalMap, 0U, "t", {}, {}};
+        const BrfShader sh_skin{"s2", kShaderFlagUsesHlsl | kShaderFlagUsesSkinning, 0U, "t", {}, {}};
+        const BrfShader sh_bskin{"s3", kShaderFlagUsesHlsl | kShaderFlagUsesNormalMap | kShaderFlagUsesSkinning, 0U, "t", {}, {}};
+        const BrfShader sh_spec{"s4", kShaderFlagUsesHlsl | kShaderFlagSpecial, 0U, "t", {}, {}};
+        expect(get_mesh_vertex_declaration_type(sh_std, nullptr, false) == VertexDeclType::Standard &&
+                   get_mesh_vertex_declaration_type(sh_bump, nullptr, false) == VertexDeclType::Bumped &&
+                   get_mesh_vertex_declaration_type(sh_skin, nullptr, true) == VertexDeclType::Skinned &&
+                   get_mesh_vertex_declaration_type(sh_bskin, nullptr, true) == VertexDeclType::BumpedSkinned &&
+                   get_mesh_vertex_declaration_type(sh_spec, nullptr, false) == VertexDeclType::Special,
+               "get_mesh_vertex_declaration_type returns 0..4 accurately");
+
+        const BrfShader* active = nullptr;
+        const VertexDeclType swapped =
+            get_mesh_vertex_declaration_type(sh_std, &sh_skin, true, &active);
+        expect(swapped == VertexDeclType::Skinned && active == &sh_skin,
+               "mismatched skinning selects paired shader before computing VertexDeclType");
+    }
+
+    // 4. `decode_material_render_state` flags, blend modes, alpha test, and render order.
+    {
+        BrfMaterial mat{};
+        mat.name = "test_cutout";
+        mat.flags = kMaterialFlagNoFog | kMaterialFlagNoZWrite | (2U << 12U) | (0xFU << 24U);
+        mat.texture_names = {"diff_a", "none", "diff_bump", "NONE", "diff_spec"};
+        mat.specular_coeff = 8.0f;
+        mat.specular_rgb = {0.9f, 0.9f, 0.9f};
+        const BrfShader sh_bump{"bump", kShaderFlagUsesHlsl | kShaderFlagUsesNormalMap, 0U, "t", {}, {}};
+
+        const MaterialRenderState st_cut = decode_material_render_state(mat, &sh_bump);
+        expect(st_cut.no_fog && !st_cut.depth_write && st_cut.depth_test &&
+                   st_cut.blend_mode == MaterialBlendMode::Opaque &&
+                   st_cut.alpha_test_mode == AlphaTestMode::GreaterEqual136 &&
+                   st_cut.alpha_ref_u8 == 136U && st_cut.render_order == -1 &&
+                   st_cut.diffuse_a == "diff_a" && st_cut.diffuse_b.empty() &&
+                   st_cut.bumpmap == "diff_bump" && st_cut.envmap.empty() &&
+                   st_cut.specular_map == "diff_spec" && st_cut.uses_normal_map &&
+                   st_cut.uses_specular,
+               "decode_material_render_state decodes opaque cutout, nibble render_order, and slots");
+
+        mat.flags = (1U << 8U) | (3U << 12U) | (2U << 24U);  // AlphaBlend suppresses alpha test
+        const MaterialRenderState st_blend = decode_material_render_state(mat, &sh_bump);
+        expect(st_blend.blend_mode == MaterialBlendMode::AlphaBlend &&
+                   st_blend.alpha_test_mode == AlphaTestMode::GreaterEqual251 &&
+                   st_blend.alpha_ref_u8 == 0U && st_blend.render_order == 2,
+               "blended material suppresses alpha_ref_u8 threshold cleanly");
+    }
+
+    // 5. `GLShaders` XML + WSE2 skinning variants + SPIR-V generator + persistent VFS cache.
+    {
+        wse::platform::MemoryVfs vfs;
+        vfs.write_text("wb/GLShaders/techniques.xml",
+                       "<techniques>\n"
+                       "  <technique name=\"faceshader_high\">\n"
+                       "    <vertex_shader name=\"vs_face.glsl\" />\n"
+                       "    <fragment_shader name=\"fs_face.glsl\" />\n"
+                       "  </technique>\n"
+                       "  <technique name=\"faceshader_high_specular\" />\n"
+                       "  <technique name=\"faceshader_simple\" />\n"
+                       "  <technique name=\"simple_shading\" />\n"
+                       "  <technique name=\"simple_shading_no_filter\" />\n"
+                       "</techniques>\n");
+        vfs.write_text(
+            "wb/GLShadersOptimized/vs_faceshader_high.glsl",
+            "attribute vec3 inPosition; attribute vec4 inTangent; uniform sampler2D normal_texture;");
+        vfs.write_text(
+            "wb/GLShadersOptimized/fs_faceshader_high.glsl",
+            "uniform sampler2D specular_texture; void main() { if (a < 0.5) discard; }");
+
+        ShaderTechniqueCatalog tech_cat{};
+        std::string err;
+        expect(load_warband_shader_technique_catalog(vfs, "wb", tech_cat, &err) &&
+                   tech_cat.techniques_by_lower.size() == 10U &&
+                   tech_cat.find("face_shader_skin_high") != nullptr &&
+                   tech_cat.find("face_shader_skin_high")->synthesized_wse2_variant &&
+                   tech_cat.find("face_shader_skin_high")->vs_glsl.find("USE_SKINNING") !=
+                       std::string::npos,
+               "GLShaders catalog parses XML/GLSL and synthesizes the 5 WSE2 skinning variants");
+
+        const GlTechniqueEntry* wse2_face = tech_cat.find("face_shader_skin_high");
+        SpirvShaderCache cache1;
+        std::vector<std::uint32_t> vs_words1;
+        std::vector<std::uint32_t> fs_words1;
+        bool hit_vs1 = true;
+        bool hit_fs1 = true;
+        std::uint32_t vs_flags = 0;
+        std::uint32_t fs_flags = 0;
+        expect(cache1.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name, SpirvStage::Vertex,
+                                     VertexDeclType::BumpedSkinned, wse2_face->vs_glsl,
+                                     vs_words1, &hit_vs1, &vs_flags) &&
+                   cache1.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name, SpirvStage::Fragment,
+                                         VertexDeclType::BumpedSkinned, wse2_face->fs_glsl,
+                                         fs_words1, &hit_fs1, &fs_flags),
+               "first SpirvShaderCache compile succeeds");
+        expect(!hit_vs1 && !hit_fs1 && cache1.compile_count == 2U && cache1.cache_hits == 0U &&
+                   vs_words1.size() >= 20U && vs_words1[0] == 0x07230203U &&
+                   vs_words1[1] == 0x00010000U && vs_words1[3] == 7U &&
+                   (vs_flags & (kSpirvFeatNormalMap | kSpirvFeatSkinning)) ==
+                       (kSpirvFeatNormalMap | kSpirvFeatSkinning) &&
+                   (fs_flags & (kSpirvFeatSpecular | kSpirvFeatAlphaTest)) ==
+                       (kSpirvFeatSpecular | kSpirvFeatAlphaTest),
+               "compiled SPIR-V header/features match GLSL + VertexDeclType cleanly");
+
+        // Second session over the same persistent VFS hits disk/VFS cache with zero compiles.
+        SpirvShaderCache cache2;
+        std::vector<std::uint32_t> vs_words2;
+        std::vector<std::uint32_t> fs_words2;
+        bool hit_vs2 = false;
+        bool hit_fs2 = false;
+        expect(cache2.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name, SpirvStage::Vertex,
+                                     VertexDeclType::BumpedSkinned, wse2_face->vs_glsl,
+                                     vs_words2, &hit_vs2) &&
+                   cache2.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name, SpirvStage::Fragment,
+                                         VertexDeclType::BumpedSkinned, wse2_face->fs_glsl,
+                                         fs_words2, &hit_fs2) &&
+                   hit_vs2 && hit_fs2 && cache2.compile_count == 0U && cache2.cache_hits == 2U &&
+                   vs_words1 == vs_words2 && fs_words1 == fs_words2,
+               "second launch SpirvShaderCache hits persisted binaries with compile_count==0");
+    }
+
+    // 6. Retail Warband corpus gate (Native + Phantasy Calradia) when installed locally.
+    {
+        std::error_code ec;
+        const std::filesystem::path retail_root("C:/GOG Games/Mount and Blade - Warband");
+        if (std::filesystem::exists(retail_root / "Modules/Native/module.ini", ec)) {
+            wse::platform::HostVfs read_vfs(retail_root);
+            ShaderTechniqueCatalog tech_cat{};
+            expect(load_warband_shader_technique_catalog(read_vfs, "", tech_cat) &&
+                       tech_cat.techniques_by_lower.size() == 271U,
+                   "retail GLShaders (262 XML + 4 GLShadersOptimized) + 5 WSE2 skinning variants load 271 techniques");
+
+            std::unordered_set<std::string> tech_names;
+            for (const auto& kv : tech_cat.techniques_by_lower) {
+                tech_names.insert(kv.first);
+            }
+
+            const auto check_module = [&](const char* mod_rel, std::size_t expected_mats) {
+                std::string ini_text;
+                if (!read_vfs.read_text(std::string(mod_rel) + "/module.ini", ini_text)) {
+                    return false;
+                }
+                wse::game::ModuleIniData ini{};
+                wse::game::parse_module_ini(ini_text, ini);
+                BrfCatalog cat{};
+                if (!load_module_brf_catalog(read_vfs, "", mod_rel, ini, cat)) {
+                    return false;
+                }
+                std::unordered_map<std::string, BrfShader> shaders;
+                std::size_t mat_count = 0;
+                std::size_t mat_resolved = 0;
+                for (const auto& e : cat.entries) {
+                    if (!e.loaded) continue;
+                    for (const BrfShader& sh : e.file.shaders) {
+                        shaders.try_emplace(wse::platform::ascii_lower(sh.name), sh);
+                    }
+                    mat_count += e.file.materials.size();
+                }
+                for (const auto& e : cat.entries) {
+                    if (!e.loaded) continue;
+                    for (const BrfMaterial& mat : e.file.materials) {
+                        const ShaderResolutionResult res =
+                            resolve_suitable_shader(mat.shader_name, shaders, {3, true, true}, &tech_names);
+                        if (res.shader != nullptr &&
+                            tech_cat.find(res.shader->technique_name) != nullptr) {
+                            ++mat_resolved;
+                        }
+                    }
+                }
+                return shaders.size() == 144U && mat_count == expected_mats &&
+                       mat_resolved == expected_mats;
+            };
+
+            expect(check_module("Modules/Native", 633U),
+                   "retail Native resolves 144/144 shaders and 633/633 materials");
+            if (std::filesystem::exists(retail_root / "Modules/Phantasy Calradia/module.ini", ec)) {
+                expect(check_module("Modules/Phantasy Calradia", 1963U),
+                       "retail Phantasy Calradia resolves 144/144 shaders and 1963/1963 materials");
+            }
+        }
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -1165,6 +1512,7 @@ int run_asset_suite(const char* fixture_path) {
     test_brf_hardening();
     test_dds_hardening();
     test_dds_decode_blocks_and_resolver_probes();
+    test_p5_shaders_materials_and_spirv_cache();
 
     if (failures == 0) {
         std::printf("asset tests: PASS\n");
