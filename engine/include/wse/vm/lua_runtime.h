@@ -72,6 +72,10 @@ public:
     // Initializes a fresh Lua 5.1 state, loads header_operations.py, msfiles
     // constants, variables.txt, installs the sandbox, game.* + _G.* bindings,
     // LuaGlobals startup script, and executes <lua_dir>/main.lua if present.
+    // A runtime that is already initialized is shut down first (see shutdown()),
+    // which touches the *previous* `cfg.vfs`, `cfg.bundle` and VmContext: they
+    // must still be alive, or the caller must have called shutdown() before
+    // destroying them. `run_headless_module` relies on the same rule.
     virtual bool initialize(VmContext& ctx, const WseLuaInitConfig& cfg) = 0;
     // Unreferences every Lua callback held by the VM, flushes sandboxed files
     // that are still open, and closes the state. `cfg.vfs` must still be alive.

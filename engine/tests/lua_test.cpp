@@ -7,8 +7,11 @@
 #include <cstdio>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -632,7 +635,9 @@ void test_review_regressions() {
         "lhs_operations = [val_add, assign]\n");
     (void)vfs.write_text(
         "Modules/TestMod/lua/msfiles/header_big.py",
-        "top_bits = 0xf000000000000000 | 1\n"
+        // 2^63 + 2^11: above int64, and still exactly representable as a double
+        // so the assertion below can tell whether the OR happened.
+        "top_bits = 0x8000000000000000 | 0x800\n"
         "bad_shift = 1 << -1\n"
         "wide_shift = 1 << 64\n"
         "ok_shift = 1 << 4\n");
@@ -649,7 +654,8 @@ void test_review_regressions() {
            "flag constants above the opcode range are not operations");
     expect(rt->do_string(
                "assert(game.const.big.ok_shift == 16)\n"
-               "assert(game.const.big.top_bits == 0xf000000000000000 + 1)\n"
+               "assert(game.const.big.top_bits == 2^63 + 2048)\n"
+               "assert(game.const.big.top_bits ~= 2^63)\n"
                "assert(rawget(game.const.big, 'bad_shift') == nil)\n"
                "assert(rawget(game.const.big, 'wide_shift') == nil)\n",
                "consts"),
@@ -773,6 +779,32 @@ void test_review_regressions() {
                "io"),
            "io.close(), read('*a') at EOF, file:write result, os.rename onto itself");
 
+    // 8b. Presentation removal by id while a trigger executes sees the queued
+    // edits: one added in the same trigger is found, one already removed is not.
+    expect(rt->do_string(
+               "assert(game.addPrsnt({id = 'keep'}) == 0)\n"
+               "_G.prs = {}\n"
+               "game.addTrigger(0, -52, 0, 0, function()\n"
+               "    _G.prs.add = game.addPrsnt({id = 'fresh'})\n"
+               "    _G.prs.rm_fresh = game.removePrsnt('fresh')\n"
+               "    _G.prs.rm_keep = game.removePrsnt('keep')\n"
+               "    _G.prs.rm_keep_again = game.removePrsnt('keep')\n"
+               "    _G.prs.rm_index = game.removePrsnt(0)\n"
+               "    _G.prs.add2 = game.addPrsnt({id = 'second'})\n"
+               "    return true\n"
+               "end)\n",
+               "prsnt"),
+           "register presentation-editing trigger");
+    expect(wse::vm::execute_trigger_manager(tm, -52, ctx->timersTotal, *ctx) &&
+               rt->do_string(
+                   "assert(_G.prs.add == 1 and _G.prs.rm_fresh == true)\n"
+                   "assert(_G.prs.rm_keep == true and _G.prs.rm_keep_again == false)\n"
+                   "assert(_G.prs.rm_index == false and _G.prs.add2 == 0)\n",
+                   "prsnt2"),
+           "queued presentation removals by id match in-place removal");
+    expect(bundle->presentations.size() == 1U && bundle->presentations[0].id == "second",
+           "queued presentation edits applied in order");
+
     // 9. A file left open is flushed by an explicit shutdown() ...
     expect(rt->do_string("_G.keep = io.open('%storage%/late.txt', 'w'); _G.keep:write('late')", "late"),
            "leave a dirty file open");
@@ -780,7 +812,7 @@ void test_review_regressions() {
     std::string late;
     expect(vfs.read_text("lua_storage/late.txt", late) && late == "late",
            "shutdown() flushes open files");
-    expect(tm.triggers.size() == 64U && !rt->is_ready(), "shutdown leaves triggers in place, not ready");
+    expect(tm.triggers.size() == 65U && !rt->is_ready(), "shutdown leaves triggers in place, not ready");
 
     // ... and a runtime destroyed after its Vfs must not touch the dead Vfs.
     {
@@ -803,6 +835,80 @@ void test_review_regressions() {
     }
 }
 
+// A Vfs whose reads throw: stands in for any C++ exception (std::bad_alloc, a
+// misbehaving platform backend) escaping a callback that Lua called.
+class ThrowingVfs final : public wse::platform::Vfs {
+public:
+    explicit ThrowingVfs(wse::platform::Vfs& inner) : inner_(inner) {}
+    bool armed = false;
+
+    bool read_file(std::string_view path, std::vector<std::uint8_t>& out) override {
+        maybe_throw();
+        return inner_.read_file(path, out);
+    }
+    bool write_file(std::string_view path, std::span<const std::uint8_t> data) override {
+        return inner_.write_file(path, data);
+    }
+    bool remove_file(std::string_view path) override { return inner_.remove_file(path); }
+    bool list_dir(std::string_view path, std::vector<wse::platform::VfsEntry>& out) override {
+        return inner_.list_dir(path, out);
+    }
+    bool is_file(std::string_view path) override {
+        maybe_throw();
+        return inner_.is_file(path);
+    }
+    bool is_dir(std::string_view path) override { return inner_.is_dir(path); }
+    bool make_dir(std::string_view path) override { return inner_.make_dir(path); }
+    bool remove_dir(std::string_view path) override { return inner_.remove_dir(path); }
+
+private:
+    void maybe_throw() const {
+        if (armed) throw std::runtime_error("vfs backend exploded");
+    }
+    wse::platform::Vfs& inner_;
+};
+
+// Lua built as C++ guards calls with `catch (...)`; without the callback
+// trampoline a C++ exception surfaced as an error with no message.
+void test_cpp_exception_becomes_lua_error() {
+    auto bundle = std::make_unique<wse::game::ModuleBundle>();
+    auto ctx = std::make_unique<wse::vm::VmContext>();
+    ctx->scripts = &bundle->scripts;
+    wse::platform::MemoryVfs mem;
+    seed_lua_fixture_files(mem);
+    ThrowingVfs vfs(mem);
+
+    auto rt = wse::lua::create_lua_runtime();
+    ctx->luaRuntime = rt;
+    wse::vm::WseLuaInitConfig cfg{};
+    cfg.module_dir = "Modules/TestMod";
+    cfg.vfs = &vfs;
+    cfg.bundle = bundle.get();
+    expect(rt->initialize(*ctx, cfg), "initialize throwing-Vfs runtime");
+
+    vfs.armed = true;
+    expect(rt->do_string(
+               "local ok, err = pcall(dofile, 'anything.lua')\n"
+               "assert(not ok, 'dofile should fail')\n"
+               "assert(type(err) == 'string', 'error is ' .. type(err))\n"
+               "assert(err:find('vfs backend exploded', 1, true), err)\n"
+               "ok, err = pcall(io.open, '%storage%/x.txt', 'r')\n"
+               "assert(not ok and type(err) == 'string' and err:find('exploded', 1, true))\n"
+               "_G.survived = true\n",
+               "throw"),
+           "C++ exception in a callback is a catchable Lua error with its message");
+    const std::size_t errors_before = rt->error_history().size();
+    expect(!rt->do_string("dofile('anything.lua')", "throw2"),
+           "uncaught C++ exception fails the chunk");
+    expect(rt->error_history().size() == errors_before + 1U &&
+               rt->error_history().back().find("vfs backend exploded") != std::string::npos,
+           "uncaught C++ exception is reported with its message");
+    vfs.armed = false;
+    expect(rt->do_string("assert(_G.survived == true)", "after") && rt->lua_get_top() == 0,
+           "runtime stays usable after a C++ exception");
+    rt->shutdown();
+}
+
 } // namespace
 
 namespace wse::selftest {
@@ -816,6 +922,7 @@ int run_lua_suite(const char* fixture_path) {
     test_opcodes_5100_to_5114_and_events();
     test_sandbox_require_and_headless_host_vfs();
     test_review_regressions();
+    test_cpp_exception_becomes_lua_error();
 
     if (failures == 0) {
         std::printf("lua tests: PASS\n");

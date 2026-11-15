@@ -82,7 +82,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/module_loaders_test.cpp` | host tests for INI/BOM/comment parsers, individual world/campaign/asset/mission/Data loaders, error diagnostics, full `load_module()` + VM execution round-trips over `MemoryVfs` and `HostVfs`, and reload (module A then B) world-state reset + move-only string storage | in-memory + temp-directory fixtures |
 | `tests/headless_test.cpp` | host tests for `run_headless_module()` / `run_headless_session()` (`game_start` + multi-frame triggers over `MemoryVfs` and `HostVfs`, loud unimplemented-opcode failure, compatibility-mode continuation past unimplemented opcodes, and missing `game_start` / load error diagnostics) | in-memory + temp-directory fixtures |
 | `tests/lua_test.cpp` | host tests for Lua 5.1.5 stdlib/`bit`/`vector3`/`pos`, `msfiles/` + `variables.txt` parsers, `game.*` / `_G.*` callbacks, trigger/item/prop/prsnt/psys/iterator/hook paths, opcodes `5100`–`5114` + 9 `On*` events, and sandboxed `HostVfs` headless `main.lua` execution | `MemoryVfs` + temp-directory `HostVfs` fixtures |
-| `tests/wse_selftest.{h,cpp}`, `tests/selftest_host_test.cpp` | shared aggregate runner invoking all `18` core suites (`WSE_SELF_TEST_LIBRARY=1`) for both host verification (`selftest_host_test`) and the Android SDL3 `libwse2.so` app shell (`platform/sdl/sdl_selftest_main.cpp`) | all 18 suites + `fixtures/scripts.txt` |
+| `tests/wse_selftest.{h,cpp}`, `tests/selftest_host_test.cpp` | shared aggregate runner invoking all `18` core suites (`WSE_SELF_TEST_LIBRARY=1`) for both host verification (`selftest_host_test`) and the Android SDL3 `libwse2.so` app shell (`platform/sdl/sdl_selftest_main.cpp`); `run_all_suites` takes an optional stop callback polled between suites. In the CMake build each suite is compiled once into `wse_selftest` and every `<name>_test` executable is `tests/suite_main.cpp` linked against it | all 18 suites + `fixtures/scripts.txt` |
 
 ## Module text format
 
@@ -284,6 +284,10 @@ Script operands never size an allocation directly (Milestone 4–6 review fixes)
 - Lua runtime safety deviations (`engine/src/lua/`, regression-tested in `lua_test.cpp`):
   - Stock Lua 5.1.5 is compiled as C++, so a Lua error raised inside a `game.*` / `io.*` callback
     unwinds as an exception and runs C++ destructors instead of `longjmp`-ing over them.
+  - Every C function registered with Lua goes through `guarded<>` (`wse_lua_internal.hpp`): a C++
+    exception escaping a callback (`std::bad_alloc`, a throwing `Vfs`) is re-raised as the Lua error
+    `C++ exception in Lua callback: <what>`. Without it Lua's `catch (...)` reports status `-1`
+    with no message.
   - VM-facing entry points (`lua_push_*` `5108`–`5110`, `lua_set_top` `5101`, event and hook calls)
     reserve Lua stack space first; a push or `lua_set_top` that cannot be satisfied is dropped with a
     `Lua stack overflow` error instead of writing past the stack.
@@ -296,13 +300,22 @@ Script operands never size an allocation directly (Milestone 4–6 review fixes)
     `removeTrigger`, the item/scene-prop trigger variants, and `addPrsnt` / `removePrsnt` are queued
     and applied in call order once the outermost trigger execution unwinds (retail edits the arrays
     in place). Returned indices, booleans, and `getNum*Triggers` counts already reflect the queued
-    edits; a trigger that removes itself finishes its current run.
+    edits (including `removePrsnt` by id); a trigger that removes itself finishes its current run.
+    Two visible differences from in-place editing: a trigger removed mid-pass still fires if it sits
+    later in the manager being walked, and a presentation added mid-trigger cannot be addressed by
+    index from VM opcodes until the trigger unwinds. `TriggerIterationScope` applies the queue when
+    the outermost scope ends, so code that walks `ModuleBundle::presentations` (or another
+    container the edits resize) and runs a trigger manager per element must hold its own scope
+    around the walk. A queued edit that throws while being applied is dropped and reported through
+    `VmContext::report_error`.
   - Sandboxed `io` follows stock 5.1 results: `read("*a")` at end of file returns `""`, `file:write`
     returns `true`, `io.close()` closes the default output. `os.rename` onto the same
     (case-insensitive) path is a no-op instead of deleting the file.
   - Files Lua leaves open are flushed by an explicit `WseLuaRuntime::shutdown()`; destroying the
     runtime without it discards their unflushed data, because the `Vfs` may already be gone.
-    `run_headless_module` shuts down any previous Lua state before loading a module.
+    `run_headless_module` shuts down any previous Lua state before loading a module; that shutdown
+    (and the one at the start of `initialize()`) uses the previous run's `Vfs`, bundle, and
+    `VmContext`, which must still be alive unless `shutdown()` was already called.
   - `msfiles/*.py` constant expressions whose operands do not fit 64 bits, or that shift by a count
     outside `0..63`, are skipped; values outside the opcode table are not registered as operations.
 - `spawn_scene_prop` (1974) stops at `kMaxSpawnedMissionObjects` like `spawn_item`; `spawn_horse`

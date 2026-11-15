@@ -118,6 +118,11 @@ WseLuaManagerImpl& WseLuaManagerImpl::from_lua(lua_State* L) {
     return *ptr;
 }
 
+void raise_cpp_exception(lua_State* L, const char* what) {
+    luaL_error(L, "C++ exception in Lua callback: %s", what);
+    std::abort(); // luaL_error never returns
+}
+
 bool WseLuaManagerImpl::reserve_stack(int slots) {
     // The VM-facing entry points run at the base of the Lua stack, where only
     // LUA_MINSTACK slots are guaranteed; pushing past them corrupts the heap.
@@ -276,8 +281,7 @@ void WseLuaManagerImpl::close_lua_state_only() noexcept {
     op_flags_by_code_.clear();
     gvar_map_.clear();
     script_fail_stack_.clear();
-    deferred_edits_.clear();
-    pending_size_delta_.clear();
+    clear_deferred_state();
     ctx_ = nullptr;
     cfg_ = {};
     ready_ = false;
@@ -291,8 +295,7 @@ void WseLuaManagerImpl::apply_deferred_edits() {
     // Edits run in the order Lua issued them, so each one sees the container
     // exactly as the index it was given assumed.
     auto edits = std::move(deferred_edits_);
-    deferred_edits_.clear();
-    pending_size_delta_.clear();
+    clear_deferred_state();
     for (auto& edit : edits) edit();
 }
 
@@ -534,7 +537,10 @@ bool WseLuaManagerImpl::lua_trigger_callback(std::int32_t ref,
     // The arguments are consumed by the call, so the stack must come back to
     // the height below them, whatever happens.
     const int base = top - nargs;
-    if (!reserve_stack(2)) return false;
+    if (!reserve_stack(2)) {
+        ::lua_settop(L_, base);
+        return false;
+    }
     ::lua_rawgeti(L_, LUA_REGISTRYINDEX, ref);
     if (!lua_isfunction(L_, -1)) {
         ::lua_settop(L_, base);

@@ -16,6 +16,8 @@ val sdl3Version = "3.4.20"
 val sdl3ZipUrl =
     "https://github.com/libsdl-org/SDL/releases/download/release-$sdl3Version/SDL3-devel-$sdl3Version-android.zip"
 val sdl3ZipSha256 = "535320e58f3bd7235b3e15f940595cdeeb9b8c0aa6b3810ff127345e3567d4da"
+// SHA-256 of SDL3-$sdl3Version.aar inside that archive.
+val sdl3AarSha256 = "e5eec5e3d0293cbe9ce5899d451eaaf00a5c9ed70c1e444b751932118714e170"
 val sdl3AarFile = layout.projectDirectory.file("libs/SDL3-$sdl3Version.aar").asFile
 val sdl3ZipFile = layout.buildDirectory.file("downloads/SDL3-devel-$sdl3Version-android.zip").get().asFile
 
@@ -60,8 +62,13 @@ val ensureSdl3Aar by tasks.registering {
     outputs.file(sdl3AarFile)
 
     doLast {
-        if (sdl3AarFile.isFile && sdl3AarFile.length() > 0L) {
-            return@doLast
+        // A cached AAR is only trusted if it still matches the pinned hash.
+        if (sdl3AarFile.isFile) {
+            if (sha256Hex(sdl3AarFile) == sdl3AarSha256) {
+                return@doLast
+            }
+            logger.warn("Discarding ${sdl3AarFile.name}: SHA-256 does not match the pinned value")
+            sdl3AarFile.delete()
         }
         sdl3ZipFile.parentFile.mkdirs()
         if (!sdl3ZipFile.isFile || sha256Hex(sdl3ZipFile) != sdl3ZipSha256) {
@@ -114,6 +121,13 @@ val ensureSdl3Aar by tasks.registering {
             tmpAar.delete()
             throw GradleException("Missing $targetEntry inside $sdl3ZipFile")
         }
+        val aarHash = sha256Hex(tmpAar)
+        if (aarHash != sdl3AarSha256) {
+            tmpAar.delete()
+            throw GradleException(
+                "SHA-256 mismatch for $targetEntry: expected $sdl3AarSha256, got $aarHash"
+            )
+        }
         if (sdl3AarFile.exists()) sdl3AarFile.delete()
         if (!tmpAar.renameTo(sdl3AarFile)) {
             tmpAar.copyTo(sdl3AarFile, overwrite = true)
@@ -121,6 +135,20 @@ val ensureSdl3Aar by tasks.registering {
         }
         logger.lifecycle("Verified and staged ${sdl3AarFile.absolutePath}")
     }
+}
+
+// Only the self-test fixture is packaged. Pointing the asset source set at
+// engine/fixtures itself would ship every file later added there.
+val selfTestAssetsDir = layout.buildDirectory.dir("generated/wse_selftest_assets")
+val stageSelfTestAssets by tasks.registering(Sync::class) {
+    description = "Stages the self-test fixture as the APK's only asset"
+    from(layout.projectDirectory.dir("../../engine/fixtures")) {
+        include("scripts.txt")
+    }
+    into(selfTestAssetsDir)
+}
+tasks.named("preBuild") {
+    dependsOn(stageSelfTestAssets)
 }
 
 val resolvedNdkVersion = providers.gradleProperty("wse.ndkVersion").orNull
@@ -185,7 +213,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            assets.srcDirs(file("../../engine/fixtures"))
+            assets.srcDirs(selfTestAssetsDir.get().asFile)
         }
     }
 

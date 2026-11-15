@@ -548,7 +548,7 @@ int file_lines(lua_State* L) {
     check_vfs_file(L, 1);
     lua_pushvalue(L, 1);
     lua_pushboolean(L, 0);
-    lua_pushcclosure(L, file_lines_iter, 2);
+    lua_pushcclosure(L, guarded<file_lines_iter>, 2);
     return 1;
 }
 
@@ -638,7 +638,7 @@ int lua_io_lines(lua_State* L) {
             return luaL_error(L, "no default input file");
         }
         lua_pushboolean(L, 0);
-        lua_pushcclosure(L, file_lines_iter, 2);
+        lua_pushcclosure(L, guarded<file_lines_iter>, 2);
         return 1;
     }
     auto& mgr = WseLuaManagerImpl::from_lua(L);
@@ -648,7 +648,7 @@ int lua_io_lines(lua_State* L) {
         return luaL_error(L, "cannot open file '%s'", std::string(filename).c_str());
     }
     lua_pushboolean(L, 1);
-    lua_pushcclosure(L, file_lines_iter, 2);
+    lua_pushcclosure(L, guarded<file_lines_iter>, 2);
     return 1;
 }
 
@@ -1007,9 +1007,9 @@ void WseLuaManagerImpl::install_sandbox() {
     lua_pushvalue(L_, -1);
     lua_setfield(L_, -2, "__index");
     static const luaL_Reg kFileMethods[] = {
-        {"close", file_close},   {"flush", file_flush}, {"lines", file_lines},
-        {"read", file_read},     {"seek", file_seek},   {"setvbuf", file_setvbuf},
-        {"write", file_write},   {"__gc", file_gc},     {nullptr, nullptr},
+        {"close", guarded<file_close>},   {"flush", guarded<file_flush>}, {"lines", guarded<file_lines>},
+        {"read", guarded<file_read>},     {"seek", guarded<file_seek>},   {"setvbuf", guarded<file_setvbuf>},
+        {"write", guarded<file_write>},   {"__gc", guarded<file_gc>},     {nullptr, nullptr},
     };
     luaL_register(L_, nullptr, kFileMethods);
     c_lua_pop(L_, 1);
@@ -1017,9 +1017,9 @@ void WseLuaManagerImpl::install_sandbox() {
     // Replace io.* completely with sandboxed VFS-backed equivalents.
     lua_newtable(L_);
     static const luaL_Reg kIoFuncs[] = {
-        {"open", lua_io_open},   {"lines", lua_io_lines}, {"input", lua_io_input},
-        {"output", lua_io_output}, {"type", lua_io_type}, {"close", lua_io_close},
-        {"flush", lua_io_flush}, {"read", lua_io_read},   {"write", lua_io_write},
+        {"open", guarded<lua_io_open>},   {"lines", guarded<lua_io_lines>}, {"input", guarded<lua_io_input>},
+        {"output", guarded<lua_io_output>}, {"type", guarded<lua_io_type>}, {"close", guarded<lua_io_close>},
+        {"flush", guarded<lua_io_flush>}, {"read", guarded<lua_io_read>},   {"write", guarded<lua_io_write>},
         {nullptr, nullptr},
     };
     luaL_register(L_, nullptr, kIoFuncs);
@@ -1032,21 +1032,21 @@ void WseLuaManagerImpl::install_sandbox() {
             lua_pushnil(L_);
             lua_setfield(L_, -2, dead);
         }
-        lua_pushcfunction(L_, lua_os_remove);
+        lua_pushcfunction(L_, guarded<lua_os_remove>);
         lua_setfield(L_, -2, "remove");
-        lua_pushcfunction(L_, lua_os_rename);
+        lua_pushcfunction(L_, guarded<lua_os_rename>);
         lua_setfield(L_, -2, "rename");
     }
     c_lua_pop(L_, 1);
 
     // Sandboxed chunk loaders rejecting bytecode (`\x1b`).
-    lua_pushcfunction(L_, lua_sandboxed_loadstring);
+    lua_pushcfunction(L_, guarded<lua_sandboxed_loadstring>);
     lua_setglobal(L_, "loadstring");
-    lua_pushcfunction(L_, lua_sandboxed_load);
+    lua_pushcfunction(L_, guarded<lua_sandboxed_load>);
     lua_setglobal(L_, "load");
-    lua_pushcfunction(L_, lua_sandboxed_loadfile);
+    lua_pushcfunction(L_, guarded<lua_sandboxed_loadfile>);
     lua_setglobal(L_, "loadfile");
-    lua_pushcfunction(L_, lua_sandboxed_dofile);
+    lua_pushcfunction(L_, guarded<lua_sandboxed_dofile>);
     lua_setglobal(L_, "dofile");
 
     // Lock down package.*: no native DLL loading, only preload + sandboxed VFS loader.
@@ -1066,7 +1066,7 @@ void WseLuaManagerImpl::install_sandbox() {
             lua_rawseti(L_, -3, 1);
         }
         c_lua_pop(L_, 1);
-        lua_pushcfunction(L_, lua_wse_require_loader);
+        lua_pushcfunction(L_, guarded<lua_wse_require_loader>);
         lua_rawseti(L_, -2, 2);
         lua_setfield(L_, -2, "loaders");
     }

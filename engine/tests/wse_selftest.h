@@ -40,9 +40,11 @@ struct SuiteSummary {
     int passed_count = 0;
     int total_count = 0;
     std::int64_t total_ms = 0;
+    // True when `should_stop` ended the run before every suite had started.
+    bool cancelled = false;
 
     [[nodiscard]] bool all_passed() const noexcept {
-        return passed_count == total_count && total_count > 0;
+        return !cancelled && passed_count == total_count && total_count > 0;
     }
 };
 
@@ -51,7 +53,12 @@ struct SuiteSummary {
 using ProgressCallback = std::function<void(int index, int total, const char* suite_name,
                                             const SuiteResult* completed_or_null)>;
 
+// Polled before each suite starts; returning true abandons the remaining
+// suites (a suite that is already running always finishes).
+using StopCallback = std::function<bool()>;
+
 SuiteSummary run_all_suites(const char* scripts_fixture_path,
-                            const ProgressCallback& progress = {});
+                            const ProgressCallback& progress = {},
+                            const StopCallback& should_stop = {});
 
 }  // namespace wse::selftest

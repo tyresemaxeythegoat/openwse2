@@ -4,6 +4,8 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <exception>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -26,6 +28,31 @@
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
+
+namespace wse::lua::detail {
+
+// Raises `what` as an ordinary Lua error (never returns).
+[[noreturn]] void raise_cpp_exception(lua_State* L, const char* what);
+
+// Every C function handed to Lua goes through this trampoline. Lua compiled as
+// C++ protects calls with `catch (...)` (luaconf.h LUAI_TRY), so a C++
+// exception escaping a callback (std::bad_alloc, a throwing Vfs, ...) would
+// surface as status -1 with no error message. Converting it here gives Lua a
+// normal, catchable error string. Lua's own errors are thrown as
+// `lua_longjmp*`, which this handler does not match, so they pass through.
+template <lua_CFunction Fn>
+int guarded(lua_State* L) {
+    char what[256];
+    try {
+        return Fn(L);
+    } catch (const std::exception& e) {
+        std::snprintf(what, sizeof(what), "%s", e.what());
+    }
+    // Raised outside the handler so the caught exception is destroyed first.
+    raise_cpp_exception(L, what);
+}
+
+} // namespace wse::lua::detail
 
 // Wrap Lua 5.1's `lua_pop(L, n)` macro and undefine it so WseLuaRuntime::lua_pop
 // never collides with C preprocessor expansion inside translation units.
@@ -220,6 +247,27 @@ public:
         }
     }
 
+    // Presentation ids in the order the container will hold them once the
+    // queued edits are applied; only meaningful while edits_deferred().
+    [[nodiscard]] std::vector<std::string>& pending_presentation_ids() {
+        if (!pending_presentation_ids_valid_) {
+            pending_presentation_ids_.clear();
+            if (cfg_.bundle != nullptr) {
+                for (const auto& p : cfg_.bundle->presentations) {
+                    pending_presentation_ids_.push_back(p.id);
+                }
+            }
+            pending_presentation_ids_valid_ = true;
+        }
+        return pending_presentation_ids_;
+    }
+    void clear_deferred_state() noexcept {
+        deferred_edits_.clear();
+        pending_size_delta_.clear();
+        pending_presentation_ids_.clear();
+        pending_presentation_ids_valid_ = false;
+    }
+
     static WseLuaManagerImpl& from_lua(lua_State* L);
 
     lua_State* L_ = nullptr;
@@ -233,6 +281,8 @@ public:
     bool gc_flush_allowed_ = false;
     std::vector<std::function<void()>> deferred_edits_{};
     std::unordered_map<const void*, std::ptrdiff_t> pending_size_delta_{};
+    std::vector<std::string> pending_presentation_ids_{};
+    bool pending_presentation_ids_valid_ = false;
 
     std::string resolved_module_dir_{};
     std::string resolved_lua_dir_{};

@@ -98,6 +98,7 @@ RuntimePaths prepare_runtime_paths(std::string& error_out) {
     paths.fixture_path = staged_fixture.string();
     paths.log_path = (tmp_dir / "selftest_stdout.log").string();
 #else
+    (void)error_out;
     paths.fixture_path = "engine/fixtures/scripts.txt";
     paths.log_path.clear();
 #endif
@@ -125,6 +126,20 @@ void collect_failure_lines(const std::string& log_path,
             }
         }
     }
+}
+
+// SDL documents that SDL_EVENT_TERMINATING must be handled from an event
+// watch: by the time it could be polled the OS may already have killed the
+// process. The watch only raises a flag the main loop and worker observe.
+bool SDLCALL on_app_event(void* userdata, SDL_Event* event) {
+    if (event->type == SDL_EVENT_TERMINATING) {
+        static_cast<std::atomic<bool>*>(userdata)->store(true);
+    }
+    return true;
+}
+
+[[nodiscard]] bool point_in_rect(float x, float y, const SDL_FRect& r) {
+    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
 
 void draw_filled_rect(SDL_Renderer* renderer, float x, float y, float w, float h,
@@ -168,6 +183,8 @@ int main(int argc, char* argv[]) {
     UiState ui;
     std::atomic<bool> stop_requested{false};
     std::atomic<bool> rerun_requested{true};
+    std::atomic<bool> terminating{false};
+    SDL_AddEventWatch(on_app_event, &terminating);
 
     std::thread worker([&]() {
         while (!stop_requested.load()) {
@@ -232,9 +249,15 @@ int main(int argc, char* argv[]) {
                                 completed->name,
                                 static_cast<long long>(completed->duration_ms));
                     }
-                });
+                },
+                // Checked between suites so Back/quit does not wait for the
+                // whole run to finish.
+                [&]() { return stop_requested.load() || terminating.load(); });
 
             std::fflush(stdout);
+            if (summary.cancelled) {
+                break;
+            }
             std::vector<std::string> fails;
             collect_failure_lines(paths.log_path, fails);
             for (const std::string& fl : fails) {
@@ -266,8 +289,13 @@ int main(int argc, char* argv[]) {
     SDL_FRect rerun_btn{0.0f, 0.0f, 0.0f, 0.0f};
     int last_win_w = 1;
     int last_win_h = 1;
+    // Window points -> logical UI units (the UI is drawn under SDL_SetRenderScale).
+    float points_to_logical = 1.0f;
 
     while (!quit) {
+        if (terminating.load()) {
+            break;
+        }
         SDL_Event ev;
         bool was_finished = false;
         {
@@ -297,24 +325,24 @@ int main(int argc, char* argv[]) {
                         const float dy = cur_y - last_finger_y;
                         if (std::fabs(dy) > 2.0f) {
                             finger_dragging = true;
-                            scroll_y -= dy;
+                            scroll_y -= dy * points_to_logical;
                             last_finger_y = cur_y;
                         }
                     } else if (ev.type == SDL_EVENT_FINGER_UP) {
                         if (!finger_dragging && was_finished) {
                             const float fx = ev.tfinger.x * static_cast<float>(last_win_w);
                             const float fy = ev.tfinger.y * static_cast<float>(last_win_h);
-                            if (fx >= rerun_btn.x && fx <= rerun_btn.x + rerun_btn.w &&
-                                fy >= rerun_btn.y && fy <= rerun_btn.y + rerun_btn.h) {
+                            if (point_in_rect(fx, fy, rerun_btn)) {
                                 scroll_y = 0.0f;
                                 rerun_requested.store(true);
                             }
                         }
-                    } else if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && was_finished) {
-                        if (ev.button.x >= rerun_btn.x &&
-                            ev.button.x <= rerun_btn.x + rerun_btn.w &&
-                            ev.button.y >= rerun_btn.y &&
-                            ev.button.y <= rerun_btn.y + rerun_btn.h) {
+                    } else if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && was_finished &&
+                               ev.button.which != SDL_TOUCH_MOUSEID) {
+                        // Touches also arrive as synthesized mouse events
+                        // (SDL_HINT_TOUCH_MOUSE_EVENTS); those are handled by
+                        // the finger path above, which knows about drags.
+                        if (point_in_rect(ev.button.x, ev.button.y, rerun_btn)) {
                             scroll_y = 0.0f;
                             rerun_requested.store(true);
                         }
@@ -361,6 +389,7 @@ int main(int argc, char* argv[]) {
         const float lh = safe_h / scale;
         const float ox = safe_x / scale;
         const float oy = safe_y / scale;
+        points_to_logical = px_scale_y / scale;
 
         SDL_SetRenderScale(renderer, scale, scale);
         SDL_SetRenderDrawColor(renderer, 16, 20, 26, 255);
@@ -429,11 +458,13 @@ int main(int argc, char* argv[]) {
         const float max_scroll = std::max(0.0f, content_h - (body_bot - body_top));
         scroll_y = std::clamp(scroll_y, 0.0f, max_scroll);
 
+        // The clip rectangle is in the same (scaled) units as the draw calls:
+        // SDL multiplies it by the render scale.
         SDL_Rect clip_rect{
-            static_cast<int>(safe_x),
-            static_cast<int>(safe_y + banner_h * scale),
-            std::max(1, static_cast<int>(safe_w)),
-            std::max(1, static_cast<int>(safe_h - (banner_h + footer_h) * scale)),
+            static_cast<int>(std::floor(ox)),
+            static_cast<int>(std::floor(oy + banner_h)),
+            std::max(1, static_cast<int>(std::ceil(lw))),
+            std::max(1, static_cast<int>(std::ceil(lh - banner_h - footer_h))),
         };
         SDL_SetRenderClipRect(renderer, &clip_rect);
 
@@ -510,6 +541,7 @@ int main(int argc, char* argv[]) {
 
     stop_requested.store(true);
     worker.join();
+    SDL_RemoveEventWatch(on_app_event, &terminating);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
