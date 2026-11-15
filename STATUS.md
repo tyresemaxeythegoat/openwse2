@@ -11,7 +11,7 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows (Zig clang++, 17 suites / 116 test functions + `wse_headless`) and Linux (`clang++ 18.1.3` local on P1 seam review fixes `15/15` suites / `107` test functions; CI green on `ff03319`) |
+| Host gate | **PASS** on Linux (`clang++ 18.1.3`, CMake + CTest, `17/17` suites / `118` test functions + `wse_headless`, run locally for the loader/headless review fixes). Windows (Zig clang++) is recorded as PASS at `807bdd7` with 17 suites / 116 test functions + `wse_headless` and has not been re-run for the review fixes |
 | Android arm64 gate | **PASS (CI on `ff03319`)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all headers standalone + CMake build via `CMakeLists.txt` glob; on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **440/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` live handlers `53, 2180, 2749` have no SDK constant and carry community names); **1,053/1,053 implemented (100%, 20/20 categories)** (`16` control-flow incl. 4 live entity iterators + `1,037` switch across `block_vm.h`, `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, `native_campaign_ops.h`, `native_campaign_ops_2.h`, `native_world_ops.h`, `native_world_ops_2.h`, `native_world_ops_3.h`, `native_agent_ops.h`, `native_mp_ops.h`, `native_scene_ops.h`, and `native_ui_ops.h`) |
@@ -24,11 +24,11 @@ documents link here instead of repeating them — see the ownership table in `AG
 
 | Gate | Result | Detail |
 | --- | --- | --- |
-| Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: 17/17 suites / 116 test functions (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`, `module_loaders`, `headless`) + `wse_headless.exe`, 55/55 standalone header checks (`x86_64-windows-gnu` and `aarch64-linux-musl`) |
-| Host C++20, Linux | PASS (local on P1 seam review fixes; CI on `ff03319`) | P1 seam review fixes run locally with the CI configuration: 15/15 suites / 107 test functions, 49 standalone header checks (`wse/platform/sleep.h`), `extract_wse_opcodes.py --check`, `check_citations.py --self-test`. `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): compiles all headers discovered by `CMakeLists.txt` glob, runs all registered CMake test suites (`CMakeLists.txt` now registers 16 suites), `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
+| Host C++20, Windows | PASS (recorded at `807bdd7`, not re-run for the loader/headless review fixes) | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: 17/17 suites / 116 test functions (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`, `module_loaders`, `headless`) + `wse_headless.exe`, 55/55 standalone header checks (`x86_64-windows-gnu` and `aarch64-linux-musl`) |
+| Host C++20, Linux | PASS (local, loader/headless review fixes; CI on `ff03319`) | Loader/headless review fixes run locally with the CI configuration (CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`, `clang++ 18.1.3`): 17/17 suites / 118 test functions + `wse_headless`, 55 standalone header checks, `check_citations.py --self-test`. `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`): compiles all headers discovered by `CMakeLists.txt` glob, runs all registered CMake test suites (`CMakeLists.txt` now registers 16 suites), `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
 | Android NDK `aarch64-linux-android29` | PASS (CI on `ff03319`) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
-| Host ASan + UBSan | PASS (CI) | `.github/workflows/ci.yml` job `host-sanitizers` (`ubuntu-24.04`, clang++, `cmake -DWSE_SANITIZE=ON` + CTest): 15/15 suites on commit `cb3d9fe`; the P1 seam review fixes were also run locally with `g++` (`-DCMAKE_CXX_FLAGS=-Wno-maybe-uninitialized`), 15/15 |
+| Host ASan + UBSan | PASS (CI) | `.github/workflows/ci.yml` job `host-sanitizers` (`ubuntu-24.04`, clang++, `cmake -DWSE_SANITIZE=ON` + CTest): 15/15 suites on commit `cb3d9fe`; the P1 seam review fixes were also run locally with `g++` (`-DCMAKE_CXX_FLAGS=-Wno-maybe-uninitialized`), 15/15; the loader/headless review fixes were run locally with `g++` (`-DCMAKE_CXX_FLAGS=-Wno-maybe-uninitialized`), 17/17 |
 | CI | PASS | `.github/workflows/ci.yml` (`Engine CI`): runs `host-linux` (including `extract_wse_opcodes.py --check` and `check_citations.py --self-test`) and `android-arm64` on push and PR. As of the 2026-11-14 review fixes it triggers on pushes to every branch (previously `main` only), builds `RelWithDebInfo` (`-O2`) by default, and adds `host-sanitizers`; all three jobs passed on commit `a01ffb3` (push and PR runs) |
 
 ## 3. Coverage
@@ -108,9 +108,9 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `native_m5_test.cpp` | 5 |
 | `wse_m6_test.cpp` | 7 |
 | `platform_test.cpp` | 6 |
-| `module_loaders_test.cpp` | 5 |
-| `headless_test.cpp` | 4 |
-| **Total (17 suites)** | **116** |
+| `module_loaders_test.cpp` | 6 |
+| `headless_test.cpp` | 5 |
+| **Total (17 suites)** | **118** |
 
 ## 4. Blocked
 

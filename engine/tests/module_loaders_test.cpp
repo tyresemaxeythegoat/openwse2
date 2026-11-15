@@ -8,9 +8,12 @@
 #include <cstdio>
 #include <filesystem>
 #include <initializer_list>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "wse/core/encoding.h"
@@ -458,6 +461,20 @@ void test_ini_and_token_helpers() {
                ini["Net"]["port"] == "7240",
            "sectioned INI parses default and named sections");
 
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> ini2;
+    parse_ini_sections(
+        "[a]\n"
+        "x = 1\n"
+        "[b] ; trailing comment\n"
+        "y = 2\n"
+        "[ c ]   // another\n"
+        "z = 3\n"
+        "; w = [d]\n",
+        ini2);
+    expect(ini2.size() == 3U && ini2["a"].size() == 1U && ini2["a"]["x"] == "1" &&
+               ini2["b"]["y"] == "2" && ini2["c"]["z"] == "3",
+           "section headers with trailing comments still open their section");
+
     ModuleIniData mod_ini;
     parse_module_ini(
         "module_name = MyMod # comment\n"
@@ -483,6 +500,19 @@ void test_ini_and_token_helpers() {
     expect(read_wrapping_u32_token(tok, u) &&
                u == static_cast<std::uint32_t>(68451502092ULL),
            "wrapping u32 mirrors 0x1402afce0 for >32-bit retail colors");
+
+    wse::io::TokenReader neg_tok("-2147483648 -1 -0 - 4294967296 1x");
+    expect(read_wrapping_u32_token(neg_tok, u) && u == 0x80000000U,
+           "wrapping u32 negates INT32_MIN magnitude without signed overflow");
+    expect(read_wrapping_u32_token(neg_tok, u) && u == 0xffffffffU,
+           "wrapping u32 maps -1 to 0xffffffff");
+    expect(read_wrapping_u32_token(neg_tok, u) && u == 0U,
+           "wrapping u32 maps -0 to 0");
+    expect(!read_wrapping_u32_token(neg_tok, u), "wrapping u32 rejects bare '-'");
+    expect(read_wrapping_u32_token(neg_tok, u) && u == 0U,
+           "wrapping u32 wraps 2^32 to 0");
+    expect(!read_wrapping_u32_token(neg_tok, u),
+           "wrapping u32 rejects trailing garbage");
 
     expect(initial_troop_xp(5, nullptr) == kCampaignLevelXpTable[4],
            "deterministic XP equals g_levelTable[level]");
@@ -1072,9 +1102,83 @@ void test_end_to_end_memory_and_host_vfs() {
     fs::remove_all(root, ec);
 }
 
+static_assert(!std::is_copy_constructible_v<wse::game::ModuleStringStorage> &&
+                  !std::is_copy_assignable_v<wse::game::ModuleStringStorage> &&
+                  !std::is_copy_constructible_v<wse::game::ModuleBundle>,
+              "bundle string views must not be copied away from their backing");
+static_assert(std::is_nothrow_move_constructible_v<wse::game::ModuleStringStorage> &&
+                  std::is_move_constructible_v<wse::game::ModuleBundle>,
+              "bundles stay movable");
+
+void test_reload_resets_module_state_and_storage_moves() {
+    using namespace wse::game;
+
+    wse::platform::MemoryVfs vfs;
+    expect(vfs.write_text("Modules/A/info_pages.txt",
+                          "infopagesfile version 1\n1\nip_a Title_a Text_a\n") &&
+               vfs.write_text("Modules/A/game_variables.txt", "foo = 1\n") &&
+               vfs.write_text("Modules/A/module_config.ini", "[sec]\nkey = 1\n") &&
+               vfs.write_text("Modules/A/scenes.txt",
+                              "scenesfile version 1\n1\n"
+                              "scn_a a 0 none none 0 0 1 1 -100 0x0 0 0 0\n") &&
+               vfs.write_text("Modules/A/meshes.txt",
+                              "1\nmesh_a 0 res_a 0 0 0 0 0 0 1 1 1\n") &&
+               vfs.write_text("Modules/A/music.txt", "1\ntrack_a.ogg 0 0\n") &&
+               vfs.write_text("Modules/A/Data/skyboxes.txt", build_skyboxes_fixture()) &&
+               vfs.write_text("Modules/A/strings.txt",
+                              "stringsfile version 1\n2\n"
+                              "str_long a_string_long_enough_to_live_on_the_heap\n"
+                              "str_s hi\n") &&
+               vfs.write_text("Modules/B/scenes.txt", "scenesfile version 1\n0\n"),
+           "seed reload fixtures");
+
+    auto ctx = std::make_unique<wse::vm::VmContext>();
+    auto bundle = std::make_unique<ModuleBundle>();
+    ModuleLoadOptions opts{};
+    opts.require_core_files = false;
+    opts.native_dir.clear();
+    opts.root_data_dir.clear();
+
+    ModuleLoadError err = load_module(vfs, "Modules/A", *ctx, *bundle, opts);
+    expect(err.ok, "module A loads");
+    const auto& world = ctx->world;
+    expect(world.info_pages.size() == 1U && world.sites.size() == 1U &&
+               world.m6.sites.size() == 1U && world.mesh_names.size() == 1U &&
+               world.misc.num_music_tracks == 1 &&
+               world.game_variables.size() == 1U &&
+               world.module_settings.size() == 1U &&
+               world.m5.skybox_fog_colors[0] == 4286611584U,
+           "module A populates world state");
+
+    // Moving the storage keeps the views bound to the moved backing strings.
+    expect(bundle->string_storage.global_views.size() == 2U,
+           "module A binds two global strings");
+    ModuleStringStorage moved = std::move(bundle->string_storage);
+    bool views_follow = moved.global_views.size() == moved.global_backing.size();
+    for (std::size_t i = 0; views_follow && i < moved.global_views.size(); ++i) {
+        views_follow = moved.global_views[i].data() == moved.global_backing[i].data() &&
+                       moved.global_views[i] == moved.global_backing[i];
+    }
+    expect(views_follow && moved.global_views.size() == 2U &&
+               moved.global_views[1] == u"hi",
+           "moved string storage views point at the moved backing");
+
+    err = load_module(vfs, "Modules/B", *ctx, *bundle, opts);
+    expect(err.ok, "module B loads over module A");
+    expect(world.info_pages.empty() && world.sites.empty() &&
+               world.m6.sites.empty() && world.mesh_names.empty() &&
+               world.misc.num_music_tracks == 0 &&
+               world.game_variables.empty() && world.module_settings.empty() &&
+               world.m5.skybox_fog_colors[0] == 0U,
+           "reload drops state from files module B does not ship");
+    expect(ctx->globalStrings.empty() && ctx->localStrings.empty(),
+           "reload rebinds empty string banks");
+}
+
 } // namespace
 
 int main() {
+    test_reload_resets_module_state_and_storage_moves();
     test_ini_and_token_helpers();
     test_individual_world_loaders();
     test_asset_mission_and_data_loaders();
