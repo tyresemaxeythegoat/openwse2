@@ -25,7 +25,7 @@ engine/
                       headless_runner.h
   include/wse/platform/ vfs.h, saf_vfs.h, clock.h,         platform seam (port infrastructure, SAF Vfs, minimal RHI)
                       sleep.h, log.h, rhi.h
-  include/wse/asset/  brf.h, dds.h                            .brf / .dds asset decoders and module resource catalog
+  include/wse/asset/  brf.h, dds.h, shader.h                  .brf / .dds asset decoders, module resource catalog, shader/material/SPIR-V pipeline
   src/lua/            lua_bitop.*, lua_globals_script.hpp,    stock MIT Lua 5.1.5 WSE runtime (`wse_lua`, `<lua.h>` isolated here)
                       wse_lua_{internal.hpp,ops,callbacks,manager}.cpp
   tools/              wse_headless.cpp, wse_brf.cpp           headless module CLI validator (`Modules/Native`) + `.brf`/`.dds` inspector
@@ -66,9 +66,9 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `include/wse/game/module_mission_loaders.h` | interactive/mission loaders (`map_icons`, `scene_props`, `menus`, `presentations`, `mission_templates`, `tableau_materials`, `conversation` v1/v2) | v1.1.5.5 stream readers cited in header |
 | `include/wse/game/module_bundle.h` | `WseOwnedStringBanks`, `ModuleBundle`, `ModuleLoadOptions`, and `load_module()` orchestrator populating `WseWorldState`, `ScriptManager`, triggers, and `VmContext` string banks; `load_module()` first resets module-derived `WseWorldState` (safety deviation: a reload never inherits the previous module's optional files), and the bundle is move-only because `VmContext` holds views into it | `mbGame::readModuleFiles` cited in header |
 | `include/wse/game/headless_runner.h` | **port infrastructure:** `HeadlessRunOptions`, `HeadlessRunReport`, `HeadlessSession`, and `run_headless_module()` / `run_headless_session()` executing `load_module`, `game_start`, and simulated trigger frames via `Vfs` and `LogSink`; unimplemented opcodes stop and fail the run only when `fail_on_unimplemented` is set (otherwise they are counted and reported) | clean-room orchestration over `module_bundle.h`, `trigger.h`, `block_vm.h` |
-| `include/wse/asset/{brf,dds}.h` | `.brf` container decoder (all 8 resource types, `MetaMesh` LOD grouper, `module.ini` resource catalog) + `.dds` parser/RGBA8 decoder (`BC1`–`BC5`, uncompressed/`L8`/`L16`/`A8L8`/`A8`, `DX10`) and Warband `Vfs` texture resolver | `rglResourceManager`, `rglMesh`, `rglMetaMesh`, `rglTexture`, `rglShader`, `rglMaterial`, `rglPhysicsMaterial`, `rglBody`, `rglSkeletonModel`, `rglSkeletonAnimation` |
+| `include/wse/asset/{brf,dds,shader}.h` | `.brf` container decoder (all 8 resource types, `MetaMesh` LOD grouper, `module.ini` resource catalog), `.dds` parser/RGBA8 decoder (`BC1`–`BC5`, uncompressed/`L8`/`L16`/`A8L8`/`A8`, `DX10`) + Warband `Vfs` texture resolver, and P5 effect search / `wse2_shaders.{brf,ini}` / `rglShader` suitability / `rglMaterial` state / `GLShaders` + WSE2 SPIR-V 1.0 cache pipeline | `rglResourceManager`, `rglMesh`, `rglMetaMesh`, `rglTexture`, `rglShader`, `rglMaterial`, `rglPhysicsMaterial`, `rglBody`, `rglSkeletonModel`, `rglSkeletonAnimation`, `rglGraphicsContext::initEffect`, `rglPostProcess::initEffect` |
 | `tools/wse_headless.cpp` | portable Phase 2H CLI runner (`<warband_root> [module_rel_dir] [--frames N] [--step-ticks T] [--allow-unimplemented]`) using `HostVfs` + `StderrLog` | Phase 2H headless `Native` exit runner |
-| `tools/wse_brf.cpp` | portable Slice P3 / Phase 2G CLI inspector (`--brf <file>`, `--dds <file>`, `--dir <dir>`, `--root <warband_root> [--module <name>]`, `--json`) using `HostVfs` | Slice P3 `.brf` / `.dds` corpus validator |
+| `tools/wse_brf.cpp` | portable Slice P3/P5 / Phase 2G CLI inspector (`--brf <file>`, `--dds <file>`, `--dir <dir>`, `--root <warband_root> [--module <name>]`, `--json`) using `HostVfs` | Slice P3/P5 `.brf` / `.dds` / shader & material corpus validator |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
 | `include/wse/core/{math,encoding,json}.h` | pure STL math vectors/transforms/MT19937, UTF-8/UTF-16/MD5/URL/path/LE codecs, minimal JSON parser/serializer | `rglTransform`, `rglMersenneTwister`, `UrlEscapeA`/`UrlUnescapeA`, `Json::Reader`/`Writer` |
 | `include/wse/vm/wse_state.h` | opcode mask, operand/effect structs, `WseStringBanks`, `WseOptionsState`, `WseObjectManager`, `parseString`, shared file helpers | `executeWSE` `0x1401e4dc0`, `0x1400720b0`, `0x1401c6150` |
@@ -76,7 +76,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `include/wse/vm/lua_{runtime,manager}.h`, `src/lua/` | isolated stock MIT Lua 5.1.5 `WseLuaRuntime` implementing sandboxed `io`/`os`/`package`/`load*` over `Vfs`/`Clock`/`LogSink`, `bit` module, clean-room `LuaGlobals`, `msfiles/` + `variables.txt` parsers, 36 `game.*` + 7 `_G.*` callbacks, op/script/event hooks, and `lua_bridge.h` (`5100`–`5114`) integration | `WSELuaManager` (`0x14033cdd0`, `0x14033d090`; see `lua_runtime.h`, `lua_manager.h`) |
 | `include/wse/vm/execute_wse.h` | top-level `execute_wse()` umbrella dispatching across `wse/vm/ops/*.h` | `executeWSE` `0x1401e4dc0` |
 | `include/wse/platform/{vfs,saf_vfs,clock,sleep,log,rhi}.h` + `../platform/vulkan/driver_loader.{h,cpp}` | **port infrastructure, not a reconstruction:** `Vfs` (case-insensitive, `/` and `\\` separators, root-confined; Windows `HostVfs` ASCII lowercase dir-cache keys) with `MemoryVfs`, `HostVfs`, and `SafVfs` (`SafTreeBackend`, `MemorySafBackend`, one-time tree index, `import_to`, `scan_warband_modules`, `verify_module_scripts`); `Clock` in the engine's 100,000-per-second ticks with `SteadyClock`/`ManualClock`; `WallClock` (Unix seconds + UTC offset) with `SystemWallClock`/`ManualWallClock`; blocking `sleep_ms`; `LogSink` with stderr, capture, and null sinks; `RhiDevice` + `SoftwareRhiDevice`, AdrenoTools `meta.json` parser, ELF `.dynstr` `libpanvk_hw.so` patcher, BRF/DDS textured mesh helpers, and `VulkanDriverLoader` (`load_system`, direct-ICD v5 / custom driver preload, `MockVulkanIcd` v5, `VulkanRhiDevice`) | none — mirrors no retail layout; replaces the Win32 file/timer/rendering imports listed in `docs/ARCHITECTURE.md` §6 (design in `docs/PLATFORM_PLAN.md`) |
-| `tests/platform_test.cpp` | host tests for path normalisation and escape rejection, one `Vfs` contract run across `MemoryVfs`, `HostVfs`, and `SafVfs`, `SafVfs` one-time index / `scan_warband_modules` / `verify_module_scripts` / `import_to`, `Vfs` → `TokenReader`, clocks, log sinks, and `test_rhi_and_driver_loader` (Turnip/PanVK `meta.json`, `.dynstr` `libpanvk_hw.so` patcher, Mock ICD v5, BRF/DDS textured mesh screenshot & Z-buffer tests) | temp directory + in-memory trees |
+| `tests/platform_test.cpp` | host tests for path normalisation and escape rejection, one `Vfs` contract run across `MemoryVfs`, `HostVfs`, and `SafVfs`, `SafVfs` one-time index / `scan_warband_modules` / `verify_module_scripts` / `import_to`, `Vfs` → `TokenReader`, clocks, log sinks, `test_rhi_and_driver_loader` (Turnip/PanVK `meta.json`, `.dynstr` `libpanvk_hw.so` patcher, Mock ICD v5, BRF/DDS textured mesh screenshot & Z-buffer tests), and `test_p5_shader_modules_d3d9_and_material_rhi` (`PresentationPath` WSI vs `AHardwareBuffer` bridge, `VkShaderModule` lifecycle, D3D9 projection/half-pixel/sRGB helpers, normal/specular/alpha-test/blend material RHI) | temp directory + in-memory trees |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
@@ -86,7 +86,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/module_loaders_test.cpp` | host tests for INI/BOM/comment parsers, individual world/campaign/asset/mission/Data loaders, error diagnostics, full `load_module()` + VM execution round-trips over `MemoryVfs` and `HostVfs`, and reload (module A then B) world-state reset + move-only string storage | in-memory + temp-directory fixtures |
 | `tests/headless_test.cpp` | host tests for `run_headless_module()` / `run_headless_session()` (`game_start` + multi-frame triggers over `MemoryVfs` and `HostVfs`, loud unimplemented-opcode failure, compatibility-mode continuation past unimplemented opcodes, and missing `game_start` / load error diagnostics) | in-memory + temp-directory fixtures |
 | `tests/lua_test.cpp` | host tests for Lua 5.1.5 stdlib/`bit`/`vector3`/`pos`, `msfiles/` + `variables.txt` parsers, `game.*` / `_G.*` callbacks, trigger/item/prop/prsnt/psys/iterator/hook paths, opcodes `5100`–`5114` + 9 `On*` events, and sandboxed `HostVfs` headless `main.lua` execution | `MemoryVfs` + temp-directory `HostVfs` fixtures |
-| `tests/asset_test.cpp` | host tests for all 8 `.brf` resource types (`rfver` 0 and `rfver` 1), `MetaMesh` LOD grouping, `module.ini` resource catalogs over `MemoryVfs`, `.dds` block/uncompressed/`L16`/`DX10` decoding, and Warband texture resolution priority | synthetic binary + `MemoryVfs` fixtures |
+| `tests/asset_test.cpp` | host tests for all 8 `.brf` resource types (`rfver` 0 and `rfver` 1), `MetaMesh` LOD grouping, `module.ini` resource catalogs over `MemoryVfs`, `.dds` block/uncompressed/`L16`/`DX10` decoding, Warband texture resolution priority, and P5 effect/INI/shader/material resolution + `GLShaders`/WSE2 SPIR-V persistent caching | synthetic binary + `MemoryVfs` fixtures |
 | `tests/wse_selftest.{h,cpp}`, `tests/selftest_host_test.cpp` | shared aggregate runner invoking all `19` core suites (`WSE_SELF_TEST_LIBRARY=1`) for both host verification (`selftest_host_test`) and the Android SDL3 `libwse2.so` app shell (`platform/sdl/sdl_selftest_main.cpp`); `run_all_suites` takes an optional stop callback polled between suites. In the CMake build each suite is compiled once into `wse_selftest` and every `<name>_test` executable is `tests/suite_main.cpp` linked against it | all 19 suites + `fixtures/scripts.txt` |
 
 ## Module text format
@@ -439,6 +439,24 @@ Platform P4 (`wse/platform/rhi.h`, `platform/vulkan/driver_loader.{h,cpp}`; port
   - `run_vulkan_mesh_smoke_test` reports a mock fallback through `fell_back_to_mock` /
     `fallback_reason` (never as a plain success); the Android probe disables the fallback unless
     the launcher's testing checkbox is ticked. Its frame comes from the CPU reference rasterizer.
+
+Platform P5 (`wse/asset/shader.h`, `wse/platform/rhi.h`, `platform/vulkan/driver_loader.{h,cpp}`):
+  - `VulkanDriverLoader::probe_and_create_device` queries `vkEnumerateInstanceExtensionProperties`
+    and records `PresentationPath`: `android_surface_wsi` (`VK_KHR_surface` + `VK_KHR_android_surface`)
+    when entered through the Android system loader (`!used_direct_icd`), vs.
+    `offscreen_hardware_buffer_bridge` (`AHardwareBuffer` + `ASurfaceControl`) for direct custom
+    Turnip/PanVK `.so` `dlopen`.
+  - `VulkanRhiDevice::{create,destroy}_shader_module` validates SPIR-V headers and manages real
+    `VkShaderModule` handles via `vkCreateShaderModule` / `vkDestroyShaderModule`.
+  - `SoftwareRhiDevice` keeps a fast path preserving P4 frame hashes bit-for-bit, and enables
+    D3D9 RH perspective/ortho depth `[0, 1]`, `(+0.5, +0.5)` half-pixel compensation, IEC 61966-2-1
+    sRGB decode/encode, Blinn-Phong diffuse+specular with tangent-space normal/specular maps,
+    alpha-test discard before depth write, and the 5 D3D9 blend modes (`opaque`, `alpha`,
+    `additive_alpha`, `multiply`, `additive`).
+  - `wse/asset/shader.h` models effect search order, `wse2_shaders.{brf,ini}`, cycle-guarded
+    `rglShader` suitability/alternative fallback, `rglMaterial` state/slots, `GLShaders/*.xml` +
+    `GLShadersOptimized` + the 5 synthesized WSE2 skinning variants, deterministic SPIR-V 1.0
+    emission, and persistent VFS `SpirvShaderCache`.
 
 ## Handler design decisions and limits
 

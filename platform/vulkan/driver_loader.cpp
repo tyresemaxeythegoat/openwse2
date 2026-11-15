@@ -210,15 +210,36 @@ VKAPI_ATTR VkResult VKAPI_CALL mock_vkEnumerateInstanceExtensionProperties(
     const char* pLayerName,
     std::uint32_t* pPropertyCount,
     VkExtensionProperties* pProperties) {
-    (void)pProperties;
     if (pLayerName != nullptr) {
         return VK_ERROR_LAYER_NOT_PRESENT;
     }
     if (pPropertyCount == nullptr) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    *pPropertyCount = 0;
-    return VK_SUCCESS;
+    const bool expose_wsi =
+        (g_tls_mock_config != nullptr) &&
+        (!g_tls_mock_config->direct_icd || g_tls_mock_config->expose_android_surface_wsi);
+    if (!expose_wsi) {
+        *pPropertyCount = 0U;
+        return VK_SUCCESS;
+    }
+    constexpr std::array<const char*, 2> kWsiExts{"VK_KHR_surface",
+                                                  "VK_KHR_android_surface"};
+    if (pProperties == nullptr) {
+        *pPropertyCount = static_cast<std::uint32_t>(kWsiExts.size());
+        return VK_SUCCESS;
+    }
+    const std::uint32_t n = std::min<std::uint32_t>(
+        *pPropertyCount, static_cast<std::uint32_t>(kWsiExts.size()));
+    for (std::uint32_t i = 0U; i < n; ++i) {
+        std::memset(&pProperties[i], 0, sizeof(VkExtensionProperties));
+        const std::size_t len = std::min<std::size_t>(
+            std::strlen(kWsiExts[i]), VK_MAX_EXTENSION_NAME_SIZE - 1U);
+        std::memcpy(pProperties[i].extensionName, kWsiExts[i], len);
+        pProperties[i].specVersion = 1U;
+    }
+    *pPropertyCount = n;
+    return (n < kWsiExts.size()) ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateInstance(
@@ -447,6 +468,31 @@ VKAPI_ATTR void VKAPI_CALL mock_vkDestroyImage(
     (void)pAllocator;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateShaderModule(
+    VkDevice device,
+    const VkShaderModuleCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkShaderModule* pShaderModule) {
+    (void)pAllocator;
+    if (device == VK_NULL_HANDLE || pCreateInfo == nullptr || pShaderModule == nullptr ||
+        pCreateInfo->pCode == nullptr || pCreateInfo->codeSize < 20U ||
+        (pCreateInfo->codeSize % 4U) != 0U || pCreateInfo->pCode[0] != 0x07230203U) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    *pShaderModule =
+        allocate_mock_handle<VkShaderModule>(reinterpret_cast<MockDevice*>(device));
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL mock_vkDestroyShaderModule(
+    VkDevice device,
+    VkShaderModule shaderModule,
+    const VkAllocationCallbacks* pAllocator) {
+    (void)device;
+    (void)shaderModule;
+    (void)pAllocator;
+}
+
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL mock_vkGetDeviceProcAddr(
     VkDevice device,
     const char* pName) {
@@ -484,6 +530,12 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL mock_vkGetDeviceProcAddr(
     }
     if (name == "vkDestroyImage") {
         return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkDestroyImage);
+    }
+    if (name == "vkCreateShaderModule") {
+        return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkCreateShaderModule);
+    }
+    if (name == "vkDestroyShaderModule") {
+        return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkDestroyShaderModule);
     }
     return nullptr;
 }
@@ -679,9 +731,12 @@ struct VulkanDriverLoader::Impl {
     PFN_vkDestroyBuffer fn_destroy_buffer = nullptr;
     PFN_vkCreateImage fn_create_image = nullptr;
     PFN_vkDestroyImage fn_destroy_image = nullptr;
+    PFN_vkCreateShaderModule fn_create_shader_module = nullptr;
+    PFN_vkDestroyShaderModule fn_destroy_shader_module = nullptr;
 
     std::unordered_set<std::uint64_t> live_buffers{};
     std::unordered_set<std::uint64_t> live_images{};
+    std::unordered_set<std::uint64_t> live_shader_modules{};
     VulkanDriverProbeResult probe{};
 
     Impl() = default;
@@ -726,6 +781,12 @@ struct VulkanDriverLoader::Impl {
                     fn_destroy_image(device, u64_to_handle<VkImage>(h), nullptr);
                 }
             }
+            for (const std::uint64_t h : live_shader_modules) {
+                if (fn_destroy_shader_module != nullptr) {
+                    fn_destroy_shader_module(
+                        device, u64_to_handle<VkShaderModule>(h), nullptr);
+                }
+            }
             if (command_pool != VK_NULL_HANDLE && fn_destroy_command_pool != nullptr) {
                 fn_destroy_command_pool(device, command_pool, nullptr);
             }
@@ -735,6 +796,7 @@ struct VulkanDriverLoader::Impl {
         }
         live_buffers.clear();
         live_images.clear();
+        live_shader_modules.clear();
         command_pool = VK_NULL_HANDLE;
         graphics_queue = VK_NULL_HANDLE;
         device = VK_NULL_HANDLE;
@@ -754,6 +816,8 @@ struct VulkanDriverLoader::Impl {
         fn_destroy_buffer = nullptr;
         fn_create_image = nullptr;
         fn_destroy_image = nullptr;
+        fn_create_shader_module = nullptr;
+        fn_destroy_shader_module = nullptr;
     }
 
     void unload() noexcept {
@@ -1097,6 +1161,35 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
         }
     }
 
+    // Check instance WSI extensions to select Android Surface WSI vs offscreen
+    // AHardwareBuffer bridge for custom direct-dlopen ICDs (`docs/PLATFORM_PLAN.md` §P5).
+    bool has_khr_surface = false;
+    bool has_android_surface = false;
+    auto enum_inst_exts = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
+        impl_->gipa(VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties"));
+    if (enum_inst_exts != nullptr) {
+        std::uint32_t ext_count = 0U;
+        if (enum_inst_exts(nullptr, &ext_count, nullptr) == VK_SUCCESS && ext_count > 0U) {
+            std::vector<VkExtensionProperties> exts(ext_count);
+            const VkResult ext_res = enum_inst_exts(nullptr, &ext_count, exts.data());
+            if (ext_res == VK_SUCCESS || ext_res == VK_INCOMPLETE) {
+                exts.resize(std::min<std::size_t>(exts.size(), ext_count));
+                for (const VkExtensionProperties& ext : exts) {
+                    const std::string_view name(ext.extensionName);
+                    if (name == "VK_KHR_surface") {
+                        has_khr_surface = true;
+                    } else if (name == "VK_KHR_android_surface") {
+                        has_android_surface = true;
+                    }
+                }
+            }
+        }
+    }
+    out.supports_android_surface_wsi = has_khr_surface && has_android_surface;
+    out.presentation_path = (!out.used_direct_icd && out.supports_android_surface_wsi)
+                                ? PresentationPath::android_surface_wsi
+                                : PresentationPath::offscreen_hardware_buffer_bridge;
+
     auto create_instance =
         reinterpret_cast<PFN_vkCreateInstance>(impl_->gipa(VK_NULL_HANDLE, "vkCreateInstance"));
     if (create_instance == nullptr) {
@@ -1264,6 +1357,8 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
     impl_->resolve_dev(gdpa, "vkDestroyBuffer", impl_->fn_destroy_buffer);
     impl_->resolve_dev(gdpa, "vkCreateImage", impl_->fn_create_image);
     impl_->resolve_dev(gdpa, "vkDestroyImage", impl_->fn_destroy_image);
+    impl_->resolve_dev(gdpa, "vkCreateShaderModule", impl_->fn_create_shader_module);
+    impl_->resolve_dev(gdpa, "vkDestroyShaderModule", impl_->fn_destroy_shader_module);
 
     if (impl_->fn_destroy_device == nullptr) {
         // Without vkDestroyDevice the device would leak on every unload.
@@ -1437,12 +1532,58 @@ void VulkanDriverLoader::destroy_vk_image(std::uint64_t vk_handle) noexcept {
     }
 }
 
+bool VulkanDriverLoader::create_vk_shader_module(std::span<const std::uint32_t> spirv_words,
+                                                 std::uint64_t& out_vk_handle,
+                                                 std::string* error_out) {
+    out_vk_handle = 0;
+    if (!has_device() || impl_->fn_create_shader_module == nullptr) {
+        return true;
+    }
+    if (!is_valid_spirv_module(spirv_words)) {
+        set_err(error_out, "invalid SPIR-V shader module payload");
+        return false;
+    }
+
+    VkShaderModuleCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    info.codeSize = spirv_words.size() * sizeof(std::uint32_t);
+    info.pCode = spirv_words.data();
+
+    VkShaderModule mod = VK_NULL_HANDLE;
+    const VkResult res =
+        impl_->fn_create_shader_module(impl_->device, &info, nullptr, &mod);
+    if (res != VK_SUCCESS || mod == VK_NULL_HANDLE) {
+        set_err(error_out, "vkCreateShaderModule failed with VkResult " +
+                               std::to_string(static_cast<int>(res)));
+        return false;
+    }
+
+    out_vk_handle = handle_to_u64(mod);
+    impl_->live_shader_modules.insert(out_vk_handle);
+    return true;
+}
+
+void VulkanDriverLoader::destroy_vk_shader_module(std::uint64_t vk_handle) noexcept {
+    if (vk_handle == 0 || !has_device()) {
+        return;
+    }
+    if (impl_->live_shader_modules.erase(vk_handle) > 0 &&
+        impl_->fn_destroy_shader_module != nullptr) {
+        impl_->fn_destroy_shader_module(
+            impl_->device, u64_to_handle<VkShaderModule>(vk_handle), nullptr);
+    }
+}
+
 std::size_t VulkanDriverLoader::live_vk_buffers() const noexcept {
     return impl_ ? impl_->live_buffers.size() : 0U;
 }
 
 std::size_t VulkanDriverLoader::live_vk_images() const noexcept {
     return impl_ ? impl_->live_images.size() : 0U;
+}
+
+std::size_t VulkanDriverLoader::live_vk_shader_modules() const noexcept {
+    return impl_ ? impl_->live_shader_modules.size() : 0U;
 }
 
 // -----------------------------------------------------------------------------
@@ -1469,9 +1610,14 @@ VulkanRhiDevice::~VulkanRhiDevice() {
             (void)h;
             loader_->destroy_vk_image(vk_h);
         }
+        for (const auto& [h, vk_h] : vk_shader_modules_) {
+            (void)h;
+            loader_->destroy_vk_shader_module(vk_h);
+        }
     }
     vk_buffers_.clear();
     vk_textures_.clear();
+    vk_shader_modules_.clear();
 }
 
 std::string VulkanRhiDevice::device_name() const {
@@ -1562,6 +1708,40 @@ void VulkanRhiDevice::destroy_texture(TextureHandle handle) {
     rasterizer_.destroy_texture(handle);
 }
 
+ShaderModuleHandle VulkanRhiDevice::create_shader_module(const ShaderModuleDesc& desc,
+                                                           std::string* error_out) {
+    if (!loader_ || !loader_->has_device()) {
+        if (error_out != nullptr) {
+            *error_out = "VulkanRhiDevice requires an initialized VulkanDriverLoader device";
+        }
+        return 0;
+    }
+    const ShaderModuleHandle h = rasterizer_.create_shader_module(desc, error_out);
+    if (h == 0) {
+        return 0;
+    }
+    std::uint64_t vk_h = 0;
+    if (!loader_->create_vk_shader_module(desc.spirv_words, vk_h, error_out)) {
+        rasterizer_.destroy_shader_module(h);
+        return 0;
+    }
+    if (vk_h != 0) {
+        vk_shader_modules_.emplace(h, vk_h);
+    }
+    return h;
+}
+
+void VulkanRhiDevice::destroy_shader_module(ShaderModuleHandle handle) {
+    const auto it = vk_shader_modules_.find(handle);
+    if (it != vk_shader_modules_.end()) {
+        if (loader_) {
+            loader_->destroy_vk_shader_module(it->second);
+        }
+        vk_shader_modules_.erase(it);
+    }
+    rasterizer_.destroy_shader_module(handle);
+}
+
 PipelineHandle VulkanRhiDevice::create_pipeline(const PipelineDesc& desc,
                                                 std::string* error_out) {
     return rasterizer_.create_pipeline(desc, error_out);
@@ -1590,6 +1770,10 @@ std::size_t VulkanRhiDevice::live_vk_buffers() const noexcept {
 
 std::size_t VulkanRhiDevice::live_vk_images() const noexcept {
     return loader_ ? loader_->live_vk_images() : 0U;
+}
+
+std::size_t VulkanRhiDevice::live_vk_shader_modules() const noexcept {
+    return loader_ ? loader_->live_vk_shader_modules() : 0U;
 }
 
 VulkanDriverProbeResult run_vulkan_mesh_smoke_test(

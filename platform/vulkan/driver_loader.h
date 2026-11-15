@@ -44,6 +44,11 @@ struct VulkanDriverProbeResult {
     // `VkPhysicalDeviceFeatures::textureCompressionBC` (Warband `.dds` are BC1-3;
     // without it the RHI must decode or transcode on the CPU).
     bool texture_compression_bc = false;
+    // Instance WSI check (`VK_KHR_surface` + `VK_KHR_android_surface`) and
+    // presentation path (`android_surface_wsi` for Android loader vs
+    // `offscreen_hardware_buffer_bridge` for direct custom ICD `dlopen`).
+    bool supports_android_surface_wsi = false;
+    PresentationPath presentation_path = PresentationPath::offscreen_hardware_buffer_bridge;
     std::string device_name{};
     std::string loaded_library{};
     std::string fallback_reason{};
@@ -60,6 +65,7 @@ struct VulkanMockConfig {
     std::uint32_t max_image_dimension_2d = 4096U;
     bool texture_compression_bc = true;
     bool direct_icd = true;
+    bool expose_android_surface_wsi = false;
 };
 
 [[nodiscard]] std::string format_vulkan_version(std::uint32_t vk_version);
@@ -141,8 +147,14 @@ public:
                                              std::string* error_out = nullptr);
     void destroy_vk_image(std::uint64_t vk_handle) noexcept;
 
+    [[nodiscard]] bool create_vk_shader_module(std::span<const std::uint32_t> spirv_words,
+                                               std::uint64_t& out_vk_handle,
+                                               std::string* error_out = nullptr);
+    void destroy_vk_shader_module(std::uint64_t vk_handle) noexcept;
+
     [[nodiscard]] std::size_t live_vk_buffers() const noexcept;
     [[nodiscard]] std::size_t live_vk_images() const noexcept;
+    [[nodiscard]] std::size_t live_vk_shader_modules() const noexcept;
 
 private:
     struct Impl;
@@ -150,9 +162,9 @@ private:
 };
 
 // Minimal RHI implementation backed by `VulkanDriverLoader`.
-// Creates and tracks genuine Vulkan `VkBuffer` and `VkImage` objects on the active
-// `VkDevice`, and executes deterministic offscreen readback through the P4
-// reference rasterizer so host/CI verification stays driver-independent until P5.
+// Creates and tracks genuine Vulkan `VkBuffer`, `VkImage`, and `VkShaderModule`
+// objects on the active `VkDevice`, and executes deterministic offscreen readback
+// through the reference rasterizer for host/CI verification.
 class VulkanRhiDevice final : public RhiDevice {
 public:
     explicit VulkanRhiDevice(std::shared_ptr<VulkanDriverLoader> loader);
@@ -179,6 +191,11 @@ public:
         std::string* error_out = nullptr) override;
     void destroy_texture(TextureHandle handle) override;
 
+    [[nodiscard]] ShaderModuleHandle create_shader_module(
+        const ShaderModuleDesc& desc,
+        std::string* error_out = nullptr) override;
+    void destroy_shader_module(ShaderModuleHandle handle) override;
+
     [[nodiscard]] PipelineHandle create_pipeline(const PipelineDesc& desc,
                                                  std::string* error_out = nullptr) override;
     void destroy_pipeline(PipelineHandle handle) override;
@@ -191,12 +208,14 @@ public:
 
     [[nodiscard]] std::size_t live_vk_buffers() const noexcept;
     [[nodiscard]] std::size_t live_vk_images() const noexcept;
+    [[nodiscard]] std::size_t live_vk_shader_modules() const noexcept;
 
 private:
     std::shared_ptr<VulkanDriverLoader> loader_{};
     SoftwareRhiDevice rasterizer_{};
     std::unordered_map<BufferHandle, std::uint64_t> vk_buffers_{};
     std::unordered_map<TextureHandle, std::uint64_t> vk_textures_{};
+    std::unordered_map<ShaderModuleHandle, std::uint64_t> vk_shader_modules_{};
 };
 
 // Convenience helper: initializes a `VulkanDriverLoader` for the requested `mode`

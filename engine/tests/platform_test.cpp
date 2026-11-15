@@ -4,6 +4,7 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -21,6 +22,7 @@
 #include "../../platform/vulkan/driver_loader.h"
 #endif
 
+#include "wse/asset/shader.h"
 #include "wse/io/text_stream.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/log.h"
@@ -1029,6 +1031,499 @@ void test_rhi_and_driver_loader() {
     }
 }
 
+void test_p5_shader_modules_d3d9_and_material_rhi() {
+    using namespace wse::platform;
+    using namespace wse::asset;
+
+    // 1. PresentationPath selection: system Vulkan loader with Android WSI vs direct custom ICDs.
+    {
+        VulkanDriverLoader sys_wsi;
+        VulkanMockConfig sys_cfg{};
+        sys_cfg.mode = DriverMode::system;
+        sys_cfg.direct_icd = false;
+        sys_cfg.expose_android_surface_wsi = true;
+        sys_cfg.device_name = "System Mali-G78 (Mock Loader)";
+        VulkanDriverProbeResult sys_probe{};
+        expect(sys_wsi.load_mock_icd(sys_cfg) && sys_wsi.probe_and_create_device(sys_probe),
+               "system WSI mock loader probes cleanly");
+        expect(sys_probe.supports_android_surface_wsi &&
+                   sys_probe.presentation_path == PresentationPath::android_surface_wsi &&
+                   std::string_view(presentation_path_name(sys_probe.presentation_path)) ==
+                       "android_surface_wsi",
+               "system Vulkan loader with Android WSI selects android_surface_wsi");
+
+        VulkanDriverLoader direct_wsi;
+        VulkanMockConfig direct_wsi_cfg = sys_cfg;
+        direct_wsi_cfg.mode = DriverMode::panvk;
+        direct_wsi_cfg.direct_icd = true;
+        direct_wsi_cfg.expose_android_surface_wsi = true;
+        VulkanDriverProbeResult direct_wsi_probe{};
+        expect(direct_wsi.load_mock_icd(direct_wsi_cfg) &&
+                   direct_wsi.probe_and_create_device(direct_wsi_probe),
+               "direct ICD with WSI flag probes cleanly");
+        expect(direct_wsi_probe.used_direct_icd && direct_wsi_probe.supports_android_surface_wsi &&
+                   direct_wsi_probe.presentation_path ==
+                       PresentationPath::offscreen_hardware_buffer_bridge,
+               "direct custom ICD selects offscreen_hardware_buffer_bridge even if WSI flag set");
+
+        VulkanDriverLoader turnip_loader;
+        VulkanMockConfig turnip_cfg{};
+        turnip_cfg.mode = DriverMode::turnip;
+        turnip_cfg.device_name = "Turnip Adreno 740 (Mock ICD)";
+        turnip_cfg.vendor_id = 0x5143U;
+        turnip_cfg.device_id = 0x0740U;
+        turnip_cfg.direct_icd = true;
+        turnip_cfg.expose_android_surface_wsi = false;
+        VulkanDriverProbeResult turnip_probe{};
+        expect(turnip_loader.load_mock_icd(turnip_cfg) &&
+                   turnip_loader.probe_and_create_device(turnip_probe),
+               "direct Turnip mock ICD probes cleanly");
+        expect(turnip_probe.used_direct_icd && !turnip_probe.supports_android_surface_wsi &&
+                   turnip_probe.presentation_path ==
+                       PresentationPath::offscreen_hardware_buffer_bridge &&
+                   std::string_view(presentation_path_name(turnip_probe.presentation_path)) ==
+                       "offscreen_hardware_buffer_bridge",
+               "direct custom Turnip ICD uses offscreen_hardware_buffer_bridge");
+
+        VulkanDriverLoader panvk_loader;
+        VulkanMockConfig panvk_cfg{};
+        panvk_cfg.mode = DriverMode::panvk;
+        panvk_cfg.direct_icd = true;
+        panvk_cfg.expose_android_surface_wsi = false;
+        VulkanDriverProbeResult panvk_probe{};
+        expect(panvk_loader.load_mock_icd(panvk_cfg) &&
+                   panvk_loader.probe_and_create_device(panvk_probe),
+               "direct PanVK mock ICD probes cleanly");
+        expect(panvk_probe.used_direct_icd &&
+                   panvk_probe.presentation_path ==
+                       PresentationPath::offscreen_hardware_buffer_bridge,
+               "direct custom PanVK ICD uses offscreen_hardware_buffer_bridge");
+    }
+
+    // 2. D3D9 projection, half-pixel offset, and sRGB math helpers.
+    {
+        auto mul_pt = [](const float m[16], float x, float y, float z, float w,
+                         float& ox, float& oy, float& oz, float& ow) noexcept {
+            ox = m[0] * x + m[4] * y + m[8] * z + m[12] * w;
+            oy = m[1] * x + m[5] * y + m[9] * z + m[13] * w;
+            oz = m[2] * x + m[6] * y + m[10] * z + m[14] * w;
+            ow = m[3] * x + m[7] * y + m[11] * z + m[15] * w;
+        };
+
+        float persp[16]{};
+        make_d3d9_perspective_off_center_rh(-1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 10.0f, persp);
+        float cx = 0, cy = 0, cz = 0, cw = 0;
+        mul_pt(persp, 0.0f, 0.0f, -1.0f, 1.0f, cx, cy, cz, cw);
+        expect(cw > 0.0f && std::fabs(cz / cw) < 1.0e-5f,
+               "D3D9 RH perspective maps z=-z_near to NDC z=0");
+        mul_pt(persp, 0.0f, 0.0f, -10.0f, 1.0f, cx, cy, cz, cw);
+        expect(cw > 0.0f && std::fabs((cz / cw) - 1.0f) < 1.0e-5f,
+               "D3D9 RH perspective maps z=-z_far to NDC z=1");
+
+        float ortho[16]{};
+        make_d3d9_ortho_off_center_rh(0.0f, 800.0f, 600.0f, 0.0f, 0.0f, 1.0f, ortho);
+        mul_pt(ortho, 0.0f, 600.0f, 0.0f, 1.0f, cx, cy, cz, cw);
+        expect(std::fabs(cx + 1.0f) < 1.0e-5f && std::fabs(cy + 1.0f) < 1.0e-5f &&
+                   std::fabs(cz) < 1.0e-5f,
+               "D3D9 RH ortho maps bottom-left near to (-1,-1,0)");
+        mul_pt(ortho, 800.0f, 0.0f, -1.0f, 1.0f, cx, cy, cz, cw);
+        expect(std::fabs(cx - 1.0f) < 1.0e-5f && std::fabs(cy - 1.0f) < 1.0e-5f &&
+                   std::fabs(cz - 1.0f) < 1.0e-5f,
+               "D3D9 RH ortho maps top-right far to (+1,+1,1)");
+
+        float px = 0.0f, py = 0.0f;
+        apply_d3d9_half_pixel_offset_px(10.0f, 20.0f, px, py);
+        expect(px == 10.5f && py == 20.5f, "half-pixel px helper adds (+0.5, +0.5)");
+        apply_d3d9_half_pixel_offset_clip(0.0f, 0.0f, 100U, 50U, cx, cy);
+        expect(std::fabs(cx - 0.01f) < 1.0e-6f && std::fabs(cy - 0.02f) < 1.0e-6f,
+               "half-pixel clip helper shifts by (1/W, 1/H)");
+
+        const float lin_128 = srgb_to_linear_f32(128.0f / 255.0f);
+        expect(lin_128 > 0.214f && lin_128 < 0.218f, "srgb_to_linear_f32(128/255) ~= 0.2158");
+        expect(linear_to_srgb_u8(srgb_to_linear_f32(180.0f / 255.0f)) == 180U,
+               "linear_to_srgb_u8 round-trips encoded sRGB byte");
+    }
+
+    // 3. GLSL -> SPIR-V -> VulkanRhiDevice ShaderModule lifecycle + material RHI rendering.
+    {
+        MemoryVfs shader_vfs;
+        shader_vfs.write_text(
+            "GLShaders/techniques.xml",
+            "<techniques>\n"
+            "  <technique name=\"standart_skin_bump_nospec_high\">\n"
+            "    <vertex_shader>skin_bump.vs</vertex_shader>\n"
+            "    <fragment_shader>skin_bump.fs</fragment_shader>\n"
+            "  </technique>\n"
+            "</techniques>\n");
+        shader_vfs.write_text("GLShadersOptimized/vs_standart_skin_bump_nospec_high.glsl",
+                              "uniform mat4 matWorldViewProj;\n"
+                              "attribute vec4 inPosition;\n"
+                              "attribute vec4 inBlendWeights;\n"
+                              "void main() { gl_Position = matWorldViewProj * inPosition; }\n");
+        shader_vfs.write_text("GLShadersOptimized/fs_standart_skin_bump_nospec_high.glsl",
+                              "uniform sampler2D diffuse_texture;\n"
+                              "uniform sampler2D normal_texture;\n"
+                              "void main() { gl_FragColor = texture2D(diffuse_texture, vec2(0.5)) + "
+                              "texture2D(normal_texture, vec2(0.5)); }\n");
+
+        ShaderTechniqueCatalog catalog{};
+        std::string err;
+        expect(load_warband_shader_technique_catalog(shader_vfs, "", catalog, &err),
+               "load synthetic GLShaders technique catalog");
+        const GlTechniqueEntry* tech = catalog.find("standart_skin_bump_nospec_high");
+        expect(tech != nullptr, "find standart_skin_bump_nospec_high technique");
+        if (tech == nullptr) {
+            return;
+        }
+
+        const auto vs_words = compile_glsl_to_spirv(
+            tech->vs_glsl, SpirvStage::Vertex, tech->name, VertexDeclType::BumpedSkinned);
+        const auto fs_words = compile_glsl_to_spirv(
+            tech->fs_glsl, SpirvStage::Fragment, tech->name, VertexDeclType::BumpedSkinned);
+        expect(is_valid_spirv_module(vs_words) && is_valid_spirv_module(fs_words),
+               "compiled VS and FS SPIR-V modules pass header validation");
+
+        auto vk_loader = std::make_shared<VulkanDriverLoader>();
+        VulkanMockConfig cfg{};
+        cfg.mode = DriverMode::panvk;
+        cfg.direct_icd = true;
+        VulkanDriverProbeResult probe{};
+        expect(vk_loader->load_mock_icd(cfg) && vk_loader->probe_and_create_device(probe),
+               "open PanVK mock device for shader module test");
+        VulkanRhiDevice vk_rhi(vk_loader);
+        SoftwareRhiDevice sw_rhi;
+
+        ShaderModuleDesc vs_desc{};
+        vs_desc.stage = RhiShaderStage::vertex;
+        vs_desc.name = tech->name + "_vs";
+        vs_desc.spirv_words = vs_words;
+        ShaderModuleDesc fs_desc{};
+        fs_desc.stage = RhiShaderStage::fragment;
+        fs_desc.name = tech->name + "_fs";
+        fs_desc.spirv_words = fs_words;
+
+        const ShaderModuleHandle bad_vs =
+            vk_rhi.create_shader_module(ShaderModuleDesc{RhiShaderStage::vertex, "main", "bad",
+                                                         {0x12345678U, 1U}},
+                                        &err);
+        expect(bad_vs == 0U && !err.empty() && vk_rhi.live_vk_shader_modules() == 0U,
+               "invalid SPIR-V words are rejected cleanly before vkCreateShaderModule");
+
+        const ShaderModuleHandle vk_vs = vk_rhi.create_shader_module(vs_desc, &err);
+        const ShaderModuleHandle vk_fs = vk_rhi.create_shader_module(fs_desc, &err);
+        const ShaderModuleHandle sw_vs = sw_rhi.create_shader_module(vs_desc, &err);
+        const ShaderModuleHandle sw_fs = sw_rhi.create_shader_module(fs_desc, &err);
+        expect(vk_vs != 0U && vk_fs != 0U && vk_rhi.live_vk_shader_modules() == 2U,
+               "VulkanRhiDevice creates and tracks VS + FS VkShaderModule objects");
+        expect(sw_vs != 0U && sw_fs != 0U,
+               "SoftwareRhiDevice creates VS + FS shader module handles");
+
+        const auto as_u8_span = [](const void* ptr, std::size_t bytes) noexcept {
+            return std::span<const std::uint8_t>(static_cast<const std::uint8_t*>(ptr), bytes);
+        };
+        const std::array<MeshVertex, 4> quad{{
+            {-0.8f, -0.8f, 0.4f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0xFFFFFFFFU},
+            {0.8f, -0.8f, 0.4f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0xFFFFFFFFU},
+            {0.8f, 0.8f, 0.4f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0xFFFFFFFFU},
+            {-0.8f, 0.8f, 0.4f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0xFFFFFFFFU},
+        }};
+        const std::array<std::uint16_t, 6> quad_idx{0, 1, 2, 0, 2, 3};
+
+        const BufferHandle sw_vb =
+            sw_rhi.create_buffer(BufferUsage::vertex, as_u8_span(quad.data(), sizeof(quad)));
+        const BufferHandle sw_ib =
+            sw_rhi.create_buffer(BufferUsage::index, as_u8_span(quad_idx.data(), sizeof(quad_idx)));
+        const BufferHandle vk_vb =
+            vk_rhi.create_buffer(BufferUsage::vertex, as_u8_span(quad.data(), sizeof(quad)));
+        const BufferHandle vk_ib =
+            vk_rhi.create_buffer(BufferUsage::index, as_u8_span(quad_idx.data(), sizeof(quad_idx)));
+
+        const std::array<std::uint8_t, 4> gray_px{160U, 160U, 160U, 255U};
+        const std::array<std::uint8_t, 4> lit_nrm_px{210U, 230U, 210U, 255U};
+        const std::array<std::uint8_t, 4> dark_nrm_px{25U, 25U, 160U, 255U};
+        const std::array<std::uint8_t, 4> bright_spec_px{255U, 255U, 255U, 255U};
+        const std::array<std::uint8_t, 4> zero_spec_px{0U, 0U, 0U, 255U};
+
+        const TextureHandle sw_diff = sw_rhi.create_texture_rgba8(1U, 1U, gray_px);
+        const TextureHandle sw_nrm_lit = sw_rhi.create_texture_rgba8(1U, 1U, lit_nrm_px);
+        const TextureHandle sw_nrm_dark = sw_rhi.create_texture_rgba8(1U, 1U, dark_nrm_px);
+        const TextureHandle sw_spec_hi = sw_rhi.create_texture_rgba8(1U, 1U, bright_spec_px);
+        const TextureHandle sw_spec_lo = sw_rhi.create_texture_rgba8(1U, 1U, zero_spec_px);
+
+        const TextureHandle vk_diff = vk_rhi.create_texture_rgba8(1U, 1U, gray_px);
+        const TextureHandle vk_nrm_lit = vk_rhi.create_texture_rgba8(1U, 1U, lit_nrm_px);
+        const TextureHandle vk_spec_hi = vk_rhi.create_texture_rgba8(1U, 1U, bright_spec_px);
+
+        PipelineDesc lit_spec_desc{};
+        lit_spec_desc.cull_mode = CullMode::none;
+        lit_spec_desc.vertex_shader = sw_vs;
+        lit_spec_desc.fragment_shader = sw_fs;
+        lit_spec_desc.enable_lighting = true;
+        lit_spec_desc.use_normal_map = true;
+        lit_spec_desc.use_specular_map = true;
+        lit_spec_desc.specular_coefficient = 0.65f;
+        lit_spec_desc.specular_power = 24.0f;
+
+        PipelineDesc vk_lit_desc = lit_spec_desc;
+        vk_lit_desc.vertex_shader = vk_vs;
+        vk_lit_desc.fragment_shader = vk_fs;
+
+        const PipelineHandle sw_lit_pip = sw_rhi.create_pipeline(lit_spec_desc);
+        const PipelineHandle vk_lit_pip = vk_rhi.create_pipeline(vk_lit_desc);
+
+        RenderPassDesc pass{};
+        pass.width = 64U;
+        pass.height = 64U;
+        pass.clear_r = 10U;
+        pass.clear_g = 12U;
+        pass.clear_b = 16U;
+
+        MeshDrawCall sw_draw{};
+        sw_draw.pipeline = sw_lit_pip;
+        sw_draw.vertex_buffer = sw_vb;
+        sw_draw.index_buffer = sw_ib;
+        sw_draw.texture = sw_diff;
+        sw_draw.normal_texture = sw_nrm_lit;
+        sw_draw.specular_texture = sw_spec_hi;
+        sw_draw.index_count = 6U;
+
+        MeshDrawCall vk_draw = sw_draw;
+        vk_draw.pipeline = vk_lit_pip;
+        vk_draw.vertex_buffer = vk_vb;
+        vk_draw.index_buffer = vk_ib;
+        vk_draw.texture = vk_diff;
+        vk_draw.normal_texture = vk_nrm_lit;
+        vk_draw.specular_texture = vk_spec_hi;
+
+        const std::size_t center = (32U * 64U + 32U) * 4U;
+        std::vector<std::uint8_t> f_lit_hi;
+        std::vector<std::uint8_t> f_vk_lit;
+        std::vector<std::uint8_t> f_lit_lo_spec;
+        std::vector<std::uint8_t> f_lit_dark_nrm;
+
+        const std::array<MeshDrawCall, 1> d_sw_hi{sw_draw};
+        const std::array<MeshDrawCall, 1> d_vk_hi{vk_draw};
+        expect(sw_rhi.render_pass_and_readback(pass, d_sw_hi, f_lit_hi, &err) &&
+                   vk_rhi.render_pass_and_readback(pass, d_vk_hi, f_vk_lit, &err),
+               "lit normal+specular material renders on both SoftwareRhiDevice and VulkanRhiDevice");
+        expect(f_lit_hi == f_vk_lit,
+               "SoftwareRhiDevice and VulkanRhiDevice produce identical lit material output");
+
+        sw_draw.specular_texture = sw_spec_lo;
+        const std::array<MeshDrawCall, 1> d_sw_lo_spec{sw_draw};
+        expect(sw_rhi.render_pass_and_readback(pass, d_sw_lo_spec, f_lit_lo_spec, &err),
+               "lit material without specular reflection renders");
+        expect(f_lit_hi[center] > f_lit_lo_spec[center],
+               "specular highlight boosts center brightness when specular mask is 255");
+
+        sw_draw.normal_texture = sw_nrm_dark;
+        const std::array<MeshDrawCall, 1> d_sw_dark{sw_draw};
+        expect(sw_rhi.render_pass_and_readback(pass, d_sw_dark, f_lit_dark_nrm, &err),
+               "lit material with away-facing normal map renders");
+        expect(f_lit_lo_spec[center] > f_lit_dark_nrm[center],
+               "tangent-space normal map modulates Blinn-Phong diffuse irradiance");
+
+        // Alpha test (`GreaterEqual136`) must discard BEFORE writing depth.
+        const std::array<std::uint8_t, 16> alpha_cutout_2x2{
+            0U,   255U, 0U, 64U,   0U, 255U, 0U, 220U,
+            0U,   255U, 0U, 64U,   0U, 255U, 0U, 220U,
+        };
+        const std::array<std::uint8_t, 4> far_red_px{220U, 20U, 20U, 255U};
+        const TextureHandle sw_cutout_tex = sw_rhi.create_texture_rgba8(2U, 2U, alpha_cutout_2x2);
+        const TextureHandle sw_red_tex = sw_rhi.create_texture_rgba8(1U, 1U, far_red_px);
+
+        const std::array<MeshVertex, 4> far_quad{{
+            {-0.8f, -0.8f, 0.8f, 0, 0, 1, 0, 0, 0xFFFFFFFFU},
+            {0.8f, -0.8f, 0.8f, 0, 0, 1, 1, 0, 0xFFFFFFFFU},
+            {0.8f, 0.8f, 0.8f, 0, 0, 1, 1, 1, 0xFFFFFFFFU},
+            {-0.8f, 0.8f, 0.8f, 0, 0, 1, 0, 1, 0xFFFFFFFFU},
+        }};
+        const BufferHandle far_vb =
+            sw_rhi.create_buffer(BufferUsage::vertex, as_u8_span(far_quad.data(), sizeof(far_quad)));
+
+        PipelineDesc cutout_pip_desc{};
+        cutout_pip_desc.depth_test = true;
+        cutout_pip_desc.depth_write = true;
+        cutout_pip_desc.cull_mode = CullMode::none;
+        cutout_pip_desc.alpha_test = true;
+        cutout_pip_desc.alpha_ref = 136U;
+        const PipelineHandle sw_cutout_pip = sw_rhi.create_pipeline(cutout_pip_desc);
+
+        PipelineDesc unlit_opaque_desc{};
+        unlit_opaque_desc.depth_test = true;
+        unlit_opaque_desc.depth_write = true;
+        unlit_opaque_desc.cull_mode = CullMode::none;
+        const PipelineHandle sw_unlit_pip = sw_rhi.create_pipeline(unlit_opaque_desc);
+
+        MeshDrawCall near_cutout{};
+        near_cutout.pipeline = sw_cutout_pip;
+        near_cutout.vertex_buffer = sw_vb;
+        near_cutout.index_buffer = sw_ib;
+        near_cutout.texture = sw_cutout_tex;
+        near_cutout.index_count = 6U;
+
+        MeshDrawCall far_opaque{};
+        far_opaque.pipeline = sw_unlit_pip;
+        far_opaque.vertex_buffer = far_vb;
+        far_opaque.index_buffer = sw_ib;
+        far_opaque.texture = sw_red_tex;
+        far_opaque.index_count = 6U;
+
+        std::vector<std::uint8_t> f_cutout;
+        const std::array<MeshDrawCall, 2> d_cutout{near_cutout, far_opaque};
+        expect(sw_rhi.render_pass_and_readback(pass, d_cutout, f_cutout, &err),
+               "alpha cutout pass renders");
+        const std::size_t left_mid = (32U * 64U + 16U) * 4U;
+        const std::size_t right_mid = (32U * 64U + 48U) * 4U;
+        expect(f_cutout[left_mid + 0U] == 220U && f_cutout[left_mid + 1U] == 20U &&
+                   f_cutout[right_mid + 0U] == 0U && f_cutout[right_mid + 1U] == 255U,
+               "alpha-tested discard occurs before depth write, revealing far quad");
+
+        // Alpha & additive blending.
+        const std::array<std::uint8_t, 4> blend_src_px{0U, 200U, 100U, 128U};
+        const TextureHandle sw_blend_tex = sw_rhi.create_texture_rgba8(1U, 1U, blend_src_px);
+
+        PipelineDesc alpha_blend_desc{};
+        alpha_blend_desc.cull_mode = CullMode::none;
+        alpha_blend_desc.depth_write = false;
+        alpha_blend_desc.blend_mode = BlendMode::alpha;
+        const PipelineHandle sw_alpha_pip = sw_rhi.create_pipeline(alpha_blend_desc);
+
+        PipelineDesc add_blend_desc = alpha_blend_desc;
+        add_blend_desc.blend_mode = BlendMode::additive;
+        const PipelineHandle sw_add_pip = sw_rhi.create_pipeline(add_blend_desc);
+
+        RenderPassDesc blend_pass = pass;
+        blend_pass.clear_r = 200U;
+        blend_pass.clear_g = 40U;
+        blend_pass.clear_b = 20U;
+
+        MeshDrawCall blend_draw = far_opaque;
+        blend_draw.pipeline = sw_alpha_pip;
+        blend_draw.texture = sw_blend_tex;
+        std::vector<std::uint8_t> f_alpha;
+        const std::array<MeshDrawCall, 1> d_alpha{blend_draw};
+        expect(sw_rhi.render_pass_and_readback(blend_pass, d_alpha, f_alpha, &err),
+               "alpha blend draw renders");
+        expect(f_alpha[center + 0U] >= 98U && f_alpha[center + 0U] <= 102U &&
+                   f_alpha[center + 1U] >= 118U && f_alpha[center + 1U] <= 122U,
+               "alpha blend interpolates src and dst accurately");
+
+        blend_draw.pipeline = sw_add_pip;
+        std::vector<std::uint8_t> f_add;
+        const std::array<MeshDrawCall, 1> d_add{blend_draw};
+        expect(sw_rhi.render_pass_and_readback(blend_pass, d_add, f_add, &err),
+               "additive blend draw renders");
+        expect(f_add[center + 0U] == 200U && f_add[center + 1U] == 240U &&
+                   f_add[center + 2U] == 120U,
+               "additive blend sums channels with saturation");
+
+        // sRGB texture decode vs sRGB framebuffer encode round-trip.
+        const std::array<std::uint8_t, 4> srgb_128_px{128U, 128U, 128U, 255U};
+        const TextureHandle sw_srgb_tex = sw_rhi.create_texture_rgba8(1U, 1U, srgb_128_px);
+
+        PipelineDesc srgb_in_only{};
+        srgb_in_only.cull_mode = CullMode::none;
+        srgb_in_only.srgb_texture = true;
+        srgb_in_only.srgb_framebuffer = false;
+        const PipelineHandle sw_srgb_in_pip = sw_rhi.create_pipeline(srgb_in_only);
+
+        PipelineDesc srgb_roundtrip = srgb_in_only;
+        srgb_roundtrip.srgb_framebuffer = true;
+        const PipelineHandle sw_srgb_rt_pip = sw_rhi.create_pipeline(srgb_roundtrip);
+
+        MeshDrawCall srgb_draw = far_opaque;
+        srgb_draw.texture = sw_srgb_tex;
+        srgb_draw.pipeline = sw_srgb_in_pip;
+        std::vector<std::uint8_t> f_srgb_lin;
+        std::vector<std::uint8_t> f_srgb_rt;
+        const std::array<MeshDrawCall, 1> d_srgb_in{srgb_draw};
+        srgb_draw.pipeline = sw_srgb_rt_pip;
+        const std::array<MeshDrawCall, 1> d_srgb_rt{srgb_draw};
+        expect(sw_rhi.render_pass_and_readback(pass, d_srgb_in, f_srgb_lin, &err) &&
+                   sw_rhi.render_pass_and_readback(pass, d_srgb_rt, f_srgb_rt, &err),
+               "sRGB decode and round-trip draws succeed");
+        expect(f_srgb_lin[center] >= 54U && f_srgb_lin[center] <= 56U &&
+                   f_srgb_rt[center] == 128U,
+               "sRGB decode produces ~55 linear and sRGB encode restores 128");
+
+        // D3D9 half-pixel compensation shifts left edge from x_px=15.3 to x_px=15.8.
+        const float x_left_ndc = (15.3f / 32.0f) - 1.0f;
+        const std::array<MeshVertex, 4> edge_quad{{
+            {x_left_ndc, -0.5f, 0.5f, 0, 0, 1, 0, 0, 0xFFFFFFFFU},
+            {0.5f, -0.5f, 0.5f, 0, 0, 1, 1, 0, 0xFFFFFFFFU},
+            {0.5f, 0.5f, 0.5f, 0, 0, 1, 1, 1, 0xFFFFFFFFU},
+            {x_left_ndc, 0.5f, 0.5f, 0, 0, 1, 0, 1, 0xFFFFFFFFU},
+        }};
+        const BufferHandle edge_vb =
+            sw_rhi.create_buffer(BufferUsage::vertex, as_u8_span(edge_quad.data(), sizeof(edge_quad)));
+
+        PipelineDesc hp_off_desc{};
+        hp_off_desc.cull_mode = CullMode::none;
+        hp_off_desc.compensate_d3d9_half_pixel = false;
+        const PipelineHandle sw_hp_off = sw_rhi.create_pipeline(hp_off_desc);
+        PipelineDesc hp_on_desc = hp_off_desc;
+        hp_on_desc.compensate_d3d9_half_pixel = true;
+        const PipelineHandle sw_hp_on = sw_rhi.create_pipeline(hp_on_desc);
+
+        MeshDrawCall hp_draw = far_opaque;
+        hp_draw.vertex_buffer = edge_vb;
+        hp_draw.texture = sw_red_tex;
+        hp_draw.pipeline = sw_hp_off;
+        std::vector<std::uint8_t> f_hp_off;
+        std::vector<std::uint8_t> f_hp_on;
+        const std::array<MeshDrawCall, 1> d_hp_off{hp_draw};
+        hp_draw.pipeline = sw_hp_on;
+        const std::array<MeshDrawCall, 1> d_hp_on{hp_draw};
+        expect(sw_rhi.render_pass_and_readback(pass, d_hp_off, f_hp_off, &err) &&
+                   sw_rhi.render_pass_and_readback(pass, d_hp_on, f_hp_on, &err),
+               "D3D9 half-pixel compensation draws succeed");
+        const std::size_t col15 = (32U * 64U + 15U) * 4U;
+        const std::size_t col16 = (32U * 64U + 16U) * 4U;
+        expect(f_hp_off[col15] == 220U && f_hp_on[col15] == pass.clear_r &&
+                   f_hp_on[col16] == 220U,
+               "compensate_d3d9_half_pixel shifts x_px=15.3 across pixel center 15.5");
+
+        // Cleanup all handles and verify zero leaked VkShaderModules.
+        sw_rhi.destroy_pipeline(sw_hp_on);
+        sw_rhi.destroy_pipeline(sw_hp_off);
+        sw_rhi.destroy_buffer(edge_vb);
+        sw_rhi.destroy_pipeline(sw_srgb_rt_pip);
+        sw_rhi.destroy_pipeline(sw_srgb_in_pip);
+        sw_rhi.destroy_texture(sw_srgb_tex);
+        sw_rhi.destroy_pipeline(sw_add_pip);
+        sw_rhi.destroy_pipeline(sw_alpha_pip);
+        sw_rhi.destroy_texture(sw_blend_tex);
+        sw_rhi.destroy_pipeline(sw_unlit_pip);
+        sw_rhi.destroy_pipeline(sw_cutout_pip);
+        sw_rhi.destroy_buffer(far_vb);
+        sw_rhi.destroy_texture(sw_red_tex);
+        sw_rhi.destroy_texture(sw_cutout_tex);
+        sw_rhi.destroy_pipeline(sw_lit_pip);
+        sw_rhi.destroy_pipeline(vk_lit_pip);
+        sw_rhi.destroy_texture(sw_spec_lo);
+        sw_rhi.destroy_texture(sw_spec_hi);
+        sw_rhi.destroy_texture(sw_nrm_dark);
+        sw_rhi.destroy_texture(sw_nrm_lit);
+        sw_rhi.destroy_texture(sw_diff);
+        sw_rhi.destroy_buffer(sw_ib);
+        sw_rhi.destroy_buffer(sw_vb);
+        sw_rhi.destroy_shader_module(sw_fs);
+        sw_rhi.destroy_shader_module(sw_vs);
+
+        vk_rhi.destroy_texture(vk_spec_hi);
+        vk_rhi.destroy_texture(vk_nrm_lit);
+        vk_rhi.destroy_texture(vk_diff);
+        vk_rhi.destroy_buffer(vk_ib);
+        vk_rhi.destroy_buffer(vk_vb);
+        vk_rhi.destroy_shader_module(vk_fs);
+        vk_rhi.destroy_shader_module(vk_vs);
+        expect(vk_rhi.live_vk_shader_modules() == 0U && vk_rhi.live_vk_buffers() == 0U &&
+                   vk_rhi.live_vk_images() == 0U,
+               "VulkanRhiDevice cleans up all shader modules, buffers, and images");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -1045,6 +1540,7 @@ int run_platform_suite(const char* fixture_path) {
     test_log();
     test_saf_vfs();
     test_rhi_and_driver_loader();
+    test_p5_shader_modules_d3d9_and_material_rhi();
     if (failures != 0) {
         std::printf("platform tests: FAIL (%d)\n", failures);
         return 1;

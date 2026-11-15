@@ -583,8 +583,8 @@ Verified in [SYMBOL_MAP.json](SYMBOL_MAP.json) and modeled in [world_state.h](..
 | `rglResource` | 96 (`0x0060`) | `0x8 m_name : rglString`, `0x50 m_inUse : int32_t`, `0x54 m_fileNo : int32_t`, `0x58 m_flags : uint32_t` ([brf.h](../engine/include/wse/asset/brf.h)) |
 | `rglResourceManager` | 1,880 (`0x0758`) | `g_resourceManager` (`0x140623a40`); `0x0 m_resourceFiles : rglVector<rglString>`, `0x20 m_metaMeshes`, `0x38 m_meshes`, `0x470 m_textures`, `0x4a0 m_shaders`, `0x4d0 m_materials`, `0x500 m_bodies`, `0x518 m_skeletonModels`, `0x530 m_skeletonAnimations`, `0x548 m_physicsMaterials`; loaders `0x1402eedf0` / `0x1402eeec0` / `0x1402ef030` / `0x1402efe10` ([brf.h](../engine/include/wse/asset/brf.h)) |
 | `rglTexture` | 288 (`0x0120`) | Inherits `rglResource` (`0x0`); `0x64 m_type`, `0x6c m_width`, `0x70 m_height`, `0xc8 m_path : rglString`; device resolution via `tryGetTexture` (`0x1402f2f10`) + `initDeviceObjects` (`0x140317710`) across `.dds`/`.jpg`/`.tga` ([dds.h](../engine/include/wse/asset/dds.h)) |
-| `rglShader` | 504 (`0x01f8`) | Inherits `rglResource` (`0x0`); `0x64 m_requirementFlags`, `0x68 m_numAlternatives`, `0x70 m_alternatives : rglString[...]`, `0x148 m_techniqueName : rglString`; stream reader `0x140301940` ([brf.h](../engine/include/wse/asset/brf.h)) |
-| `rglMaterial` | 632 (`0x0278`) | Inherits `rglResource` (`0x0`); `0x68 m_shaderName : rglString`, `0xb0 m_specularColor : rglVector4`, `0xc0 m_specularPower : float`, `0xd0 m_textureNames : rglString[...]` (`5` slots); stream reader `0x1402b5970` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglShader` | 504 (`0x01f8`) | Inherits `rglResource` (`0x0`); `0x64 m_requirementFlags`, `0x68 m_numAlternatives`, `0x70 m_alternatives : rglString[...]`, `0x148 m_techniqueName : rglString`; stream reader `0x140301940` ([brf.h](../engine/include/wse/asset/brf.h), [shader.h](../engine/include/wse/asset/shader.h)) |
+| `rglMaterial` | 632 (`0x0278`) | Inherits `rglResource` (`0x0`); `0x68 m_shaderName : rglString`, `0xb0 m_specularColor : rglVector4`, `0xc0 m_specularPower : float`, `0xd0 m_textureNames : rglString[...]` (`5` slots); stream reader `0x1402b5970` ([brf.h](../engine/include/wse/asset/brf.h), [shader.h](../engine/include/wse/asset/shader.h)) |
 | `rglPhysicsMaterial` | 104 (`0x0068`) | Inherits `rglResource` (`0x0`); `0x60 m_soundOcclusion : float` (default `0.5f`; vftable `0x1405639a8`, [brf.h](../engine/include/wse/asset/brf.h)) |
 | `rglBody` / `rglBodyPart` | 104 (`0x0068`) / 88 (`0x0058`) | `rglBody +0x60 m_bodyPart : rglBodyPart*`; polymorphic body variants `rglSphere` (`128 B`), `rglCapsule` (`160 B`), `rglQuad` (`304 B`), `rglManifoldBody` (`160 B`, `rglManifoldBodyFace` `40 B`), `rglCompositeBody` (`104 B`); stream reader `0x1402581a0` ([brf.h](../engine/include/wse/asset/brf.h)) |
 | `rglSkeletonModel` / `rglSkeletonModelBone` | 152 (`0x0098`) / 360 (`0x0168`) | `rglSkeletonModel +0x60 m_numBones`, `+0x68 m_bones`; `rglSkeletonModelBone +0x0 m_parentBoneNo`, `+0x8 m_transform : rglTransform`, `+0x88 m_name : rglString`; stream reader `0x14030d230` ([brf.h](../engine/include/wse/asset/brf.h)) |
@@ -920,6 +920,15 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 8. ~~Handler-site addresses cited only in `engine/include` source comments~~ **Resolved (B7):**
    `tools/build_symbol_map.py` exports `function_ranges`, `global_objects`, and `superseded_vas`,
    and `tools/check_citations.py` verifies all `1,494` unique header VAs (`1,714` VA refs) across `54` headers (plus REA `ev_*` IDs) in CI.
+9. ~~Measure v1.1.5.5 module effect loading and material/shader technique resolution for P5.~~
+   **Resolved (Slice P5):** PE/PDB analysis verified effect search & postFX loading
+   (`rglPostProcess::initEffect` `0x1402a5ef0`, `rglGraphicsContext::initEffect` `0x1402a5a90`),
+   material texture slot normalization (`initMaterialTextures` `0x1402f5390`), `wse2_shaders.ini` +
+   `wse2_shaders.brf` fallback pairs (`0x1402eec40`, `0x1402eeac0`, `0x1402f0b50`, `0x1402f09c0`),
+   shader suitability/alternatives (`0x1402f50a0`, `isShaderSuitable` `0x1402f2b30`), and
+   `VertexDeclType` / blend / alpha-test dispatch (`0x1402baa30`, `0x14029f590`, `0x1402a00b0`,
+   `0x1402e7f50`), recorded in `docs/SYMBOL_MAP.json` and implemented in
+   `engine/include/wse/asset/shader.h`.
 
 ## 9. Evidence index
 

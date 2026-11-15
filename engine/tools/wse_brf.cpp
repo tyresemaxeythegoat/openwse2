@@ -17,10 +17,13 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "wse/asset/brf.h"
 #include "wse/asset/dds.h"
+#include "wse/asset/shader.h"
 #include "wse/game/module_loader_common.h"
 #include "wse/platform/vfs.h"
 
@@ -295,6 +298,81 @@ int run_module_catalog(const std::filesystem::path& root,
     for (const std::string& warning : cat.warnings) {
         std::fprintf(stderr, "WARN  %s\n", warning.c_str());
     }
+
+    std::unordered_map<std::string, wse::asset::BrfShader> shaders_by_lower;
+    for (const auto& entry : cat.entries) {
+        if (!entry.loaded) {
+            continue;
+        }
+        for (const wse::asset::BrfShader& sh : entry.file.shaders) {
+            shaders_by_lower.try_emplace(wse::platform::ascii_lower(sh.name), sh);
+        }
+    }
+    wse::asset::BrfFile opt_wse2_shaders{};
+    if (wse::asset::load_optional_wse2_shaders_brf(vfs, "", mod_rel, opt_wse2_shaders)) {
+        for (const wse::asset::BrfShader& sh : opt_wse2_shaders.shaders) {
+            shaders_by_lower.try_emplace(wse::platform::ascii_lower(sh.name), sh);
+        }
+    }
+
+    wse::asset::ShaderTechniqueCatalog tech_cat{};
+    std::unordered_set<std::string> tech_names_lower;
+    if (wse::asset::load_warband_shader_technique_catalog(vfs, "", tech_cat)) {
+        tech_names_lower.reserve(tech_cat.techniques_by_lower.size());
+        for (const auto& kv : tech_cat.techniques_by_lower) {
+            tech_names_lower.insert(kv.first);
+        }
+    }
+    const std::unordered_set<std::string>* tech_ptr =
+        tech_names_lower.empty() ? nullptr : &tech_names_lower;
+
+    wse::asset::ShaderQualityConfig quality_cfg{};
+    quality_cfg.require_hlsl_technique = !tech_names_lower.empty();
+
+    wse::asset::ShaderPairTable raw_pairs{};
+    const std::string shader_ini_path =
+        wse::asset::resolve_wse2_shaders_ini_path(vfs, "", mod_rel);
+    std::string shader_ini_text;
+    if (!shader_ini_path.empty() && vfs.read_text(shader_ini_path, shader_ini_text)) {
+        wse::asset::parse_wse2_shaders_ini(shader_ini_text, raw_pairs);
+    }
+    wse::asset::ShaderPairTable valid_pairs{};
+    wse::asset::validate_shader_pairs(raw_pairs, shaders_by_lower, quality_cfg,
+                                      valid_pairs, tech_ptr);
+
+    std::size_t shaders_suitable = 0;
+    std::size_t shaders_fallback = 0;
+    for (const auto& kv : shaders_by_lower) {
+        const wse::asset::ShaderResolutionResult res =
+            wse::asset::resolve_suitable_shader(kv.second.name, shaders_by_lower,
+                                                quality_cfg, tech_ptr);
+        if (res.shader != nullptr) {
+            if (res.hop_depth == 0 && !res.used_default_fallback) {
+                ++shaders_suitable;
+            } else {
+                ++shaders_fallback;
+            }
+        }
+    }
+
+    std::size_t materials_resolved = 0;
+    for (const auto& entry : cat.entries) {
+        if (!entry.loaded) {
+            continue;
+        }
+        for (const wse::asset::BrfMaterial& mat : entry.file.materials) {
+            const wse::asset::ShaderResolutionResult res =
+                wse::asset::resolve_suitable_shader(mat.shader_name, shaders_by_lower,
+                                                    quality_cfg, tech_ptr);
+            const wse::asset::MaterialRenderState state =
+                wse::asset::decode_material_render_state(mat, res.shader);
+            (void)state;
+            if (res.shader != nullptr) {
+                ++materials_resolved;
+            }
+        }
+    }
+
     if (json) {
         std::printf("{\"root\":");
         print_json_escaped(root.string());
@@ -309,18 +387,25 @@ int run_module_catalog(const std::filesystem::path& root,
         std::printf(",\"entries\":%zu,\"loaded\":%zu,\"warnings\":%zu,"
                     "\"meshes\":%zu,\"meta_meshes\":%zu,\"textures\":%zu,\"shaders\":%zu,"
                     "\"materials\":%zu,\"bodies\":%zu,\"skeletons\":%zu,\"animations\":%zu,"
-                    "\"physics_materials\":%zu}\n",
+                    "\"physics_materials\":%zu,"
+                    "\"gl_techniques\":%zu,\"shaders_suitable\":%zu,\"shaders_fallback\":%zu,"
+                    "\"materials_resolved\":%zu,\"wse2_ini_fallbacks\":%zu}\n",
                     cat.entries.size(), loaded_entries, cat.warnings.size(),
                     totals.meshes, totals.meta_meshes, totals.textures, totals.shaders,
                     totals.materials, totals.bodies, totals.skeletons, totals.animations,
-                    totals.physics_materials);
+                    totals.physics_materials,
+                    tech_cat.techniques_by_lower.size(), shaders_suitable, shaders_fallback,
+                    materials_resolved, valid_pairs.entries.size());
     } else {
         std::printf("CATALOG %s (%s): entries=%zu loaded=%zu warnings=%zu "
-                    "(meshes=%zu meta=%zu tex=%zu shader=%zu mat=%zu body=%zu skel=%zu anim=%zu phys=%zu)\n",
+                    "(meshes=%zu meta=%zu tex=%zu shader=%zu mat=%zu body=%zu skel=%zu anim=%zu phys=%zu) "
+                    "[gl_tech=%zu shaders_ok=%zu fallback=%zu mat_resolved=%zu ini_pairs=%zu]\n",
                     root.string().c_str(), mod_rel.c_str(), cat.entries.size(), loaded_entries,
                     cat.warnings.size(), totals.meshes, totals.meta_meshes, totals.textures,
                     totals.shaders, totals.materials, totals.bodies, totals.skeletons,
-                    totals.animations, totals.physics_materials);
+                    totals.animations, totals.physics_materials,
+                    tech_cat.techniques_by_lower.size(), shaders_suitable, shaders_fallback,
+                    materials_resolved, valid_pairs.entries.size());
     }
     return 0;
 }
