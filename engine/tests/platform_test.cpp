@@ -2,6 +2,7 @@
 //
 // Build/run: see AGENTS.md section 2 (CMake/CTest or the shell loop).
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -172,6 +173,53 @@ void test_host_vfs() {
                "host write still does not create parents below the root");
     }
     fs::remove_all(fresh.parent_path(), ec);
+}
+
+// HostVfs keeps one lower-case index per directory for case-insensitive
+// lookups; misses must not rescan, and changes must be seen.
+void test_host_vfs_dir_cache() {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path root = fs::temp_directory_path(ec) / "wse_platform_test_dircache";
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "Textures", ec);
+    expect(!ec, "dir-cache fixture directory created");
+    const auto touch = [](const fs::path& p) {
+        std::FILE* f = std::fopen(p.string().c_str(), "wb");
+        if (f != nullptr) std::fclose(f);
+    };
+    for (int i = 0; i < 50; ++i) touch(root / "Textures" / ("tex_" + std::to_string(i) + ".dds"));
+    touch(root / "Textures" / "Mixed_Case.DDS");
+
+    wse::platform::HostVfs vfs(root);
+    expect(vfs.is_file("textures/mixed_case.dds"), "case-insensitive hit through the index");
+    const std::size_t after_first = vfs.directory_scans();
+    for (int i = 0; i < 20; ++i) {
+        (void)vfs.is_file("Textures/languages/en/missing_" + std::to_string(i) + ".dds");
+        (void)vfs.is_file("TEXTURES/MIXED_CASE.dds");
+    }
+    // At most the root and Textures listed once each across all lookups.
+    expect(after_first >= 1U && vfs.directory_scans() <= 2U,
+           "repeated misses reuse the cached directory listing");
+
+    // A file written through the Vfs is visible under another spelling at once.
+    expect(vfs.write_text("Textures/New_File.txt", "x") && vfs.is_file("textures/NEW_FILE.TXT"),
+           "write through the Vfs invalidates the cached listing");
+    expect(vfs.remove_file("textures/new_file.txt") && !vfs.is_file("Textures/New_File.txt"),
+           "remove through the Vfs invalidates the cached listing");
+    expect(vfs.make_dir("Textures/Sub") && vfs.is_dir("textures/SUB"),
+           "make_dir through the Vfs invalidates the cached listing");
+
+    // An entry added by another process is seen once the directory's
+    // last-write time moves (set explicitly so coarse timestamps cannot hide it).
+    expect(!vfs.is_file("textures/external.dds"), "external file absent before creation");
+    const auto before = fs::last_write_time(root / "Textures", ec);
+    touch(root / "Textures" / "External.DDS");
+    fs::last_write_time(root / "Textures", before + std::chrono::seconds(2), ec);
+    expect(!ec && vfs.is_file("textures/external.dds"),
+           "external change is picked up when the directory time moves");
+
+    fs::remove_all(root, ec);
 }
 
 void test_vfs_feeds_text_stream() {
@@ -380,6 +428,7 @@ int run_platform_suite(const char* fixture_path) {
     test_paths();
     test_memory_vfs();
     test_host_vfs();
+    test_host_vfs_dir_cache();
     test_vfs_feeds_text_stream();
     test_clock();
     test_log();
