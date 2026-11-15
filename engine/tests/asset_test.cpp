@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "wse/asset/brf.h"
@@ -1027,6 +1028,129 @@ void test_dds_formats_and_resolver() {
     }
 }
 
+// Counts is_file/is_dir calls on top of a MemoryVfs.
+class CountingVfs final : public wse::platform::Vfs {
+public:
+    wse::platform::MemoryVfs inner;
+    std::size_t is_file_calls = 0;
+    std::size_t is_dir_calls = 0;
+
+    bool read_file(std::string_view path, std::vector<std::uint8_t>& out) override {
+        return inner.read_file(path, out);
+    }
+    bool write_file(std::string_view path, std::span<const std::uint8_t> data) override {
+        return inner.write_file(path, data);
+    }
+    bool remove_file(std::string_view path) override { return inner.remove_file(path); }
+    bool list_dir(std::string_view path, std::vector<wse::platform::VfsEntry>& out) override {
+        return inner.list_dir(path, out);
+    }
+    bool is_file(std::string_view path) override {
+        ++is_file_calls;
+        return inner.is_file(path);
+    }
+    bool is_dir(std::string_view path) override {
+        ++is_dir_calls;
+        return inner.is_dir(path);
+    }
+};
+
+std::vector<std::byte> dds_with_payload(std::uint32_t width, std::uint32_t height, std::uint32_t fourcc,
+                                        const std::vector<std::byte>& payload) {
+    wse::io::BinaryWriter w;
+    write_dds_header(w, width, height, 0x1007U, 1, 0x4U, fourcc, 0, 0, 0, 0, 0);
+    w.write_bytes(payload);
+    return std::vector<std::byte>(w.bytes().begin(), w.bytes().end());
+}
+
+void test_dds_decode_blocks_and_resolver_probes() {
+    using wse::asset::dds_detail::fourcc;
+    // Deterministic block data: any 16 bytes are a valid BC2/BC3 block.
+    std::vector<std::byte> blocks(4U * 16U);
+    std::uint32_t seed = 0x12345678U;
+    for (std::byte& b : blocks) {
+        seed = seed * 1664525U + 1013904223U;
+        b = static_cast<std::byte>(seed >> 24);
+    }
+    for (const std::uint32_t cc : {fourcc('D', 'X', 'T', '3'), fourcc('D', 'X', 'T', '5')}) {
+        // 8x8 and 6x5 share the same 2x2 block grid; 6x5 must be the top-left crop of 8x8.
+        const auto full_bytes = dds_with_payload(8, 8, cc, blocks);
+        const auto crop_bytes = dds_with_payload(6, 5, cc, blocks);
+        wse::asset::DdsImageView full_img, crop_img;
+        std::vector<std::uint8_t> full, crop;
+        const bool ok = wse::asset::parse_dds(full_bytes, full_img) &&
+                        wse::asset::parse_dds(crop_bytes, crop_img) &&
+                        wse::asset::decode_dds_mip_rgba8(full_img, 0, 0, full) &&
+                        wse::asset::decode_dds_mip_rgba8(crop_img, 0, 0, crop) &&
+                        full.size() == 8U * 8U * 4U && crop.size() == 6U * 5U * 4U;
+        bool same = ok;
+        for (std::size_t y = 0; same && y < 5U; ++y) {
+            for (std::size_t x = 0; x < 6U * 4U; ++x) {
+                if (crop[y * 6U * 4U + x] != full[y * 8U * 4U + x]) {
+                    same = false;
+                    break;
+                }
+            }
+        }
+        expect(same, "edge blocks of a non-multiple-of-4 image are clipped, not shifted");
+
+        // A reused buffer of the same size is fully overwritten.
+        std::vector<std::uint8_t> dirty(full.size(), 0xA5U);
+        expect(wse::asset::decode_dds_mip_rgba8(full_img, 0, 0, dirty) && dirty == full,
+               "decode into a reused dirty buffer matches a fresh decode");
+        std::vector<std::uint8_t> larger(4096U, 0xA5U);
+        expect(wse::asset::decode_dds_mip_rgba8(crop_img, 0, 0, larger) && larger == crop,
+               "decode into a larger reused buffer shrinks it to the image");
+    }
+    {
+        // Uncompressed path into a dirty buffer.
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 3, 1, 0x1007U, 1, 0x41U, 0U, 32U, 0x00FF0000U, 0x0000FF00U, 0x000000FFU,
+                         0xFF000000U);
+        for (int i = 0; i < 12; ++i) w.write_byte(static_cast<std::uint8_t>(i * 7));
+        wse::asset::DdsImageView img;
+        std::vector<std::uint8_t> fresh, dirty(12U, 0xA5U);
+        expect(wse::asset::parse_dds(w.bytes(), img) && wse::asset::decode_dds_mip_rgba8(img, 0, 0, fresh) &&
+                   wse::asset::decode_dds_mip_rgba8(img, 0, 0, dirty) && dirty == fresh,
+               "uncompressed decode into a reused dirty buffer matches a fresh decode");
+    }
+    {
+        // DX10 TEXTURE3D must have array_size == 1 and no TEXTURECUBE flag.
+        const std::pair<std::uint32_t, std::uint32_t> bad[] = {{0U, 2U}, {0x4U, 1U}};
+        for (const auto& [misc, array_size] : bad) {
+            wse::io::BinaryWriter w;
+            write_dds_header(w, 4, 4, 0x1007U, 1, 0x4U, fourcc('D', 'X', '1', '0'), 0, 0, 0, 0, 0);
+            write_dx10_header(w, 28U, 4U, misc, array_size);
+            const std::vector<std::byte> px(4U * 4U * 4U * 6U * 2U);
+            w.write_bytes(px);
+            wse::asset::DdsImageView img;
+            std::string err;
+            expect(!wse::asset::parse_dds(w.bytes(), img, &err) && contains(err, "volume"),
+                   "rejects DX10 TEXTURE3D with array_size > 1 or TEXTURECUBE");
+        }
+    }
+    {
+        // A missing directory costs one is_dir call, not one is_file per candidate.
+        CountingVfs vfs;
+        const std::vector<std::uint8_t> dummy{0};
+        vfs.write_file("warband/Textures/stone.dds", dummy);
+        vfs.write_file("warband/Textures/languages/fr/sign.dds", dummy);
+        vfs.is_file_calls = 0;
+        vfs.is_dir_calls = 0;
+        // Missing: module Textures/languages/de, module Textures, TexturesHD, base languages/de.
+        expect(wse::asset::resolve_texture_path(vfs, "stone", "warband", "warband/Modules/M", "de", true) ==
+                   "warband/Textures/stone.dds",
+               "resolver finds the base texture past four missing directories");
+        expect(vfs.is_file_calls == 1U && vfs.is_dir_calls == 5U,
+               "missing directories are skipped without per-candidate is_file probes");
+
+        // A trailing separator on the language gives the same path as vfs_join_path.
+        expect(wse::asset::resolve_texture_path(vfs, "sign", "warband", "", "fr/") ==
+                   "warband/Textures/languages/fr/sign.dds",
+               "language with a trailing separator joins without a double slash");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -1040,6 +1164,7 @@ int run_asset_suite(const char* fixture_path) {
     test_binary_stream_strings();
     test_brf_hardening();
     test_dds_hardening();
+    test_dds_decode_blocks_and_resolver_probes();
 
     if (failures == 0) {
         std::printf("asset tests: PASS\n");

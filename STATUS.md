@@ -11,7 +11,7 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows after Slice P2 & PR #12 re-verification (`engine/build_host.ps1`, Zig `clang++`: `19/19` suites / `132` test functions + `selftest_host` `19/19` (`480 ms`) + `wse_headless` + `wse_brf`). Linux CI (`clang++` + `g++` ASan/UBSan) passed on PR #11 (`CI run 43712260606` on `fa4b7c2`: `19/19` / `131`) and re-runs on push |
+| Host gate | **PASS** on Windows after Slice P2 & PR #12 re-verification (`engine/build_host.ps1`, Zig `clang++`: `19/19` suites / `132` test functions + `selftest_host` `19/19` (`480 ms`) + `wse_headless` + `wse_brf`). Linux CI (`clang++` + `g++` ASan/UBSan) passed on PR #11 (`CI run 43712260606` on `fa4b7c2`: `19/19` / `131`) and re-runs on push. Linux local (Ubuntu `clang++` 18.1.3 shell loop + `g++` ASan/UBSan CTest `20/20`) PASS after the `HostVfs` directory-index / texture-probe performance fixes (`19/19` / `134`) |
 | Android arm64 gate | **PASS (CI run `43712260606` on `fa4b7c2`)** — `.github/workflows/ci.yml` (`android-arm64` + `android-apk`) compiles all headers standalone, cross-compiles CMake targets (`engine`, `lua51`, `wse_lua`, `wse_selftest`), and builds `arm64-v8a` debug APK (`libwse2.so` + `libSDL3.so` + `assets/scripts.txt` with `WseLauncherActivity` + `WseSafBridge`); on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **440/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` live handlers `53, 2180, 2749` have no SDK constant and carry community names); **1,053/1,053 implemented (100%, 20/20 categories)** (`16` control-flow incl. 4 live entity iterators + `1,037` switch across `block_vm.h`, `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, `native_campaign_ops.h`, `native_campaign_ops_2.h`, `native_world_ops.h`, `native_world_ops_2.h`, `native_world_ops_3.h`, `native_agent_ops.h`, `native_mp_ops.h`, `native_scene_ops.h`, and `native_ui_ops.h`) |
@@ -107,13 +107,13 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `native_world_test.cpp` | 7 |
 | `native_m5_test.cpp` | 5 |
 | `wse_m6_test.cpp` | 7 |
-| `platform_test.cpp` | 7 |
+| `platform_test.cpp` | 8 |
 | `module_loaders_test.cpp` | 6 |
 | `headless_test.cpp` | 5 |
 | `lua_test.cpp` | 7 |
-| `asset_test.cpp` | 6 |
+| `asset_test.cpp` | 7 |
 | `selftest_host_test.cpp` *(aggregate runner over the 19 suites)* | 19 suites |
-| **Total (19 standalone suites + aggregate runner)** | **132** |
+| **Total (19 standalone suites + aggregate runner)** | **134** |
 
 ## 4. Blocked
 

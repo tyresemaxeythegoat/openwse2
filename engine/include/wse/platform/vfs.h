@@ -35,6 +35,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -249,11 +250,22 @@ private:
 };
 
 // A directory on the host file system. Each component is matched exactly
-// first and then case-insensitively by scanning its parent, so a module that
-// asks for `Resource\Foo.BRF` finds `resource/foo.brf` on a case-sensitive
-// volume. `write_file` does not create parent directories below the root, but
-// it does create the root itself when that is missing, so a save directory
-// that has never been written to works on first use.
+// first and then case-insensitively against its parent's listing, so a module
+// that asks for `Resource\Foo.BRF` finds `resource/foo.brf` on a
+// case-sensitive volume. When several entries differ only in case, the one
+// whose name sorts first byte-wise wins.
+//
+// Each parent directory is listed once and its lower-case name index kept, so
+// probing many missing names (the texture search chain) does not rescan large
+// directories such as `Textures`. The index is rebuilt when the directory's
+// last-write time changes and dropped on every write, remove, or make_dir
+// through this Vfs. A differently-cased entry added by another process within
+// the file system's timestamp resolution may stay unseen until the directory
+// changes again; exact-spelling lookups never depend on the index.
+//
+// `write_file` does not create parent directories below the root, but it does
+// create the root itself when that is missing, so a save directory that has
+// never been written to works on first use.
 //
 // The root is made absolute and its symlink-free form is computed once at
 // construction; a root that is later re-pointed through a symbolic link is
@@ -279,6 +291,7 @@ public:
     bool write_file(std::string_view path, std::span<const std::uint8_t> data) override {
         std::error_code root_ec;
         std::filesystem::create_directories(root_, root_ec);
+        const CacheReset reset{*this};
         const auto real = resolve(path, true);
         if (!real) return false;
         std::FILE* file = open(*real, "wb");
@@ -289,6 +302,7 @@ public:
     }
 
     bool remove_file(std::string_view path) override {
+        const CacheReset reset{*this};
         const auto real = resolve(path, false);
         if (!real) return false;
         std::error_code ec;
@@ -330,6 +344,7 @@ public:
     bool make_dir(std::string_view path) override {
         std::error_code root_ec;
         std::filesystem::create_directories(root_, root_ec);
+        const CacheReset reset{*this};
         const auto real = resolve(path, true);
         if (!real) return false;
         std::error_code ec;
@@ -337,12 +352,17 @@ public:
     }
 
     bool remove_dir(std::string_view path) override {
+        const CacheReset reset{*this};
         const auto real = resolve(path, false);
         if (!real) return false;
         std::error_code ec;
         if (!std::filesystem::is_directory(*real, ec) || ec) return false;
         return std::filesystem::remove(*real, ec) && !ec;
     }
+
+    // Number of directory listings read for case-insensitive lookups since
+    // construction (for tests and profiling).
+    std::size_t directory_scans() const noexcept { return directory_scans_; }
 
 private:
     // `Out` is a byte vector or a string; both are filled without a second
@@ -390,18 +410,10 @@ private:
                 current = std::move(exact);
                 continue;
             }
-            const std::string wanted = ascii_lower(part);
-            bool found = false;
-            std::filesystem::directory_iterator it(current, ec);
-            for (const std::filesystem::directory_iterator end; !ec && it != end;
-                 it.increment(ec)) {
-                if (ascii_lower(it->path().filename().string()) == wanted) {
-                    current = it->path();
-                    found = true;
-                    break;
-                }
+            if (auto match = find_case_insensitive(current, part)) {
+                current = std::move(*match);
+                continue;
             }
-            if (found) continue;
             if (for_create && i + 1 == parts->size()) {
                 return inside_root(exact) ? std::optional(exact) : std::nullopt;
             }
@@ -409,6 +421,44 @@ private:
         }
         if (!inside_root(current)) return std::nullopt;
         return current;
+    }
+
+    // Looks `name` up in `dir`'s cached lower-case index, listing `dir` when
+    // there is no index or the directory's last-write time moved. A listing
+    // that fails part-way is used for this lookup but not cached.
+    std::optional<std::filesystem::path> find_case_insensitive(
+        const std::filesystem::path& dir, std::string_view name) const {
+        const std::string wanted = ascii_lower(name);
+        std::error_code time_ec;
+        const auto mtime = std::filesystem::last_write_time(dir, time_ec);
+        if (!time_ec) {
+            const auto cached = dir_cache_.find(dir.native());
+            if (cached != dir_cache_.end() && cached->second.mtime == mtime) {
+                const auto hit = cached->second.by_lower.find(wanted);
+                if (hit == cached->second.by_lower.end()) return std::nullopt;
+                return hit->second;
+            }
+        }
+        DirListing listing;
+        listing.mtime = mtime;
+        std::error_code ec;
+        std::filesystem::directory_iterator it(dir, ec);
+        ++directory_scans_;
+        for (const std::filesystem::directory_iterator end; !ec && it != end;
+             it.increment(ec)) {
+            const std::filesystem::path& entry = it->path();
+            auto [pos, inserted] =
+                listing.by_lower.try_emplace(ascii_lower(entry.filename().string()), entry);
+            if (!inserted && entry.filename().native() < pos->second.filename().native()) {
+                pos->second = entry;
+            }
+        }
+        std::optional<std::filesystem::path> result;
+        if (const auto hit = listing.by_lower.find(wanted); hit != listing.by_lower.end()) {
+            result = hit->second;
+        }
+        if (!ec && !time_ec) dir_cache_.insert_or_assign(dir.native(), std::move(listing));
+        return result;
     }
 
     // Component checks are lexical, so a symbolic link inside the tree could
@@ -431,6 +481,21 @@ private:
 
     std::filesystem::path root_;
     std::filesystem::path canonical_root_;  // empty when it could not be resolved
+
+    // Drops every cached listing when a mutating call returns, after the
+    // change it made (resolve() inside the call may have cached the old state).
+    struct CacheReset {
+        const HostVfs& vfs;
+        ~CacheReset() { vfs.dir_cache_.clear(); }
+    };
+
+    struct DirListing {
+        std::filesystem::file_time_type mtime{};
+        std::unordered_map<std::string, std::filesystem::path> by_lower;
+    };
+    // Keyed by the directory's host path; see the class comment.
+    mutable std::unordered_map<std::filesystem::path::string_type, DirListing> dir_cache_;
+    mutable std::size_t directory_scans_ = 0;
 };
 
 }  // namespace wse::platform

@@ -290,11 +290,15 @@ Asset decoders (`wse/asset/{brf,dds}.h`, P3 review & evidence follow-ups):
   `TEXTURE3D`); other files are 2D/cube images whatever `dwDepth` holds. A volume with
   `dwDepth > 1` is rejected rather than decoded as its first slice; a single-slice volume
   (`dwDepth` `0` or `1`, e.g. retail Warband `Textures\languages\cnt\font.dds`) is accepted as a
-  2D image. DX10 `array_size` is capped at 64.
+  2D image. DX10 `array_size` is capped at 64. A DX10 `TEXTURE3D` header with `array_size > 1` or
+  the `TEXTURECUBE` misc flag is malformed (D3D10/11 forbid both) and rejected as a volume texture.
   DX10 cube maps count `6 × array_size` faces; legacy cube maps count their `dwCaps2` face bits.
   `DdsImageView::is_srgb` marks the DXGI `*_SRGB` formats, whose `format` is the UNORM equivalent.
 - `decode_dds_mip_rgba8` re-validates the slice index and that the slice payload covers its
   dimensions. `DdsImageView` slices are non-owning views into the buffer given to `parse_dds`.
+  Every texel of the output is written, so a caller's buffer is resized but not cleared first
+  (reuse one buffer across decodes); BC blocks are stored a 4-texel row at a time and only
+  right/bottom edge blocks of a non-multiple-of-4 image are clipped.
 - Verified against the v1.1.5.5 control flow: `rglResourceManager::createMetaMesh` (`0x1402f29a0`)
   requires `prefix.length >= 2` (`0x1402f2b23`), splits at the first `.`, and routes dotted non-LOD
   names to LOD `0`; `rglResourceManager::tryGetTexture` (`0x1402f2f10`) + `rglTexture::initDeviceObjects`
@@ -305,6 +309,13 @@ Asset decoders (`wse/asset/{brf,dds}.h`, P3 review & evidence follow-ups):
   `parse_dds`).
 - `resolve_texture_path` with an empty `warband_root` probes the base directories at the VFS root
   (`vfs_join_path("", x) == x`), as `load_module_brf_catalog` does for `CommonRes`.
+- `resolve_texture_path` skips a directory that `is_dir` reports missing instead of probing each
+  candidate in it (port-side optimisation; the retail probe order and results are unchanged).
+- `HostVfs` matches a component exactly first, then against a cached lower-case index of the
+  parent directory. The index is rebuilt when the directory's last-write time changes and dropped
+  on every `write_file` / `remove_file` / `make_dir` / `remove_dir`; among entries differing only
+  in case the byte-wise smallest name wins. A differently-cased file added by another process
+  inside the file system's timestamp resolution can stay unseen until the directory changes again.
 
 Script operands never size an allocation directly (Milestone 4–6 review fixes):
 

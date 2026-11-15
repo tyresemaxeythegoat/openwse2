@@ -13,6 +13,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <string>
 #include <string_view>
@@ -349,21 +350,40 @@ inline std::array<std::uint8_t, 16> decode_bc_alpha_block(const std::byte* block
     return alphas;
 }
 
-inline void write_pixel(std::vector<std::uint8_t>& dst,
+// One decoded 4x4 block: 16 RGBA8 texels, row-major.
+using BlockTexels = std::array<std::uint8_t, 64>;
+
+inline void set_texel(BlockTexels& t, std::uint32_t p,
+                      std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a) noexcept {
+    t[p * 4U + 0] = r;
+    t[p * 4U + 1] = g;
+    t[p * 4U + 2] = b;
+    t[p * 4U + 3] = a;
+}
+
+// Copies block (bx, by) into a width x height RGBA8 image, a whole 16-byte row at a
+// time; only blocks on the right/bottom edge of a non-multiple-of-4 image are clipped.
+inline void store_block(std::uint8_t* dst,
                         std::uint32_t width,
                         std::uint32_t height,
-                        std::uint32_t x,
-                        std::uint32_t y,
-                        std::uint8_t r,
-                        std::uint8_t g,
-                        std::uint8_t b,
-                        std::uint8_t a) noexcept {
-    if (x >= width || y >= height) return;
-    const std::size_t off = (static_cast<std::size_t>(y) * width + x) * 4U;
-    dst[off + 0] = r;
-    dst[off + 1] = g;
-    dst[off + 2] = b;
-    dst[off + 3] = a;
+                        std::uint32_t bx,
+                        std::uint32_t by,
+                        const BlockTexels& t) noexcept {
+    const std::uint32_t x0 = bx * 4U;
+    const std::uint32_t y0 = by * 4U;
+    const std::uint32_t cols = (std::min)(4U, width - x0);
+    const std::uint32_t rows = (std::min)(4U, height - y0);
+    std::uint8_t* row = dst + (static_cast<std::size_t>(y0) * width + x0) * 4U;
+    const std::size_t stride = static_cast<std::size_t>(width) * 4U;
+    if (cols == 4U) {
+        for (std::uint32_t r = 0; r < rows; ++r, row += stride) {
+            std::memcpy(row, t.data() + r * 16U, 16U);
+        }
+    } else {
+        for (std::uint32_t r = 0; r < rows; ++r, row += stride) {
+            std::memcpy(row, t.data() + r * 16U, static_cast<std::size_t>(cols) * 4U);
+        }
+    }
 }
 
 }  // namespace dds_detail
@@ -421,6 +441,11 @@ inline bool parse_dds(std::span<const std::byte> data,
         }
         (void)misc2;
         is_texture3d = (res_dim == 4U);  // D3D10_RESOURCE_DIMENSION_TEXTURE3D
+        // D3D10/11 require arraySize == 1 and forbid TEXTURECUBE on a 3D resource; such a
+        // header is malformed rather than a 2D array or cube map.
+        if (is_texture3d && (array_size > 1U || (dxt10_misc & 0x4U) != 0U)) {
+            return dds_detail::set_error(error_out, "unsupported DDS volume texture");
+        }
         if (array_size == 0U) array_size = 1U;
         if (array_size > 64U) {
             return dds_detail::set_error(error_out, "unsupported DDS face or mip count");
@@ -525,7 +550,10 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
     if (slice.data.size() < expected_bytes || slice.data.data() == nullptr) {
         return dds_detail::set_error(error_out, "DDS slice payload smaller than its dimensions require");
     }
-    out_rgba8.assign(static_cast<std::size_t>(w) * h * 4U, 0);
+    // Every case below writes every texel, so a reused buffer of the right size is not
+    // cleared first.
+    out_rgba8.resize(static_cast<std::size_t>(w) * h * 4U);
+    std::uint8_t* const dst = out_rgba8.data();
 
     const std::byte* src = slice.data.data();
     const std::uint32_t blocks_x = (w + 3U) / 4U;
@@ -541,14 +569,12 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
                     const std::uint32_t idx_bits = dds_detail::read_u32_le(blk + 4);
                     std::array<std::array<std::uint8_t, 4>, 4> pal{};
                     dds_detail::decode_bc_color_palette(c0, c1, true, pal);
-                    for (std::uint32_t py = 0; py < 4U; ++py) {
-                        for (std::uint32_t px = 0; px < 4U; ++px) {
-                            const auto& rgba = pal[(idx_bits >> ((py * 4U + px) * 2U)) & 0x3U];
-                            dds_detail::write_pixel(
-                                out_rgba8, w, h, bx * 4U + px, by * 4U + py,
-                                rgba[0], rgba[1], rgba[2], rgba[3]);
-                        }
+                    dds_detail::BlockTexels texels;
+                    for (std::uint32_t p = 0; p < 16U; ++p) {
+                        const auto& rgba = pal[(idx_bits >> (p * 2U)) & 0x3U];
+                        dds_detail::set_texel(texels, p, rgba[0], rgba[1], rgba[2], rgba[3]);
                     }
+                    dds_detail::store_block(dst, w, h, bx, by, texels);
                 }
             }
             return true;
@@ -562,17 +588,18 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
                     const std::uint32_t idx_bits = dds_detail::read_u32_le(blk + 12);
                     std::array<std::array<std::uint8_t, 4>, 4> pal{};
                     dds_detail::decode_bc_color_palette(c0, c1, false, pal);
+                    dds_detail::BlockTexels texels;
                     for (std::uint32_t py = 0; py < 4U; ++py) {
                         const std::uint16_t row_a = dds_detail::read_u16_le(blk + py * 2U);
                         for (std::uint32_t px = 0; px < 4U; ++px) {
+                            const std::uint32_t p = py * 4U + px;
                             const std::uint8_t a4 = static_cast<std::uint8_t>((row_a >> (px * 4U)) & 0xFU);
                             const std::uint8_t alpha = static_cast<std::uint8_t>((a4 << 4) | a4);
-                            const auto& rgb = pal[(idx_bits >> ((py * 4U + px) * 2U)) & 0x3U];
-                            dds_detail::write_pixel(
-                                out_rgba8, w, h, bx * 4U + px, by * 4U + py,
-                                rgb[0], rgb[1], rgb[2], alpha);
+                            const auto& rgb = pal[(idx_bits >> (p * 2U)) & 0x3U];
+                            dds_detail::set_texel(texels, p, rgb[0], rgb[1], rgb[2], alpha);
                         }
                     }
+                    dds_detail::store_block(dst, w, h, bx, by, texels);
                 }
             }
             return true;
@@ -587,15 +614,12 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
                     const std::uint32_t idx_bits = dds_detail::read_u32_le(blk + 12);
                     std::array<std::array<std::uint8_t, 4>, 4> pal{};
                     dds_detail::decode_bc_color_palette(c0, c1, false, pal);
-                    for (std::uint32_t py = 0; py < 4U; ++py) {
-                        for (std::uint32_t px = 0; px < 4U; ++px) {
-                            const std::uint32_t p = py * 4U + px;
-                            const auto& rgb = pal[(idx_bits >> (p * 2U)) & 0x3U];
-                            dds_detail::write_pixel(
-                                out_rgba8, w, h, bx * 4U + px, by * 4U + py,
-                                rgb[0], rgb[1], rgb[2], alphas[p]);
-                        }
+                    dds_detail::BlockTexels texels;
+                    for (std::uint32_t p = 0; p < 16U; ++p) {
+                        const auto& rgb = pal[(idx_bits >> (p * 2U)) & 0x3U];
+                        dds_detail::set_texel(texels, p, rgb[0], rgb[1], rgb[2], alphas[p]);
                     }
+                    dds_detail::store_block(dst, w, h, bx, by, texels);
                 }
             }
             return true;
@@ -605,12 +629,12 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
                 for (std::uint32_t bx = 0; bx < blocks_x; ++bx) {
                     const std::byte* blk = src + (static_cast<std::size_t>(by) * blocks_x + bx) * 8U;
                     const auto reds = dds_detail::decode_bc_alpha_block(blk);
-                    for (std::uint32_t py = 0; py < 4U; ++py) {
-                        for (std::uint32_t px = 0; px < 4U; ++px) {
-                            const std::uint8_t v = reds[py * 4U + px];
-                            dds_detail::write_pixel(out_rgba8, w, h, bx * 4U + px, by * 4U + py, v, v, v, 255);
-                        }
+                    dds_detail::BlockTexels texels;
+                    for (std::uint32_t p = 0; p < 16U; ++p) {
+                        const std::uint8_t v = reds[p];
+                        dds_detail::set_texel(texels, p, v, v, v, 255);
                     }
+                    dds_detail::store_block(dst, w, h, bx, by, texels);
                 }
             }
             return true;
@@ -621,14 +645,11 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
                     const std::byte* blk = src + (static_cast<std::size_t>(by) * blocks_x + bx) * 16U;
                     const auto reds = dds_detail::decode_bc_alpha_block(blk);
                     const auto greens = dds_detail::decode_bc_alpha_block(blk + 8);
-                    for (std::uint32_t py = 0; py < 4U; ++py) {
-                        for (std::uint32_t px = 0; px < 4U; ++px) {
-                            const std::uint32_t p = py * 4U + px;
-                            dds_detail::write_pixel(
-                                out_rgba8, w, h, bx * 4U + px, by * 4U + py,
-                                reds[p], greens[p], 0, 255);
-                        }
+                    dds_detail::BlockTexels texels;
+                    for (std::uint32_t p = 0; p < 16U; ++p) {
+                        dds_detail::set_texel(texels, p, reds[p], greens[p], 0, 255);
                     }
+                    dds_detail::store_block(dst, w, h, bx, by, texels);
                 }
             }
             return true;
@@ -647,20 +668,20 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
                 const std::uint8_t c1 = std::to_integer<std::uint8_t>(src[i * 4U + 1]);
                 const std::uint8_t c2 = std::to_integer<std::uint8_t>(src[i * 4U + 2]);
                 const std::uint8_t c3 = opaque ? 255 : std::to_integer<std::uint8_t>(src[i * 4U + 3]);
-                out_rgba8[i * 4U + 0] = is_bgr ? c2 : c0;
-                out_rgba8[i * 4U + 1] = c1;
-                out_rgba8[i * 4U + 2] = is_bgr ? c0 : c2;
-                out_rgba8[i * 4U + 3] = c3;
+                dst[i * 4U + 0] = is_bgr ? c2 : c0;
+                dst[i * 4U + 1] = c1;
+                dst[i * 4U + 2] = is_bgr ? c0 : c2;
+                dst[i * 4U + 3] = c3;
             }
             return true;
         }
         case DdsFormat::B8G8R8_UNORM: {
             const std::size_t count = static_cast<std::size_t>(w) * h;
             for (std::size_t i = 0; i < count; ++i) {
-                out_rgba8[i * 4U + 0] = std::to_integer<std::uint8_t>(src[i * 3U + 2]);
-                out_rgba8[i * 4U + 1] = std::to_integer<std::uint8_t>(src[i * 3U + 1]);
-                out_rgba8[i * 4U + 2] = std::to_integer<std::uint8_t>(src[i * 3U + 0]);
-                out_rgba8[i * 4U + 3] = 255;
+                dst[i * 4U + 0] = std::to_integer<std::uint8_t>(src[i * 3U + 2]);
+                dst[i * 4U + 1] = std::to_integer<std::uint8_t>(src[i * 3U + 1]);
+                dst[i * 4U + 2] = std::to_integer<std::uint8_t>(src[i * 3U + 0]);
+                dst[i * 4U + 3] = 255;
             }
             return true;
         }
@@ -669,10 +690,10 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
             for (std::size_t i = 0; i < count; ++i) {
                 std::array<std::uint8_t, 4> rgba{};
                 dds_detail::decode_rgb565(dds_detail::read_u16_le(src + i * 2U), rgba);
-                out_rgba8[i * 4U + 0] = rgba[0];
-                out_rgba8[i * 4U + 1] = rgba[1];
-                out_rgba8[i * 4U + 2] = rgba[2];
-                out_rgba8[i * 4U + 3] = 255;
+                dst[i * 4U + 0] = rgba[0];
+                dst[i * 4U + 1] = rgba[1];
+                dst[i * 4U + 2] = rgba[2];
+                dst[i * 4U + 3] = 255;
             }
             return true;
         }
@@ -683,10 +704,10 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
                 const std::uint8_t r5 = static_cast<std::uint8_t>((px >> 10) & 0x1FU);
                 const std::uint8_t g5 = static_cast<std::uint8_t>((px >> 5) & 0x1FU);
                 const std::uint8_t b5 = static_cast<std::uint8_t>(px & 0x1FU);
-                out_rgba8[i * 4U + 0] = static_cast<std::uint8_t>((r5 << 3) | (r5 >> 2));
-                out_rgba8[i * 4U + 1] = static_cast<std::uint8_t>((g5 << 3) | (g5 >> 2));
-                out_rgba8[i * 4U + 2] = static_cast<std::uint8_t>((b5 << 3) | (b5 >> 2));
-                out_rgba8[i * 4U + 3] = (px & 0x8000U) != 0U ? 255 : 0;
+                dst[i * 4U + 0] = static_cast<std::uint8_t>((r5 << 3) | (r5 >> 2));
+                dst[i * 4U + 1] = static_cast<std::uint8_t>((g5 << 3) | (g5 >> 2));
+                dst[i * 4U + 2] = static_cast<std::uint8_t>((b5 << 3) | (b5 >> 2));
+                dst[i * 4U + 3] = (px & 0x8000U) != 0U ? 255 : 0;
             }
             return true;
         }
@@ -697,20 +718,20 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
                 const auto expand4 = [](std::uint16_t v) noexcept -> std::uint8_t {
                     return static_cast<std::uint8_t>((v << 4) | v);
                 };
-                out_rgba8[i * 4U + 0] = expand4((px >> 8) & 0xFU);
-                out_rgba8[i * 4U + 1] = expand4((px >> 4) & 0xFU);
-                out_rgba8[i * 4U + 2] = expand4(px & 0xFU);
-                out_rgba8[i * 4U + 3] = expand4((px >> 12) & 0xFU);
+                dst[i * 4U + 0] = expand4((px >> 8) & 0xFU);
+                dst[i * 4U + 1] = expand4((px >> 4) & 0xFU);
+                dst[i * 4U + 2] = expand4(px & 0xFU);
+                dst[i * 4U + 3] = expand4((px >> 12) & 0xFU);
             }
             return true;
         }
         case DdsFormat::A8_UNORM: {
             const std::size_t count = static_cast<std::size_t>(w) * h;
             for (std::size_t i = 0; i < count; ++i) {
-                out_rgba8[i * 4U + 0] = 255;
-                out_rgba8[i * 4U + 1] = 255;
-                out_rgba8[i * 4U + 2] = 255;
-                out_rgba8[i * 4U + 3] = std::to_integer<std::uint8_t>(src[i]);
+                dst[i * 4U + 0] = 255;
+                dst[i * 4U + 1] = 255;
+                dst[i * 4U + 2] = 255;
+                dst[i * 4U + 3] = std::to_integer<std::uint8_t>(src[i]);
             }
             return true;
         }
@@ -718,10 +739,10 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
             const std::size_t count = static_cast<std::size_t>(w) * h;
             for (std::size_t i = 0; i < count; ++i) {
                 const std::uint8_t v = std::to_integer<std::uint8_t>(src[i]);
-                out_rgba8[i * 4U + 0] = v;
-                out_rgba8[i * 4U + 1] = v;
-                out_rgba8[i * 4U + 2] = v;
-                out_rgba8[i * 4U + 3] = 255;
+                dst[i * 4U + 0] = v;
+                dst[i * 4U + 1] = v;
+                dst[i * 4U + 2] = v;
+                dst[i * 4U + 3] = 255;
             }
             return true;
         }
@@ -729,10 +750,10 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
             const std::size_t count = static_cast<std::size_t>(w) * h;
             for (std::size_t i = 0; i < count; ++i) {
                 const std::uint8_t v = static_cast<std::uint8_t>(dds_detail::read_u16_le(src + i * 2U) >> 8);
-                out_rgba8[i * 4U + 0] = v;
-                out_rgba8[i * 4U + 1] = v;
-                out_rgba8[i * 4U + 2] = v;
-                out_rgba8[i * 4U + 3] = 255;
+                dst[i * 4U + 0] = v;
+                dst[i * 4U + 1] = v;
+                dst[i * 4U + 2] = v;
+                dst[i * 4U + 3] = 255;
             }
             return true;
         }
@@ -741,10 +762,10 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
             for (std::size_t i = 0; i < count; ++i) {
                 const std::uint8_t l = std::to_integer<std::uint8_t>(src[i * 2U + 0]);
                 const std::uint8_t a = std::to_integer<std::uint8_t>(src[i * 2U + 1]);
-                out_rgba8[i * 4U + 0] = l;
-                out_rgba8[i * 4U + 1] = l;
-                out_rgba8[i * 4U + 2] = l;
-                out_rgba8[i * 4U + 3] = a;
+                dst[i * 4U + 0] = l;
+                dst[i * 4U + 1] = l;
+                dst[i * 4U + 2] = l;
+                dst[i * 4U + 3] = a;
             }
             return true;
         }
@@ -802,64 +823,73 @@ inline std::string resolve_texture_path(wse::platform::Vfs& vfs,
                s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
     };
 
-    std::vector<std::string> candidates;
+    // At most four candidates; built once and probed in every directory below.
+    std::array<std::string, 4> candidates;
+    std::size_t candidate_count = 0;
     if (frame_index >= 0) {
         std::string_view stem(clean);
         if (ends_with(lower_clean, ".dds")) {
             stem.remove_suffix(4U);
         }
         if (stem.empty()) return {};
-        candidates.push_back(std::string(stem) + "_" + std::to_string(frame_index) + ".dds");
+        candidates[candidate_count++] = std::string(stem) + "_" + std::to_string(frame_index) + ".dds";
     } else if (ends_with(lower_clean, ".dds") ||
                ends_with(lower_clean, ".jpg") ||
                ends_with(lower_clean, ".tga")) {
-        candidates.push_back(clean);
+        candidates[candidate_count++] = clean;
     } else {
-        candidates.push_back(clean + ".dds");
-        candidates.push_back(clean);
-        candidates.push_back(clean + ".jpg");
-        candidates.push_back(clean + ".tga");
+        candidates[candidate_count++] = clean + ".dds";
+        candidates[candidate_count++] = clean;
+        candidates[candidate_count++] = clean + ".jpg";
+        candidates[candidate_count++] = clean + ".tga";
     }
 
-    const auto probe_dir = [&](std::string_view dir) -> std::string {
-        for (const std::string& file : candidates) {
-            const std::string p = wse::game::vfs_join_path(dir, file);
-            if (vfs.is_file(p)) return p;
+    // Same result as vfs_join_path(dir, file), built in one buffer reused for every probe
+    // (the hit is returned from it).
+    std::string probe;
+    const auto probe_file = [&](std::string_view dir, std::string_view file) -> bool {
+        while (!dir.empty() && (dir.back() == '/' || dir.back() == '\\')) dir.remove_suffix(1);
+        while (!file.empty() && (file.front() == '/' || file.front() == '\\')) file.remove_prefix(1);
+        probe.assign(dir);
+        if (!probe.empty() && !file.empty()) probe.push_back('/');
+        probe.append(file);
+        return vfs.is_file(probe);
+    };
+    // A missing directory is skipped with one is_dir call instead of one failed is_file
+    // per candidate.
+    const auto probe_dir = [&](std::string_view dir) -> bool {
+        if (!dir.empty() && !vfs.is_dir(dir)) return false;
+        for (std::size_t i = 0; i < candidate_count; ++i) {
+            if (probe_file(dir, candidates[i])) return true;
         }
-        return {};
+        return false;
     };
 
     if (!module_root.empty()) {
         if (!language.empty()) {
             const std::string mod_lang = wse::game::vfs_join_path(
                 wse::game::vfs_join_path(module_root, "Textures/languages"), language);
-            if (auto hit = probe_dir(mod_lang); !hit.empty()) return hit;
-            if (frame_index < 0) {
+            if (vfs.is_dir(mod_lang)) {
+                if (probe_dir(mod_lang)) return probe;
                 // Covers retail literal "%sTextures\languages\%s\%s.dds" (0x14056b448)
                 // when m_name already carries an extension.
-                const std::string literal_dds = wse::game::vfs_join_path(mod_lang, clean + ".dds");
-                if (vfs.is_file(literal_dds)) return literal_dds;
+                if (frame_index < 0 && probe_file(mod_lang, clean + ".dds")) return probe;
             }
         }
-        if (auto hit = probe_dir(wse::game::vfs_join_path(module_root, "Textures")); !hit.empty()) {
-            return hit;
-        }
+        if (probe_dir(wse::game::vfs_join_path(module_root, "Textures"))) return probe;
     }
     // An empty warband_root means the VFS root (vfs_join_path("", x) == x), as in
     // load_module_brf_catalog's CommonRes lookup.
-    if (use_textures_hd && frame_index < 0) {
-        if (auto hit = probe_dir(wse::game::vfs_join_path(warband_root, "TexturesHD")); !hit.empty()) {
-            return hit;
-        }
+    if (use_textures_hd && frame_index < 0 &&
+        probe_dir(wse::game::vfs_join_path(warband_root, "TexturesHD"))) {
+        return probe;
     }
     if (!language.empty()) {
         const std::string base_lang = wse::game::vfs_join_path(
             wse::game::vfs_join_path(warband_root, "Textures/languages"), language);
-        if (auto hit = probe_dir(base_lang); !hit.empty()) return hit;
+        if (probe_dir(base_lang)) return probe;
     }
-    if (auto hit = probe_dir(wse::game::vfs_join_path(warband_root, "Textures")); !hit.empty()) {
-        return hit;
-    }
+    if (probe_dir(wse::game::vfs_join_path(warband_root, "Textures"))) return probe;
     return {};
 }
 
