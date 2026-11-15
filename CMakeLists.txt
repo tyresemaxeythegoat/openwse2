@@ -126,6 +126,12 @@ endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(lua51 PRIVATE -w)
 endif()
+if(WSE_SANITIZE AND NOT MSVC)
+    # Stock unmodified Lua 5.1.5 triggers Clang UBSan on C89 float-to-int table
+    # probes (ltable.c) and 1/0 constant folding; keep ASan on lua51 and full
+    # ASan+UBSan on all first-party engine/wse_lua/test targets.
+    target_compile_options(lua51 PRIVATE -fno-sanitize=undefined)
+endif()
 
 add_library(wse_lua STATIC
     engine/src/lua/lua_bitop.cpp
