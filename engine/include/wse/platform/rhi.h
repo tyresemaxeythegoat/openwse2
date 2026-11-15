@@ -188,22 +188,38 @@ inline void apply_d3d9_half_pixel_offset_px(float x_px,
     out_y_px = y_px + 0.5f;
 }
 
-inline void apply_d3d9_half_pixel_offset_clip(float x_ndc,
-                                              float y_ndc,
+// The same `(+0.5, +0.5)`-pixel shift applied to a clip-space position (before the
+// perspective divide): half a pixel is `1/W` (`1/H`) in NDC, i.e. `w/W` (`w/H`) in
+// clip space. `ndc_y_up` selects the NDC convention of `y_clip`: Vulkan NDC is
+// `+Y` down (screen-down shift is `+w/H`); D3D9 NDC is `+Y` up (`-w/H`).
+inline void apply_d3d9_half_pixel_offset_clip(float x_clip,
+                                              float y_clip,
+                                              float w_clip,
                                               std::uint32_t width,
                                               std::uint32_t height,
-                                              float& out_x_ndc,
-                                              float& out_y_ndc) noexcept {
-    const float dx = (width > 0U) ? (1.0f / static_cast<float>(width)) : 0.0f;
-    const float dy = (height > 0U) ? (1.0f / static_cast<float>(height)) : 0.0f;
-    out_x_ndc = x_ndc + dx;
-    out_y_ndc = y_ndc + dy;
+                                              float& out_x_clip,
+                                              float& out_y_clip,
+                                              bool ndc_y_up = false) noexcept {
+    const float dx = (width > 0U) ? (w_clip / static_cast<float>(width)) : 0.0f;
+    const float dy = (height > 0U) ? (w_clip / static_cast<float>(height)) : 0.0f;
+    out_x_clip = x_clip + dx;
+    out_y_clip = ndc_y_up ? (y_clip - dy) : (y_clip + dy);
+}
+
+// Clamps to [0, 1]; NaN maps to 0 (std::clamp would pass NaN through).
+[[nodiscard]] inline float unit_clamp(float c) noexcept {
+    return (c > 0.0f) ? ((c < 1.0f) ? c : 1.0f) : 0.0f;
+}
+
+// [0, 1] float to UNORM8 with round-to-nearest; NaN-safe.
+[[nodiscard]] inline std::uint8_t unorm_to_u8(float c) noexcept {
+    return static_cast<std::uint8_t>(unit_clamp(c) * 255.0f + 0.5f);
 }
 
 // IEC 61966-2-1 sRGB <-> linear float conversions matching D3D9 `D3DRS_SRGBWRITEENABLE`
 // and `D3DSAMP_SRGBTEXTURE`.
 [[nodiscard]] inline float srgb_to_linear_f32(float c) noexcept {
-    const float clamped = std::clamp(c, 0.0f, 1.0f);
+    const float clamped = unit_clamp(c);
     if (clamped <= 0.04045f) {
         return clamped / 12.92f;
     }
@@ -211,7 +227,7 @@ inline void apply_d3d9_half_pixel_offset_clip(float x_ndc,
 }
 
 [[nodiscard]] inline float linear_to_srgb_f32(float c) noexcept {
-    const float clamped = std::clamp(c, 0.0f, 1.0f);
+    const float clamped = unit_clamp(c);
     if (clamped <= 0.0031308f) {
         return clamped * 12.92f;
     }
@@ -219,7 +235,19 @@ inline void apply_d3d9_half_pixel_offset_clip(float x_ndc,
 }
 
 [[nodiscard]] inline std::uint8_t linear_to_srgb_u8(float c) noexcept {
-    return static_cast<std::uint8_t>(std::lround(linear_to_srgb_f32(c) * 255.0f));
+    return unorm_to_u8(linear_to_srgb_f32(c));
+}
+
+// Exact `srgb_to_linear_f32(b / 255)` for every byte, from a table built once.
+[[nodiscard]] inline float srgb_u8_to_linear_f32(std::uint8_t b) noexcept {
+    static const std::array<float, 256> kTable = [] {
+        std::array<float, 256> t{};
+        for (std::size_t i = 0; i < t.size(); ++i) {
+            t[i] = srgb_to_linear_f32(static_cast<float>(i) / 255.0f);
+        }
+        return t;
+    }();
+    return kTable[b];
 }
 
 // -----------------------------------------------------------------------------
@@ -266,6 +294,51 @@ struct ShaderModuleDesc {
 [[nodiscard]] inline bool is_valid_spirv_module(
     std::span<const std::uint32_t> words) noexcept {
     return words.size() >= 5U && words[0] == 0x07230203U && words[3] > 0U;
+}
+
+// SPIR-V `ExecutionModel` for an RHI stage (Vertex = 0, Fragment = 4).
+[[nodiscard]] inline constexpr std::uint32_t spirv_execution_model(RhiShaderStage stage) noexcept {
+    return (stage == RhiShaderStage::fragment) ? 4U : 0U;
+}
+
+// True when every instruction's word count fits the module and some `OpEntryPoint`
+// has `execution_model` and the literal name `entry_point`.
+[[nodiscard]] inline bool spirv_has_entry_point(std::span<const std::uint32_t> words,
+                                                std::uint32_t execution_model,
+                                                std::string_view entry_point) noexcept {
+    if (!is_valid_spirv_module(words) || entry_point.empty()) {
+        return false;
+    }
+    bool found = false;
+    std::size_t idx = 5U;
+    while (idx < words.size()) {
+        const std::uint32_t wc = words[idx] >> 16U;
+        if (wc == 0U || idx + wc > words.size()) {
+            return false;
+        }
+        if ((words[idx] & 0xFFFFU) == 15U && wc >= 4U && words[idx + 1U] == execution_model) {
+            // Literal name starts at word idx + 3, NUL-terminated within the instruction.
+            const std::size_t max_bytes = static_cast<std::size_t>(wc - 3U) * 4U;
+            std::size_t len = 0;
+            bool terminated = false;
+            for (; len < max_bytes; ++len) {
+                const std::uint32_t w = words[idx + 3U + len / 4U];
+                const char c = static_cast<char>((w >> (8U * (len % 4U))) & 0xFFU);
+                if (c == '\0') {
+                    terminated = true;
+                    break;
+                }
+                if (len >= entry_point.size() || c != entry_point[len]) {
+                    break;
+                }
+            }
+            if (terminated && len == entry_point.size()) {
+                found = true;
+            }
+        }
+        idx += wc;
+    }
+    return found;
 }
 
 enum class BlendMode : std::uint8_t {
@@ -340,6 +413,15 @@ struct MeshDrawCall {
     };
     TextureHandle normal_texture = 0;
     TextureHandle specular_texture = 0;
+    // Column-major object -> world matrix used only to bring normals and tangents
+    // into the (world-space) lighting frame; positions use `mvp`. Normals use its
+    // inverse transpose, tangents its upper 3x3.
+    float model[16] = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f,
+    };
 };
 
 class RhiDevice {
@@ -457,6 +539,13 @@ public:
             (void)rhi_detail::set_error(error_out, "invalid SPIR-V shader module payload");
             return 0;
         }
+        if (!spirv_has_entry_point(desc.spirv_words, spirv_execution_model(desc.stage),
+                                   desc.entry_point)) {
+            (void)rhi_detail::set_error(
+                error_out, "SPIR-V module has no entry point '" + desc.entry_point +
+                               "' for the requested shader stage");
+            return 0;
+        }
         const ShaderModuleHandle id = allocate_handle();
         ShaderModuleRec rec{};
         rec.stage = desc.stage;
@@ -475,15 +564,30 @@ public:
 
     [[nodiscard]] PipelineHandle create_pipeline(const PipelineDesc& desc,
                                                  std::string* error_out = nullptr) override {
-        if (desc.vertex_shader != 0 &&
-            shader_modules_.find(desc.vertex_shader) == shader_modules_.end()) {
-            (void)rhi_detail::set_error(error_out, "pipeline references invalid vertex shader");
-            return 0;
+        // Modules are only needed at pipeline creation: like `VkShaderModule`, they
+        // may be destroyed afterwards without affecting the pipeline.
+        if (desc.vertex_shader != 0) {
+            const auto it = shader_modules_.find(desc.vertex_shader);
+            if (it == shader_modules_.end()) {
+                (void)rhi_detail::set_error(error_out, "pipeline references invalid vertex shader");
+                return 0;
+            }
+            if (it->second.stage != RhiShaderStage::vertex) {
+                (void)rhi_detail::set_error(error_out, "pipeline vertex shader is not a vertex-stage module");
+                return 0;
+            }
         }
-        if (desc.fragment_shader != 0 &&
-            shader_modules_.find(desc.fragment_shader) == shader_modules_.end()) {
-            (void)rhi_detail::set_error(error_out, "pipeline references invalid fragment shader");
-            return 0;
+        if (desc.fragment_shader != 0) {
+            const auto it = shader_modules_.find(desc.fragment_shader);
+            if (it == shader_modules_.end()) {
+                (void)rhi_detail::set_error(error_out, "pipeline references invalid fragment shader");
+                return 0;
+            }
+            if (it->second.stage != RhiShaderStage::fragment) {
+                (void)rhi_detail::set_error(error_out,
+                                            "pipeline fragment shader is not a fragment-stage module");
+                return 0;
+            }
         }
         const PipelineHandle id = allocate_handle();
         pipelines_.emplace(id, desc);
@@ -537,14 +641,6 @@ public:
             if (pip_it == pipelines_.end() || vb_it == buffers_.end() || ib_it == buffers_.end()) {
                 return fail("draw call references invalid RHI handle");
             }
-            if (pip_it->second.vertex_shader != 0 &&
-                shader_modules_.find(pip_it->second.vertex_shader) == shader_modules_.end()) {
-                return fail("pipeline vertex shader handle was destroyed");
-            }
-            if (pip_it->second.fragment_shader != 0 &&
-                shader_modules_.find(pip_it->second.fragment_shader) == shader_modules_.end()) {
-                return fail("pipeline fragment shader handle was destroyed");
-            }
             if (vb_it->second.usage != BufferUsage::vertex ||
                 ib_it->second.usage != BufferUsage::index) {
                 return fail("draw call buffer usage mismatch");
@@ -583,11 +679,18 @@ public:
 
             // Vertex stage: transform each vertex once (indexed meshes share
             // vertices between triangles), reading the stored bytes in place.
+            const PipelineDesc& pip = pip_it->second;
+            const bool lit = pip.enable_lighting;
+            const bool need_tangent = lit && pip.use_normal_map && normal_tex != nullptr;
+            std::array<float, 9> normal_m{};
+            if (lit) {
+                normal_m = normal_matrix_from_model(draw.model);
+            }
             clip_scratch_.resize(num_verts);
             for (std::size_t i = 0; i < num_verts; ++i) {
                 MeshVertex mv{};
                 std::memcpy(&mv, vb.data() + i * sizeof(MeshVertex), sizeof(MeshVertex));
-                clip_scratch_[i] = to_clip(mv, draw.mvp);
+                clip_scratch_[i] = to_clip(mv, draw.mvp, lit ? normal_m.data() : nullptr);
             }
 
             for (std::uint32_t idx = 0; idx + 2U < draw.index_count; idx += 3U) {
@@ -602,7 +705,17 @@ public:
                 if (!a.finite || !b.finite || !c.finite) {
                     continue;
                 }
-                clip_and_rasterize(pass, pip_it->second, a, b, c, tex, normal_tex, spec_tex,
+                TriangleFrame frame{};
+                if (need_tangent) {
+                    MeshVertex v0{};
+                    MeshVertex v1{};
+                    MeshVertex v2{};
+                    std::memcpy(&v0, vb.data() + tri[0] * sizeof(MeshVertex), sizeof(MeshVertex));
+                    std::memcpy(&v1, vb.data() + tri[1] * sizeof(MeshVertex), sizeof(MeshVertex));
+                    std::memcpy(&v2, vb.data() + tri[2] * sizeof(MeshVertex), sizeof(MeshVertex));
+                    frame = triangle_uv_frame(v0, v1, v2, draw.model);
+                }
+                clip_and_rasterize(pass, pip, a, b, c, frame, tex, normal_tex, spec_tex,
                                    out_rgba8, depth_scratch_);
             }
         }
@@ -675,7 +788,76 @@ private:
     static constexpr int kClipPlanes = 6;
     static constexpr std::size_t kMaxClipVerts = 3U + kClipPlanes;
 
-    static ClipVert to_clip(const MeshVertex& v, const float m[16]) noexcept {
+    // Per-triangle tangent frame derived from object positions and UVs (MeshVertex
+    // carries no tangents), in the lighting frame. `valid` is false for degenerate UVs.
+    struct TriangleFrame {
+        float tx = 1.0f;
+        float ty = 0.0f;
+        float tz = 0.0f;
+        float bx = 0.0f;
+        float by = 1.0f;
+        float bz = 0.0f;
+        bool valid = false;
+    };
+
+    // Inverse transpose of the model matrix's upper 3x3, column-major; falls back to
+    // the upper 3x3 itself when it is singular.
+    static std::array<float, 9> normal_matrix_from_model(const float m[16]) noexcept {
+        const float a = m[0], b = m[4], c = m[8];
+        const float d = m[1], e = m[5], f = m[9];
+        const float g = m[2], h = m[6], i = m[10];
+        const float A = e * i - f * h;
+        const float B = -(d * i - f * g);
+        const float C = d * h - e * g;
+        const float det = a * A + b * B + c * C;
+        if (!(std::fabs(det) > 1.0e-12f) || !std::isfinite(det)) {
+            return {m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]};
+        }
+        const float inv = 1.0f / det;
+        // Cofactor matrix / det == inverse transpose; stored column-major.
+        const float D = -(b * i - c * h);
+        const float E = a * i - c * g;
+        const float F = -(a * h - b * g);
+        const float G = b * f - c * e;
+        const float H = -(a * f - c * d);
+        const float I = a * e - b * d;
+        // Row r, column c of the inverse transpose is cofactor(r, c) / det, where
+        // A..C, D..F, G..I are cofactor rows 0, 1, 2; emitted column by column.
+        return {A * inv, D * inv, G * inv, B * inv, E * inv, H * inv, C * inv, F * inv, I * inv};
+    }
+
+    static TriangleFrame triangle_uv_frame(const MeshVertex& v0,
+                                           const MeshVertex& v1,
+                                           const MeshVertex& v2,
+                                           const float model[16]) noexcept {
+        TriangleFrame fr{};
+        const float e1x = v1.px - v0.px, e1y = v1.py - v0.py, e1z = v1.pz - v0.pz;
+        const float e2x = v2.px - v0.px, e2y = v2.py - v0.py, e2z = v2.pz - v0.pz;
+        const float du1 = v1.u - v0.u, dv1 = v1.v - v0.v;
+        const float du2 = v2.u - v0.u, dv2 = v2.v - v0.v;
+        const float det = du1 * dv2 - du2 * dv1;
+        if (!(std::fabs(det) > 1.0e-12f) || !std::isfinite(det)) {
+            return fr;
+        }
+        const float r = 1.0f / det;
+        const float tx = (e1x * dv2 - e2x * dv1) * r;
+        const float ty = (e1y * dv2 - e2y * dv1) * r;
+        const float tz = (e1z * dv2 - e2z * dv1) * r;
+        const float bx = (e2x * du1 - e1x * du2) * r;
+        const float by = (e2y * du1 - e1y * du2) * r;
+        const float bz = (e2z * du1 - e1z * du2) * r;
+        fr.tx = model[0] * tx + model[4] * ty + model[8] * tz;
+        fr.ty = model[1] * tx + model[5] * ty + model[9] * tz;
+        fr.tz = model[2] * tx + model[6] * ty + model[10] * tz;
+        fr.bx = model[0] * bx + model[4] * by + model[8] * bz;
+        fr.by = model[1] * bx + model[5] * by + model[9] * bz;
+        fr.bz = model[2] * bx + model[6] * by + model[10] * bz;
+        fr.valid = std::isfinite(fr.tx) && std::isfinite(fr.ty) && std::isfinite(fr.tz) &&
+                   std::isfinite(fr.bx) && std::isfinite(fr.by) && std::isfinite(fr.bz);
+        return fr;
+    }
+
+    static ClipVert to_clip(const MeshVertex& v, const float m[16], const float* normal_m) noexcept {
         ClipVert cv{};
         cv.x = m[0] * v.px + m[4] * v.py + m[8] * v.pz + m[12];
         cv.y = m[1] * v.px + m[5] * v.py + m[9] * v.pz + m[13];
@@ -685,9 +867,15 @@ private:
                     std::isfinite(cv.w) && std::isfinite(v.u) && std::isfinite(v.v);
         cv.u = v.u;
         cv.v = v.v;
-        cv.nx = v.nx;
-        cv.ny = v.ny;
-        cv.nz = v.nz;
+        if (normal_m != nullptr) {
+            cv.nx = normal_m[0] * v.nx + normal_m[3] * v.ny + normal_m[6] * v.nz;
+            cv.ny = normal_m[1] * v.nx + normal_m[4] * v.ny + normal_m[7] * v.nz;
+            cv.nz = normal_m[2] * v.nx + normal_m[5] * v.ny + normal_m[8] * v.nz;
+        } else {
+            cv.nx = v.nx;
+            cv.ny = v.ny;
+            cv.nz = v.nz;
+        }
         cv.r = static_cast<float>(v.color_rgba & 0xFFU) / 255.0f;
         cv.g = static_cast<float>((v.color_rgba >> 8U) & 0xFFU) / 255.0f;
         cv.b = static_cast<float>((v.color_rgba >> 16U) & 0xFFU) / 255.0f;
@@ -800,6 +988,7 @@ private:
                                    const ClipVert& a,
                                    const ClipVert& b,
                                    const ClipVert& c,
+                                   const TriangleFrame& frame,
                                    const TextureRec* tex,
                                    const TextureRec* normal_tex,
                                    const TextureRec* spec_tex,
@@ -843,8 +1032,30 @@ private:
                                   pip.compensate_d3d9_half_pixel);
         }
         for (std::size_t i = 1; i + 1U < count; ++i) {
-            rasterize_triangle(pass, pip, screen[0], screen[i], screen[i + 1U], tex,
+            rasterize_triangle(pass, pip, screen[0], screen[i], screen[i + 1U], frame, tex,
                                normal_tex, spec_tex, color_buf, depth_buf);
+        }
+    }
+
+    // Key light normalized from (0.45, 0.70, 0.55); Blinn half vector with view (0, 0, 1),
+    // precomputed: normalize(L + V).
+    static constexpr float kLightX = 0.451129f;
+    static constexpr float kLightY = 0.701757f;
+    static constexpr float kLightZ = 0.551380f;
+    static constexpr float kHalfX = 0.256110f;
+    static constexpr float kHalfY = 0.398394f;
+    static constexpr float kHalfZ = 0.880733f;
+
+    static void normalize3(float& x, float& y, float& z) noexcept {
+        const float len = std::sqrt(x * x + y * y + z * z);
+        if (len > 1.0e-6f) {
+            x /= len;
+            y /= len;
+            z /= len;
+        } else {
+            x = 0.0f;
+            y = 0.0f;
+            z = 1.0f;
         }
     }
 
@@ -861,6 +1072,7 @@ private:
                                    const ScreenVert& s0,
                                    ScreenVert s1,
                                    ScreenVert s2,
+                                   const TriangleFrame& frame,
                                    const TextureRec* tex,
                                    const TextureRec* normal_tex,
                                    const TextureRec* spec_tex,
@@ -925,6 +1137,7 @@ private:
         const std::int64_t step_x2 = (s1.fy - s0.fy) * kSubpixel;
         const bool fast_p4_path = !pip.alpha_test && !pip.srgb_texture && !pip.srgb_framebuffer &&
                                   !pip.enable_lighting && pip.blend_mode == BlendMode::opaque;
+        const float spec_power = std::max(1.0f, pip.specular_power);
 
         for (std::int64_t py = y_begin; py <= y_end; ++py) {
             const std::int64_t cy = py * kSubpixel + half;
@@ -988,36 +1201,23 @@ private:
                     continue;
                 }
 
-                float tr_f = static_cast<float>(tr) / 255.0f;
-                float tg_f = static_cast<float>(tg) / 255.0f;
-                float tb_f = static_cast<float>(tb) / 255.0f;
+                float sr = static_cast<float>(tr) / 255.0f;
+                float sg = static_cast<float>(tg) / 255.0f;
+                float sb = static_cast<float>(tb) / 255.0f;
                 if (pip.srgb_texture) {
-                    tr_f = srgb_to_linear_f32(tr_f);
-                    tg_f = srgb_to_linear_f32(tg_f);
-                    tb_f = srgb_to_linear_f32(tb_f);
+                    sr = srgb_u8_to_linear_f32(tr);
+                    sg = srgb_u8_to_linear_f32(tg);
+                    sb = srgb_u8_to_linear_f32(tb);
                 }
-
-                float sr = tr_f * vr;
-                float sg = tg_f * vg;
-                float sb = tb_f * vb;
+                sr *= vr;
+                sg *= vg;
+                sb *= vb;
 
                 if (pip.enable_lighting) {
-                    auto norm3 = [](float& x, float& y, float& z_c) noexcept {
-                        const float len = std::sqrt(x * x + y * y + z_c * z_c);
-                        if (len > 1.0e-6f) {
-                            x /= len;
-                            y /= len;
-                            z_c /= len;
-                        } else {
-                            x = 0.0f;
-                            y = 0.0f;
-                            z_c = 1.0f;
-                        }
-                    };
                     float nx = interp(s0.nx_over_w, s1.nx_over_w, s2.nx_over_w);
                     float ny = interp(s0.ny_over_w, s1.ny_over_w, s2.ny_over_w);
                     float nz = interp(s0.nz_over_w, s1.nz_over_w, s2.nz_over_w);
-                    norm3(nx, ny, nz);
+                    normalize3(nx, ny, nz);
 
                     if (pip.use_normal_map && normal_tex != nullptr) {
                         std::uint8_t nr = 128U, ng = 128U, nb = 255U, na = 255U;
@@ -1025,36 +1225,62 @@ private:
                         const float tnx = (static_cast<float>(nr) / 255.0f) * 2.0f - 1.0f;
                         const float tny = (static_cast<float>(ng) / 255.0f) * 2.0f - 1.0f;
                         const float tnz = (static_cast<float>(nb) / 255.0f) * 2.0f - 1.0f;
-                        const float ux = (std::fabs(ny) < 0.99f) ? 0.0f : 1.0f;
-                        const float uy = (std::fabs(ny) < 0.99f) ? 1.0f : 0.0f;
-                        const float uz = 0.0f;
-                        float tx = uy * nz - uz * ny;
-                        float ty = uz * nx - ux * nz;
-                        float tz = ux * ny - uy * nx;
-                        norm3(tx, ty, tz);
-                        const float bx = ny * tz - nz * ty;
-                        const float by = nz * tx - nx * tz;
-                        const float bz = nx * ty - ny * tx;
-                        nx = tx * tnx + bx * tny + nx * tnz;
-                        ny = ty * tnx + by * tny + ny * tnz;
-                        nz = tz * tnx + bz * tny + nz * tnz;
-                        norm3(nx, ny, nz);
+                        float tx = 0.0f;
+                        float ty = 0.0f;
+                        float tz = 0.0f;
+                        float handed = 1.0f;
+                        bool have_t = false;
+                        if (frame.valid) {
+                            // Gram-Schmidt the triangle's UV tangent against the
+                            // interpolated normal; the UV bitangent sets handedness.
+                            const float ndt = nx * frame.tx + ny * frame.ty + nz * frame.tz;
+                            tx = frame.tx - nx * ndt;
+                            ty = frame.ty - ny * ndt;
+                            tz = frame.tz - nz * ndt;
+                            const float len2 = tx * tx + ty * ty + tz * tz;
+                            if (len2 > 1.0e-12f) {
+                                const float il = 1.0f / std::sqrt(len2);
+                                tx *= il;
+                                ty *= il;
+                                tz *= il;
+                                const float cx = ny * tz - nz * ty;
+                                const float cy = nz * tx - nx * tz;
+                                const float cz = nx * ty - ny * tx;
+                                handed = (cx * frame.bx + cy * frame.by + cz * frame.bz < 0.0f)
+                                             ? -1.0f
+                                             : 1.0f;
+                                have_t = true;
+                            }
+                        }
+                        if (!have_t) {
+                            // Degenerate UVs: any tangent perpendicular to the normal.
+                            const float ux = (std::fabs(ny) < 0.99f) ? 0.0f : 1.0f;
+                            const float uy = (std::fabs(ny) < 0.99f) ? 1.0f : 0.0f;
+                            tx = uy * nz;
+                            ty = -ux * nz;
+                            tz = ux * ny - uy * nx;
+                            normalize3(tx, ty, tz);
+                        }
+                        const float bx = handed * (ny * tz - nz * ty);
+                        const float by = handed * (nz * tx - nx * tz);
+                        const float bz = handed * (nx * ty - ny * tx);
+                        const float mx = tx * tnx + bx * tny + nx * tnz;
+                        const float my = ty * tnx + by * tny + ny * tnz;
+                        const float mz = tz * tnx + bz * tny + nz * tnz;
+                        nx = mx;
+                        ny = my;
+                        nz = mz;
+                        normalize3(nx, ny, nz);
                     }
 
-                    // Key light normalized from (0.45, 0.70, 0.55) + view (0, 0, 1).
-                    constexpr float lx = 0.451129f;
-                    constexpr float ly = 0.701757f;
-                    constexpr float lz = 0.551380f;
-                    const float ndotl = std::max(0.0f, nx * lx + ny * ly + nz * lz);
+                    const float ndotl =
+                        std::max(0.0f, nx * kLightX + ny * kLightY + nz * kLightZ);
                     const float diffuse = 0.28f + 0.72f * ndotl;
 
                     float spec = 0.0f;
                     if (pip.specular_coefficient > 0.0f) {
-                        float hx = lx;
-                        float hy = ly;
-                        float hz = lz + 1.0f;
-                        norm3(hx, hy, hz);
-                        const float ndoth = std::max(0.0f, nx * hx + ny * hy + nz * hz);
+                        const float ndoth =
+                            std::max(0.0f, nx * kHalfX + ny * kHalfY + nz * kHalfZ);
                         float spec_mask = 1.0f;
                         if (pip.use_specular_map && spec_tex != nullptr) {
                             std::uint8_t mr = 255U, mg = 255U, mb = 255U, ma = 255U;
@@ -1062,7 +1288,7 @@ private:
                             spec_mask = static_cast<float>(mr) / 255.0f;
                         }
                         spec = pip.specular_coefficient * spec_mask *
-                               std::pow(ndoth, std::max(1.0f, pip.specular_power));
+                               std::pow(ndoth, spec_power);
                     }
 
                     sr = sr * diffuse + spec;
@@ -1070,41 +1296,51 @@ private:
                     sb = sb * diffuse + spec;
                 }
 
-                float dst_r = static_cast<float>(dst[0]) / 255.0f;
-                float dst_g = static_cast<float>(dst[1]) / 255.0f;
-                float dst_b = static_cast<float>(dst[2]) / 255.0f;
-                if (pip.srgb_framebuffer) {
-                    dst_r = srgb_to_linear_f32(dst_r);
-                    dst_g = srgb_to_linear_f32(dst_g);
-                    dst_b = srgb_to_linear_f32(dst_b);
-                }
-
                 float out_r = sr;
                 float out_g = sg;
                 float out_b = sb;
-                switch (pip.blend_mode) {
-                    case BlendMode::opaque:
-                        break;
-                    case BlendMode::alpha:
-                        out_r = sr * src_a + dst_r * (1.0f - src_a);
-                        out_g = sg * src_a + dst_g * (1.0f - src_a);
-                        out_b = sb * src_a + dst_b * (1.0f - src_a);
-                        break;
-                    case BlendMode::additive_alpha:
-                        out_r = dst_r + sr * src_a;
-                        out_g = dst_g + sg * src_a;
-                        out_b = dst_b + sb * src_a;
-                        break;
-                    case BlendMode::multiply:
-                        out_r = sr * dst_r;
-                        out_g = sg * dst_g;
-                        out_b = sb * dst_b;
-                        break;
-                    case BlendMode::additive:
-                        out_r = dst_r + sr;
-                        out_g = dst_g + sg;
-                        out_b = dst_b + sb;
-                        break;
+                const float dst_a = static_cast<float>(dst[3]) / 255.0f;
+                float out_a = src_a;
+                if (pip.blend_mode != BlendMode::opaque) {
+                    // The destination is only read (and sRGB-decoded) when blending.
+                    float dst_r = static_cast<float>(dst[0]) / 255.0f;
+                    float dst_g = static_cast<float>(dst[1]) / 255.0f;
+                    float dst_b = static_cast<float>(dst[2]) / 255.0f;
+                    if (pip.srgb_framebuffer) {
+                        dst_r = srgb_u8_to_linear_f32(dst[0]);
+                        dst_g = srgb_u8_to_linear_f32(dst[1]);
+                        dst_b = srgb_u8_to_linear_f32(dst[2]);
+                    }
+                    // D3D9 without D3DRS_SEPARATEALPHABLENDENABLE: alpha uses the
+                    // same source/destination factors as colour.
+                    switch (pip.blend_mode) {
+                        case BlendMode::opaque:
+                            break;
+                        case BlendMode::alpha:  // SRCALPHA / INVSRCALPHA
+                            out_r = sr * src_a + dst_r * (1.0f - src_a);
+                            out_g = sg * src_a + dst_g * (1.0f - src_a);
+                            out_b = sb * src_a + dst_b * (1.0f - src_a);
+                            out_a = src_a * src_a + dst_a * (1.0f - src_a);
+                            break;
+                        case BlendMode::additive_alpha:  // SRCALPHA / ONE
+                            out_r = dst_r + sr * src_a;
+                            out_g = dst_g + sg * src_a;
+                            out_b = dst_b + sb * src_a;
+                            out_a = dst_a + src_a * src_a;
+                            break;
+                        case BlendMode::multiply:  // ZERO / SRCCOLOR
+                            out_r = sr * dst_r;
+                            out_g = sg * dst_g;
+                            out_b = sb * dst_b;
+                            out_a = src_a * dst_a;
+                            break;
+                        case BlendMode::additive:  // ONE / ONE
+                            out_r = dst_r + sr;
+                            out_g = dst_g + sg;
+                            out_b = dst_b + sb;
+                            out_a = dst_a + src_a;
+                            break;
+                    }
                 }
 
                 if (pip.srgb_framebuffer) {
@@ -1112,13 +1348,11 @@ private:
                     dst[1] = linear_to_srgb_u8(out_g);
                     dst[2] = linear_to_srgb_u8(out_b);
                 } else {
-                    dst[0] = static_cast<std::uint8_t>(std::lround(std::clamp(out_r, 0.0f, 1.0f) * 255.0f));
-                    dst[1] = static_cast<std::uint8_t>(std::lround(std::clamp(out_g, 0.0f, 1.0f) * 255.0f));
-                    dst[2] = static_cast<std::uint8_t>(std::lround(std::clamp(out_b, 0.0f, 1.0f) * 255.0f));
+                    dst[0] = unorm_to_u8(out_r);
+                    dst[1] = unorm_to_u8(out_g);
+                    dst[2] = unorm_to_u8(out_b);
                 }
-                dst[3] = (pip.blend_mode == BlendMode::alpha)
-                             ? static_cast<std::uint8_t>(std::max<int>(dst[3], out_a_u8))
-                             : out_a_u8;
+                dst[3] = (pip.blend_mode == BlendMode::opaque) ? out_a_u8 : unorm_to_u8(out_a);
             }
         }
     }

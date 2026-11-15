@@ -49,6 +49,13 @@ struct VulkanDriverProbeResult {
     // `offscreen_hardware_buffer_bridge` for direct custom ICD `dlopen`).
     bool supports_android_surface_wsi = false;
     PresentationPath presentation_path = PresentationPath::offscreen_hardware_buffer_bridge;
+    // On `android_surface_wsi` the instance is created with `VK_KHR_surface` +
+    // `VK_KHR_android_surface` enabled and the device with `VK_KHR_swapchain`; a
+    // device without `VK_KHR_swapchain` drops back to the offscreen bridge
+    // (`presentation_note` says so).
+    bool wsi_instance_extensions_enabled = false;
+    bool swapchain_extension_enabled = false;
+    std::string presentation_note{};
     std::string device_name{};
     std::string loaded_library{};
     std::string fallback_reason{};
@@ -66,6 +73,8 @@ struct VulkanMockConfig {
     bool texture_compression_bc = true;
     bool direct_icd = true;
     bool expose_android_surface_wsi = false;
+    // Device-level `VK_KHR_swapchain`, offered only on a WSI-enabled instance.
+    bool expose_swapchain = true;
 };
 
 [[nodiscard]] std::string format_vulkan_version(std::uint32_t vk_version);

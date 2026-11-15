@@ -31,6 +31,7 @@
 #include "wse/platform/driver_package.h"
 #include "wse/platform/rhi.h"
 #include "wse/platform/rhi_brf.h"
+#include "wse/platform/rhi_material.h"
 #include "wse/platform/saf_vfs.h"
 #include "wse/platform/sleep.h"
 #include "wse/platform/vfs.h"
@@ -1172,9 +1173,16 @@ void test_p5_shader_modules_d3d9_and_material_rhi() {
         float px = 0.0f, py = 0.0f;
         apply_d3d9_half_pixel_offset_px(10.0f, 20.0f, px, py);
         expect(px == 10.5f && py == 20.5f, "half-pixel px helper adds (+0.5, +0.5)");
-        apply_d3d9_half_pixel_offset_clip(0.0f, 0.0f, 100U, 50U, cx, cy);
+        apply_d3d9_half_pixel_offset_clip(0.0f, 0.0f, 1.0f, 100U, 50U, cx, cy);
         expect(std::fabs(cx - 0.01f) < 1.0e-6f && std::fabs(cy - 0.02f) < 1.0e-6f,
-               "half-pixel clip helper shifts by (1/W, 1/H)");
+               "half-pixel clip helper shifts by (1/W, 1/H) at w = 1");
+        apply_d3d9_half_pixel_offset_clip(0.0f, 0.0f, 2.0f, 100U, 50U, cx, cy, true);
+        expect(std::fabs(cx - 0.02f) < 1.0e-6f && std::fabs(cy + 0.04f) < 1.0e-6f,
+               "half-pixel clip helper scales by w and flips for D3D9 +Y-up NDC");
+        expect(unorm_to_u8(std::numeric_limits<float>::quiet_NaN()) == 0U &&
+                   linear_to_srgb_u8(std::numeric_limits<float>::quiet_NaN()) == 0U &&
+                   srgb_u8_to_linear_f32(128U) == srgb_to_linear_f32(128.0f / 255.0f),
+               "NaN-safe UNORM conversion and exact sRGB decode table");
 
         const float lin_128 = srgb_to_linear_f32(128.0f / 255.0f);
         expect(lin_128 > 0.214f && lin_128 < 0.218f, "srgb_to_linear_f32(128/255) ~= 0.2158");
@@ -1214,9 +1222,9 @@ void test_p5_shader_modules_d3d9_and_material_rhi() {
             return;
         }
 
-        const auto vs_words = compile_glsl_to_spirv(
+        const auto vs_words = emit_placeholder_spirv_module(
             tech->vs_glsl, SpirvStage::Vertex, tech->name, VertexDeclType::BumpedSkinned);
-        const auto fs_words = compile_glsl_to_spirv(
+        const auto fs_words = emit_placeholder_spirv_module(
             tech->fs_glsl, SpirvStage::Fragment, tech->name, VertexDeclType::BumpedSkinned);
         expect(is_valid_spirv_module(vs_words) && is_valid_spirv_module(fs_words),
                "compiled VS and FS SPIR-V modules pass header validation");
@@ -1562,6 +1570,172 @@ void test_p5_shader_modules_d3d9_and_material_rhi() {
     }
 }
 
+// Regression tests for the P5 review (each block names the defect).
+void test_p5_rhi_review_fixes() {
+    using namespace wse::platform;
+    using namespace wse::asset;
+    std::string err;
+
+    // WSI is enabled (instance + VK_KHR_swapchain), not merely detected; a device
+    // without VK_KHR_swapchain falls back to the offscreen bridge.
+    {
+        VulkanDriverLoader loader;
+        VulkanMockConfig cfg{};
+        cfg.mode = DriverMode::system;
+        cfg.direct_icd = false;
+        cfg.expose_android_surface_wsi = true;
+        VulkanDriverProbeResult probe{};
+        expect(loader.load_mock_icd(cfg) && loader.probe_and_create_device(probe) &&
+                   probe.presentation_path == PresentationPath::android_surface_wsi &&
+                   probe.wsi_instance_extensions_enabled && probe.swapchain_extension_enabled,
+               "android_surface_wsi enables instance WSI and VK_KHR_swapchain");
+
+        VulkanDriverLoader no_sc;
+        cfg.expose_swapchain = false;
+        VulkanDriverProbeResult probe2{};
+        expect(no_sc.load_mock_icd(cfg) && no_sc.probe_and_create_device(probe2) &&
+                   probe2.presentation_path == PresentationPath::offscreen_hardware_buffer_bridge &&
+                   !probe2.swapchain_extension_enabled && !probe2.presentation_note.empty(),
+               "missing VK_KHR_swapchain falls back to the offscreen bridge");
+
+        VulkanDriverLoader direct;
+        VulkanMockConfig dcfg{};
+        VulkanDriverProbeResult probe3{};
+        expect(direct.load_mock_icd(dcfg) && direct.probe_and_create_device(probe3) &&
+                   !probe3.wsi_instance_extensions_enabled && !probe3.swapchain_extension_enabled,
+               "direct ICD requests no WSI extensions");
+    }
+
+    const auto vs_words = emit_placeholder_spirv_module("void main() {}", SpirvStage::Vertex, "t",
+                                                        VertexDeclType::Standard);
+    const auto fs_words = emit_placeholder_spirv_module("void main() {}", SpirvStage::Fragment, "t",
+                                                        VertexDeclType::Standard);
+
+    // Stage / entry-point validation.
+    {
+        SoftwareRhiDevice dev;
+        expect(dev.create_shader_module(ShaderModuleDesc{RhiShaderStage::fragment, "main", "x", vs_words},
+                                        &err) == 0U &&
+                   dev.create_shader_module(ShaderModuleDesc{RhiShaderStage::vertex, "other", "x", vs_words},
+                                            &err) == 0U &&
+                   dev.create_shader_module(ShaderModuleDesc{RhiShaderStage::vertex, "", "x", vs_words},
+                                            &err) == 0U,
+               "shader module stage and entry point must match the SPIR-V OpEntryPoint");
+        const ShaderModuleHandle vs = dev.create_shader_module(
+            ShaderModuleDesc{RhiShaderStage::vertex, "main", "vs", vs_words}, &err);
+        const ShaderModuleHandle fs = dev.create_shader_module(
+            ShaderModuleDesc{RhiShaderStage::fragment, "main", "fs", fs_words}, &err);
+        PipelineDesc swapped{};
+        swapped.vertex_shader = fs;
+        swapped.fragment_shader = vs;
+        expect(vs != 0U && fs != 0U && dev.create_pipeline(swapped, &err) == 0U,
+               "pipeline rejects a fragment module in the vertex slot");
+
+        // Modules may be destroyed once the pipeline exists (VkShaderModule semantics).
+        PipelineDesc pd{};
+        pd.cull_mode = CullMode::none;
+        pd.vertex_shader = vs;
+        pd.fragment_shader = fs;
+        const PipelineHandle pip = dev.create_pipeline(pd, &err);
+        dev.destroy_shader_module(vs);
+        dev.destroy_shader_module(fs);
+        const std::array<MeshVertex, 3> tri{{
+            {-0.5f, -0.5f, 0.5f, 0, 0, 1, 0, 0, 0xFF0000FFU},
+            {0.5f, -0.5f, 0.5f, 0, 0, 1, 1, 0, 0xFF0000FFU},
+            {0.0f, 0.5f, 0.5f, 0, 0, 1, 0, 1, 0xFF0000FFU},
+        }};
+        const std::array<std::uint16_t, 3> idx{0, 1, 2};
+        const BufferHandle vb = dev.create_buffer(
+            BufferUsage::vertex, std::span<const std::uint8_t>(
+                                     reinterpret_cast<const std::uint8_t*>(tri.data()), sizeof(tri)));
+        const BufferHandle ib = dev.create_buffer(
+            BufferUsage::index, std::span<const std::uint8_t>(
+                                    reinterpret_cast<const std::uint8_t*>(idx.data()), sizeof(idx)));
+        MeshDrawCall draw{};
+        draw.pipeline = pip;
+        draw.vertex_buffer = vb;
+        draw.index_buffer = ib;
+        draw.index_count = 3U;
+        RenderPassDesc pass{};
+        std::vector<std::uint8_t> frame;
+        const std::array<MeshDrawCall, 1> draws{draw};
+        expect(pip != 0U && dev.render_pass_and_readback(pass, draws, frame, &err) &&
+                   frame[(32U * 64U + 32U) * 4U] == 255U,
+               "pipeline still draws after its shader modules are destroyed");
+
+        // Lighting uses the model matrix: rotating the mesh 180 degrees about Y
+        // turns a light-facing +Z normal away from the key light.
+        PipelineDesc lit{};
+        lit.cull_mode = CullMode::none;
+        lit.enable_lighting = true;
+        const PipelineHandle lit_pip = dev.create_pipeline(lit, &err);
+        MeshDrawCall lit_draw = draw;
+        lit_draw.pipeline = lit_pip;
+        std::vector<std::uint8_t> f_front;
+        std::vector<std::uint8_t> f_back;
+        const std::array<MeshDrawCall, 1> d_front{lit_draw};
+        lit_draw.model[0] = -1.0f;
+        lit_draw.model[10] = -1.0f;
+        const std::array<MeshDrawCall, 1> d_back{lit_draw};
+        expect(dev.render_pass_and_readback(pass, d_front, f_front, &err) &&
+                   dev.render_pass_and_readback(pass, d_back, f_back, &err) &&
+                   f_front[(32U * 64U + 32U) * 4U] > f_back[(32U * 64U + 32U) * 4U],
+               "normals are transformed by MeshDrawCall::model");
+
+        // Alpha channel blends with the colour factors (SRCALPHA / INVSRCALPHA).
+        PipelineDesc blend{};
+        blend.cull_mode = CullMode::none;
+        blend.depth_write = false;
+        blend.blend_mode = BlendMode::alpha;
+        const PipelineHandle blend_pip = dev.create_pipeline(blend, &err);
+        MeshDrawCall bdraw = draw;
+        bdraw.pipeline = blend_pip;
+        const std::array<MeshVertex, 3> half_tri{{
+            {-0.5f, -0.5f, 0.5f, 0, 0, 1, 0, 0, 0x80FFFFFFU},
+            {0.5f, -0.5f, 0.5f, 0, 0, 1, 1, 0, 0x80FFFFFFU},
+            {0.0f, 0.5f, 0.5f, 0, 0, 1, 0, 1, 0x80FFFFFFU},
+        }};
+        const BufferHandle hvb = dev.create_buffer(
+            BufferUsage::vertex,
+            std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(half_tri.data()),
+                                          sizeof(half_tri)));
+        bdraw.vertex_buffer = hvb;
+        RenderPassDesc bpass{};
+        bpass.clear_a = 0U;
+        std::vector<std::uint8_t> f_blend;
+        const std::array<MeshDrawCall, 1> d_blend{bdraw};
+        // a = 128/255: a*a + 0*(1-a) = 0.252 -> 64.
+        expect(dev.render_pass_and_readback(bpass, d_blend, f_blend, &err) &&
+                   f_blend[(32U * 64U + 32U) * 4U + 3U] >= 63U &&
+                   f_blend[(32U * 64U + 32U) * 4U + 3U] <= 65U,
+               "alpha blend applies SRCALPHA/INVSRCALPHA to the alpha channel");
+        dev.destroy_buffer(hvb);
+        dev.destroy_pipeline(blend_pip);
+        dev.destroy_pipeline(lit_pip);
+        dev.destroy_buffer(ib);
+        dev.destroy_buffer(vb);
+        dev.destroy_pipeline(pip);
+    }
+
+    // Material -> pipeline mapping.
+    {
+        MaterialRenderState st{};
+        st.blend_mode = MaterialBlendMode::AdditiveAlpha;
+        st.alpha_ref_u8 = 0U;
+        st.depth_write = false;
+        st.uses_specular = true;
+        st.specular_coeff = 32.0f;
+        st.specular_rgb = {0.2f, 0.5f, 0.1f};
+        const PipelineDesc pd = make_pipeline_desc(st);
+        expect(pd.blend_mode == BlendMode::additive_alpha && !pd.alpha_test && !pd.depth_write &&
+                   pd.front_face == FrontFace::clockwise && pd.specular_power == 32.0f &&
+                   pd.specular_coefficient == 0.5f &&
+                   to_rhi_shader_stage(SpirvStage::Fragment) == RhiShaderStage::fragment &&
+                   to_spirv_stage(RhiShaderStage::vertex) == SpirvStage::Vertex,
+               "make_pipeline_desc maps decoded material state onto PipelineDesc");
+    }
+}
+
 // Regression tests for the second P4 review (each block names the defect).
 void test_p4_review_fixes() {
     using namespace wse::platform;
@@ -1865,6 +2039,7 @@ int run_platform_suite(const char* fixture_path) {
     test_rhi_and_driver_loader();
     test_p5_shader_modules_d3d9_and_material_rhi();
     test_p4_review_fixes();
+    test_p5_rhi_review_fixes();
     if (failures != 0) {
         std::printf("platform tests: FAIL (%d)\n", failures);
         return 1;

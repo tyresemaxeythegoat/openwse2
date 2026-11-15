@@ -198,6 +198,7 @@ struct MockInstance {
     VulkanMockConfig config{};
     std::uint32_t negotiated_version = kMaxSupportedIcdVersion;
     MockPhysicalDevice physical_device{};
+    bool wsi_enabled = false;  // VK_KHR_surface + VK_KHR_android_surface enabled
 };
 
 struct MockDevice {
@@ -245,6 +246,63 @@ VKAPI_ATTR VkResult VKAPI_CALL mock_vkEnumerateInstanceVersion(std::uint32_t* pA
     return VK_SUCCESS;
 }
 
+bool mock_config_exposes_wsi(const VulkanMockConfig* cfg) noexcept {
+    return cfg != nullptr && (!cfg->direct_icd || cfg->expose_android_surface_wsi);
+}
+
+constexpr std::array<const char*, 2> kMockWsiInstanceExts{"VK_KHR_surface",
+                                                          "VK_KHR_android_surface"};
+constexpr std::array<const char*, 1> kMockWsiDeviceExts{"VK_KHR_swapchain"};
+
+// Standard two-call enumeration over `names` (empty when `expose` is false).
+template <std::size_t N>
+VkResult mock_enumerate_extensions(bool expose,
+                                   const std::array<const char*, N>& names,
+                                   std::uint32_t* pPropertyCount,
+                                   VkExtensionProperties* pProperties) noexcept {
+    const std::uint32_t total = expose ? static_cast<std::uint32_t>(N) : 0U;
+    if (pProperties == nullptr) {
+        *pPropertyCount = total;
+        return VK_SUCCESS;
+    }
+    const std::uint32_t n = std::min<std::uint32_t>(*pPropertyCount, total);
+    for (std::uint32_t i = 0U; i < n; ++i) {
+        std::memset(&pProperties[i], 0, sizeof(VkExtensionProperties));
+        const std::size_t len = std::min<std::size_t>(
+            std::strlen(names[i]), VK_MAX_EXTENSION_NAME_SIZE - 1U);
+        std::memcpy(pProperties[i].extensionName, names[i], len);
+        pProperties[i].specVersion = 1U;
+    }
+    *pPropertyCount = n;
+    return (n < total) ? VK_INCOMPLETE : VK_SUCCESS;
+}
+
+// VK_ERROR_EXTENSION_NOT_PRESENT unless every requested name is offered, as a
+// conformant driver does. Sets `all_of_offered` when every offered name was enabled.
+template <std::size_t N>
+VkResult mock_check_enabled_extensions(bool expose,
+                                       const std::array<const char*, N>& names,
+                                       std::uint32_t count,
+                                       const char* const* requested,
+                                       bool& all_of_offered) noexcept {
+    std::size_t matched = 0;
+    for (std::uint32_t i = 0U; i < count; ++i) {
+        if (requested == nullptr || requested[i] == nullptr) {
+            return VK_ERROR_EXTENSION_NOT_PRESENT;
+        }
+        bool known = false;
+        for (const char* n : names) {
+            known = known || (expose && std::strcmp(n, requested[i]) == 0);
+        }
+        if (!known) {
+            return VK_ERROR_EXTENSION_NOT_PRESENT;
+        }
+        ++matched;
+    }
+    all_of_offered = expose && matched == N;
+    return VK_SUCCESS;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL mock_vkEnumerateInstanceExtensionProperties(
     const char* pLayerName,
     std::uint32_t* pPropertyCount,
@@ -255,30 +313,8 @@ VKAPI_ATTR VkResult VKAPI_CALL mock_vkEnumerateInstanceExtensionProperties(
     if (pPropertyCount == nullptr) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    const bool expose_wsi =
-        (g_tls_mock_config != nullptr) &&
-        (!g_tls_mock_config->direct_icd || g_tls_mock_config->expose_android_surface_wsi);
-    if (!expose_wsi) {
-        *pPropertyCount = 0U;
-        return VK_SUCCESS;
-    }
-    constexpr std::array<const char*, 2> kWsiExts{"VK_KHR_surface",
-                                                  "VK_KHR_android_surface"};
-    if (pProperties == nullptr) {
-        *pPropertyCount = static_cast<std::uint32_t>(kWsiExts.size());
-        return VK_SUCCESS;
-    }
-    const std::uint32_t n = std::min<std::uint32_t>(
-        *pPropertyCount, static_cast<std::uint32_t>(kWsiExts.size()));
-    for (std::uint32_t i = 0U; i < n; ++i) {
-        std::memset(&pProperties[i], 0, sizeof(VkExtensionProperties));
-        const std::size_t len = std::min<std::size_t>(
-            std::strlen(kWsiExts[i]), VK_MAX_EXTENSION_NAME_SIZE - 1U);
-        std::memcpy(pProperties[i].extensionName, kWsiExts[i], len);
-        pProperties[i].specVersion = 1U;
-    }
-    *pPropertyCount = n;
-    return (n < kWsiExts.size()) ? VK_INCOMPLETE : VK_SUCCESS;
+    return mock_enumerate_extensions(mock_config_exposes_wsi(g_tls_mock_config),
+                                     kMockWsiInstanceExts, pPropertyCount, pProperties);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateInstance(
@@ -289,7 +325,15 @@ VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateInstance(
     if (pCreateInfo == nullptr || pInstance == nullptr) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    bool wsi_enabled = false;
+    const VkResult ext_res = mock_check_enabled_extensions(
+        mock_config_exposes_wsi(g_tls_mock_config), kMockWsiInstanceExts,
+        pCreateInfo->enabledExtensionCount, pCreateInfo->ppEnabledExtensionNames, wsi_enabled);
+    if (ext_res != VK_SUCCESS) {
+        return ext_res;
+    }
     auto* inst = new MockInstance{};
+    inst->wsi_enabled = wsi_enabled;
     g_mock_live_objects.fetch_add(1);
     if (g_tls_mock_config != nullptr) {
         inst->config = *g_tls_mock_config;
@@ -388,15 +432,41 @@ VKAPI_ATTR void VKAPI_CALL mock_vkGetPhysicalDeviceFeatures(
     pFeatures->textureCompressionBC = phys->instance->config.texture_compression_bc ? VK_TRUE : VK_FALSE;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL mock_vkEnumerateDeviceExtensionProperties(
+    VkPhysicalDevice physicalDevice,
+    const char* pLayerName,
+    std::uint32_t* pPropertyCount,
+    VkExtensionProperties* pProperties) {
+    if (pLayerName != nullptr) {
+        return VK_ERROR_LAYER_NOT_PRESENT;
+    }
+    if (physicalDevice == VK_NULL_HANDLE || pPropertyCount == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    const auto* phys = reinterpret_cast<const MockPhysicalDevice*>(physicalDevice);
+    return mock_enumerate_extensions(
+        phys->instance->wsi_enabled && phys->instance->config.expose_swapchain, kMockWsiDeviceExts,
+                                     pPropertyCount, pProperties);
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateDevice(
     VkPhysicalDevice physicalDevice,
     const VkDeviceCreateInfo* pCreateInfo,
     const VkAllocationCallbacks* pAllocator,
     VkDevice* pDevice) {
-    (void)pCreateInfo;
     (void)pAllocator;
-    if (physicalDevice == VK_NULL_HANDLE || pDevice == nullptr) {
+    if (physicalDevice == VK_NULL_HANDLE || pDevice == nullptr || pCreateInfo == nullptr) {
         return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    const auto* phys = reinterpret_cast<const MockPhysicalDevice*>(physicalDevice);
+    bool swapchain_enabled = false;
+    // Device WSI extensions are offered only on an instance that enabled surface WSI.
+    const VkResult ext_res = mock_check_enabled_extensions(
+        phys->instance->wsi_enabled && phys->instance->config.expose_swapchain, kMockWsiDeviceExts,
+        pCreateInfo->enabledExtensionCount,
+        pCreateInfo->ppEnabledExtensionNames, swapchain_enabled);
+    if (ext_res != VK_SUCCESS) {
+        return ext_res;
     }
     auto* dev = new MockDevice{};
     g_mock_live_objects.fetch_add(1);
@@ -636,6 +706,9 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL mock_vk_icdGetInstanceProcAddr(
     }
     if (name == "vkCreateDevice") {
         return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkCreateDevice);
+    }
+    if (name == "vkEnumerateDeviceExtensionProperties") {
+        return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkEnumerateDeviceExtensionProperties);
     }
     return mock_vkGetDeviceProcAddr(VK_NULL_HANDLE, pName);
 }
@@ -1302,8 +1375,24 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
     VkInstanceCreateInfo inst_info{};
     inst_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     inst_info.pApplicationInfo = &app_info;
+    // The surface path needs the instance WSI extensions enabled, not just offered.
+    static constexpr std::array<const char*, 2> kWsiInstanceExts{"VK_KHR_surface",
+                                                                 "VK_KHR_android_surface"};
+    if (out.presentation_path == PresentationPath::android_surface_wsi) {
+        inst_info.enabledExtensionCount = static_cast<std::uint32_t>(kWsiInstanceExts.size());
+        inst_info.ppEnabledExtensionNames = kWsiInstanceExts.data();
+    }
 
     VkResult inst_res = create_instance(&inst_info, nullptr, &impl_->instance);
+    if (inst_res == VK_ERROR_EXTENSION_NOT_PRESENT && inst_info.enabledExtensionCount != 0U) {
+        // Offered but refused: present through the offscreen bridge instead.
+        impl_->instance = VK_NULL_HANDLE;
+        inst_info.enabledExtensionCount = 0U;
+        inst_info.ppEnabledExtensionNames = nullptr;
+        out.presentation_path = PresentationPath::offscreen_hardware_buffer_bridge;
+        out.presentation_note = "instance refused WSI extensions; using offscreen bridge";
+        inst_res = create_instance(&inst_info, nullptr, &impl_->instance);
+    }
     if (inst_res == VK_ERROR_INCOMPATIBLE_DRIVER && app_info.apiVersion != VK_API_VERSION_1_0) {
         // Pre-v5 ICDs may reject apiVersion > 1.0 outright; retry as 1.0.
         impl_->instance = VK_NULL_HANDLE;
@@ -1316,6 +1405,8 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
                     std::to_string(static_cast<int>(inst_res)));
     }
     out.instance_api_version = app_info.apiVersion;
+    out.wsi_instance_extensions_enabled =
+        out.presentation_path == PresentationPath::android_surface_wsi;
 
     impl_->resolve_inst("vkDestroyInstance", impl_->fn_destroy_instance);
     PFN_vkEnumeratePhysicalDevices enum_phys = nullptr;
@@ -1420,6 +1511,37 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
     dev_info.queueCreateInfoCount = 1U;
     dev_info.pQueueCreateInfos = &q_info;
     dev_info.pEnabledFeatures = &enabled;
+
+    // Presenting to a surface also needs VK_KHR_swapchain on the device; without it
+    // the surface path is unusable, so fall back to the offscreen bridge.
+    static constexpr const char* kSwapchainExt = "VK_KHR_swapchain";
+    if (out.presentation_path == PresentationPath::android_surface_wsi) {
+        bool has_swapchain = false;
+        PFN_vkEnumerateDeviceExtensionProperties enum_dev_exts = nullptr;
+        impl_->resolve_inst("vkEnumerateDeviceExtensionProperties", enum_dev_exts);
+        if (enum_dev_exts != nullptr) {
+            std::uint32_t n = 0U;
+            if (enum_dev_exts(impl_->physical_device, nullptr, &n, nullptr) == VK_SUCCESS && n > 0U) {
+                std::vector<VkExtensionProperties> dev_exts(n);
+                const VkResult r = enum_dev_exts(impl_->physical_device, nullptr, &n, dev_exts.data());
+                if (r == VK_SUCCESS || r == VK_INCOMPLETE) {
+                    dev_exts.resize(std::min<std::size_t>(dev_exts.size(), n));
+                    for (const VkExtensionProperties& e : dev_exts) {
+                        has_swapchain = has_swapchain ||
+                                        std::string_view(e.extensionName) == kSwapchainExt;
+                    }
+                }
+            }
+        }
+        if (has_swapchain) {
+            dev_info.enabledExtensionCount = 1U;
+            dev_info.ppEnabledExtensionNames = &kSwapchainExt;
+            out.swapchain_extension_enabled = true;
+        } else {
+            out.presentation_path = PresentationPath::offscreen_hardware_buffer_bridge;
+            out.presentation_note = "device lacks VK_KHR_swapchain; using offscreen bridge";
+        }
+    }
 
     const VkResult dev_res =
         create_dev(impl_->physical_device, &dev_info, nullptr, &impl_->device);
@@ -1627,8 +1749,14 @@ bool VulkanDriverLoader::create_vk_shader_module(std::span<const std::uint32_t> 
                                                  std::uint64_t& out_vk_handle,
                                                  std::string* error_out) {
     out_vk_handle = 0;
-    if (!has_device() || impl_->fn_create_shader_module == nullptr) {
+    if (!has_device()) {
         return true;
+    }
+    if (impl_->fn_create_shader_module == nullptr) {
+        // Unlike buffers, a shader module cannot degrade to a no-op: a pipeline
+        // would later be built without it.
+        set_err(error_out, "Vulkan device does not expose vkCreateShaderModule");
+        return false;
     }
     if (!is_valid_spirv_module(spirv_words)) {
         set_err(error_out, "invalid SPIR-V shader module payload");

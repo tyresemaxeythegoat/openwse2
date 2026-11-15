@@ -922,13 +922,23 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    and `tools/check_citations.py` verifies all `1,494` unique header VAs (`1,714` VA refs) across `54` headers (plus REA `ev_*` IDs) in CI.
 9. ~~Measure v1.1.5.5 module effect loading and material/shader technique resolution for P5.~~
    **Resolved (Slice P5):** PE/PDB analysis verified effect search & postFX loading
-   (`rglPostProcess::initEffect` `0x1402a5ef0`, `rglGraphicsContext::initEffect` `0x1402a5a90`),
-   material texture slot normalization (`initMaterialTextures` `0x1402f5390`), `wse2_shaders.ini` +
-   `wse2_shaders.brf` fallback pairs (`0x1402eec40`, `0x1402eeac0`, `0x1402f0b50`, `0x1402f09c0`),
-   shader suitability/alternatives (`0x1402f50a0`, `isShaderSuitable` `0x1402f2b30`), and
-   `VertexDeclType` / blend / alpha-test dispatch (`0x1402baa30`, `0x14029f590`, `0x1402a00b0`,
-   `0x1402e7f50`), recorded in `docs/SYMBOL_MAP.json` and implemented in
-   `engine/include/wse/asset/shader.h`.
+   (`rglEffectManager::initDeviceObjects` `0x14028bce0`, `rglGraphicsContext::checkLoadingPostEffects`
+   `0x14029c930`, `rglRenderer::initPostFxShaders` `0x1402db690`, `D3DXCreateEffectFromFileA`
+   import `0x140501b70`), material texture slot normalization (`initMaterialTextures` `0x1402f5390`),
+   `wse2_shaders.brf` + `wse2_shaders.ini` fallback pairs (`loadOptionalShaderResource` `0x1402eeec0`,
+   `initShaderPairs` `0x1402ed3c0`, `initShaderTechniques` `0x1402ecd30`), shader
+   suitability/alternatives (`rglShader::isSuitable` `0x140301ab0`, `getSuitableShader` `0x1402f3db0`,
+   `getSuitableShaderImpl` `0x1402f3eb0`, `getDefaultShader` `0x1402f1ef0`), and `VertexDeclType` /
+   blend / alpha-test dispatch (`0x1402baa30`, `0x14029f590`, `0x1402a00b0`, `0x1402e7f50`), recorded
+   in `docs/SYMBOL_MAP.json` and implemented in `engine/include/wse/asset/shader.h`.
+   *Correction (P5 review):* this entry previously cited `0x1402a5a90` (no function at all) and <!-- citation-check: ignore-line -->
+   `0x1402a5ef0`, `0x1402eec40`, `0x1402eeac0`, `0x1402f09c0`, `0x1402f2b30`, `0x1402f50a0`, `0x1402f0b50`, <!-- citation-check: ignore-line -->
+   which fall inside unrelated functions (`rglTechnique::initDeviceObjects`, `loadResourceBlacklist`,
+   `getFormatName`, `createMetaMesh`, `gammaCorrectMeshes`, `dumpUsageInfo`) rather than the
+   functions they were labeled as. The citation checker accepts any address inside a known
+   function, so it cannot catch a mislabeled interior VA; cite function entry VAs. Open evidence
+   gaps: the sign of the `rglMaterial` render-order nibble (bits 24..27) and the sRGB treatment of
+   the diffuse slot are port assumptions, not yet confirmed in `rglRenderer::renderMesh`.
 
 ## 9. Evidence index
 
