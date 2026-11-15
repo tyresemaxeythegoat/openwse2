@@ -139,14 +139,17 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
                                : report.game_start_ok);
     report.ok = report.load_error.ok && start_ok &&
                 report.triggers_ok && report.simple_triggers_ok &&
-                report.error_count == 0U && report.unimplemented_count == 0U;
+                report.error_count == 0U &&
+                (!options.fail_on_unimplemented ||
+                 report.unimplemented_count == 0U);
 }
 
 } // namespace detail
 
 // Loads `options.module_dir` via `vfs`, runs mapped script slot 0 (`game_start`)
 // when requested, steps `options.trigger_frames` trigger ticks, and returns a
-// diagnostic report enforcing zero VM errors / zero unimplemented opcodes.
+// diagnostic report enforcing zero VM errors and, unless
+// `fail_on_unimplemented` is cleared, zero unimplemented opcodes.
 [[nodiscard]] inline HeadlessRunReport run_headless_module(
     platform::Vfs& vfs,
     vm::VmContext& ctx,
@@ -155,6 +158,11 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
     HeadlessRunReport report{};
     detail::ScopedErrorForwarder err_scope(ctx, options.log);
     ctx.failOnUnimplemented = options.fail_on_unimplemented;
+    // Unimplemented opcodes only stop or fail the run in strict mode; with
+    // `fail_on_unimplemented == false` they are counted and reported.
+    const auto unimplemented_hit = [&]() noexcept {
+        return options.fail_on_unimplemented && ctx.unimplementedCount > 0U;
+    };
 
     report.load_error = load_module(vfs, options.module_dir, ctx, bundle,
                                     options.load_options);
@@ -197,7 +205,7 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
         }
         if (options.stop_on_error &&
             (!report.game_start_ok || ctx.errorCount > 0U ||
-             ctx.unimplementedCount > 0U)) {
+             unimplemented_hit())) {
             detail::finalize_headless_report(ctx, report, options);
             return report;
         }
@@ -226,7 +234,7 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
 
         if (options.stop_on_error &&
             (!trig_ok || !strig_ok || ctx.errorCount > 0U ||
-             ctx.unimplementedCount > 0U)) {
+             unimplemented_hit())) {
             break;
         }
     }

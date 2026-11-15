@@ -32,6 +32,15 @@ struct ModuleStringStorage {
     std::vector<std::u16string_view> global_views{};
     std::vector<std::u16string_view> local_views{};
 
+    // Move-only: the views point into this object's backing strings, so a
+    // member-wise copy would alias (and outlive) the source. Moving a
+    // std::vector keeps its elements in place, so moved views stay valid.
+    ModuleStringStorage() = default;
+    ModuleStringStorage(const ModuleStringStorage&) = delete;
+    ModuleStringStorage& operator=(const ModuleStringStorage&) = delete;
+    ModuleStringStorage(ModuleStringStorage&&) noexcept = default;
+    ModuleStringStorage& operator=(ModuleStringStorage&&) noexcept = default;
+
     void clear() {
         global_views.clear();
         local_views.clear();
@@ -272,8 +281,45 @@ template <class Fn>
 
 } // namespace detail
 
+namespace detail {
+
+// Drops everything a previous load_module() derived from module files, so a
+// file that is optional or absent in the next module cannot leak through.
+inline void reset_module_world_state(WseWorldState& world) {
+    world.skills = {};
+    world.items.clear();
+    world.party_templates.clear();
+    world.troops.clear();
+    world.factions.clear();
+    world.quests.clear();
+    world.sites.clear();
+    world.parties.clear();
+    world.mission_templates.clear();
+    world.info_pages.clear();
+    world.mesh_names.clear();
+    world.module_settings.clear();
+    world.game_variables.clear();
+    world.num_skins = 2; // WseWorldState default (g_faceGenerator.m_numSkins)
+    world.num_particle_systems = 0;
+    world.misc.num_actions = 0;
+    world.misc.num_music_tracks = 0;
+    world.misc.num_post_effects = 0;
+    world.misc.num_map_icons = 0;
+    world.misc.num_scene_props = 0;
+    world.misc.num_menus = 0;
+    world.misc.num_tableau_materials = 0;
+    world.m5.num_sounds = 0;
+    world.m5.skybox_fog_colors.fill(0U);
+    world.m6.sites.clear();
+}
+
+} // namespace detail
+
 // Loads a full or partial Warband/WSE2 module under `module_dir` into `ctx`
-// and `bundle`, binding string banks and `ctx.scripts` on success.
+// and `bundle`, binding string banks and `ctx.scripts` on success. Module-derived
+// world state from an earlier load is reset first. `ctx` keeps a pointer to
+// `bundle.scripts` and spans into `bundle.string_storage`, so `bundle` must
+// outlive every use of `ctx` and must not be moved while bound.
 [[nodiscard]] inline ModuleLoadError load_module(
     platform::Vfs& vfs,
     std::string_view module_dir,
@@ -284,6 +330,7 @@ template <class Fn>
     ctx.scripts = nullptr;
     ctx.globalStrings = {};
     ctx.localStrings = {};
+    detail::reset_module_world_state(ctx.world);
 
     const bool req = options.require_core_files;
     const auto mod_path = [&](std::string_view file) {

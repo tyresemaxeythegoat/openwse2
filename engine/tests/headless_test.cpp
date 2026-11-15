@@ -141,6 +141,32 @@ void test_headless_unimplemented_opcode_fails_loudly() {
            "loud error recorded and forwarded to LogSink");
 }
 
+void test_headless_allow_unimplemented_continues_and_reports() {
+    wse::platform::MemoryVfs vfs;
+    seed_minimal_module(vfs, "Modules/BadOpMod", build_minimal_scripts(9999U));
+
+    wse::platform::CaptureLog log;
+    wse::game::HeadlessRunOptions opts{};
+    opts.module_dir = "Modules/BadOpMod";
+    opts.load_options.require_core_files = false;
+    opts.trigger_frames = 2;
+    opts.fail_on_unimplemented = false;
+    opts.log = &log;
+
+    const auto session = wse::game::run_headless_session(vfs, opts);
+    const auto& r = session.report;
+
+    expect(r.game_start_executed && r.game_start_ok,
+           "compat mode: game_start falls through the unimplemented opcode");
+    expect(r.frames_executed == 2U && r.triggers_ok && r.simple_triggers_ok,
+           "compat mode: trigger frames still run after an unimplemented opcode");
+    expect(r.unimplemented_count == 1U && r.unimplemented_opcodes.size() == 1U &&
+               r.unimplemented_opcodes[0].first == 9999U,
+           "compat mode: unimplemented opcode is still counted and reported");
+    expect(r.ok && r.error_count == 0U,
+           "compat mode: unimplemented opcodes alone do not fail the run");
+}
+
 void test_headless_missing_game_start_and_load_failure() {
     wse::platform::MemoryVfs vfs;
     expect(vfs.write_text("Modules/NoStart/scripts.txt",
@@ -211,6 +237,7 @@ void test_headless_host_vfs_roundtrip() {
 int main() {
     test_headless_memory_game_start_and_frames();
     test_headless_unimplemented_opcode_fails_loudly();
+    test_headless_allow_unimplemented_continues_and_reports();
     test_headless_missing_game_start_and_load_failure();
     test_headless_host_vfs_roundtrip();
 
