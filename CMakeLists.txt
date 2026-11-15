@@ -145,6 +145,20 @@ target_include_directories(wse_lua PRIVATE "${wse_lua51_src_dir}")
 target_link_libraries(wse_lua PRIVATE wse_engine lua51)
 wse_apply_strict_warnings(wse_lua)
 
+# Vulkan runtime driver loader + VulkanRhiDevice (slice P4). Its <vulkan/vulkan.h>
+# comes from the vendored headers and stays private: callers see only rhi.h.
+add_library(wse_vulkan STATIC platform/vulkan/driver_loader.cpp)
+set_target_properties(wse_vulkan PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(wse_vulkan
+    PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan"
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/runtime/android/third_party"
+)
+target_link_libraries(wse_vulkan PUBLIC wse_engine)
+if(NOT WIN32)
+    target_link_libraries(wse_vulkan PUBLIC ${CMAKE_DL_LIBS})
+endif()
+wse_apply_strict_warnings(wse_vulkan)
+
 include(CTest)
 if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
     add_library(wse_selftest STATIC
@@ -168,21 +182,13 @@ if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
         engine/tests/headless_test.cpp
         engine/tests/lua_test.cpp
         engine/tests/asset_test.cpp
-        platform/vulkan/driver_loader.cpp
     )
     set_target_properties(wse_selftest PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_compile_definitions(wse_selftest PRIVATE WSE_SELF_TEST_LIBRARY=1)
     target_include_directories(wse_selftest PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests"
-        "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan"
     )
-    target_include_directories(wse_selftest PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/android/third_party"
-    )
-    target_link_libraries(wse_selftest PUBLIC wse_engine wse_lua)
-    if(NOT WIN32)
-        target_link_libraries(wse_selftest PUBLIC ${CMAKE_DL_LIBS})
-    endif()
+    target_link_libraries(wse_selftest PUBLIC wse_engine wse_lua wse_vulkan)
     wse_apply_strict_warnings(wse_selftest)
 endif()
 

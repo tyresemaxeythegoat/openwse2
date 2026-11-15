@@ -9,13 +9,18 @@ import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.InputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.zip.ZipInputStream
 
 class WseLauncherActivity : Activity() {
 
@@ -40,12 +45,16 @@ class WseLauncherActivity : Activity() {
     private lateinit var moduleSpinner: Spinner
     private lateinit var moduleDetailText: TextView
     private lateinit var driverSpinner: Spinner
+    private lateinit var driverStatusText: TextView
+    private lateinit var mockFallbackCheck: CheckBox
     private lateinit var outputStatusText: TextView
     private lateinit var rescanButton: Button
     private lateinit var verifyScriptsButton: Button
 
     private val modules = ArrayList<ModuleChoice>()
     private val driverOptions = listOf("System Vulkan", "Turnip (Adreno custom)", "PanVK (Mali direct ICD)")
+    // Native `parse_driver_mode` keys, index-aligned with driverOptions.
+    private val driverModeKeys = listOf("system", "turnip", "panvk")
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
 
     private var selectedTreeUri: Uri? = null
@@ -141,8 +150,26 @@ class WseLauncherActivity : Activity() {
         }
         container.addView(driverSpinner)
 
+        driverStatusText = TextView(this).apply {
+            text = ""
+            textSize = 13f
+            setPadding(0, px(4), 0, px(4))
+        }
+        container.addView(driverStatusText)
+
         container.addView(Button(this).apply {
-            text = "Probe Vulkan Driver & Render Test Mesh"
+            text = "Import Turnip / PanVK Driver Package (.zip)"
+            setOnClickListener { openDriverPackagePicker() }
+        })
+
+        mockFallbackCheck = CheckBox(this).apply {
+            text = "Allow mock ICD fallback (testing only)"
+            isChecked = false
+        }
+        container.addView(mockFallbackCheck)
+
+        container.addView(Button(this).apply {
+            text = "Probe Vulkan Driver (CPU reference frame)"
             setOnClickListener { probeVulkanDriver() }
         })
 
@@ -173,9 +200,11 @@ class WseLauncherActivity : Activity() {
         val savedDriver = prefs.getString(KEY_GPU_DRIVER, driverOptions.first())
         val driverIdx = driverOptions.indexOf(savedDriver).coerceAtLeast(0)
         driverSpinner.setSelection(driverIdx)
+        updateDriverStatus()
         driverSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
                 prefs.edit().putString(KEY_GPU_DRIVER, driverOptions[pos]).apply()
+                updateDriverStatus()
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -204,11 +233,32 @@ class WseLauncherActivity : Activity() {
         startActivityForResult(intent, REQ_PICK_TREE)
     }
 
+    @Suppress("DEPRECATION")
+    private fun openDriverPackagePicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(
+                Intent.EXTRA_MIME_TYPES,
+                arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
+            )
+        }
+        startActivityForResult(intent, REQ_PICK_DRIVER)
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQ_PICK_TREE || resultCode != RESULT_OK) {
+        if (resultCode != RESULT_OK) {
+            return
+        }
+        if (requestCode == REQ_PICK_DRIVER) {
+            val driverUri = data?.data ?: return
+            importDriverPackage(driverUri)
+            return
+        }
+        if (requestCode != REQ_PICK_TREE) {
             return
         }
         val uri = data?.data ?: return
@@ -363,13 +413,178 @@ class WseLauncherActivity : Activity() {
         }
     }
 
+    private fun selectedDriverModeKey(): String =
+        driverModeKeys[driverSpinner.selectedItemPosition.coerceIn(0, driverModeKeys.size - 1)]
+
+    private fun updateDriverStatus() {
+        val mode = selectedDriverModeKey()
+        if (mode == "system") {
+            driverStatusText.text = "Uses the device's built-in Vulkan driver."
+            return
+        }
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val path = prefs.getString(KEY_DRIVER_PATH_PREFIX + mode, "") ?: ""
+        val name = prefs.getString(KEY_DRIVER_NAME_PREFIX + mode, "") ?: ""
+        driverStatusText.text = if (path.isNotEmpty() && File(path).isFile) {
+            "Imported: $name"
+        } else {
+            "No $mode driver imported yet."
+        }
+    }
+
+    private fun importDriverPackage(uri: Uri) {
+        val selectedMode = selectedDriverModeKey()
+        outputStatusText.text = "Importing GPU driver package..."
+        executor.execute {
+            val result = try {
+                stageDriverPackage(uri, selectedMode)
+            } catch (e: Exception) {
+                "ERROR: ${e.message ?: e.javaClass.simpleName}"
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) {
+                    return@runOnUiThread
+                }
+                applyDriverImportResult(result)
+            }
+        }
+    }
+
+    // Reads meta.json and the library it names out of an AdrenoTools-style zip,
+    // stages them natively (ELF check + libhardware.so patch) under app storage,
+    // and marks the ICD read-only. dlopen needs a real file path, not a SAF URI.
+    private fun stageDriverPackage(uri: Uri, selectedMode: String): String {
+        var metaJson: String? = null
+        val libraries = HashMap<String, ByteArray>()
+        var total = 0L
+        contentResolver.openInputStream(uri)?.use { raw ->
+            ZipInputStream(raw.buffered()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (entry.isDirectory) {
+                        continue
+                    }
+                    val base = entry.name.substringAfterLast('/')
+                    val isMeta = base.equals("meta.json", ignoreCase = true)
+                    if (!isMeta && !base.endsWith(".so", ignoreCase = true)) {
+                        continue
+                    }
+                    val bytes = readLimited(zip, MAX_DRIVER_PACKAGE_BYTES - total)
+                        ?: return "ERROR: driver package exceeds ${MAX_DRIVER_PACKAGE_BYTES / (1024 * 1024)} MiB"
+                    total += bytes.size
+                    if (isMeta) {
+                        metaJson = String(bytes, Charsets.UTF_8)
+                    } else {
+                        libraries[base] = bytes
+                    }
+                }
+            }
+        } ?: return "ERROR: cannot open the selected file"
+
+        val meta = metaJson ?: return "ERROR: package has no meta.json"
+        val libName = try {
+            JSONObject(meta).optString("libraryName", "")
+        } catch (_: Exception) {
+            ""
+        }
+        val icd = libraries[libName]
+            ?: return "ERROR: package has no '$libName' (libraryName in meta.json)"
+
+        val root = File(noBackupFilesDir, "gpu_drivers")
+        val staging = File(root, "import")
+        staging.deleteRecursively()
+        if (!staging.mkdirs()) {
+            return "ERROR: cannot create ${staging.path}"
+        }
+        val bridge = WseSafBridge(applicationContext, Uri.EMPTY)
+        val res = bridge.nativeStageDriverPackage(meta, icd, staging.absolutePath)
+        val parts = res.split('\t')
+        if (parts.size < 5 || parts[0] != "OK") {
+            staging.deleteRecursively()
+            return res
+        }
+        val mode = when {
+            parts[1] == "turnip" || parts[1] == "panvk" -> parts[1]
+            selectedMode != "system" -> selectedMode
+            else -> {
+                staging.deleteRecursively()
+                return "ERROR: cannot tell whether '${parts[3]}' is Turnip or PanVK; select one first"
+            }
+        }
+        val finalDir = File(root, mode)
+        finalDir.deleteRecursively()
+        if (!staging.renameTo(finalDir)) {
+            staging.deleteRecursively()
+            return "ERROR: cannot move driver into ${finalDir.path}"
+        }
+        val icdFile = File(finalDir, File(parts[2]).name)
+        // Android 14+ refuses to load dynamically loaded code from a writable file.
+        icdFile.setReadOnly()
+        return "OK\t$mode\t${icdFile.absolutePath}\t${parts[3]}\t${parts[4]}"
+    }
+
+    private fun readLimited(input: InputStream, limit: Long): ByteArray? {
+        val out = ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) {
+                break
+            }
+            total += n
+            if (total > limit) {
+                return null
+            }
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
+
+    private fun applyDriverImportResult(result: String) {
+        val parts = result.split('\t')
+        if (parts.size < 5 || parts[0] != "OK") {
+            outputStatusText.text = result
+            return
+        }
+        val mode = parts[1]
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(KEY_DRIVER_PATH_PREFIX + mode, parts[2])
+            .putString(KEY_DRIVER_NAME_PREFIX + mode, parts[3])
+            .apply()
+        val idx = driverModeKeys.indexOf(mode)
+        if (idx >= 0) {
+            driverSpinner.setSelection(idx)
+        }
+        updateDriverStatus()
+        outputStatusText.text =
+            "Imported ${parts[3]} as $mode (libhardware.so references patched: ${parts[4]})."
+    }
+
     private fun probeVulkanDriver() {
-        val driver = driverOptions[driverSpinner.selectedItemPosition.coerceAtLeast(0)]
+        val mode = selectedDriverModeKey()
+        val driver = driverOptions[driverModeKeys.indexOf(mode)]
         val nativeLibDir = applicationInfo.nativeLibraryDir ?: ""
-        outputStatusText.text = "Probing $driver Vulkan driver and rendering test mesh..."
+        val icdPath = if (mode == "system") {
+            ""
+        } else {
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString(KEY_DRIVER_PATH_PREFIX + mode, "") ?: ""
+        }
+        val allowMock = mockFallbackCheck.isChecked
+        val shaderCache = File(cacheDir, "mesa_shader_cache")
+        shaderCache.mkdirs()
+        outputStatusText.text = "Probing $driver Vulkan driver..."
         executor.execute {
             val bridge = WseSafBridge(applicationContext, selectedTreeUri ?: Uri.EMPTY)
-            val result = bridge.nativeProbeVulkanAndRenderMesh(driver, "", nativeLibDir)
+            val result = bridge.nativeProbeVulkanAndRenderMesh(
+                mode,
+                icdPath,
+                nativeLibDir,
+                shaderCache.absolutePath,
+                allowMock
+            )
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
                     outputStatusText.text = result
@@ -392,6 +607,10 @@ class WseLauncherActivity : Activity() {
 
     companion object {
         private const val REQ_PICK_TREE = 2001
+        private const val REQ_PICK_DRIVER = 2002
+        private const val MAX_DRIVER_PACKAGE_BYTES = 256L * 1024L * 1024L
+        private const val KEY_DRIVER_PATH_PREFIX = "driver_path_"
+        private const val KEY_DRIVER_NAME_PREFIX = "driver_name_"
         private const val PREFS_NAME = "wse2_launcher"
         private const val KEY_TREE_URI = "tree_uri"
         private const val KEY_SELECTED_MODULE = "selected_module"

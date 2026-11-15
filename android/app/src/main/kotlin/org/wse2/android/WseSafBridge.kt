@@ -132,7 +132,17 @@ class WseSafBridge(
     external fun nativeProbeVulkanAndRenderMesh(
         driverMode: String,
         customIcdPath: String,
-        nativeLibDir: String
+        nativeLibDir: String,
+        shaderCacheDir: String,
+        allowMockFallback: Boolean
+    ): String
+
+    // Validates meta.json, ELF-checks and patches the ICD, and writes both into
+    // stageDir. Returns "OK\t<mode>\t<icd path>\t<name>\t<patched>" or "ERROR: ...".
+    external fun nativeStageDriverPackage(
+        metaJson: String,
+        icdBytes: ByteArray,
+        stageDir: String
     ): String
 
     companion object {

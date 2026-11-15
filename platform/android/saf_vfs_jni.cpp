@@ -5,10 +5,13 @@
 
 #include <jni.h>
 
+#include <unistd.h>
+
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -36,17 +39,50 @@ namespace {
     return false;
 }
 
+// JNI's *StringUTF* functions use "modified UTF-8" (NUL as C0 80, characters
+// outside the BMP as two 3-byte surrogates), not UTF-8. SAF display names and
+// paths can hold any Unicode, so convert through UTF-16 explicitly.
 [[nodiscard]] std::string jstring_to_utf8(JNIEnv* env, jstring jstr) {
     if (env == nullptr || jstr == nullptr) {
         return {};
     }
-    const char* chars = env->GetStringUTFChars(jstr, nullptr);
+    const jsize len = env->GetStringLength(jstr);
+    const jchar* chars = env->GetStringChars(jstr, nullptr);
     if (chars == nullptr) {
         (void)clear_if_exception(env);
         return {};
     }
-    std::string out(chars);
-    env->ReleaseStringUTFChars(jstr, chars);
+    std::string out;
+    out.reserve(static_cast<std::size_t>(len));
+    const auto put = [&out](std::uint32_t cp) {
+        if (cp < 0x80U) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp < 0x800U) {
+            out.push_back(static_cast<char>(0xC0U | (cp >> 6U)));
+            out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+        } else if (cp < 0x10000U) {
+            out.push_back(static_cast<char>(0xE0U | (cp >> 12U)));
+            out.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
+            out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+        } else {
+            out.push_back(static_cast<char>(0xF0U | (cp >> 18U)));
+            out.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU)));
+            out.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
+            out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+        }
+    };
+    for (jsize i = 0; i < len; ++i) {
+        std::uint32_t cp = chars[i];
+        if (cp >= 0xD800U && cp <= 0xDBFFU && i + 1 < len && chars[i + 1] >= 0xDC00U &&
+            chars[i + 1] <= 0xDFFFU) {
+            cp = 0x10000U + ((cp - 0xD800U) << 10U) + (static_cast<std::uint32_t>(chars[i + 1]) - 0xDC00U);
+            ++i;
+        } else if (cp >= 0xD800U && cp <= 0xDFFFU) {
+            cp = 0xFFFDU;  // Unpaired surrogate.
+        }
+        put(cp);
+    }
+    env->ReleaseStringChars(jstr, chars);
     return out;
 }
 
@@ -54,8 +90,45 @@ namespace {
     if (env == nullptr) {
         return nullptr;
     }
-    const std::string tmp(sv);
-    jstring result = env->NewStringUTF(tmp.c_str());
+    std::u16string utf16;
+    utf16.reserve(sv.size());
+    for (std::size_t i = 0; i < sv.size();) {
+        const auto b0 = static_cast<unsigned char>(sv[i]);
+        std::uint32_t cp = 0xFFFDU;
+        std::size_t n = 1;
+        const auto cont = [&](std::size_t k) {
+            return i + k < sv.size() && (static_cast<unsigned char>(sv[i + k]) & 0xC0U) == 0x80U;
+        };
+        const auto bits = [&](std::size_t k) {
+            return static_cast<std::uint32_t>(static_cast<unsigned char>(sv[i + k]) & 0x3FU);
+        };
+        if (b0 < 0x80U) {
+            cp = b0;
+        } else if ((b0 & 0xE0U) == 0xC0U && cont(1)) {
+            cp = ((b0 & 0x1FU) << 6U) | bits(1);
+            n = 2;
+            if (cp < 0x80U) cp = 0xFFFDU;
+        } else if ((b0 & 0xF0U) == 0xE0U && cont(1) && cont(2)) {
+            cp = ((b0 & 0x0FU) << 12U) | (bits(1) << 6U) | bits(2);
+            n = 3;
+            if (cp < 0x800U || (cp >= 0xD800U && cp <= 0xDFFFU)) cp = 0xFFFDU;
+        } else if ((b0 & 0xF8U) == 0xF0U && cont(1) && cont(2) && cont(3)) {
+            cp = ((b0 & 0x07U) << 18U) | (bits(1) << 12U) | (bits(2) << 6U) | bits(3);
+            n = 4;
+            if (cp < 0x10000U || cp > 0x10FFFFU) cp = 0xFFFDU;
+        }
+        i += n;
+        if (cp >= 0x10000U) {
+            cp -= 0x10000U;
+            utf16.push_back(static_cast<char16_t>(0xD800U + (cp >> 10U)));
+            utf16.push_back(static_cast<char16_t>(0xDC00U + (cp & 0x3FFU)));
+        } else {
+            utf16.push_back(static_cast<char16_t>(cp));
+        }
+    }
+    static_assert(sizeof(char16_t) == sizeof(jchar), "jchar must be UTF-16");
+    jstring result = env->NewString(reinterpret_cast<const jchar*>(utf16.data()),
+                                    static_cast<jsize>(utf16.size()));
     if (clear_if_exception(env)) {
         return nullptr;
     }
@@ -513,34 +586,107 @@ Java_org_wse2_android_WseSafBridge_nativeVerifyModule(JNIEnv* env,
     return utf8_to_jstring(env, summary);
 }
 
+// Stages an AdrenoTools-style driver package (meta.json + ICD bytes, already
+// unzipped by Kotlin) under `stage_dir` on the app's own storage: validates
+// meta.json, rejects a non-ELF `.so`, rewrites `libhardware.so` ->
+// `libpanvk_hw.so`, and writes both files. dlopen needs a real filesystem path,
+// so a SAF `content://` document cannot be loaded in place.
+// Returns `OK\t<mode>\t<absolute ICD path>\t<package name>\t<patched refs>` or
+// `ERROR: <reason>`.
+JNIEXPORT jstring JNICALL
+Java_org_wse2_android_WseSafBridge_nativeStageDriverPackage(JNIEnv* env,
+                                                           jobject thiz,
+                                                           jstring meta_json_jstr,
+                                                           jbyteArray icd_bytes_jarr,
+                                                           jstring stage_dir_jstr) {
+    (void)thiz;
+    const std::string meta_json = jstring_to_utf8(env, meta_json_jstr);
+    const std::string stage_dir = jstring_to_utf8(env, stage_dir_jstr);
+    if (stage_dir.empty() || icd_bytes_jarr == nullptr) {
+        return utf8_to_jstring(env, "ERROR: missing stage directory or driver bytes");
+    }
+    const jsize len = env->GetArrayLength(icd_bytes_jarr);
+    std::vector<std::uint8_t> icd(static_cast<std::size_t>(len));
+    if (len > 0) {
+        env->GetByteArrayRegion(icd_bytes_jarr, 0, len, reinterpret_cast<jbyte*>(icd.data()));
+        if (clear_if_exception(env)) {
+            return utf8_to_jstring(env, "ERROR: failed reading driver bytes");
+        }
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories(stage_dir, ec);
+    wse::platform::HostVfs vfs(stage_dir);
+    wse::platform::DriverPackageMeta meta{};
+    std::string staged_rel;
+    std::size_t patched = 0;
+    std::string err;
+    if (!wse::platform::stage_driver_package_to_vfs(vfs, "", meta_json, icd, meta, staged_rel,
+                                                    &patched, &err)) {
+        return utf8_to_jstring(env, "ERROR: " + err);
+    }
+    std::string abs = stage_dir;
+    if (abs.back() != '/') {
+        abs.push_back('/');
+    }
+    abs.append(staged_rel);
+
+    std::string out = "OK\t";
+    out.append(wse::platform::driver_mode_name(meta.inferred_mode));
+    out.push_back('\t');
+    out.append(abs);
+    out.push_back('\t');
+    out.append(meta.name.empty() ? meta.library_name : meta.name);
+    out.push_back('\t');
+    out.append(std::to_string(patched));
+    return utf8_to_jstring(env, out);
+}
+
 JNIEXPORT jstring JNICALL
 Java_org_wse2_android_WseSafBridge_nativeProbeVulkanAndRenderMesh(JNIEnv* env,
                                                                   jobject thiz,
                                                                   jstring driver_mode_jstr,
                                                                   jstring custom_icd_path_jstr,
-                                                                  jstring native_lib_dir_jstr) {
+                                                                  jstring native_lib_dir_jstr,
+                                                                  jstring shader_cache_dir_jstr,
+                                                                  jboolean allow_mock_fallback) {
     (void)thiz;
     const std::string mode_str = jstring_to_utf8(env, driver_mode_jstr);
     const std::string custom_icd = jstring_to_utf8(env, custom_icd_path_jstr);
     const std::string native_lib_dir = jstring_to_utf8(env, native_lib_dir_jstr);
+    const std::string shader_cache_dir = jstring_to_utf8(env, shader_cache_dir_jstr);
 
     wse::platform::DriverMode mode = wse::platform::DriverMode::system;
-    (void)wse::platform::parse_driver_mode(mode_str, mode);
+    if (!wse::platform::parse_driver_mode(mode_str, mode)) {
+        return utf8_to_jstring(env, "ERROR: unknown GPU driver selection \"" + mode_str + "\"");
+    }
 
+    // Mesa drivers (Turnip and PanVK alike) link libhardware.so, which staging
+    // rewrote to libpanvk_hw.so; preload the bundled stub for every custom driver.
+    // Fall back to the bare soname (linker namespace search path) when the APK
+    // keeps native libraries uncompressed and nativeLibraryDir has no file.
     std::string hw_stub_path;
-    if (mode == wse::platform::DriverMode::panvk && !native_lib_dir.empty()) {
-        hw_stub_path = native_lib_dir;
-        if (hw_stub_path.back() != '/') {
-            hw_stub_path.push_back('/');
+    if (mode != wse::platform::DriverMode::system) {
+        hw_stub_path = "libpanvk_hw.so";
+        if (!native_lib_dir.empty()) {
+            std::string candidate = native_lib_dir;
+            if (candidate.back() != '/') {
+                candidate.push_back('/');
+            }
+            candidate.append("libpanvk_hw.so");
+            if (::access(candidate.c_str(), R_OK) == 0) {
+                hw_stub_path = std::move(candidate);
+            }
         }
-        hw_stub_path.append("libpanvk_hw.so");
+        (void)wse::platform::apply_mesa_driver_environment(mode, shader_cache_dir);
     }
 
     std::uint64_t frame_hash = 0;
     std::string err;
     const wse::platform::VulkanDriverProbeResult probe =
-        wse::platform::run_vulkan_mesh_smoke_test(
-            mode, custom_icd, hw_stub_path, /*allow_mock_fallback=*/true, frame_hash, &err);
+        wse::platform::run_vulkan_mesh_smoke_test(mode, custom_icd, hw_stub_path,
+                                                  allow_mock_fallback == JNI_TRUE, frame_hash,
+                                                  &err);
 
     if (!probe.ok) {
         return utf8_to_jstring(env, "ERROR: " + (probe.error.empty() ? err : probe.error));
@@ -550,15 +696,16 @@ Java_org_wse2_android_WseSafBridge_nativeProbeVulkanAndRenderMesh(JNIEnv* env,
     std::snprintf(hex_buf, sizeof(hex_buf), "0x%016llx",
                   static_cast<unsigned long long>(frame_hash));
 
-    std::string summary = "VK ";
+    std::string summary;
+    if (probe.fell_back_to_mock) {
+        summary = "MOCK ICD (real driver unavailable: " + probe.fallback_reason + ")\n";
+    }
+    summary.append("VK ");
     summary.append(wse::platform::driver_mode_name(probe.mode));
     if (probe.is_mock) {
-        summary.append(" (mock");
-        if (!probe.error.empty()) {
-            summary.append(": ");
-            summary.append(probe.error);
-        }
-        summary.push_back(')');
+        summary.append(" (mock)");
+    } else if (probe.used_hal_module) {
+        summary.append(" (hwvulkan HAL)");
     } else if (probe.used_direct_icd) {
         summary.append(" (direct ICD v");
         summary.append(std::to_string(probe.negotiated_icd_version));
@@ -566,9 +713,15 @@ Java_org_wse2_android_WseSafBridge_nativeProbeVulkanAndRenderMesh(JNIEnv* env,
     }
     summary.append(": ");
     summary.append(probe.device_name);
-    summary.append(" | API ");
+    summary.append("\nAPI device ");
     summary.append(wse::platform::format_vulkan_version(probe.api_version));
-    summary.append(" | 64x64 mesh hash=");
+    summary.append(" / instance ");
+    summary.append(wse::platform::format_vulkan_version(probe.instance_api_version));
+    summary.append(" | BC textures: ");
+    summary.append(probe.texture_compression_bc ? "yes" : "no (CPU decode)");
+    summary.append(" | max 2D ");
+    summary.append(std::to_string(probe.max_image_dimension_2d));
+    summary.append("\n64x64 CPU reference frame hash=");
     summary.append(hex_buf);
     return utf8_to_jstring(env, summary);
 }

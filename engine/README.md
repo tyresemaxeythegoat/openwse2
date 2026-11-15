@@ -418,6 +418,28 @@ one across script-visible execution:
     must set while `ti_on_missile_hit` runs. Missile positions (3609/3613) use world up `(0,0,1)`.
   - `skin_set_blood_color` (5200) stores one colour per skin (`WseM6SkinExt::blood_color(skin)`).
 
+Platform P4 (`wse/platform/rhi.h`, `platform/vulkan/driver_loader.{h,cpp}`; port infrastructure):
+  - `patch_icd_libhardware_needed` parses the ELF (little-endian ELF32/ELF64, every offset bounds-
+    checked) and rewrites `libhardware.so` -> `libpanvk_hw.so` only in strings reached through
+    `PT_DYNAMIC` -> `DT_STRTAB` (`DT_NEEDED` and `DT_VERNEED` `vn_file`); identical text in
+    `.rodata` is not touched. `stage_driver_package_to_vfs` rejects a `.so` payload that is not ELF.
+  - `SoftwareRhiDevice` clips against Vulkan's near plane (`z >= 0`), a minimum `w`, and an 8x
+    guard band before rasterizing, so triangles crossing the camera are cut instead of dropped and
+    huge or NaN coordinates never reach an integer conversion. Positions snap to 1/256 pixel and
+    edge functions are exact `int64`, with the top-left fill rule: pixels on a shared edge are drawn
+    exactly once. Every varying (UV and colour) is perspective-correct. Vertices are transformed
+    once per draw and buffers are read in place (no per-draw copies).
+  - `VulkanDriverLoader`: custom drivers are opened `RTLD_NODELETE` (Mesa threads / exit handlers);
+    entry order `vk_icdGetInstanceProcAddr` -> Android `HMI` hwvulkan module -> `vkGetInstanceProcAddr`;
+    instance `apiVersion` = `min(vkEnumerateInstanceVersion, 1.3)` with a 1.0 retry on
+    `VK_ERROR_INCOMPATIBLE_DRIVER`; `textureCompressionBC` is enabled when present and reported;
+    textures above `maxImageDimension2D` are rejected; `vkDeviceWaitIdle` runs before teardown;
+    moved-from loaders report an error instead of dereferencing null; zero-sized buffers are
+    rejected (Vulkan forbids them).
+  - `run_vulkan_mesh_smoke_test` reports a mock fallback through `fell_back_to_mock` /
+    `fallback_reason` (never as a plain success); the Android probe disables the fallback unless
+    the launcher's testing checkbox is ticked. Its frame comes from the CPU reference rasterizer.
+
 ## Handler design decisions and limits
 
 - **Exceptions (`execute_wse` / `DispatchFn`):** `execute_wse()` and all eight `execute_wse_*`

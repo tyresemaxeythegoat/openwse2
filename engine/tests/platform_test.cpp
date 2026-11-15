@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <span>
 #include <string>
@@ -432,6 +433,81 @@ void test_saf_vfs() {
     }
 }
 
+// Minimal little-endian ELF64 shared object: one PT_LOAD covering the file
+// (vaddr == file offset), a PT_DYNAMIC with DT_NEEDED entries, DT_STRTAB/DT_STRSZ,
+// and one DT_VERNEED record whose vn_file names a *separate* copy of
+// "libhardware.so". A `.rodata`-style decoy copy follows the string table and
+// must never be patched.
+struct TestElf {
+    std::vector<std::uint8_t> bytes;
+    std::size_t needed_name_off = 0;   // file offset of DT_NEEDED "libhardware.so"
+    std::size_t verneed_name_off = 0;  // file offset of vn_file "libhardware.so"
+    std::size_t decoy_off = 0;         // file offset of the unreferenced decoy
+};
+
+TestElf build_test_elf64() {
+    TestElf elf;
+    std::vector<std::uint8_t>& b = elf.bytes;
+    const auto put = [&b](std::size_t off, std::uint64_t v, unsigned width) {
+        if (b.size() < off + width) b.resize(off + width, 0);
+        for (unsigned i = 0; i < width; ++i) b[off + i] = static_cast<std::uint8_t>(v >> (8U * i));
+    };
+    const std::size_t phoff = 64, strtab = 64 + 2 * 56;
+    const std::string strings("\0libc.so\0libhardware.so\0liblog.so\0libhardware.so\0", 50);
+    const std::size_t s_libc = 1, s_hw = 9, s_log = 24, s_hw2 = 34;
+    b.assign(strtab, 0);
+    b.insert(b.end(), strings.begin(), strings.end());
+    elf.needed_name_off = strtab + s_hw;
+    elf.verneed_name_off = strtab + s_hw2;
+    const std::string decoy("dlopen(libhardware.so)\0libhardware.so\0", 38);
+    elf.decoy_off = b.size() + 23;
+    b.insert(b.end(), decoy.begin(), decoy.end());
+    while (b.size() % 8 != 0) b.push_back(0);
+    const std::size_t verneed = b.size();
+    put(verneed + 0, 1, 2);       // vn_version
+    put(verneed + 2, 0, 2);       // vn_cnt
+    put(verneed + 4, s_hw2, 4);   // vn_file
+    put(verneed + 8, 0, 4);       // vn_aux
+    put(verneed + 12, 0, 4);      // vn_next
+    const std::size_t dyn = verneed + 16;
+    const std::uint64_t entries[][2] = {
+        {1, s_libc}, {1, s_hw}, {1, s_log}, {5, strtab}, {10, strings.size()},
+        {0x6ffffffeULL, verneed}, {0x6fffffffULL, 1}, {0, 0}};
+    std::size_t pos = dyn;
+    for (const auto& e : entries) {
+        put(pos, e[0], 8);
+        put(pos + 8, e[1], 8);
+        pos += 16;
+    }
+    const std::size_t total = pos;
+    b[0] = 0x7F; b[1] = 'E'; b[2] = 'L'; b[3] = 'F'; b[4] = 2; b[5] = 1; b[6] = 1;
+    put(16, 3, 2);         // e_type = ET_DYN
+    put(18, 183, 2);       // e_machine = EM_AARCH64
+    put(20, 1, 4);         // e_version
+    put(32, phoff, 8);     // e_phoff
+    put(52, 64, 2);        // e_ehsize
+    put(54, 56, 2);        // e_phentsize
+    put(56, 2, 2);         // e_phnum
+    // PT_LOAD over the whole file.
+    put(phoff + 0, 1, 4);
+    put(phoff + 8, 0, 8);
+    put(phoff + 16, 0, 8);
+    put(phoff + 32, total, 8);
+    put(phoff + 40, total, 8);
+    // PT_DYNAMIC.
+    put(phoff + 56 + 0, 2, 4);
+    put(phoff + 56 + 8, dyn, 8);
+    put(phoff + 56 + 16, dyn, 8);
+    put(phoff + 56 + 32, total - dyn, 8);
+    put(phoff + 56 + 40, total - dyn, 8);
+    return elf;
+}
+
+bool bytes_equal(const std::vector<std::uint8_t>& b, std::size_t off, const char* text) {
+    const std::size_t n = std::strlen(text) + 1;  // include NUL
+    return off + n <= b.size() && std::memcmp(b.data() + off, text, n) == 0;
+}
+
 void test_rhi_and_driver_loader() {
     using namespace wse::platform;
 
@@ -488,26 +564,50 @@ void test_rhi_and_driver_loader() {
                "reject unsupported schemaVersion");
         expect(!parse_driver_meta_json("{not json", meta, &err), "reject malformed meta.json");
 
-        // 2. ELF .dynstr `libhardware.so\0` -> `libpanvk_hw.so\0` patching and VFS staging.
-        const std::string raw_dynstr(
-            "\0libc.so\0libhardware.so\0liblog.so\0libhardware.so\0libm.so\0", 53);
-        const std::string expected_dynstr(
-            "\0libc.so\0libpanvk_hw.so\0liblog.so\0libpanvk_hw.so\0libm.so\0", 53);
-        std::vector<std::uint8_t> elf_bytes(raw_dynstr.begin(), raw_dynstr.end());
+        // 2. ELF-aware `libhardware.so` -> `libpanvk_hw.so` patching and VFS staging.
+        const TestElf elf = build_test_elf64();
+        {
+            std::vector<std::uint8_t> direct = elf.bytes;
+            expect(patch_icd_libhardware_needed(direct) == 2U,
+                   "DT_NEEDED and DT_VERNEED libhardware.so names rewritten");
+            expect(bytes_equal(direct, elf.needed_name_off, "libpanvk_hw.so") &&
+                       bytes_equal(direct, elf.verneed_name_off, "libpanvk_hw.so"),
+                   "both dynamic-string references now name libpanvk_hw.so");
+            expect(bytes_equal(direct, elf.decoy_off, "libhardware.so"),
+                   "unreferenced .rodata copy of libhardware.so left untouched");
+            expect(direct.size() == elf.bytes.size(), "patch preserves ELF size and offsets");
+            expect(patch_icd_libhardware_needed(direct) == 0U, "patching is idempotent");
+
+            std::vector<std::uint8_t> not_elf{'\0', 'l', 'i', 'b'};
+            const std::string raw("\0libhardware.so\0", 16);
+            not_elf.insert(not_elf.end(), raw.begin(), raw.end());
+            expect(patch_icd_libhardware_needed(not_elf) == 0U && !is_little_endian_elf(not_elf),
+                   "non-ELF bytes are never patched");
+            std::vector<std::uint8_t> truncated(elf.bytes.begin(), elf.bytes.begin() + 120);
+            expect(patch_icd_libhardware_needed(truncated) == 0U,
+                   "truncated ELF (dynamic section out of range) is rejected safely");
+        }
 
         MemoryVfs stage_vfs;
         std::string staged_path;
         std::size_t patched_refs = 0;
-        expect(stage_driver_package_to_vfs(stage_vfs, "drivers/panvk", panvk_json, elf_bytes,
+        expect(stage_driver_package_to_vfs(stage_vfs, "drivers/panvk", panvk_json, elf.bytes,
                                            meta, staged_path, &patched_refs, &err),
                "stage PanVK driver package into Vfs");
-        expect(patched_refs == 2U, "two libhardware.so DT_NEEDED references rewritten");
+        expect(patched_refs == 2U, "staging rewrote both libhardware.so references");
         expect(staged_path == "drivers/panvk/libvulkan_panfrost.so", "staged ICD path matches");
         std::vector<std::uint8_t> staged_elf;
         expect(stage_vfs.read_file(staged_path, staged_elf) &&
-                   staged_elf.size() == expected_dynstr.size() &&
-                   std::memcmp(staged_elf.data(), expected_dynstr.data(), expected_dynstr.size()) == 0,
-               "staged ICD rewrote libhardware.so in place preserving ELF offsets");
+                   staged_elf.size() == elf.bytes.size() &&
+                   bytes_equal(staged_elf, elf.needed_name_off, "libpanvk_hw.so") &&
+                   bytes_equal(staged_elf, elf.decoy_off, "libhardware.so"),
+               "staged ICD patched in place preserving ELF offsets");
+
+        const std::vector<std::uint8_t> text_payload{'h', 'e', 'l', 'l', 'o'};
+        expect(!stage_driver_package_to_vfs(stage_vfs, "drivers/bad", panvk_json, text_payload,
+                                            meta, staged_path, &patched_refs, &err) &&
+                   !stage_vfs.is_file("drivers/bad/libvulkan_panfrost.so"),
+               "staging rejects a .so payload that is not an ELF file");
     }
 
     // 3. VulkanDriverLoader + VulkanRhiDevice against Mock ICD v5 (PanVK and Turnip).
@@ -546,6 +646,87 @@ void test_rhi_and_driver_loader() {
             vk_rhi.destroy_buffer(bh);
             expect(vk_rhi.live_vk_buffers() == 0U && vk_rhi.live_vk_images() == 0U,
                    "VulkanRhiDevice destroys live VkBuffer and VkImage handles");
+        }
+
+        expect(probe.instance_api_version == ((1U << 22U) | (3U << 12U)) && probe.texture_compression_bc &&
+                   probe.max_image_dimension_2d == 4096U && !probe.used_hal_module,
+               "probe reports instance API, BC feature, and 2D image limit");
+
+        // Limits and features from the device are honoured.
+        {
+            auto small = std::make_shared<VulkanDriverLoader>();
+            VulkanMockConfig cfg{};
+            cfg.max_image_dimension_2d = 2U;
+            cfg.texture_compression_bc = false;
+            VulkanDriverProbeResult small_probe{};
+            expect(small->load_mock_icd(cfg) && small->probe_and_create_device(small_probe) &&
+                       !small_probe.texture_compression_bc,
+                   "mock without BC support reports texture_compression_bc = false");
+            VulkanRhiDevice rhi(small);
+            const std::array<std::uint8_t, 64> px{};
+            std::string tex_err;
+            expect(rhi.create_texture_rgba8(4U, 4U, px, &tex_err) == 0 &&
+                       tex_err.find("maxImageDimension2D") != std::string::npos &&
+                       small->live_vk_images() == 0U,
+                   "texture larger than maxImageDimension2D is rejected");
+            expect(rhi.create_texture_rgba8(2U, 2U, std::span(px).first(16)) != 0,
+                   "texture within maxImageDimension2D is accepted");
+        }
+
+        // Android hwvulkan HAL (`HMI`) entry path.
+        {
+            VulkanDriverLoader hal;
+            std::string hal_err;
+            VulkanDriverProbeResult hal_probe{};
+            expect(hal.attach_hal_module(DriverMode::panvk, mock_vulkan_hal_module(), &hal_err) &&
+                       hal.probe_and_create_device(hal_probe) && hal_probe.ok &&
+                       hal_probe.used_hal_module && hal_probe.mode == DriverMode::panvk,
+                   "hwvulkan HAL module opens HWVULKAN_DEVICE_0 and creates a device");
+            const std::array<std::uintptr_t, 40> not_a_module{};
+            expect(!hal.attach_hal_module(DriverMode::panvk, not_a_module.data(), &hal_err) &&
+                       hal_err.find("tag") != std::string::npos && !hal.is_loaded(),
+                   "hwvulkan attach rejects a symbol that is not a hw_module_t");
+            expect(!hal.attach_hal_module(DriverMode::panvk, nullptr, &hal_err),
+                   "hwvulkan attach rejects null");
+        }
+
+        // Move-assignment releases the overwritten loader's device (ASan/LSan
+        // would report the leaked mock instance/device otherwise), and a
+        // moved-from loader is safe to probe and reuse.
+        {
+            VulkanDriverLoader a;
+            VulkanDriverLoader b;
+            VulkanDriverProbeResult pa{};
+            VulkanDriverProbeResult pb{};
+            expect(a.load_mock_icd(VulkanMockConfig{}) && a.probe_and_create_device(pa) &&
+                       b.load_mock_icd(VulkanMockConfig{}) && b.probe_and_create_device(pb),
+                   "two mock loaders open devices");
+            b = std::move(a);
+            expect(b.has_device(), "move-assigned loader owns the source device");
+            VulkanDriverProbeResult moved{};
+            expect(!a.has_device() && !a.probe_and_create_device(moved) && !moved.error.empty(),
+                   "moved-from loader reports an error instead of crashing");
+            expect(a.load_mock_icd(VulkanMockConfig{}) && a.probe_and_create_device(moved),
+                   "moved-from loader can be reloaded");
+        }
+
+        // Mock fallback is reported as such, never as a silent success.
+        {
+            std::uint64_t hash = 0;
+            const VulkanDriverProbeResult fb =
+                run_vulkan_mesh_smoke_test(DriverMode::turnip, "", "", true, hash);
+            expect(fb.ok && fb.is_mock && fb.fell_back_to_mock && fb.error.empty() &&
+                       fb.fallback_reason.find("no custom Vulkan ICD path") != std::string::npos,
+                   "smoke test marks mock fallback and keeps the reason");
+            std::string no_fb_err;
+            const VulkanDriverProbeResult strict =
+                run_vulkan_mesh_smoke_test(DriverMode::panvk, "", "", false, hash, &no_fb_err);
+            expect(!strict.ok && !strict.error.empty() && no_fb_err == strict.error && hash == 0U,
+                   "smoke test without fallback fails with the load error");
+            const VulkanDriverProbeResult missing = run_vulkan_mesh_smoke_test(
+                DriverMode::panvk, "/nonexistent/libvulkan_panfrost.so", "", false, hash);
+            expect(!missing.ok && missing.error.find("failed to open Vulkan ICD") != std::string::npos,
+                   "missing ICD file reports the dlopen failure");
         }
 
         // System Vulkan loader probe executes cleanly whether a host GPU is present or not.
@@ -726,6 +907,119 @@ void test_rhi_and_driver_loader() {
                    occ_a[center_off + 2U] == 0U && occ_a[center_off + 3U] == 255U &&
                    occ_a == occ_b,
                "nearer triangle occludes farther triangle regardless of draw order");
+
+        // Near-plane clipping: a triangle with one vertex behind the camera is
+        // clipped, not dropped (ground/terrain under the camera stays visible).
+        {
+            float persp[16]{};
+            make_orbit_mvp_matrix(1.0f, 1.8f, 0.0f, 0.0f, persp);
+            const std::array<MeshVertex, 3> crossing{{
+                {-0.8f, -0.3f, 0.5f, 0, 0, 1, 0, 0, 0xFFFFFFFFU},
+                {0.8f, -0.3f, 0.5f, 0, 0, 1, 1, 0, 0xFFFFFFFFU},
+                {0.0f, -0.3f, 5.0f, 0, 0, 1, 0.5f, 1, 0xFFFFFFFFU},  // behind the eye (z=1.8)
+            }};
+            const BufferHandle cvb = sw_rhi.create_buffer(
+                BufferUsage::vertex, as_u8_span(crossing.data(), sizeof(crossing)));
+            const PipelineHandle no_cull = sw_rhi.create_pipeline(PipelineDesc{true, true, CullMode::none});
+            MeshDrawCall cross_draw{};
+            cross_draw.pipeline = no_cull;
+            cross_draw.vertex_buffer = cvb;
+            cross_draw.index_buffer = ib;
+            cross_draw.index_count = 3U;
+            std::memcpy(cross_draw.mvp, persp, sizeof(persp));
+            std::vector<std::uint8_t> cross_frame;
+            const std::array<MeshDrawCall, 1> cross_draws{cross_draw};
+            expect(sw_rhi.render_pass_and_readback(pass, cross_draws, cross_frame, &err),
+                   "near-plane crossing draw succeeds");
+            std::size_t lit = 0;
+            for (std::size_t i = 0; i < cross_frame.size(); i += 4U) {
+                lit += (cross_frame[i] == 255U) ? 1U : 0U;
+            }
+            expect(lit > 0U, "triangle crossing the near plane is clipped and still drawn");
+
+            // Degenerate / non-finite input never reaches the integer rasterizer.
+            const std::array<MeshVertex, 3> wild{{
+                {1.0e30f, 0.0f, 0.5f, 0, 0, 1, 0, 0, 0xFFFFFFFFU},
+                {-1.0e30f, 1.0e30f, 0.5f, 0, 0, 1, 1, 0, 0xFFFFFFFFU},
+                {0.0f, std::numeric_limits<float>::quiet_NaN(), 0.5f, 0, 0, 1, 0, 1, 0xFFFFFFFFU},
+            }};
+            const BufferHandle wvb =
+                sw_rhi.create_buffer(BufferUsage::vertex, as_u8_span(wild.data(), sizeof(wild)));
+            MeshDrawCall wild_draw = cross_draw;
+            wild_draw.vertex_buffer = wvb;
+            const std::array<MeshDrawCall, 1> wild_draws{wild_draw};
+            expect(sw_rhi.render_pass_and_readback(pass, wild_draws, cross_frame, &err),
+                   "huge and NaN vertex coordinates are handled without UB");
+            sw_rhi.destroy_buffer(wvb);
+            sw_rhi.destroy_buffer(cvb);
+
+            // Top-left fill rule: the two halves of a full-screen quad split along
+            // a diagonal through pixel centres cover every pixel exactly once.
+            const std::array<MeshVertex, 4> quad{{
+                {-1.0f, -1.0f, 0.5f, 0, 0, 1, 0, 0, 0xFFFFFFFFU},
+                {1.0f, -1.0f, 0.5f, 0, 0, 1, 1, 0, 0xFFFFFFFFU},
+                {1.0f, 1.0f, 0.5f, 0, 0, 1, 1, 1, 0xFFFFFFFFU},
+                {-1.0f, 1.0f, 0.5f, 0, 0, 1, 0, 1, 0xFFFFFFFFU},
+            }};
+            const std::array<std::uint16_t, 3> half_a{0, 1, 2};
+            const std::array<std::uint16_t, 3> half_b{0, 2, 3};
+            const BufferHandle qvb =
+                sw_rhi.create_buffer(BufferUsage::vertex, as_u8_span(quad.data(), sizeof(quad)));
+            const BufferHandle iba =
+                sw_rhi.create_buffer(BufferUsage::index, as_u8_span(half_a.data(), sizeof(half_a)));
+            const BufferHandle ibb =
+                sw_rhi.create_buffer(BufferUsage::index, as_u8_span(half_b.data(), sizeof(half_b)));
+            MeshDrawCall qa{};
+            qa.pipeline = no_cull;
+            qa.vertex_buffer = qvb;
+            qa.index_buffer = iba;
+            qa.index_count = 3U;
+            MeshDrawCall qb = qa;
+            qb.index_buffer = ibb;
+            RenderPassDesc black = pass;
+            black.clear_r = black.clear_g = black.clear_b = 0U;
+            std::vector<std::uint8_t> fa;
+            std::vector<std::uint8_t> fb;
+            const std::array<MeshDrawCall, 1> da{qa};
+            const std::array<MeshDrawCall, 1> db{qb};
+            expect(sw_rhi.render_pass_and_readback(black, da, fa, &err) &&
+                       sw_rhi.render_pass_and_readback(black, db, fb, &err),
+                   "quad halves render");
+            std::size_t both = 0;
+            std::size_t neither = 0;
+            std::size_t count_a = 0;
+            for (std::size_t i = 0; i < fa.size(); i += 4U) {
+                const bool in_a = fa[i] == 255U;
+                const bool in_b = fb[i] == 255U;
+                count_a += in_a ? 1U : 0U;
+                both += (in_a && in_b) ? 1U : 0U;
+                neither += (!in_a && !in_b) ? 1U : 0U;
+            }
+            expect(both == 0U && neither == 0U && count_a > 0U && count_a < 64U * 64U,
+                   "shared diagonal edge: no pixel drawn twice, none missed");
+            sw_rhi.destroy_buffer(ibb);
+            sw_rhi.destroy_buffer(iba);
+            sw_rhi.destroy_buffer(qvb);
+            sw_rhi.destroy_pipeline(no_cull);
+        }
+
+        // BRF corner de-duplication.
+        {
+            wse::asset::BrfMesh dup = mesh;
+            dup.face_corners.push_back(dup.face_corners[0]);  // corner 4 == corner 0
+            dup.face_corners.push_back(dup.face_corners[2]);  // corner 5 == corner 2
+            dup.faces[1] = wse::asset::BrfMeshFace{{4, 5, 3}};
+            dup.faces.push_back(wse::asset::BrfMeshFace{{0, 1, 99}});  // corrupt: skipped
+            std::vector<MeshVertex> dv;
+            std::vector<std::uint16_t> di;
+            build_rhi_mesh_from_brf(dup, dv, di);
+            expect(dv.size() == 4U && di.size() == 6U && di[3] == di[0] && di[4] == di[2],
+                   "identical BRF corners share one vertex; corrupt face dropped");
+            std::vector<std::uint8_t> dup_frame;
+            expect(render_textured_brf_mesh_frame(sw_rhi, dup, dds, 64U, 64U, mvp, dup_frame, &err) &&
+                       hash_rgba8_frame(dup_frame) == sw_hash,
+                   "de-duplicated mesh renders the identical frame");
+        }
 
         sw_rhi.destroy_buffer(ib);
         sw_rhi.destroy_buffer(near_vb);
