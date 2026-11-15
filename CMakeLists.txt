@@ -242,6 +242,7 @@ if(WSE_BUILD_ANDROID_APP)
     find_package(SDL3 REQUIRED CONFIG)
     add_library(wse2 SHARED
         platform/sdl/sdl_selftest_main.cpp
+        platform/android/saf_vfs_jni.cpp
     )
     target_link_libraries(wse2 PRIVATE
         wse_selftest

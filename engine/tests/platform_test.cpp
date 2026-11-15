@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -12,6 +13,7 @@
 #include "wse/io/text_stream.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/log.h"
+#include "wse/platform/saf_vfs.h"
 #include "wse/platform/sleep.h"
 #include "wse/platform/vfs.h"
 
@@ -232,6 +234,142 @@ void test_log() {
     null.info("dropped");
 }
 
+void test_saf_vfs() {
+    using namespace wse::platform;
+
+    // 1. Contract compliance over MemorySafBackend.
+    {
+        auto backend = std::make_shared<MemorySafBackend>();
+        std::string doc_modules;
+        std::string doc_native;
+        std::string doc_resource;
+        std::string doc_scripts;
+        expect(backend->create_directory(backend->root_document_id(), "Modules", doc_modules),
+               "saf seed Modules");
+        expect(backend->create_directory(doc_modules, "Native", doc_native),
+               "saf seed Modules/Native");
+        expect(backend->create_directory(doc_native, "Resource", doc_resource),
+               "saf seed Modules/Native/Resource");
+        const std::string scripts_seed = "scriptsfile version 1\n0\n";
+        expect(backend->write_document(
+                   doc_native, {}, "scripts.txt",
+                   std::span<const std::uint8_t>(
+                       reinterpret_cast<const std::uint8_t*>(scripts_seed.data()),
+                       scripts_seed.size()),
+                   doc_scripts),
+               "saf seed scripts.txt");
+
+        SafVfs saf(backend);
+        expect(saf.index_complete(), "saf initial index succeeds");
+        backend->reset_call_counts();
+        check_contract(saf, "SafVfs");
+        expect(backend->list_children_calls == 0,
+               "SafVfs contract ops never re-query list_children");
+    }
+
+    // 2. One-time index, write/mkdir/rmdir updates, module scanner, scripts check, and import_to.
+    {
+        MemoryVfs seed_vfs;
+        const std::string native_ini =
+            "# Native config\n"
+            "module_name = Calradia_Native\n"
+            "compatible_with_warband = 1\n"
+            "load_resource = core_shaders\n"
+            "load_resource = core_textures\n"
+            "load_mod_resource = custom_ui\n";
+        const std::string native_scripts =
+            "scriptsfile version 1\n"
+            "4\n"
+            "game_start -1\n"
+            " 2\n"
+            " 2133 2 1224979098644774912 5\n"
+            " 2105 2 1224979098644774912 1\n"
+            "unmapped_custom_script 0.5\n"
+            " 1\n"
+            " 1 1 7\n"
+            "game_start 2.25\n"
+            " 1\n"
+            " 2320 2 1224979098644774913 1\n"
+            "last_script -1\n"
+            " 0\n";
+        const std::string custom_ini =
+            "module_name = Prophesy_Sample\n"
+            "load_resource = test_res\n"
+            "load_mod_resource = custom_a\n"
+            "load_mod_resource = custom_b\n";
+
+        expect(seed_vfs.write_text("Modules/CustomMod/module.ini", custom_ini), "seed custom mod");
+        expect(seed_vfs.write_text("Modules/Native/module.ini", native_ini), "seed native ini");
+        expect(seed_vfs.write_text("Modules/Native/scripts.txt", native_scripts),
+               "seed native scripts");
+        expect(seed_vfs.write_text("CommonRes/core_shaders.brf", "BRF0"), "seed commonres");
+        expect(seed_vfs.make_dir("Modules/EmptyFolder"), "seed empty folder without ini");
+
+        auto backend = std::make_shared<MemorySafBackend>();
+        expect(backend->seed_from_vfs(seed_vfs), "seed MemorySafBackend from Vfs");
+
+        SafVfs saf(backend);
+        expect(saf.index_complete(), "saf index complete");
+        expect(saf.index_file_count() == 4, "saf indexed 4 files");
+        expect(saf.index_dir_count() == 5, "saf indexed 5 dirs");
+        backend->reset_call_counts();
+
+        // Module discovery should find Native first and skip EmptyFolder (no module.ini).
+        const auto modules = scan_warband_modules(saf);
+        expect(modules.size() == 2, "scan_warband_modules finds 2 modules");
+        if (modules.size() == 2) {
+            expect(modules[0].folder_name == "Native", "Native module sorted first");
+            expect(modules[0].display_name == "Calradia Native", "Native display_name cleaned");
+            expect(modules[0].has_scripts_txt, "Native has scripts.txt");
+            expect(modules[0].load_resource_count == 2 && modules[0].load_mod_resource_count == 1,
+                   "Native resource counts");
+            expect(modules[0].compatible_with_warband == "1", "Native compatibility flag");
+            expect(modules[1].folder_name == "CustomMod", "CustomMod sorted second");
+            expect(modules[1].display_name == "Prophesy Sample", "CustomMod display_name cleaned");
+            expect(!modules[1].has_scripts_txt, "CustomMod lacks scripts.txt");
+            expect(modules[1].load_resource_count == 1 && modules[1].load_mod_resource_count == 2,
+                   "CustomMod resource counts");
+        }
+
+        // Script verification through SafVfs.
+        const ModuleScriptsCheckResult check = verify_module_scripts(saf, "Modules\\Native");
+        expect(check.ok, "verify_module_scripts succeeds through SafVfs");
+        expect(check.script_count == 4, "4 scripts parsed through SafVfs");
+        expect(check.statement_count == 4, "4 statements parsed through SafVfs");
+        expect(check.mapped_script_count == 1, "1 mapped script resolved through SafVfs");
+        expect(!verify_module_scripts(saf, "Modules/CustomMod").ok,
+               "verify_module_scripts fails cleanly when scripts.txt missing");
+
+        // Write, mkdir, rmdir updates index in place without calling list_children.
+        expect(saf.make_dir("Savegames/Native"), "SafVfs make_dir creates missing ancestors");
+        expect(!saf.make_dir("Savegames/Native"), "SafVfs make_dir rejects existing dir");
+        expect(saf.write_text("Savegames/Native/sg00.sav", "SAV"), "SafVfs write_text");
+        expect(!saf.remove_dir("Savegames/Native"), "SafVfs remove_dir refuses non-empty dir");
+        expect(saf.remove_file("savegames/native/SG00.SAV"), "SafVfs remove_file case-insensitive");
+        expect(saf.remove_dir("Savegames/Native"), "SafVfs remove_dir succeeds when empty");
+        expect(!saf.is_dir("Savegames/Native") && saf.is_dir("Savegames"),
+               "Savegames parent remains after child removal");
+        expect(backend->list_children_calls == 0,
+               "no list_children binder calls during read/scan/write/mkdir/rmdir");
+
+        // Import subtree to destination Vfs (app storage simulation).
+        MemoryVfs imported;
+        std::size_t files_copied = 0;
+        std::uint64_t bytes_copied = 0;
+        expect(saf.import_to(imported, "Modules/Native", &files_copied, &bytes_copied),
+               "SafVfs import_to succeeds");
+        expect(files_copied == 2, "import_to copied 2 Native files");
+        expect(bytes_copied == native_ini.size() + native_scripts.size(),
+               "import_to copied exact byte count");
+        std::string imported_scripts;
+        expect(imported.read_text("Modules/Native/scripts.txt", imported_scripts) &&
+                   imported_scripts == native_scripts,
+               "imported scripts.txt matches source");
+        expect(!imported.is_file("CommonRes/core_shaders.brf"),
+               "subtree import_to excluded CommonRes");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -245,6 +383,7 @@ int run_platform_suite(const char* fixture_path) {
     test_vfs_feeds_text_stream();
     test_clock();
     test_log();
+    test_saf_vfs();
     if (failures != 0) {
         std::printf("platform tests: FAIL (%d)\n", failures);
         return 1;

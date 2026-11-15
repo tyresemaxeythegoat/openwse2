@@ -1,0 +1,384 @@
+package org.wse2.android
+
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Spinner
+import android.widget.TextView
+import org.json.JSONObject
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+
+class WseLauncherActivity : Activity() {
+
+    private data class ModuleChoice(
+        val folderName: String,
+        val modulePath: String,
+        val displayName: String,
+        val hasScriptsTxt: Boolean,
+        val loadResourceCount: Int,
+        val loadModResourceCount: Int
+    ) {
+        override fun toString(): String =
+            if (displayName == folderName) {
+                folderName
+            } else {
+                "$displayName ($folderName)"
+            }
+    }
+
+    private lateinit var folderStatusText: TextView
+    private lateinit var indexStatsText: TextView
+    private lateinit var moduleSpinner: Spinner
+    private lateinit var moduleDetailText: TextView
+    private lateinit var driverSpinner: Spinner
+    private lateinit var outputStatusText: TextView
+    private lateinit var rescanButton: Button
+    private lateinit var verifyScriptsButton: Button
+
+    private val modules = ArrayList<ModuleChoice>()
+    private val driverOptions = listOf("System Vulkan", "Turnip (Adreno custom)", "PanVK (Mali direct ICD)")
+    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+
+    private var selectedTreeUri: Uri? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val dp = resources.displayMetrics.density
+        fun px(v: Int): Int = (v * dp).toInt()
+
+        val rootScroll = ScrollView(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(px(16), px(20), px(16), px(24))
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        rootScroll.addView(container)
+
+        fun addSectionTitle(text: String) {
+            container.addView(TextView(this).apply {
+                this.text = text
+                textSize = 15f
+                setPadding(0, px(12), 0, px(4))
+            })
+        }
+
+        container.addView(TextView(this).apply {
+            text = "WSE2 Android Launcher (Slice P2)"
+            textSize = 20f
+            setPadding(0, 0, 0, px(8))
+        })
+
+        addSectionTitle("Warband Folder (SAF)")
+        folderStatusText = TextView(this).apply {
+            text = "No Warband folder selected."
+            textSize = 13f
+            setPadding(0, 0, 0, px(6))
+        }
+        container.addView(folderStatusText)
+
+        container.addView(Button(this).apply {
+            text = "Select Warband Folder"
+            setOnClickListener { openWarbandFolderPicker() }
+        })
+
+        rescanButton = Button(this).apply {
+            text = "Rescan Folder & Rebuild SafVfs Index"
+            isEnabled = false
+            setOnClickListener {
+                val uri = selectedTreeUri
+                if (uri != null) {
+                    scanTree(uri)
+                }
+            }
+        }
+        container.addView(rescanButton)
+
+        indexStatsText = TextView(this).apply {
+            text = "SafVfs index: idle"
+            textSize = 13f
+            setPadding(0, px(4), 0, px(4))
+        }
+        container.addView(indexStatsText)
+
+        addSectionTitle("Module (Modules/*/module.ini)")
+        moduleSpinner = Spinner(this)
+        container.addView(moduleSpinner)
+
+        moduleDetailText = TextView(this).apply {
+            text = "Select a Warband folder to discover modules."
+            textSize = 13f
+            setPadding(0, px(4), 0, px(6))
+        }
+        container.addView(moduleDetailText)
+
+        verifyScriptsButton = Button(this).apply {
+            text = "Verify scripts.txt via SafVfs"
+            isEnabled = false
+            setOnClickListener { verifySelectedModuleScripts() }
+        }
+        container.addView(verifyScriptsButton)
+
+        addSectionTitle("GPU Driver")
+        driverSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@WseLauncherActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                driverOptions
+            )
+        }
+        container.addView(driverSpinner)
+
+        addSectionTitle("Runtime")
+        container.addView(Button(this).apply {
+            text = "Launch WSE2 SDL3 Self-Test (WseActivity)"
+            setOnClickListener { launchSelfTestActivity() }
+        })
+
+        addSectionTitle("Status Log")
+        outputStatusText = TextView(this).apply {
+            text = "Ready."
+            textSize = 12f
+        }
+        container.addView(outputStatusText)
+
+        setContentView(rootScroll)
+        restorePreferences()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        executor.shutdownNow()
+    }
+
+    private fun restorePreferences() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val savedDriver = prefs.getString(KEY_GPU_DRIVER, driverOptions.first())
+        val driverIdx = driverOptions.indexOf(savedDriver).coerceAtLeast(0)
+        driverSpinner.setSelection(driverIdx)
+        driverSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                prefs.edit().putString(KEY_GPU_DRIVER, driverOptions[pos]).apply()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        val savedTree = prefs.getString(KEY_TREE_URI, null)
+        if (!savedTree.isNullOrEmpty()) {
+            val uri = Uri.parse(savedTree)
+            selectedTreeUri = uri
+            folderStatusText.text = "Tree URI: $savedTree"
+            rescanButton.isEnabled = true
+            scanTree(uri)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun openWarbandFolderPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+            )
+        }
+        startActivityForResult(intent, REQ_PICK_TREE)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_PICK_TREE || resultCode != RESULT_OK) {
+            return
+        }
+        val uri = data?.data ?: return
+        val grantFlags = data.flags and
+            (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (_: SecurityException) {
+            if ((grantFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0) {
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: SecurityException) {
+                    // Continue with temporary grant if provider disallows persistence.
+                }
+            }
+        }
+
+        selectedTreeUri = uri
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(KEY_TREE_URI, uri.toString())
+            .apply()
+        folderStatusText.text = "Tree URI: $uri"
+        rescanButton.isEnabled = true
+        scanTree(uri)
+    }
+
+    private fun scanTree(uri: Uri) {
+        outputStatusText.text = "Indexing SAF tree and scanning Modules/*/module.ini..."
+        verifyScriptsButton.isEnabled = false
+        executor.execute {
+            val bridge = WseSafBridge(applicationContext, uri)
+            val rawJson = bridge.nativeScanTree()
+            runOnUiThread {
+                if (isFinishing || isDestroyed) {
+                    return@runOnUiThread
+                }
+                applyScanJson(rawJson)
+            }
+        }
+    }
+
+    private fun applyScanJson(rawJson: String) {
+        try {
+            val obj = JSONObject(rawJson)
+            if (!obj.optBoolean("ok", false)) {
+                val err = obj.optString("error", "unknown scan failure")
+                indexStatsText.text = "SafVfs index: error"
+                moduleDetailText.text = "Scan failed: $err"
+                outputStatusText.text = "ERROR: $err"
+                return
+            }
+
+            val indexMs = obj.optLong("index_ms", 0L)
+            val fileCount = obj.optLong("files", 0L)
+            val dirCount = obj.optLong("dirs", 0L)
+            indexStatsText.text = "SafVfs index: $fileCount files, $dirCount dirs in $indexMs ms"
+
+            modules.clear()
+            val arr = obj.optJSONArray("modules")
+            if (arr != null) {
+                for (i in 0 until arr.length()) {
+                    val m = arr.getJSONObject(i)
+                    modules.add(
+                        ModuleChoice(
+                            folderName = m.optString("folder_name", ""),
+                            modulePath = m.optString("module_path", ""),
+                            displayName = m.optString("display_name", ""),
+                            hasScriptsTxt = m.optBoolean("has_scripts_txt", false),
+                            loadResourceCount = m.optInt("load_resource_count", 0),
+                            loadModResourceCount = m.optInt("load_mod_resource_count", 0)
+                        )
+                    )
+                }
+            }
+
+            val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            val savedModule = prefs.getString(KEY_SELECTED_MODULE, "Native")
+            val adapter = ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                modules
+            )
+            moduleSpinner.adapter = adapter
+            if (modules.isNotEmpty()) {
+                val idx = modules.indexOfFirst {
+                    it.folderName.equals(savedModule, ignoreCase = true)
+                }.coerceAtLeast(0)
+                moduleSpinner.setSelection(idx)
+                updateSelectedModuleUi(idx)
+                moduleSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(
+                        parent: AdapterView<*>?,
+                        view: View?,
+                        pos: Int,
+                        id: Long
+                    ) {
+                        updateSelectedModuleUi(pos)
+                    }
+
+                    override fun onNothingSelected(parent: AdapterView<*>?) {}
+                }
+                outputStatusText.text = "Found ${modules.size} module(s) in $indexMs ms."
+            } else {
+                moduleDetailText.text = "No Modules/*/module.ini folders found in selected tree."
+                verifyScriptsButton.isEnabled = false
+                outputStatusText.text = "Indexed $fileCount file(s), 0 Warband modules."
+            }
+        } catch (e: Exception) {
+            outputStatusText.text = "JSON parse error: ${e.message}"
+        }
+    }
+
+    private fun updateSelectedModuleUi(position: Int) {
+        if (position !in modules.indices) {
+            verifyScriptsButton.isEnabled = false
+            return
+        }
+        val m = modules[position]
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SELECTED_MODULE, m.folderName)
+            .apply()
+        val scriptsLabel = if (m.hasScriptsTxt) "scripts.txt present" else "scripts.txt missing"
+        moduleDetailText.text =
+            "${m.modulePath} | $scriptsLabel | BRFs: ${m.loadResourceCount} common + ${m.loadModResourceCount} mod"
+        verifyScriptsButton.isEnabled = m.hasScriptsTxt && selectedTreeUri != null
+    }
+
+    private fun verifySelectedModuleScripts() {
+        val uri = selectedTreeUri ?: return
+        val pos = moduleSpinner.selectedItemPosition
+        if (pos !in modules.indices) {
+            return
+        }
+        val mod = modules[pos]
+        outputStatusText.text = "Verifying ${mod.modulePath}/scripts.txt via SafVfs..."
+        executor.execute {
+            val bridge = WseSafBridge(applicationContext, uri)
+            val result = bridge.nativeVerifyModule(mod.modulePath)
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    outputStatusText.text = result
+                }
+            }
+        }
+    }
+
+    private fun launchSelfTestActivity() {
+        val selectedPos = moduleSpinner.selectedItemPosition
+        val selectedMod = if (selectedPos in modules.indices) modules[selectedPos].folderName else "Native"
+        val driver = driverOptions[driverSpinner.selectedItemPosition.coerceAtLeast(0)]
+        val intent = Intent(this, WseActivity::class.java).apply {
+            putExtra(EXTRA_TREE_URI, selectedTreeUri?.toString() ?: "")
+            putExtra(EXTRA_MODULE_NAME, selectedMod)
+            putExtra(EXTRA_GPU_DRIVER, driver)
+        }
+        startActivity(intent)
+    }
+
+    companion object {
+        private const val REQ_PICK_TREE = 2001
+        private const val PREFS_NAME = "wse2_launcher"
+        private const val KEY_TREE_URI = "tree_uri"
+        private const val KEY_SELECTED_MODULE = "selected_module"
+        private const val KEY_GPU_DRIVER = "gpu_driver"
+
+        const val EXTRA_TREE_URI = "wse2.extra.TREE_URI"
+        const val EXTRA_MODULE_NAME = "wse2.extra.MODULE_NAME"
+        const val EXTRA_GPU_DRIVER = "wse2.extra.GPU_DRIVER"
+    }
+}

@@ -134,9 +134,9 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
 
 ### Phase 4 — Native Android Features
 
-- [ ] **P2 Asset & mod loader UI:** SAF folder picker for the user's Warband install, persisted
-      permission, module list and mod switcher (equivalent to `wse2_launcher.exe`), GPU driver
-      picker; native `SafVfs` with a one-time case-insensitive index.
+- [x] **P2 Asset & mod loader UI:** SAF folder picker for the user's Warband install (`WseLauncherActivity`), persisted
+      URI permission, module list and mod switcher (`Modules/*/module.ini`, equivalent to `wse2_launcher.exe`), GPU driver
+      picker; native `SafVfs` (`wse/platform/saf_vfs.h`, `platform/android/saf_vfs_jni.cpp`, `WseSafBridge.kt`) with a one-time case-insensitive index (`platform_test.cpp` host-verified; on-device run pending hardware).
 - [ ] **P7 Dynamic touch controls:** context-sensitive overlay (virtual movement stick, 4-direction
       combat swipe/block zones, battle command radial menu) that hides during menu/inventory
       screens or when a controller is connected.
@@ -165,7 +165,8 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
-| 2026-11-15 | — | P3 follow-up review fixes: `resolve_texture_path` probes base directories again when `warband_root` is empty (VFS root); `parse_dds` reads `dwDepth` only for volume textures (2D files with junk depth accepted) and accepts every single-slice volume, including DX10 `TEXTURE3D` and `DDSCAPS2_VOLUME` without `DDSD_DEPTH`; `asset_test.cpp` regression cases |
+| 2026-11-15 | — | Slice P2 launcher & SAF file system: re-verified 100% of retail Warband corpus (`CommonRes` `221/221`, `WSE2 SDK` `3/3`, `Modules/Native` `221/221`, `Textures` `1,269/1,269`) after PR #12 (`0629bdf`); added portable `SafVfs`, `MemorySafBackend`, `scan_warband_modules`, and `verify_module_scripts` (`wse/platform/saf_vfs.h`), Android JNI bridge (`platform/android/saf_vfs_jni.cpp` linked into `wse2`), Kotlin `WseSafBridge` + `WseLauncherActivity` (`ACTION_OPEN_DOCUMENT_TREE` Warband tree picker, persisted URI grant, module switcher, GPU driver selector, `scripts.txt` verifier, SDL3 launch), and expanded `platform_test.cpp` (`7` test functions, `SafVfs` contract/index/import/module scanner) |
+| 2026-11-15 | `0629bdf` | P3 follow-up review fixes: `resolve_texture_path` probes base directories again when `warband_root` is empty (VFS root); `parse_dds` reads `dwDepth` only for volume textures (2D files with junk depth accepted) and accepts every single-slice volume, including DX10 `TEXTURE3D` and `DDSCAPS2_VOLUME` without `DDSD_DEPTH`; `asset_test.cpp` regression cases |
 | 2026-11-15 | `77e265e` | P3 evidence follow-ups + retail `.dds` fix: verified `rglResourceManager::createMetaMesh` (`0x1402f29a0`, `prefix.length >= 2`, first-`.` split, dotted non-LOD names in LOD `0`), `tryGetTexture` (`0x1402f2f10`), and `rglTexture::initDeviceObjects` (`0x140317710`: `TexturesHD` before base language, indexed `%s_%d.dds` frames with `texture_frame_count` skipping `TexturesHD`); accepted single-slice `DDSCAPS2_VOLUME` with `DDSD_DEPTH && dwDepth == 1` (`cnt\font.dds`); re-verified `19/19` host suites (`131` tests) and 100% of retail `CommonRes` (`221/221`), `WSE2 SDK` (`3/3`), `Textures` (`1,269/1,269`), and `Modules/Native` (`221/221`) |
 | 2026-11-15 | `a5c4dc4` | P3 review fixes: `.brf` up-front reservation capped (`kMaxReserveElements`), specific count diagnostics preserved, vertex indices > 65535 rejected; `.dds` volume textures rejected, DX10 cube arrays count `6 × array_size` faces, `is_srgb` flag, decoder re-validates slice table/payload; `wse_brf` prints catalog warnings and catches exceptions; `asset_test.cpp` 6 functions (`131` total) |
 | 2026-11-15 | `d1dd094` | Slice P3 / Phase 2G asset decoders: added 25 RGL resource/mesh/body/skeleton/texture/shader/material layouts + `g_resourceManager` + 34 `.rdata` strings to `docs/SYMBOL_MAP.json`; added clean-room `wse/asset/brf.h` (all 8 `.brf` resource types, `MetaMesh` LOD grouper, `module.ini` resource catalog) and `wse/asset/dds.h` (`BC1`–`BC5`, uncompressed RGBA/BGRA/BGR/16-bit/`L8`/`L16`/`A8L8`/`A8`, DX10, Warband texture search chain); added `asset_test.cpp` (19th suite) + `wse_brf` CLI; verified `19/19` host suites and 100% of retail Warband `CommonRes`, `WSE2 SDK`, `Textures`, and `Modules/Native` |
