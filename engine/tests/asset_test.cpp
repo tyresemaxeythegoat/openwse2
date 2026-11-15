@@ -64,14 +64,15 @@ void write_dds_header(wse::io::BinaryWriter& w,
                       std::uint32_t b_mask,
                       std::uint32_t a_mask,
                       std::uint32_t caps = 0x1000U,
-                      std::uint32_t caps2 = 0U) {
+                      std::uint32_t caps2 = 0U,
+                      std::uint32_t depth = 1U) {
     w.write_u32(wse::asset::dds_detail::fourcc('D', 'D', 'S', ' '));
     w.write_u32(124U);
     w.write_u32(flags);
     w.write_u32(height);
     w.write_u32(width);
-    w.write_u32(0U);  // pitch
-    w.write_u32(1U);  // depth
+    w.write_u32(0U);     // pitch
+    w.write_u32(depth);  // depth
     w.write_u32(mip_count);
     for (int i = 0; i < 11; ++i) w.write_u32(0U);
     w.write_u32(32U);
@@ -342,6 +343,24 @@ void test_brf_rfver1_metamesh_and_catalog() {
                groups[0].lod_mesh_indices[4].size() == 1,
            "MetaMesh LOD buckets [0..4]");
 
+    // Verified createMetaMesh (0x1402f29a0) edge cases: dotted non-LOD names land in LOD 0,
+    // ".lod3_alt" still selects LOD 3, and prefixes shorter than 2 chars before '.' are not split.
+    {
+        std::vector<wse::asset::BrfMesh> edge_meshes(4);
+        edge_meshes[0].name = "tree";
+        edge_meshes[1].name = "tree.1";
+        edge_meshes[2].name = "tree.lod3_alt";
+        edge_meshes[3].name = "x.lod1";
+        const auto edge_groups = wse::asset::group_meta_meshes(edge_meshes);
+        expect(edge_groups.size() == 2 &&
+                   edge_groups[0].base_name == "tree" &&
+                   edge_groups[0].lod_mesh_indices[0].size() == 2 &&
+                   edge_groups[0].lod_mesh_indices[3].size() == 1 &&
+                   edge_groups[1].base_name == "x.lod1" &&
+                   edge_groups[1].lod_mesh_indices[0].size() == 1,
+               "MetaMesh createMetaMesh prefix >= 2 and dotted/prefix LOD rules");
+    }
+
     // Rejections
     {
         wse::io::BinaryWriter bad;
@@ -586,16 +605,40 @@ void test_dds_hardening() {
     std::string err;
     const std::uint32_t argb_masks[4] = {0x00FF0000U, 0x0000FF00U, 0x000000FFU, 0xFF000000U};
     {
-        // Legacy volume texture (DDSCAPS2_VOLUME + DDSD_DEPTH).
+        // Legacy multi-slice volume texture (DDSCAPS2_VOLUME + DDSD_DEPTH, depth = 4).
         wse::io::BinaryWriter w;
         write_dds_header(w, 4, 4, 0x1007U | 0x800000U, 1, 0x41U, 0U, 32U, argb_masks[0], argb_masks[1],
-                         argb_masks[2], argb_masks[3], 0x1000U, 0x200000U);
-        const std::vector<std::byte> px(4U * 4U * 4U * 4U);
+                         argb_masks[2], argb_masks[3], 0x1000U, 0x200000U, 4U);
+        const std::vector<std::byte> px(4U * 4U * 4U * 4U * 4U);
         w.write_bytes(px);
         wse::asset::DdsImageView img;
         err.clear();
         expect(!wse::asset::parse_dds(w.bytes(), img, &err) && contains(err, "volume"),
-               "rejects legacy volume DDS");
+               "rejects legacy multi-slice volume DDS");
+    }
+    {
+        // DDSCAPS2_VOLUME without DDSD_DEPTH + depth == 1 is rejected.
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 4, 4, 0x1007U, 1, 0x41U, 0U, 32U, argb_masks[0], argb_masks[1],
+                         argb_masks[2], argb_masks[3], 0x1000U, 0x200000U, 1U);
+        const std::vector<std::byte> px(4U * 4U * 4U);
+        w.write_bytes(px);
+        wse::asset::DdsImageView img;
+        err.clear();
+        expect(!wse::asset::parse_dds(w.bytes(), img, &err) && contains(err, "volume"),
+               "rejects DDSCAPS2_VOLUME without explicit depth == 1");
+    }
+    {
+        // Single-slice DDSCAPS2_VOLUME + DDSD_DEPTH + depth == 1 (retail Warband cnt/font.dds).
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 4, 4, 0x1007U | 0x800000U, 1, 0x41U, 0U, 32U, argb_masks[0], argb_masks[1],
+                         argb_masks[2], argb_masks[3], 0x1000U, 0x200000U, 1U);
+        const std::vector<std::byte> px(4U * 4U * 4U);
+        w.write_bytes(px);
+        wse::asset::DdsImageView img;
+        err.clear();
+        expect(wse::asset::parse_dds(w.bytes(), img, &err) && img.slices.size() == 1U,
+               "accepts single-slice DDSCAPS2_VOLUME with DDSD_DEPTH and depth == 1");
     }
     {
         // DX10 TEXTURE3D.
@@ -856,30 +899,74 @@ void test_dds_formats_and_resolver() {
         expect(!wse::asset::parse_dds(bad, img, &err), "reject bad DDS magic");
     }
 
-    // 6. Texture path resolution priority
+    // 6. Texture path resolution priority (tryGetTexture 0x1402f2f10 + initDeviceObjects 0x140317710)
     {
+        expect(wse::asset::texture_frame_count(0U) == 1U &&
+                   wse::asset::texture_frame_count(0x01000000U) == 4U &&
+                   wse::asset::texture_frame_count(0x07000000U) == 28U &&
+                   wse::asset::texture_frame_count(0x0F000000U) == 60U,
+               "texture_frame_count matches ((flags >> 24) & 0xF) * 4");
+
         wse::platform::MemoryVfs vfs;
         const std::vector<std::uint8_t> dummy{1};
         vfs.write_file("warband/Textures/ui_icon.dds", dummy);
+        vfs.write_file("warband/Textures/languages/fr/ui_icon.dds", dummy);
         vfs.write_file("warband/TexturesHD/ui_icon.dds", dummy);
         vfs.write_file("warband/Modules/Mod/Textures/ui_icon.dds", dummy);
         vfs.write_file("warband/Modules/Mod/Textures/languages/fr/ui_icon.dds", dummy);
+        vfs.write_file("warband/Textures/languages/fr/lang_only.dds", dummy);
+        vfs.write_file("warband/Textures/lang_only.dds", dummy);
         vfs.write_file("warband/Textures/base_only.tga", dummy);
         vfs.write_file("warband/TexturesHD/hd_only.dds", dummy);
+        vfs.write_file("warband/Textures/rock.1.dds", dummy);
+
+        vfs.write_file("warband/Textures/waterbump_0.dds", dummy);
+        vfs.write_file("warband/TexturesHD/waterbump_0.dds", dummy);
+        vfs.write_file("warband/Textures/languages/fr/waterbump_0.dds", dummy);
+        vfs.write_file("warband/Modules/Mod/Textures/waterbump_0.dds", dummy);
+        vfs.write_file("warband/Modules/Mod/Textures/languages/fr/waterbump_0.dds", dummy);
+        vfs.write_file("warband/Textures/waterbump_5.dds", dummy);
+        vfs.write_file("warband/Textures/languages/fr/anim_lang_0.dds", dummy);
+        vfs.write_file("warband/TexturesHD/anim_lang_0.dds", dummy);
 
         expect(wse::asset::resolve_texture_path(vfs, "Textures\\ui_icon", "warband", "warband/Modules/Mod", "fr", true) ==
                    "warband/Modules/Mod/Textures/languages/fr/ui_icon.dds",
                "module localized texture takes highest priority");
         expect(wse::asset::resolve_texture_path(vfs, "ui_icon", "warband", "warband/Modules/Mod", "", true) ==
                    "warband/Modules/Mod/Textures/ui_icon.dds",
-               "module texture overrides base TexturesHD and Textures");
+               "module texture overrides base TexturesHD, base language, and Textures");
+        expect(wse::asset::resolve_texture_path(vfs, "ui_icon", "warband", "", "fr", true) ==
+                   "warband/TexturesHD/ui_icon.dds",
+               "TexturesHD overrides base Textures/languages when enabled");
+        expect(wse::asset::resolve_texture_path(vfs, "lang_only", "warband", "", "fr", true) ==
+                   "warband/Textures/languages/fr/lang_only.dds",
+               "base Textures/languages used when absent from module and TexturesHD");
         expect(wse::asset::resolve_texture_path(vfs, "base_only", "warband", "", "", true) ==
                    "warband/Textures/base_only.tga",
-               "probes .dds -> .jpg -> .tga");
+               "probes .dds -> exact -> .jpg -> .tga");
+        expect(wse::asset::resolve_texture_path(vfs, "rock.1", "warband", "", "", true) ==
+                   "warband/Textures/rock.1.dds",
+               "dotted texture stem probes .dds via tryGetTexture");
         expect(wse::asset::resolve_texture_path(vfs, "hd_only.dds", "warband", "", "", false).empty() &&
                    wse::asset::resolve_texture_path(vfs, "hd_only.dds", "warband", "", "", true) ==
                        "warband/TexturesHD/hd_only.dds",
                "TexturesHD searched only when enabled");
+
+        expect(wse::asset::resolve_texture_path(vfs, "waterbump.dds", "warband", "warband/Modules/Mod", "fr", true, 0) ==
+                   "warband/Modules/Mod/Textures/languages/fr/waterbump_0.dds",
+               "indexed frame prefers module language");
+        expect(wse::asset::resolve_texture_path(vfs, "waterbump", "warband", "warband/Modules/Mod", "", true, 0) ==
+                   "warband/Modules/Mod/Textures/waterbump_0.dds",
+               "indexed frame checks module Textures");
+        expect(wse::asset::resolve_texture_path(vfs, "anim_lang.dds", "warband", "", "fr", true, 0) ==
+                   "warband/Textures/languages/fr/anim_lang_0.dds",
+               "indexed frame skips TexturesHD and uses base language");
+        expect(wse::asset::resolve_texture_path(vfs, "waterbump.dds", "warband", "", "", true, 0) ==
+                   "warband/Textures/waterbump_0.dds",
+               "indexed frame skips TexturesHD and falls back to base Textures");
+        expect(wse::asset::resolve_texture_path(vfs, "waterbump", "warband", "", "", false, 5) ==
+                   "warband/Textures/waterbump_5.dds",
+               "indexed frame formats <stem>_<frame>.dds");
     }
 }
 

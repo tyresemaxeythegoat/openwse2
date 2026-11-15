@@ -276,7 +276,7 @@ binary savegames; none of these checks changes valid module behaviour. In `str_s
 empty delimiter cannot advance in retail and would loop indefinitely; the port stores the source as
 a single piece (respecting `skip_empty`) and terminates.
 
-Asset decoders (`wse/asset/{brf,dds}.h`, P3 review fixes):
+Asset decoders (`wse/asset/{brf,dds}.h`, P3 review & evidence follow-ups):
 
 - `.brf` element counts are checked against the remaining stream bytes at each record's minimum
   wire size, and at most `detail::kMaxReserveElements` (`4096`) elements are reserved before they
@@ -285,15 +285,22 @@ Asset decoders (`wse/asset/{brf,dds}.h`, P3 review fixes):
 - A face-corner vertex index above `65535` is rejected: retail `rglMeshFaceCorner::m_vertexNo`
   (`+0x40`) is an `unsigned short`, so such an index would be truncated.
 - Composite bodies nest at most 8 levels.
-- `.dds` volume textures (`DDSCAPS2_VOLUME`, `DDSD_DEPTH` with depth > 1, DX10 `TEXTURE3D`) are
-  rejected rather than decoded as their first slice; DX10 `array_size` is capped at 64.
+- Multi-slice `.dds` volume textures (`dwDepth > 1`, `DDSCAPS2_VOLUME` without `DDSD_DEPTH &&
+  dwDepth == 1`, or DX10 `TEXTURE3D`) are rejected rather than decoded as their first slice, while
+  single-slice `DDSCAPS2_VOLUME` with `DDSD_DEPTH` and `dwDepth == 1` (retail Warband
+  `Textures\languages\cnt\font.dds`) is accepted as a 2D image; DX10 `array_size` is capped at 64.
   DX10 cube maps count `6 × array_size` faces; legacy cube maps count their `dwCaps2` face bits.
   `DdsImageView::is_srgb` marks the DXGI `*_SRGB` formats, whose `format` is the UNORM equivalent.
 - `decode_dds_mip_rgba8` re-validates the slice index and that the slice payload covers its
   dimensions. `DdsImageView` slices are non-owning views into the buffer given to `parse_dds`.
-- Unverified against the retail control flow: the `MetaMesh` base-name split and `.lodN` rule,
-  and the texture probe order in `resolve_texture_path`; extension-less texture names fall back to
-  `.jpg`/`.tga`, which `parse_dds` cannot decode.
+- Verified against the v1.1.5.5 control flow: `rglResourceManager::createMetaMesh` (`0x1402f29a0`)
+  requires `prefix.length >= 2` (`0x1402f2b23`), splits at the first `.`, and routes dotted non-LOD
+  names to LOD `0`; `rglResourceManager::tryGetTexture` (`0x1402f2f10`) + `rglTexture::initDeviceObjects`
+  (`0x140317710`) probe module language, module `Textures`, `TexturesHD` (single-frame only, before
+  base `Textures\languages`), base `Textures\languages`, and base `Textures`, with indexed
+  `%s_%d.dds` frames (`((flags >> 24) & 0xF) * 4`) skipping `TexturesHD` and single-frame
+  extensionless names falling back to exact / `.jpg` / `.tga` (callers must check extension before
+  `parse_dds`).
 
 Script operands never size an allocation directly (Milestone 4–6 review fixes):
 

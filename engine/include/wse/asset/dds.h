@@ -407,9 +407,12 @@ inline bool parse_dds(std::span<const std::byte> data,
     }
     (void)dwPitchOrLinearSize;
     (void)dwCaps;
-    // Volume textures (DDSCAPS2_VOLUME, or DDSD_DEPTH with depth > 1) are not 2D/cube
-    // images; rejecting them avoids silently decoding only the first depth slice.
-    if ((dwCaps2 & 0x200000U) != 0U || ((dwFlags & 0x800000U) != 0U && dwDepth > 1U)) {
+    // Multi-slice volume textures (depth > 1, or DDSCAPS2_VOLUME without an explicit
+    // single-slice depth == 1) are not 2D/cube images; rejecting them avoids silently
+    // decoding only the first depth slice while accepting retail Warband's single-slice
+    // Textures\languages\cnt\font.dds (DDSCAPS2_VOLUME with DDSD_DEPTH and dwDepth == 1).
+    const bool has_explicit_depth_1 = ((dwFlags & 0x800000U) != 0U && dwDepth == 1U);
+    if (dwDepth > 1U || ((dwCaps2 & 0x200000U) != 0U && !has_explicit_depth_1)) {
         return dds_detail::set_error(error_out, "unsupported DDS volume texture");
     }
 
@@ -749,38 +752,70 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
     }
 }
 
+// Animated/indexed frame count formula from rglTexture::initDeviceObjects
+// (0x1403177b7..0x1403177ce): 1 when (flags & 0x0F000000) == 0, else
+// ((flags >> 24) & 0xF) * 4 (4..60 frames).
+inline constexpr std::uint32_t texture_frame_count(std::uint32_t texture_flags) noexcept {
+    return ((texture_flags & 0x0F000000U) != 0U)
+        ? (((texture_flags >> 24U) & 0xFU) << 2U)
+        : 1U;
+}
+
 // Resolves a texture identifier through the Warband search chain matching
-// rglResourceManager::tryGetTexture (0x1402f2f10) + rglTexture::initDeviceObjects (0x140317710).
-// Probe order (module language, module, base language, TexturesHD, Textures) is not yet
-// confirmed against the retail control flow; the cited strings fix only the directory
-// templates. The indexed "%s_%d.dds" templates (0x14056b380..0x14056b3d0) are not handled.
-// Extension-less names fall back to .jpg / .tga, which parse_dds cannot decode: callers
-// must check the returned extension before decoding.
+// rglResourceManager::tryGetTexture (0x1402f2f10..0x1402f335e) and
+// rglTexture::initDeviceObjects (0x140317710..0x14031813b).
+// - Single-frame lookup (frame_index < 0): when the normalized name does not end with
+//   .dds/.jpg/.tga, tries "<name>.dds" (0x1402f2f41), "<name>" (0x1402f3081),
+//   "<name>.jpg" (0x1402f30ec), "<name>.tga" (0x1402f3203). Callers must check the
+//   returned extension before passing the file to parse_dds.
+// - Indexed multi-frame lookup (frame_index >= 0, (m_flags & 0x0F000000) != 0):
+//   formats "<stem>_<frame_index>.dds" (0x1403178b8..0x140317b3b, templates
+//   0x14056b380..0x14056b3d0) and skips TexturesHD (0x140317f45).
+// - Verified directory probe order (0x140317e77..0x140317ff4):
+//   1. module Textures/languages/<lang> (0x140317e77)
+//   2. module Textures (0x140317ee4)
+//   3. base TexturesHD (0x140317f45, before base language; skipped when frame_index >= 0)
+//   4. base Textures/languages/<lang> (0x140317fa2)
+//   5. base Textures (0x140317ff4)
 inline std::string resolve_texture_path(wse::platform::Vfs& vfs,
                                         std::string_view texture_name,
                                         std::string_view warband_root,
                                         std::string_view module_root = {},
                                         std::string_view language = {},
-                                        bool use_textures_hd = false) {
+                                        bool use_textures_hd = false,
+                                        int frame_index = -1) {
     if (texture_name.empty()) return {};
 
     std::string clean(texture_name);
     std::replace(clean.begin(), clean.end(), '\\', '/');
     while (!clean.empty() && clean.front() == '/') clean.erase(clean.begin());
-    const std::string lower_clean = wse::platform::ascii_lower(clean);
+    std::string lower_clean = wse::platform::ascii_lower(clean);
     if (lower_clean.rfind("textures/", 0) == 0) {
         clean.erase(0, 9);
+        lower_clean.erase(0, 9);
     }
     if (clean.empty()) return {};
 
+    const auto ends_with = [](std::string_view s, std::string_view suffix) noexcept {
+        return s.size() >= suffix.size() &&
+               s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+    };
+
     std::vector<std::string> candidates;
-    const std::size_t slash = clean.find_last_of('/');
-    const std::size_t dot = clean.find_last_of('.');
-    const bool has_ext = (dot != std::string::npos) && (slash == std::string::npos || dot > slash);
-    if (has_ext) {
+    if (frame_index >= 0) {
+        std::string_view stem(clean);
+        if (ends_with(lower_clean, ".dds")) {
+            stem.remove_suffix(4U);
+        }
+        if (stem.empty()) return {};
+        candidates.push_back(std::string(stem) + "_" + std::to_string(frame_index) + ".dds");
+    } else if (ends_with(lower_clean, ".dds") ||
+               ends_with(lower_clean, ".jpg") ||
+               ends_with(lower_clean, ".tga")) {
         candidates.push_back(clean);
     } else {
         candidates.push_back(clean + ".dds");
+        candidates.push_back(clean);
         candidates.push_back(clean + ".jpg");
         candidates.push_back(clean + ".tga");
     }
@@ -798,23 +833,31 @@ inline std::string resolve_texture_path(wse::platform::Vfs& vfs,
             const std::string mod_lang = wse::game::vfs_join_path(
                 wse::game::vfs_join_path(module_root, "Textures/languages"), language);
             if (auto hit = probe_dir(mod_lang); !hit.empty()) return hit;
+            if (frame_index < 0) {
+                // Covers retail literal "%sTextures\languages\%s\%s.dds" (0x14056b448)
+                // when m_name already carries an extension.
+                const std::string literal_dds = wse::game::vfs_join_path(mod_lang, clean + ".dds");
+                if (vfs.is_file(literal_dds)) return literal_dds;
+            }
         }
         if (auto hit = probe_dir(wse::game::vfs_join_path(module_root, "Textures")); !hit.empty()) {
             return hit;
         }
     }
-    if (!language.empty()) {
-        const std::string base_lang = wse::game::vfs_join_path(
-            wse::game::vfs_join_path(warband_root, "Textures/languages"), language);
-        if (auto hit = probe_dir(base_lang); !hit.empty()) return hit;
-    }
-    if (use_textures_hd) {
-        if (auto hit = probe_dir(wse::game::vfs_join_path(warband_root, "TexturesHD")); !hit.empty()) {
+    if (!warband_root.empty()) {
+        if (use_textures_hd && frame_index < 0) {
+            if (auto hit = probe_dir(wse::game::vfs_join_path(warband_root, "TexturesHD")); !hit.empty()) {
+                return hit;
+            }
+        }
+        if (!language.empty()) {
+            const std::string base_lang = wse::game::vfs_join_path(
+                wse::game::vfs_join_path(warband_root, "Textures/languages"), language);
+            if (auto hit = probe_dir(base_lang); !hit.empty()) return hit;
+        }
+        if (auto hit = probe_dir(wse::game::vfs_join_path(warband_root, "Textures")); !hit.empty()) {
             return hit;
         }
-    }
-    if (auto hit = probe_dir(wse::game::vfs_join_path(warband_root, "Textures")); !hit.empty()) {
-        return hit;
     }
     return {};
 }

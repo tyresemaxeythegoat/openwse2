@@ -704,7 +704,9 @@ bool read_section(wse::io::BinaryReader& r,
 
 inline int parse_lod_suffix(std::string_view suffix) noexcept {
     // Matches rglResourceManager::createMetaMesh (0x1402f29a0) suffix rule:
-    // suffix[0] == '.' followed case-insensitively by "lod" and digit '1'..'4'.
+    // 0x1402f2bed: suffix[0] == '.'; 0x1402f2bfa: suffix.size() <= 4 stays LOD 0;
+    // 0x1402f2bfe..0x1402f2c49: suffix[1..3] == "lod" (ASCII CI) and suffix[4] in '1'..'4'
+    // (without requiring end-of-string after suffix[4]) gives LOD 1..4.
     if (suffix.size() >= 5 && suffix[0] == '.') {
         using wse::platform::ascii_lower;
         if (ascii_lower(suffix[1]) == 'l' &&
@@ -798,24 +800,26 @@ inline bool load_brf(wse::platform::Vfs& vfs,
     return parse_brf(bytes, out, error_out);
 }
 
-// Groups mesh records into MetaMesh LOD buckets [0..4] per
-// rglResourceManager::createMetaMesh (0x1402f29a0).
-// Open verification item: the base name is the text before the *first* '.', and
-// parse_lod_suffix accepts any suffix that starts with ".lod1".."lod4" (".lod1x" is
-// LOD 1), so a dotted non-LOD name such as "tree.1" lands in "tree"'s LOD 0 bucket.
-// Both rules still need confirming against createMetaMesh's control flow.
+// Groups mesh records into MetaMesh LOD buckets [0..4] matching
+// rglResourceManager::createMetaMesh (0x1402f29a0..0x1402f2cd0):
+// - 0x1402f2b23: prefix length must be >= 2 (shorter prefixes before '.' are not split).
+// - 0x1402f2be2..0x1402f2bed: exact prefix match -> LOD 0; longer names must have '.' at
+//   prefix length (first '.').
+// - 0x1402f2bfa..0x1402f2c49: dotted suffixes with size <= 4 (such as "tree.1") or not
+//   beginning with case-insensitive ".lod[1-4]" (so ".lod1x" is LOD 1) land in LOD 0.
 inline std::vector<BrfMetaMeshGroup> group_meta_meshes(std::span<const BrfMesh> meshes) {
     std::vector<BrfMetaMeshGroup> groups;
     std::unordered_map<std::string, std::size_t> index_by_base;
     for (std::size_t i = 0; i < meshes.size(); ++i) {
         const std::string& full = meshes[i].name;
         const std::size_t dot = full.find('.');
-        const std::string_view base_sv = (dot == std::string::npos)
-            ? std::string_view(full)
-            : std::string_view(full).substr(0, dot);
-        const std::string_view suffix_sv = (dot == std::string::npos)
-            ? std::string_view()
-            : std::string_view(full).substr(dot);
+        const bool split = (dot != std::string::npos && dot >= 2U);
+        const std::string_view base_sv = split
+            ? std::string_view(full).substr(0, dot)
+            : std::string_view(full);
+        const std::string_view suffix_sv = split
+            ? std::string_view(full).substr(dot)
+            : std::string_view();
         const int lod = detail::parse_lod_suffix(suffix_sv);
 
         const std::string key(base_sv);
