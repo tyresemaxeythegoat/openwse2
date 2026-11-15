@@ -80,6 +80,16 @@ std::size_t apply_mesa_driver_environment(DriverMode mode, const std::string& sh
 // backed by the mock ICD, for `VulkanDriverLoader::attach_hal_module` tests.
 [[nodiscard]] const void* mock_vulkan_hal_module() noexcept;
 
+// Process-wide accounting of objects created through the mock ICD (instances,
+// devices, command pools, buffers, images). Tests compare snapshots to prove
+// every object is destroyed exactly once and children die before their device.
+struct MockVulkanObjectStats {
+    std::size_t live_objects = 0;              // created and not yet destroyed
+    std::size_t leaked_at_device_destroy = 0;  // children alive at vkDestroyDevice
+    std::size_t invalid_destroys = 0;          // destroys of unknown/already-destroyed handles
+};
+[[nodiscard]] MockVulkanObjectStats mock_vulkan_object_stats() noexcept;
+
 // Dynamically loads a Vulkan system loader or direct Vulkan ICD (`.so` / `.dll`),
 // negotiates ICD v5 entry points when loading PanVK/Turnip directly, creates a
 // `VkInstance` + graphics `VkDevice` + `VkCommandPool`, and manages resource handles.
@@ -128,18 +138,27 @@ public:
     [[nodiscard]] bool has_device() const noexcept;
     [[nodiscard]] const VulkanDriverProbeResult& probe_result() const noexcept;
 
-    // Vulkan object handle tracking (non-zero opaque uint64 handles).
+    // Process-unique id of the current `VkDevice`; 0 without one. Changes every
+    // time `probe_and_create_device` opens a new device, so a caller holding a
+    // handle from an earlier device can tell it is gone.
+    [[nodiscard]] std::uint64_t device_generation() const noexcept;
+
+    // Vulkan object handle tracking (non-zero opaque uint64 handles). Record
+    // `device_generation()` next to each handle and pass it back to destroy:
+    // Vulkan handle values are reused, so a stale handle from a destroyed device
+    // can equal a live handle of the current one; a mismatched generation makes
+    // the destroy a no-op.
     [[nodiscard]] bool create_vk_buffer(std::size_t size_bytes,
                                         BufferUsage usage,
                                         std::uint64_t& out_vk_handle,
                                         std::string* error_out = nullptr);
-    void destroy_vk_buffer(std::uint64_t vk_handle) noexcept;
+    void destroy_vk_buffer(std::uint64_t vk_handle, std::uint64_t generation) noexcept;
 
     [[nodiscard]] bool create_vk_image_rgba8(std::uint32_t width,
                                              std::uint32_t height,
                                              std::uint64_t& out_vk_handle,
                                              std::string* error_out = nullptr);
-    void destroy_vk_image(std::uint64_t vk_handle) noexcept;
+    void destroy_vk_image(std::uint64_t vk_handle, std::uint64_t generation) noexcept;
 
     [[nodiscard]] std::size_t live_vk_buffers() const noexcept;
     [[nodiscard]] std::size_t live_vk_images() const noexcept;
@@ -195,8 +214,12 @@ public:
 private:
     std::shared_ptr<VulkanDriverLoader> loader_{};
     SoftwareRhiDevice rasterizer_{};
-    std::unordered_map<BufferHandle, std::uint64_t> vk_buffers_{};
-    std::unordered_map<TextureHandle, std::uint64_t> vk_textures_{};
+    struct VkRef {
+        std::uint64_t handle = 0;
+        std::uint64_t generation = 0;  // loader device generation at creation
+    };
+    std::unordered_map<BufferHandle, VkRef> vk_buffers_{};
+    std::unordered_map<TextureHandle, VkRef> vk_textures_{};
 };
 
 // Convenience helper: initializes a `VulkanDriverLoader` for the requested `mode`

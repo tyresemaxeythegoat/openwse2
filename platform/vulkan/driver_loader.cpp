@@ -6,8 +6,13 @@
 
 #include "driver_loader.h"
 
+#include "wse/asset/brf.h"
+#include "wse/asset/dds.h"
+#include "wse/platform/rhi_brf.h"
+
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -51,8 +56,6 @@ namespace {
 
 typedef PFN_vkVoidFunction(VKAPI_PTR* PFN_vk_icdGetInstanceProcAddr)(
     VkInstance instance, const char* pName);
-typedef PFN_vkVoidFunction(VKAPI_PTR* PFN_vk_icdGetPhysicalDeviceProcAddr)(
-    VkInstance instance, const char* pName);
 typedef VkResult(VKAPI_PTR* PFN_vk_icdNegotiateLoaderICDInterfaceVersion)(
     std::uint32_t* pVersion);
 
@@ -64,9 +67,31 @@ typedef VkResult(VKAPI_PTR* PFN_vk_icdNegotiateLoaderICDInterfaceVersion)(
 struct LibHandle {
     HMODULE mod = nullptr;
 
+    // Custom driver: `path` is UTF-8 (LoadLibraryA would read it in the ANSI
+    // code page and mangle non-ASCII user folders). An absolute path also lets
+    // the driver's own DLL dependencies resolve from its directory.
     [[nodiscard]] bool open(const char* path, bool global_scope) noexcept {
         (void)global_scope;
-        mod = ::LoadLibraryA(path);
+        mod = nullptr;
+        const int wide_len = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, nullptr, 0);
+        if (wide_len <= 0) {
+            ::SetLastError(ERROR_INVALID_NAME);
+            return false;
+        }
+        std::wstring wide(static_cast<std::size_t>(wide_len), L'\0');
+        if (::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide.data(), wide_len) <= 0) {
+            ::SetLastError(ERROR_INVALID_NAME);
+            return false;
+        }
+        const bool absolute = wide.size() > 2U && (wide[1] == L':' || (wide[0] == L'\\' && wide[1] == L'\\'));
+        mod = ::LoadLibraryExW(wide.c_str(), nullptr, absolute ? LOAD_WITH_ALTERED_SEARCH_PATH : 0);
+        return mod != nullptr;
+    }
+
+    // System Vulkan loader: search System32 only, never the application
+    // directory or the current directory (DLL planting).
+    [[nodiscard]] bool open_system(const char* name) noexcept {
+        mod = ::LoadLibraryExA(name, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
         return mod != nullptr;
     }
 
@@ -120,6 +145,9 @@ struct LibHandle {
         mod = ::dlopen(path, flags);
         return mod != nullptr;
     }
+
+    // System Vulkan loader by soname (dynamic-linker search path).
+    [[nodiscard]] bool open_system(const char* name) noexcept { return open(name, false); }
 
     template <typename Fn>
     void load_sym(const char* name, Fn& out) const noexcept {
@@ -177,7 +205,18 @@ struct MockDevice {
     MockPhysicalDevice* phys = nullptr;
     std::uint64_t next_id = 100U;
     std::uintptr_t queue_magic = kIcdLoaderMagic;
+    std::unordered_set<std::uint64_t> live{};  // child objects not yet destroyed
 };
+
+// Process-wide mock object accounting (`mock_vulkan_object_stats`): lets tests
+// prove the loader destroys every instance, device, and child object exactly once.
+std::atomic<std::size_t> g_mock_live_objects{0};
+std::atomic<std::size_t> g_mock_leaked_at_device_destroy{0};
+std::atomic<std::size_t> g_mock_invalid_destroys{0};
+
+// Source of `VulkanDriverLoader::device_generation` values, unique across every
+// loader in the process (a move-assigned loader cannot repeat an old id).
+std::atomic<std::uint64_t> g_next_device_generation{1};
 
 // Thread-local config passed from `VulkanDriverLoader::load_mock_icd()` into
 // `mock_vkCreateInstance()`, after which `MockInstance` owns a copy of it.
@@ -230,6 +269,7 @@ VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateInstance(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     auto* inst = new MockInstance{};
+    g_mock_live_objects.fetch_add(1);
     if (g_tls_mock_config != nullptr) {
         inst->config = *g_tls_mock_config;
     }
@@ -246,6 +286,7 @@ VKAPI_ATTR void VKAPI_CALL mock_vkDestroyInstance(
     (void)pAllocator;
     if (instance != VK_NULL_HANDLE) {
         delete reinterpret_cast<MockInstance*>(instance);
+        g_mock_live_objects.fetch_sub(1);
     }
 }
 
@@ -337,6 +378,7 @@ VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateDevice(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     auto* dev = new MockDevice{};
+    g_mock_live_objects.fetch_add(1);
     dev->phys = reinterpret_cast<MockPhysicalDevice*>(physicalDevice);
     *pDevice = reinterpret_cast<VkDevice>(dev);
     return VK_SUCCESS;
@@ -347,7 +389,11 @@ VKAPI_ATTR void VKAPI_CALL mock_vkDestroyDevice(
     const VkAllocationCallbacks* pAllocator) {
     (void)pAllocator;
     if (device != VK_NULL_HANDLE) {
-        delete reinterpret_cast<MockDevice*>(device);
+        auto* dev = reinterpret_cast<MockDevice*>(device);
+        // Vulkan requires every child object to be destroyed before its device.
+        g_mock_leaked_at_device_destroy.fetch_add(dev->live.size());
+        g_mock_live_objects.fetch_sub(dev->live.size() + 1U);
+        delete dev;
     }
 }
 
@@ -370,12 +416,30 @@ VKAPI_ATTR void VKAPI_CALL mock_vkGetDeviceQueue(
 }
 
 template <typename VkHandle>
-VkHandle allocate_mock_handle(MockDevice* dev) noexcept {
+VkHandle allocate_mock_handle(MockDevice* dev) {
     const std::uint64_t id = ++dev->next_id;
+    dev->live.insert(id);
+    g_mock_live_objects.fetch_add(1);
     VkHandle out{};
     static_assert(sizeof(out) <= sizeof(id), "handle exceeds uint64");
     std::memcpy(&out, &id, sizeof(out));
     return out;
+}
+
+template <typename VkHandle>
+void release_mock_handle(VkDevice device, VkHandle handle) noexcept {
+    if (device == VK_NULL_HANDLE || handle == VK_NULL_HANDLE) {
+        return;  // destroying VK_NULL_HANDLE is a valid no-op
+    }
+    std::uint64_t id = 0;
+    static_assert(sizeof(handle) <= sizeof(id), "handle exceeds uint64");
+    std::memcpy(&id, &handle, sizeof(handle));
+    auto* dev = reinterpret_cast<MockDevice*>(device);
+    if (dev->live.erase(id) != 0) {
+        g_mock_live_objects.fetch_sub(1);
+    } else {
+        g_mock_invalid_destroys.fetch_add(1);  // double destroy or foreign handle
+    }
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateCommandPool(
@@ -396,9 +460,8 @@ VKAPI_ATTR void VKAPI_CALL mock_vkDestroyCommandPool(
     VkDevice device,
     VkCommandPool commandPool,
     const VkAllocationCallbacks* pAllocator) {
-    (void)device;
-    (void)commandPool;
     (void)pAllocator;
+    release_mock_handle(device, commandPool);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateBuffer(
@@ -419,9 +482,8 @@ VKAPI_ATTR void VKAPI_CALL mock_vkDestroyBuffer(
     VkDevice device,
     VkBuffer buffer,
     const VkAllocationCallbacks* pAllocator) {
-    (void)device;
-    (void)buffer;
     (void)pAllocator;
+    release_mock_handle(device, buffer);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateImage(
@@ -442,9 +504,8 @@ VKAPI_ATTR void VKAPI_CALL mock_vkDestroyImage(
     VkDevice device,
     VkImage image,
     const VkAllocationCallbacks* pAllocator) {
-    (void)device;
-    (void)image;
     (void)pAllocator;
+    release_mock_handle(device, image);
 }
 
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL mock_vkGetDeviceProcAddr(
@@ -661,7 +722,6 @@ struct VulkanDriverLoader::Impl {
     VulkanMockConfig mock_config{};
 
     PFN_vkGetInstanceProcAddr gipa = nullptr;
-    PFN_vk_icdGetPhysicalDeviceProcAddr gpdpa = nullptr;
     HalDevice* hal_device = nullptr;
 
     VkInstance instance = VK_NULL_HANDLE;
@@ -682,6 +742,9 @@ struct VulkanDriverLoader::Impl {
 
     std::unordered_set<std::uint64_t> live_buffers{};
     std::unordered_set<std::uint64_t> live_images{};
+    // Process-unique id of the current `VkDevice` (0 when there is none); see
+    // `VulkanDriverLoader::device_generation`.
+    std::uint64_t device_generation = 0;
     VulkanDriverProbeResult probe{};
 
     Impl() = default;
@@ -738,6 +801,7 @@ struct VulkanDriverLoader::Impl {
         command_pool = VK_NULL_HANDLE;
         graphics_queue = VK_NULL_HANDLE;
         device = VK_NULL_HANDLE;
+        device_generation = 0;
         physical_device = VK_NULL_HANDLE;
         max_image_dimension_2d = 0;
 
@@ -771,7 +835,6 @@ struct VulkanDriverLoader::Impl {
         negotiated_icd_version = 0;
         loaded_library.clear();
         gipa = nullptr;
-        gpdpa = nullptr;
         probe = VulkanDriverProbeResult{};
     }
 
@@ -887,6 +950,14 @@ const void* mock_vulkan_hal_module() noexcept {
     return &g_mock_hal_module;
 }
 
+MockVulkanObjectStats mock_vulkan_object_stats() noexcept {
+    MockVulkanObjectStats stats{};
+    stats.live_objects = g_mock_live_objects.load();
+    stats.leaked_at_device_destroy = g_mock_leaked_at_device_destroy.load();
+    stats.invalid_destroys = g_mock_invalid_destroys.load();
+    return stats;
+}
+
 bool VulkanDriverLoader::load_system(std::string* error_out) {
     if (!impl_) {
         impl_ = std::make_unique<Impl>();
@@ -896,13 +967,16 @@ bool VulkanDriverLoader::load_system(std::string* error_out) {
 
 #if defined(_WIN32)
     static constexpr const char* kCandidates[] = {"vulkan-1.dll"};
+#elif defined(__ANDROID__)
+    // Android ships only the unversioned soname.
+    static constexpr const char* kCandidates[] = {"libvulkan.so"};
 #else
     static constexpr const char* kCandidates[] = {"libvulkan.so.1", "libvulkan.so"};
 #endif
 
     std::string last_err;
     for (const char* name : kCandidates) {
-        if (impl_->icd_lib.open(name, false)) {
+        if (impl_->icd_lib.open_system(name)) {
             impl_->loaded_library = name;
             break;
         }
@@ -976,13 +1050,22 @@ bool VulkanDriverLoader::load_custom_driver(DriverMode mode,
                 unload();
                 return false;
             }
+            // The loader-ICD contract: the ICD may only lower the offered
+            // version, and 0 means no usable interface.
+            if (ver == 0U || ver > kMaxSupportedIcdVersion) {
+                set_err(error_out, "ICD negotiated unsupported loader interface version " +
+                                       std::to_string(ver) + " (expected 1.." +
+                                       std::to_string(kMaxSupportedIcdVersion) + ")");
+                unload();
+                return false;
+            }
             impl_->negotiated_icd_version = ver;
         } else {
             impl_->negotiated_icd_version = 1U;
         }
-        if (impl_->negotiated_icd_version >= 2U) {
-            impl_->icd_lib.load_sym("vk_icdGetPhysicalDeviceProcAddr", impl_->gpdpa);
-        }
+        // Physical-device entry points come from `vk_icdGetInstanceProcAddr` on
+        // the instance, which is valid for every interface version; the loader-only
+        // `vk_icdGetPhysicalDeviceProcAddr` (unknown-extension dispatch) is unused.
         impl_->gipa = icd_gipa;
         impl_->used_direct_icd = true;
         impl_->loaded = true;
@@ -1253,6 +1336,7 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
         return fail("vkCreateDevice failed with VkResult " +
                     std::to_string(static_cast<int>(dev_res)));
     }
+    impl_->device_generation = g_next_device_generation.fetch_add(1);
 
     PFN_vkGetDeviceProcAddr gdpa = nullptr;
     impl_->resolve_inst("vkGetDeviceProcAddr", gdpa);
@@ -1324,6 +1408,10 @@ bool VulkanDriverLoader::has_device() const noexcept {
     return impl_ && impl_->device != VK_NULL_HANDLE;
 }
 
+std::uint64_t VulkanDriverLoader::device_generation() const noexcept {
+    return has_device() ? impl_->device_generation : 0U;
+}
+
 const VulkanDriverProbeResult& VulkanDriverLoader::probe_result() const noexcept {
     static const VulkanDriverProbeResult kEmpty{};
     return impl_ ? impl_->probe : kEmpty;
@@ -1374,8 +1462,11 @@ bool VulkanDriverLoader::create_vk_buffer(std::size_t size_bytes,
     return true;
 }
 
-void VulkanDriverLoader::destroy_vk_buffer(std::uint64_t vk_handle) noexcept {
-    if (vk_handle == 0 || !has_device()) {
+void VulkanDriverLoader::destroy_vk_buffer(std::uint64_t vk_handle,
+                                           std::uint64_t generation) noexcept {
+    // A handle from an earlier device died with it; its value may since have
+    // been reused by the current device for someone else's object.
+    if (vk_handle == 0 || !has_device() || generation != impl_->device_generation) {
         return;
     }
     if (impl_->live_buffers.erase(vk_handle) > 0 && impl_->fn_destroy_buffer != nullptr) {
@@ -1428,8 +1519,9 @@ bool VulkanDriverLoader::create_vk_image_rgba8(std::uint32_t width,
     return true;
 }
 
-void VulkanDriverLoader::destroy_vk_image(std::uint64_t vk_handle) noexcept {
-    if (vk_handle == 0 || !has_device()) {
+void VulkanDriverLoader::destroy_vk_image(std::uint64_t vk_handle,
+                                          std::uint64_t generation) noexcept {
+    if (vk_handle == 0 || !has_device() || generation != impl_->device_generation) {
         return;
     }
     if (impl_->live_images.erase(vk_handle) > 0 && impl_->fn_destroy_image != nullptr) {
@@ -1461,13 +1553,13 @@ VulkanRhiDevice::VulkanRhiDevice(std::shared_ptr<VulkanDriverLoader> loader)
 
 VulkanRhiDevice::~VulkanRhiDevice() {
     if (loader_) {
-        for (const auto& [h, vk_h] : vk_buffers_) {
+        for (const auto& [h, ref] : vk_buffers_) {
             (void)h;
-            loader_->destroy_vk_buffer(vk_h);
+            loader_->destroy_vk_buffer(ref.handle, ref.generation);
         }
-        for (const auto& [h, vk_h] : vk_textures_) {
+        for (const auto& [h, ref] : vk_textures_) {
             (void)h;
-            loader_->destroy_vk_image(vk_h);
+            loader_->destroy_vk_image(ref.handle, ref.generation);
         }
     }
     vk_buffers_.clear();
@@ -1510,7 +1602,7 @@ BufferHandle VulkanRhiDevice::create_buffer(BufferUsage usage,
         return 0;
     }
     if (vk_h != 0) {
-        vk_buffers_.emplace(h, vk_h);
+        vk_buffers_.emplace(h, VkRef{vk_h, loader_->device_generation()});
     }
     return h;
 }
@@ -1519,7 +1611,7 @@ void VulkanRhiDevice::destroy_buffer(BufferHandle handle) {
     const auto it = vk_buffers_.find(handle);
     if (it != vk_buffers_.end()) {
         if (loader_) {
-            loader_->destroy_vk_buffer(it->second);
+            loader_->destroy_vk_buffer(it->second.handle, it->second.generation);
         }
         vk_buffers_.erase(it);
     }
@@ -1546,7 +1638,7 @@ TextureHandle VulkanRhiDevice::create_texture_rgba8(std::uint32_t width,
         return 0;
     }
     if (vk_h != 0) {
-        vk_textures_.emplace(h, vk_h);
+        vk_textures_.emplace(h, VkRef{vk_h, loader_->device_generation()});
     }
     return h;
 }
@@ -1555,7 +1647,7 @@ void VulkanRhiDevice::destroy_texture(TextureHandle handle) {
     const auto it = vk_textures_.find(handle);
     if (it != vk_textures_.end()) {
         if (loader_) {
-            loader_->destroy_vk_image(it->second);
+            loader_->destroy_vk_image(it->second.handle, it->second.generation);
         }
         vk_textures_.erase(it);
     }

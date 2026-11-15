@@ -137,12 +137,14 @@ class WseSafBridge(
         allowMockFallback: Boolean
     ): String
 
-    // Validates meta.json, ELF-checks and patches the ICD, and writes both into
-    // stageDir. Returns "OK\t<mode>\t<icd path>\t<name>\t<patched>" or "ERROR: ...".
+    // Validates meta.json (minApi vs this device; a turnip/panvk requestedMode
+    // refuses the other kind), ELF-checks and patches the ICD, and writes both
+    // into stageDir. Returns "OK\t<mode>\t<icd path>\t<name>\t<patched>" or "ERROR: ...".
     external fun nativeStageDriverPackage(
         metaJson: String,
         icdBytes: ByteArray,
-        stageDir: String
+        stageDir: String,
+        requestedMode: String
     ): String
 
     companion object {

@@ -32,7 +32,7 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
     cd "$out" && for t in operand trigger savegame wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 platform module_loaders headless asset; do ./${t}_test || exit 1; done \
       && ./script_test "$root/engine/fixtures/scripts.txt" && echo "engine host tests: PASS"
     ```
-    Every suite must print `<name> tests: PASS`. `wse_string`, `wse_dict`, `wse_array`, and `block_vm` take ~5–15 s each to compile.
+    Every suite must print `<name> tests: PASS`. The `platform` suite touches the real host Vulkan loader (and any GPU driver it finds) only when `WSE_TEST_SYSTEM_VULKAN=1` is set; otherwise it uses the in-process mock ICD. `wse_string`, `wse_dict`, `wse_array`, and `block_vm` take ~5–15 s each to compile.
 
     The loop above covers the header-only suites (each `*_test.cpp` keeps its own `main()` for it). The `lua` suite (and `wse_headless` / `wse_brf`) build through CMake (`lua_test` / `wse_headless` link `lua51` + `wse_lua`) — required on every edit under `engine/src/lua/` or to the Lua hooks in `block_vm.h` / `lua_bridge.h`:
     ```sh
