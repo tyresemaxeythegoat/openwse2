@@ -206,12 +206,91 @@ inline std::uint32_t pack_rgba8(std::uint8_t r, std::uint8_t g, std::uint8_t b, 
     return true;
 }
 
-// Rewrites the 15-byte NUL-terminated ELF `.dynstr` DT_NEEDED string `"libhardware.so\0"`
-// to `"libpanvk_hw.so\0"` (exact same 14-character byte length, preserving all ELF
-// offsets and string table indices). PanVK links `libhardware.so` (a VNDK-SP library
-// inaccessible to app namespaces on Android); redirecting it to our bundled
-// `libpanvk_hw.so` routes `hw_get_module` cleanly into PanVK's supported `-ENOENT`
-// fallback path (`docs/PLATFORM_PLAN.md` §P4).
+namespace rhi_detail {
+
+// Little-endian ELF reader with every offset bounds-checked against the input.
+struct ElfView {
+    std::span<const std::uint8_t> bytes{};
+    bool is64 = false;
+
+    [[nodiscard]] bool in_range(std::uint64_t off, std::uint64_t len) const noexcept {
+        return off <= bytes.size() && len <= bytes.size() - off;
+    }
+    [[nodiscard]] std::uint64_t rd(std::uint64_t off, unsigned width) const noexcept {
+        std::uint64_t v = 0;
+        for (unsigned i = 0; i < width; ++i) {
+            v |= static_cast<std::uint64_t>(bytes[static_cast<std::size_t>(off) + i]) << (8U * i);
+        }
+        return v;
+    }
+    [[nodiscard]] unsigned word() const noexcept { return is64 ? 8U : 4U; }
+};
+
+[[nodiscard]] inline bool open_elf(std::span<const std::uint8_t> bytes, ElfView& out) noexcept {
+    if (bytes.size() < 52U || bytes[0] != 0x7FU || bytes[1] != 'E' || bytes[2] != 'L' ||
+        bytes[3] != 'F') {
+        return false;
+    }
+    const std::uint8_t ei_class = bytes[4];
+    const std::uint8_t ei_data = bytes[5];
+    if ((ei_class != 1U && ei_class != 2U) || ei_data != 1U) {
+        return false;  // ELF32/ELF64 little-endian only (every Android ABI).
+    }
+    out.bytes = bytes;
+    out.is64 = (ei_class == 2U);
+    return out.in_range(0, out.is64 ? 64U : 52U);
+}
+
+// Maps a virtual address to a file offset through the PT_LOAD segments.
+[[nodiscard]] inline bool elf_vaddr_to_offset(const ElfView& elf,
+                                              std::uint64_t vaddr,
+                                              std::uint64_t& out_off) noexcept {
+    const std::uint64_t phoff = elf.rd(elf.is64 ? 32U : 28U, elf.word());
+    const std::uint64_t phentsize = elf.rd(elf.is64 ? 54U : 42U, 2U);
+    const std::uint64_t phnum = elf.rd(elf.is64 ? 56U : 44U, 2U);
+    const std::uint64_t min_ent = elf.is64 ? 56U : 32U;
+    if (phentsize < min_ent) {
+        return false;
+    }
+    for (std::uint64_t i = 0; i < phnum; ++i) {
+        const std::uint64_t ph = phoff + i * phentsize;
+        if (!elf.in_range(ph, min_ent)) {
+            return false;
+        }
+        if (elf.rd(ph, 4U) != 1U) {  // PT_LOAD
+            continue;
+        }
+        const std::uint64_t p_offset = elf.rd(ph + (elf.is64 ? 8U : 4U), elf.word());
+        const std::uint64_t p_vaddr = elf.rd(ph + (elf.is64 ? 16U : 8U), elf.word());
+        const std::uint64_t p_filesz = elf.rd(ph + (elf.is64 ? 32U : 16U), elf.word());
+        if (vaddr >= p_vaddr && vaddr - p_vaddr < p_filesz) {
+            out_off = p_offset + (vaddr - p_vaddr);
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace rhi_detail
+
+// True when `bytes` starts with a well-formed little-endian ELF32/ELF64 header.
+[[nodiscard]] inline bool is_little_endian_elf(std::span<const std::uint8_t> bytes) noexcept {
+    rhi_detail::ElfView elf{};
+    return rhi_detail::open_elf(bytes, elf);
+}
+
+// Rewrites the dynamic-string-table name `"libhardware.so"` to `"libpanvk_hw.so"`
+// (same 14-byte length, so no ELF offset moves) wherever the dynamic section
+// references it: `DT_NEEDED` entries and `DT_VERNEED` `vn_file` names. Mesa's
+// Android Vulkan drivers (PanVK and Turnip) link `libhardware.so`, a VNDK-SP
+// library outside an app's linker namespace; the bundled `libpanvk_hw.so` routes
+// `hw_get_module` into the drivers' supported `-ENOENT` fallback path
+// (`docs/PLATFORM_PLAN.md` §P4).
+//
+// Only strings reached through `PT_DYNAMIC` -> `DT_STRTAB` are touched, so the
+// same text in `.rodata` (log messages, dlopen paths) is left alone. Mirrors
+// `tools/patch_panvk.py`. Returns the number of strings rewritten; 0 for
+// non-ELF input or an ELF with no `libhardware.so` dependency.
 [[nodiscard]] inline std::size_t patch_icd_libhardware_needed(
     std::span<std::uint8_t> elf_bytes) noexcept {
     static constexpr char kFrom[] = "libhardware.so";
@@ -219,24 +298,117 @@ inline std::uint32_t pack_rgba8(std::uint8_t r, std::uint8_t g, std::uint8_t b, 
     static constexpr std::size_t kNeedleLen = sizeof(kFrom);  // includes trailing NUL
     static_assert(sizeof(kFrom) == sizeof(kTo), "replacement SONAME length must match");
 
-    if (elf_bytes.size() < kNeedleLen) {
+    rhi_detail::ElfView elf{};
+    if (!rhi_detail::open_elf(elf_bytes, elf)) {
         return 0;
     }
 
+    // Locate PT_DYNAMIC.
+    const std::uint64_t phoff = elf.rd(elf.is64 ? 32U : 28U, elf.word());
+    const std::uint64_t phentsize = elf.rd(elf.is64 ? 54U : 42U, 2U);
+    const std::uint64_t phnum = elf.rd(elf.is64 ? 56U : 44U, 2U);
+    const std::uint64_t min_ent = elf.is64 ? 56U : 32U;
+    if (phentsize < min_ent) {
+        return 0;
+    }
+    std::uint64_t dyn_off = 0;
+    std::uint64_t dyn_size = 0;
+    for (std::uint64_t i = 0; i < phnum; ++i) {
+        const std::uint64_t ph = phoff + i * phentsize;
+        if (!elf.in_range(ph, min_ent)) {
+            return 0;
+        }
+        if (elf.rd(ph, 4U) == 2U) {  // PT_DYNAMIC
+            dyn_off = elf.rd(ph + (elf.is64 ? 8U : 4U), elf.word());
+            dyn_size = elf.rd(ph + (elf.is64 ? 32U : 16U), elf.word());
+            break;
+        }
+    }
+    if (dyn_size == 0 || !elf.in_range(dyn_off, dyn_size)) {
+        return 0;
+    }
+
+    // Walk the dynamic array once.
+    const std::uint64_t ent = 2U * elf.word();
+    std::uint64_t strtab_vaddr = 0;
+    std::uint64_t strsz = 0;
+    std::uint64_t verneed_vaddr = 0;
+    std::uint64_t verneed_num = 0;
+    bool have_strtab = false;
+    std::vector<std::uint64_t> name_offsets;
+    for (std::uint64_t pos = dyn_off; pos + ent <= dyn_off + dyn_size; pos += ent) {
+        const std::uint64_t tag = elf.rd(pos, elf.word());
+        const std::uint64_t val = elf.rd(pos + elf.word(), elf.word());
+        if (tag == 0U) {  // DT_NULL
+            break;
+        }
+        switch (tag) {
+            case 1U:  // DT_NEEDED
+                name_offsets.push_back(val);
+                break;
+            case 5U:  // DT_STRTAB
+                strtab_vaddr = val;
+                have_strtab = true;
+                break;
+            case 10U:  // DT_STRSZ
+                strsz = val;
+                break;
+            case 0x6ffffffeU:  // DT_VERNEED
+                verneed_vaddr = val;
+                break;
+            case 0x6fffffffU:  // DT_VERNEEDNUM
+                verneed_num = val;
+                break;
+            default:
+                break;
+        }
+    }
+    std::uint64_t strtab_off = 0;
+    if (!have_strtab || strsz == 0 ||
+        !rhi_detail::elf_vaddr_to_offset(elf, strtab_vaddr, strtab_off) ||
+        !elf.in_range(strtab_off, strsz)) {
+        return 0;
+    }
+
+    // `Elf32_Verneed` and `Elf64_Verneed` share one 16-byte layout:
+    // vn_version u16, vn_cnt u16, vn_file u32, vn_aux u32, vn_next u32.
+    std::uint64_t vn_off = 0;
+    if (verneed_vaddr != 0U && verneed_num != 0U &&
+        rhi_detail::elf_vaddr_to_offset(elf, verneed_vaddr, vn_off)) {
+        for (std::uint64_t n = 0; n < verneed_num && n < 4096U; ++n) {
+            if (!elf.in_range(vn_off, 16U)) {
+                break;
+            }
+            name_offsets.push_back(elf.rd(vn_off + 4U, 4U));
+            const std::uint64_t next = elf.rd(vn_off + 12U, 4U);
+            if (next == 0U) {
+                break;
+            }
+            vn_off += next;
+        }
+    }
+
+    std::sort(name_offsets.begin(), name_offsets.end());
+    name_offsets.erase(std::unique(name_offsets.begin(), name_offsets.end()), name_offsets.end());
+
     std::size_t patched = 0;
-    for (std::size_t i = 0; i + kNeedleLen <= elf_bytes.size(); ++i) {
-        if (std::memcmp(elf_bytes.data() + i, kFrom, kNeedleLen) == 0) {
-            std::memcpy(elf_bytes.data() + i, kTo, kNeedleLen);
+    for (const std::uint64_t name : name_offsets) {
+        if (name > strsz || kNeedleLen > strsz - name) {
+            continue;
+        }
+        const std::size_t at = static_cast<std::size_t>(strtab_off + name);
+        if (std::memcmp(elf_bytes.data() + at, kFrom, kNeedleLen) == 0) {
+            std::memcpy(elf_bytes.data() + at, kTo, kNeedleLen);
             ++patched;
-            i += kNeedleLen - 1U;
         }
     }
     return patched;
 }
 
-// Validates `meta_json`, patches any `"libhardware.so\0"` reference inside `icd_bytes`
-// into `"libpanvk_hw.so\0"`, and writes both `meta.json` and `<libraryName>` under
-// `stage_dir` through `vfs`.
+// Validates `meta_json`, rejects a `.so` payload that is not an ELF shared object,
+// rewrites its `libhardware.so` dependency to `libpanvk_hw.so`
+// (`patch_icd_libhardware_needed`), and writes both `meta.json` and
+// `<libraryName>` under `stage_dir` through `vfs`.
 [[nodiscard]] inline bool stage_driver_package_to_vfs(
     Vfs& vfs,
     std::string_view stage_dir,
@@ -256,6 +428,10 @@ inline std::uint32_t pack_rgba8(std::uint8_t r, std::uint8_t g, std::uint8_t b, 
     }
     if (icd_bytes.empty()) {
         return rhi_detail::set_error(error_out, "driver ICD binary is empty");
+    }
+    if (rhi_detail::ends_with_ci(out_meta.library_name, ".so") && !is_little_endian_elf(icd_bytes)) {
+        return rhi_detail::set_error(
+            error_out, "driver ICD " + out_meta.library_name + " is not a little-endian ELF file");
     }
 
     while (!stage_dir.empty() && (stage_dir.back() == '/' || stage_dir.back() == '\\')) {
@@ -435,7 +611,7 @@ public:
             (void)rhi_detail::set_error(error_out, "cannot create empty RHI buffer");
             return 0;
         }
-        const BufferHandle id = next_handle_++;
+        const BufferHandle id = allocate_handle();
         BufferRec rec{};
         rec.usage = usage;
         rec.bytes.assign(data.begin(), data.end());
@@ -463,7 +639,7 @@ public:
             (void)rhi_detail::set_error(error_out, "RGBA8 texture payload size mismatch");
             return 0;
         }
-        const TextureHandle id = next_handle_++;
+        const TextureHandle id = allocate_handle();
         TextureRec rec{};
         rec.width = width;
         rec.height = height;
@@ -481,7 +657,7 @@ public:
     [[nodiscard]] PipelineHandle create_pipeline(const PipelineDesc& desc,
                                                  std::string* error_out = nullptr) override {
         (void)error_out;
-        const PipelineHandle id = next_handle_++;
+        const PipelineHandle id = allocate_handle();
         pipelines_.emplace(id, desc);
         return id;
     }
@@ -504,13 +680,12 @@ public:
 
         const std::size_t pixel_count = static_cast<std::size_t>(pass.width) * pass.height;
         out_rgba8.resize(pixel_count * 4U);
+        const std::array<std::uint8_t, 4> clear{pass.clear_r, pass.clear_g, pass.clear_b,
+                                                pass.clear_a};
         for (std::size_t i = 0; i < pixel_count; ++i) {
-            out_rgba8[i * 4U + 0U] = pass.clear_r;
-            out_rgba8[i * 4U + 1U] = pass.clear_g;
-            out_rgba8[i * 4U + 2U] = pass.clear_b;
-            out_rgba8[i * 4U + 3U] = pass.clear_a;
+            std::memcpy(out_rgba8.data() + i * 4U, clear.data(), 4U);
         }
-        std::vector<float> depth_buf(pixel_count, pass.clear_depth);
+        depth_scratch_.assign(pixel_count, pass.clear_depth);
 
         for (const MeshDrawCall& draw : draws) {
             const auto pip_it = pipelines_.find(draw.pipeline);
@@ -532,25 +707,37 @@ public:
                 tex = &tex_it->second;
             }
 
-            const std::size_t num_verts = vb_it->second.bytes.size() / sizeof(MeshVertex);
-            const std::size_t num_indices = ib_it->second.bytes.size() / sizeof(std::uint16_t);
+            const std::vector<std::uint8_t>& vb = vb_it->second.bytes;
+            const std::vector<std::uint8_t>& ib = ib_it->second.bytes;
+            const std::size_t num_verts = vb.size() / sizeof(MeshVertex);
+            const std::size_t num_indices = ib.size() / sizeof(std::uint16_t);
             if (draw.index_count > num_indices || (draw.index_count % 3U) != 0U) {
                 return rhi_detail::set_error(error_out, "invalid draw index count");
             }
 
-            std::vector<MeshVertex> verts(num_verts);
-            if (num_verts > 0U) {
-                std::memcpy(verts.data(), vb_it->second.bytes.data(),
-                            num_verts * sizeof(MeshVertex));
-            }
-            std::vector<std::uint16_t> indices(num_indices);
-            if (num_indices > 0U) {
-                std::memcpy(indices.data(), ib_it->second.bytes.data(),
-                            num_indices * sizeof(std::uint16_t));
+            // Vertex stage: transform each vertex once (indexed meshes share
+            // vertices between triangles), reading the stored bytes in place.
+            clip_scratch_.resize(num_verts);
+            for (std::size_t i = 0; i < num_verts; ++i) {
+                MeshVertex mv{};
+                std::memcpy(&mv, vb.data() + i * sizeof(MeshVertex), sizeof(MeshVertex));
+                clip_scratch_[i] = to_clip(mv, draw.mvp);
             }
 
-            rasterize_draw(pass, pip_it->second, draw.mvp, verts, indices, draw.index_count, tex,
-                           out_rgba8, depth_buf);
+            for (std::uint32_t idx = 0; idx + 2U < draw.index_count; idx += 3U) {
+                std::uint16_t tri[3]{};
+                std::memcpy(tri, ib.data() + static_cast<std::size_t>(idx) * 2U, sizeof(tri));
+                if (tri[0] >= num_verts || tri[1] >= num_verts || tri[2] >= num_verts) {
+                    continue;
+                }
+                const ClipVert& a = clip_scratch_[tri[0]];
+                const ClipVert& b = clip_scratch_[tri[1]];
+                const ClipVert& c = clip_scratch_[tri[2]];
+                if (!a.finite || !b.finite || !c.finite) {
+                    continue;
+                }
+                clip_and_rasterize(pass, pip_it->second, a, b, c, tex, out_rgba8, depth_scratch_);
+            }
         }
 
         return true;
@@ -568,51 +755,114 @@ private:
         std::vector<std::uint8_t> rgba8{};
     };
 
-    struct ScreenVert {
-        float sx = 0.0f;
-        float sy = 0.0f;
-        float z_ndc = 0.0f;
-        float inv_w = 1.0f;
-        float u_over_w = 0.0f;
-        float v_over_w = 0.0f;
+    // Clip-space vertex plus the varyings interpolated across a triangle.
+    struct ClipVert {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float w = 1.0f;
+        float u = 0.0f;
+        float v = 0.0f;
         float r = 1.0f;
         float g = 1.0f;
         float b = 1.0f;
         float a = 1.0f;
-        bool valid = false;
+        bool finite = true;
     };
 
-    static ScreenVert project_vertex(const MeshVertex& v,
-                                     const float m[16],
-                                     std::uint32_t width,
-                                     std::uint32_t height) noexcept {
-        ScreenVert sv{};
-        const float cx = m[0] * v.px + m[4] * v.py + m[8] * v.pz + m[12];
-        const float cy = m[1] * v.px + m[5] * v.py + m[9] * v.pz + m[13];
-        const float cz = m[2] * v.px + m[6] * v.py + m[10] * v.pz + m[14];
-        const float cw = m[3] * v.px + m[7] * v.py + m[11] * v.pz + m[15];
-        if (!(cw > 1.0e-5f) || !std::isfinite(cw)) {
-            return sv;
+    // Screen-space vertex: position snapped to 1/256-pixel fixed point so edge
+    // functions are exact integers (no cracks or double hits on shared edges),
+    // varyings pre-divided by w for perspective-correct interpolation.
+    struct ScreenVert {
+        std::int64_t fx = 0;
+        std::int64_t fy = 0;
+        float z_ndc = 0.0f;
+        float inv_w = 1.0f;
+        float u_over_w = 0.0f;
+        float v_over_w = 0.0f;
+        float r_over_w = 0.0f;
+        float g_over_w = 0.0f;
+        float b_over_w = 0.0f;
+        float a_over_w = 0.0f;
+    };
+
+    static constexpr std::int64_t kSubpixelBits = 8;
+    static constexpr std::int64_t kSubpixel = std::int64_t{1} << kSubpixelBits;
+    // Guard band: |x|,|y| <= kGuardBand * w after clipping keeps fixed-point
+    // screen coordinates below 2^23 subpixels at 4096 px, so edge products fit int64.
+    static constexpr float kGuardBand = 8.0f;
+    static constexpr float kMinW = 1.0e-5f;
+    static constexpr int kClipPlanes = 6;
+    static constexpr std::size_t kMaxClipVerts = 3U + kClipPlanes;
+
+    static ClipVert to_clip(const MeshVertex& v, const float m[16]) noexcept {
+        ClipVert cv{};
+        cv.x = m[0] * v.px + m[4] * v.py + m[8] * v.pz + m[12];
+        cv.y = m[1] * v.px + m[5] * v.py + m[9] * v.pz + m[13];
+        cv.z = m[2] * v.px + m[6] * v.py + m[10] * v.pz + m[14];
+        cv.w = m[3] * v.px + m[7] * v.py + m[11] * v.pz + m[15];
+        cv.finite = std::isfinite(cv.x) && std::isfinite(cv.y) && std::isfinite(cv.z) &&
+                    std::isfinite(cv.w) && std::isfinite(v.u) && std::isfinite(v.v);
+        cv.u = v.u;
+        cv.v = v.v;
+        cv.r = static_cast<float>(v.color_rgba & 0xFFU) / 255.0f;
+        cv.g = static_cast<float>((v.color_rgba >> 8U) & 0xFFU) / 255.0f;
+        cv.b = static_cast<float>((v.color_rgba >> 16U) & 0xFFU) / 255.0f;
+        cv.a = static_cast<float>((v.color_rgba >> 24U) & 0xFFU) / 255.0f;
+        return cv;
+    }
+
+    // Signed distance to clip plane `plane` (inside when >= 0): Vulkan near plane
+    // `z >= 0`, a minimum `w`, and the four guard-band side planes.
+    static float plane_distance(const ClipVert& v, int plane) noexcept {
+        switch (plane) {
+            case 0:
+                return v.z;
+            case 1:
+                return v.w - kMinW;
+            case 2:
+                return kGuardBand * v.w - v.x;
+            case 3:
+                return kGuardBand * v.w + v.x;
+            case 4:
+                return kGuardBand * v.w - v.y;
+            default:
+                return kGuardBand * v.w + v.y;
         }
-        const float inv_w = 1.0f / cw;
-        const float ndc_x = cx * inv_w;
-        const float ndc_y = cy * inv_w;
-        const float ndc_z = cz * inv_w;
-        if (!std::isfinite(ndc_x) || !std::isfinite(ndc_y) || !std::isfinite(ndc_z)) {
-            return sv;
-        }
-        sv.sx = (ndc_x * 0.5f + 0.5f) * static_cast<float>(width);
-        sv.sy = (ndc_y * 0.5f + 0.5f) * static_cast<float>(height);
-        sv.z_ndc = ndc_z;
-        sv.inv_w = inv_w;
-        sv.u_over_w = v.u * inv_w;
-        sv.v_over_w = v.v * inv_w;
-        sv.r = static_cast<float>(v.color_rgba & 0xFFU) / 255.0f;
-        sv.g = static_cast<float>((v.color_rgba >> 8U) & 0xFFU) / 255.0f;
-        sv.b = static_cast<float>((v.color_rgba >> 16U) & 0xFFU) / 255.0f;
-        sv.a = static_cast<float>((v.color_rgba >> 24U) & 0xFFU) / 255.0f;
-        sv.valid = true;
-        return sv;
+    }
+
+    static ClipVert lerp_clip(const ClipVert& p, const ClipVert& q, float t) noexcept {
+        const auto mix = [t](float a, float b) noexcept { return a + (b - a) * t; };
+        ClipVert o{};
+        o.x = mix(p.x, q.x);
+        o.y = mix(p.y, q.y);
+        o.z = mix(p.z, q.z);
+        o.w = mix(p.w, q.w);
+        o.u = mix(p.u, q.u);
+        o.v = mix(p.v, q.v);
+        o.r = mix(p.r, q.r);
+        o.g = mix(p.g, q.g);
+        o.b = mix(p.b, q.b);
+        o.a = mix(p.a, q.a);
+        return o;
+    }
+
+    static ScreenVert to_screen(const ClipVert& v, std::uint32_t width, std::uint32_t height) noexcept {
+        ScreenVert s{};
+        const float inv_w = 1.0f / v.w;
+        const float sx = (v.x * inv_w * 0.5f + 0.5f) * static_cast<float>(width);
+        const float sy = (v.y * inv_w * 0.5f + 0.5f) * static_cast<float>(height);
+        s.fx = static_cast<std::int64_t>(std::llround(sx * static_cast<float>(kSubpixel)));
+        s.fy = static_cast<std::int64_t>(std::llround(sy * static_cast<float>(kSubpixel)));
+        s.z_ndc = v.z * inv_w;
+        s.inv_w = inv_w;
+        s.u_over_w = v.u * inv_w;
+        s.v_over_w = v.v * inv_w;
+        s.r_over_w = v.r * inv_w;
+        s.g_over_w = v.g * inv_w;
+        s.b_over_w = v.b * inv_w;
+        s.a_over_w = v.a * inv_w;
+        return s;
     }
 
     static float wrap_uv_unit(float coord) noexcept {
@@ -647,110 +897,192 @@ private:
         out_a = tex->rgba8[off + 3U];
     }
 
-    static void rasterize_draw(const RenderPassDesc& pass,
-                               const PipelineDesc& pip,
-                               const float mvp[16],
-                               const std::vector<MeshVertex>& verts,
-                               const std::vector<std::uint16_t>& indices,
-                               std::uint32_t index_count,
-                               const TextureRec* tex,
-                               std::vector<std::uint8_t>& color_buf,
-                               std::vector<float>& depth_buf) noexcept {
-        const auto edge_fn = [](const ScreenVert& a, const ScreenVert& b, float px, float py) noexcept {
-            return (px - a.sx) * (b.sy - a.sy) - (py - a.sy) * (b.sx - a.sx);
-        };
+    // Clips one triangle against the near/w/guard-band planes (Sutherland-Hodgman)
+    // and rasterizes the resulting convex polygon as a triangle fan. Triangles
+    // crossing the near plane are cut instead of dropped.
+    static void clip_and_rasterize(const RenderPassDesc& pass,
+                                   const PipelineDesc& pip,
+                                   const ClipVert& a,
+                                   const ClipVert& b,
+                                   const ClipVert& c,
+                                   const TextureRec* tex,
+                                   std::vector<std::uint8_t>& color_buf,
+                                   std::vector<float>& depth_buf) noexcept {
+        std::array<ClipVert, kMaxClipVerts> poly{a, b, c};
+        std::size_t count = 3U;
 
-        for (std::uint32_t idx = 0; idx + 2U < index_count; idx += 3U) {
-            const std::uint16_t i0 = indices[idx + 0U];
-            const std::uint16_t i1 = indices[idx + 1U];
-            const std::uint16_t i2 = indices[idx + 2U];
-            if (i0 >= verts.size() || i1 >= verts.size() || i2 >= verts.size()) {
-                continue;
-            }
-            const ScreenVert v0 = project_vertex(verts[i0], mvp, pass.width, pass.height);
-            const ScreenVert v1 = project_vertex(verts[i1], mvp, pass.width, pass.height);
-            const ScreenVert v2 = project_vertex(verts[i2], mvp, pass.width, pass.height);
-            if (!v0.valid || !v1.valid || !v2.valid) {
-                continue;
-            }
-
-            // Screen space has +Y down: area > 0 corresponds to visual clockwise
-            // (or standard CCW in math coordinates before Vulkan Y-flip).
-            const float area = edge_fn(v0, v1, v2.sx, v2.sy);
-            if (std::fabs(area) < 1.0e-5f) {
-                continue;
-            }
-            if (pip.cull_mode == CullMode::back && area < 0.0f) {
-                continue;
-            }
-            if (pip.cull_mode == CullMode::front && area > 0.0f) {
-                continue;
-            }
-
-            const float inv_area = 1.0f / area;
-            const float min_xf = std::min({v0.sx, v1.sx, v2.sx});
-            const float max_xf = std::max({v0.sx, v1.sx, v2.sx});
-            const float min_yf = std::min({v0.sy, v1.sy, v2.sy});
-            const float max_yf = std::max({v0.sy, v1.sy, v2.sy});
-
-            const int x_begin = std::max(0, static_cast<int>(std::floor(min_xf)));
-            const int x_end = std::min(static_cast<int>(pass.width) - 1,
-                                       static_cast<int>(std::ceil(max_xf)));
-            const int y_begin = std::max(0, static_cast<int>(std::floor(min_yf)));
-            const int y_end = std::min(static_cast<int>(pass.height) - 1,
-                                       static_cast<int>(std::ceil(max_yf)));
-
-            for (int py = y_begin; py <= y_end; ++py) {
-                const float cy = static_cast<float>(py) + 0.5f;
-                for (int px = x_begin; px <= x_end; ++px) {
-                    const float cx = static_cast<float>(px) + 0.5f;
-                    const float w0 = edge_fn(v1, v2, cx, cy) * inv_area;
-                    const float w1 = edge_fn(v2, v0, cx, cy) * inv_area;
-                    const float w2 = edge_fn(v0, v1, cx, cy) * inv_area;
-                    if (w0 < -1.0e-4f || w1 < -1.0e-4f || w2 < -1.0e-4f) {
-                        continue;
+        bool all_inside = true;
+        for (int plane = 0; plane < kClipPlanes && all_inside; ++plane) {
+            all_inside = plane_distance(a, plane) >= 0.0f && plane_distance(b, plane) >= 0.0f &&
+                         plane_distance(c, plane) >= 0.0f;
+        }
+        if (!all_inside) {
+            std::array<ClipVert, kMaxClipVerts> next{};
+            for (int plane = 0; plane < kClipPlanes && count >= 3U; ++plane) {
+                std::size_t out_count = 0;
+                for (std::size_t i = 0; i < count; ++i) {
+                    const ClipVert& cur = poly[i];
+                    const ClipVert& nxt = poly[(i + 1U) % count];
+                    const float dc = plane_distance(cur, plane);
+                    const float dn = plane_distance(nxt, plane);
+                    if (dc >= 0.0f && out_count < kMaxClipVerts) {
+                        next[out_count++] = cur;
                     }
-
-                    const float z = w0 * v0.z_ndc + w1 * v1.z_ndc + w2 * v2.z_ndc;
-                    if (z < 0.0f || z > 1.0f) {
-                        continue;
+                    if (((dc >= 0.0f) != (dn >= 0.0f)) && out_count < kMaxClipVerts) {
+                        next[out_count++] = lerp_clip(cur, nxt, dc / (dc - dn));
                     }
-
-                    const std::size_t pix =
-                        static_cast<std::size_t>(py) * pass.width + static_cast<std::size_t>(px);
-                    if (pip.depth_test && z >= depth_buf[pix]) {
-                        continue;
-                    }
-                    if (pip.depth_write) {
-                        depth_buf[pix] = z;
-                    }
-
-                    const float inv_w = w0 * v0.inv_w + w1 * v1.inv_w + w2 * v2.inv_w;
-                    const float u = (inv_w > 1.0e-6f)
-                        ? (w0 * v0.u_over_w + w1 * v1.u_over_w + w2 * v2.u_over_w) / inv_w
-                        : 0.0f;
-                    const float v = (inv_w > 1.0e-6f)
-                        ? (w0 * v0.v_over_w + w1 * v1.v_over_w + w2 * v2.v_over_w) / inv_w
-                        : 0.0f;
-
-                    std::uint8_t tr = 255U;
-                    std::uint8_t tg = 255U;
-                    std::uint8_t tb = 255U;
-                    std::uint8_t ta = 255U;
-                    sample_texture(tex, u, v, tr, tg, tb, ta);
-
-                    const float vr = std::clamp(w0 * v0.r + w1 * v1.r + w2 * v2.r, 0.0f, 1.0f);
-                    const float vg = std::clamp(w0 * v0.g + w1 * v1.g + w2 * v2.g, 0.0f, 1.0f);
-                    const float vb = std::clamp(w0 * v0.b + w1 * v1.b + w2 * v2.b, 0.0f, 1.0f);
-                    const float va = std::clamp(w0 * v0.a + w1 * v1.a + w2 * v2.a, 0.0f, 1.0f);
-
-                    color_buf[pix * 4U + 0U] = static_cast<std::uint8_t>(std::lround(tr * vr));
-                    color_buf[pix * 4U + 1U] = static_cast<std::uint8_t>(std::lround(tg * vg));
-                    color_buf[pix * 4U + 2U] = static_cast<std::uint8_t>(std::lround(tb * vb));
-                    color_buf[pix * 4U + 3U] = static_cast<std::uint8_t>(std::lround(ta * va));
                 }
+                poly = next;
+                count = out_count;
+            }
+            if (count < 3U) {
+                return;
             }
         }
+
+        std::array<ScreenVert, kMaxClipVerts> screen{};
+        for (std::size_t i = 0; i < count; ++i) {
+            screen[i] = to_screen(poly[i], pass.width, pass.height);
+        }
+        for (std::size_t i = 1; i + 1U < count; ++i) {
+            rasterize_triangle(pass, pip, screen[0], screen[i], screen[i + 1U], tex, color_buf,
+                               depth_buf);
+        }
+    }
+
+    static std::int64_t floor_div(std::int64_t num, std::int64_t den) noexcept {
+        std::int64_t q = num / den;
+        if ((num % den != 0) && ((num < 0) != (den < 0))) {
+            --q;
+        }
+        return q;
+    }
+
+    static void rasterize_triangle(const RenderPassDesc& pass,
+                                   const PipelineDesc& pip,
+                                   const ScreenVert& s0,
+                                   ScreenVert s1,
+                                   ScreenVert s2,
+                                   const TextureRec* tex,
+                                   std::vector<std::uint8_t>& color_buf,
+                                   std::vector<float>& depth_buf) noexcept {
+        // E(a, b, p) = (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x).
+        const auto edge = [](const ScreenVert& ea, const ScreenVert& eb, std::int64_t px,
+                             std::int64_t py) noexcept {
+            return (px - ea.fx) * (eb.fy - ea.fy) - (py - ea.fy) * (eb.fx - ea.fx);
+        };
+
+        // Screen space has +Y down: area > 0 corresponds to visual clockwise
+        // (or standard CCW in math coordinates before Vulkan Y-flip).
+        std::int64_t area = edge(s0, s1, s2.fx, s2.fy);
+        if (area == 0) {
+            return;
+        }
+        if (pip.cull_mode == CullMode::back && area < 0) {
+            return;
+        }
+        if (pip.cull_mode == CullMode::front && area > 0) {
+            return;
+        }
+        if (area < 0) {
+            std::swap(s1, s2);
+            area = -area;
+        }
+
+        // Top-left fill rule: a pixel centre exactly on an edge belongs to the
+        // triangle only for a left edge (dy > 0) or a top edge (dy == 0, dx < 0).
+        const auto bias = [](const ScreenVert& ea, const ScreenVert& eb) noexcept -> std::int64_t {
+            const std::int64_t dy = eb.fy - ea.fy;
+            const std::int64_t dx = eb.fx - ea.fx;
+            return (dy > 0 || (dy == 0 && dx < 0)) ? 0 : -1;
+        };
+        const std::int64_t bias0 = bias(s1, s2);
+        const std::int64_t bias1 = bias(s2, s0);
+        const std::int64_t bias2 = bias(s0, s1);
+
+        const std::int64_t half = kSubpixel / 2;
+        const std::int64_t min_fx = std::min({s0.fx, s1.fx, s2.fx});
+        const std::int64_t max_fx = std::max({s0.fx, s1.fx, s2.fx});
+        const std::int64_t min_fy = std::min({s0.fy, s1.fy, s2.fy});
+        const std::int64_t max_fy = std::max({s0.fy, s1.fy, s2.fy});
+        const std::int64_t x_begin = std::max<std::int64_t>(0, floor_div(min_fx - half + kSubpixel - 1, kSubpixel));
+        const std::int64_t x_end = std::min<std::int64_t>(static_cast<std::int64_t>(pass.width) - 1,
+                                                          floor_div(max_fx - half, kSubpixel));
+        const std::int64_t y_begin = std::max<std::int64_t>(0, floor_div(min_fy - half + kSubpixel - 1, kSubpixel));
+        const std::int64_t y_end = std::min<std::int64_t>(static_cast<std::int64_t>(pass.height) - 1,
+                                                          floor_div(max_fy - half, kSubpixel));
+        if (x_begin > x_end || y_begin > y_end) {
+            return;
+        }
+
+        const float inv_area = 1.0f / static_cast<float>(area);
+        // Per-pixel steps of each edge function (exact integers).
+        const std::int64_t step_x0 = (s2.fy - s1.fy) * kSubpixel;
+        const std::int64_t step_x1 = (s0.fy - s2.fy) * kSubpixel;
+        const std::int64_t step_x2 = (s1.fy - s0.fy) * kSubpixel;
+
+        for (std::int64_t py = y_begin; py <= y_end; ++py) {
+            const std::int64_t cy = py * kSubpixel + half;
+            const std::int64_t cx0 = x_begin * kSubpixel + half;
+            std::int64_t e0 = edge(s1, s2, cx0, cy);
+            std::int64_t e1 = edge(s2, s0, cx0, cy);
+            std::int64_t e2 = edge(s0, s1, cx0, cy);
+            const std::size_t row = static_cast<std::size_t>(py) * pass.width;
+            for (std::int64_t px = x_begin; px <= x_end;
+                 ++px, e0 += step_x0, e1 += step_x1, e2 += step_x2) {
+                if (e0 + bias0 < 0 || e1 + bias1 < 0 || e2 + bias2 < 0) {
+                    continue;
+                }
+                const float w0 = static_cast<float>(e0) * inv_area;
+                const float w1 = static_cast<float>(e1) * inv_area;
+                const float w2 = static_cast<float>(e2) * inv_area;
+
+                const float z = w0 * s0.z_ndc + w1 * s1.z_ndc + w2 * s2.z_ndc;
+                if (z < 0.0f || z > 1.0f) {
+                    continue;
+                }
+                const std::size_t pix = row + static_cast<std::size_t>(px);
+                if (pip.depth_test && z >= depth_buf[pix]) {
+                    continue;
+                }
+                if (pip.depth_write) {
+                    depth_buf[pix] = z;
+                }
+
+                const float inv_w = w0 * s0.inv_w + w1 * s1.inv_w + w2 * s2.inv_w;
+                const float persp = (inv_w > 1.0e-12f) ? 1.0f / inv_w : 0.0f;
+                const auto interp = [&](float a0, float a1, float a2) noexcept {
+                    return (w0 * a0 + w1 * a1 + w2 * a2) * persp;
+                };
+                const float u = interp(s0.u_over_w, s1.u_over_w, s2.u_over_w);
+                const float v = interp(s0.v_over_w, s1.v_over_w, s2.v_over_w);
+
+                std::uint8_t tr = 255U;
+                std::uint8_t tg = 255U;
+                std::uint8_t tb = 255U;
+                std::uint8_t ta = 255U;
+                sample_texture(tex, u, v, tr, tg, tb, ta);
+
+                const float vr = std::clamp(interp(s0.r_over_w, s1.r_over_w, s2.r_over_w), 0.0f, 1.0f);
+                const float vg = std::clamp(interp(s0.g_over_w, s1.g_over_w, s2.g_over_w), 0.0f, 1.0f);
+                const float vb = std::clamp(interp(s0.b_over_w, s1.b_over_w, s2.b_over_w), 0.0f, 1.0f);
+                const float va = std::clamp(interp(s0.a_over_w, s1.a_over_w, s2.a_over_w), 0.0f, 1.0f);
+
+                std::uint8_t* dst = color_buf.data() + pix * 4U;
+                dst[0] = static_cast<std::uint8_t>(std::lround(tr * vr));
+                dst[1] = static_cast<std::uint8_t>(std::lround(tg * vg));
+                dst[2] = static_cast<std::uint8_t>(std::lround(tb * vb));
+                dst[3] = static_cast<std::uint8_t>(std::lround(ta * va));
+            }
+        }
+    }
+
+    // Handle 0 is reserved for "invalid"; skip it if the counter ever wraps.
+    std::uint32_t allocate_handle() noexcept {
+        if (next_handle_ == 0) {
+            ++next_handle_;
+        }
+        return next_handle_++;
     }
 
     std::string device_name_;
@@ -760,6 +1092,9 @@ private:
     std::unordered_map<BufferHandle, BufferRec> buffers_{};
     std::unordered_map<TextureHandle, TextureRec> textures_{};
     std::unordered_map<PipelineHandle, PipelineDesc> pipelines_{};
+    // Per-pass scratch reused across frames (no per-draw allocations once warm).
+    std::vector<ClipVert> clip_scratch_{};
+    std::vector<float> depth_scratch_{};
 };
 
 // Converts D3DCOLOR (`0xAARRGGBB`) into little-endian RGBA8 packed uint32 (`R | G<<8 | B<<16 | A<<24`).
@@ -815,6 +1150,63 @@ private:
         indices.push_back(face.corners[2]);
     }
     return indices;
+}
+
+// Builds a de-duplicated indexed stream from a decoded `BrfMesh`: face corners
+// with byte-identical attributes (position, normal, UV, colour) share one vertex,
+// and corners no face references are dropped. `.brf` stores one corner per face
+// vertex, so this typically cuts the vertex stream (and GPU vertex shading and
+// bandwidth) by 2-6x. Faces naming a corner past `face_corners` are skipped.
+inline void build_rhi_mesh_from_brf(const wse::asset::BrfMesh& mesh,
+                                    std::vector<MeshVertex>& out_verts,
+                                    std::vector<std::uint16_t>& out_indices,
+                                    std::size_t frame_index = 0) {
+    static_assert(sizeof(MeshVertex) == 9U * 4U, "MeshVertex must have no padding bytes");
+    out_verts.clear();
+    out_indices.clear();
+    const std::vector<MeshVertex> corners = build_rhi_vertices_from_brf(mesh, frame_index);
+
+    struct CornerHash {
+        const std::vector<MeshVertex>* verts;
+        std::size_t operator()(std::uint32_t i) const noexcept {
+            const auto* p = reinterpret_cast<const std::uint8_t*>(&(*verts)[i]);
+            std::uint64_t h = 14695981039346656037ULL;
+            for (std::size_t k = 0; k < sizeof(MeshVertex); ++k) {
+                h = (h ^ p[k]) * 1099511628211ULL;
+            }
+            return static_cast<std::size_t>(h);
+        }
+    };
+    struct CornerEq {
+        const std::vector<MeshVertex>* verts;
+        bool operator()(std::uint32_t a, std::uint32_t b) const noexcept {
+            return std::memcmp(&(*verts)[a], &(*verts)[b], sizeof(MeshVertex)) == 0;
+        }
+    };
+    std::unordered_map<std::uint32_t, std::uint16_t, CornerHash, CornerEq> unique(
+        corners.size(), CornerHash{&corners}, CornerEq{&corners});
+    constexpr std::uint32_t kUnmapped = 0xFFFFFFFFU;
+    std::vector<std::uint32_t> remap(corners.size(), kUnmapped);
+
+    out_verts.reserve(corners.size());
+    out_indices.reserve(mesh.faces.size() * 3U);
+    for (const wse::asset::BrfMeshFace& face : mesh.faces) {
+        if (face.corners[0] >= corners.size() || face.corners[1] >= corners.size() ||
+            face.corners[2] >= corners.size()) {
+            continue;
+        }
+        for (const std::uint16_t corner : face.corners) {
+            if (remap[corner] == kUnmapped) {
+                const auto [it, inserted] = unique.try_emplace(
+                    corner, static_cast<std::uint16_t>(out_verts.size()));
+                if (inserted) {
+                    out_verts.push_back(corners[corner]);
+                }
+                remap[corner] = it->second;
+            }
+            out_indices.push_back(static_cast<std::uint16_t>(remap[corner]));
+        }
+    }
 }
 
 // Builds a column-major 4x4 perspective * view matrix targeting the origin `(0, 0, 0)`
@@ -919,8 +1311,9 @@ inline void make_orbit_mvp_matrix(float aspect,
         return rhi_detail::set_error(error_out, "cannot render empty BrfMesh");
     }
 
-    const std::vector<MeshVertex> verts = build_rhi_vertices_from_brf(mesh);
-    const std::vector<std::uint16_t> indices = build_rhi_indices_from_brf(mesh);
+    std::vector<MeshVertex> verts;
+    std::vector<std::uint16_t> indices;
+    build_rhi_mesh_from_brf(mesh, verts, indices);
     if (verts.empty() || indices.empty()) {
         return rhi_detail::set_error(error_out, "BrfMesh produced empty vertex or index stream");
     }

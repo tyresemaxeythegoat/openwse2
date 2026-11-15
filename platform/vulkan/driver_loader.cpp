@@ -10,6 +10,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -22,10 +23,12 @@
 #define VK_NO_PROTOTYPES
 #endif
 
-#if __has_include(<vulkan/vulkan.h>)
-#include <vulkan/vulkan.h>
-#elif __has_include("../../runtime/android/third_party/vulkan/vulkan.h")
+// Prefer the vendored headers so host, CI, and NDK builds compile against one
+// Vulkan header version (the NDK sysroot ships its own, older `vulkan.h`).
+#if __has_include("../../runtime/android/third_party/vulkan/vulkan.h")
 #include "../../runtime/android/third_party/vulkan/vulkan.h"
+#elif __has_include(<vulkan/vulkan.h>)
+#include <vulkan/vulkan.h>
 #else
 #error "Missing Vulkan headers (expected vendored headers in runtime/android/third_party)"
 #endif
@@ -86,6 +89,17 @@ struct LibHandle {
         }
     }
 
+    [[nodiscard]] void* sym(const char* name) const noexcept {
+        if (mod == nullptr) {
+            return nullptr;
+        }
+        FARPROC p = ::GetProcAddress(mod, name);
+        void* out = nullptr;
+        static_assert(sizeof(out) == sizeof(p), "unexpected function pointer size");
+        std::memcpy(&out, &p, sizeof(out));
+        return out;
+    }
+
     [[nodiscard]] static std::string last_error() {
         const DWORD err = ::GetLastError();
         return "Win32 LoadLibrary error " + std::to_string(err);
@@ -96,7 +110,13 @@ struct LibHandle {
     void* mod = nullptr;
 
     [[nodiscard]] bool open(const char* path, bool global_scope) noexcept {
-        const int flags = RTLD_NOW | (global_scope ? RTLD_GLOBAL : RTLD_LOCAL);
+        int flags = RTLD_NOW | (global_scope ? RTLD_GLOBAL : RTLD_LOCAL);
+#ifdef RTLD_NODELETE
+        // Mesa drivers spawn util_queue / disk-cache threads and register exit
+        // handlers; unmapping them on `close()` can crash later. Keep them mapped.
+        flags |= RTLD_NODELETE;
+#endif
+        (void)::dlerror();  // Clear any stale error so last_error() reports this call.
         mod = ::dlopen(path, flags);
         return mod != nullptr;
     }
@@ -117,6 +137,11 @@ struct LibHandle {
             ::dlclose(mod);
             mod = nullptr;
         }
+    }
+
+    // Raw symbol lookup (data symbols such as the Android `HMI` HAL module).
+    [[nodiscard]] void* sym(const char* name) const noexcept {
+        return (mod != nullptr) ? ::dlsym(mod, name) : nullptr;
     }
 
     [[nodiscard]] static std::string last_error() {
@@ -259,7 +284,7 @@ VKAPI_ATTR void VKAPI_CALL mock_vkGetPhysicalDeviceProperties(
     pProperties->vendorID = cfg.vendor_id;
     pProperties->deviceID = cfg.device_id;
     pProperties->deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
-    pProperties->limits.maxImageDimension2D = 4096U;
+    pProperties->limits.maxImageDimension2D = cfg.max_image_dimension_2d;
     const std::size_t copy_len =
         (std::min)(cfg.device_name.size(), static_cast<std::size_t>(VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 1U));
     std::memcpy(pProperties->deviceName, cfg.device_name.data(), copy_len);
@@ -290,6 +315,17 @@ VKAPI_ATTR void VKAPI_CALL mock_vkGetPhysicalDeviceQueueFamilyProperties(
     *pQueueFamilyPropertyCount = 1U;
 }
 
+VKAPI_ATTR void VKAPI_CALL mock_vkGetPhysicalDeviceFeatures(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceFeatures* pFeatures) {
+    if (physicalDevice == VK_NULL_HANDLE || pFeatures == nullptr) {
+        return;
+    }
+    const auto* phys = reinterpret_cast<const MockPhysicalDevice*>(physicalDevice);
+    std::memset(pFeatures, 0, sizeof(*pFeatures));
+    pFeatures->textureCompressionBC = phys->instance->config.texture_compression_bc ? VK_TRUE : VK_FALSE;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateDevice(
     VkPhysicalDevice physicalDevice,
     const VkDeviceCreateInfo* pCreateInfo,
@@ -313,6 +349,10 @@ VKAPI_ATTR void VKAPI_CALL mock_vkDestroyDevice(
     if (device != VK_NULL_HANDLE) {
         delete reinterpret_cast<MockDevice*>(device);
     }
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL mock_vkDeviceWaitIdle(VkDevice device) {
+    return (device != VK_NULL_HANDLE) ? VK_SUCCESS : VK_ERROR_DEVICE_LOST;
 }
 
 VKAPI_ATTR void VKAPI_CALL mock_vkGetDeviceQueue(
@@ -424,6 +464,9 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL mock_vkGetDeviceProcAddr(
     if (name == "vkGetDeviceQueue") {
         return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkGetDeviceQueue);
     }
+    if (name == "vkDeviceWaitIdle") {
+        return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkDeviceWaitIdle);
+    }
     if (name == "vkCreateCommandPool") {
         return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkCreateCommandPool);
     }
@@ -473,6 +516,9 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL mock_vk_icdGetInstanceProcAddr(
     if (name == "vkGetPhysicalDeviceProperties") {
         return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkGetPhysicalDeviceProperties);
     }
+    if (name == "vkGetPhysicalDeviceFeatures") {
+        return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkGetPhysicalDeviceFeatures);
+    }
     if (name == "vkGetPhysicalDeviceQueueFamilyProperties") {
         return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkGetPhysicalDeviceQueueFamilyProperties);
     }
@@ -480,6 +526,89 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL mock_vk_icdGetInstanceProcAddr(
         return reinterpret_cast<PFN_vkVoidFunction>(&mock_vkCreateDevice);
     }
     return mock_vkGetDeviceProcAddr(VK_NULL_HANDLE, pName);
+}
+
+// -----------------------------------------------------------------------------
+// Android hwvulkan HAL ABI (`hardware/hardware.h`, `hardware/hwvulkan.h`).
+// This is the interface Android's own `libvulkan.so` (and adrenotools) use to
+// enter a vendor/Mesa driver through its exported `HMI` symbol; drivers built
+// only for that path may not export `vk_icd*`.
+// -----------------------------------------------------------------------------
+
+constexpr std::uint32_t make_hal_tag(char a, char b, char c, char d) noexcept {
+    return (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
+           (static_cast<std::uint32_t>(c) << 8U) | static_cast<std::uint32_t>(d);
+}
+constexpr std::uint32_t kHardwareModuleTag = make_hal_tag('H', 'W', 'M', 'T');
+constexpr std::uint32_t kHardwareDeviceTag = make_hal_tag('H', 'W', 'D', 'T');
+constexpr const char* kHwVulkanModuleId = "vulkan";
+constexpr const char* kHwVulkanDevice0 = "vk0";
+
+struct HalDevice;
+struct HalModule;
+
+struct HalModuleMethods {
+    int (*open)(const HalModule* module, const char* id, HalDevice** device);
+};
+
+// `hw_module_t`: 32 pointer-sized words in total (`reserved[32 - 7]`).
+struct HalModule {
+    std::uint32_t tag;
+    std::uint16_t module_api_version;
+    std::uint16_t hal_api_version;
+    const char* id;
+    const char* name;
+    const char* author;
+    HalModuleMethods* methods;
+    void* dso;
+    std::uintptr_t reserved[32 - 7];
+};
+
+// `hw_device_t`.
+struct HalDevice {
+    std::uint32_t tag;
+    std::uint32_t version;
+    HalModule* module;
+    std::uintptr_t reserved[12];
+    int (*close)(HalDevice* device);
+};
+
+// `hwvulkan_device_t`.
+struct HwVulkanDevice {
+    HalDevice common;
+    PFN_vkEnumerateInstanceExtensionProperties EnumerateInstanceExtensionProperties;
+    PFN_vkCreateInstance CreateInstance;
+    PFN_vkGetInstanceProcAddr GetInstanceProcAddr;
+};
+
+int mock_hal_close(HalDevice* device) {
+    delete reinterpret_cast<HwVulkanDevice*>(device);
+    return 0;
+}
+
+int mock_hal_open(const HalModule* module, const char* id, HalDevice** device);
+
+HalModuleMethods g_mock_hal_methods{&mock_hal_open};
+
+HalModule g_mock_hal_module{
+    kHardwareModuleTag, 1U, 0U, kHwVulkanModuleId, "WSE2 mock hwvulkan", "wse2-android",
+    &g_mock_hal_methods, nullptr, {}};
+
+int mock_hal_open(const HalModule* module, const char* id, HalDevice** device) {
+    if (module != &g_mock_hal_module || id == nullptr || device == nullptr ||
+        std::strcmp(id, kHwVulkanDevice0) != 0) {
+        return -22;  // -EINVAL
+    }
+    auto* dev = new HwVulkanDevice{};
+    dev->common.tag = kHardwareDeviceTag;
+    dev->common.version = 1U;
+    dev->common.module = &g_mock_hal_module;
+    dev->common.close = &mock_hal_close;
+    dev->EnumerateInstanceExtensionProperties = &mock_vkEnumerateInstanceExtensionProperties;
+    dev->CreateInstance = &mock_vkCreateInstance;
+    dev->GetInstanceProcAddr = &mock_vk_icdGetInstanceProcAddr;
+    *device = &dev->common;
+    return 0;
 }
 
 template <typename VkHandle>
@@ -526,21 +655,25 @@ struct VulkanDriverLoader::Impl {
     bool loaded = false;
     bool is_mock = false;
     bool used_direct_icd = false;
+    bool used_hal_module = false;
     std::uint32_t negotiated_icd_version = 0;
     std::string loaded_library{};
     VulkanMockConfig mock_config{};
 
     PFN_vkGetInstanceProcAddr gipa = nullptr;
     PFN_vk_icdGetPhysicalDeviceProcAddr gpdpa = nullptr;
+    HalDevice* hal_device = nullptr;
 
     VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     VkQueue graphics_queue = VK_NULL_HANDLE;
     VkCommandPool command_pool = VK_NULL_HANDLE;
+    std::uint32_t max_image_dimension_2d = 0;
 
     PFN_vkDestroyInstance fn_destroy_instance = nullptr;
     PFN_vkDestroyDevice fn_destroy_device = nullptr;
+    PFN_vkDeviceWaitIdle fn_device_wait_idle = nullptr;
     PFN_vkDestroyCommandPool fn_destroy_command_pool = nullptr;
     PFN_vkCreateBuffer fn_create_buffer = nullptr;
     PFN_vkDestroyBuffer fn_destroy_buffer = nullptr;
@@ -550,6 +683,13 @@ struct VulkanDriverLoader::Impl {
     std::unordered_set<std::uint64_t> live_buffers{};
     std::unordered_set<std::uint64_t> live_images{};
     VulkanDriverProbeResult probe{};
+
+    Impl() = default;
+    Impl(const Impl&) = delete;
+    Impl& operator=(const Impl&) = delete;
+    // Releasing an `Impl` (destructor or move-assignment of the owning loader)
+    // must tear down its Vulkan objects and library handles.
+    ~Impl() { unload(); }
 
     template <typename Fn>
     void resolve_inst(const char* name, Fn& out) const noexcept {
@@ -572,6 +712,10 @@ struct VulkanDriverLoader::Impl {
 
     void destroy_vulkan_objects() noexcept {
         if (device != VK_NULL_HANDLE) {
+            // No GPU work may still reference an object we are about to destroy.
+            if (fn_device_wait_idle != nullptr) {
+                (void)fn_device_wait_idle(device);
+            }
             for (const std::uint64_t h : live_buffers) {
                 if (fn_destroy_buffer != nullptr) {
                     fn_destroy_buffer(device, u64_to_handle<VkBuffer>(h), nullptr);
@@ -595,6 +739,7 @@ struct VulkanDriverLoader::Impl {
         graphics_queue = VK_NULL_HANDLE;
         device = VK_NULL_HANDLE;
         physical_device = VK_NULL_HANDLE;
+        max_image_dimension_2d = 0;
 
         if (instance != VK_NULL_HANDLE && fn_destroy_instance != nullptr) {
             fn_destroy_instance(instance, nullptr);
@@ -603,6 +748,7 @@ struct VulkanDriverLoader::Impl {
 
         fn_destroy_instance = nullptr;
         fn_destroy_device = nullptr;
+        fn_device_wait_idle = nullptr;
         fn_destroy_command_pool = nullptr;
         fn_create_buffer = nullptr;
         fn_destroy_buffer = nullptr;
@@ -612,25 +758,139 @@ struct VulkanDriverLoader::Impl {
 
     void unload() noexcept {
         destroy_vulkan_objects();
+        if (hal_device != nullptr && hal_device->close != nullptr) {
+            (void)hal_device->close(hal_device);
+        }
+        hal_device = nullptr;
         icd_lib.close();
         hw_stub_lib.close();
         loaded = false;
         is_mock = false;
         used_direct_icd = false;
+        used_hal_module = false;
         negotiated_icd_version = 0;
         loaded_library.clear();
         gipa = nullptr;
         gpdpa = nullptr;
         probe = VulkanDriverProbeResult{};
     }
+
+    // Opens `HWVULKAN_DEVICE_0` on an `HMI` hwvulkan module and adopts its
+    // `GetInstanceProcAddr` as the instance-level entry point.
+    [[nodiscard]] bool enter_hal_module(const void* hmi, std::string& err) noexcept {
+        if (hmi == nullptr) {
+            err = "HAL module pointer is null";
+            return false;
+        }
+        const auto* module = static_cast<const HalModule*>(hmi);
+        if (module->tag != kHardwareModuleTag) {
+            err = "HMI symbol is not a hw_module_t (bad tag)";
+            return false;
+        }
+        if (module->id == nullptr || std::strcmp(module->id, kHwVulkanModuleId) != 0) {
+            err = "HMI module id is not \"vulkan\"";
+            return false;
+        }
+        if (module->methods == nullptr || module->methods->open == nullptr) {
+            err = "HMI module has no open() method";
+            return false;
+        }
+        HalDevice* dev = nullptr;
+        const int rc = module->methods->open(module, kHwVulkanDevice0, &dev);
+        if (rc != 0 || dev == nullptr) {
+            err = "hwvulkan open(\"vk0\") failed with " + std::to_string(rc);
+            return false;
+        }
+        const auto* vk_dev = reinterpret_cast<const HwVulkanDevice*>(dev);
+        if (dev->tag != kHardwareDeviceTag || vk_dev->GetInstanceProcAddr == nullptr) {
+            if (dev->close != nullptr) {
+                (void)dev->close(dev);
+            }
+            err = "hwvulkan device is malformed (bad tag or no GetInstanceProcAddr)";
+            return false;
+        }
+        hal_device = dev;
+        gipa = vk_dev->GetInstanceProcAddr;
+        used_hal_module = true;
+        used_direct_icd = true;
+        return true;
+    }
 };
 
 VulkanDriverLoader::VulkanDriverLoader() : impl_(std::make_unique<Impl>()) {}
-VulkanDriverLoader::~VulkanDriverLoader() { unload(); }
+VulkanDriverLoader::~VulkanDriverLoader() = default;
 VulkanDriverLoader::VulkanDriverLoader(VulkanDriverLoader&&) noexcept = default;
 VulkanDriverLoader& VulkanDriverLoader::operator=(VulkanDriverLoader&&) noexcept = default;
 
+namespace {
+
+void set_err(std::string* error_out, std::string msg) {
+    if (error_out != nullptr) {
+        *error_out = std::move(msg);
+    }
+}
+
+// Highest Vulkan version this backend asks for; newer drivers still work.
+constexpr std::uint32_t kMaxRequestedApiVersion = VK_API_VERSION_1_3;
+
+[[nodiscard]] std::uint32_t clamp_api_version(std::uint32_t available) noexcept {
+    const std::uint32_t major = VK_API_VERSION_MAJOR(available);
+    const std::uint32_t minor = VK_API_VERSION_MINOR(available);
+    const std::uint32_t req_major = VK_API_VERSION_MAJOR(kMaxRequestedApiVersion);
+    const std::uint32_t req_minor = VK_API_VERSION_MINOR(kMaxRequestedApiVersion);
+    if (major == 0U) {
+        return VK_API_VERSION_1_0;
+    }
+    if (major > req_major || (major == req_major && minor >= req_minor)) {
+        return kMaxRequestedApiVersion;
+    }
+    return VK_MAKE_API_VERSION(0, major, minor, 0);
+}
+
+[[nodiscard]] bool set_env_if_unset(const char* name, const std::string& value) {
+    if (value.empty()) {
+        return false;
+    }
+#if defined(_WIN32)
+    // GetEnvironmentVariableA avoids MSVC's C4996 on getenv under /W4 /WX.
+    char probe[2]{};
+    if (::GetEnvironmentVariableA(name, probe, sizeof(probe)) != 0) {
+        return false;
+    }
+    return ::_putenv_s(name, value.c_str()) == 0;
+#else
+    const char* current = std::getenv(name);
+    if (current != nullptr && current[0] != '\0') {
+        return false;
+    }
+    return ::setenv(name, value.c_str(), 0) == 0;
+#endif
+}
+
+}  // namespace
+
+std::size_t apply_mesa_driver_environment(DriverMode mode, const std::string& shader_cache_dir) {
+    std::size_t set = 0;
+    if (mode == DriverMode::system) {
+        return set;  // The system driver is not Mesa-controlled by us.
+    }
+    if (set_env_if_unset("MESA_SHADER_CACHE_DIR", shader_cache_dir)) {
+        ++set;
+    }
+    if (mode == DriverMode::panvk && set_env_if_unset("PAN_I_WANT_A_BROKEN_VULKAN_DRIVER", "1")) {
+        ++set;
+    }
+    return set;
+}
+
+const void* mock_vulkan_hal_module() noexcept {
+    return &g_mock_hal_module;
+}
+
 bool VulkanDriverLoader::load_system(std::string* error_out) {
+    if (!impl_) {
+        impl_ = std::make_unique<Impl>();
+    }
     unload();
     impl_->mode = DriverMode::system;
 
@@ -649,17 +909,13 @@ bool VulkanDriverLoader::load_system(std::string* error_out) {
         last_err = LibHandle::last_error();
     }
     if (impl_->loaded_library.empty()) {
-        if (error_out != nullptr) {
-            *error_out = "failed to load system Vulkan loader: " + last_err;
-        }
+        set_err(error_out, "failed to load system Vulkan loader: " + last_err);
         return false;
     }
 
     impl_->icd_lib.load_sym("vkGetInstanceProcAddr", impl_->gipa);
     if (impl_->gipa == nullptr) {
-        if (error_out != nullptr) {
-            *error_out = impl_->loaded_library + " does not export vkGetInstanceProcAddr";
-        }
+        set_err(error_out, impl_->loaded_library + " does not export vkGetInstanceProcAddr");
         unload();
         return false;
     }
@@ -672,39 +928,39 @@ bool VulkanDriverLoader::load_custom_driver(DriverMode mode,
                                             const std::string& icd_so_path,
                                             const std::string& hw_stub_so_path,
                                             std::string* error_out) {
+    if (!impl_) {
+        impl_ = std::make_unique<Impl>();
+    }
     unload();
     if (icd_so_path.empty()) {
-        if (error_out != nullptr) {
-            *error_out = "custom ICD path is empty";
-        }
+        set_err(error_out, "custom ICD path is empty");
         return false;
     }
 
     impl_->mode = mode;
 
-    // Preload `libpanvk_hw.so` into the global namespace when supplied so
-    // patched `libvulkan_panfrost.so` resolves its hw_get_module dependency cleanly.
+    // Preload `libpanvk_hw.so` into the global namespace when supplied so a Mesa
+    // driver whose `libhardware.so` dependency was rewritten resolves it cleanly.
     if (!hw_stub_so_path.empty()) {
         if (!impl_->hw_stub_lib.open(hw_stub_so_path.c_str(), true)) {
-            if (error_out != nullptr) {
-                *error_out = "failed to preload " + hw_stub_so_path + ": " +
-                             LibHandle::last_error();
-            }
+            set_err(error_out, "failed to preload " + hw_stub_so_path + ": " +
+                                   LibHandle::last_error());
             unload();
             return false;
         }
     }
 
     if (!impl_->icd_lib.open(icd_so_path.c_str(), false)) {
-        if (error_out != nullptr) {
-            *error_out = "failed to open Vulkan ICD " + icd_so_path + ": " +
-                         LibHandle::last_error();
-        }
+        // dlerror() names the missing DT_NEEDED library or the ELF class/machine
+        // mismatch, which is the actionable part for the user.
+        set_err(error_out, "failed to open Vulkan ICD " + icd_so_path + ": " +
+                               LibHandle::last_error());
         unload();
         return false;
     }
     impl_->loaded_library = icd_so_path;
 
+    // 1. Loader-ICD interface (`vk_icd*`).
     PFN_vk_icdGetInstanceProcAddr icd_gipa = nullptr;
     PFN_vk_icdNegotiateLoaderICDInterfaceVersion icd_negotiate = nullptr;
     impl_->icd_lib.load_sym("vk_icdGetInstanceProcAddr", icd_gipa);
@@ -715,10 +971,8 @@ bool VulkanDriverLoader::load_custom_driver(DriverMode mode,
             std::uint32_t ver = kMaxSupportedIcdVersion;
             const VkResult neg_res = icd_negotiate(&ver);
             if (neg_res != VK_SUCCESS) {
-                if (error_out != nullptr) {
-                    *error_out = "ICD refused loader interface version 5 (VkResult " +
-                                 std::to_string(static_cast<int>(neg_res)) + ")";
-                }
+                set_err(error_out, "ICD refused loader interface version 5 (VkResult " +
+                                       std::to_string(static_cast<int>(neg_res)) + ")");
                 unload();
                 return false;
             }
@@ -735,12 +989,23 @@ bool VulkanDriverLoader::load_custom_driver(DriverMode mode,
         return true;
     }
 
+    // 2. Android hwvulkan HAL module (`HMI`), as Android's libvulkan enters it.
+    if (const void* hmi = impl_->icd_lib.sym("HMI"); hmi != nullptr) {
+        std::string hal_err;
+        if (!impl_->enter_hal_module(hmi, hal_err)) {
+            set_err(error_out, icd_so_path + ": " + hal_err);
+            unload();
+            return false;
+        }
+        impl_->loaded = true;
+        return true;
+    }
+
+    // 3. A loader-style library exporting `vkGetInstanceProcAddr`.
     impl_->icd_lib.load_sym("vkGetInstanceProcAddr", impl_->gipa);
     if (impl_->gipa == nullptr) {
-        if (error_out != nullptr) {
-            *error_out = icd_so_path +
-                         " exports neither vk_icdGetInstanceProcAddr nor vkGetInstanceProcAddr";
-        }
+        set_err(error_out, icd_so_path +
+                               " exports none of vk_icdGetInstanceProcAddr, HMI, or vkGetInstanceProcAddr");
         unload();
         return false;
     }
@@ -750,7 +1015,29 @@ bool VulkanDriverLoader::load_custom_driver(DriverMode mode,
     return true;
 }
 
+bool VulkanDriverLoader::attach_hal_module(DriverMode mode,
+                                           const void* hw_module,
+                                           std::string* error_out) {
+    if (!impl_) {
+        impl_ = std::make_unique<Impl>();
+    }
+    unload();
+    impl_->mode = mode;
+    std::string err;
+    if (!impl_->enter_hal_module(hw_module, err)) {
+        set_err(error_out, std::move(err));
+        unload();
+        return false;
+    }
+    impl_->loaded_library = "hal://vulkan";
+    impl_->loaded = true;
+    return true;
+}
+
 bool VulkanDriverLoader::load_mock_icd(const VulkanMockConfig& config) {
+    if (!impl_) {
+        impl_ = std::make_unique<Impl>();
+    }
     unload();
     impl_->mode = config.mode;
     impl_->is_mock = true;
@@ -773,11 +1060,21 @@ bool VulkanDriverLoader::load_mock_icd(const VulkanMockConfig& config) {
 
 bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
     out = VulkanDriverProbeResult{};
+    if (!impl_) {
+        out.error = "VulkanDriverLoader was moved from";
+        return false;
+    }
     out.mode = impl_->mode;
     out.used_direct_icd = impl_->used_direct_icd;
+    out.used_hal_module = impl_->used_hal_module;
     out.is_mock = impl_->is_mock;
     out.negotiated_icd_version = impl_->negotiated_icd_version;
     out.loaded_library = impl_->loaded_library;
+
+    // Clears the thread-local mock config on every exit path.
+    struct MockConfigScope {
+        ~MockConfigScope() { g_tls_mock_config = nullptr; }
+    } mock_scope;
 
     const auto fail = [&](std::string msg) -> bool {
         out.ok = false;
@@ -795,14 +1092,28 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
 
     if (impl_->is_mock) {
         g_tls_mock_config = &impl_->mock_config;
-        g_tls_mock_icd_version = impl_->negotiated_icd_version;
+        if (impl_->used_direct_icd) {
+            g_tls_mock_icd_version = impl_->negotiated_icd_version;
+        }
     }
 
     auto create_instance =
         reinterpret_cast<PFN_vkCreateInstance>(impl_->gipa(VK_NULL_HANDLE, "vkCreateInstance"));
     if (create_instance == nullptr) {
-        g_tls_mock_config = nullptr;
         return fail("missing vkCreateInstance entry point");
+    }
+
+    // Ask for the newest version the instance offers (capped at 1.3): Turnip and
+    // recent PanVK expose 1.3/1.4 features (dynamic rendering, synchronization2,
+    // timeline semaphores) that a 1.0 instance cannot use.
+    std::uint32_t instance_version = VK_API_VERSION_1_0;
+    auto enum_version = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
+        impl_->gipa(VK_NULL_HANDLE, "vkEnumerateInstanceVersion"));
+    if (enum_version != nullptr) {
+        std::uint32_t v = 0;
+        if (enum_version(&v) == VK_SUCCESS) {
+            instance_version = v;
+        }
     }
 
     VkApplicationInfo app_info{};
@@ -811,26 +1122,35 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
     app_info.applicationVersion = VK_MAKE_API_VERSION(0, 1, 1, 5);
     app_info.pEngineName = "WSE2";
     app_info.engineVersion = VK_MAKE_API_VERSION(0, 1, 1, 5);
-    app_info.apiVersion = VK_API_VERSION_1_0;
+    app_info.apiVersion = clamp_api_version(instance_version);
 
     VkInstanceCreateInfo inst_info{};
     inst_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     inst_info.pApplicationInfo = &app_info;
 
-    const VkResult inst_res = create_instance(&inst_info, nullptr, &impl_->instance);
-    g_tls_mock_config = nullptr;
+    VkResult inst_res = create_instance(&inst_info, nullptr, &impl_->instance);
+    if (inst_res == VK_ERROR_INCOMPATIBLE_DRIVER && app_info.apiVersion != VK_API_VERSION_1_0) {
+        // Pre-v5 ICDs may reject apiVersion > 1.0 outright; retry as 1.0.
+        impl_->instance = VK_NULL_HANDLE;
+        app_info.apiVersion = VK_API_VERSION_1_0;
+        inst_res = create_instance(&inst_info, nullptr, &impl_->instance);
+    }
     if (inst_res != VK_SUCCESS || impl_->instance == VK_NULL_HANDLE) {
+        impl_->instance = VK_NULL_HANDLE;
         return fail("vkCreateInstance failed with VkResult " +
                     std::to_string(static_cast<int>(inst_res)));
     }
+    out.instance_api_version = app_info.apiVersion;
 
     impl_->resolve_inst("vkDestroyInstance", impl_->fn_destroy_instance);
     PFN_vkEnumeratePhysicalDevices enum_phys = nullptr;
     PFN_vkGetPhysicalDeviceProperties get_phys_props = nullptr;
+    PFN_vkGetPhysicalDeviceFeatures get_phys_features = nullptr;
     PFN_vkGetPhysicalDeviceQueueFamilyProperties get_q_props = nullptr;
     PFN_vkCreateDevice create_dev = nullptr;
     impl_->resolve_inst("vkEnumeratePhysicalDevices", enum_phys);
     impl_->resolve_inst("vkGetPhysicalDeviceProperties", get_phys_props);
+    impl_->resolve_inst("vkGetPhysicalDeviceFeatures", get_phys_features);
     impl_->resolve_inst("vkGetPhysicalDeviceQueueFamilyProperties", get_q_props);
     impl_->resolve_inst("vkCreateDevice", create_dev);
 
@@ -847,9 +1167,10 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
     }
     std::vector<VkPhysicalDevice> phys_list(phys_count);
     phys_res = enum_phys(impl_->instance, &phys_count, phys_list.data());
-    if ((phys_res != VK_SUCCESS && phys_res != VK_INCOMPLETE) || phys_list.empty()) {
+    if ((phys_res != VK_SUCCESS && phys_res != VK_INCOMPLETE) || phys_count == 0U) {
         return fail("vkEnumeratePhysicalDevices returned no usable handles");
     }
+    phys_list.resize(std::min<std::size_t>(phys_list.size(), phys_count));
 
     const auto score_device_type = [](VkPhysicalDeviceType t) noexcept -> int {
         switch (t) {
@@ -885,7 +1206,7 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
         std::vector<VkQueueFamilyProperties> q_props(q_count);
         get_q_props(candidate, &q_count, q_props.data());
 
-        for (std::uint32_t qi = 0; qi < q_count; ++qi) {
+        for (std::uint32_t qi = 0; qi < q_count && qi < q_props.size(); ++qi) {
             if ((q_props[qi].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U &&
                 q_props[qi].queueCount > 0U) {
                 const int sc = score_device_type(props.deviceType);
@@ -904,6 +1225,14 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
         return fail("no Vulkan physical device exposes a graphics queue family");
     }
 
+    VkPhysicalDeviceFeatures features{};
+    if (get_phys_features != nullptr) {
+        get_phys_features(impl_->physical_device, &features);
+    }
+    // Enable BC sampling when present so P5 can upload Warband `.dds` blocks as-is.
+    VkPhysicalDeviceFeatures enabled{};
+    enabled.textureCompressionBC = features.textureCompressionBC;
+
     const float q_priority = 1.0f;
     VkDeviceQueueCreateInfo q_info{};
     q_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -915,10 +1244,12 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
     dev_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     dev_info.queueCreateInfoCount = 1U;
     dev_info.pQueueCreateInfos = &q_info;
+    dev_info.pEnabledFeatures = &enabled;
 
     const VkResult dev_res =
         create_dev(impl_->physical_device, &dev_info, nullptr, &impl_->device);
     if (dev_res != VK_SUCCESS || impl_->device == VK_NULL_HANDLE) {
+        impl_->device = VK_NULL_HANDLE;
         return fail("vkCreateDevice failed with VkResult " +
                     std::to_string(static_cast<int>(dev_res)));
     }
@@ -927,11 +1258,17 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
     impl_->resolve_inst("vkGetDeviceProcAddr", gdpa);
 
     impl_->resolve_dev(gdpa, "vkDestroyDevice", impl_->fn_destroy_device);
+    impl_->resolve_dev(gdpa, "vkDeviceWaitIdle", impl_->fn_device_wait_idle);
     impl_->resolve_dev(gdpa, "vkDestroyCommandPool", impl_->fn_destroy_command_pool);
     impl_->resolve_dev(gdpa, "vkCreateBuffer", impl_->fn_create_buffer);
     impl_->resolve_dev(gdpa, "vkDestroyBuffer", impl_->fn_destroy_buffer);
     impl_->resolve_dev(gdpa, "vkCreateImage", impl_->fn_create_image);
     impl_->resolve_dev(gdpa, "vkDestroyImage", impl_->fn_destroy_image);
+
+    if (impl_->fn_destroy_device == nullptr) {
+        // Without vkDestroyDevice the device would leak on every unload.
+        return fail("Vulkan device is missing vkDestroyDevice");
+    }
 
     PFN_vkGetDeviceQueue get_queue = nullptr;
     PFN_vkCreateCommandPool create_pool = nullptr;
@@ -949,10 +1286,13 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
         const VkResult pool_res =
             create_pool(impl_->device, &pool_info, nullptr, &impl_->command_pool);
         if (pool_res != VK_SUCCESS) {
+            impl_->command_pool = VK_NULL_HANDLE;
             return fail("vkCreateCommandPool failed with VkResult " +
                         std::to_string(static_cast<int>(pool_res)));
         }
     }
+
+    impl_->max_image_dimension_2d = chosen_props.limits.maxImageDimension2D;
 
     out.ok = true;
     out.api_version = chosen_props.apiVersion;
@@ -960,7 +1300,12 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
     out.vendor_id = chosen_props.vendorID;
     out.device_id = chosen_props.deviceID;
     out.graphics_queue_family = chosen_q_family;
-    out.device_name = chosen_props.deviceName;
+    out.max_image_dimension_2d = chosen_props.limits.maxImageDimension2D;
+    out.texture_compression_bc = features.textureCompressionBC == VK_TRUE;
+    const char* name_begin = chosen_props.deviceName;
+    const char* name_end = std::find(name_begin,
+                                     name_begin + VK_MAX_PHYSICAL_DEVICE_NAME_SIZE, '\0');
+    out.device_name.assign(name_begin, name_end);
     impl_->probe = out;
     return true;
 }
@@ -992,19 +1337,26 @@ bool VulkanDriverLoader::create_vk_buffer(std::size_t size_bytes,
     if (!has_device() || impl_->fn_create_buffer == nullptr) {
         return true;  // Graceful no-op when optional device handle proc is absent.
     }
+    if (size_bytes == 0U) {
+        // VkBufferCreateInfo::size must be > 0 (VUID-VkBufferCreateInfo-size-00912).
+        set_err(error_out, "cannot create a zero-sized VkBuffer");
+        return false;
+    }
 
     VkBufferCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     info.size = static_cast<VkDeviceSize>(size_bytes);
+    // TRANSFER_DST: contents arrive through a staging copy (or vkCmdUpdateBuffer).
+    info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     switch (usage) {
         case BufferUsage::vertex:
-            info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+            info.usage |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
             break;
         case BufferUsage::index:
-            info.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+            info.usage |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
             break;
         case BufferUsage::uniform:
-            info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+            info.usage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
             break;
     }
     info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -1012,10 +1364,8 @@ bool VulkanDriverLoader::create_vk_buffer(std::size_t size_bytes,
     VkBuffer buf = VK_NULL_HANDLE;
     const VkResult res = impl_->fn_create_buffer(impl_->device, &info, nullptr, &buf);
     if (res != VK_SUCCESS || buf == VK_NULL_HANDLE) {
-        if (error_out != nullptr) {
-            *error_out = "vkCreateBuffer failed with VkResult " +
-                         std::to_string(static_cast<int>(res));
-        }
+        set_err(error_out, "vkCreateBuffer failed with VkResult " +
+                               std::to_string(static_cast<int>(res)));
         return false;
     }
 
@@ -1041,6 +1391,16 @@ bool VulkanDriverLoader::create_vk_image_rgba8(std::uint32_t width,
     if (!has_device() || impl_->fn_create_image == nullptr) {
         return true;
     }
+    if (width == 0U || height == 0U) {
+        set_err(error_out, "VkImage dimensions must be non-zero");
+        return false;
+    }
+    const std::uint32_t limit = impl_->max_image_dimension_2d;
+    if (limit != 0U && (width > limit || height > limit)) {
+        set_err(error_out, "texture " + std::to_string(width) + "x" + std::to_string(height) +
+                               " exceeds device maxImageDimension2D " + std::to_string(limit));
+        return false;
+    }
 
     VkImageCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -1058,10 +1418,8 @@ bool VulkanDriverLoader::create_vk_image_rgba8(std::uint32_t width,
     VkImage img = VK_NULL_HANDLE;
     const VkResult res = impl_->fn_create_image(impl_->device, &info, nullptr, &img);
     if (res != VK_SUCCESS || img == VK_NULL_HANDLE) {
-        if (error_out != nullptr) {
-            *error_out = "vkCreateImage failed with VkResult " +
-                         std::to_string(static_cast<int>(res));
-        }
+        set_err(error_out, "vkCreateImage failed with VkResult " +
+                               std::to_string(static_cast<int>(res)));
         return false;
     }
 
@@ -1244,6 +1602,14 @@ VulkanDriverProbeResult run_vulkan_mesh_smoke_test(
     out_frame_hash = 0;
     auto loader = std::make_shared<VulkanDriverLoader>();
     VulkanDriverProbeResult probe{};
+    std::string err;
+    const auto finish_error = [&](std::string msg) -> VulkanDriverProbeResult {
+        probe.ok = false;
+        probe.mode = mode;
+        probe.error = std::move(msg);
+        set_err(error_out, probe.error);
+        return probe;
+    };
 
     bool loaded = false;
     std::string load_err;
@@ -1262,7 +1628,10 @@ VulkanDriverProbeResult run_vulkan_mesh_smoke_test(
         }
     }
 
-    if (!loaded && allow_mock_fallback) {
+    if (!loaded) {
+        if (!allow_mock_fallback) {
+            return finish_error(load_err);
+        }
         VulkanMockConfig cfg{};
         cfg.mode = mode;
         cfg.direct_icd = (mode != DriverMode::system);
@@ -1279,19 +1648,11 @@ VulkanDriverProbeResult run_vulkan_mesh_smoke_test(
             cfg.vendor_id = 0x1AE0U;
             cfg.device_id = 0x0001U;
         }
-        (void)loader->load_mock_icd(cfg);
-        (void)loader->probe_and_create_device(probe);
-        if (!load_err.empty()) {
-            probe.error = load_err;
+        if (!loader->load_mock_icd(cfg) || !loader->probe_and_create_device(probe)) {
+            return finish_error(load_err + " (mock fallback also failed: " + probe.error + ")");
         }
-    } else if (!loaded) {
-        probe.ok = false;
-        probe.mode = mode;
-        probe.error = load_err;
-        if (error_out != nullptr) {
-            *error_out = load_err;
-        }
-        return probe;
+        probe.fell_back_to_mock = true;
+        probe.fallback_reason = load_err;
     }
 
     // Build a synthetic static `.brf` textured quad + valid 4x4 BC1 `.dds` image.
@@ -1346,12 +1707,8 @@ VulkanDriverProbeResult run_vulkan_mesh_smoke_test(
     write_u32_le(dds_bytes, 132U, 0x55005500U);
 
     wse::asset::DdsImageView dds{};
-    if (!wse::asset::parse_dds(dds_bytes, dds, error_out)) {
-        probe.ok = false;
-        if (error_out != nullptr && !error_out->empty()) {
-            probe.error = *error_out;
-        }
-        return probe;
+    if (!wse::asset::parse_dds(dds_bytes, dds, &err)) {
+        return finish_error("smoke-test DDS: " + err);
     }
 
     float mvp[16]{};
@@ -1359,13 +1716,9 @@ VulkanDriverProbeResult run_vulkan_mesh_smoke_test(
 
     VulkanRhiDevice rhi(loader);
     std::vector<std::uint8_t> frame;
-    if (!render_textured_brf_mesh_frame(rhi, mesh, dds, 64U, 64U, mvp, frame, error_out,
+    if (!render_textured_brf_mesh_frame(rhi, mesh, dds, 64U, 64U, mvp, frame, &err,
                                         CullMode::none)) {
-        probe.ok = false;
-        if (error_out != nullptr && !error_out->empty()) {
-            probe.error = *error_out;
-        }
-        return probe;
+        return finish_error("smoke-test render: " + err);
     }
     out_frame_hash = hash_rgba8_frame(frame);
     return probe;

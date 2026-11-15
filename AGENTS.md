@@ -24,8 +24,10 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
     ```sh
     out="$(mktemp -d)"; root="$PWD"
     for t in operand trigger savegame script wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 platform module_loaders headless asset; do
+      extra=""  # platform also links the Vulkan driver loader (vendored Vulkan headers, libdl)
+      [ "$t" = platform ] && extra="-I platform/vulkan -I runtime/android/third_party platform/vulkan/driver_loader.cpp -ldl"
       clang++ -std=c++20 -O2 -Wall -Wextra -Werror -I engine/include \
-        -o "$out/${t}_test" "engine/tests/${t}_test.cpp" || exit 1
+        -o "$out/${t}_test" "engine/tests/${t}_test.cpp" $extra || exit 1
     done
     cd "$out" && for t in operand trigger savegame wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 platform module_loaders headless asset; do ./${t}_test || exit 1; done \
       && ./script_test "$root/engine/fixtures/scripts.txt" && echo "engine host tests: PASS"

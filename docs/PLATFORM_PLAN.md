@@ -84,6 +84,8 @@ should land as its own commit when no VM refactor is in flight.
 | SAF is slow for thousands of small files | Index the tree once, read through file descriptors, offer import to app storage |
 | Modules reference files in the wrong case and with `\` | The `Vfs` contract is case-insensitive and accepts both separators (already true of `MemoryVfs` and `HostVfs`) |
 | Custom driver loading depends on linker-namespace behaviour that varies by Android version and SoC | The system driver is always a working fallback; driver choice is a per-device setting |
+| Loading a custom driver directly bypasses Android's `libvulkan.so`, which is what implements `VK_KHR_android_surface` and the swapchain (drivers only expose `VK_ANDROID_native_buffer`) | P5 must choose before presenting: either enter the driver through the system loader (adrenotools-style hook), or render offscreen and hand frames to the window through `AHardwareBuffer` (`VK_ANDROID_external_memory_android_hardware_buffer`) + `ASurfaceControl`. P4 only opens a device |
+| Imported driver packages are executable code from the user | Staged under `noBackupFilesDir/gpu_drivers/<mode>/`, ELF-checked, patched, and marked read-only (Android 14 refuses writable dynamically loaded code); never bundled |
 | Modules may ship shader source, compiled effects, or both | P5 begins with an evidence spike and a measurement of real modules before choosing a translator |
 | Mobile GPUs may not sample the block-compressed formats in `.dds` | Query format support; transcode at import and cache on disk |
 | No device is attached to any build machine | P0–P3 are fully CI-verifiable; from P2/P4 on, device results come from running the CI APK and reading its self-test screen |
