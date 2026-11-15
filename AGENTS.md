@@ -19,25 +19,25 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
     ```powershell
     powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
     ```
-    Compiles and runs all host test suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`, `module_loaders`, `headless`, `lua`) plus the `lua51` and `wse_lua` static libraries, and builds `wse_headless` via Zig `clang++ -std=c++20 -O2 -Wall -Wextra -Werror` and must finish with `engine host tests: PASS`.
+    Compiles and runs all host test suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`, `module_loaders`, `headless`, `lua`, `asset`) plus the `lua51` and `wse_lua` static libraries, and builds `wse_headless` and `wse_brf` via Zig `clang++ -std=c++20 -O2 -Wall -Wextra -Werror` and must finish with `engine host tests: PASS`.
   - Linux / cloud sessions (no PowerShell or Zig needed; verified with Ubuntu `clang++` 18.1.3). Run from the repository root and build outside the tree. The `wse_dict`, `wse_array`, `platform`, `module_loaders`, and `headless` suites write fixed-name scratch files under the system temp directory, so do not run two copies of the gate at once:
     ```sh
     out="$(mktemp -d)"; root="$PWD"
-    for t in operand trigger savegame script wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 platform module_loaders headless; do
+    for t in operand trigger savegame script wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 platform module_loaders headless asset; do
       clang++ -std=c++20 -O2 -Wall -Wextra -Werror -I engine/include \
         -o "$out/${t}_test" "engine/tests/${t}_test.cpp" || exit 1
     done
-    cd "$out" && for t in operand trigger savegame wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 platform module_loaders headless; do ./${t}_test || exit 1; done \
+    cd "$out" && for t in operand trigger savegame wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 platform module_loaders headless asset; do ./${t}_test || exit 1; done \
       && ./script_test "$root/engine/fixtures/scripts.txt" && echo "engine host tests: PASS"
     ```
     Every suite must print `<name> tests: PASS`. `wse_string`, `wse_dict`, `wse_array`, and `block_vm` take ~5–15 s each to compile.
 
-    The loop above covers the header-only suites (each `*_test.cpp` keeps its own `main()` for it). The `lua` suite (and `wse_headless`) link the `lua51` + `wse_lua` static libraries, so build them through CMake — required on every edit under `engine/src/lua/` or to the Lua hooks in `block_vm.h` / `lua_bridge.h`:
+    The loop above covers the header-only suites (each `*_test.cpp` keeps its own `main()` for it). The `lua` suite (and `wse_headless` / `wse_brf`) build through CMake (`lua_test` / `wse_headless` link `lua51` + `wse_lua`) — required on every edit under `engine/src/lua/` or to the Lua hooks in `block_vm.h` / `lua_bridge.h`:
     ```sh
-    cmake -S . -B "$out/cmake" -DCMAKE_CXX_COMPILER=clang++ && cmake --build "$out/cmake" -j4 --target lua_test wse_headless \
+    cmake -S . -B "$out/cmake" -DCMAKE_CXX_COMPILER=clang++ && cmake --build "$out/cmake" -j4 --target lua_test wse_headless wse_brf \
       && ctest --test-dir "$out/cmake" -R '^lua$' --output-on-failure
     ```
-    The CMake build compiles each suite once into the `wse_selftest` static library; every `<name>_test` executable is `engine/tests/suite_main.cpp` linked against it, and `selftest_host_test` (CTest `selftest_host`) runs all 18 in one process, as the Android self-test APK does. A new suite needs a `run_<name>_suite` entry in `engine/tests/wse_selftest.{h,cpp}` and in both `CMakeLists.txt` lists.
+    The CMake build compiles each suite once into the `wse_selftest` static library; every `<name>_test` executable is `engine/tests/suite_main.cpp` linked against it, and `selftest_host_test` (CTest `selftest_host`) runs all 19 in one process, as the Android self-test APK does. A new suite needs a `run_<name>_suite` entry in `engine/tests/wse_selftest.{h,cpp}` and in both `CMakeLists.txt` lists.
 
     CMake downloads `lua-5.1.5.tar.gz` from `www.lua.org` (SHA-256 pinned). Where that host is blocked, unpack the same tarball (the Ubuntu archive's `lua5.1_5.1.5.orig.tar.gz` is byte-identical) and pass `-DWSE_LUA_SOURCE_DIR=<dir containing src/lua.h>`. Lua is compiled **as C++** so Lua errors unwind as exceptions; never wrap `<lua.h>` in `extern "C"`.
 - **Sanitizer gate (CI job `host-sanitizers`, required when touching VM control flow, loaders, or object lifetimes):**
@@ -70,7 +70,7 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
 
 | Path | Status | Contents |
 | --- | --- | --- |
-| `engine/` | **active** | Clean-room C++20 headers (`include/wse/{core,io,vm,game,platform}`), host tests, fixtures |
+| `engine/` | **active** | Clean-room C++20 headers (`include/wse/{core,io,vm,game,platform,asset}`), host tests, CLI tools, fixtures |
 | `docs/` | **active** | `PLATFORM_PLAN.md` (Phase 3/4 design), `ARCHITECTURE.md`, `SYMBOL_MAP.json`, generated native & WSE opcode maps |
 | `tools/build_symbol_map.py`, `check_citations.py`, `demand_rank.py`, `extract_native_opcodes.py`, `extract_wse_opcodes.py`, `pdb_symbols.py`, `pe_evidence.py`, `symbol_inventory.py`, `vtables.py` | **active** | Evidence extraction, citation verification, generators, and demand analysis |
 | `tools/pe_catalog.py`, `check_panvk.py`, `patch_panvk.py` | legacy | Static-recompilation catalog and PanVK helpers |

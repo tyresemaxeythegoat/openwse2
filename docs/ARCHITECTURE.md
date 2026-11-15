@@ -580,8 +580,17 @@ Verified in [SYMBOL_MAP.json](SYMBOL_MAP.json) and modeled in [world_state.h](..
 | `mbAgent` | 38,432 (`0x9620`) | `0x30 m_status : int32_t`, `0xf8 m_slots : mbSlots` |
 | `mbMissionObject` | 544 (`0x0220`) | `0x170 m_id : rglString`, `0x1f8 m_slots : mbSlots` |
 | `mbSceneProp` | 152 (`0x0098`) | `0x0 m_id : rglString`, `0x48 m_flags : unsigned __int64`, `0x50 m_hitPoints : int32_t` |
-| `rglMesh` | 872 (`0x0368`) | `0x68 m_materialName : rglString`, `0xc0 m_materialColor : uint32_t` |
-| `rglMetaMesh` | 344 (`0x0158`) | `0x48 m_lods : rglMetaMeshLod[120]`, `0xc0 m_numLods : int32_t`, `0x110 m_meshName : rglString` |
+| `rglResource` | 96 (`0x0060`) | `0x8 m_name : rglString`, `0x50 m_inUse : int32_t`, `0x54 m_fileNo : int32_t`, `0x58 m_flags : uint32_t` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglResourceManager` | 1,880 (`0x0758`) | `g_resourceManager` (`0x140623a40`); `0x0 m_resourceFiles : rglVector<rglString>`, `0x20 m_metaMeshes`, `0x38 m_meshes`, `0x470 m_textures`, `0x4a0 m_shaders`, `0x4d0 m_materials`, `0x500 m_bodies`, `0x518 m_skeletonModels`, `0x530 m_skeletonAnimations`, `0x548 m_physicsMaterials`; loaders `0x1402eedf0` / `0x1402eeec0` / `0x1402ef030` / `0x1402efe10` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglTexture` | 288 (`0x0120`) | Inherits `rglResource` (`0x0`); `0x64 m_type`, `0x6c m_width`, `0x70 m_height`, `0xc8 m_path : rglString`; device resolution via `tryGetTexture` (`0x1402f2f10`) + `initDeviceObjects` (`0x140317710`) across `.dds`/`.jpg`/`.tga` ([dds.h](../engine/include/wse/asset/dds.h)) |
+| `rglShader` | 504 (`0x01f8`) | Inherits `rglResource` (`0x0`); `0x64 m_requirementFlags`, `0x68 m_numAlternatives`, `0x70 m_alternatives : rglString[...]`, `0x148 m_techniqueName : rglString`; stream reader `0x140301940` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglMaterial` | 632 (`0x0278`) | Inherits `rglResource` (`0x0`); `0x68 m_shaderName : rglString`, `0xb0 m_specularColor : rglVector4`, `0xc0 m_specularPower : float`, `0xd0 m_textureNames : rglString[...]` (`5` slots); stream reader `0x1402b5970` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglPhysicsMaterial` | 104 (`0x0068`) | Inherits `rglResource` (`0x0`); `0x60 m_soundOcclusion : float` (default `0.5f`; vftable `0x1405639a8`, [brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglBody` / `rglBodyPart` | 104 (`0x0068`) / 88 (`0x0058`) | `rglBody +0x60 m_bodyPart : rglBodyPart*`; polymorphic body variants `rglSphere` (`128 B`), `rglCapsule` (`160 B`), `rglQuad` (`304 B`), `rglManifoldBody` (`160 B`, `rglManifoldBodyFace` `40 B`), `rglCompositeBody` (`104 B`); stream reader `0x1402581a0` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglSkeletonModel` / `rglSkeletonModelBone` | 152 (`0x0098`) / 360 (`0x0168`) | `rglSkeletonModel +0x60 m_numBones`, `+0x68 m_bones`; `rglSkeletonModelBone +0x0 m_parentBoneNo`, `+0x8 m_transform : rglTransform`, `+0x88 m_name : rglString`; stream reader `0x14030d230` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglSkeletonAnimation` / `rglSkeletonAnimationBone` | 144 (`0x0090`) / 24 (`0x0018`) | `0x60 m_bones : rglVector<rglSkeletonAnimationBone>`, `0x78 m_positionIpo : rglIpo<rglVector3>`; bone `+0x0 m_rotationIpo : rglIpo<rglQuaternion>` (`0x14030c320` reads `qy, qz, qw, qx` in stream order); stream reader `0x14030c130` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglMesh` | 872 (`0x0368`) | `0x68 m_materialName : rglString`, `0xc0 m_materialColor : uint32_t`, `0xd8 m_faceCorners` (`rglMeshFaceCorner` `68 B`), `0x128 m_vertices` (`rglMeshVertex` `24 B`), `0x140 m_vertexGroups` (`rglMeshVertexGroup` `32 B`), `0x158 m_faces` (`rglMeshFace` `6 B`), `0x1a8 m_vertexKeys` (`rglMeshVertexKey` `48 B`); stream reader `0x1402b84b0` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglMetaMesh` | 344 (`0x0158`) | `0x48 m_lods : rglMetaMeshLod[...]` (`rglMetaMeshLod` `24 B`), `0xc0 m_numLods : int32_t`, `0x110 m_meshName : rglString`; grouped by `createMetaMesh` (`0x1402f29a0`, `.lod[1-4]`) ([brf.h](../engine/include/wse/asset/brf.h)) |
 | `mbMission` | 346,704 (`0x54a50`) | `0x98d8 m_teams : mbTeam[512]` (opcodes validate teams `0..7`), `0xa4f4 m_waterLevel : float`, `0x54a40` use-objects tooltip flags ([world_state.h](../engine/include/wse/game/world_state.h)) |
 
 ## 5. Module/script entry points
@@ -899,8 +908,10 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    2,738-slot native jump table at `0x1401e22f0` are mapped in `docs/wse_opcodes.json` and
    `docs/native_opcodes.json`.
 4. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
-5. Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
-   writing asset code.
+5. ~~Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
+   writing asset code.~~ **Confirmed (Slice P3):** PE/PDB layouts for `rglResourceManager` and all 8
+   `.brf` resource types plus `rglTexture` / `.dds` texture path search are verified in
+   `docs/SYMBOL_MAP.json` and implemented in `engine/include/wse/asset/{brf,dds}.h`.
 6. Validate every reconstructed offset against decompiled member accesses before committing C++.
 7. ~~Reconcile this document's own bookkeeping (`STATUS.md` §6)~~ **Resolved (B7):** §1–§3 and §9 now use
    consistent `*_x64.json` names and v1.1.5.5 counts/hashes (`73` `rgl*`/`mb*`/`WSE*` vtables,

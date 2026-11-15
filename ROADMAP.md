@@ -103,7 +103,7 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
       local/global rotations and parent/local transforms in `wse/core/math.h`; 35 native position
       ops `700–746` in `wse/vm/native_ops.h`; WSE vector ops `4100/4102–4104` in
       `wse/vm/ops/position.h`)
-- [ ] `rglString` semantics as a shared type; `.brf` mesh and texture loaders
+- [~] `rglString` semantics as a shared type (open); `.brf` mesh/material/texture/shader/body/skeleton/animation + `.dds` texture decoders and `module.ini` resource catalog implemented in `wse/asset/{brf,dds}.h` (done)
 
 **2H. Phase exit: headless `Native` run**
 - [x] Load a user-supplied `Native` module and execute `game_start` plus simulated frames of
@@ -124,7 +124,7 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
   - [x] `wse/platform/{vfs,clock,log}.h` with host implementations and the `platform` suite
   - [x] Route the engine's direct file, clock, and thread calls through the seam (`wse/core/encoding.h`, `wse/game/world_state.h`, `wse/vm/wse_state.h`, `wse/vm/ops/{dict,array,string,system}.h`): files through `Vfs`, `sleep_ms` through `wse/platform/sleep.h`, `get_time` through `WallClock`
   - [x] Gradle + SDL3 `SDLActivity` + `libwse2.so` with an on-device self-test screen; CI builds the APK (`arm64-v8a`)
-- [ ] **P3** Asset decoders: `.brf`, `.dds`, module resource lists (evidence exports first).
+- [x] **P3** Asset decoders: `.brf`, `.dds`, module resource lists (PE/PDB evidence + `wse/asset/{brf,dds}.h`, `asset` suite, and `wse_brf` CLI).
 - [ ] **P4** Vulkan RHI and runtime driver loader: system driver, PanVK (Mali), Turnip (Adreno) —
       drivers are user-supplied, never bundled.
 - [ ] **P5** Module shaders → SPIR-V at import time, cached; D3D9 conventions handled in the RHI.
@@ -165,6 +165,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-15 | — | Slice P3 / Phase 2G asset decoders: added 25 RGL resource/mesh/body/skeleton/texture/shader/material layouts + `g_resourceManager` + 34 `.rdata` strings to `docs/SYMBOL_MAP.json`; added clean-room `wse/asset/brf.h` (all 8 `.brf` resource types, `MetaMesh` LOD grouper, `module.ini` resource catalog) and `wse/asset/dds.h` (`BC1`–`BC5`, uncompressed RGBA/BGRA/BGR/16-bit/`L8`/`L16`/`A8L8`/`A8`, DX10, Warband texture search chain); added `asset_test.cpp` (19th suite) + `wse_brf` CLI; verified `19/19` host suites and 100% of retail Warband `CommonRes`, `WSE2 SDK`, `Textures`, and `Modules/Native` |
 | 2026-11-15 | — | P1/Lua review follow-up: self-test UI clip rectangle in render-scale units (rows 1–6 were hidden), touch scroll scaling, synthesized-mouse de-duplication, cancellable `run_all_suites` + `SDL_EVENT_TERMINATING` watch; `game.removePrsnt(id)` consistent with queued edits, C++ exceptions in Lua callbacks become Lua errors (`guarded<>`), non-throwing `TriggerIterationScope`; CMake compiles each suite once (`suite_main.cpp` + `wse_selftest`), `lua51` UBSan exclusion narrowed to `float-cast-overflow`, pinned NDK/CMake + SDL3 AAR hash + fixture-only assets in `android-apk`, SDL3 notice; `lua_test.cpp` 7 functions |
 | 2026-11-15 | `6f83abc` | Phase 2F Lua review fixes: Lua 5.1.5 compiled as C++ (errors unwind instead of `longjmp`), stack reservation for `lua_push_*`/`lua_set_top`/hook and event calls, non-raising integer conversion outside protected calls, `lua_triggerCallback` stack balance, trigger/presentation edits queued while a trigger executes (`TriggerIterationScope`), stock-5.1 `io` results and `os.rename` self-rename, flush-on-`shutdown()` only, range-checked `msfiles` constants; `lua_test.cpp` regression test (6 functions), `THIRD_PARTY_NOTICES.md` |
 | 2026-11-15 | `ea59df7` | Platform P1 app shell: add `wse_selftest` (`18/18` suite runner + `selftest_host_test` CTest), SDL3 `3.4.20` on-device self-test UI (`platform/sdl/sdl_selftest_main.cpp`), Kotlin `WseActivity` + Prefab CMake Gradle build (`android/`, `arm64-v8a` `libwse2.so` + `libSDL3.so` + `assets/scripts.txt`), and CI `android-apk` debug APK artifact job |

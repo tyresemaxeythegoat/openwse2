@@ -129,7 +129,8 @@ $tests = @(
     @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp" },
     @{ Name = "module_loaders"; Source = Join-Path $here "tests\module_loaders_test.cpp" },
     @{ Name = "headless"; Source = Join-Path $here "tests\headless_test.cpp" },
-    @{ Name = "lua"; Source = Join-Path $here "tests\lua_test.cpp"; LinkLua = $true }
+    @{ Name = "lua"; Source = Join-Path $here "tests\lua_test.cpp"; LinkLua = $true },
+    @{ Name = "asset"; Source = Join-Path $here "tests\asset_test.cpp" }
 )
 
 Write-Host "zig          $zig"
@@ -188,6 +189,14 @@ Write-Host "building     wse_headless"
     -I $include -o $headlessTool (Join-Path $here "tools\wse_headless.cpp") $wseLuaLib $luaLib
 if ($LASTEXITCODE -ne 0) {
     throw "wse_headless build failed"
+}
+
+$brfTool = Join-Path $out "wse_brf.exe"
+Write-Host "building     wse_brf"
+& $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
+    -I $include -o $brfTool (Join-Path $here "tools\wse_brf.cpp")
+if ($LASTEXITCODE -ne 0) {
+    throw "wse_brf build failed"
 }
 
 Write-Host "engine host tests: PASS"

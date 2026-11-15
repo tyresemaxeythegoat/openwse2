@@ -38,7 +38,11 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace wse::io {
@@ -64,6 +68,21 @@ public:
     void write_bool(bool value) { bytes_.push_back(static_cast<std::byte>(value ? 1 : 0)); }
 
     void write_byte(std::uint8_t value) { bytes_.push_back(static_cast<std::byte>(value)); }
+
+    void write_bytes(std::span<const std::byte> data) {
+        bytes_.insert(bytes_.end(), data.begin(), data.end());
+    }
+
+    // Mirrors rglBinaryStream::writeString (0x1402aeb10): int32 byte count + raw bytes.
+    void write_string(std::string_view text) {
+        const std::size_t max_len =
+            static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max());
+        const std::size_t len = text.size() > max_len ? max_len : text.size();
+        write_i32(static_cast<std::int32_t>(len));
+        for (std::size_t i = 0; i < len; ++i) {
+            bytes_.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(text[i])));
+        }
+    }
 
     [[nodiscard]] std::span<const std::byte> bytes() const noexcept { return bytes_; }
     [[nodiscard]] std::size_t size() const noexcept { return bytes_.size(); }
@@ -134,7 +153,46 @@ public:
         return true;
     }
 
+    [[nodiscard]] bool read_bytes(std::span<std::byte> out) noexcept {
+        if (remaining() < out.size()) {
+            return false;
+        }
+        if (!out.empty()) {
+            std::memcpy(out.data(), bytes_.data() + cursor_, out.size());
+            cursor_ += out.size();
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool skip(std::size_t count) noexcept {
+        if (remaining() < count) {
+            return false;
+        }
+        cursor_ += count;
+        return true;
+    }
+
+    // Mirrors rglBinaryStream::readString (0x1402aec40) with bounds checking.
+    [[nodiscard]] bool read_string(std::string& out,
+                                   std::size_t max_len = (1U << 20U)) {
+        std::int32_t len = 0;
+        if (!read_i32(len) || len < 0) {
+            return false;
+        }
+        const auto byte_count = static_cast<std::size_t>(len);
+        if (byte_count > max_len || byte_count > remaining()) {
+            return false;
+        }
+        out.resize(byte_count);
+        if (byte_count > 0U) {
+            std::memcpy(out.data(), bytes_.data() + cursor_, byte_count);
+            cursor_ += byte_count;
+        }
+        return true;
+    }
+
     [[nodiscard]] bool at_end() const noexcept { return cursor_ == bytes_.size(); }
+    [[nodiscard]] std::size_t cursor() const noexcept { return cursor_; }
     [[nodiscard]] std::size_t remaining() const noexcept { return bytes_.size() - cursor_; }
 
 private:

@@ -167,6 +167,7 @@ if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
         engine/tests/module_loaders_test.cpp
         engine/tests/headless_test.cpp
         engine/tests/lua_test.cpp
+        engine/tests/asset_test.cpp
     )
     set_target_properties(wse_selftest PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_compile_definitions(wse_selftest PRIVATE WSE_SELF_TEST_LIBRARY=1)
@@ -211,6 +212,7 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
     wse_add_host_test(module_loaders)
     wse_add_host_test(headless)
     wse_add_host_test(lua)
+    wse_add_host_test(asset)
 
     add_executable(selftest_host_test engine/tests/selftest_host_test.cpp)
     target_link_libraries(selftest_host_test PRIVATE wse_selftest)
@@ -219,7 +221,7 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
              COMMAND selftest_host_test "${CMAKE_CURRENT_SOURCE_DIR}/engine/fixtures/scripts.txt"
              WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    set_tests_properties(wse_dict wse_array platform module_loaders headless lua selftest_host
+    set_tests_properties(wse_dict wse_array platform module_loaders headless lua asset selftest_host
                          PROPERTIES RUN_SERIAL TRUE)
 endif()
 
@@ -227,6 +229,10 @@ if(WSE_BUILD_TOOLS)
     add_executable(wse_headless engine/tools/wse_headless.cpp)
     target_link_libraries(wse_headless PRIVATE wse_engine wse_lua)
     wse_apply_strict_warnings(wse_headless)
+
+    add_executable(wse_brf engine/tools/wse_brf.cpp)
+    target_link_libraries(wse_brf PRIVATE wse_engine)
+    wse_apply_strict_warnings(wse_brf)
 endif()
 
 if(WSE_BUILD_ANDROID_APP)

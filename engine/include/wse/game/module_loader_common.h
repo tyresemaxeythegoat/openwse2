@@ -358,7 +358,8 @@ inline void parse_module_ini(std::string_view text, ModuleIniData& out) {
             cmd.value = trim_ascii(std::string_view(clean).substr(eq + 1U));
             if (!cmd.key.empty()) {
                 out.settings[cmd.key] = cmd.value;
-                if (cmd.key == "load_resource") {
+                if (cmd.key == "load_resource" ||
+                    cmd.key == "load_resource_nofast") {
                     out.load_resources.push_back(cmd.value);
                 } else if (cmd.key == "load_mod_resource" ||
                            cmd.key == "load_module_resource") {

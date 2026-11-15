@@ -28,6 +28,7 @@ int run_platform_suite(const char* fixture_path);
 int run_module_loaders_suite(const char* fixture_path);
 int run_headless_suite(const char* fixture_path);
 int run_lua_suite(const char* fixture_path);
+int run_asset_suite(const char* fixture_path);
 
 struct SuiteResult {
     const char* name = "";
