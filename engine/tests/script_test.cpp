@@ -220,8 +220,11 @@ void test_error_descriptions() {
 
 }  // namespace
 
-int main(int argc, char** argv) {
-    const char* fixture = argc > 1 ? argv[1] : "engine/fixtures/scripts.txt";
+namespace wse::selftest {
+
+int run_script_suite(const char* fixture_path) {
+    failures = 0;
+    const char* fixture = fixture_path ? fixture_path : "engine/fixtures/scripts.txt";
     const std::string contents = read_file(fixture);
     if (contents.empty()) {
         std::printf("script tests: FAIL (cannot read fixture %s)\n", fixture);
@@ -241,3 +244,11 @@ int main(int argc, char** argv) {
     std::printf("script tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main(int argc, char** argv) {
+    return wse::selftest::run_script_suite(argc > 1 ? argv[1] : nullptr);
+}
+#endif

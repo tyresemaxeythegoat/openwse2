@@ -471,7 +471,11 @@ void test_party_group() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_wse_world_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_troop_group();
     test_item_group();
     test_edit_mode_group();
@@ -484,3 +488,11 @@ int main() {
     std::printf("wse_world tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_wse_world_suite(nullptr);
+}
+#endif

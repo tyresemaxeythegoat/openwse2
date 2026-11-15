@@ -691,7 +691,11 @@ void test_dictionary_storage_edges() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_wse_dict_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_dictionary_group();
     test_dictionary_memory_vfs();
     test_dictionary_storage_edges();
@@ -702,3 +706,11 @@ int main() {
     std::printf("wse_dict tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_wse_dict_suite(nullptr);
+}
+#endif

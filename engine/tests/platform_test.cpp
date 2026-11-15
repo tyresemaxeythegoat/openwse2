@@ -234,7 +234,11 @@ void test_log() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_platform_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_paths();
     test_memory_vfs();
     test_host_vfs();
@@ -248,3 +252,11 @@ int main() {
     std::printf("platform tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_platform_suite(nullptr);
+}
+#endif

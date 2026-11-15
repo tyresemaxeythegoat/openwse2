@@ -13,6 +13,7 @@ target_compile_features(wse_engine INTERFACE cxx_std_20)
 
 option(WSE_BUILD_TESTS "Build the engine C++20 unit test binaries" ON)
 option(WSE_BUILD_TOOLS "Build portable engine CLI tools" ON)
+option(WSE_BUILD_ANDROID_APP "Build the Android SDL3 shared library target wse2" OFF)
 option(WSE_BUILD_HEADER_CHECKS "Compile every engine header standalone" OFF)
 option(WSE_SANITIZE "Build tests with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
@@ -113,7 +114,10 @@ add_library(lua51 STATIC
 # C++ frames and runs their destructors instead of longjmp-ing over them.
 get_target_property(wse_lua51_sources lua51 SOURCES)
 set_source_files_properties(${wse_lua51_sources} PROPERTIES LANGUAGE CXX)
-set_target_properties(lua51 PROPERTIES LINKER_LANGUAGE CXX)
+set_target_properties(lua51 PROPERTIES
+    LINKER_LANGUAGE CXX
+    POSITION_INDEPENDENT_CODE ON
+)
 target_include_directories(lua51 PRIVATE "${wse_lua51_src_dir}")
 if(NOT WIN32)
     target_compile_definitions(lua51 PRIVATE LUA_USE_MKSTEMP LUA_USE_ISATTY)
@@ -129,11 +133,43 @@ add_library(wse_lua STATIC
     engine/src/lua/wse_lua_manager.cpp
     engine/src/lua/wse_lua_ops.cpp
 )
+set_target_properties(wse_lua PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(wse_lua PRIVATE "${wse_lua51_src_dir}")
 target_link_libraries(wse_lua PRIVATE wse_engine lua51)
 wse_apply_strict_warnings(wse_lua)
 
 include(CTest)
+if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
+    add_library(wse_selftest STATIC
+        engine/tests/wse_selftest.cpp
+        engine/tests/operand_test.cpp
+        engine/tests/trigger_test.cpp
+        engine/tests/savegame_test.cpp
+        engine/tests/script_test.cpp
+        engine/tests/wse_bitwise_fp_test.cpp
+        engine/tests/wse_system_test.cpp
+        engine/tests/wse_string_test.cpp
+        engine/tests/wse_dict_test.cpp
+        engine/tests/wse_array_test.cpp
+        engine/tests/wse_world_test.cpp
+        engine/tests/block_vm_test.cpp
+        engine/tests/native_world_test.cpp
+        engine/tests/native_m5_test.cpp
+        engine/tests/wse_m6_test.cpp
+        engine/tests/platform_test.cpp
+        engine/tests/module_loaders_test.cpp
+        engine/tests/headless_test.cpp
+        engine/tests/lua_test.cpp
+    )
+    set_target_properties(wse_selftest PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_compile_definitions(wse_selftest PRIVATE WSE_SELF_TEST_LIBRARY=1)
+    target_include_directories(wse_selftest PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests"
+    )
+    target_link_libraries(wse_selftest PUBLIC wse_engine wse_lua)
+    wse_apply_strict_warnings(wse_selftest)
+endif()
+
 if(WSE_BUILD_TESTS AND BUILD_TESTING)
     function(wse_add_host_test name source)
         set(target "${name}_test")
@@ -165,11 +201,34 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
     wse_add_host_test(headless       engine/tests/headless_test.cpp)
     wse_add_host_test(lua            engine/tests/lua_test.cpp)
     target_link_libraries(lua_test PRIVATE wse_lua)
-    set_tests_properties(wse_dict wse_array platform module_loaders headless lua PROPERTIES RUN_SERIAL TRUE)
+
+    wse_add_host_test(selftest_host  engine/tests/selftest_host_test.cpp
+                      "${CMAKE_CURRENT_SOURCE_DIR}/engine/fixtures/scripts.txt")
+    target_link_libraries(selftest_host_test PRIVATE wse_selftest)
+
+    set_tests_properties(wse_dict wse_array platform module_loaders headless lua selftest_host
+                         PROPERTIES RUN_SERIAL TRUE)
 endif()
 
 if(WSE_BUILD_TOOLS)
     add_executable(wse_headless engine/tools/wse_headless.cpp)
     target_link_libraries(wse_headless PRIVATE wse_engine wse_lua)
     wse_apply_strict_warnings(wse_headless)
+endif()
+
+if(WSE_BUILD_ANDROID_APP)
+    if(NOT ANDROID)
+        message(FATAL_ERROR "WSE_BUILD_ANDROID_APP=ON requires an Android toolchain build")
+    endif()
+    find_package(SDL3 REQUIRED CONFIG)
+    add_library(wse2 SHARED
+        platform/sdl/sdl_selftest_main.cpp
+    )
+    target_link_libraries(wse2 PRIVATE
+        wse_selftest
+        SDL3::SDL3
+        android
+        log
+    )
+    wse_apply_strict_warnings(wse2)
 endif()

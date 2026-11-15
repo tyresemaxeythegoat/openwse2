@@ -267,7 +267,11 @@ void test_savegame_descriptions() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_savegame_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_binary_writer();
     test_binary_reader_bounds();
     test_trigger_savegame_roundtrip();
@@ -284,3 +288,11 @@ int main() {
     std::printf("savegame tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_savegame_suite(nullptr);
+}
+#endif

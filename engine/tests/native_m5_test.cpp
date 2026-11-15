@@ -805,7 +805,11 @@ void test_m5_review_regressions() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_native_m5_suite(const char* fixture_path) {
+    (void)fixture_path;
+    g_failures = 0;
     test_m5_review_regressions();
     test_agents_m5();
     test_mp_players_m5();
@@ -819,3 +823,11 @@ int main() {
     std::printf("FAIL  native_m5_test (%d failures)\n", g_failures);
     return 1;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_native_m5_suite(nullptr);
+}
+#endif

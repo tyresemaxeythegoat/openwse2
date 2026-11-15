@@ -22,3 +22,10 @@ engine/build/
 WSE2.zip
 extracted/
 *.bin
+
+# Android Gradle & NDK build outputs and downloaded AARs
+android/.gradle/
+android/local.properties
+android/app/.cxx/
+android/app/build/
+android/app/libs/*.aar

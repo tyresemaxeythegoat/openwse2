@@ -27,7 +27,8 @@ engine/
   src/lua/            lua_bitop.*, lua_globals_script.hpp,    stock MIT Lua 5.1.5 WSE runtime (`wse_lua`, `<lua.h>` isolated here)
                       wse_lua_{internal.hpp,ops,callbacks,manager}.cpp
   tools/              wse_headless.cpp                        headless module CLI validator (`Modules/Native`)
-  tests/              one *_test.cpp per suite (+ wse_test_common.h), no framework
+  tests/              one *_test.cpp per suite (+ wse_test_common.h),
+                      plus wse_selftest.{h,cpp} and selftest_host_test.cpp, no framework
   fixtures/           hand-written module snippets (never retail files)
   build_host.ps1      Windows host gate
 ```
@@ -81,6 +82,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/module_loaders_test.cpp` | host tests for INI/BOM/comment parsers, individual world/campaign/asset/mission/Data loaders, error diagnostics, full `load_module()` + VM execution round-trips over `MemoryVfs` and `HostVfs`, and reload (module A then B) world-state reset + move-only string storage | in-memory + temp-directory fixtures |
 | `tests/headless_test.cpp` | host tests for `run_headless_module()` / `run_headless_session()` (`game_start` + multi-frame triggers over `MemoryVfs` and `HostVfs`, loud unimplemented-opcode failure, compatibility-mode continuation past unimplemented opcodes, and missing `game_start` / load error diagnostics) | in-memory + temp-directory fixtures |
 | `tests/lua_test.cpp` | host tests for Lua 5.1.5 stdlib/`bit`/`vector3`/`pos`, `msfiles/` + `variables.txt` parsers, `game.*` / `_G.*` callbacks, trigger/item/prop/prsnt/psys/iterator/hook paths, opcodes `5100`–`5114` + 9 `On*` events, and sandboxed `HostVfs` headless `main.lua` execution | `MemoryVfs` + temp-directory `HostVfs` fixtures |
+| `tests/wse_selftest.{h,cpp}`, `tests/selftest_host_test.cpp` | shared aggregate runner invoking all `18` core suites (`WSE_SELF_TEST_LIBRARY=1`) for both host verification (`selftest_host_test`) and the Android SDL3 `libwse2.so` app shell (`platform/sdl/sdl_selftest_main.cpp`) | all 18 suites + `fixtures/scripts.txt` |
 
 ## Module text format
 
@@ -454,6 +456,7 @@ platform tests: PASS
 module_loaders tests: PASS
 headless tests: PASS
 lua tests: PASS
+selftest_host tests: PASS (18/18, ...)
 engine host tests: PASS
 ```
 
@@ -463,5 +466,4 @@ To run the headless Phase 2H validator against a local Warband install:
 .\engine\build\host\wse_headless.exe "C:\Path\To\Warband" "Modules/Native" --frames 20 --step-ticks 2500000
 ```
 
-The Android NDK (`aarch64-linux-android29`) header checks and cross-compile build also run in
-`.github/workflows/ci.yml`; see [`STATUS.md`](../STATUS.md) §2 for current gate results.
+The Android NDK (`aarch64-linux-android29`) header checks, cross-compile build, and `arm64-v8a` SDL3 debug APK (`gradle -p android assembleDebug` -> `libwse2.so` + `libSDL3.so`) also run in `.github/workflows/ci.yml`; see [`STATUS.md`](../STATUS.md) §2 for current gate results.

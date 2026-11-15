@@ -316,7 +316,11 @@ void test_interval_key() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_trigger_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_trigger();
     test_trigger_id();
     test_manager();
@@ -335,3 +339,11 @@ int main() {
     std::printf("trigger tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_trigger_suite(nullptr);
+}
+#endif

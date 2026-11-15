@@ -1020,7 +1020,11 @@ void test_b8_locale_and_exception_safety() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_wse_string_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_string_group();
     test_string_extended_group();
     test_b8_locale_and_exception_safety();
@@ -1031,3 +1035,11 @@ int main() {
     std::printf("wse_string tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_wse_string_suite(nullptr);
+}
+#endif

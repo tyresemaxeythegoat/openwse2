@@ -2278,7 +2278,11 @@ void test_native_campaign_ops() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_block_vm_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_analyze_block();
     test_modifiers_and_top_level_failure();
     test_try_else_and_loops();
@@ -2308,3 +2312,11 @@ int main() {
     std::printf("block_vm tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_block_vm_suite(nullptr);
+}
+#endif

@@ -155,6 +155,33 @@ foreach ($test in $tests) {
     }
 }
 
+$selftestObjDir = Join-Path $out "selftest_obj"
+New-Item -ItemType Directory -Force -Path $selftestObjDir | Out-Null
+$selftestSources = @($tests | ForEach-Object { $_.Source }) + @(Join-Path $here "tests\wse_selftest.cpp")
+$selftestObjs = @()
+Write-Host "building     selftest_host"
+foreach ($src in $selftestSources) {
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($src)
+    $obj = Join-Path $selftestObjDir ("{0}.o" -f $stem)
+    & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
+        -DWSE_SELF_TEST_LIBRARY=1 -I $include -c $src -o $obj
+    if ($LASTEXITCODE -ne 0) {
+        throw ("selftest compile failed: {0}" -f $src)
+    }
+    $selftestObjs += $obj
+}
+$selftestBinary = Join-Path $out "selftest_host_test.exe"
+& $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
+    -I $include -o $selftestBinary (Join-Path $here "tests\selftest_host_test.cpp") `
+    @selftestObjs $wseLuaLib $luaLib
+if ($LASTEXITCODE -ne 0) {
+    throw "selftest_host link failed"
+}
+& $selftestBinary (Join-Path $here "fixtures\scripts.txt")
+if ($LASTEXITCODE -ne 0) {
+    throw "selftest_host tests failed"
+}
+
 $headlessTool = Join-Path $out "wse_headless.exe"
 Write-Host "building     wse_headless"
 & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `

@@ -234,7 +234,11 @@ void test_headless_host_vfs_roundtrip() {
 
 } // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_headless_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_headless_memory_game_start_and_frames();
     test_headless_unimplemented_opcode_fails_loudly();
     test_headless_allow_unimplemented_continues_and_reports();
@@ -248,3 +252,11 @@ int main() {
     std::printf("headless tests: FAIL (%d)\n", failures);
     return 1;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_headless_suite(nullptr);
+}
+#endif

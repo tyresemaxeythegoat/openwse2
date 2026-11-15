@@ -715,7 +715,11 @@ void test_m4_review_regressions() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_native_world_suite(const char* fixture_path) {
+    (void)fixture_path;
+    g_failures = 0;
     test_m4_review_regressions();
     test_world_ops_1();
     test_world_ops_2_and_non_switch_and_m3_upgrades();
@@ -731,3 +735,11 @@ int main() {
     std::printf("FAIL  native_world_test (%d failures)\n", g_failures);
     return 1;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_native_world_suite(nullptr);
+}
+#endif

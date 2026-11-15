@@ -265,7 +265,11 @@ void test_statement() {
 
 }  // namespace
 
-int main() {
+namespace wse::selftest {
+
+int run_operand_suite(const char* fixture_path) {
+    (void)fixture_path;
+    failures = 0;
     test_tags();
     test_decode();
     test_store();
@@ -280,3 +284,11 @@ int main() {
     std::printf("operand tests: PASS\n");
     return 0;
 }
+
+}  // namespace wse::selftest
+
+#ifndef WSE_SELF_TEST_LIBRARY
+int main() {
+    return wse::selftest::run_operand_suite(nullptr);
+}
+#endif

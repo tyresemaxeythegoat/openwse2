@@ -37,14 +37,14 @@ layout has **not been inspected yet**; slice P4 starts by doing that.
 ## Target layout
 
 ```
-CMakeLists.txt                 root: engine (INTERFACE), tests (CTest), later platform + app
+CMakeLists.txt                 root: engine (INTERFACE), tests (CTest), wse_selftest, Android libwse2.so
 engine/include/wse/platform/   vfs.h clock.h sleep.h log.h (present) · rhi.h audio.h input.h (planned)
 engine/include/wse/asset/      brf, dds, shader, sound decoders — portable, host-tested (planned)
-platform/sdl/                  SDL3 window / input / audio / clock implementations (planned)
+platform/sdl/                  SDL3 on-device self-test shell (present); window / input / audio / clock (planned)
 platform/vulkan/               RHI Vulkan backend + driver loader (planned)
 platform/android/              SAF Vfs over JNI, thermal and frame-rate hooks (planned)
-android/                       Gradle project: Kotlin launcher + SDLActivity, arm64-v8a only (planned)
-third_party/                   SDL3, Lua 5.1, Bullet, volk/VMA — fetched by CMake, pinned by hash (planned)
+android/                       Gradle project: Kotlin WseActivity (SDLActivity) + Prefab SDL3 arm64-v8a APK (present)
+third_party/                   SDL3 (Gradle Prefab), Lua 5.1 (CMake FetchContent), Bullet, volk/VMA — pinned by hash
 ```
 
 The legacy `runtime/android/src/vk_panvk_loader.{c,h}` and `hardware_stub.c` are the starting point
@@ -58,7 +58,7 @@ Each slice is one milestone. "Done when" is the acceptance test, not a descripti
 | # | Slice | Contents | Done when |
 | --- | --- | --- | --- |
 | P0 | Build + gates | Root CMake + CTest, CI host job, CI NDK `aarch64-linux-android29` compile of every header (backlog B1) | CI green on `main` |
-| P1 | Platform seam + app shell | `wse/platform/{vfs,clock,sleep,log}.h` with host implementations and tests. Route the engine's direct `std::filesystem` / `fstream` / `chrono` / `thread` uses (`wse/vm/ops/{dict,array,string,system}.h`, `world_state.h`) through the seam. Gradle project with SDL3 `SDLActivity` and `libwse2.so` that runs the host suites as an on-device self-test screen. CI assembles a debug APK. | APK artifact from CI; self-test prints PASS on a device or emulator |
+| P1 | Platform seam + app shell | `wse/platform/{vfs,clock,sleep,log}.h` with host implementations and tests; engine file/clock/sleep routing through the seam; `wse_selftest` runner across all 18 core suites; Gradle `android/` + `platform/sdl/` SDL3 `SDLActivity` + `libwse2.so` on-device self-test screen + CI debug APK (`arm64-v8a`) | APK artifact built by CI (`android-apk`) and `selftest_host` passes on host; on-device run prints PASS when installed on a device or emulator |
 | P2 | Launcher + SAF file system *(Phase 4)* | Kotlin launcher: `ACTION_OPEN_DOCUMENT_TREE` for the Warband folder, persisted URI permission, module list from `Modules/*/module.ini`, mod switcher, driver picker. Native `SafVfs` over `DocumentsContract`: one-time directory index (case-insensitive path → document ID), reads through `openFileDescriptor`; optional import to app storage. | Launcher lists modules from a user tree; `scripts.txt` parses through `SafVfs`; index build time recorded in `STATUS.md` |
 | P3 | Asset decoders (host-first) | Evidence exports, then `wse/asset/`: `.brf` (mesh, material, texture, skeleton, animation, collision), `.dds` (decode; transcode block-compressed data when the device lacks the format), module resource lists from `module.ini`. Closes the `.brf` bullet of Phase 2G. | Host tests on synthetic fixtures; a CLI reports counts for a user-supplied `CommonRes/` |
 | P4 | Vulkan bring-up + driver loader | Inspect both driver packages. `platform/vulkan/driver_loader`: system `libvulkan.so`; PanVK through the direct-ICD loader; Turnip through the custom-driver mechanism its package expects. Import a user-picked package into app-private storage. Minimal RHI (`rhi.h`: buffers, textures, pipelines, passes) with a Vulkan backend; CI renders on a software Vulkan driver. | Textured static mesh viewer: screenshot test on host, and on device with each driver path |
