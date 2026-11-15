@@ -1,6 +1,7 @@
 // Comprehensive host tests for Phase 2F: stock MIT Lua 5.1.5 runtime,
 // sandbox, ModSys parsers, hooks, opcodes 5100..5114, and headless runner.
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -610,6 +611,198 @@ void test_sandbox_require_and_headless_host_vfs() {
     fs::remove_all(root, ec);
 }
 
+// Regression coverage for the Phase 2F review: each block below crashed,
+// corrupted the Lua stack, or misbehaved before the fix it names.
+void test_review_regressions() {
+    auto bundle = std::make_unique<wse::game::ModuleBundle>();
+    auto ctx = std::make_unique<wse::vm::VmContext>();
+    ctx->scripts = &bundle->scripts;
+    bundle->mission_templates.resize(1);
+    bundle->item_triggers.resize(1);
+
+    wse::platform::MemoryVfs vfs;
+    seed_lua_fixture_files(vfs);
+    // Constants that do not fit int64/int32 must be rejected, not cast (UB).
+    (void)vfs.write_text(
+        "Modules/TestMod/lua/msfiles/header_operations.py",
+        "neg = 0x80000000\n"
+        "this_or_next = 0x40000000\n"
+        "val_add = 2105\n"
+        "assign = 2133\n"
+        "lhs_operations = [val_add, assign]\n");
+    (void)vfs.write_text(
+        "Modules/TestMod/lua/msfiles/header_big.py",
+        "top_bits = 0xf000000000000000 | 1\n"
+        "bad_shift = 1 << -1\n"
+        "wide_shift = 1 << 64\n"
+        "ok_shift = 1 << 4\n");
+
+    auto rt = wse::lua::create_lua_runtime();
+    ctx->luaRuntime = rt;
+    wse::vm::WseLuaInitConfig cfg{};
+    cfg.module_dir = "Modules/TestMod";
+    cfg.vfs = &vfs;
+    cfg.bundle = bundle.get();
+    expect(rt->initialize(*ctx, cfg), "initialize regression fixture");
+    // val_add, assign, plus dict_get_int from the fixture addon file.
+    expect(rt->operation_count() == 3U && !rt->operation_flags("neg").has_value(),
+           "flag constants above the opcode range are not operations");
+    expect(rt->do_string(
+               "assert(game.const.big.ok_shift == 16)\n"
+               "assert(game.const.big.top_bits == 0xf000000000000000 + 1)\n"
+               "assert(rawget(game.const.big, 'bad_shift') == nil)\n"
+               "assert(rawget(game.const.big, 'wide_shift') == nil)\n",
+               "consts"),
+           "out-of-range constant expressions are rejected without UB");
+
+    // 1. Pushing past LUA_MINSTACK from VM opcodes grows the stack.
+    for (int i = 0; i < 500; ++i) rt->lua_push_int(i);
+    rt->lua_push_str("s");
+    rt->lua_push_pos(wse::core::WseTransform::identity());
+    expect(rt->lua_get_top() == 502, "push opcodes grow the Lua stack");
+    expect(rt->lua_to_int(500) == 499, "values survive stack growth");
+
+    // 2. lua_set_top grows the stack, and refuses an impossible size.
+    expect(rt->lua_set_top(3000) && rt->lua_get_top() == 3000, "lua_set_top grows the stack");
+    expect(!rt->lua_set_top(100000000), "lua_set_top rejects an unreachable height");
+    expect(rt->lua_set_top(0) && rt->lua_get_top() == 0, "lua_set_top(0) clears the stack");
+
+    // 3. lua_to_int on inf / NaN / huge values must not raise an unprotected error.
+    expect(rt->do_string("function inf() return 1/0, 0/0, 1e300 end", "inf"), "define inf()");
+    expect(rt->lua_call("inf", 0, 0) && rt->lua_get_top() == 3, "inf() leaves three results");
+    expect(rt->lua_to_int(1) == 0 && rt->lua_to_int(2) == 0 && rt->lua_to_int(3) == 0,
+           "lua_to_int yields 0 for non-representable numbers");
+    (void)rt->lua_set_top(0);
+
+    // 4. An operation hook returning a non-number lhs is reported, not fatal.
+    expect(rt->do_string("game.hookOperation('assign', function() return false, {} end)", "hk"),
+           "install bad-lhs hook");
+    {
+        const std::size_t errors_before = rt->error_history().size();
+        std::array<std::int64_t, 16> locals{};
+        locals[0] = 41;
+        const auto st = make_stmt(2133, {op_tag(wse::vm::OperandTag::local, 0), 5});
+        expect(wse::vm::execute_statement(st, 0, *ctx, locals), "hooked assign still succeeds");
+        expect(locals[0] == 41, "bad lhs hook result does not store");
+        expect(rt->error_history().size() == errors_before + 1U, "bad lhs hook result is reported");
+        expect(rt->lua_get_top() == 0, "hook leaves the stack balanced");
+    }
+    expect(rt->do_string("game.unhookOperation('assign')", "unhk"), "remove hook");
+
+    // 5. lua_triggerCallback consumes its arguments.
+    expect(rt->do_string(
+               "_G.cb_sum = 0\n"
+               "game.addItemTrigger(0, -51, function(a, b, c) _G.cb_sum = a + b + c return true end)\n",
+               "cb"),
+           "register callback");
+    {
+        const auto ref = static_cast<std::int32_t>(
+            bundle->item_triggers[0].triggers.triggers[0].block.statements[0].operands[0]);
+        rt->lua_push_int(7); // stays below the arguments
+        rt->lua_push_int(1);
+        rt->lua_push_int(2);
+        rt->lua_push_int(3);
+        expect(rt->lua_trigger_callback(ref, 3, 0), "callback returns true");
+        expect(rt->lua_get_top() == 1 && rt->lua_to_int(1) == 7,
+               "callback arguments and result are removed from the stack");
+        expect(!rt->lua_trigger_callback(-12345, 1, 0) && rt->lua_get_top() == 0,
+               "invalid callback ref still consumes its arguments");
+        expect(rt->do_string("assert(_G.cb_sum == 6)", "cbsum"), "callback saw its arguments");
+    }
+
+    // 6. Triggers that add/remove triggers while the manager is iterating.
+    expect(rt->do_string(
+               "_G.runs = 0\n"
+               "game.addTrigger(0, -50, 0, 0, function()\n"
+               "    _G.runs = _G.runs + 1\n"
+               "    assert(game.removeTrigger(0, 0) == true)\n"       // itself
+               "    for i = 1, 64 do\n"
+               "        local idx = game.addTrigger(0, -50, 0, 0, function() _G.runs = _G.runs + 100 return false end)\n"
+               "        assert(idx == i - 1, 'index ' .. tostring(idx))\n"
+               "    end\n"
+               "    assert(game.getNumTriggers(0) == 64)\n"
+               "    assert(game.removeTrigger(0, 63) == true)\n"
+               "    assert(game.removeTrigger(0, 63) == false)\n"
+               "    assert(game.getNumTriggers(0) == 63)\n"
+               "    return true\n"
+               "end, function() _G.runs = _G.runs + 10 end)\n",
+               "selfmod"),
+           "register self-modifying trigger");
+    auto& tm = bundle->mission_templates[0].triggers;
+    expect(wse::vm::execute_trigger_manager(tm, -50, ctx->timersTotal, *ctx),
+           "self-modifying trigger executes");
+    expect(rt->error_history().size() == 1U, "self-modifying trigger raised no Lua error");
+    expect(tm.triggers.size() == 63U, "queued edits applied after the manager finished");
+    expect(ctx->triggerIterationDepth == 0, "trigger iteration depth unwinds");
+    expect(rt->do_string("assert(_G.runs == 11, tostring(_G.runs))", "runs"),
+           "removed trigger finished its run; queued triggers did not run early");
+    expect(wse::vm::execute_trigger_manager(tm, -50, ctx->timersTotal, *ctx) &&
+               rt->do_string("assert(_G.runs == 11 + 6300, tostring(_G.runs))", "runs2"),
+           "queued triggers run on the next pass");
+    expect(rt->do_string("assert(game.addTrigger(0, -1, 0, 0, function() end) == 63)", "imm"),
+           "edits outside trigger execution apply immediately");
+    expect(tm.triggers.size() == 64U, "immediate add");
+
+    // 7. Lua errors unwind C++ frames (no leak under LeakSanitizer) and stay catchable.
+    expect(rt->do_string(
+               "local ok, err = pcall(dofile, 'a_missing_file_with_a_long_enough_name_to_heap_allocate.lua')\n"
+               "assert(not ok and err:find('cannot open', 1, true))\n"
+               "ok = pcall(game.execOperation, 1, 0, {}, {})\n"
+               "assert(not ok)\n"
+               "ok = pcall(game.addTrigger, 0, 0, 0, 0, function() end, 5)\n"
+               "assert(not ok)\n",
+               "unwind"),
+           "Lua errors propagate through C++ callbacks");
+
+    // 8. Sandboxed io / os semantics match stock Lua 5.1.
+    expect(rt->do_string(
+               "local f = assert(io.open('%storage%/e.txt', 'w'))\n"
+               "assert(f:write('') == true)\n"
+               "f:close()\n"
+               "f = assert(io.open('%storage%/e.txt', 'r'))\n"
+               "assert(f:read('*a') == '')\n"
+               "assert(f:read('*l') == nil and f:read(1) == nil)\n"
+               "f:close()\n"
+               "io.output('%storage%/o.txt'); io.write('x'); assert(io.close() == true)\n"
+               "f = assert(io.open('%storage%/o.txt', 'r')); assert(f:read('*a') == 'x'); f:close()\n"
+               "assert(os.rename('%storage%/o.txt', '%storage%/O.TXT') == true)\n"
+               "f = assert(io.open('%storage%/o.txt', 'r'), 'self-rename deleted the file')\n"
+               "assert(f:read('*a') == 'x'); f:close()\n"
+               "assert(os.rename('%storage%/o.txt', '%storage%/p.txt') == true)\n"
+               "assert(io.open('%storage%/o.txt', 'r') == nil and io.open('%storage%/p.txt', 'r'))\n",
+               "io"),
+           "io.close(), read('*a') at EOF, file:write result, os.rename onto itself");
+
+    // 9. A file left open is flushed by an explicit shutdown() ...
+    expect(rt->do_string("_G.keep = io.open('%storage%/late.txt', 'w'); _G.keep:write('late')", "late"),
+           "leave a dirty file open");
+    rt->shutdown();
+    std::string late;
+    expect(vfs.read_text("lua_storage/late.txt", late) && late == "late",
+           "shutdown() flushes open files");
+    expect(tm.triggers.size() == 64U && !rt->is_ready(), "shutdown leaves triggers in place, not ready");
+
+    // ... and a runtime destroyed after its Vfs must not touch the dead Vfs.
+    {
+        auto ctx2 = std::make_unique<wse::vm::VmContext>();
+        auto bundle2 = std::make_unique<wse::game::ModuleBundle>();
+        ctx2->scripts = &bundle2->scripts;
+        auto rt2 = wse::lua::create_lua_runtime();
+        {
+            wse::platform::MemoryVfs short_lived;
+            seed_lua_fixture_files(short_lived);
+            wse::vm::WseLuaInitConfig cfg2{};
+            cfg2.module_dir = "Modules/TestMod";
+            cfg2.vfs = &short_lived;
+            cfg2.bundle = bundle2.get();
+            expect(rt2->initialize(*ctx2, cfg2), "initialize short-lived Vfs runtime");
+            expect(rt2->do_string("_G.keep = io.open('%storage%/x.txt', 'w'); _G.keep:write('x')", "x"),
+                   "leave a dirty file open on a short-lived Vfs");
+        }
+        rt2.reset(); // destructor path: must not flush through the destroyed Vfs
+    }
+}
+
 } // namespace
 
 namespace wse::selftest {
@@ -622,6 +815,7 @@ int run_lua_suite(const char* fixture_path) {
     test_hooks_triggers_and_iterators();
     test_opcodes_5100_to_5114_and_events();
     test_sandbox_require_and_headless_host_vfs();
+    test_review_regressions();
 
     if (failures == 0) {
         std::printf("lua tests: PASS\n");

@@ -150,6 +150,15 @@ std::string strip_python_comment(std::string_view line, char& triple_quote) {
     return true;
 }
 
+// Truncates a double to its 64-bit pattern without float-to-integer undefined
+// behaviour: values outside [-2^63, 2^64) (and inf/NaN) are rejected.
+[[nodiscard]] bool double_to_u64_bits(double d, std::uint64_t& out) noexcept {
+    std::int64_t bits = 0;
+    if (!number_to_i64_noexcept(d, bits)) return false;
+    out = static_cast<std::uint64_t>(bits);
+    return true;
+}
+
 [[nodiscard]] bool eval_const_expr(
     std::string_view rhs,
     const std::unordered_map<std::string, double>& local_syms,
@@ -202,8 +211,9 @@ std::string strip_python_comment(std::string_view line, char& triple_quote) {
             !eval_const_expr(rhs_part, local_syms, b)) {
             return false;
         }
-        const auto ua = static_cast<std::uint64_t>(static_cast<std::int64_t>(a));
-        const auto ub = static_cast<std::uint64_t>(static_cast<std::int64_t>(b));
+        std::uint64_t ua = 0;
+        std::uint64_t ub = 0;
+        if (!double_to_u64_bits(a, ua) || !double_to_u64_bits(b, ub)) return false;
         out = static_cast<double>(ua | ub);
         return true;
     }
@@ -222,10 +232,9 @@ std::string strip_python_comment(std::string_view line, char& triple_quote) {
         double a = 0.0, b = 0.0;
         if (eval_const_expr(rhs.substr(0, shl), local_syms, a) &&
             eval_const_expr(rhs.substr(shl + 2), local_syms, b)) {
-            const auto shift = static_cast<unsigned>(b);
-            if (shift < 64U) {
-                out = static_cast<double>(
-                    static_cast<std::uint64_t>(static_cast<std::int64_t>(a)) << shift);
+            std::uint64_t ua = 0;
+            if (b >= 0.0 && b < 64.0 && double_to_u64_bits(a, ua)) {
+                out = static_cast<double>(ua << static_cast<unsigned>(b));
                 return true;
             }
         }
@@ -311,6 +320,7 @@ void ensure_parent_dirs(platform::Vfs* vfs, std::string_view file_path) {
 
 // ---- Sandboxed VFS file userdata for Lua `io` ----
 struct LuaVfsFile {
+    WseLuaManagerImpl* mgr = nullptr;
     platform::Vfs* vfs = nullptr;
     std::string path{};
     std::string data{};
@@ -319,7 +329,6 @@ struct LuaVfsFile {
     bool writable = false;
     bool dirty = false;
     bool closed = false;
-    bool is_std = false;
 };
 
 constexpr const char* kFileMeta = "wse.VfsFile";
@@ -359,7 +368,12 @@ int file_close(lua_State* L) {
 int file_gc(lua_State* L) {
     LuaVfsFile* f = check_vfs_file(L, 1);
     if (!f->closed) {
-        (void)flush_vfs_file(f);
+        // When the state is torn down by the runtime's destructor the Vfs may
+        // already have been destroyed; only an explicit shutdown() may flush.
+        if (f->mgr != nullptr && f->mgr->L_ != nullptr &&
+            (f->mgr->ready_ || f->mgr->gc_flush_allowed_)) {
+            (void)flush_vfs_file(f);
+        }
         f->closed = true;
     }
     f->~LuaVfsFile();
@@ -380,6 +394,15 @@ int file_flush(lua_State* L) {
 
 bool read_one_item(LuaVfsFile* f, lua_State* L, int arg_idx) {
     if (f->pos >= f->data.size()) {
+        // Stock Lua 5.1: "*a" at end of file yields "", every other format nil.
+        if (!lua_isnumber(L, arg_idx)) {
+            std::string_view fmt = to_sv(L, arg_idx);
+            if (!fmt.empty() && fmt.front() == '*') fmt.remove_prefix(1);
+            if (fmt.starts_with("a")) {
+                lua_pushliteral(L, "");
+                return true;
+            }
+        }
         lua_pushnil(L);
         return false;
     }
@@ -475,7 +498,7 @@ int file_write(lua_State* L) {
         f->pos += s.size();
         f->dirty = true;
     }
-    lua_pushvalue(L, 1);
+    lua_pushboolean(L, 1); // Lua 5.1 returns true, not the file (that is 5.2+)
     return 1;
 }
 
@@ -586,6 +609,7 @@ int push_opened_vfs_file(lua_State* L, WseLuaManagerImpl& mgr,
 
     void* mem = lua_newuserdata(L, sizeof(LuaVfsFile));
     auto* f = new (mem) LuaVfsFile{};
+    f->mgr = &mgr;
     f->vfs = mgr.cfg_.vfs;
     f->path = std::move(vfs_path);
     f->data = std::move(initial);
@@ -676,7 +700,8 @@ int lua_io_close(lua_State* L) {
     if (lua_isnone(L, 1)) {
         lua_getfield(L, LUA_REGISTRYINDEX, "wse_io_output");
         if (lua_isnil(L, -1)) return 0;
-        lua_replace(L, 1);
+        // The default output is now the only value, at index 1, which is
+        // where file_close expects it (lua_replace(L, 1) here would pop it).
     }
     return file_close(L);
 }
@@ -739,6 +764,12 @@ int lua_os_rename(lua_State* L) {
         lua_pushnil(L);
         lua_pushliteral(L, "source file not found");
         return 2;
+    }
+    // Rename is copy-then-remove; on the same file (the Vfs is ASCII
+    // case-insensitive) the remove would delete the only copy.
+    if (old_vfs.size() == new_vfs.size() && iequals_prefix(old_vfs, new_vfs)) {
+        lua_pushboolean(L, 1);
+        return 1;
     }
     ensure_parent_dirs(mgr.cfg_.vfs, new_vfs);
     if (!mgr.cfg_.vfs->write_text(new_vfs, content) ||
@@ -1111,9 +1142,11 @@ void WseLuaManagerImpl::load_operations() {
                             if (eval_const_expr(rhs_part, expr_syms, val)) {
                                 const std::string key(lhs_part);
                                 expr_syms[key] = val;
-                                const auto opcode = static_cast<std::int32_t>(val);
-                                if (opcode >= 0 &&
-                                    static_cast<std::size_t>(opcode) < vm::kMaxLuaOperationSlots) {
+                                // Range-check as a double first: flag constants such
+                                // as `neg = 0x80000000` do not fit an int32.
+                                if (val >= 0.0 &&
+                                    val < static_cast<double>(vm::kMaxLuaOperationSlots)) {
+                                    const auto opcode = static_cast<std::int32_t>(val);
                                     ops_by_name_[key] = GameOpDef{key, opcode, 0};
                                     op_flags_by_code_.try_emplace(opcode, std::uint16_t{0});
                                 }

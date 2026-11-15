@@ -116,6 +116,8 @@ int main(int argc, char** argv) {
     session.ctx->luaRuntime = wse::lua::create_lua_runtime();
     session.report =
         wse::game::run_headless_module(vfs, *session.ctx, *session.bundle, opts);
+    // Flush sandboxed Lua files while the Vfs is still alive.
+    session.ctx->luaRuntime->shutdown();
     const auto& r = session.report;
     const auto& b = *session.bundle;
     const auto& c = *session.ctx;
