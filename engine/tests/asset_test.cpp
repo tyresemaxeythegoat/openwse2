@@ -428,6 +428,267 @@ void test_brf_rfver1_metamesh_and_catalog() {
     expect(cat.warnings.size() == 5, "missing non-optional core + nofast logged as warnings (not optional)");
 }
 
+bool contains(const std::string& haystack, std::string_view needle) {
+    return haystack.find(needle) != std::string::npos;
+}
+
+void write_dx10_header(wse::io::BinaryWriter& w,
+                       std::uint32_t dxgi_format,
+                       std::uint32_t res_dim,
+                       std::uint32_t misc,
+                       std::uint32_t array_size) {
+    w.write_u32(dxgi_format);
+    w.write_u32(res_dim);
+    w.write_u32(misc);
+    w.write_u32(array_size);
+    w.write_u32(0U);
+}
+
+void test_binary_stream_strings() {
+    wse::io::BinaryWriter w;
+    w.write_string("");
+    w.write_string("abc");
+    w.write_string(std::string_view("a\0b", 3));
+    wse::io::BinaryReader r(w.bytes());
+    std::string a, b, c;
+    expect(r.read_string(a) && a.empty() && r.read_string(b) && b == "abc" &&
+               r.read_string(c) && c.size() == 3 && c[1] == '\0' && r.at_end(),
+           "BinaryWriter/Reader string round-trip (empty, ascii, embedded NUL)");
+
+    wse::io::BinaryWriter big;
+    big.write_string("hello");
+    wse::io::BinaryReader rb(big.bytes());
+    std::string out;
+    expect(!rb.read_string(out, 4) && rb.cursor() == 4U, "read_string rejects length above max_len");
+
+    wse::io::BinaryWriter neg;
+    neg.write_i32(-1);
+    wse::io::BinaryReader rn(neg.bytes());
+    expect(!rn.read_string(out), "read_string rejects negative length");
+
+    wse::io::BinaryWriter overrun;
+    overrun.write_i32(10);
+    overrun.write_byte('x');
+    wse::io::BinaryReader ro(overrun.bytes());
+    expect(!ro.read_string(out), "read_string rejects length past end of stream");
+
+    std::array<std::byte, 2> buf{};
+    wse::io::BinaryReader rs(big.bytes());
+    expect(rs.skip(4U) && rs.read_bytes(buf) && buf[0] == std::byte{'h'} && rs.cursor() == 6U &&
+               !rs.skip(100U) && rs.cursor() == 6U,
+           "skip / read_bytes bounds");
+}
+
+void test_brf_hardening() {
+    std::string err;
+    {
+        // Declared count far larger than the in-memory reservation cap: the header is
+        // consistent with the stream size (4 B per record) but each BrfMesh is ~200 B.
+        constexpr std::size_t kCount = 200000;
+        wse::io::BinaryWriter w;
+        w.write_string("mesh");
+        w.write_i32(static_cast<std::int32_t>(kCount));
+        // 0xFF padding makes the first record's name length -1, so parsing stops at
+        // record 0 and the capacity reflects only the up-front reservation.
+        const std::vector<std::byte> pad(kCount * 4U, std::byte{0xFF});
+        w.write_bytes(pad);
+        wse::asset::BrfFile out;
+        expect(!wse::asset::parse_brf(w.bytes(), out, &err), "huge mesh count still fails to parse");
+        expect(out.meshes.capacity() <= wse::asset::detail::kMaxReserveElements,
+               "section reservation is capped regardless of declared count");
+    }
+    {
+        // Specific count diagnostic is not overwritten by a generic message.
+        wse::io::BinaryWriter w;
+        w.write_string("mesh");
+        w.write_i32(1);
+        w.write_string("m");
+        w.write_u32(0);
+        w.write_string("mat");
+        w.write_u32(1000000U);
+        wse::asset::BrfFile out;
+        err.clear();
+        expect(!wse::asset::parse_brf(w.bytes(), out, &err) && contains(err, "mesh positions in m") &&
+                   contains(err, "exceeds remaining stream bytes"),
+               "count overflow keeps its specific error message");
+    }
+    {
+        wse::io::BinaryWriter w;
+        w.write_string("texture");
+        w.write_i32(-2);
+        wse::asset::BrfFile out;
+        err.clear();
+        expect(!wse::asset::parse_brf(w.bytes(), out, &err) && contains(err, "negative count"),
+               "negative section count reported as negative");
+    }
+    {
+        wse::io::BinaryWriter w;
+        w.write_string("skeleton");
+        w.write_i32(1);
+        w.write_string("skel");
+        wse::asset::BrfFile out;
+        err.clear();
+        expect(!wse::asset::parse_brf(w.bytes(), out, &err) && contains(err, "truncated skeleton bones in skel count"),
+               "truncated count reported as truncated");
+    }
+    {
+        // Vertex index 65536 is valid against the position table but cannot fit
+        // rglMeshFaceCorner::m_vertexNo (unsigned short).
+        constexpr std::uint32_t kPositions = 65537U;
+        wse::io::BinaryWriter w;
+        w.write_string("mesh");
+        w.write_i32(1);
+        w.write_string("big");
+        w.write_u32(0);
+        w.write_string("mat");
+        w.write_u32(kPositions);
+        for (std::uint32_t i = 0; i < kPositions; ++i) write_vec3(w, 0, 0, 0);
+        w.write_u32(0);  // vertex groups
+        w.write_i32(0);  // vertex keys
+        w.write_u32(1);  // face corners
+        w.write_i32(65536);
+        w.write_u32(0);
+        write_vec3(w, 0, 0, 1);
+        w.write_f32(0);
+        w.write_f32(0);
+        w.write_f32(0);
+        w.write_f32(0);
+        w.write_u32(0);  // faces
+        w.write_string("end");
+        wse::asset::BrfFile out;
+        err.clear();
+        expect(!wse::asset::parse_brf(w.bytes(), out, &err) && contains(err, "Invalid vertex index 65536"),
+               "rejects vertex index above unsigned short range");
+    }
+    {
+        // Composite nesting beyond the depth limit is rejected rather than recursing.
+        wse::io::BinaryWriter w;
+        w.write_string("body");
+        w.write_i32(1);
+        w.write_string("deep");
+        for (int i = 0; i < 10; ++i) {
+            w.write_string("composite");
+            w.write_i32(1);
+        }
+        w.write_string("sphere");
+        w.write_f32(1);
+        write_vec3(w, 0, 0, 0);
+        w.write_u32(0);
+        w.write_string("end");
+        wse::asset::BrfFile out;
+        err.clear();
+        expect(!wse::asset::parse_brf(w.bytes(), out, &err) && contains(err, "depth limit"),
+               "rejects composite body nesting beyond depth limit");
+    }
+}
+
+void test_dds_hardening() {
+    std::string err;
+    const std::uint32_t argb_masks[4] = {0x00FF0000U, 0x0000FF00U, 0x000000FFU, 0xFF000000U};
+    {
+        // Legacy volume texture (DDSCAPS2_VOLUME + DDSD_DEPTH).
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 4, 4, 0x1007U | 0x800000U, 1, 0x41U, 0U, 32U, argb_masks[0], argb_masks[1],
+                         argb_masks[2], argb_masks[3], 0x1000U, 0x200000U);
+        const std::vector<std::byte> px(4U * 4U * 4U * 4U);
+        w.write_bytes(px);
+        wse::asset::DdsImageView img;
+        err.clear();
+        expect(!wse::asset::parse_dds(w.bytes(), img, &err) && contains(err, "volume"),
+               "rejects legacy volume DDS");
+    }
+    {
+        // DX10 TEXTURE3D.
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 4, 4, 0x1007U, 1, 0x4U, wse::asset::dds_detail::fourcc('D', 'X', '1', '0'),
+                         0, 0, 0, 0, 0);
+        write_dx10_header(w, 28U, 4U, 0U, 1U);
+        const std::vector<std::byte> px(4U * 4U * 4U);
+        w.write_bytes(px);
+        wse::asset::DdsImageView img;
+        err.clear();
+        expect(!wse::asset::parse_dds(w.bytes(), img, &err) && contains(err, "volume"),
+               "rejects DX10 TEXTURE3D");
+    }
+    {
+        // DX10 cube array of 2 cubes with the legacy face bits also set: 12 faces.
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 4, 4, 0x1007U, 1, 0x4U, wse::asset::dds_detail::fourcc('D', 'X', '1', '0'),
+                         0, 0, 0, 0, 0, 0x1008U, 0x200U | 0xFC00U);
+        write_dx10_header(w, 71U, 3U, 0x4U, 2U);
+        const std::vector<std::byte> blocks(12U * 8U);
+        w.write_bytes(blocks);
+        wse::asset::DdsImageView img;
+        std::vector<std::uint8_t> rgba;
+        expect(wse::asset::parse_dds(w.bytes(), img, &err) && img.is_cubemap && img.face_count == 12U &&
+                   img.slices.size() == 12U && wse::asset::decode_dds_mip_rgba8(img, 0, 11, rgba),
+               "DX10 cube array counts six faces per array element");
+        expect(!wse::asset::parse_dds(std::span<const std::byte>(w.bytes()).subspan(0, w.size() - 8U), img, &err),
+               "DX10 cube array with a missing face is truncated");
+    }
+    {
+        // Legacy partial cube map keeps the face-bit count.
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 4, 4, 0x1007U, 1, 0x4U, wse::asset::dds_detail::fourcc('D', 'X', 'T', '1'),
+                         0, 0, 0, 0, 0, 0x1008U, 0x200U | 0x400U | 0x800U);
+        const std::vector<std::byte> blocks(2U * 8U);
+        w.write_bytes(blocks);
+        wse::asset::DdsImageView img;
+        expect(wse::asset::parse_dds(w.bytes(), img, &err) && img.face_count == 2U,
+               "legacy partial cube map counts face bits");
+    }
+    {
+        // sRGB flag for DX10 *_SRGB formats only.
+        for (const std::uint32_t dxgi : {71U, 72U}) {
+            wse::io::BinaryWriter w;
+            write_dds_header(w, 4, 4, 0x1007U, 1, 0x4U, wse::asset::dds_detail::fourcc('D', 'X', '1', '0'),
+                             0, 0, 0, 0, 0);
+            write_dx10_header(w, dxgi, 3U, 0U, 1U);
+            const std::vector<std::byte> block(8U);
+            w.write_bytes(block);
+            wse::asset::DdsImageView img;
+            expect(wse::asset::parse_dds(w.bytes(), img, &err) && img.format == wse::asset::DdsFormat::BC1_UNORM &&
+                       img.is_srgb == (dxgi == 72U),
+                   "DX10 sRGB flag set only for BC1_UNORM_SRGB");
+        }
+    }
+    {
+        // Truncated mip chain: header claims 3 mips, payload holds 2.
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 4, 4, 0x1007U | 0x20000U, 3, 0x41U, 0U, 32U, argb_masks[0], argb_masks[1],
+                         argb_masks[2], argb_masks[3]);
+        const std::vector<std::byte> px((16U + 4U) * 4U);
+        w.write_bytes(px);
+        wse::asset::DdsImageView img;
+        err.clear();
+        expect(!wse::asset::parse_dds(w.bytes(), img, &err) && contains(err, "truncated DDS mip payload"),
+               "rejects truncated mip chain");
+    }
+    {
+        // Hand-modified views cannot make the decoder read out of bounds.
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 4, 4, 0x1007U, 1, 0x41U, 0U, 32U, argb_masks[0], argb_masks[1],
+                         argb_masks[2], argb_masks[3]);
+        const std::vector<std::byte> px(64U);
+        w.write_bytes(px);
+        wse::asset::DdsImageView img;
+        std::vector<std::uint8_t> rgba;
+        expect(wse::asset::parse_dds(w.bytes(), img, &err), "parse 4x4 BGRA for tamper tests");
+        wse::asset::DdsImageView short_slice = img;
+        short_slice.slices[0].data = short_slice.slices[0].data.subspan(0, 32U);
+        expect(!wse::asset::decode_dds_mip_rgba8(short_slice, 0, 0, rgba, &err),
+               "decode rejects slice payload smaller than its dimensions");
+        wse::asset::DdsImageView no_slices = img;
+        no_slices.slices.clear();
+        expect(!wse::asset::decode_dds_mip_rgba8(no_slices, 0, 0, rgba, &err),
+               "decode rejects slice table that does not match face/mip count");
+        wse::asset::DdsImageView grown = img;
+        grown.slices[0].width = 8U;
+        expect(!wse::asset::decode_dds_mip_rgba8(grown, 0, 0, rgba, &err),
+               "decode rejects slice dimensions larger than its payload");
+    }
+}
+
 void test_dds_formats_and_resolver() {
     // 1. DXT1 4-color opaque (c0 > c1) and 1-bit transparent (c0 <= c1)
     {
@@ -632,6 +893,9 @@ int run_asset_suite(const char* fixture_path) {
     test_brf_unversioned_all_eight_types();
     test_brf_rfver1_metamesh_and_catalog();
     test_dds_formats_and_resolver();
+    test_binary_stream_strings();
+    test_brf_hardening();
+    test_dds_hardening();
 
     if (failures == 0) {
         std::printf("asset tests: PASS\n");

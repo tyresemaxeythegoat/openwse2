@@ -221,7 +221,7 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
              COMMAND selftest_host_test "${CMAKE_CURRENT_SOURCE_DIR}/engine/fixtures/scripts.txt"
              WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    set_tests_properties(wse_dict wse_array platform module_loaders headless lua asset selftest_host
+    set_tests_properties(wse_dict wse_array platform module_loaders headless lua selftest_host
                          PROPERTIES RUN_SERIAL TRUE)
 endif()
 

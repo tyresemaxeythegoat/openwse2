@@ -61,6 +61,9 @@ struct DdsImageView {
     bool is_cubemap = false;
     bool has_dx10_header = false;
     bool has_alpha = false;
+    // True for the DXGI *_SRGB formats (29, 72, 75, 78, 91, 93); `format` holds the
+    // UNORM equivalent, so a GPU uploader needs this to pick the sRGB view.
+    bool is_srgb = false;
     DdsFormat format = DdsFormat::Unknown;
     std::vector<DdsMipSlice> slices{};  // indexed [face * mip_count + mip]
 };
@@ -77,6 +80,10 @@ constexpr std::uint32_t fourcc(char a, char b, char c, char d) noexcept {
 inline bool set_error(std::string* error_out, std::string msg) {
     if (error_out != nullptr) *error_out = std::move(msg);
     return false;
+}
+
+inline bool is_srgb_dxgi_format(std::uint32_t dxgi) noexcept {
+    return dxgi == 29U || dxgi == 72U || dxgi == 75U || dxgi == 78U || dxgi == 91U || dxgi == 93U;
 }
 
 inline DdsFormat map_dxgi_format(std::uint32_t dxgi) noexcept {
@@ -232,12 +239,14 @@ inline bool compute_mip_layout(DdsFormat fmt,
         case DdsFormat::B8G8R8X8_UNORM:
         case DdsFormat::R8G8B8X8_UNORM: {
             const std::uint64_t rp = static_cast<std::uint64_t>(w) * 4ULL;
+            if (rp > 0xFFFFFFFFULL) return false;
             row_pitch_out = static_cast<std::uint32_t>(rp);
             byte_size_out = static_cast<std::size_t>(rp * h);
             return true;
         }
         case DdsFormat::B8G8R8_UNORM: {
             const std::uint64_t rp = static_cast<std::uint64_t>(w) * 3ULL;
+            if (rp > 0xFFFFFFFFULL) return false;
             row_pitch_out = static_cast<std::uint32_t>(rp);
             byte_size_out = static_cast<std::size_t>(rp * h);
             return true;
@@ -248,6 +257,7 @@ inline bool compute_mip_layout(DdsFormat fmt,
         case DdsFormat::L16_UNORM:
         case DdsFormat::A8L8_UNORM: {
             const std::uint64_t rp = static_cast<std::uint64_t>(w) * 2ULL;
+            if (rp > 0xFFFFFFFFULL) return false;
             row_pitch_out = static_cast<std::uint32_t>(rp);
             byte_size_out = static_cast<std::size_t>(rp * h);
             return true;
@@ -396,8 +406,12 @@ inline bool parse_dds(std::span<const std::byte> data,
         return dds_detail::set_error(error_out, "truncated DDS_HEADER caps");
     }
     (void)dwPitchOrLinearSize;
-    (void)dwDepth;
     (void)dwCaps;
+    // Volume textures (DDSCAPS2_VOLUME, or DDSD_DEPTH with depth > 1) are not 2D/cube
+    // images; rejecting them avoids silently decoding only the first depth slice.
+    if ((dwCaps2 & 0x200000U) != 0U || ((dwFlags & 0x800000U) != 0U && dwDepth > 1U)) {
+        return dds_detail::set_error(error_out, "unsupported DDS volume texture");
+    }
 
     std::uint32_t dxgi_format = 0;
     std::uint32_t dxt10_misc = 0;
@@ -409,17 +423,27 @@ inline bool parse_dds(std::span<const std::byte> data,
             !r.read_u32(dxt10_misc) || !r.read_u32(array_size) || !r.read_u32(misc2)) {
             return dds_detail::set_error(error_out, "truncated DDS_HEADER_DXT10");
         }
-        (void)res_dim;
         (void)misc2;
+        if (res_dim == 4U) {  // D3D10_RESOURCE_DIMENSION_TEXTURE3D
+            return dds_detail::set_error(error_out, "unsupported DDS volume texture");
+        }
         if (array_size == 0U) array_size = 1U;
+        if (array_size > 64U) {
+            return dds_detail::set_error(error_out, "unsupported DDS face or mip count");
+        }
     }
 
     out.width = dwWidth;
     out.height = dwHeight;
     out.mip_count = ((dwFlags & 0x20000U) != 0U && dwMipMapCount > 0U) ? dwMipMapCount : 1U;
     out.has_dx10_header = has_dx10;
-    out.is_cubemap = ((dwCaps2 & 0x200U) != 0U) || (has_dx10 && ((dxt10_misc & 0x4U) != 0U));
-    if (out.is_cubemap) {
+    const bool dx10_cube = has_dx10 && ((dxt10_misc & 0x4U) != 0U);
+    out.is_cubemap = ((dwCaps2 & 0x200U) != 0U) || dx10_cube;
+    if (dx10_cube) {
+        // DX10 cube maps (and cube arrays) always store all six faces per array element;
+        // the legacy dwCaps2 face bits do not carry the array size.
+        out.face_count = 6U * array_size;
+    } else if (out.is_cubemap) {
         if ((dwCaps2 & 0xFC00U) != 0U) {
             std::uint32_t bits = dwCaps2 & 0xFC00U;
             std::uint32_t faces = 0;
@@ -442,6 +466,7 @@ inline bool parse_dds(std::span<const std::byte> data,
     if (out.format == DdsFormat::Unknown) {
         return dds_detail::set_error(error_out, "unsupported DDS pixel format");
     }
+    out.is_srgb = has_dx10 && dds_detail::is_srgb_dxgi_format(dxgi_format);
 
     std::size_t cursor = r.cursor();
     out.slices.reserve(static_cast<std::size_t>(out.face_count) * out.mip_count);
@@ -468,6 +493,10 @@ inline bool parse_dds(std::span<const std::byte> data,
     return true;
 }
 
+// `image` must come from parse_dds, and the buffer passed to parse_dds must outlive it:
+// the slices are non-owning views into that buffer. The slice table and each slice's
+// byte size are re-validated here so a hand-built or modified view cannot read out of
+// bounds.
 inline bool decode_dds_mip_rgba8(const DdsImageView& image,
                                  std::size_t mip_index,
                                  std::size_t face_index,
@@ -476,9 +505,22 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
     if (face_index >= image.face_count || mip_index >= image.mip_count) {
         return dds_detail::set_error(error_out, "DDS mip/face index out of range");
     }
-    const DdsMipSlice& slice = image.slices[face_index * image.mip_count + mip_index];
+    const std::size_t slice_index = face_index * image.mip_count + mip_index;
+    if (slice_index >= image.slices.size()) {
+        return dds_detail::set_error(error_out, "DDS slice table does not match face/mip count");
+    }
+    const DdsMipSlice& slice = image.slices[slice_index];
     const std::uint32_t w = slice.width;
     const std::uint32_t h = slice.height;
+    std::uint32_t expected_pitch = 0;
+    std::size_t expected_bytes = 0;
+    if (w == 0U || h == 0U ||
+        !dds_detail::compute_mip_layout(image.format, w, h, expected_pitch, expected_bytes)) {
+        return dds_detail::set_error(error_out, "unsupported DDS format for RGBA8 decode");
+    }
+    if (slice.data.size() < expected_bytes || slice.data.data() == nullptr) {
+        return dds_detail::set_error(error_out, "DDS slice payload smaller than its dimensions require");
+    }
     out_rgba8.assign(static_cast<std::size_t>(w) * h * 4U, 0);
 
     const std::byte* src = slice.data.data();
@@ -709,6 +751,11 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
 
 // Resolves a texture identifier through the Warband search chain matching
 // rglResourceManager::tryGetTexture (0x1402f2f10) + rglTexture::initDeviceObjects (0x140317710).
+// Probe order (module language, module, base language, TexturesHD, Textures) is not yet
+// confirmed against the retail control flow; the cited strings fix only the directory
+// templates. The indexed "%s_%d.dds" templates (0x14056b380..0x14056b3d0) are not handled.
+// Extension-less names fall back to .jpg / .tga, which parse_dds cannot decode: callers
+// must check the returned extension before decoding.
 inline std::string resolve_texture_path(wse::platform::Vfs& vfs,
                                         std::string_view texture_name,
                                         std::string_view warband_root,
