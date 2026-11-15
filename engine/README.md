@@ -491,8 +491,44 @@ Platform P5 (`wse/asset/shader.h`, `wse/platform/rhi.h`, `platform/vulkan/driver
     `additive_alpha`, `multiply`, `additive`).
   - `wse/asset/shader.h` models effect search order, `wse2_shaders.{brf,ini}`, cycle-guarded
     `rglShader` suitability/alternative fallback, `rglMaterial` state/slots, `GLShaders/*.xml` +
-    `GLShadersOptimized` + the 5 synthesized WSE2 skinning variants, deterministic SPIR-V 1.0
+    `GLShadersOptimized` + the 5 synthesized WSE2 skinning variants, placeholder SPIR-V 1.0
     emission, and persistent VFS `SpirvShaderCache`.
+
+Platform P5 review fixes (behaviour notes and safety deviations):
+  - **SPIR-V is a placeholder.** `emit_placeholder_spirv_module` (formerly `compile_glsl_to_spirv`)
+    emits a valid empty `void main()` tagged `<tech>:decl=:feat=:src=:gen=`; it does not translate
+    GLSL. A real translator is still open P5 work (`ROADMAP.md`).
+  - **Technique XML:** `<technique` must be followed by a tag boundary (a `<techniques>` root no
+    longer swallows the first technique); comments, CDATA, `<?…?>`, and `>` inside quoted values are
+    skipped; `<vertex_shader name="…"/>` and `<vertex_shader>…</vertex_shader>` are both read.
+  - **Technique catalog:** fails (`false` + error) when no technique exists at all; the 5 WSE2
+    skinning variants are synthesized only from a present base, with a real `#define USE_SKINNING 1`
+    after `#version`. `TechniqueCatalogOptions::load_glsl_sources = false` loads names only.
+  - **Shader resolution:** breadth-first with one visited set, `O(shaders + alternatives)` (the
+    path-local DFS was exponential on dense graphs); ties go to alternative-list order.
+    `SuitableShaderResolver` memoizes per case-folded name.
+  - **Feature flags:** whole-identifier, case-insensitive matches outside comments; preprocessor
+    lines count only `#define NAME`. Allocation-free.
+  - **`wse2_shaders.ini`:** a UTF-8 BOM is skipped; a key repeated in one section keeps its first
+    position but the later value everywhere, with a warning.
+  - **PostFx (safety deviation):** the WSE2 include is appended unless a `#if`/`#ifdef`/`#elif`
+    directive tests `WSE2` as a whole token (incl. `defined(WSE2)`), instead of a substring test.
+  - **Material state:** `uses_specular` uses one rule with or without a resolved shader.
+    `render_order` sign and `srgb_diffuse` remain port assumptions (`docs/ARCHITECTURE.md` §8).
+  - **SPIR-V cache:** a hit requires the whole module to validate and its tag to match the source
+    hash, stage, and generator version (part of the key); writes go through `.partial` +
+    `Vfs::rename_file`. Hits return feature flags from the tag.
+  - **RHI:** shader modules can be destroyed after pipeline creation (`VkShaderModule` semantics);
+    `create_shader_module` requires an `OpEntryPoint` matching stage and name, and pipelines reject
+    a module of the wrong stage. `VulkanRhiDevice` fails module creation when the device lacks
+    `vkCreateShaderModule`. `MeshDrawCall::model` transforms normals (inverse transpose) and
+    per-triangle UV tangents for lighting; alpha blends with the colour factors (D3D9 without
+    `SEPARATEALPHABLENDENABLE`); NaN-safe UNORM writes; exact 256-entry sRGB decode table; the
+    destination is read only when blending. `apply_d3d9_half_pixel_offset_clip` takes `w` and the
+    NDC Y convention. `wse/platform/rhi_material.h` maps `MaterialRenderState` to `PipelineDesc`.
+  - **WSI:** `android_surface_wsi` now enables `VK_KHR_surface` + `VK_KHR_android_surface` on the
+    instance and `VK_KHR_swapchain` on the device; a device without it (or an instance refusing the
+    extensions) falls back to the offscreen bridge with `presentation_note`.
 
 ## Handler design decisions and limits
 

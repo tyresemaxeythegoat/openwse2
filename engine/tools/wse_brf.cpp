@@ -19,6 +19,7 @@
 #include <system_error>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "wse/asset/brf.h"
@@ -299,25 +300,30 @@ int run_module_catalog(const std::filesystem::path& root,
         std::fprintf(stderr, "WARN  %s\n", warning.c_str());
     }
 
+    // Totals are already counted, so the shaders are moved (not copied) out of the
+    // catalog; the first definition of a name wins.
     std::unordered_map<std::string, wse::asset::BrfShader> shaders_by_lower;
-    for (const auto& entry : cat.entries) {
+    for (auto& entry : cat.entries) {
         if (!entry.loaded) {
             continue;
         }
-        for (const wse::asset::BrfShader& sh : entry.file.shaders) {
-            shaders_by_lower.try_emplace(wse::platform::ascii_lower(sh.name), sh);
+        for (wse::asset::BrfShader& sh : entry.file.shaders) {
+            shaders_by_lower.try_emplace(wse::platform::ascii_lower(sh.name), std::move(sh));
         }
     }
     wse::asset::BrfFile opt_wse2_shaders{};
     if (wse::asset::load_optional_wse2_shaders_brf(vfs, "", mod_rel, opt_wse2_shaders)) {
-        for (const wse::asset::BrfShader& sh : opt_wse2_shaders.shaders) {
-            shaders_by_lower.try_emplace(wse::platform::ascii_lower(sh.name), sh);
+        for (wse::asset::BrfShader& sh : opt_wse2_shaders.shaders) {
+            shaders_by_lower.try_emplace(wse::platform::ascii_lower(sh.name), std::move(sh));
         }
     }
 
+    // Only technique names are needed here, so no GLSL is read.
     wse::asset::ShaderTechniqueCatalog tech_cat{};
     std::unordered_set<std::string> tech_names_lower;
-    if (wse::asset::load_warband_shader_technique_catalog(vfs, "", tech_cat)) {
+    wse::asset::TechniqueCatalogOptions tech_opts{};
+    tech_opts.load_glsl_sources = false;
+    if (wse::asset::load_warband_shader_technique_catalog(vfs, "", tech_cat, nullptr, tech_opts)) {
         tech_names_lower.reserve(tech_cat.techniques_by_lower.size());
         for (const auto& kv : tech_cat.techniques_by_lower) {
             tech_names_lower.insert(kv.first);
@@ -340,12 +346,11 @@ int run_module_catalog(const std::filesystem::path& root,
     wse::asset::validate_shader_pairs(raw_pairs, shaders_by_lower, quality_cfg,
                                       valid_pairs, tech_ptr);
 
+    wse::asset::SuitableShaderResolver resolver(shaders_by_lower, quality_cfg, tech_ptr);
     std::size_t shaders_suitable = 0;
     std::size_t shaders_fallback = 0;
     for (const auto& kv : shaders_by_lower) {
-        const wse::asset::ShaderResolutionResult res =
-            wse::asset::resolve_suitable_shader(kv.second.name, shaders_by_lower,
-                                                quality_cfg, tech_ptr);
+        const wse::asset::ShaderResolutionResult& res = resolver.resolve(kv.first);
         if (res.shader != nullptr) {
             if (res.hop_depth == 0 && !res.used_default_fallback) {
                 ++shaders_suitable;
@@ -356,19 +361,24 @@ int run_module_catalog(const std::filesystem::path& root,
     }
 
     std::size_t materials_resolved = 0;
+    std::size_t materials_alpha_test = 0;
+    std::size_t materials_blended = 0;
     for (const auto& entry : cat.entries) {
         if (!entry.loaded) {
             continue;
         }
         for (const wse::asset::BrfMaterial& mat : entry.file.materials) {
-            const wse::asset::ShaderResolutionResult res =
-                wse::asset::resolve_suitable_shader(mat.shader_name, shaders_by_lower,
-                                                    quality_cfg, tech_ptr);
+            const wse::asset::ShaderResolutionResult& res = resolver.resolve(mat.shader_name);
             const wse::asset::MaterialRenderState state =
                 wse::asset::decode_material_render_state(mat, res.shader);
-            (void)state;
             if (res.shader != nullptr) {
                 ++materials_resolved;
+            }
+            if (state.alpha_ref_u8 != 0U) {
+                ++materials_alpha_test;
+            }
+            if (state.blend_mode != wse::asset::MaterialBlendMode::Opaque) {
+                ++materials_blended;
             }
         }
     }
@@ -389,23 +399,27 @@ int run_module_catalog(const std::filesystem::path& root,
                     "\"materials\":%zu,\"bodies\":%zu,\"skeletons\":%zu,\"animations\":%zu,"
                     "\"physics_materials\":%zu,"
                     "\"gl_techniques\":%zu,\"shaders_suitable\":%zu,\"shaders_fallback\":%zu,"
-                    "\"materials_resolved\":%zu,\"wse2_ini_fallbacks\":%zu}\n",
+                    "\"materials_resolved\":%zu,\"materials_alpha_test\":%zu,"
+                    "\"materials_blended\":%zu,\"wse2_ini_fallbacks\":%zu}\n",
                     cat.entries.size(), loaded_entries, cat.warnings.size(),
                     totals.meshes, totals.meta_meshes, totals.textures, totals.shaders,
                     totals.materials, totals.bodies, totals.skeletons, totals.animations,
                     totals.physics_materials,
                     tech_cat.techniques_by_lower.size(), shaders_suitable, shaders_fallback,
-                    materials_resolved, valid_pairs.entries.size());
+                    materials_resolved, materials_alpha_test, materials_blended,
+                    valid_pairs.entries.size());
     } else {
         std::printf("CATALOG %s (%s): entries=%zu loaded=%zu warnings=%zu "
                     "(meshes=%zu meta=%zu tex=%zu shader=%zu mat=%zu body=%zu skel=%zu anim=%zu phys=%zu) "
-                    "[gl_tech=%zu shaders_ok=%zu fallback=%zu mat_resolved=%zu ini_pairs=%zu]\n",
+                    "[gl_tech=%zu shaders_ok=%zu fallback=%zu mat_resolved=%zu "
+                    "mat_alpha_test=%zu mat_blended=%zu ini_pairs=%zu]\n",
                     root.string().c_str(), mod_rel.c_str(), cat.entries.size(), loaded_entries,
                     cat.warnings.size(), totals.meshes, totals.meta_meshes, totals.textures,
                     totals.shaders, totals.materials, totals.bodies, totals.skeletons,
                     totals.animations, totals.physics_materials,
                     tech_cat.techniques_by_lower.size(), shaders_suitable, shaders_fallback,
-                    materials_resolved, valid_pairs.entries.size());
+                    materials_resolved, materials_alpha_test, materials_blended,
+                    valid_pairs.entries.size());
     }
     return 0;
 }

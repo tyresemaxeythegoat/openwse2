@@ -30,7 +30,7 @@ jobs:
         run: python3 tools/extract_wse_opcodes.py --check
 
       - name: Check evidence citations
-        run: python3 tools/check_citations.py --self-test
+        run: python3 tools/check_citations.py --self-test --docs
 
   host-sanitizers:
     name: Host ASan + UBSan (Linux clang++)

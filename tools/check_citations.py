@@ -34,8 +34,56 @@ SUPERSEDED_EVIDENCE_PREFIXES = (
 )
 
 
+# Living prose documents scanned by --docs (AGENTS.md section 4). Their VAs are
+# checked the same way as header VAs, except that (a) a line carrying
+# DOC_IGNORE_MARKER is skipped (used to quote a corrected, wrong citation) and
+# (b) VAs listed in DOCS_BASELINE (pre-existing image-base, .data, and labeled
+# historical citations that SYMBOL_MAP.json does not curate) are tolerated, so
+# only newly introduced unresolved citations fail.
+DOC_FILES = (
+    "AGENTS.md",
+    "STATUS.md",
+    "ROADMAP.md",
+    "engine/README.md",
+    "docs/ARCHITECTURE.md",
+    "docs/PLATFORM_PLAN.md",
+)
+DOC_IGNORE_MARKER = "citation-check: ignore-line"
+DOCS_BASELINE = os.path.join("tools", "docs_citation_baseline.txt")
+
+
 def parse_hex(s):
     return int(s, 16)
+
+
+def extract_doc_citations(repo_root):
+    """Yield (relpath, line_no, va_int) for every full VA in the living docs."""
+    refs = []
+    for rel in DOC_FILES:
+        path = os.path.join(repo_root, rel)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            for line_no, line in enumerate(f, 1):
+                if DOC_IGNORE_MARKER in line:
+                    continue
+                for m in RE_FULL_VA.finditer(line):
+                    refs.append((rel, line_no, parse_hex(m.group(1))))
+    return refs
+
+
+def load_docs_baseline(repo_root):
+    path = os.path.join(repo_root, DOCS_BASELINE)
+    allowed = set()
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                rel, va = line.split()
+                allowed.add((rel, parse_hex(va)))
+    return allowed
 
 
 def extract_citations(include_root):
@@ -218,6 +266,10 @@ def main():
     ap.add_argument("--globals", help="Optional v1.1.5.5 globals JSON")
     ap.add_argument("--old-globals", help="Optional superseded globals JSON")
     ap.add_argument("--self-test", action="store_true", help="Also verify known-bad VAs are rejected")
+    ap.add_argument("--docs", action="store_true",
+                    help="Also check VAs in the living docs (DOC_FILES) against SYMBOL_MAP.json")
+    ap.add_argument("--write-docs-baseline", action="store_true",
+                    help="Rewrite %s with every currently unresolved doc VA and exit" % DOCS_BASELINE)
     args = ap.parse_args()
 
     include_root = args.include_root or os.path.join(args.repo_root, "engine", "include")
@@ -226,8 +278,28 @@ def main():
     if args.self_test and not run_self_test(idx):
         return 1
 
+    if args.write_docs_baseline:
+        rows = sorted({(rel, va) for rel, _, va in extract_doc_citations(args.repo_root)
+                       if not idx.check_va(va)[0]})
+        with open(os.path.join(args.repo_root, DOCS_BASELINE), "w", encoding="utf-8", newline="\n") as f:
+            f.write("# Pre-existing doc VAs not curated in docs/SYMBOL_MAP.json (image base, .data,\n")
+            f.write("# labeled historical sections). Regenerate with --write-docs-baseline only after\n")
+            f.write("# confirming each new entry is intentional. Format: <doc path> <VA>\n")
+            for rel, va in rows:
+                f.write("%s 0x%x\n" % (rel, va))
+        print("Wrote %d baseline entries to %s" % (len(rows), DOCS_BASELINE))
+        return 0
+
     headers, va_refs, ev_errors = extract_citations(include_root)
     failures = []
+    doc_refs = []
+    if args.docs:
+        baseline = load_docs_baseline(args.repo_root)
+        doc_refs = extract_doc_citations(args.repo_root)
+        for rel, line_no, va in doc_refs:
+            ok, reason = idx.check_va(va)
+            if not ok and (rel, va) not in baseline:
+                failures.append("%s:%d: 0x%x: %s" % (rel, line_no, va, reason))
     for rel, line_no, ev, reason in ev_errors:
         failures.append("%s:%d: %s: %s" % (rel, line_no, ev, reason))
 
@@ -248,6 +320,8 @@ def main():
         "Citation check PASSED: %d headers, %d VA references (%d unique VAs), 0 superseded/unresolved citations."
         % (len(headers), len(va_refs), len(unique_vas))
     )
+    if args.docs:
+        print("Doc citation check PASSED: %d VA references across %d living docs." % (len(doc_refs), len(DOC_FILES)))
     return 0
 
 

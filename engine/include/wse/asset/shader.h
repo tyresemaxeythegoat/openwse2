@@ -14,6 +14,14 @@
 // - rglMaterial (0x1dc61, 632 B), rglMaterial::readStream (0x1402b5970),
 //   rglGraphicsContext::setAlphaTestMode (0x1402a00b0),
 //   rglGraphicsContext::createBlendStates (0x14029f590), setFogEnabled (0x14029ffa0)
+//
+// Port infrastructure in this header that is NOT a reconstruction:
+// - `emit_placeholder_spirv_module` is a placeholder. It does not translate GLSL: it
+//   emits a valid but empty `void main()` module tagged with the technique, vertex
+//   declaration, detected features, and a source hash. A real GLSL/HLSL -> SPIR-V
+//   translator is still open work for P5 (`ROADMAP.md`).
+// - `SpirvShaderCache` (persistent VFS cache), `detect_glsl_feature_flags`, and the
+//   synthesized WSE2 skinning techniques have no retail counterpart.
 #pragma once
 
 #include <algorithm>
@@ -22,6 +30,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <deque>
+#include <initializer_list>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -62,6 +73,9 @@ inline constexpr std::uint32_t kMaterialFlagNoDepthTest = 0x00000010U;
 inline constexpr std::uint32_t kMaterialFlagBlendMask = 0x00000700U;
 inline constexpr std::uint32_t kMaterialFlagAlphaTestMask = 0x00003000U;
 inline constexpr std::uint32_t kMaterialFlagRenderOrderMask = 0x0F000000U;
+
+// rglResourceManager::getSuitableShader (0x1402f3db0) starts its best depth at 0x186a0.
+inline constexpr int kSuitableShaderNoDepth = 100000;
 
 // rglMesh::getVertexDeclarationType (0x1402baa30) returns values 0..4.
 enum class VertexDeclType : std::uint8_t {
@@ -132,6 +146,8 @@ struct MaterialRenderState {
     bool no_fog = false;
     bool depth_write = true;
     bool depth_test = true;
+    // Port heuristic, not retail evidence: the diffuse slot is sampled as sRGB
+    // whenever it names a texture.
     bool srgb_diffuse = true;
     bool uses_normal_map = false;
     bool uses_specular = false;
@@ -139,6 +155,8 @@ struct MaterialRenderState {
     MaterialBlendMode blend_mode = MaterialBlendMode::Opaque;
     AlphaTestMode alpha_test_mode = AlphaTestMode::None;
     std::uint8_t alpha_ref_u8 = 0;
+    // Provisional: bits 24..27 decoded as a signed nibble (-8..7). The sign
+    // convention is not yet confirmed against rglRenderer::renderMesh (0x1402e7f50).
     int render_order = 0;
     std::string diffuse_a{};
     std::string diffuse_b{};
@@ -149,6 +167,7 @@ struct MaterialRenderState {
     Vec3f specular_rgb{};
 };
 
+// Values equal SPIR-V `ExecutionModel` (Vertex = 0, Fragment = 4).
 enum class SpirvStage : std::uint32_t {
     Vertex = 0,
     Fragment = 4,
@@ -188,6 +207,12 @@ struct ShaderTechniqueCatalog {
     }
 };
 
+struct TechniqueCatalogOptions {
+    // False loads technique names and XML metadata only (no GLSL reads), for
+    // callers that only need the set of available techniques.
+    bool load_glsl_sources = true;
+};
+
 namespace shader_detail {
 
 inline std::string_view trim_ascii(std::string_view s) noexcept {
@@ -200,29 +225,143 @@ inline std::string_view trim_ascii(std::string_view s) noexcept {
     return s;
 }
 
+inline std::string_view strip_utf8_bom(std::string_view s) noexcept {
+    if (s.size() >= 3U && static_cast<unsigned char>(s[0]) == 0xEFU &&
+        static_cast<unsigned char>(s[1]) == 0xBBU && static_cast<unsigned char>(s[2]) == 0xBFU) {
+        s.remove_prefix(3U);
+    }
+    return s;
+}
+
+inline bool equals_ci(std::string_view a, std::string_view b) noexcept {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (wse::platform::ascii_lower(a[i]) != wse::platform::ascii_lower(b[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Non-allocating ASCII case-insensitive search.
+inline std::size_t find_ci(std::string_view haystack,
+                           std::string_view needle,
+                           std::size_t from = 0U) noexcept {
+    if (from > haystack.size()) {
+        return std::string_view::npos;
+    }
+    if (needle.empty()) {
+        return from;
+    }
+    if (haystack.size() < needle.size()) {
+        return std::string_view::npos;
+    }
+    for (std::size_t i = from; i + needle.size() <= haystack.size(); ++i) {
+        if (equals_ci(haystack.substr(i, needle.size()), needle)) {
+            return i;
+        }
+    }
+    return std::string_view::npos;
+}
+
+inline bool contains_ci(std::string_view haystack, std::string_view needle) noexcept {
+    return find_ci(haystack, needle) != std::string_view::npos;
+}
+
+inline constexpr bool is_ident_char(char c) noexcept {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+           c == '_';
+}
+
+inline constexpr bool is_inline_space(char c) noexcept {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v';
+}
+
+// Calls `fn(identifier)` for every identifier token of GLSL source that lies outside
+// comments. Preprocessor lines contribute only the macro name of `#define NAME`, so
+// `#ifdef USE_SKINNING` or a commented-out `// #define USE_SKINNING` never counts.
+template <typename Fn>
+inline void for_each_glsl_identifier(std::string_view src, Fn&& fn) noexcept {
+    const std::size_t n = src.size();
+    std::size_t i = 0;
+    bool line_start = true;
+    while (i < n) {
+        const char c = src[i];
+        if (c == '/' && i + 1U < n && src[i + 1U] == '/') {
+            while (i < n && src[i] != '\n') {
+                ++i;
+            }
+            continue;
+        }
+        if (c == '/' && i + 1U < n && src[i + 1U] == '*') {
+            const std::size_t end = src.find("*/", i + 2U);
+            i = (end == std::string_view::npos) ? n : end + 2U;
+            continue;
+        }
+        if (c == '\n') {
+            line_start = true;
+            ++i;
+            continue;
+        }
+        if (is_inline_space(c)) {
+            ++i;
+            continue;
+        }
+        if (c == '#' && line_start) {
+            std::size_t j = i + 1U;
+            while (j < n && is_inline_space(src[j])) {
+                ++j;
+            }
+            const std::size_t dir_begin = j;
+            while (j < n && is_ident_char(src[j])) {
+                ++j;
+            }
+            if (src.substr(dir_begin, j - dir_begin) == "define") {
+                while (j < n && is_inline_space(src[j])) {
+                    ++j;
+                }
+                const std::size_t name_begin = j;
+                while (j < n && is_ident_char(src[j])) {
+                    ++j;
+                }
+                if (j > name_begin) {
+                    fn(src.substr(name_begin, j - name_begin));
+                }
+            }
+            while (j < n && src[j] != '\n') {
+                j += (src[j] == '\\' && j + 1U < n && src[j + 1U] == '\n') ? 2U : 1U;
+            }
+            i = j;
+            line_start = false;
+            continue;
+        }
+        line_start = false;
+        if (is_ident_char(c)) {
+            const std::size_t begin = i;
+            while (i < n && is_ident_char(src[i])) {
+                ++i;
+            }
+            if (!(src[begin] >= '0' && src[begin] <= '9')) {
+                fn(src.substr(begin, i - begin));
+            }
+            continue;
+        }
+        ++i;
+    }
+}
+
 inline std::string normalize_material_slot(std::string_view raw) {
     const std::string_view trimmed = trim_ascii(raw);
     if (trimmed.empty()) {
         return {};
     }
-    const std::string lower = wse::platform::ascii_lower(trimmed);
     // rglResourceManager::initMaterialTextures (0x1402f5390) ignores "none".
-    if (lower == "none") {
+    if (equals_ci(trimmed, "none")) {
         return {};
     }
     return std::string(trimmed);
-}
-
-inline bool contains_ci(std::string_view haystack, std::string_view needle) {
-    if (needle.empty()) {
-        return true;
-    }
-    if (haystack.size() < needle.size()) {
-        return false;
-    }
-    const std::string h = wse::platform::ascii_lower(haystack);
-    const std::string n = wse::platform::ascii_lower(needle);
-    return h.find(n) != std::string::npos;
 }
 
 inline void append_spirv_string(std::vector<std::uint32_t>& words, std::string_view text) {
@@ -234,6 +373,21 @@ inline void append_spirv_string(std::vector<std::uint32_t>& words, std::string_v
         const std::uint32_t byte = static_cast<std::uint8_t>(text[i]);
         words[base + (i / 4U)] |= byte << (8U * (i % 4U));
     }
+}
+
+// Decodes a NUL-terminated SPIR-V literal string; nullopt when no NUL is present.
+inline std::optional<std::string> read_spirv_string(std::span<const std::uint32_t> words) {
+    std::string out;
+    for (const std::uint32_t w : words) {
+        for (std::uint32_t b = 0; b < 4U; ++b) {
+            const char c = static_cast<char>((w >> (8U * b)) & 0xFFU);
+            if (c == '\0') {
+                return out;
+            }
+            out.push_back(c);
+        }
+    }
+    return std::nullopt;
 }
 
 inline void emit_spirv_inst(std::vector<std::uint32_t>& words,
@@ -265,6 +419,28 @@ inline std::string hex_u64(std::uint64_t v) {
     return out;
 }
 
+inline std::optional<std::uint64_t> parse_hex_u64(std::string_view s) noexcept {
+    if (s.empty() || s.size() > 16U) {
+        return std::nullopt;
+    }
+    std::uint64_t v = 0;
+    for (const char c : s) {
+        std::uint64_t d = 0;
+        if (c >= '0' && c <= '9') {
+            d = static_cast<std::uint64_t>(c - '0');
+        } else if (c >= 'a' && c <= 'f') {
+            d = static_cast<std::uint64_t>(c - 'a' + 10);
+        } else {
+            return std::nullopt;
+        }
+        v = (v << 4U) | d;
+    }
+    return v;
+}
+
+// Creates every missing directory of `dir`. An intermediate component that cannot
+// be created or probed (a drive or mount root) is skipped; only the final directory
+// must exist afterwards.
 inline bool ensure_vfs_dir_tree(wse::platform::Vfs& vfs, std::string_view dir) {
     while (!dir.empty() && (dir.back() == '/' || dir.back() == '\\')) {
         dir.remove_suffix(1);
@@ -277,9 +453,7 @@ inline bool ensure_vfs_dir_tree(wse::platform::Vfs& vfs, std::string_view dir) {
         const std::size_t sep = dir.find_first_of("/\\", pos);
         const std::string_view prefix = (sep == std::string_view::npos) ? dir : dir.substr(0, sep);
         if (!prefix.empty() && !vfs.is_dir(prefix)) {
-            if (!vfs.make_dir(prefix) && !vfs.is_dir(prefix)) {
-                return false;
-            }
+            (void)vfs.make_dir(prefix);
         }
         if (sep == std::string_view::npos) {
             break;
@@ -297,6 +471,15 @@ inline std::string probe_first_existing(wse::platform::Vfs& vfs,
         }
     }
     return {};
+}
+
+// `read_text` that never leaves a partial or stale value behind on failure.
+inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, std::string& out) {
+    if (vfs.read_text(path, out)) {
+        return true;
+    }
+    out.clear();
+    return false;
 }
 
 }  // namespace shader_detail
@@ -320,18 +503,11 @@ inline std::string probe_first_existing(wse::platform::Vfs& vfs,
     return 0U;
 }
 
+// Float threshold for shaders comparing a [0, 1] alpha: `ref / 256` sits between
+// (ref - 1) / 255 and ref / 255, so 8-bit inputs pass exactly when the D3D9
+// integer test `alpha >= ref` passes.
 [[nodiscard]] inline constexpr float alpha_test_ref_float(AlphaTestMode mode) noexcept {
-    switch (mode) {
-        case AlphaTestMode::None:
-            return 0.0f;
-        case AlphaTestMode::GreaterEqual8:
-            return 8.0f / 256.0f;
-        case AlphaTestMode::GreaterEqual136:
-            return 136.0f / 256.0f;
-        case AlphaTestMode::GreaterEqual251:
-            return 251.0f / 256.0f;
-    }
-    return 0.0f;
+    return static_cast<float>(alpha_test_ref_u8(mode)) / 256.0f;
 }
 
 [[nodiscard]] inline MaterialRenderState decode_material_render_state(
@@ -341,6 +517,7 @@ inline std::string probe_first_existing(wse::platform::Vfs& vfs,
     out.depth_write = (mat.flags & kMaterialFlagNoZWrite) == 0U;
     out.depth_test = (mat.flags & kMaterialFlagNoDepthTest) == 0U;
 
+    // Values 5..7 have no createBlendStates (0x14029f590) slot; treated as opaque.
     const std::uint32_t raw_blend = (mat.flags & kMaterialFlagBlendMask) >> 8U;
     switch (raw_blend) {
         case 1U:
@@ -368,7 +545,7 @@ inline std::string probe_first_existing(wse::platform::Vfs& vfs,
                            : 0U;
 
     const std::uint32_t raw_order = (mat.flags & kMaterialFlagRenderOrderMask) >> 24U;
-    // Signed 4-bit nibble or 0..15 render order bias encoded in bits 24..27.
+    // Provisional signed-nibble decode (see MaterialRenderState::render_order).
     out.render_order = (raw_order >= 8U) ? static_cast<int>(raw_order) - 16 : static_cast<int>(raw_order);
 
     out.diffuse_a = shader_detail::normalize_material_slot(mat.texture_names[0]);
@@ -381,17 +558,17 @@ inline std::string probe_first_existing(wse::platform::Vfs& vfs,
     out.specular_rgb = mat.specular_rgb;
     out.srgb_diffuse = !out.diffuse_a.empty();
 
+    // One rule with or without a resolved shader: a specular map, or a positive
+    // coefficient with a non-black specular colour.
+    out.uses_specular = !out.specular_map.empty() ||
+                        (mat.specular_coeff > 0.0f &&
+                         (mat.specular_rgb.x > 0.0f || mat.specular_rgb.y > 0.0f ||
+                          mat.specular_rgb.z > 0.0f));
+    out.uses_normal_map = !out.bumpmap.empty();
     if (resolved_shader != nullptr) {
-        out.uses_normal_map = (resolved_shader->flags & kShaderFlagUsesNormalMap) != 0U ||
-                              !out.bumpmap.empty();
+        out.uses_normal_map =
+            out.uses_normal_map || (resolved_shader->flags & kShaderFlagUsesNormalMap) != 0U;
         out.uses_skinning = (resolved_shader->flags & kShaderFlagUsesSkinning) != 0U;
-        out.uses_specular = !out.specular_map.empty() ||
-                            (mat.specular_coeff > 0.0f &&
-                             (mat.specular_rgb.x > 0.0f || mat.specular_rgb.y > 0.0f ||
-                              mat.specular_rgb.z > 0.0f));
-    } else {
-        out.uses_normal_map = !out.bumpmap.empty();
-        out.uses_specular = !out.specular_map.empty() || mat.specular_coeff > 0.0f;
     }
 
     return out;
@@ -488,10 +665,68 @@ inline std::string probe_first_existing(wse::platform::Vfs& vfs,
     return {};
 }
 
+// True when effect source already carries a WSE2 conditional: a preprocessor
+// `#if WSE2`, `#ifdef WSE2`, `#elif WSE2`, or `#if defined(WSE2)` line with `WSE2`
+// as a whole token. Safety deviation: retail checkLoadingPostEffects (0x14029c930)
+// is treated as a substring check, which would duplicate the include for `#ifdef
+// WSE2` and skip it for `#if WSE2_LEGACY`.
+[[nodiscard]] inline bool effect_source_has_wse2_conditional(std::string_view src) noexcept {
+    using shader_detail::is_ident_char;
+    using shader_detail::is_inline_space;
+    src = shader_detail::strip_utf8_bom(src);
+    std::size_t pos = 0;
+    while (pos < src.size()) {
+        const std::size_t eol = src.find('\n', pos);
+        std::string_view line = src.substr(pos, (eol == std::string_view::npos) ? src.size() - pos
+                                                                             : eol - pos);
+        pos = (eol == std::string_view::npos) ? src.size() : eol + 1U;
+        std::size_t i = 0;
+        while (i < line.size() && is_inline_space(line[i])) {
+            ++i;
+        }
+        if (i >= line.size() || line[i] != '#') {
+            continue;
+        }
+        ++i;
+        const auto skip_ws = [&]() {
+            while (i < line.size() && is_inline_space(line[i])) {
+                ++i;
+            }
+        };
+        const auto read_ident = [&]() {
+            const std::size_t b = i;
+            while (i < line.size() && is_ident_char(line[i])) {
+                ++i;
+            }
+            return line.substr(b, i - b);
+        };
+        skip_ws();
+        const std::string_view directive = read_ident();
+        if (directive != "if" && directive != "ifdef" && directive != "elif") {
+            continue;
+        }
+        skip_ws();
+        std::string_view token = read_ident();
+        if (directive != "ifdef" && token == "defined") {
+            skip_ws();
+            if (i < line.size() && line[i] == '(') {
+                ++i;
+                skip_ws();
+            }
+            token = read_ident();
+        }
+        if (token == "WSE2") {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Matches rglGraphicsContext::checkLoadingPostEffects (0x14029c930):
-//   Checks <module>/PostFx.fx (or Shaders/postFX.fx / root PostFx.fx), appends
-//   `#if WSE2\n#include "postFX_WSE2.fx"\n#endif\n` when `use_wse2_effect` is set and
-//   `#if WSE2` is absent, and flags if <module>/postFX_WSE2.fx shadows root.
+//   Checks <module>/PostFx.fx (or <module>/Shaders/postFX.fx, then root PostFx.fx),
+//   appends `#if WSE2\n#include "postFX_WSE2.fx"\n#endif\n` when `use_wse2_effect` is set
+//   and no WSE2 conditional is present, and flags if <module>/postFX_WSE2.fx shadows root.
+//   The Vfs is case-insensitive, so one probe per location covers `postFX.fx` spellings.
 [[nodiscard]] inline bool resolve_postfx_effect_source(wse::platform::Vfs& vfs,
                                                        std::string_view warband_root,
                                                        std::string_view module_dir,
@@ -503,7 +738,6 @@ inline std::string probe_first_existing(wse::platform::Vfs& vfs,
         out.resolved_path = shader_detail::probe_first_existing(
             vfs,
             {wse::game::vfs_join_path(module_dir, "PostFx.fx"),
-             wse::game::vfs_join_path(module_dir, "postFX.fx"),
              wse::game::vfs_join_path(module_dir, "Shaders/postFX.fx")});
         out.module_wse2_shadows_root =
             vfs.is_file(wse::game::vfs_join_path(module_dir, "postFX_WSE2.fx")) &&
@@ -511,17 +745,16 @@ inline std::string probe_first_existing(wse::platform::Vfs& vfs,
     }
     if (out.resolved_path.empty()) {
         out.resolved_path = shader_detail::probe_first_existing(
-            vfs,
-            {wse::game::vfs_join_path(warband_root, "PostFx.fx"),
-             wse::game::vfs_join_path(warband_root, "postFX.fx")});
+            vfs, {wse::game::vfs_join_path(warband_root, "PostFx.fx")});
     }
     if (out.resolved_path.empty() || !vfs.read_text(out.resolved_path, out.source_text)) {
+        out.source_text.clear();
         if (error_out != nullptr) {
             *error_out = "unable to locate PostFx.fx";
         }
         return false;
     }
-    if (use_wse2_effect && out.source_text.find("#if WSE2") == std::string::npos) {
+    if (use_wse2_effect && !effect_source_has_wse2_conditional(out.source_text)) {
         if (!out.source_text.empty() && out.source_text.back() != '\n') {
             out.source_text.push_back('\n');
         }
@@ -598,11 +831,18 @@ inline std::string probe_first_existing(wse::platform::Vfs& vfs,
     return {};
 }
 
+// Parses `[SkinFallback]` / `[NoSkinFallback]` pairs. A leading UTF-8 BOM is
+// ignored. A key repeated within one section keeps its first position in `entries`
+// but takes the later value everywhere (with a warning), so `entries` and the maps
+// never disagree.
 inline void parse_wse2_shaders_ini(std::string_view ini_text, ShaderPairTable& out) {
     out = ShaderPairTable{};
     enum class Section : std::uint8_t { Other, SkinFallback, NoSkinFallback };
     Section sec = Section::Other;
+    std::unordered_map<std::string, std::size_t> skin_index;
+    std::unordered_map<std::string, std::size_t> noskin_index;
 
+    ini_text = shader_detail::strip_utf8_bom(ini_text);
     std::size_t pos = 0;
     while (pos < ini_text.size()) {
         const std::size_t eol = ini_text.find('\n', pos);
@@ -612,13 +852,9 @@ inline void parse_wse2_shaders_ini(std::string_view ini_text, ShaderPairTable& o
         pos = (eol == std::string_view::npos) ? ini_text.size() : eol + 1U;
 
         // Strip ';' or '#' comments before trimming whitespace.
-        const std::size_t semi = line.find(';');
-        if (semi != std::string_view::npos) {
-            line = line.substr(0, semi);
-        }
-        const std::size_t hash = line.find('#');
-        if (hash != std::string_view::npos) {
-            line = line.substr(0, hash);
+        const std::size_t comment = line.find_first_of(";#");
+        if (comment != std::string_view::npos) {
+            line = line.substr(0, comment);
         }
         line = shader_detail::trim_ascii(line);
         if (line.empty()) {
@@ -626,11 +862,11 @@ inline void parse_wse2_shaders_ini(std::string_view ini_text, ShaderPairTable& o
         }
 
         if (line.front() == '[' && line.back() == ']') {
-            const std::string sec_lower =
-                wse::platform::ascii_lower(shader_detail::trim_ascii(line.substr(1U, line.size() - 2U)));
-            if (sec_lower == "skinfallback") {
+            const std::string_view sec_name =
+                shader_detail::trim_ascii(line.substr(1U, line.size() - 2U));
+            if (shader_detail::equals_ci(sec_name, "skinfallback")) {
                 sec = Section::SkinFallback;
-            } else if (sec_lower == "noskinfallback") {
+            } else if (shader_detail::equals_ci(sec_name, "noskinfallback")) {
                 sec = Section::NoSkinFallback;
             } else {
                 sec = Section::Other;
@@ -655,18 +891,24 @@ inline void parse_wse2_shaders_ini(std::string_view ini_text, ShaderPairTable& o
         entry.source_shader = std::string(lhs);
         entry.target_shader = std::string(rhs);
         entry.skin_fallback = (sec == Section::SkinFallback);
-        const std::string key = wse::platform::ascii_lower(lhs);
-        if (entry.skin_fallback) {
-            out.skin_fallback_map[key] = entry.target_shader;
+        std::string key = wse::platform::ascii_lower(lhs);
+        auto& index = entry.skin_fallback ? skin_index : noskin_index;
+        auto& map = entry.skin_fallback ? out.skin_fallback_map : out.noskin_fallback_map;
+        map[key] = entry.target_shader;
+        const auto found = index.find(key);
+        if (found != index.end()) {
+            out.warnings.push_back("duplicate wse2_shaders.ini key, later value wins: " +
+                                   entry.source_shader);
+            out.entries[found->second] = std::move(entry);
         } else {
-            out.noskin_fallback_map[key] = entry.target_shader;
+            index.emplace(std::move(key), out.entries.size());
+            out.entries.push_back(std::move(entry));
         }
-        out.entries.push_back(std::move(entry));
     }
 }
 
 // -----------------------------------------------------------------------------
-// Shader Suitability, Recursive Alternative Resolution & Vertex Decl Type
+// Shader Suitability, Alternative Resolution & Vertex Decl Type
 // -----------------------------------------------------------------------------
 
 // Reconstructs rglShader::isSuitable (0x140301ab0).
@@ -697,20 +939,23 @@ inline void parse_wse2_shaders_ini(std::string_view ini_text, ShaderPairTable& o
     return true;
 }
 
+namespace shader_detail {
+
+inline bool technique_available(const BrfShader& sh,
+                                const std::unordered_set<std::string>* available_techniques_lower) {
+    return (available_techniques_lower == nullptr) ||
+           (available_techniques_lower->find(wse::platform::ascii_lower(sh.technique_name)) !=
+            available_techniques_lower->end());
+}
+
+}  // namespace shader_detail
+
 inline void validate_shader_pairs(const ShaderPairTable& raw_table,
                                   const std::unordered_map<std::string, BrfShader>& shaders_by_lower,
                                   const ShaderQualityConfig& quality_cfg,
                                   ShaderPairTable& validated_out,
                                   const std::unordered_set<std::string>* available_techniques_lower = nullptr) {
     validated_out = ShaderPairTable{};
-    const auto is_tech_ok = [&](const BrfShader& sh) -> bool {
-        if (available_techniques_lower == nullptr) {
-            return true;
-        }
-        return available_techniques_lower->find(wse::platform::ascii_lower(sh.technique_name)) !=
-               available_techniques_lower->end();
-    };
-
     for (const ShaderPairEntry& e : raw_table.entries) {
         const std::string src_k = wse::platform::ascii_lower(e.source_shader);
         const std::string dst_k = wse::platform::ascii_lower(e.target_shader);
@@ -740,7 +985,8 @@ inline void validate_shader_pairs(const ShaderPairTable& raw_table,
                                              e.source_shader + " = " + e.target_shader);
             continue;
         }
-        if (!is_shader_suitable(dst, quality_cfg, is_tech_ok(dst))) {
+        if (!is_shader_suitable(dst, quality_cfg,
+                                shader_detail::technique_available(dst, available_techniques_lower))) {
             validated_out.warnings.push_back("unsuitable pair target: " + e.source_shader +
                                              " = " + e.target_shader);
             continue;
@@ -754,73 +1000,84 @@ inline void validate_shader_pairs(const ShaderPairTable& raw_table,
     }
 }
 
-namespace shader_detail {
-
-inline void resolve_suitable_shader_impl(
-    std::string_view name,
-    const std::unordered_map<std::string, BrfShader>& shaders_by_lower,
-    const ShaderQualityConfig& cfg,
-    const std::unordered_set<std::string>* available_techniques_lower,
-    std::unordered_set<std::string>& visiting,
-    int depth,
-    const BrfShader*& best_shader,
-    int& best_depth) {
-    // rglResourceManager::getSuitableShaderImpl (0x1402f3eb0) starts best_depth at 0x186a0 (100000).
-    if (depth >= best_depth) {
-        return;
-    }
-    const std::string key = wse::platform::ascii_lower(name);
-    if (key.empty() || !visiting.insert(key).second) {
-        return;
-    }
-
-    const auto it = shaders_by_lower.find(key);
-    if (it != shaders_by_lower.end()) {
-        const BrfShader& sh = it->second;
-        const bool tech_ok =
-            (available_techniques_lower == nullptr) ||
-            (available_techniques_lower->find(wse::platform::ascii_lower(sh.technique_name)) !=
-             available_techniques_lower->end());
-        if (is_shader_suitable(sh, cfg, tech_ok)) {
-            best_shader = &sh;
-            best_depth = depth;
-            visiting.erase(key);
-            return;
-        }
-        for (const std::string& alt : sh.alternatives) {
-            resolve_suitable_shader_impl(alt, shaders_by_lower, cfg, available_techniques_lower,
-                                         visiting, depth + 1, best_shader, best_depth);
-        }
-    }
-
-    visiting.erase(key);
-}
-
-}  // namespace shader_detail
-
 // Reconstructs rglResourceManager::getSuitableShader (0x1402f3db0) ->
-// getSuitableShaderImpl (0x1402f3eb0) -> getDefaultShader ("def_shader", 0x1402f1ef0).
+// getSuitableShaderImpl (0x1402f3eb0) -> getDefaultShader ("def_shader", 0x1402f1ef0):
+// the suitable shader reachable through the fewest alternative hops, else
+// `def_shader`. Implemented as a breadth-first search with one global visited set,
+// O(shaders + alternatives) even for cyclic or densely linked alternative graphs
+// (a path-local depth-first search is exponential there). Among equally shallow
+// candidates the first in alternative-list order wins.
 [[nodiscard]] inline ShaderResolutionResult resolve_suitable_shader(
     std::string_view requested_name,
     const std::unordered_map<std::string, BrfShader>& shaders_by_lower,
     const ShaderQualityConfig& cfg = {},
     const std::unordered_set<std::string>* available_techniques_lower = nullptr) {
-    const BrfShader* best = nullptr;
-    int best_depth = 100000;  // 0x186a0 in rglResourceManager::getSuitableShader (0x1402f3db0)
-    std::unordered_set<std::string> visiting;
-    shader_detail::resolve_suitable_shader_impl(
-        requested_name, shaders_by_lower, cfg, available_techniques_lower, visiting, 0, best,
-        best_depth);
-    if (best != nullptr) {
-        return ShaderResolutionResult{best, best_depth, false};
+    std::deque<std::pair<std::string, int>> queue;
+    std::unordered_set<std::string> seen;
+    std::string start = wse::platform::ascii_lower(requested_name);
+    if (!start.empty()) {
+        seen.insert(start);
+        queue.emplace_back(std::move(start), 0);
+    }
+    while (!queue.empty()) {
+        const std::pair<std::string, int> node = std::move(queue.front());
+        queue.pop_front();
+        const auto it = shaders_by_lower.find(node.first);
+        if (it == shaders_by_lower.end()) {
+            continue;
+        }
+        const BrfShader& sh = it->second;
+        if (is_shader_suitable(sh, cfg,
+                               shader_detail::technique_available(sh, available_techniques_lower))) {
+            return ShaderResolutionResult{&sh, node.second, false};
+        }
+        if (node.second + 1 >= kSuitableShaderNoDepth) {
+            continue;
+        }
+        for (const std::string& alt : sh.alternatives) {
+            std::string key = wse::platform::ascii_lower(alt);
+            if (!key.empty() && seen.insert(key).second) {
+                queue.emplace_back(std::move(key), node.second + 1);
+            }
+        }
     }
 
     const auto def_it = shaders_by_lower.find("def_shader");
     if (def_it != shaders_by_lower.end()) {
-        return ShaderResolutionResult{&def_it->second, best_depth, true};
+        return ShaderResolutionResult{&def_it->second, kSuitableShaderNoDepth, true};
     }
-    return ShaderResolutionResult{nullptr, best_depth, true};
+    return ShaderResolutionResult{nullptr, kSuitableShaderNoDepth, true};
 }
+
+// Memoizing front end for `resolve_suitable_shader`: materials share a small set
+// of shaders, so each distinct (case-folded) name is resolved once. The shader map
+// and technique set must outlive the resolver and stay unmodified.
+class SuitableShaderResolver {
+public:
+    explicit SuitableShaderResolver(
+        const std::unordered_map<std::string, BrfShader>& shaders_by_lower,
+        ShaderQualityConfig cfg = {},
+        const std::unordered_set<std::string>* available_techniques_lower = nullptr)
+        : shaders_(&shaders_by_lower), cfg_(cfg), techniques_(available_techniques_lower) {}
+
+    [[nodiscard]] const ShaderResolutionResult& resolve(std::string_view name) {
+        std::string key = wse::platform::ascii_lower(name);
+        const auto it = cache_.find(key);
+        if (it != cache_.end()) {
+            return it->second;
+        }
+        ShaderResolutionResult res = resolve_suitable_shader(key, *shaders_, cfg_, techniques_);
+        return cache_.emplace(std::move(key), res).first->second;
+    }
+
+    [[nodiscard]] std::size_t cached_count() const noexcept { return cache_.size(); }
+
+private:
+    const std::unordered_map<std::string, BrfShader>* shaders_;
+    ShaderQualityConfig cfg_;
+    const std::unordered_set<std::string>* techniques_;
+    std::unordered_map<std::string, ShaderResolutionResult> cache_{};
+};
 
 // Reconstructs rglMesh::getVertexDeclarationType (0x1402baa30):
 // Selects `paired_shader` when `uses_skinning != mesh_has_bones`, then maps shader flags to 0..4.
@@ -897,67 +1154,201 @@ inline std::string_view extract_xml_attr(std::string_view tag_body, std::string_
     return {};
 }
 
+// Index of the `>` that closes a tag whose attributes start at `from`; a `>` inside a
+// quoted attribute value does not count. npos when unterminated.
+inline std::size_t find_xml_tag_close(std::string_view xml, std::size_t from) noexcept {
+    char quote = 0;
+    for (std::size_t i = from; i < xml.size(); ++i) {
+        const char c = xml[i];
+        if (quote != 0) {
+            if (c == quote) {
+                quote = 0;
+            }
+        } else if (c == '"' || c == '\'') {
+            quote = c;
+        } else if (c == '>') {
+            return i;
+        }
+    }
+    return std::string_view::npos;
+}
+
+// True when `xml[lt]` opens `<name` (or `</name` with `closing`) followed by a tag
+// boundary, so `<technique` never matches `<techniques>`.
+inline bool xml_tag_name_at(std::string_view xml,
+                            std::size_t lt,
+                            std::string_view name,
+                            bool closing) noexcept {
+    std::size_t p = lt + 1U;
+    if (closing) {
+        if (p >= xml.size() || xml[p] != '/') {
+            return false;
+        }
+        ++p;
+    }
+    if (p + name.size() >= xml.size() || xml.compare(p, name.size(), name) != 0) {
+        return false;
+    }
+    const char c = xml[p + name.size()];
+    return c == '>' || c == '/' || std::isspace(static_cast<unsigned char>(c)) != 0;
+}
+
+// Next `<` at or after `pos` that is not inside a comment, CDATA section, or
+// processing instruction.
+inline std::size_t next_xml_tag(std::string_view xml, std::size_t pos) noexcept {
+    while (pos < xml.size()) {
+        const std::size_t lt = xml.find('<', pos);
+        if (lt == std::string_view::npos) {
+            return lt;
+        }
+        std::string_view terminator{};
+        std::size_t skip = 0;
+        if (xml.compare(lt, 4U, "<!--") == 0) {
+            terminator = "-->";
+            skip = 4U;
+        } else if (xml.compare(lt, 9U, "<![CDATA[") == 0) {
+            terminator = "]]>";
+            skip = 9U;
+        } else if (xml.compare(lt, 2U, "<?") == 0) {
+            terminator = "?>";
+            skip = 2U;
+        } else {
+            return lt;
+        }
+        const std::size_t end = xml.find(terminator, lt + skip);
+        if (end == std::string_view::npos) {
+            return std::string_view::npos;
+        }
+        pos = end + terminator.size();
+    }
+    return std::string_view::npos;
+}
+
+struct XmlElement {
+    std::string_view attrs{};
+    std::string_view inner{};
+    std::size_t end = 0;  // index just past the element
+};
+
+// Finds the next `<name ...>` element at or after `from`. `inner` spans up to the
+// first matching close tag (elements of the same name are not nested in GLShaders).
+// An unterminated element is returned with an empty body.
+inline std::optional<XmlElement> find_xml_element(std::string_view xml,
+                                                  std::string_view name,
+                                                  std::size_t from) noexcept {
+    std::size_t pos = from;
+    for (;;) {
+        const std::size_t lt = next_xml_tag(xml, pos);
+        if (lt == std::string_view::npos) {
+            return std::nullopt;
+        }
+        if (!xml_tag_name_at(xml, lt, name, false)) {
+            pos = lt + 1U;
+            continue;
+        }
+        const std::size_t attrs_begin = lt + 1U + name.size();
+        const std::size_t gt = find_xml_tag_close(xml, attrs_begin);
+        if (gt == std::string_view::npos) {
+            return std::nullopt;
+        }
+        XmlElement el{};
+        el.attrs = xml.substr(attrs_begin, gt - attrs_begin);
+        const std::string_view trimmed = trim_ascii(el.attrs);
+        el.end = gt + 1U;
+        if (!trimmed.empty() && trimmed.back() == '/') {
+            el.attrs = trimmed.substr(0U, trimmed.size() - 1U);
+            return el;
+        }
+        std::size_t scan = gt + 1U;
+        for (;;) {
+            const std::size_t close = next_xml_tag(xml, scan);
+            if (close == std::string_view::npos) {
+                return el;
+            }
+            if (xml_tag_name_at(xml, close, name, true)) {
+                el.inner = xml.substr(gt + 1U, close - (gt + 1U));
+                const std::size_t close_gt = xml.find('>', close);
+                el.end = (close_gt == std::string_view::npos) ? xml.size() : close_gt + 1U;
+                return el;
+            }
+            scan = close + 1U;
+        }
+    }
+}
+
+// `<child name="x"/>` or `<child>x</child>`.
+inline std::string xml_child_value(std::string_view parent_inner, std::string_view child) {
+    const std::optional<XmlElement> el = find_xml_element(parent_inner, child, 0U);
+    if (!el) {
+        return {};
+    }
+    const std::string_view attr = extract_xml_attr(el->attrs, "name");
+    if (!attr.empty()) {
+        return std::string(attr);
+    }
+    return std::string(trim_ascii(el->inner));
+}
+
+// Inserts `#define <define_body>` right after a leading `#version` line (which GLSL
+// requires to come first), else at the top.
+inline std::string inject_glsl_define(std::string_view glsl, std::string_view define_body) {
+    const std::string line = "#define " + std::string(define_body) + "\n";
+    std::size_t pos = 0;
+    while (pos < glsl.size()) {
+        const std::size_t eol = glsl.find('\n', pos);
+        const std::string_view l = trim_ascii(
+            glsl.substr(pos, (eol == std::string_view::npos) ? glsl.size() - pos : eol - pos));
+        if (l.rfind("#version", 0U) == 0U) {
+            const std::size_t insert_at = (eol == std::string_view::npos) ? glsl.size() : eol + 1U;
+            std::string out(glsl.substr(0U, insert_at));
+            if (eol == std::string_view::npos) {
+                out.push_back('\n');
+            }
+            out += line;
+            out.append(glsl.substr(insert_at));
+            return out;
+        }
+        if (!l.empty() && l.rfind("//", 0U) != 0U) {
+            break;  // first non-comment line is not #version
+        }
+        pos = (eol == std::string_view::npos) ? glsl.size() : eol + 1U;
+    }
+    return line + std::string(glsl);
+}
+
 }  // namespace shader_detail
 
 inline void parse_techniques_xml(std::string_view xml_text,
                                  std::string_view source_xml,
                                  std::vector<GlTechniqueEntry>& out) {
     std::size_t pos = 0;
-    while (pos < xml_text.size()) {
-        const std::size_t open = xml_text.find("<technique", pos);
-        if (open == std::string_view::npos) {
-            break;
+    while (const std::optional<shader_detail::XmlElement> el =
+               shader_detail::find_xml_element(xml_text, "technique", pos)) {
+        pos = el->end;
+        const std::string_view tech_name = shader_detail::extract_xml_attr(el->attrs, "name");
+        if (tech_name.empty()) {
+            continue;
         }
-        const std::size_t open_end = xml_text.find('>', open + 10U);
-        if (open_end == std::string_view::npos) {
-            break;
-        }
-        const std::string_view header = xml_text.substr(open + 10U, open_end - (open + 10U));
-        const std::string_view tech_name = shader_detail::extract_xml_attr(header, "name");
-
-        std::string_view body{};
-        std::size_t next_pos = open_end + 1U;
-        if (open_end > open && xml_text[open_end - 1U] != '/') {
-            const std::size_t close = xml_text.find("</technique>", open_end + 1U);
-            if (close != std::string_view::npos) {
-                body = xml_text.substr(open_end + 1U, close - (open_end + 1U));
-                next_pos = close + 12U;
-            }
-        }
-
-        if (!tech_name.empty()) {
-            GlTechniqueEntry entry{};
-            entry.name = std::string(tech_name);
-            entry.source_xml = std::string(source_xml);
-
-            const std::size_t vs_pos = body.find("<vertex_shader");
-            if (vs_pos != std::string_view::npos) {
-                const std::size_t vs_end = body.find('>', vs_pos);
-                if (vs_end != std::string_view::npos) {
-                    entry.vertex_shader = std::string(
-                        shader_detail::extract_xml_attr(body.substr(vs_pos, vs_end - vs_pos), "name"));
-                }
-            }
-            const std::size_t fs_pos = body.find("<fragment_shader");
-            if (fs_pos != std::string_view::npos) {
-                const std::size_t fs_end = body.find('>', fs_pos);
-                if (fs_end != std::string_view::npos) {
-                    entry.fragment_shader = std::string(
-                        shader_detail::extract_xml_attr(body.substr(fs_pos, fs_end - fs_pos), "name"));
-                }
-            }
-            out.push_back(std::move(entry));
-        }
-
-        pos = next_pos;
+        GlTechniqueEntry entry{};
+        entry.name = std::string(tech_name);
+        entry.source_xml = std::string(source_xml);
+        entry.vertex_shader = shader_detail::xml_child_value(el->inner, "vertex_shader");
+        entry.fragment_shader = shader_detail::xml_child_value(el->inner, "fragment_shader");
+        out.push_back(std::move(entry));
     }
 }
 
+// Loads `GLShaders/*.xml` techniques (+ their `GLShadersOptimized` or `GLShaders`
+// GLSL when `opts.load_glsl_sources`) and standalone `GLShadersOptimized/vs_*.glsl`
+// pairs. False (with an error) when no technique is found at all. The 5 WSE2
+// skinning variants are then synthesized from their base techniques, only when the
+// base exists and the variant is absent.
 [[nodiscard]] inline bool load_warband_shader_technique_catalog(
     wse::platform::Vfs& vfs,
     std::string_view warband_root,
     ShaderTechniqueCatalog& out,
-    std::string* error_out = nullptr) {
+    std::string* error_out = nullptr,
+    const TechniqueCatalogOptions& opts = {}) {
     out = ShaderTechniqueCatalog{};
     static constexpr const char* kXmlFiles[] = {
         "GLShaders/techniques.xml",
@@ -965,36 +1356,33 @@ inline void parse_techniques_xml(std::string_view xml_text,
         "GLShaders/postfx_techniques.xml",
     };
 
+    std::string xml_text;
+    std::vector<GlTechniqueEntry> parsed;
     for (const char* rel : kXmlFiles) {
         const std::string full = wse::game::vfs_join_path(warband_root, rel);
-        std::string xml_text;
-        if (!vfs.is_file(full) || !vfs.read_text(full, xml_text)) {
+        if (!vfs.read_text(full, xml_text)) {
             continue;
         }
         out.loaded_sources.push_back(full);
-        std::vector<GlTechniqueEntry> parsed;
+        parsed.clear();
         parse_techniques_xml(xml_text, rel, parsed);
         for (GlTechniqueEntry& entry : parsed) {
-            const std::string vs_opt =
-                wse::game::vfs_join_path(warband_root, "GLShadersOptimized/vs_" + entry.name + ".glsl");
-            const std::string fs_opt =
-                wse::game::vfs_join_path(warband_root, "GLShadersOptimized/fs_" + entry.name + ".glsl");
-            if (vfs.is_file(vs_opt)) {
-                (void)vfs.read_text(vs_opt, entry.vs_glsl);
-            } else if (!entry.vertex_shader.empty()) {
-                const std::string vs_raw =
-                    wse::game::vfs_join_path(warband_root, "GLShaders/" + entry.vertex_shader);
-                if (vfs.is_file(vs_raw)) {
-                    (void)vfs.read_text(vs_raw, entry.vs_glsl);
+            if (opts.load_glsl_sources) {
+                const std::string vs_opt = wse::game::vfs_join_path(
+                    warband_root, "GLShadersOptimized/vs_" + entry.name + ".glsl");
+                const std::string fs_opt = wse::game::vfs_join_path(
+                    warband_root, "GLShadersOptimized/fs_" + entry.name + ".glsl");
+                if (!shader_detail::read_text_or_clear(vfs, vs_opt, entry.vs_glsl) &&
+                    !entry.vertex_shader.empty()) {
+                    (void)shader_detail::read_text_or_clear(
+                        vfs, wse::game::vfs_join_path(warband_root, "GLShaders/" + entry.vertex_shader),
+                        entry.vs_glsl);
                 }
-            }
-            if (vfs.is_file(fs_opt)) {
-                (void)vfs.read_text(fs_opt, entry.fs_glsl);
-            } else if (!entry.fragment_shader.empty()) {
-                const std::string fs_raw =
-                    wse::game::vfs_join_path(warband_root, "GLShaders/" + entry.fragment_shader);
-                if (vfs.is_file(fs_raw)) {
-                    (void)vfs.read_text(fs_raw, entry.fs_glsl);
+                if (!shader_detail::read_text_or_clear(vfs, fs_opt, entry.fs_glsl) &&
+                    !entry.fragment_shader.empty()) {
+                    (void)shader_detail::read_text_or_clear(
+                        vfs, wse::game::vfs_join_path(warband_root, "GLShaders/" + entry.fragment_shader),
+                        entry.fs_glsl);
                 }
             }
             out.techniques_by_lower[wse::platform::ascii_lower(entry.name)] = std::move(entry);
@@ -1004,60 +1392,32 @@ inline void parse_techniques_xml(std::string_view xml_text,
     // Also pick up any standalone GLShadersOptimized pairs not listed in XML.
     const std::string opt_dir = wse::game::vfs_join_path(warband_root, "GLShadersOptimized");
     std::vector<wse::platform::VfsEntry> opt_entries;
-    if (vfs.is_dir(opt_dir) && vfs.list_dir(opt_dir, opt_entries)) {
+    if (vfs.list_dir(opt_dir, opt_entries)) {
         for (const auto& ve : opt_entries) {
-            if (ve.is_directory) {
+            if (ve.is_directory || ve.name.size() <= 8U) {
                 continue;
             }
-            const std::string lower = wse::platform::ascii_lower(ve.name);
-            if (lower.rfind("vs_", 0U) == 0U && lower.size() > 8U &&
-                lower.substr(lower.size() - 5U) == ".glsl") {
-                const std::string stem = ve.name.substr(3U, ve.name.size() - 8U);
-                const std::string key = wse::platform::ascii_lower(stem);
-                if (out.techniques_by_lower.find(key) == out.techniques_by_lower.end()) {
-                    GlTechniqueEntry extra{};
-                    extra.name = stem;
-                    extra.source_xml = "GLShadersOptimized";
-                    (void)vfs.read_text(wse::game::vfs_join_path(opt_dir, ve.name), extra.vs_glsl);
-                    const std::string fs_path = wse::game::vfs_join_path(opt_dir, "fs_" + stem + ".glsl");
-                    if (vfs.is_file(fs_path)) {
-                        (void)vfs.read_text(fs_path, extra.fs_glsl);
-                    }
-                    out.techniques_by_lower.emplace(key, std::move(extra));
-                }
+            const std::string_view name(ve.name);
+            if (!shader_detail::equals_ci(name.substr(0U, 3U), "vs_") ||
+                !shader_detail::equals_ci(name.substr(name.size() - 5U), ".glsl")) {
+                continue;
             }
+            const std::string stem(name.substr(3U, name.size() - 8U));
+            std::string key = wse::platform::ascii_lower(stem);
+            if (out.techniques_by_lower.find(key) != out.techniques_by_lower.end()) {
+                continue;
+            }
+            GlTechniqueEntry extra{};
+            extra.name = stem;
+            extra.source_xml = "GLShadersOptimized";
+            if (opts.load_glsl_sources) {
+                (void)shader_detail::read_text_or_clear(
+                    vfs, wse::game::vfs_join_path(opt_dir, ve.name), extra.vs_glsl);
+                (void)shader_detail::read_text_or_clear(
+                    vfs, wse::game::vfs_join_path(opt_dir, "fs_" + stem + ".glsl"), extra.fs_glsl);
+            }
+            out.techniques_by_lower.emplace(std::move(key), std::move(extra));
         }
-    }
-
-    // Synthesize the 5 WSE2 `wse2_shaders.brf` skinned technique variants from their base
-    // GLShaders counterparts when absent (they live in `mb_wse2_2a/2b.fxo` in retail WSE2).
-    static constexpr std::pair<const char*, const char*> kWse2SkinMappings[] = {
-        {"face_shader_skin_high", "faceshader_high"},
-        {"faceshader_skin_high_specular", "faceshader_high_specular"},
-        {"faceshader_skin_simple", "faceshader_simple"},
-        {"simple_shading_with_skin", "simple_shading"},
-        {"simple_shading_no_filter_with_skin", "simple_shading_no_filter"},
-    };
-    for (const auto& [wse2_tech, base_tech] : kWse2SkinMappings) {
-        const std::string key = wse::platform::ascii_lower(wse2_tech);
-        if (out.techniques_by_lower.find(key) != out.techniques_by_lower.end()) {
-            continue;
-        }
-        const GlTechniqueEntry* base = out.find(base_tech);
-        GlTechniqueEntry syn{};
-        syn.name = wse2_tech;
-        syn.source_xml = "wse2_shaders.brf";
-        syn.synthesized_wse2_variant = true;
-        if (base != nullptr) {
-            syn.vertex_shader = base->vertex_shader;
-            syn.fragment_shader = base->fragment_shader;
-            syn.vs_glsl = "// #define USE_SKINNING 1\n" + base->vs_glsl;
-            syn.fs_glsl = base->fs_glsl;
-        } else {
-            syn.vs_glsl = "// #define USE_SKINNING 1\n";
-            syn.fs_glsl = "// synthesized WSE2 fragment stage\n";
-        }
-        out.techniques_by_lower.emplace(key, std::move(syn));
     }
 
     if (out.techniques_by_lower.empty()) {
@@ -1066,76 +1426,124 @@ inline void parse_techniques_xml(std::string_view xml_text,
         }
         return false;
     }
+
+    // Synthesize the 5 WSE2 `wse2_shaders.brf` skinned technique variants from their base
+    // GLShaders counterparts when absent (they live in `mb_wse2_2a/2b.fxo` in retail WSE2).
+    // The vertex stage gets a real `#define USE_SKINNING 1`; it only skins if the base
+    // GLSL branches on that macro.
+    static constexpr std::pair<const char*, const char*> kWse2SkinMappings[] = {
+        {"face_shader_skin_high", "faceshader_high"},
+        {"faceshader_skin_high_specular", "faceshader_high_specular"},
+        {"faceshader_skin_simple", "faceshader_simple"},
+        {"simple_shading_with_skin", "simple_shading"},
+        {"simple_shading_no_filter_with_skin", "simple_shading_no_filter"},
+    };
+    for (const auto& [wse2_tech, base_tech] : kWse2SkinMappings) {
+        std::string key = wse::platform::ascii_lower(wse2_tech);
+        if (out.techniques_by_lower.find(key) != out.techniques_by_lower.end()) {
+            continue;
+        }
+        const GlTechniqueEntry* base = out.find(base_tech);
+        if (base == nullptr) {
+            out.warnings.push_back(std::string("WSE2 skinning variant ") + wse2_tech +
+                                   " not synthesized: base technique " + base_tech + " missing");
+            continue;
+        }
+        GlTechniqueEntry syn{};
+        syn.name = wse2_tech;
+        syn.source_xml = "wse2_shaders.brf";
+        syn.synthesized_wse2_variant = true;
+        syn.vertex_shader = base->vertex_shader;
+        syn.fragment_shader = base->fragment_shader;
+        syn.vs_glsl = shader_detail::inject_glsl_define(base->vs_glsl, "USE_SKINNING 1");
+        syn.fs_glsl = base->fs_glsl;
+        out.techniques_by_lower.emplace(std::move(key), std::move(syn));
+    }
     return true;
 }
 
 // -----------------------------------------------------------------------------
-// Deterministic SPIR-V 1.0 Module Generator & Persistent VFS Cache
+// Placeholder SPIR-V 1.0 Module Emitter & Persistent VFS Cache
 // -----------------------------------------------------------------------------
 
+// Bumped whenever `emit_placeholder_spirv_module` output changes; part of every
+// cache key and of the module's tag, so stale cache entries are never reused.
+inline constexpr std::uint32_t kPlaceholderSpirvGeneratorVersion = 2U;
+inline constexpr std::uint32_t kPlaceholderSpirvGeneratorMagic = 0x57534532U;  // "WSE2"
+
+namespace shader_detail {
+
+inline constexpr std::uint32_t kSpvIdExtInst = 1U;
+inline constexpr std::uint32_t kSpvIdEntryFn = 2U;
+inline constexpr std::uint32_t kSpvIdTypeVoid = 3U;
+inline constexpr std::uint32_t kSpvIdTypeFnVoid = 4U;
+inline constexpr std::uint32_t kSpvIdLabel = 5U;
+inline constexpr std::uint32_t kSpvIdTechTag = 6U;
+inline constexpr std::uint32_t kSpvIdBound = 7U;
+
+struct GlslFeatureToken {
+    std::string_view token;
+    std::uint32_t flag;
+};
+
+inline constexpr GlslFeatureToken kGlslFeatureTokens[] = {
+    {"normal_texture", kSpirvFeatNormalMap},
+    {"inTangent", kSpirvFeatNormalMap},
+    {"specular_texture", kSpirvFeatSpecular},
+    {"fMaterialPower", kSpirvFeatSpecular},
+    {"USE_SKINNING", kSpirvFeatSkinning},
+    {"inBlendWeight", kSpirvFeatSkinning},
+    {"matWorldArray", kSpirvFeatSkinning},
+    {"discard", kSpirvFeatAlphaTest},
+    {"alphatest", kSpirvFeatAlphaTest},
+    {"instanced", kSpirvFeatInstancing},
+    {"inColor0", kSpirvFeatVertexColor},
+    {"VertexColor", kSpirvFeatVertexColor},
+    {"env_texture", kSpirvFeatEnvMap},
+    {"shadowmap_texture", kSpirvFeatShadowMap},
+    {"output_gamma_inv", kSpirvFeatGammaOutput},
+};
+
+}  // namespace shader_detail
+
+// Feature flags from GLSL source plus the vertex declaration. Matching is by whole
+// identifier (ASCII case-insensitive) outside comments; on preprocessor lines only
+// `#define NAME` counts. Allocation-free.
 [[nodiscard]] inline std::uint32_t detect_glsl_feature_flags(
     std::string_view glsl_source, VertexDeclType decl_type) noexcept {
     std::uint32_t flags = kSpirvFeatNone;
-    if (decl_type == VertexDeclType::Bumped || decl_type == VertexDeclType::BumpedSkinned ||
-        shader_detail::contains_ci(glsl_source, "normal_texture") ||
-        shader_detail::contains_ci(glsl_source, "inTangent")) {
+    if (decl_type == VertexDeclType::Bumped || decl_type == VertexDeclType::BumpedSkinned) {
         flags |= kSpirvFeatNormalMap;
     }
-    if (shader_detail::contains_ci(glsl_source, "specular_texture") ||
-        shader_detail::contains_ci(glsl_source, "fMaterialPower")) {
-        flags |= kSpirvFeatSpecular;
-    }
-    if (decl_type == VertexDeclType::Skinned || decl_type == VertexDeclType::BumpedSkinned ||
-        shader_detail::contains_ci(glsl_source, "USE_SKINNING") ||
-        shader_detail::contains_ci(glsl_source, "inBlendWeight") ||
-        shader_detail::contains_ci(glsl_source, "matWorldArray")) {
+    if (decl_type == VertexDeclType::Skinned || decl_type == VertexDeclType::BumpedSkinned) {
         flags |= kSpirvFeatSkinning;
     }
-    if (shader_detail::contains_ci(glsl_source, "discard") ||
-        shader_detail::contains_ci(glsl_source, "alphatest")) {
-        flags |= kSpirvFeatAlphaTest;
-    }
-    if (shader_detail::contains_ci(glsl_source, "instanced")) {
-        flags |= kSpirvFeatInstancing;
-    }
-    if (shader_detail::contains_ci(glsl_source, "inColor0") ||
-        shader_detail::contains_ci(glsl_source, "VertexColor")) {
-        flags |= kSpirvFeatVertexColor;
-    }
-    if (shader_detail::contains_ci(glsl_source, "env_texture")) {
-        flags |= kSpirvFeatEnvMap;
-    }
-    if (shader_detail::contains_ci(glsl_source, "shadowmap_texture")) {
-        flags |= kSpirvFeatShadowMap;
-    }
-    if (shader_detail::contains_ci(glsl_source, "output_gamma_inv")) {
-        flags |= kSpirvFeatGammaOutput;
-    }
+    shader_detail::for_each_glsl_identifier(glsl_source, [&flags](std::string_view tok) noexcept {
+        for (const shader_detail::GlslFeatureToken& ft : shader_detail::kGlslFeatureTokens) {
+            if (shader_detail::equals_ci(tok, ft.token)) {
+                flags |= ft.flag;
+            }
+        }
+    });
     return flags;
 }
 
-// Emits a deterministic, structurally valid SPIR-V 1.0 binary module encoding
-// capability, GLSL450 memory model, stage entry point, technique/feature OpName
-// metadata, and a well-typed void main() function (`OpTypeVoid`, `OpTypeFunction`,
-// `OpFunction`, `OpLabel`, `OpReturn`, `OpFunctionEnd`).
-[[nodiscard]] inline std::vector<std::uint32_t> compile_glsl_to_spirv(
+// PLACEHOLDER, not a translator: emits a deterministic, structurally valid SPIR-V 1.0
+// module (capability, GLSL450 memory model, stage entry point, an `OpName` tag
+// `"<tech>:decl=<n>:feat=<hex>:src=<hash>:gen=<v>"`, and an empty `void main()`).
+// The GLSL only feeds the hash and feature flags; a pipeline built from these
+// modules draws nothing. Real GLSL -> SPIR-V translation is open P5 work.
+[[nodiscard]] inline std::vector<std::uint32_t> emit_placeholder_spirv_module(
     std::string_view glsl_source,
     SpirvStage stage,
     std::string_view technique_name,
     VertexDeclType decl_type,
     std::uint32_t* out_feature_flags = nullptr) {
+    using namespace shader_detail;
     const std::uint32_t feats = detect_glsl_feature_flags(glsl_source, decl_type);
     if (out_feature_flags != nullptr) {
         *out_feature_flags = feats;
     }
-
-    constexpr std::uint32_t kIdExtInst = 1U;
-    constexpr std::uint32_t kIdEntryFn = 2U;
-    constexpr std::uint32_t kIdTypeVoid = 3U;
-    constexpr std::uint32_t kIdTypeFnVoid = 4U;
-    constexpr std::uint32_t kIdLabel = 5U;
-    constexpr std::uint32_t kIdTechTag = 6U;
-    constexpr std::uint32_t kIdBound = 7U;
 
     std::vector<std::uint32_t> words;
     words.reserve(96U);
@@ -1143,84 +1551,113 @@ inline void parse_techniques_xml(std::string_view xml_text,
     // SPIR-V 1.0 header.
     words.push_back(0x07230203U);  // Magic
     words.push_back(0x00010000U);  // Version 1.0
-    words.push_back(0x57534532U);  // Generator magic ("WSE2")
-    words.push_back(kIdBound);     // Bound
+    words.push_back(kPlaceholderSpirvGeneratorMagic);
+    words.push_back(kSpvIdBound);  // Bound
     words.push_back(0U);           // Reserved schema
 
-    // OpCapability Shader (opcode 17)
-    shader_detail::emit_spirv_inst(words, 17U, {1U});
-
-    // OpExtInstImport "GLSL.std.450" (opcode 11)
-    {
+    const auto emit_with_string = [&](std::uint16_t opcode,
+                                      std::initializer_list<std::uint32_t> operands,
+                                      std::string_view text) {
         const std::size_t idx = words.size();
         words.push_back(0U);
-        words.push_back(kIdExtInst);
-        shader_detail::append_spirv_string(words, "GLSL.std.450");
+        for (const std::uint32_t op : operands) {
+            words.push_back(op);
+        }
+        append_spirv_string(words, text);
         const std::uint32_t wc = static_cast<std::uint32_t>(words.size() - idx);
-        words[idx] = (wc << 16U) | 11U;
-    }
+        words[idx] = (wc << 16U) | opcode;
+    };
 
-    // OpMemoryModel Logical GLSL450 (opcode 14)
-    shader_detail::emit_spirv_inst(words, 14U, {0U, 1U});
-
-    // OpEntryPoint <ExecutionModel> %main "main" (opcode 15)
-    {
-        const std::size_t idx = words.size();
-        words.push_back(0U);
-        words.push_back(static_cast<std::uint32_t>(stage));
-        words.push_back(kIdEntryFn);
-        shader_detail::append_spirv_string(words, "main");
-        const std::uint32_t wc = static_cast<std::uint32_t>(words.size() - idx);
-        words[idx] = (wc << 16U) | 15U;
-    }
-
-    // Fragment stages declare OpExecutionMode %main OriginUpperLeft (opcode 16, mode 7).
+    emit_spirv_inst(words, 17U, {1U});                                  // OpCapability Shader
+    emit_with_string(11U, {kSpvIdExtInst}, "GLSL.std.450");             // OpExtInstImport
+    emit_spirv_inst(words, 14U, {0U, 1U});                              // OpMemoryModel Logical GLSL450
+    emit_with_string(15U, {static_cast<std::uint32_t>(stage), kSpvIdEntryFn}, "main");  // OpEntryPoint
     if (stage == SpirvStage::Fragment) {
-        shader_detail::emit_spirv_inst(words, 16U, {kIdEntryFn, 7U});
+        emit_spirv_inst(words, 16U, {kSpvIdEntryFn, 7U});              // OpExecutionMode OriginUpperLeft
     }
+    emit_spirv_inst(words, 3U, {2U, 330U});                             // OpSource GLSL 330
 
-    // OpSource GLSL 330 (opcode 3: Language GLSL=2, Version 330)
-    shader_detail::emit_spirv_inst(words, 3U, {2U, 330U});
+    const std::string tag = std::string(technique_name) +
+                            ":decl=" + std::to_string(static_cast<int>(decl_type)) +
+                            ":feat=" + hex_u64(feats) +
+                            ":src=" + hex_u64(fnv1a64(glsl_source)) +
+                            ":gen=" + std::to_string(kPlaceholderSpirvGeneratorVersion);
+    emit_with_string(5U, {kSpvIdTechTag}, tag);                         // OpName %tag
+    emit_with_string(5U, {kSpvIdEntryFn}, "main");                      // OpName %main
 
-    // OpName %kIdTechTag "<tech>:decl=<n>:feat=<hex>:src=<hash>" (opcode 5)
-    {
-        const std::string tag = std::string(technique_name) +
-                                ":decl=" + std::to_string(static_cast<int>(decl_type)) +
-                                ":feat=" + shader_detail::hex_u64(feats) +
-                                ":src=" + shader_detail::hex_u64(shader_detail::fnv1a64(glsl_source));
-        const std::size_t idx = words.size();
-        words.push_back(0U);
-        words.push_back(kIdTechTag);
-        shader_detail::append_spirv_string(words, tag);
-        const std::uint32_t wc = static_cast<std::uint32_t>(words.size() - idx);
-        words[idx] = (wc << 16U) | 5U;
-    }
-
-    // OpName %main "main" (opcode 5)
-    {
-        const std::size_t idx = words.size();
-        words.push_back(0U);
-        words.push_back(kIdEntryFn);
-        shader_detail::append_spirv_string(words, "main");
-        const std::uint32_t wc = static_cast<std::uint32_t>(words.size() - idx);
-        words[idx] = (wc << 16U) | 5U;
-    }
-
-    // Types: OpTypeVoid (19), OpTypeFunction (33), OpTypeInt 32 0 (21)
-    shader_detail::emit_spirv_inst(words, 19U, {kIdTypeVoid});
-    shader_detail::emit_spirv_inst(words, 33U, {kIdTypeFnVoid, kIdTypeVoid});
-    shader_detail::emit_spirv_inst(words, 21U, {kIdTechTag, 32U, 0U});
-
-    // OpFunction %void %main None %fn_type (opcode 54)
-    shader_detail::emit_spirv_inst(words, 54U, {kIdTypeVoid, kIdEntryFn, 0U, kIdTypeFnVoid});
-    // OpLabel %label (opcode 248)
-    shader_detail::emit_spirv_inst(words, 248U, {kIdLabel});
-    // OpReturn (opcode 253)
-    shader_detail::emit_spirv_inst(words, 253U, {});
-    // OpFunctionEnd (opcode 56)
-    shader_detail::emit_spirv_inst(words, 56U, {});
-
+    emit_spirv_inst(words, 19U, {kSpvIdTypeVoid});                      // OpTypeVoid
+    emit_spirv_inst(words, 33U, {kSpvIdTypeFnVoid, kSpvIdTypeVoid});    // OpTypeFunction
+    emit_spirv_inst(words, 21U, {kSpvIdTechTag, 32U, 0U});              // OpTypeInt 32 0
+    emit_spirv_inst(words, 54U, {kSpvIdTypeVoid, kSpvIdEntryFn, 0U, kSpvIdTypeFnVoid});  // OpFunction
+    emit_spirv_inst(words, 248U, {kSpvIdLabel});                        // OpLabel
+    emit_spirv_inst(words, 253U, {});                                   // OpReturn
+    emit_spirv_inst(words, 56U, {});                                    // OpFunctionEnd
     return words;
+}
+
+struct PlaceholderSpirvInfo {
+    std::uint32_t execution_model = 0;
+    std::uint32_t feature_flags = 0;
+    std::uint64_t source_hash = 0;
+    std::uint32_t generator_version = 0;
+};
+
+// Validates a whole placeholder module (header, every instruction's word count,
+// trailing `OpFunctionEnd`) and decodes its tag. nullopt for anything truncated,
+// corrupt, or not produced by `emit_placeholder_spirv_module`.
+[[nodiscard]] inline std::optional<PlaceholderSpirvInfo> inspect_placeholder_spirv(
+    std::span<const std::uint32_t> words) {
+    using namespace shader_detail;
+    if (words.size() < 6U || words[0] != 0x07230203U || words[1] != 0x00010000U ||
+        words[2] != kPlaceholderSpirvGeneratorMagic || words[3] != kSpvIdBound || words[4] != 0U) {
+        return std::nullopt;
+    }
+    PlaceholderSpirvInfo info{};
+    bool have_entry = false;
+    std::optional<std::string> tag;
+    std::uint32_t last_opcode = 0;
+    std::size_t idx = 5U;
+    while (idx < words.size()) {
+        const std::uint32_t wc = words[idx] >> 16U;
+        const std::uint32_t opcode = words[idx] & 0xFFFFU;
+        if (wc == 0U || idx + wc > words.size()) {
+            return std::nullopt;
+        }
+        if (opcode == 15U && wc >= 4U) {
+            info.execution_model = words[idx + 1U];
+            have_entry = true;
+        } else if (opcode == 5U && wc >= 3U && words[idx + 1U] == kSpvIdTechTag) {
+            tag = read_spirv_string(words.subspan(idx + 2U, wc - 2U));
+            if (!tag) {
+                return std::nullopt;
+            }
+        }
+        last_opcode = opcode;
+        idx += wc;
+    }
+    if (!have_entry || !tag || last_opcode != 56U) {
+        return std::nullopt;
+    }
+    const std::string_view t(*tag);
+    const std::size_t feat_at = t.rfind(":feat=");
+    const std::size_t src_at = t.rfind(":src=");
+    const std::size_t gen_at = t.rfind(":gen=");
+    if (feat_at == std::string_view::npos || src_at == std::string_view::npos ||
+        gen_at == std::string_view::npos || !(feat_at < src_at && src_at < gen_at)) {
+        return std::nullopt;
+    }
+    const auto feat = parse_hex_u64(t.substr(feat_at + 6U, src_at - (feat_at + 6U)));
+    const auto src = parse_hex_u64(t.substr(src_at + 5U, gen_at - (src_at + 5U)));
+    const std::string_view gen_text = t.substr(gen_at + 5U);
+    if (!feat || !src || gen_text.empty() || gen_text.size() > 9U ||
+        !std::all_of(gen_text.begin(), gen_text.end(),
+                     [](char c) { return c >= '0' && c <= '9'; })) {
+        return std::nullopt;
+    }
+    info.feature_flags = static_cast<std::uint32_t>(*feat);
+    info.source_hash = *src;
+    info.generator_version = static_cast<std::uint32_t>(std::stoul(std::string(gen_text)));
+    return info;
 }
 
 class SpirvShaderCache {
@@ -1232,7 +1669,8 @@ public:
                                                             SpirvStage stage,
                                                             VertexDeclType decl_type,
                                                             std::string_view glsl_source) {
-        std::uint64_t h = shader_detail::fnv1a64("wse2_spv_v1:");
+        std::uint64_t h = shader_detail::fnv1a64(
+            "wse2_spv_gen" + std::to_string(kPlaceholderSpirvGeneratorVersion) + ":");
         h = shader_detail::fnv1a64(wse::platform::ascii_lower(technique_name), h);
         h = shader_detail::fnv1a64(stage == SpirvStage::Vertex ? ":vs:" : ":fs:", h);
         h = shader_detail::fnv1a64(std::to_string(static_cast<int>(decl_type)), h);
@@ -1241,6 +1679,9 @@ public:
         return shader_detail::hex_u64(h) + ".spv";
     }
 
+    // Returns the cached module when it validates completely and its tag matches this
+    // source, stage, and generator version; otherwise emits a new one and stores it
+    // through `<file>.partial` + `rename_file` (direct write where rename is unsupported).
     [[nodiscard]] bool get_or_compile(wse::platform::Vfs& cache_vfs,
                                       std::string_view cache_dir,
                                       std::string_view technique_name,
@@ -1258,15 +1699,16 @@ public:
         const std::string path = wse::game::vfs_join_path(cache_dir, fname);
 
         std::vector<std::uint8_t> raw;
-        if (cache_vfs.is_file(path) && cache_vfs.read_file(path, raw) &&
-            raw.size() >= 20U && (raw.size() % 4U) == 0U) {
+        if (cache_vfs.read_file(path, raw) && raw.size() >= 24U && (raw.size() % 4U) == 0U) {
             std::vector<std::uint32_t> cached(raw.size() / 4U);
             std::memcpy(cached.data(), raw.data(), raw.size());
-            if (cached[0] == 0x07230203U && cached[1] >= 0x00010000U && cached[3] > 0U &&
-                cached[4] == 0U) {
+            const std::optional<PlaceholderSpirvInfo> info = inspect_placeholder_spirv(cached);
+            if (info && info->generator_version == kPlaceholderSpirvGeneratorVersion &&
+                info->execution_model == static_cast<std::uint32_t>(stage) &&
+                info->source_hash == shader_detail::fnv1a64(glsl_source)) {
                 out_words = std::move(cached);
                 if (out_feature_flags != nullptr) {
-                    *out_feature_flags = detect_glsl_feature_flags(glsl_source, decl_type);
+                    *out_feature_flags = info->feature_flags;
                 }
                 ++cache_hits;
                 if (out_cache_hit != nullptr) {
@@ -1276,15 +1718,19 @@ public:
             }
         }
 
-        out_words = compile_glsl_to_spirv(glsl_source, stage, technique_name, decl_type,
-                                          out_feature_flags);
+        out_words = emit_placeholder_spirv_module(glsl_source, stage, technique_name, decl_type,
+                                                  out_feature_flags);
         ++compile_count;
 
         (void)shader_detail::ensure_vfs_dir_tree(cache_vfs, cache_dir);
         const std::span<const std::uint8_t> spv_bytes(
             reinterpret_cast<const std::uint8_t*>(out_words.data()),
             out_words.size() * sizeof(std::uint32_t));
-        (void)cache_vfs.write_file(path, spv_bytes);
+        const std::string partial = path + ".partial";
+        if (!(cache_vfs.write_file(partial, spv_bytes) && cache_vfs.rename_file(partial, path))) {
+            (void)cache_vfs.remove_file(partial);
+            (void)cache_vfs.write_file(path, spv_bytes);
+        }
         return true;
     }
 };

@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -1156,6 +1158,193 @@ void test_dds_decode_blocks_and_resolver_probes() {
     }
 }
 
+void test_p5_shader_review_regressions() {
+    using namespace wse::asset;
+
+    // XML: a `<techniques>` root no longer swallows the first technique; comments,
+    // look-alike tags, `>` in quoted values, and element-text children are handled.
+    {
+        std::vector<GlTechniqueEntry> out;
+        parse_techniques_xml(
+            "<?xml version=\"1.0\"?>\n<techniques>\n"
+            "  <!-- <technique name=\"dead\"/> -->\n"
+            "  <technique name=\"a\" note=\"x>y\">\n"
+            "    <vertex_shaders name=\"wrong.glsl\"/>\n"
+            "    <vertex_shader name=\"vs_a.glsl\"/>\n"
+            "    <fragment_shader> fs_a.glsl </fragment_shader>\n"
+            "  </technique>\n"
+            "  <technique_group name=\"not_a_technique\"/>\n"
+            "  <technique name=\"b\"/>\n"
+            "</techniques>\n",
+            "x.xml", out);
+        expect(out.size() == 2U && out[0].name == "a" && out[0].vertex_shader == "vs_a.glsl" &&
+                   out[0].fragment_shader == "fs_a.glsl" && out[1].name == "b" &&
+                   out[1].vertex_shader.empty(),
+               "technique XML parser keeps the first technique under a <techniques> root");
+    }
+
+    // Catalog: an install with no techniques fails; variants need their base.
+    {
+        wse::platform::MemoryVfs empty;
+        ShaderTechniqueCatalog cat{};
+        std::string err;
+        expect(!load_warband_shader_technique_catalog(empty, "wb", cat, &err) &&
+                   cat.techniques_by_lower.empty() && !err.empty(),
+               "technique catalog reports failure when no GLShaders techniques exist");
+
+        wse::platform::MemoryVfs vfs;
+        vfs.write_text("wb/GLShaders/techniques.xml",
+                       "<techniques><technique name=\"simple_shading\"/></techniques>");
+        vfs.write_text("wb/GLShadersOptimized/vs_simple_shading.glsl",
+                       "#version 120\nattribute vec4 inPosition;\nvoid main() {}\n");
+        expect(load_warband_shader_technique_catalog(vfs, "wb", cat, &err) &&
+                   cat.techniques_by_lower.size() == 2U && cat.find("simple_shading") != nullptr &&
+                   cat.find("simple_shading_with_skin") != nullptr &&
+                   cat.find("face_shader_skin_high") == nullptr && cat.warnings.size() == 4U,
+               "WSE2 skinning variants are synthesized only from present base techniques");
+        const GlTechniqueEntry* syn = cat.find("simple_shading_with_skin");
+        expect(syn != nullptr &&
+                   syn->vs_glsl.rfind("#version 120\n#define USE_SKINNING 1\n", 0U) == 0U &&
+                   (detect_glsl_feature_flags(syn->vs_glsl, VertexDeclType::Standard) &
+                    kSpirvFeatSkinning) != 0U,
+               "synthesized variant gets a real #define USE_SKINNING after #version");
+
+        ShaderTechniqueCatalog names_only{};
+        TechniqueCatalogOptions opts{};
+        opts.load_glsl_sources = false;
+        expect(load_warband_shader_technique_catalog(vfs, "wb", names_only, nullptr, opts) &&
+                   names_only.find("simple_shading") != nullptr &&
+                   names_only.find("simple_shading")->vs_glsl.empty(),
+               "names-only technique catalog skips GLSL reads");
+    }
+
+    // Feature detection: whole identifiers outside comments; #define counts, #ifdef does not.
+    {
+        const auto f = [](std::string_view src) {
+            return detect_glsl_feature_flags(src, VertexDeclType::Standard);
+        };
+        expect(f("int discarded_count; // not_instanced\n/* discard */") == kSpirvFeatNone,
+               "feature detection ignores substrings and comments");
+        expect(f("// #define USE_SKINNING 1\n#ifdef USE_SKINNING\n#endif\n") == kSpirvFeatNone,
+               "commented-out or tested macros do not set the skinning flag");
+        expect(f("void main() { if (a < 0.5) discard; }") == kSpirvFeatAlphaTest &&
+                   f("#define USE_SKINNING 1\n") == kSpirvFeatSkinning &&
+                   f("uniform sampler2D NORMAL_TEXTURE;") == kSpirvFeatNormalMap,
+               "feature detection matches whole identifiers case-insensitively");
+    }
+
+    // Alternative resolution is linear-time on a dense, fully unsuitable graph.
+    {
+        std::unordered_map<std::string, BrfShader> m;
+        constexpr int kN = 64;
+        for (int i = 0; i < kN; ++i) {
+            BrfShader sh{"s" + std::to_string(i), 0U, 0U, "t", {}, {}};
+            for (int j = 0; j < kN; ++j) {
+                if (j != i) sh.alternatives.push_back("S" + std::to_string(j));
+            }
+            m[sh.name] = sh;
+        }
+        m["s63"].flags = kShaderFlagUsesHlsl;
+        const auto t0 = std::chrono::steady_clock::now();
+        const ShaderResolutionResult r = resolve_suitable_shader("s0", m, {3, true, false});
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - t0)
+                            .count();
+        expect(r.shader != nullptr && r.shader->name == "s63" && r.hop_depth == 1 && ms < 1000,
+               "dense alternative graph resolves in linear time to the 1-hop suitable shader");
+
+        SuitableShaderResolver resolver(m, {3, true, false});
+        const ShaderResolutionResult& a = resolver.resolve("S0");
+        const ShaderResolutionResult& b = resolver.resolve("s0");
+        expect(&a == &b && resolver.cached_count() == 1U && a.shader == r.shader,
+               "SuitableShaderResolver memoizes case-folded names");
+    }
+
+    // INI: BOM, duplicate keys (last wins in entries and maps alike).
+    {
+        ShaderPairTable t{};
+        parse_wse2_shaders_ini("\xEF\xBB\xBF[SkinFallback]\na = b\nA = c\n", t);
+        expect(t.entries.size() == 1U && t.entries[0].target_shader == "c" &&
+                   t.skin_fallback_map["a"] == "c" && t.warnings.size() == 1U,
+               "wse2_shaders.ini handles a UTF-8 BOM and duplicate keys consistently");
+    }
+
+    // PostFx: WSE2 conditional detection by directive, not substring.
+    {
+        expect(effect_source_has_wse2_conditional("#if WSE2\n#endif\n") &&
+                   effect_source_has_wse2_conditional("  #ifdef WSE2\n#endif\n") &&
+                   effect_source_has_wse2_conditional("#if defined(WSE2)\n#endif\n") &&
+                   !effect_source_has_wse2_conditional("#if WSE2_LEGACY\n#endif\n") &&
+                   !effect_source_has_wse2_conditional("// #if WSE2\n"),
+               "WSE2 conditional detection parses preprocessor directives");
+        wse::platform::MemoryVfs v;
+        v.write_text("wb/PostFx.fx", "#ifdef WSE2\n#include \"postFX_WSE2.fx\"\n#endif\n");
+        PostFxResolveResult r{};
+        expect(resolve_postfx_effect_source(v, "wb", "", true, r) && !r.appended_wse2_include,
+               "#ifdef WSE2 PostFx is not given a duplicate include");
+    }
+
+    // Material: uses_specular does not depend on whether a shader was passed.
+    {
+        BrfMaterial mat{};
+        mat.specular_coeff = 4.0f;
+        const BrfShader sh{"x", kShaderFlagUsesHlsl, 0U, "t", {}, {}};
+        expect(decode_material_render_state(mat).uses_specular ==
+                       decode_material_render_state(mat, &sh).uses_specular &&
+                   !decode_material_render_state(mat).uses_specular,
+               "uses_specular is the same with and without a resolved shader");
+    }
+
+    // SPIR-V cache: truncated, corrupt, or other-source files are recompiled; hits
+    // read feature flags from the module tag.
+    {
+        wse::platform::MemoryVfs v;
+        const std::string src = "uniform sampler2D specular_texture; void main() {}";
+        const std::string fname = SpirvShaderCache::compute_cache_filename(
+            "t", SpirvStage::Fragment, VertexDeclType::Standard, src);
+        std::vector<std::uint8_t> trunc(24U, 0U);
+        const std::uint32_t hdr[6] = {0x07230203U, 0x00010000U, kPlaceholderSpirvGeneratorMagic,
+                                      7U, 0U, (2U << 16U) | 17U};
+        std::memcpy(trunc.data(), hdr, sizeof(hdr));
+        v.write_file("c/" + fname, trunc);
+        SpirvShaderCache c{};
+        std::vector<std::uint32_t> w;
+        bool hit = true;
+        std::uint32_t feats = 0;
+        expect(c.get_or_compile(v, "c", "t", SpirvStage::Fragment, VertexDeclType::Standard, src,
+                                w, &hit, &feats) &&
+                   !hit && c.compile_count == 1U && inspect_placeholder_spirv(w).has_value(),
+               "truncated cache file is rejected and recompiled");
+        expect(!v.is_file("c/" + fname + ".partial"), "cache write leaves no .partial file");
+
+        SpirvShaderCache c2{};
+        std::uint32_t feats2 = 0;
+        expect(c2.get_or_compile(v, "c", "t", SpirvStage::Fragment, VertexDeclType::Standard,
+                                 src, w, &hit, &feats2) &&
+                   hit && feats2 == feats && (feats2 & kSpirvFeatSpecular) != 0U,
+               "cache hit returns feature flags decoded from the module tag");
+
+        // A valid module for another source stored under this name is not reused.
+        const auto other = emit_placeholder_spirv_module("void main() {}", SpirvStage::Fragment,
+                                                         "t", VertexDeclType::Standard);
+        v.write_file("c/" + fname,
+                     std::span<const std::uint8_t>(
+                         reinterpret_cast<const std::uint8_t*>(other.data()), other.size() * 4U));
+        SpirvShaderCache c3{};
+        expect(c3.get_or_compile(v, "c", "t", SpirvStage::Fragment, VertexDeclType::Standard,
+                                 src, w, &hit) &&
+                   !hit && c3.compile_count == 1U,
+               "cached module whose source hash differs is recompiled");
+    }
+
+    // ensure_vfs_dir_tree tolerates an uncreatable intermediate component.
+    {
+        wse::platform::MemoryVfs v;
+        expect(shader_detail::ensure_vfs_dir_tree(v, "a/b/c") && v.is_dir("a/b/c"),
+               "ensure_vfs_dir_tree creates nested directories");
+    }
+}
+
 void test_p5_shaders_materials_and_spirv_cache() {
     using namespace wse::asset;
 
@@ -1439,13 +1628,19 @@ void test_p5_shaders_materials_and_spirv_cache() {
     // 6. Retail Warband corpus gate (Native + Phantasy Calradia) when installed locally.
     {
         std::error_code ec;
-        const std::filesystem::path retail_root("C:/GOG Games/Mount and Blade - Warband");
+        // WSE_WARBAND_ROOT selects a local install; the GOG default keeps the old behaviour.
+        const char* root_env = std::getenv("WSE_WARBAND_ROOT");
+        const std::filesystem::path retail_root(
+            (root_env != nullptr && root_env[0] != '\0') ? root_env
+                                                          : "C:/GOG Games/Mount and Blade - Warband");
         if (std::filesystem::exists(retail_root / "Modules/Native/module.ini", ec)) {
             wse::platform::HostVfs read_vfs(retail_root);
             ShaderTechniqueCatalog tech_cat{};
+            // 271 was measured before the `<techniques>` root-element fix, which can
+            // only add techniques the old parser skipped.
             expect(load_warband_shader_technique_catalog(read_vfs, "", tech_cat) &&
-                       tech_cat.techniques_by_lower.size() == 271U,
-                   "retail GLShaders (262 XML + 4 GLShadersOptimized) + 5 WSE2 skinning variants load 271 techniques");
+                       tech_cat.techniques_by_lower.size() >= 271U,
+                   "retail GLShaders + GLShadersOptimized + 5 WSE2 skinning variants load >= 271 techniques");
 
             std::unordered_set<std::string> tech_names;
             for (const auto& kv : tech_cat.techniques_by_lower) {
@@ -1473,11 +1668,11 @@ void test_p5_shaders_materials_and_spirv_cache() {
                     }
                     mat_count += e.file.materials.size();
                 }
+                SuitableShaderResolver resolver(shaders, {3, true, true}, &tech_names);
                 for (const auto& e : cat.entries) {
                     if (!e.loaded) continue;
                     for (const BrfMaterial& mat : e.file.materials) {
-                        const ShaderResolutionResult res =
-                            resolve_suitable_shader(mat.shader_name, shaders, {3, true, true}, &tech_names);
+                        const ShaderResolutionResult& res = resolver.resolve(mat.shader_name);
                         if (res.shader != nullptr &&
                             tech_cat.find(res.shader->technique_name) != nullptr) {
                             ++mat_resolved;
@@ -1513,6 +1708,7 @@ int run_asset_suite(const char* fixture_path) {
     test_dds_hardening();
     test_dds_decode_blocks_and_resolver_probes();
     test_p5_shaders_materials_and_spirv_cache();
+    test_p5_shader_review_regressions();
 
     if (failures == 0) {
         std::printf("asset tests: PASS\n");
