@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -18,11 +19,13 @@
 #include "wse/vm/ops/lua_bridge.h"
 #include "wse/vm/wse_opcodes.h"
 
-extern "C" {
+// Lua 5.1.5 is compiled as C++ (see CMakeLists.txt / build_host.ps1) so that
+// Lua errors unwind as C++ exceptions and run destructors instead of
+// longjmp-ing over live C++ objects. Its headers therefore have C++ linkage
+// and must not be wrapped in `extern "C"`.
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
-}
 
 // Wrap Lua 5.1's `lua_pop(L, n)` macro and undefine it so WseLuaRuntime::lua_pop
 // never collides with C preprocessor expansion inside translation units.
@@ -56,6 +59,11 @@ inline std::string_view to_sv(lua_State* L, int idx) {
 [[nodiscard]] std::int64_t lua_number_to_i64(lua_Number d, lua_State* L, int arg);
 [[nodiscard]] std::int64_t check_i64(lua_State* L, int idx);
 [[nodiscard]] std::int64_t opt_i64(lua_State* L, int idx, std::int64_t def);
+// Non-raising variants for code that runs outside a protected call (after a
+// pcall has returned, or from a VM opcode): a Lua error there is unprotected
+// and terminates the process.
+[[nodiscard]] bool number_to_i64_noexcept(lua_Number d, std::int64_t& out) noexcept;
+[[nodiscard]] bool try_i64(lua_State* L, int idx, std::int64_t& out);
 
 [[nodiscard]] bool is_pos(lua_State* L, int idx);
 void push_pos(lua_State* L, const core::WseTransform& pos);
@@ -87,6 +95,7 @@ public:
 
     bool initialize(vm::VmContext& ctx, const vm::WseLuaInitConfig& cfg) override;
     void shutdown() override;
+    void apply_deferred_edits() override;
     void close_lua_state_only() noexcept;
 
     [[nodiscard]] bool is_ready() const noexcept override { return ready_; }
@@ -160,6 +169,7 @@ public:
     // Helpers callable from lua_ops / lua_callbacks translation units.
     [[nodiscard]] bool sandbox_path(std::string_view raw, bool for_write,
                                     std::string& out_vfs_path) const;
+    [[nodiscard]] bool reserve_stack(int slots);
     void record_print(std::string msg);
     void record_error(std::string_view msg, bool also_log = true);
     void log_rgl_direct(std::string_view msg);
@@ -187,6 +197,29 @@ public:
         return !script_fail_stack_.empty() && script_fail_stack_.back();
     }
 
+    // Structural trigger/presentation edits. While a trigger is executing the
+    // edit is queued (in call order) and `pending_size_delta_` tracks how each
+    // container's size will change, so indices and counts returned to Lua match
+    // what in-place editing would have produced.
+    [[nodiscard]] bool edits_deferred() const noexcept {
+        return ctx_ != nullptr && ctx_->triggerIterationDepth > 0;
+    }
+    template <class Vec>
+    [[nodiscard]] std::size_t virtual_size(const Vec& vec) const {
+        const auto it = pending_size_delta_.find(&vec);
+        const std::ptrdiff_t delta = it == pending_size_delta_.end() ? 0 : it->second;
+        return static_cast<std::size_t>(static_cast<std::ptrdiff_t>(vec.size()) + delta);
+    }
+    void run_or_defer_edit(const void* container, std::ptrdiff_t size_delta,
+                           std::function<void()> edit) {
+        if (edits_deferred()) {
+            pending_size_delta_[container] += size_delta;
+            deferred_edits_.push_back(std::move(edit));
+        } else {
+            edit();
+        }
+    }
+
     static WseLuaManagerImpl& from_lua(lua_State* L);
 
     lua_State* L_ = nullptr;
@@ -195,6 +228,11 @@ public:
     bool ready_ = false;
     bool has_main_script_ = false;
     bool in_rgl_log_ = false;
+    // True only while shutdown() closes the state: file __gc may then flush
+    // through cfg_.vfs. False on the destructor path, where the Vfs may be gone.
+    bool gc_flush_allowed_ = false;
+    std::vector<std::function<void()>> deferred_edits_{};
+    std::unordered_map<const void*, std::ptrdiff_t> pending_size_delta_{};
 
     std::string resolved_module_dir_{};
     std::string resolved_lua_dir_{};

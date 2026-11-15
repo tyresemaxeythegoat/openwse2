@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -106,6 +107,33 @@ bool remove_trigger_at(Vec& vec, std::int32_t idx, UnrefFn&& unref_fn) {
     unref_fn(vec[static_cast<std::size_t>(idx)]);
     vec.erase(vec.begin() + static_cast<std::ptrdiff_t>(idx));
     return true;
+}
+
+// Removes `vec[idx]` now, or queues the removal when a trigger is executing
+// (erasing would invalidate the trigger the VM is in the middle of running).
+// The bounds check uses the size the container will have once queued edits
+// are applied, so the result matches in-place removal.
+template <class Vec, class UnrefFn>
+bool remove_at_or_defer(WseLuaManagerImpl& mgr, Vec& vec, std::int32_t idx,
+                        UnrefFn unref_fn) {
+    if (idx < 0 || static_cast<std::size_t>(idx) >= mgr.virtual_size(vec)) return false;
+    Vec* target = &vec;
+    mgr.run_or_defer_edit(target, -1, [target, idx, unref_fn] {
+        (void)remove_trigger_at(*target, idx, unref_fn);
+    });
+    return true;
+}
+
+// Appends `value` now or queues the append; returns the index it will occupy.
+template <class Vec, class T>
+std::size_t append_or_defer(WseLuaManagerImpl& mgr, Vec& vec, T&& value) {
+    const std::size_t index = mgr.virtual_size(vec);
+    Vec* target = &vec;
+    auto pending = std::make_shared<std::decay_t<T>>(std::forward<T>(value));
+    mgr.run_or_defer_edit(target, 1, [target, pending] {
+        target->push_back(std::move(*pending));
+    });
+    return index;
 }
 
 [[nodiscard]] std::int32_t resolve_script_index(WseLuaManagerImpl& mgr,
@@ -488,9 +516,8 @@ int lc_addTrigger(lua_State* L) {
             return luaL_argerror(L, 6, "expected consequence function");
         }
     }
-    const auto index = static_cast<lua_Integer>(tm->triggers.size());
-    tm->triggers.push_back(std::move(trig));
-    lua_pushinteger(L, index);
+    lua_pushinteger(L, static_cast<lua_Integer>(
+                           append_or_defer(mgr, tm->triggers, std::move(trig))));
     return 1;
 }
 
@@ -498,11 +525,13 @@ int lc_removeTrigger(lua_State* L) {
     auto& mgr = WseLuaManagerImpl::from_lua(L);
     game::TriggerManager* tm = resolve_template_triggers(mgr, static_cast<std::int32_t>(check_i64(L, 1)));
     const auto trig_no = static_cast<std::int32_t>(check_i64(L, 2));
-    const bool removed = tm != nullptr &&
-                         remove_trigger_at(tm->triggers, trig_no, [&](game::Trigger& t) {
-                             mgr.unref_all_block_callbacks(t.conditions);
-                             mgr.unref_all_block_callbacks(t.consequences);
-                         });
+    WseLuaManagerImpl* pmgr = &mgr;
+    const bool removed =
+        tm != nullptr &&
+        remove_at_or_defer(mgr, tm->triggers, trig_no, [pmgr](game::Trigger& t) {
+            pmgr->unref_all_block_callbacks(t.conditions);
+            pmgr->unref_all_block_callbacks(t.consequences);
+        });
     lua_pushboolean(L, removed ? 1 : 0);
     return 1;
 }
@@ -510,12 +539,12 @@ int lc_removeTrigger(lua_State* L) {
 int lc_getNumTriggers(lua_State* L) {
     auto& mgr = WseLuaManagerImpl::from_lua(L);
     game::TriggerManager* tm = resolve_template_triggers(mgr, static_cast<std::int32_t>(check_i64(L, 1)));
-    lua_pushinteger(L, tm ? static_cast<lua_Integer>(tm->triggers.size()) : 0);
+    lua_pushinteger(L, tm ? static_cast<lua_Integer>(mgr.virtual_size(tm->triggers)) : 0);
     return 1;
 }
 
 template <class Container>
-int add_simple_trigger_impl(lua_State* L, Container& vec,
+int add_simple_trigger_impl(WseLuaManagerImpl& mgr, lua_State* L, Container& vec,
                             std::int32_t target_idx) {
     if (target_idx < 0 || static_cast<std::size_t>(target_idx) >= vec.size()) {
         lua_pushinteger(L, -1);
@@ -527,9 +556,7 @@ int add_simple_trigger_impl(lua_State* L, Container& vec,
         return luaL_argerror(L, 3, "expected trigger function");
     }
     auto& trigs = vec[static_cast<std::size_t>(target_idx)].triggers.triggers;
-    const auto idx = static_cast<lua_Integer>(trigs.size());
-    trigs.push_back(std::move(st));
-    lua_pushinteger(L, idx);
+    lua_pushinteger(L, static_cast<lua_Integer>(append_or_defer(mgr, trigs, std::move(st))));
     return 1;
 }
 
@@ -539,8 +566,9 @@ int remove_simple_trigger_impl(WseLuaManagerImpl& mgr, lua_State* L, Container& 
     bool removed = false;
     if (target_idx >= 0 && static_cast<std::size_t>(target_idx) < vec.size()) {
         auto& trigs = vec[static_cast<std::size_t>(target_idx)].triggers.triggers;
-        removed = remove_trigger_at(trigs, trig_idx, [&](game::SimpleTrigger& t) {
-            mgr.unref_all_block_callbacks(t.block);
+        WseLuaManagerImpl* pmgr = &mgr;
+        removed = remove_at_or_defer(mgr, trigs, trig_idx, [pmgr](game::SimpleTrigger& t) {
+            pmgr->unref_all_block_callbacks(t.block);
         });
     }
     lua_pushboolean(L, removed ? 1 : 0);
@@ -553,7 +581,7 @@ int lc_addItemTrigger(lua_State* L) {
         lua_pushinteger(L, -1);
         return 1;
     }
-    return add_simple_trigger_impl(L, mgr.cfg_.bundle->item_triggers,
+    return add_simple_trigger_impl(mgr, L, mgr.cfg_.bundle->item_triggers,
                                    static_cast<std::int32_t>(check_i64(L, 1)));
 }
 
@@ -574,7 +602,8 @@ int lc_getNumItemTriggers(lua_State* L) {
     std::size_t n = 0;
     if (mgr.cfg_.bundle != nullptr && idx >= 0 &&
         static_cast<std::size_t>(idx) < mgr.cfg_.bundle->item_triggers.size()) {
-        n = mgr.cfg_.bundle->item_triggers[static_cast<std::size_t>(idx)].triggers.triggers.size();
+        n = mgr.virtual_size(
+            mgr.cfg_.bundle->item_triggers[static_cast<std::size_t>(idx)].triggers.triggers);
     }
     lua_pushinteger(L, static_cast<lua_Integer>(n));
     return 1;
@@ -586,7 +615,7 @@ int lc_addScenePropTrigger(lua_State* L) {
         lua_pushinteger(L, -1);
         return 1;
     }
-    return add_simple_trigger_impl(L, mgr.cfg_.bundle->scene_props,
+    return add_simple_trigger_impl(mgr, L, mgr.cfg_.bundle->scene_props,
                                    static_cast<std::int32_t>(check_i64(L, 1)));
 }
 
@@ -607,7 +636,8 @@ int lc_getNumScenePropTriggers(lua_State* L) {
     std::size_t n = 0;
     if (mgr.cfg_.bundle != nullptr && idx >= 0 &&
         static_cast<std::size_t>(idx) < mgr.cfg_.bundle->scene_props.size()) {
-        n = mgr.cfg_.bundle->scene_props[static_cast<std::size_t>(idx)].triggers.triggers.size();
+        n = mgr.virtual_size(
+            mgr.cfg_.bundle->scene_props[static_cast<std::size_t>(idx)].triggers.triggers);
     }
     lua_pushinteger(L, static_cast<lua_Integer>(n));
     return 1;
@@ -659,9 +689,8 @@ int lc_addPrsnt(lua_State* L) {
     }
     c_lua_pop(L, 1);
 
-    const auto idx = static_cast<lua_Integer>(mgr.cfg_.bundle->presentations.size());
-    mgr.cfg_.bundle->presentations.push_back(std::move(prsnt));
-    lua_pushinteger(L, idx);
+    lua_pushinteger(L, static_cast<lua_Integer>(append_or_defer(
+                           mgr, mgr.cfg_.bundle->presentations, std::move(prsnt))));
     return 1;
 }
 
@@ -672,21 +701,32 @@ int lc_removePrsnt(lua_State* L) {
         return 1;
     }
     auto& vec = mgr.cfg_.bundle->presentations;
-    std::int32_t idx = -1;
+    WseLuaManagerImpl* pmgr = &mgr;
+    const auto unref = [pmgr](game::LoadedPresentation& p) {
+        for (auto& st : p.triggers.triggers) pmgr->unref_all_block_callbacks(st.block);
+    };
+    const auto find_id = [](const std::vector<game::LoadedPresentation>& v,
+                            std::string_view id) -> std::int32_t {
+        for (std::size_t i = 0; i < v.size(); ++i) {
+            if (v[i].id == id) return static_cast<std::int32_t>(i);
+        }
+        return -1;
+    };
+    bool removed = false;
     if (lua_isnumber(L, 1)) {
-        idx = static_cast<std::int32_t>(check_i64(L, 1));
+        removed = remove_at_or_defer(mgr, vec, static_cast<std::int32_t>(check_i64(L, 1)), unref);
     } else if (lua_isstring(L, 1)) {
-        const std::string_view id = to_sv(L, 1);
-        for (std::size_t i = 0; i < vec.size(); ++i) {
-            if (vec[i].id == id) {
-                idx = static_cast<std::int32_t>(i);
-                break;
-            }
+        // An id is resolved when the edit is applied, so removals queued ahead
+        // of it cannot shift it onto a different presentation.
+        std::string id(to_sv(L, 1));
+        removed = find_id(vec, id) >= 0;
+        if (removed) {
+            auto* target = &vec;
+            mgr.run_or_defer_edit(target, -1, [target, id = std::move(id), unref, find_id] {
+                (void)remove_trigger_at(*target, find_id(*target, id), unref);
+            });
         }
     }
-    const bool removed = remove_trigger_at(vec, idx, [&](game::LoadedPresentation& p) {
-        for (auto& st : p.triggers.triggers) mgr.unref_all_block_callbacks(st.block);
-    });
     lua_pushboolean(L, removed ? 1 : 0);
     return 1;
 }
@@ -1106,19 +1146,35 @@ int lc_getTime(lua_State* L) {
 
 } // namespace
 
-std::int64_t lua_number_to_i64(lua_Number d, lua_State* L, int arg) {
-    if (!std::isfinite(d)) {
-        luaL_argerror(L, arg, "number is non-finite");
-        return 0;
-    }
+bool number_to_i64_noexcept(lua_Number d, std::int64_t& out) noexcept {
+    if (!std::isfinite(d)) return false;
     const double t = std::trunc(d);
     if (t >= -9223372036854775808.0 && t < 9223372036854775808.0) {
-        return static_cast<std::int64_t>(t);
+        out = static_cast<std::int64_t>(t);
+        return true;
     }
     if (t >= 9223372036854775808.0 && t < 18446744073709551616.0) {
-        return static_cast<std::int64_t>(static_cast<std::uint64_t>(t));
+        out = static_cast<std::int64_t>(static_cast<std::uint64_t>(t));
+        return true;
     }
-    return luaL_argerror(L, arg, "number out of int64 range");
+    return false;
+}
+
+std::int64_t lua_number_to_i64(lua_Number d, lua_State* L, int arg) {
+    std::int64_t out = 0;
+    if (number_to_i64_noexcept(d, out)) return out;
+    return luaL_argerror(L, arg, std::isfinite(d) ? "number out of int64 range"
+                                                  : "number is non-finite");
+}
+
+bool try_i64(lua_State* L, int idx, std::int64_t& out) {
+    if (lua_isboolean(L, idx)) {
+        out = lua_toboolean(L, idx) ? 1 : 0;
+        return true;
+    }
+    // lua_isnumber also accepts numeric strings; lua_tonumber does not raise.
+    if (!lua_isnumber(L, idx)) return false;
+    return number_to_i64_noexcept(lua_tonumber(L, idx), out);
 }
 
 std::int64_t check_i64(lua_State* L, int idx) {
@@ -1293,6 +1349,7 @@ vm::WseLuaOpHookResult WseLuaManagerImpl::on_operation_execute(
     const int ref = op_hook_refs_[opcode];
     LuaStackGuard guard(L_);
     const int base_top = lua_gettop(L_);
+    if (!reserve_stack(static_cast<int>(parsed_operands.size()) + 4)) return out;
     lua_rawgeti(L_, LUA_REGISTRYINDEX, ref);
     if (!lua_isfunction(L_, -1)) return out;
 
@@ -1326,25 +1383,32 @@ vm::WseLuaOpHookResult WseLuaManagerImpl::on_operation_execute(
     const bool is_lhs = (flags & vm::kLuaOpFlagLhs) != 0;
     const bool is_cf = (flags & vm::kLuaOpFlagCf) != 0;
 
+    // The pcall has returned, so nothing here may raise a Lua error: a hook
+    // that returns a non-number (or inf/NaN) where the lhs value belongs is
+    // reported and the lhs store is skipped.
+    const auto read_lhs = [&](int idx) {
+        if (try_i64(L_, idx, out.lhs_value)) {
+            out.has_lhs = true;
+        } else {
+            record_error("hookOperation: lhs return value is not an integer-convertible number");
+        }
+    };
     if (nret == 2) {
         if (is_cf && !is_lhs) {
             out.has_cf = true;
             out.cf_result = lua_toboolean(L_, base_top + 2) != 0;
         } else if (is_lhs && !is_cf) {
-            out.has_lhs = true;
-            out.lhs_value = check_i64(L_, base_top + 2);
+            read_lhs(base_top + 2);
         } else if (lua_isboolean(L_, base_top + 2)) {
             out.has_cf = true;
             out.cf_result = lua_toboolean(L_, base_top + 2) != 0;
         } else if (lua_isnumber(L_, base_top + 2)) {
-            out.has_lhs = true;
-            out.lhs_value = check_i64(L_, base_top + 2);
+            read_lhs(base_top + 2);
         }
     } else if (nret >= 3) {
         out.has_cf = true;
         out.cf_result = lua_toboolean(L_, base_top + 2) != 0;
-        out.has_lhs = true;
-        out.lhs_value = check_i64(L_, base_top + 3);
+        read_lhs(base_top + 3);
     }
     return out;
 }
@@ -1358,6 +1422,7 @@ vm::WseLuaScriptHookResult WseLuaManagerImpl::on_script_execute(
 
     LuaStackGuard guard(L_);
     const int base_top = lua_gettop(L_);
+    if (!reserve_stack(static_cast<int>(params.size()) + 4)) return out;
     lua_rawgeti(L_, LUA_REGISTRYINDEX, hook_ref);
     if (!lua_isfunction(L_, -1)) return out;
 
@@ -1392,8 +1457,9 @@ vm::WseLuaScriptHookResult WseLuaManagerImpl::on_script_execute(
         if (nret >= 2) {
             out.replace_params = true;
             for (int i = 2; i <= nret; ++i) {
-                if (lua_isnumber(L_, base_top + i) || lua_isboolean(L_, base_top + i)) {
-                    out.replacement_params.push_back(check_i64(L_, base_top + i));
+                std::int64_t value = 0;
+                if (try_i64(L_, base_top + i, value)) {
+                    out.replacement_params.push_back(value);
                 }
             }
         }

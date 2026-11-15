@@ -73,7 +73,16 @@ public:
     // constants, variables.txt, installs the sandbox, game.* + _G.* bindings,
     // LuaGlobals startup script, and executes <lua_dir>/main.lua if present.
     virtual bool initialize(VmContext& ctx, const WseLuaInitConfig& cfg) = 0;
+    // Unreferences every Lua callback held by the VM, flushes sandboxed files
+    // that are still open, and closes the state. `cfg.vfs` must still be alive.
+    // Destroying the runtime without calling this is safe but discards
+    // unflushed file writes, because the Vfs may already be gone by then.
     virtual void shutdown() = 0;
+
+    // Applies trigger/presentation edits that Lua requested while a trigger
+    // was executing (VmContext::triggerIterationDepth > 0). Called by
+    // TriggerIterationScope once the outermost trigger execution has unwound.
+    virtual void apply_deferred_edits() = 0;
 
     [[nodiscard]] virtual bool is_ready() const noexcept = 0;
     [[nodiscard]] virtual bool has_main_script() const noexcept = 0;

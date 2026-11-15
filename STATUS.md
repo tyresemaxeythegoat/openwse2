@@ -11,7 +11,7 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows (Zig clang++, `18/18` suites / `123` test functions + `wse_headless` across merged Phase 2F + `475ed87`) and Linux (`clang++ 18.1.3` local at `475ed87`, `17/17` / `118`; CI on `ff03319`; Phase 2F pending CI push) |
+| Host gate | **PASS** on Linux for the Phase 2F Lua review fixes (`clang++ 18.1.3`, CMake + CTest with header checks, `18/18` suites / `124` test functions + `wse_headless`; also `18/18` under ASan + UBSan with `g++ 13`). Windows (Zig clang++) is recorded as PASS for merged Phase 2F + `475ed87` (`18/18` / `123`) and has **not** been re-run for the review fixes, which change `engine/build_host.ps1` to compile Lua as C++ |
 | Android arm64 gate | **PASS (prior CI on `ff03319`)** — `.github/workflows/ci.yml` (`android-arm64`, NDK `30.0.16248370` Clang 21, `aarch64-linux-android29`) compiles all headers standalone + CMake build (`engine`, `lua51`, `wse_lua`); Phase 2F pending CI push; on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **440/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` live handlers `53, 2180, 2749` have no SDK constant and carry community names); **1,053/1,053 implemented (100%, 20/20 categories)** (`16` control-flow incl. 4 live entity iterators + `1,037` switch across `block_vm.h`, `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, `native_campaign_ops.h`, `native_campaign_ops_2.h`, `native_world_ops.h`, `native_world_ops_2.h`, `native_world_ops_3.h`, `native_agent_ops.h`, `native_mp_ops.h`, `native_scene_ops.h`, and `native_ui_ops.h`) |
@@ -24,8 +24,8 @@ documents link here instead of repeating them — see the ownership table in `AG
 
 | Gate | Result | Detail |
 | --- | --- | --- |
-| Host C++20, Windows | PASS | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: `lua51` + `wse_lua` + `18/18` suites / `123` test functions (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`, `module_loaders`, `headless`, `lua`) + `wse_headless.exe`, `57/57` standalone header checks (`x86_64-windows-gnu` and `aarch64-linux-musl`) |
-| Host C++20, Linux | PASS (local at `475ed87`; CI on `ff03319`) | Loader/headless review fixes (`475ed87`) run locally with the CI configuration (`clang++ 18.1.3`, CMake + CTest): `17/17` suites / `118` test functions + `wse_headless`; `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`) runs standalone header checks, CTest (`18` suites + `wse_headless` with Phase 2F), `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
+| Host C++20, Windows | PASS (recorded before the Phase 2F Lua review fixes; not re-run since, and those fixes change how `build_host.ps1` compiles `lua51`) | `engine/build_host.ps1`, Zig `clang++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror`: `lua51` + `wse_lua` + `18/18` suites / `123` test functions (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`, `module_loaders`, `headless`, `lua`) + `wse_headless.exe`, `57/57` standalone header checks (`x86_64-windows-gnu` and `aarch64-linux-musl`) |
+| Host C++20, Linux | PASS (local, Phase 2F Lua review fixes; CI on `6c43089`) | Phase 2F Lua review fixes run locally with the CI configuration (`clang++ 18.1.3`, CMake + CTest `-DWSE_BUILD_HEADER_CHECKS=ON`, Lua 5.1.5 compiled as C++ from a SHA-256-identical tarball via `-DWSE_LUA_SOURCE_DIR`): `18/18` suites / `124` test functions + `wse_headless`, and `18/18` under ASan + UBSan (`g++ 13`, LeakSanitizer on); `.github/workflows/ci.yml` (`ubuntu-24.04`, Clang `18.1.3`) runs standalone header checks, CTest (`18` suites + `wse_headless` with Phase 2F), `extract_wse_opcodes.py --check`, and `check_citations.py --self-test` |
 | Android NDK `aarch64-linux-android29` | PASS (CI on `ff03319`) | `.github/workflows/ci.yml` (`ubuntu-24.04`, NDK `30.0.16248370` / Clang `21.0.0`, `-std=c++20 -O2 -Wall -Wextra -Werror`): all headers pass standalone compile + CMake cross-compile build; on-device runtime tests remain unrun |
 | Host PanVK loader/surface test (legacy) | PASS (recorded) | `host loader tests: PASS`; independent of the reconstructed engine |
 | Host ASan + UBSan | PASS (CI) | `.github/workflows/ci.yml` job `host-sanitizers` (`ubuntu-24.04`, clang++, `cmake -DWSE_SANITIZE=ON` + CTest): 15/15 suites on commit `cb3d9fe`; the P1 seam review fixes were also run locally with `g++` (`-DCMAKE_CXX_FLAGS=-Wno-maybe-uninitialized`), 15/15; the loader/headless review fixes were run locally with `g++` (`-DCMAKE_CXX_FLAGS=-Wno-maybe-uninitialized`), 17/17 |
@@ -110,8 +110,8 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `platform_test.cpp` | 6 |
 | `module_loaders_test.cpp` | 6 |
 | `headless_test.cpp` | 5 |
-| `lua_test.cpp` | 5 |
-| **Total (18 suites)** | **123** |
+| `lua_test.cpp` | 6 |
+| **Total (18 suites)** | **124** |
 
 ## 4. Blocked
 

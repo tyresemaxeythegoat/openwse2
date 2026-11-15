@@ -5,10 +5,8 @@
 #include <limits>
 #include <string_view>
 
-extern "C" {
 #include <lauxlib.h>
 #include <lua.h>
-}
 
 namespace wse::lua::detail {
 namespace {

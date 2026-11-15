@@ -108,13 +108,18 @@ add_library(lua51 STATIC
     "${wse_lua51_src_dir}/lvm.c"
     "${wse_lua51_src_dir}/lzio.c"
 )
-set_target_properties(lua51 PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
+# Stock Lua is compiled as C++ so LUAI_THROW/LUAI_TRY use exceptions (see
+# luaconf.h): a Lua error raised inside a wse_lua callback then unwinds through
+# C++ frames and runs their destructors instead of longjmp-ing over them.
+get_target_property(wse_lua51_sources lua51 SOURCES)
+set_source_files_properties(${wse_lua51_sources} PROPERTIES LANGUAGE CXX)
+set_target_properties(lua51 PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(lua51 PRIVATE "${wse_lua51_src_dir}")
 if(NOT WIN32)
     target_compile_definitions(lua51 PRIVATE LUA_USE_MKSTEMP LUA_USE_ISATTY)
     target_link_libraries(lua51 INTERFACE m)
 endif()
-if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(lua51 PRIVATE -w)
 endif()
 

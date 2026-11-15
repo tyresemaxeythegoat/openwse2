@@ -279,6 +279,30 @@ Script operands never size an allocation directly (Milestone 4–6 review fixes)
   `package.loadlib`, and `io.popen`; replaces `io.*` and `os.remove`/`os.rename`/`load*`/`dofile`/`require`
   with `Vfs`-confined equivalents (`%storage%` / `%savegames%` tokens, no upward writes outside
   `<module>/lua/`), and rejects precompiled `\x1b` bytecode chunks.
+- Lua runtime safety deviations (`engine/src/lua/`, regression-tested in `lua_test.cpp`):
+  - Stock Lua 5.1.5 is compiled as C++, so a Lua error raised inside a `game.*` / `io.*` callback
+    unwinds as an exception and runs C++ destructors instead of `longjmp`-ing over them.
+  - VM-facing entry points (`lua_push_*` `5108`–`5110`, `lua_set_top` `5101`, event and hook calls)
+    reserve Lua stack space first; a push or `lua_set_top` that cannot be satisfied is dropped with a
+    `Lua stack overflow` error instead of writing past the stack.
+  - Values read outside a protected call (`lua_to_int` `5105`, operation-hook lhs results,
+    script-hook replacement parameters) use a non-raising conversion: inf/NaN/out-of-range numbers
+    read as `0` or are skipped with an error rather than terminating the process.
+  - `lua_triggerCallback` (`5113`) always removes its `num_args` arguments and its result from the
+    stack, including when the reference is not a function.
+  - While any trigger is executing (`VmContext::triggerIterationDepth > 0`), `game.addTrigger`,
+    `removeTrigger`, the item/scene-prop trigger variants, and `addPrsnt` / `removePrsnt` are queued
+    and applied in call order once the outermost trigger execution unwinds (retail edits the arrays
+    in place). Returned indices, booleans, and `getNum*Triggers` counts already reflect the queued
+    edits; a trigger that removes itself finishes its current run.
+  - Sandboxed `io` follows stock 5.1 results: `read("*a")` at end of file returns `""`, `file:write`
+    returns `true`, `io.close()` closes the default output. `os.rename` onto the same
+    (case-insensitive) path is a no-op instead of deleting the file.
+  - Files Lua leaves open are flushed by an explicit `WseLuaRuntime::shutdown()`; destroying the
+    runtime without it discards their unflushed data, because the `Vfs` may already be gone.
+    `run_headless_module` shuts down any previous Lua state before loading a module.
+  - `msfiles/*.py` constant expressions whose operands do not fit 64 bits, or that shift by a count
+    outside `0..63`, are skipped; values outside the opcode table are not registered as operations.
 - `spawn_scene_prop` (1974) stops at `kMaxSpawnedMissionObjects` like `spawn_item`; `spawn_horse`
   (1973) stops at `kMaxSpawnedAgents` and leaves `reg0 = -1`.
 - `overlay_set_boundaries` (928) and `scene_set_height_fog` (4518) convert float to `int32` with

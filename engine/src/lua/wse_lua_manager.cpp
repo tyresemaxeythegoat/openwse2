@@ -30,6 +30,9 @@ std::string join_vfs_dir(std::string_view base, std::string_view sub) {
     return out;
 }
 
+// push_pos builds a position table three levels deep and looks up metatables.
+constexpr int kPushPosStackSlots = 8;
+
 int lua_traceback_handler(lua_State* L) {
     if (!lua_isstring(L, 1)) {
         return 1;
@@ -81,6 +84,7 @@ bool call_game_event(WseLuaManagerImpl& mgr, const char* name, int nargs,
                      int nresults, PushArgsFn&& push_args) {
     if (!mgr.is_ready() || mgr.L_ == nullptr) return false;
     lua_State* L = mgr.L_;
+    if (!mgr.reserve_stack(nargs + 4)) return false;
     lua_getglobal(L, "game");
     if (!lua_istable(L, -1)) {
         c_lua_pop(L, 1);
@@ -112,6 +116,14 @@ WseLuaManagerImpl& WseLuaManagerImpl::from_lua(lua_State* L) {
     auto* ptr = static_cast<WseLuaManagerImpl*>(lua_touserdata(L, -1));
     c_lua_pop(L, 1);
     return *ptr;
+}
+
+bool WseLuaManagerImpl::reserve_stack(int slots) {
+    // The VM-facing entry points run at the base of the Lua stack, where only
+    // LUA_MINSTACK slots are guaranteed; pushing past them corrupts the heap.
+    if (lua_checkstack(L_, slots) != 0) return true;
+    record_error("Lua stack overflow");
+    return false;
 }
 
 void WseLuaManagerImpl::record_print(std::string msg) {
@@ -162,6 +174,10 @@ bool WseLuaManagerImpl::pcall_with_traceback(int nargs, int nresults,
                                              std::string_view context) {
     if (L_ == nullptr) return false;
     const int err_idx = ::lua_gettop(L_) - nargs;
+    if (!reserve_stack(1)) {
+        ::lua_settop(L_, err_idx - 1);
+        return false;
+    }
     lua_pushcfunction(L_, lua_traceback_handler);
     ::lua_insert(L_, err_idx);
     const int rc = ::lua_pcall(L_, nargs, nresults, err_idx);
@@ -248,6 +264,9 @@ bool WseLuaManagerImpl::initialize(vm::VmContext& ctx,
 }
 
 void WseLuaManagerImpl::close_lua_state_only() noexcept {
+    // Cleared first so file __gc handlers running inside lua_close can tell a
+    // teardown from normal operation.
+    ready_ = false;
     if (L_ != nullptr) {
         op_hook_refs_.fill(LUA_NOREF);
         lua_close(L_);
@@ -257,11 +276,24 @@ void WseLuaManagerImpl::close_lua_state_only() noexcept {
     op_flags_by_code_.clear();
     gvar_map_.clear();
     script_fail_stack_.clear();
+    deferred_edits_.clear();
+    pending_size_delta_.clear();
     ctx_ = nullptr;
     cfg_ = {};
     ready_ = false;
     has_main_script_ = false;
     in_rgl_log_ = false;
+    gc_flush_allowed_ = false;
+}
+
+void WseLuaManagerImpl::apply_deferred_edits() {
+    if (deferred_edits_.empty()) return;
+    // Edits run in the order Lua issued them, so each one sees the container
+    // exactly as the index it was given assumed.
+    auto edits = std::move(deferred_edits_);
+    deferred_edits_.clear();
+    pending_size_delta_.clear();
+    for (auto& edit : edits) edit();
 }
 
 void WseLuaManagerImpl::shutdown() {
@@ -305,6 +337,9 @@ void WseLuaManagerImpl::shutdown() {
             }
         }
     }
+    // An explicit shutdown happens while the caller's Vfs is alive, so files
+    // Lua left open may flush from __gc. The destructor path must not.
+    gc_flush_allowed_ = true;
     close_lua_state_only();
 }
 
@@ -362,6 +397,9 @@ bool WseLuaManagerImpl::lua_set_top(std::int32_t idx) {
     if (L_ == nullptr) return false;
     const int top = ::lua_gettop(L_);
     if (idx < -(top + 1)) return false;
+    // lua_settop does not grow the stack itself; an unchecked large index
+    // writes nils past the end of it.
+    if (idx > top && lua_checkstack(L_, static_cast<int>(idx) - top) == 0) return false;
     ::lua_settop(L_, static_cast<int>(idx));
     return true;
 }
@@ -423,7 +461,9 @@ std::int64_t WseLuaManagerImpl::lua_to_int(std::int32_t idx) {
     if (L_ == nullptr) return 0;
     const int i = static_cast<int>(idx);
     if (lua_isboolean(L_, i)) return ::lua_toboolean(L_, i) ? 1 : 0;
-    if (::lua_isnumber(L_, i)) return check_i64(L_, i);
+    // Runs from a VM opcode, outside any protected call: must not raise.
+    std::int64_t value = 0;
+    if (::lua_isnumber(L_, i) && try_i64(L_, i, value)) return value;
     return 0;
 }
 
@@ -447,17 +487,17 @@ bool WseLuaManagerImpl::lua_to_pos(std::int32_t idx, core::WseTransform& out) {
 }
 
 void WseLuaManagerImpl::lua_push_int(std::int64_t val) {
-    if (L_ == nullptr) return;
+    if (L_ == nullptr || !reserve_stack(1)) return;
     ::lua_pushnumber(L_, static_cast<lua_Number>(val));
 }
 
 void WseLuaManagerImpl::lua_push_str(std::string_view val) {
-    if (L_ == nullptr) return;
+    if (L_ == nullptr || !reserve_stack(1)) return;
     push_sv(L_, val);
 }
 
 void WseLuaManagerImpl::lua_push_pos(const core::WseTransform& pos) {
-    if (L_ == nullptr) return;
+    if (L_ == nullptr || !reserve_stack(kPushPosStackSlots)) return;
     push_pos(L_, pos);
 }
 
@@ -471,7 +511,7 @@ bool WseLuaManagerImpl::lua_call(std::string_view func_name,
         record_error("lua_call: not enough arguments on stack");
         return false;
     }
-    if (!push_dotted_callable(L_, func_name)) {
+    if (!reserve_stack(3) || !push_dotted_callable(L_, func_name)) {
         record_error("lua_call: undefined function '" + std::string(func_name) + "'");
         return false;
     }
@@ -491,9 +531,15 @@ bool WseLuaManagerImpl::lua_trigger_callback(std::int32_t ref,
     }
     const int top = ::lua_gettop(L_);
     const int nargs = std::clamp(static_cast<int>(num_args), 0, top);
-    LuaStackGuard guard(L_);
+    // The arguments are consumed by the call, so the stack must come back to
+    // the height below them, whatever happens.
+    const int base = top - nargs;
+    if (!reserve_stack(2)) return false;
     ::lua_rawgeti(L_, LUA_REGISTRYINDEX, ref);
-    if (!lua_isfunction(L_, -1)) return false;
+    if (!lua_isfunction(L_, -1)) {
+        ::lua_settop(L_, base);
+        return false;
+    }
     if (nargs > 0) {
         ::lua_insert(L_, ::lua_gettop(L_) - nargs);
     }
@@ -501,11 +547,12 @@ bool WseLuaManagerImpl::lua_trigger_callback(std::int32_t ref,
     const bool ok = pcall_with_traceback(nargs, 1, "lua_triggerCallback");
     const bool failed = current_script_failed();
     pop_script_fail();
-    if (!ok || failed) return false;
-    if (lua_isboolean(L_, -1)) {
-        return ::lua_toboolean(L_, -1) != 0;
+    bool result = false;
+    if (ok && !failed) {
+        result = !lua_isboolean(L_, -1) || ::lua_toboolean(L_, -1) != 0;
     }
-    return true;
+    ::lua_settop(L_, base);
+    return result;
 }
 
 bool WseLuaManagerImpl::lua_test(std::int32_t idx) {

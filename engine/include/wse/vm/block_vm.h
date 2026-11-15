@@ -207,6 +207,11 @@ struct VmContext {
     bool skipStatement = false;
     game::ScriptManager* scripts = nullptr;
     std::shared_ptr<WseLuaRuntime> luaRuntime{};
+    // Number of trigger state machines currently on the call stack. While it
+    // is non-zero the Lua runtime queues structural trigger/presentation edits
+    // (game.addTrigger, game.removeTrigger, ...) instead of resizing a vector
+    // that is being iterated; see TriggerIterationScope.
+    std::int32_t triggerIterationDepth = 0;
 
     NativeOpHook nativeHook = nullptr;
     void* nativeHookUser = nullptr;
@@ -1182,12 +1187,35 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
     return execute_script(manager, manager.mappedScripts[mappedSlot], ctx, params, caller);
 }
 
+// Marks a trigger (or trigger-manager) execution in progress. Lua callbacks
+// reached from inside it must not resize the trigger vectors being walked, so
+// the Lua runtime queues those edits and this scope applies them once the
+// outermost trigger execution has unwound. Safety deviation: retail edits the
+// arrays in place.
+class TriggerIterationScope {
+public:
+    explicit TriggerIterationScope(VmContext& ctx) noexcept : ctx_(ctx) {
+        ++ctx_.triggerIterationDepth;
+    }
+    ~TriggerIterationScope() {
+        if (--ctx_.triggerIterationDepth == 0 && ctx_.luaRuntime != nullptr) {
+            ctx_.luaRuntime->apply_deferred_edits();
+        }
+    }
+    TriggerIterationScope(const TriggerIterationScope&) = delete;
+    TriggerIterationScope& operator=(const TriggerIterationScope&) = delete;
+
+private:
+    VmContext& ctx_;
+};
+
 // Drives one trigger state machine against VmContext, passing eventKey as caller
 // so WSE ops like store_current_trigger (3014) observe the active trigger event.
 [[nodiscard]] inline bool execute_trigger(game::Trigger& trigger,
                                           std::int32_t eventKey,
                                           std::span<const std::int64_t> timersTotal,
                                           VmContext& ctx) {
+    const TriggerIterationScope iterationScope(ctx);
     std::int64_t now = 0;
     auto timer_elapsed = [&](const game::AppTimer& t, double interval,
                              bool& out_elapsed) -> bool {
@@ -1248,6 +1276,7 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
                                                   std::int32_t eventKey,
                                                   std::span<const std::int64_t> timersTotal,
                                                   VmContext& ctx) {
+    const TriggerIterationScope iterationScope(ctx);
     for (auto& trigger : manager.triggers) {
         if (!execute_trigger(trigger, eventKey, timersTotal, ctx)) return false;
     }
@@ -1258,6 +1287,7 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
                                                  std::int32_t eventKey,
                                                  std::span<const std::int64_t> timersTotal,
                                                  VmContext& ctx) {
+    const TriggerIterationScope iterationScope(ctx);
     if (trigger.interval < game::kSimpleEventThreshold) {
         if (game::interval_key(trigger.interval) != eventKey) return true;
     } else {
@@ -1276,6 +1306,7 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
                                                          std::int32_t eventKey,
                                                          std::span<const std::int64_t> timersTotal,
                                                          VmContext& ctx) {
+    const TriggerIterationScope iterationScope(ctx);
     for (auto& trigger : manager.triggers) {
         if (!execute_simple_trigger(trigger, eventKey, timersTotal, ctx)) return false;
     }

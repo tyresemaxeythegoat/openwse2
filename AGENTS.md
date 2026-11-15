@@ -19,7 +19,7 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
     ```powershell
     powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
     ```
-    Compiles and runs all host test suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`, `module_loaders`, `headless`) and builds `wse_headless` via Zig `clang++ -std=c++20 -O2 -Wall -Wextra -Werror` and must finish with `engine host tests: PASS`.
+    Compiles and runs all host test suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`, `module_loaders`, `headless`, `lua`) plus the `lua51` and `wse_lua` static libraries, and builds `wse_headless` via Zig `clang++ -std=c++20 -O2 -Wall -Wextra -Werror` and must finish with `engine host tests: PASS`.
   - Linux / cloud sessions (no PowerShell or Zig needed; verified with Ubuntu `clang++` 18.1.3). Run from the repository root and build outside the tree. The `wse_dict`, `wse_array`, `platform`, `module_loaders`, and `headless` suites write fixed-name scratch files under the system temp directory, so do not run two copies of the gate at once:
     ```sh
     out="$(mktemp -d)"; root="$PWD"
@@ -31,6 +31,13 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
       && ./script_test "$root/engine/fixtures/scripts.txt" && echo "engine host tests: PASS"
     ```
     Every suite must print `<name> tests: PASS`. `wse_string`, `wse_dict`, `wse_array`, and `block_vm` take ~5–15 s each to compile.
+
+    The loop above covers the header-only suites. The `lua` suite (and `wse_headless`) link the `lua51` + `wse_lua` static libraries, so build them through CMake — required on every edit under `engine/src/lua/` or to the Lua hooks in `block_vm.h` / `lua_bridge.h`:
+    ```sh
+    cmake -S . -B "$out/cmake" -DCMAKE_CXX_COMPILER=clang++ && cmake --build "$out/cmake" -j4 --target lua_test wse_headless \
+      && ctest --test-dir "$out/cmake" -R '^lua$' --output-on-failure
+    ```
+    CMake downloads `lua-5.1.5.tar.gz` from `www.lua.org` (SHA-256 pinned). Where that host is blocked, unpack the same tarball (the Ubuntu archive's `lua5.1_5.1.5.orig.tar.gz` is byte-identical) and pass `-DWSE_LUA_SOURCE_DIR=<dir containing src/lua.h>`. Lua is compiled **as C++** so Lua errors unwind as exceptions; never wrap `<lua.h>` in `extern "C"`.
 - **Sanitizer gate (CI job `host-sanitizers`, required when touching VM control flow, loaders, or object lifetimes):**
   ```sh
   cmake -S . -B build-san -DCMAKE_CXX_COMPILER=clang++ -DWSE_SANITIZE=ON && cmake --build build-san -j && ctest --test-dir build-san --output-on-failure

@@ -74,13 +74,16 @@ $luaCoreFiles = @(
 )
 $luaObjDir = Join-Path $out "lua51_obj"
 New-Item -ItemType Directory -Force -Path $luaObjDir | Out-Null
-$luaLib = Join-Path $out "liblua51.a"
+# Lua is compiled as C++ so Lua errors unwind as exceptions through wse_lua's
+# C++ callbacks. The archive name differs from the earlier C build so a stale
+# cached C archive is never linked against the C++-linkage headers.
+$luaLib = Join-Path $out "liblua51_cxx.a"
 if (-not (Test-Path $luaLib)) {
     Write-Host "building     lua51"
     $luaObjs = @()
     foreach ($cf in $luaCoreFiles) {
         $obj = Join-Path $luaObjDir ($cf -replace '\.c$', '.o')
-        & $zig cc -target x86_64-windows-gnu -std=c99 -O2 -w -I $luaSrc -c (Join-Path $luaSrc $cf) -o $obj
+        & $zig c++ -target x86_64-windows-gnu -x c++ -std=c++20 -O2 -w -I $luaSrc -c (Join-Path $luaSrc $cf) -o $obj
         if ($LASTEXITCODE -ne 0) { throw "lua51 compile failed: $cf" }
         $luaObjs += $obj
     }

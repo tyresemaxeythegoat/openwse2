@@ -164,6 +164,13 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
         return options.fail_on_unimplemented && ctx.unimplementedCount > 0U;
     };
 
+    // Close any Lua state left by a previous run before the bundle it holds
+    // callbacks into is reset; otherwise a failed reload or `enable_lua ==
+    // false` would leave the old module's hooks active.
+    if (ctx.luaRuntime != nullptr) {
+        ctx.luaRuntime->shutdown();
+    }
+
     report.load_error = load_module(vfs, options.module_dir, ctx, bundle,
                                     options.load_options);
     report.loaded_files = bundle.loaded_files.size();
