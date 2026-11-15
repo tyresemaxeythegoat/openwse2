@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -118,6 +119,14 @@ public:
     virtual bool make_dir(std::string_view /*path*/) { return false; }
     virtual bool remove_dir(std::string_view /*path*/) { return false; }
 
+    // Optional atomic replace: moves file `from` to `to`, replacing an existing
+    // file at `to` in one step (POSIX `rename`). `to`'s parent must exist. The
+    // replaced file keeps its own storage, so a reader that still has it open
+    // or mapped (a `dlopen`ed driver) is unaffected. False when unsupported.
+    virtual bool rename_file(std::string_view /*from*/, std::string_view /*to*/) {
+        return false;
+    }
+
     // Same as `read_file`, into a string. Implementations override this to
     // fill `out` directly; the default pays one extra copy.
     virtual bool read_text(std::string_view path, std::string& out) {
@@ -176,6 +185,30 @@ public:
     bool remove_file(std::string_view path) override {
         const auto key = normalize_path(path);
         return key && files_.erase(*key) != 0;
+    }
+
+    bool rename_file(std::string_view from, std::string_view to) override {
+        const auto from_key = normalize_path(from);
+        const auto parts = split_path(to);
+        if (!from_key || !parts || parts->empty()) return false;
+        const auto src = files_.find(*from_key);
+        if (src == files_.end()) return false;
+        std::string to_key;
+        for (std::size_t i = 0; i < parts->size(); ++i) {
+            if (i != 0) to_key.push_back('/');
+            to_key += ascii_lower((*parts)[i]);
+        }
+        const std::size_t slash = to_key.rfind('/');
+        if (slash != std::string::npos && dirs_.count(to_key.substr(0, slash)) == 0) {
+            return false;  // missing parent
+        }
+        if (dirs_.count(to_key) != 0) return false;
+        if (to_key == *from_key) return true;
+        File moved = std::move(src->second);
+        files_.erase(src);
+        moved.name = parts->back();
+        files_.insert_or_assign(std::move(to_key), std::move(moved));
+        return true;
     }
 
     bool list_dir(std::string_view path, std::vector<VfsEntry>& out) override {
@@ -310,6 +343,19 @@ public:
         return std::filesystem::remove(*real, ec) && !ec;
     }
 
+    bool rename_file(std::string_view from, std::string_view to) override {
+        const CacheReset reset{*this};
+        const auto src = resolve(from, false);
+        const auto dst = resolve(to, true);
+        if (!src || !dst) return false;
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(*src, ec) || ec) return false;
+        // Replaces an existing `dst` atomically (MoveFileExW with
+        // MOVEFILE_REPLACE_EXISTING on Windows).
+        std::filesystem::rename(*src, *dst, ec);
+        return !ec;
+    }
+
     bool list_dir(std::string_view path, std::vector<VfsEntry>& out) override {
         const auto real = resolve(path, false);
         if (!real) return false;
@@ -423,16 +469,43 @@ private:
         return current;
     }
 
+    struct DirListing {
+        std::filesystem::file_time_type mtime{};
+        std::filesystem::path dir;  // spelling the listing was read through
+        std::vector<std::filesystem::path::string_type> aliases;  // proven-equal spellings
+        std::unordered_map<std::string, std::filesystem::path> by_lower;
+    };
+
+    // ASCII-folded host path. On a case-insensitive volume (NTFS, default APFS,
+    // casefolded ext4/f2fs) `resolve` keeps the caller's spelling of a
+    // directory that exists, so `Textures` and `textures` must share one index.
+    // On a case-sensitive volume (or a case-sensitive NTFS directory) they can
+    // be two directories; `find_case_insensitive` tells them apart by checking
+    // that a hit's recorded spelling is the same directory.
     static std::filesystem::path::string_type cache_key(const std::filesystem::path& dir) {
         std::filesystem::path::string_type key = dir.native();
-#ifdef _WIN32
+        using Ch = std::filesystem::path::value_type;
         for (auto& ch : key) {
-            if (ch >= L'A' && ch <= L'Z') {
-                ch = static_cast<wchar_t>(ch - L'A' + L'a');
+            if (ch >= Ch('A') && ch <= Ch('Z')) {
+                ch = static_cast<Ch>(ch - Ch('A') + Ch('a'));
             }
         }
-#endif
         return key;
+    }
+
+    // True when `listing` was built for `dir`: same spelling, a spelling already
+    // proven equivalent, or (checked once, then remembered) the same directory.
+    bool listing_matches(DirListing& listing, const std::filesystem::path& dir) const {
+        const auto& native = dir.native();
+        if (listing.dir.native() == native) return true;
+        if (std::find(listing.aliases.begin(), listing.aliases.end(), native) !=
+            listing.aliases.end()) {
+            return true;
+        }
+        std::error_code ec;
+        if (!std::filesystem::equivalent(listing.dir, dir, ec) || ec) return false;
+        if (listing.aliases.size() < 8U) listing.aliases.push_back(native);
+        return true;
     }
 
     // Looks `name` up in `dir`'s cached lower-case index, listing `dir` when
@@ -446,7 +519,8 @@ private:
         const auto mtime = std::filesystem::last_write_time(dir, time_ec);
         if (!time_ec) {
             const auto cached = dir_cache_.find(key);
-            if (cached != dir_cache_.end() && cached->second.mtime == mtime) {
+            if (cached != dir_cache_.end() && cached->second.mtime == mtime &&
+                listing_matches(cached->second, dir)) {
                 const auto hit = cached->second.by_lower.find(wanted);
                 if (hit == cached->second.by_lower.end()) return std::nullopt;
                 return hit->second;
@@ -454,6 +528,7 @@ private:
         }
         DirListing listing;
         listing.mtime = mtime;
+        listing.dir = dir;
         std::error_code ec;
         std::filesystem::directory_iterator it(dir, ec);
         ++directory_scans_;
@@ -502,11 +577,7 @@ private:
         ~CacheReset() { vfs.dir_cache_.clear(); }
     };
 
-    struct DirListing {
-        std::filesystem::file_time_type mtime{};
-        std::unordered_map<std::string, std::filesystem::path> by_lower;
-    };
-    // Keyed by the directory's host path; see the class comment.
+    // Keyed by the ASCII-folded host path; see `cache_key`.
     mutable std::unordered_map<std::filesystem::path::string_type, DirListing> dir_cache_;
     mutable std::size_t directory_scans_ = 0;
 };

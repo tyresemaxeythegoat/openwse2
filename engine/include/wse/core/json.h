@@ -254,8 +254,68 @@ inline void wse_skip_json_ws(std::string_view src, std::size_t& pos) noexcept {
 }
 
 // Parses top-level JSON object (0x1402a97f0 requires Json::objectValue).
+// Validates and steps over one JSON value of any kind (nested arrays/objects
+// included, up to `max_depth` levels) without storing it.
+[[nodiscard]] inline bool wse_skip_json_value(std::string_view src,
+                                              std::size_t& pos,
+                                              int max_depth = 64) {
+    wse_skip_json_ws(src, pos);
+    if (pos >= src.size()) {
+        return false;
+    }
+    const char open = src[pos];
+    if (open != '{' && open != '[') {
+        std::string ignored;
+        return wse_parse_json_scalar(src, pos, ignored);
+    }
+    if (max_depth <= 0) {
+        return false;
+    }
+    const char close = (open == '{') ? '}' : ']';
+    ++pos;
+    wse_skip_json_ws(src, pos);
+    if (pos < src.size() && src[pos] == close) {
+        ++pos;
+        return true;
+    }
+    for (;;) {
+        wse_skip_json_ws(src, pos);
+        if (open == '{') {
+            std::string key;
+            if (!wse_parse_json_string(src, pos, key)) {
+                return false;
+            }
+            wse_skip_json_ws(src, pos);
+            if (pos >= src.size() || src[pos] != ':') {
+                return false;
+            }
+            ++pos;
+        }
+        if (!wse_skip_json_value(src, pos, max_depth - 1)) {
+            return false;
+        }
+        wse_skip_json_ws(src, pos);
+        if (pos >= src.size()) {
+            return false;
+        }
+        if (src[pos] == close) {
+            ++pos;
+            return true;
+        }
+        if (src[pos] != ',') {
+            return false;
+        }
+        ++pos;
+    }
+}
+
+// Parses a flat object of scalar values into `out` (strings unescaped,
+// numbers/booleans as their text, null as ""). With `skip_nested`, members whose
+// value is an array or object are validated and left out instead of failing the
+// parse (for foreign files such as driver `meta.json` that may grow structured
+// fields); the WSE dict ops keep the strict default.
 [[nodiscard]] inline bool wse_parse_json_object(
-    std::string_view src, std::map<std::string, std::string>& out) {
+    std::string_view src, std::map<std::string, std::string>& out, bool skip_nested = false) {
     if (src.starts_with("\xEF\xBB\xBF")) {
         src.remove_prefix(3);
     }
@@ -288,11 +348,17 @@ inline void wse_skip_json_ws(std::string_view src, std::size_t& pos) noexcept {
         }
         ++pos;
         wse_skip_json_ws(src, pos);
-        std::string value;
-        if (!wse_parse_json_scalar(src, pos, value)) {
-            return false;
+        if (skip_nested && pos < src.size() && (src[pos] == '{' || src[pos] == '[')) {
+            if (!wse_skip_json_value(src, pos)) {
+                return false;
+            }
+        } else {
+            std::string value;
+            if (!wse_parse_json_scalar(src, pos, value)) {
+                return false;
+            }
+            parsed[std::move(key)] = std::move(value);
         }
-        parsed[std::move(key)] = std::move(value);
         wse_skip_json_ws(src, pos);
         if (pos >= src.size()) {
             return false;

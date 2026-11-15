@@ -255,7 +255,7 @@ if(WSE_BUILD_ANDROID_APP)
     endif()
     find_package(SDL3 REQUIRED CONFIG)
     add_library(panvk_hw SHARED
-        runtime/android/src/hardware_stub.c
+        platform/android/panvk_hw_stub.c
     )
     wse_apply_strict_warnings(panvk_hw)
 

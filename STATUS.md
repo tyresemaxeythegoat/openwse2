@@ -107,13 +107,13 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `native_world_test.cpp` | 7 |
 | `native_m5_test.cpp` | 5 |
 | `wse_m6_test.cpp` | 7 |
-| `platform_test.cpp` | 10 |
+| `platform_test.cpp` | 11 |
 | `module_loaders_test.cpp` | 6 |
 | `headless_test.cpp` | 5 |
 | `lua_test.cpp` | 7 |
 | `asset_test.cpp` | 8 |
 | `selftest_host_test.cpp` *(aggregate runner over the 19 suites)* | 19 suites |
-| **Total (19 standalone suites + aggregate runner)** | **137** |
+| **Total (19 standalone suites + aggregate runner)** | **138** |
 
 ## 4. Blocked
 
@@ -130,6 +130,44 @@ Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
 
 1. **P6 Audio (SDL3 audio-stream mixer + decoders):** P0–P5 (`wse/asset/shader.h`, `SpirvShaderCache`, `PresentationPath` WSI vs `AHardwareBuffer` bridge decision, `VkShaderModule` lifecycle, D3D9 projection/half-pixel/sRGB + material RHI) are implemented and host-verified; the next platform slice is inspecting v1.1.5.5 FMOD Ex call sites and implementing `AudioDevice` + SDL3 audio mixer (`P6`), plus touch/controller input (`P7`).
 2. **Device verification of P1/P2/P4 APK:** install the `wse2-android-selftest-debug-apk` CI artifact on an `arm64-v8a` device/emulator once available and record live on-device SAF index timing plus system / Turnip / PanVK driver probe results from `WseLauncherActivity`.
+
+### P4 review: items not fixed yet
+
+Found in the review of `ef4f3e0` and still open after the second round of fixes (`STATUS.md` §7,
+"Slice P4 second review fixes"). Each needs hardware, a GPU pipeline, or a design decision this
+environment cannot make.
+
+1. **The P4 "render test" never uses the GPU.** `VulkanRhiDevice` creates `VkBuffer` / `VkImage`
+   (and, since P5, `VkShaderModule`) objects, but binds no memory, uploads no data, records no
+   command buffer, and draws every frame with `SoftwareRhiDevice`. The frame hash is therefore
+   identical for every driver (the tests assert exactly that) and the probe only proves
+   `vkCreateDevice` worked. Way out: allocate and bind memory, upload through a staging buffer,
+   build a real render pass + graphics pipeline from the P5 SPIR-V modules, read back, and
+   compare against the CPU reference within a tolerance; add a CI job
+   on Mesa lavapipe (`mesa-vulkan-drivers`) as `docs/PLATFORM_PLAN.md`'s original P4 exit asked,
+   run with `WSE_TEST_SYSTEM_VULKAN=1`.
+2. **On-device behaviour is unverified.** The isolated `:vkprobe` probe process
+   (`WseVulkanProbeService`), its crash/timeout reporting, the `android_get_device_api_level()`
+   `minApi` check, and the requested-mode check in `nativeStageDriverPackage` are compile-checked
+   only (Kotlin against the Android 14 framework jar, JNI on the host). Needs a device (§4).
+3. **Windows changes are compile-checked only.** `LoadLibraryExA(..., LOAD_LIBRARY_SEARCH_SYSTEM32)`
+   for `vulkan-1.dll`, UTF-8 custom-driver paths through `LoadLibraryExW`, and `HostVfs::rename_file`
+   replacing an existing file were cross-compiled and linked with Zig `x86_64-windows-gnu` but not
+   run; the next `engine/build_host.ps1` run on Windows covers them.
+4. **Front face of real Warband meshes.** `PipelineDesc::front_face` exists (default
+   `counter_clockwise`), but which winding `.brf` faces have after the D3D9 -> Vulkan coordinate
+   conversion is unknown until a real mesh is rendered with culling on (P5's D3D9 projection
+   helpers do not settle it). Decide the default with the first GPU-rendered `.brf`.
+5. **Software rasterizer throughput.** Remaining ideas, deferred because the GPU path replaces this
+   rasterizer for real frames: 8x8 tile binning with empty-tile skipping and one thread per tile
+   row; integer power-of-two texture wrap (`& (w - 1)`); a word-at-a-time hash (xxh3) for large
+   frames (`hash_rgba8_frame` is a regression contract, so changing it changes every recorded hash).
+6. **`SafVfs` has no `rename_file`.** Staging through it falls back to remove + write (a short
+   window without the file). Driver staging uses `HostVfs`, so nothing depends on it yet; a
+   `DocumentsContract.renameDocument`/`moveDocument` backend call would close it.
+7. **Non-ASCII directory case.** `HostVfs` cache keys fold ASCII only, so two spellings of a
+   non-ASCII directory that differ only in case (on a case-insensitive volume) get separate
+   listings: correct, one extra scan each. Unicode case folding was not worth a dependency.
 
 ## 6. Open documentation questions
 
@@ -160,6 +198,7 @@ Previously closed: the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vta
 | Phase 2H headless `Native` run | PASS (host local) | `wse_headless.exe` against user retail install (`Modules/Native`): `34` loaded files + `1` skipped optional `module_config.ini` (after fixing `particle_systems.txt` 35-float layout `0x140207d50`, `skins.txt` wrapping u32 color literals `0x1402afce0` + `(weight, key_index)` constraint pairs `0x140213d60`, and `Data/skyboxes.txt` scalar `flare_strength` `0x1402180c0`); `game_start` (`idx 0`, `maxDepth 5`) + `20` simulated frames across `25` triggers and `110` simple triggers (`500.0s`, resulting in `755` parties) completed with `errorCount=0` and `unimplementedCount=0` under `failOnUnimplemented=true` |
 | Slice P4 Vulkan bring-up & driver loader | PASS (host + Linux/arm64 objects; CI & device pending) | Inspected `FristOneRR-Panvk-Driver` (`v3.7.0`) and `Banners-Turnip` (`v27.0.0-20261115`) AdrenoTools layouts; added `wse/platform/rhi.h` (`RhiDevice`, `SoftwareRhiDevice`, `parse_driver_meta_json`, `patch_icd_libhardware_needed`, `stage_driver_package_to_vfs`, BRF/DDS textured mesh helpers), `platform/vulkan/driver_loader.{h,cpp}` (`VulkanDriverLoader`, `MockVulkanIcd` v5, `VulkanRhiDevice`, `run_vulkan_mesh_smoke_test`), `libpanvk_hw.so` (`panvk_hw` CMake/Gradle target from `runtime/android/src/hardware_stub.c`), and `nativeProbeVulkanAndRenderMesh` launcher button; fixed Windows NTFS `HostVfs::cache_key` ASCII case normalization; `platform_test.cpp` (`9` tests) and full `build_host.ps1` (`19/19` / `135`, `1717 ms`) PASS on host |
 | Slice P4 review fixes | PASS (Linux host: CMake CTest `20/20`, standalone gate `19/19`, g++ ASan/UBSan; Windows, CI & device pending) | Launcher probe never reached a real driver (empty ICD path + forced mock fallback reported as success): added `.zip` driver-package import (`nativeStageDriverPackage` -> `noBackupFilesDir/gpu_drivers/<mode>/`, read-only ICD), mock fallback now opt-in and flagged (`fell_back_to_mock`); ELF-aware `patch_icd_libhardware_needed` (`DT_NEEDED` + `DT_VERNEED` only) and non-ELF rejection; `VulkanDriverLoader` `HMI` hwvulkan HAL path, `RTLD_NODELETE`, instance `apiVersion` up to 1.3, BC feature + `maxImageDimension2D` probing, `vkDeviceWaitIdle`, move-assignment teardown, Mesa `MESA_SHADER_CACHE_DIR` / PanVK env; `SoftwareRhiDevice` near-plane + guard-band clipping, fixed-point top-left fill rule, perspective-correct colours, no per-draw copies; BRF corner de-duplication; JNI UTF-16 string conversion; `wse_vulkan` CMake library; `AGENTS.md` Linux gate links the loader for `platform` |
+| Slice P4 second review fixes | PASS (Linux host: standalone gate `19/19`, CMake CTest `20/20` with header checks, g++ ASan/UBSan CTest `20/20`; Windows cross-compile + link via Zig; Kotlin type-checked against the Android 14 framework jar; device pending) | Stale Vulkan handles from an earlier device no longer destroy a live object (`device_generation`); driver staging never truncates an existing file in place (`.partial` + `Vfs::rename_file`, `meta.json` last) and reports an uncreatable stage directory; `libraryName` allow-list; nested `meta.json` members skipped; `minApi` / requested-mode check; exact driver-mode ids (launcher stores ids, migrates labels); ICD interface version range check; Windows System32-only system loader + UTF-8 custom paths; `HostVfs` folded cache keys with a same-directory check (fixes case-distinct directories sharing a listing; covers macOS / casefolded volumes); `PipelineDesc::front_face`; empty frame on failed pass; `clear_depth` validation; handle reuse guard after wrap; orbit camera far plane; cached `BrfMeshRenderer`; `rhi.h` split into `rhi.h` / `driver_package.h` / `rhi_brf.h`; mock ICD object accounting; probe in a separate `:vkprobe` process; host system-Vulkan tests opt-in (`WSE_TEST_SYSTEM_VULKAN=1`). Open items: §5 "P4 review: items not fixed yet" |
 | Slice P3 / Phase 2G asset decoders | PASS (host local, re-verified after PR #12 / `0629bdf`) | `wse/asset/{brf,dds}.h` + `wse_brf.exe` against retail Warband install (`7e60f1d`, including `dwDepth` and empty-root fixes): `CommonRes` (`221/221` `.brf`: `7,243` meshes, `2,939` metameshes, `734` textures, `144` shaders, `633` materials, `856` bodies, `2` skeletons, `203` animations, `1` physics material), `WSE2 SDK` (`3/3` `.brf`: `12` meshes, `12` metameshes, `5` shaders, `1` physics material), `Textures` (`1,269/1,269` `.dds` incl. `L16_UNORM` skybox exponent maps and single-slice `DDSCAPS2_VOLUME` `cnt/font.dds`), and `Modules/Native` resource catalog (`221/221` entries, `0` warnings) |
 | Slice P2 SAF Vfs & launcher | PASS (host + JNI/Kotlin build; device pending) | `wse/platform/saf_vfs.h` (`SafVfs`, `SafTreeBackend`, `MemorySafBackend`, `scan_warband_modules`, `verify_module_scripts`, `import_to`), `platform/android/saf_vfs_jni.cpp`, `WseSafBridge.kt`, `WseLauncherActivity.kt`: `platform_test.cpp` verifies `check_contract`, zero-rescan index behavior (`list_children_calls == 0`), `Modules/*/module.ini` discovery, `scripts.txt` parse via `SafVfs` (`4` scripts, `4` statements, `1` mapped), and subtree `import_to`; on-device SAF index timing (`index_ms`) reported live in `WseLauncherActivity` once hardware is attached |
 | Statement-block VM & trigger/script bridge | PASS | `engine/include/wse/vm/block_vm.h` + `native_*.h` reconstructed and host-tested (`analyze`, `execute`, `startLoop`/`endLoop`/`canLoop`, live entity iterators `11/12/16/17`, `try_for_dict_keys` `0x12`, `16` control-flow + `1,037` switch native ops across `native_ops.h`/`native_entity_ops.h`/`native_mission_ops.h`/`native_campaign_ops.h`/`native_campaign_ops_2.h`/`native_world_ops.h`/`native_world_ops_2.h`/`native_world_ops_3.h`/`native_agent_ops.h`/`native_mp_ops.h`/`native_scene_ops.h`/`native_ui_ops.h` + `7` non-switch/fallback via `dispatch_native_non_switch`, `call_script` up to depth 255 preserving `currentCaller`, `store_script_param*`, `this_or_next`/`neg`, script & trigger execution) |

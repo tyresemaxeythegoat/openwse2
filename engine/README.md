@@ -24,7 +24,8 @@ engine/
                       module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h,
                       headless_runner.h
   include/wse/platform/ vfs.h, saf_vfs.h, clock.h,         platform seam (port infrastructure, SAF Vfs, minimal RHI)
-                      sleep.h, log.h, rhi.h
+                      sleep.h, log.h, rhi.h, driver_package.h,
+                      rhi_brf.h
   include/wse/asset/  brf.h, dds.h, shader.h                  .brf / .dds asset decoders, module resource catalog, shader/material/SPIR-V pipeline
   src/lua/            lua_bitop.*, lua_globals_script.hpp,    stock MIT Lua 5.1.5 WSE runtime (`wse_lua`, `<lua.h>` isolated here)
                       wse_lua_{internal.hpp,ops,callbacks,manager}.cpp
@@ -75,8 +76,8 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `include/wse/vm/ops/{bitwise,system,world,string,fp_expr,fp,dict,array,position}.h` | per-family `executeWSE` dispatch handlers (2800–2809, 3000–3045/3619/3622/4300–4305/4606, 3340–3341, 3600–3911/4600–4609, 4200–4246, `feval` 4400–4438, dict 3200–3222, array 5000–5022, pos vec 4100–4104) | `executeWSE` `0x1401e4dc0`; `0x1400a6c10`–`0x1400ad5a0`; `0x1401e55c5`–`0x1401ec52b`; `0x1401ef0ef`–`0x1401efc8d`; `0x1401f198c`–`0x1401f1c2c`; `0x1401f58a0`–`0x1401fdd80`; `0x140246010`–`0x1402461d7`; `0x14024f4c0`; `0x1402a24f0`–`0x1402b64b0`; `0x14034e340`–`0x1403508a0` |
 | `include/wse/vm/lua_{runtime,manager}.h`, `src/lua/` | isolated stock MIT Lua 5.1.5 `WseLuaRuntime` implementing sandboxed `io`/`os`/`package`/`load*` over `Vfs`/`Clock`/`LogSink`, `bit` module, clean-room `LuaGlobals`, `msfiles/` + `variables.txt` parsers, 36 `game.*` + 7 `_G.*` callbacks, op/script/event hooks, and `lua_bridge.h` (`5100`–`5114`) integration | `WSELuaManager` (`0x14033cdd0`, `0x14033d090`; see `lua_runtime.h`, `lua_manager.h`) |
 | `include/wse/vm/execute_wse.h` | top-level `execute_wse()` umbrella dispatching across `wse/vm/ops/*.h` | `executeWSE` `0x1401e4dc0` |
-| `include/wse/platform/{vfs,saf_vfs,clock,sleep,log,rhi}.h` + `../platform/vulkan/driver_loader.{h,cpp}` | **port infrastructure, not a reconstruction:** `Vfs` (case-insensitive, `/` and `\\` separators, root-confined; Windows `HostVfs` ASCII lowercase dir-cache keys) with `MemoryVfs`, `HostVfs`, and `SafVfs` (`SafTreeBackend`, `MemorySafBackend`, one-time tree index, `import_to`, `scan_warband_modules`, `verify_module_scripts`); `Clock` in the engine's 100,000-per-second ticks with `SteadyClock`/`ManualClock`; `WallClock` (Unix seconds + UTC offset) with `SystemWallClock`/`ManualWallClock`; blocking `sleep_ms`; `LogSink` with stderr, capture, and null sinks; `RhiDevice` + `SoftwareRhiDevice`, AdrenoTools `meta.json` parser, ELF `.dynstr` `libpanvk_hw.so` patcher, BRF/DDS textured mesh helpers, and `VulkanDriverLoader` (`load_system`, direct-ICD v5 / custom driver preload, `MockVulkanIcd` v5, `VulkanRhiDevice`) | none — mirrors no retail layout; replaces the Win32 file/timer/rendering imports listed in `docs/ARCHITECTURE.md` §6 (design in `docs/PLATFORM_PLAN.md`) |
-| `tests/platform_test.cpp` | host tests for path normalisation and escape rejection, one `Vfs` contract run across `MemoryVfs`, `HostVfs`, and `SafVfs`, `SafVfs` one-time index / `scan_warband_modules` / `verify_module_scripts` / `import_to`, `Vfs` → `TokenReader`, clocks, log sinks, `test_rhi_and_driver_loader` (Turnip/PanVK `meta.json`, `.dynstr` `libpanvk_hw.so` patcher, Mock ICD v5, BRF/DDS textured mesh screenshot & Z-buffer tests), and `test_p5_shader_modules_d3d9_and_material_rhi` (`PresentationPath` WSI vs `AHardwareBuffer` bridge, `VkShaderModule` lifecycle, D3D9 projection/half-pixel/sRGB helpers, normal/specular/alpha-test/blend material RHI) | temp directory + in-memory trees |
+| `include/wse/platform/{vfs,saf_vfs,clock,sleep,log,rhi,driver_package,rhi_brf}.h` + `../platform/vulkan/driver_loader.{h,cpp}` | **port infrastructure, not a reconstruction:** `Vfs` (case-insensitive, `/` and `\\` separators, root-confined, optional atomic `rename_file`; `HostVfs` ASCII-folded dir-cache keys with a same-directory check) with `MemoryVfs`, `HostVfs`, and `SafVfs` (`SafTreeBackend`, `MemorySafBackend`, one-time tree index, `import_to`, `scan_warband_modules`, `verify_module_scripts`); `Clock` in the engine's 100,000-per-second ticks with `SteadyClock`/`ManualClock`; `WallClock` (Unix seconds + UTC offset) with `SystemWallClock`/`ManualWallClock`; blocking `sleep_ms`; `LogSink` with stderr, capture, and null sinks; `RhiDevice` + `SoftwareRhiDevice` (`rhi.h`, standard library only), AdrenoTools `meta.json` parser, ELF `.dynstr` `libpanvk_hw.so` patcher, and atomic package staging (`driver_package.h`), BRF/DDS textured mesh helpers + cached `BrfMeshRenderer` (`rhi_brf.h`), and `VulkanDriverLoader` (`load_system`, direct-ICD v5 / custom driver preload, `MockVulkanIcd` v5, `VulkanRhiDevice`) | none — mirrors no retail layout; replaces the Win32 file/timer/rendering imports listed in `docs/ARCHITECTURE.md` §6 (design in `docs/PLATFORM_PLAN.md`) |
+| `tests/platform_test.cpp` | host tests for path normalisation and escape rejection, one `Vfs` contract run across `MemoryVfs`, `HostVfs`, and `SafVfs`, `SafVfs` one-time index / `scan_warband_modules` / `verify_module_scripts` / `import_to`, `Vfs` → `TokenReader`, clocks, log sinks, `test_rhi_and_driver_loader` (Turnip/PanVK `meta.json`, `.dynstr` `libpanvk_hw.so` patcher, Mock ICD v5, BRF/DDS textured mesh screenshot & Z-buffer tests), `test_p5_shader_modules_d3d9_and_material_rhi` (`PresentationPath` WSI vs `AHardwareBuffer` bridge, `VkShaderModule` lifecycle, D3D9 projection/half-pixel/sRGB helpers, normal/specular/alpha-test/blend material RHI), and `test_p4_review_fixes` (mode ids, name allow-list, nested `meta.json`, atomic re-staging, front face, handle wrap, device generations, mock object accounting). The real host Vulkan loader is exercised only with `WSE_TEST_SYSTEM_VULKAN=1` | temp directory + in-memory trees |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
 | `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
@@ -418,7 +419,8 @@ one across script-visible execution:
     must set while `ti_on_missile_hit` runs. Missile positions (3609/3613) use world up `(0,0,1)`.
   - `skin_set_blood_color` (5200) stores one colour per skin (`WseM6SkinExt::blood_color(skin)`).
 
-Platform P4 (`wse/platform/rhi.h`, `platform/vulkan/driver_loader.{h,cpp}`; port infrastructure):
+Platform P4 (`wse/platform/{rhi,driver_package,rhi_brf}.h`, `platform/vulkan/driver_loader.{h,cpp}`;
+port infrastructure):
   - `patch_icd_libhardware_needed` parses the ELF (little-endian ELF32/ELF64, every offset bounds-
     checked) and rewrites `libhardware.so` -> `libpanvk_hw.so` only in strings reached through
     `PT_DYNAMIC` -> `DT_STRTAB` (`DT_NEEDED` and `DT_VERNEED` `vn_file`); identical text in
@@ -439,6 +441,40 @@ Platform P4 (`wse/platform/rhi.h`, `platform/vulkan/driver_loader.{h,cpp}`; port
   - `run_vulkan_mesh_smoke_test` reports a mock fallback through `fell_back_to_mock` /
     `fallback_reason` (never as a plain success); the Android probe disables the fallback unless
     the launcher's testing checkbox is ticked. Its frame comes from the CPU reference rasterizer.
+  - Second review (2026-11-15):
+    - `parse_driver_mode` accepts only the stable ids (`system`, `turnip`, `panvk`, `custom_icd`,
+      plus exact aliases `freedreno` / `panfrost` / `custom`), case-insensitive. Substring matching
+      once read "not turnip" as Turnip. The launcher stores and passes ids, not display labels
+      (old label preferences are migrated).
+    - `is_safe_driver_library_name` is an allow-list: 1..128 characters from `[A-Za-z0-9._+-]`, no
+      leading `.` or `-`, no `..`, a `.so`/`.dll` suffix with a non-empty stem.
+    - `parse_driver_meta_json` skips nested array/object members instead of rejecting the file
+      (`wse_parse_json_object(..., skip_nested = true)`; the WSE dict ops keep the strict default).
+      `check_driver_package_compat` refuses a package whose `minApi` exceeds the device API level
+      or whose kind (Turnip/PanVK) differs from the selected one; the JNI staging call applies it.
+    - `stage_driver_package_to_vfs` patches the ICD in place (rvalue overload; the span overload
+      copies once), creates the stage directory or fails with an error, and writes the ICD first
+      and `meta.json` last, each through `<name>.partial` + `Vfs::rename_file`. An existing file is
+      never truncated in place, so a still-mapped driver (`RTLD_NODELETE`) keeps its pages and an
+      interrupted write leaves the old package whole. Without rename support: remove + write.
+    - `SoftwareRhiDevice`: `PipelineDesc::front_face` (default `counter_clockwise`, Vulkan
+      framebuffer terms) decides which winding culling keeps; a failed pass leaves `out_rgba8`
+      empty; `clear_depth` outside `[0, 1]` or NaN is rejected (NaN disabled depth testing); after
+      the 32-bit handle counter wraps, allocation skips every live handle.
+    - `make_orbit_mvp_matrix`: far plane `max(100, 4 * distance)`, near `max(0.1, distance / 1000)`;
+      non-finite arguments fall back to defaults.
+    - `VulkanDriverLoader::device_generation()` (process-unique per `VkDevice`); `destroy_vk_buffer`
+      / `destroy_vk_image` take the generation recorded at creation and ignore stale handles, whose
+      values the next device may reuse (a stale destroy used to free another owner's buffer).
+      Negotiated ICD interface versions outside `1..5` are refused. On Windows the system loader is
+      searched in System32 only (`LOAD_LIBRARY_SEARCH_SYSTEM32`) and custom paths are UTF-8
+      (`LoadLibraryExW`).
+    - The mock ICD counts live objects (`mock_vulkan_object_stats`): children still alive at
+      `vkDestroyDevice` and unknown/double destroys are reported.
+    - Android: the probe runs in `WseVulkanProbeService` (`:vkprobe` process, one probe per
+      process, 60 s timeout); a crashing or hanging driver ends only that process.
+    - `libpanvk_hw.so` is built from `platform/android/panvk_hw_stub.c` (active copy of the legacy
+      `runtime/android/src/hardware_stub.c`).
 
 Platform P5 (`wse/asset/shader.h`, `wse/platform/rhi.h`, `platform/vulkan/driver_loader.{h,cpp}`):
   - `VulkanDriverLoader::probe_and_create_device` queries `vkEnumerateInstanceExtensionProperties`

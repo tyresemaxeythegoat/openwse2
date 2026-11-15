@@ -25,6 +25,11 @@
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:exported="true"
             android:launchMode="singleTask" />
+        <!-- Vulkan driver probe runs isolated: a crashing user driver kills only this process. -->
+        <service
+            android:name=".WseVulkanProbeService"
+            android:exported="false"
+            android:process=":vkprobe" />
     </application>
 
 </manifest>

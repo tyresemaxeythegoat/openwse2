@@ -1,9 +1,18 @@
 package org.wse2.android
 
 import android.app.Activity
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.Message
+import android.os.Messenger
+import android.os.RemoteException
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
@@ -50,12 +59,15 @@ class WseLauncherActivity : Activity() {
     private lateinit var outputStatusText: TextView
     private lateinit var rescanButton: Button
     private lateinit var verifyScriptsButton: Button
+    private lateinit var probeButton: Button
 
     private val modules = ArrayList<ModuleChoice>()
     private val driverOptions = listOf("System Vulkan", "Turnip (Adreno custom)", "PanVK (Mali direct ICD)")
     // Native `parse_driver_mode` keys, index-aligned with driverOptions.
     private val driverModeKeys = listOf("system", "turnip", "panvk")
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var probeConnection: ServiceConnection? = null
 
     private var selectedTreeUri: Uri? = null
 
@@ -168,10 +180,11 @@ class WseLauncherActivity : Activity() {
         }
         container.addView(mockFallbackCheck)
 
-        container.addView(Button(this).apply {
+        probeButton = Button(this).apply {
             text = "Probe Vulkan Driver (CPU reference frame)"
             setOnClickListener { probeVulkanDriver() }
-        })
+        }
+        container.addView(probeButton)
 
         addSectionTitle("Runtime")
         container.addView(Button(this).apply {
@@ -192,18 +205,22 @@ class WseLauncherActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        finishProbe(null)
         executor.shutdownNow()
     }
 
     private fun restorePreferences() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val savedDriver = prefs.getString(KEY_GPU_DRIVER, driverOptions.first())
-        val driverIdx = driverOptions.indexOf(savedDriver).coerceAtLeast(0)
+        // Stored as the stable mode id; older builds stored the display label.
+        val savedDriver = prefs.getString(KEY_GPU_DRIVER, driverModeKeys.first()) ?: ""
+        val driverIdx = driverModeKeys.indexOf(savedDriver).takeIf { it >= 0 }
+            ?: driverOptions.indexOf(savedDriver).coerceAtLeast(0)
         driverSpinner.setSelection(driverIdx)
+        prefs.edit().putString(KEY_GPU_DRIVER, driverModeKeys[driverIdx]).apply()
         updateDriverStatus()
         driverSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
-                prefs.edit().putString(KEY_GPU_DRIVER, driverOptions[pos]).apply()
+                prefs.edit().putString(KEY_GPU_DRIVER, driverModeKeys[pos]).apply()
                 updateDriverStatus()
             }
 
@@ -497,7 +514,7 @@ class WseLauncherActivity : Activity() {
             return "ERROR: cannot create ${staging.path}"
         }
         val bridge = WseSafBridge(applicationContext, Uri.EMPTY)
-        val res = bridge.nativeStageDriverPackage(meta, icd, staging.absolutePath)
+        val res = bridge.nativeStageDriverPackage(meta, icd, staging.absolutePath, selectedMode)
         val parts = res.split('\t')
         if (parts.size < 5 || parts[0] != "OK") {
             staging.deleteRecursively()
@@ -562,45 +579,106 @@ class WseLauncherActivity : Activity() {
             "Imported ${parts[3]} as $mode (libhardware.so references patched: ${parts[4]})."
     }
 
+    // Runs the probe in WseVulkanProbeService (separate ":vkprobe" process), so a
+    // crashing driver cannot take the launcher down. One probe at a time.
     private fun probeVulkanDriver() {
+        if (probeConnection != null) {
+            return
+        }
         val mode = selectedDriverModeKey()
         val driver = driverOptions[driverModeKeys.indexOf(mode)]
-        val nativeLibDir = applicationInfo.nativeLibraryDir ?: ""
         val icdPath = if (mode == "system") {
             ""
         } else {
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .getString(KEY_DRIVER_PATH_PREFIX + mode, "") ?: ""
         }
-        val allowMock = mockFallbackCheck.isChecked
         val shaderCache = File(cacheDir, "mesa_shader_cache")
         shaderCache.mkdirs()
-        outputStatusText.text = "Probing $driver Vulkan driver..."
-        executor.execute {
-            val bridge = WseSafBridge(applicationContext, selectedTreeUri ?: Uri.EMPTY)
-            val result = bridge.nativeProbeVulkanAndRenderMesh(
-                mode,
-                icdPath,
-                nativeLibDir,
-                shaderCache.absolutePath,
-                allowMock
-            )
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
-                    outputStatusText.text = result
+        val args = Bundle().apply {
+            putString(WseVulkanProbeService.KEY_MODE, mode)
+            putString(WseVulkanProbeService.KEY_ICD_PATH, icdPath)
+            putString(WseVulkanProbeService.KEY_NATIVE_LIB_DIR, applicationInfo.nativeLibraryDir ?: "")
+            putString(WseVulkanProbeService.KEY_SHADER_CACHE_DIR, shaderCache.absolutePath)
+            putBoolean(WseVulkanProbeService.KEY_ALLOW_MOCK, mockFallbackCheck.isChecked)
+        }
+
+        val replies = Messenger(object : Handler(Looper.getMainLooper()) {
+            override fun handleMessage(msg: Message) {
+                if (msg.what == WseVulkanProbeService.MSG_RESULT) {
+                    finishProbe(msg.data.getString(WseVulkanProbeService.KEY_RESULT) ?: "ERROR: empty probe result")
+                } else {
+                    super.handleMessage(msg)
                 }
             }
+        })
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                val request = Message.obtain(null, WseVulkanProbeService.MSG_PROBE).apply {
+                    data = args
+                    replyTo = replies
+                }
+                try {
+                    Messenger(service).send(request)
+                } catch (_: RemoteException) {
+                    finishProbe("ERROR: Vulkan probe process died before the request was sent")
+                }
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) {
+                finishProbe("ERROR: the $driver driver crashed the probe process " +
+                    "(native fault while loading or initializing it); the launcher is unaffected")
+            }
+
+            override fun onBindingDied(name: ComponentName?) {
+                onServiceDisconnected(name)
+            }
+        }
+
+        outputStatusText.text = "Probing $driver Vulkan driver in an isolated process..."
+        probeButton.isEnabled = false
+        probeConnection = connection
+        val bound = bindService(
+            Intent(this, WseVulkanProbeService::class.java),
+            connection,
+            Context.BIND_AUTO_CREATE
+        )
+        if (!bound) {
+            finishProbe("ERROR: cannot start the Vulkan probe service")
+            return
+        }
+        mainHandler.postDelayed(probeTimeout, PROBE_TIMEOUT_MS)
+    }
+
+    private val probeTimeout = Runnable {
+        finishProbe("ERROR: Vulkan probe timed out after ${PROBE_TIMEOUT_MS / 1000} s (driver hung); probe process stopped")
+    }
+
+    // Unbinding ends the probe process (WseVulkanProbeService.onUnbind exits it).
+    // `result == null` means the activity is going away: clean up silently.
+    private fun finishProbe(result: String?) {
+        val connection = probeConnection ?: return
+        probeConnection = null
+        mainHandler.removeCallbacks(probeTimeout)
+        try {
+            unbindService(connection)
+        } catch (_: IllegalArgumentException) {
+            // Already unbound.
+        }
+        if (result != null && !isFinishing && !isDestroyed) {
+            outputStatusText.text = result
+            probeButton.isEnabled = true
         }
     }
 
     private fun launchSelfTestActivity() {
         val selectedPos = moduleSpinner.selectedItemPosition
         val selectedMod = if (selectedPos in modules.indices) modules[selectedPos].folderName else "Native"
-        val driver = driverOptions[driverSpinner.selectedItemPosition.coerceAtLeast(0)]
         val intent = Intent(this, WseActivity::class.java).apply {
             putExtra(EXTRA_TREE_URI, selectedTreeUri?.toString() ?: "")
             putExtra(EXTRA_MODULE_NAME, selectedMod)
-            putExtra(EXTRA_GPU_DRIVER, driver)
+            // Stable mode id ("system" / "turnip" / "panvk"), as parse_driver_mode expects.
+            putExtra(EXTRA_GPU_DRIVER, selectedDriverModeKey())
         }
         startActivity(intent)
     }
@@ -609,6 +687,7 @@ class WseLauncherActivity : Activity() {
         private const val REQ_PICK_TREE = 2001
         private const val REQ_PICK_DRIVER = 2002
         private const val MAX_DRIVER_PACKAGE_BYTES = 256L * 1024L * 1024L
+        private const val PROBE_TIMEOUT_MS = 60_000L
         private const val KEY_DRIVER_PATH_PREFIX = "driver_path_"
         private const val KEY_DRIVER_NAME_PREFIX = "driver_name_"
         private const val PREFS_NAME = "wse2_launcher"

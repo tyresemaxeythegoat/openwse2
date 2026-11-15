@@ -3,6 +3,7 @@
 //
 // Compiled into libwse2.so only when WSE_BUILD_ANDROID_APP is ON.
 
+#include <android/api-level.h>
 #include <jni.h>
 
 #include <unistd.h>
@@ -18,11 +19,13 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "driver_loader.h"
 #include "wse/core/json.h"
 #include "wse/platform/clock.h"
+#include "wse/platform/driver_package.h"
 #include "wse/platform/rhi.h"
 #include "wse/platform/saf_vfs.h"
 
@@ -591,6 +594,9 @@ Java_org_wse2_android_WseSafBridge_nativeVerifyModule(JNIEnv* env,
 // meta.json, rejects a non-ELF `.so`, rewrites `libhardware.so` ->
 // `libpanvk_hw.so`, and writes both files. dlopen needs a real filesystem path,
 // so a SAF `content://` document cannot be loaded in place.
+// `requested_mode` is the launcher's selected driver id: a Turnip/PanVK request
+// refuses a package of the other kind, and a package whose `minApi` exceeds the
+// device API level is refused.
 // Returns `OK\t<mode>\t<absolute ICD path>\t<package name>\t<patched refs>` or
 // `ERROR: <reason>`.
 JNIEXPORT jstring JNICALL
@@ -598,10 +604,16 @@ Java_org_wse2_android_WseSafBridge_nativeStageDriverPackage(JNIEnv* env,
                                                            jobject thiz,
                                                            jstring meta_json_jstr,
                                                            jbyteArray icd_bytes_jarr,
-                                                           jstring stage_dir_jstr) {
+                                                           jstring stage_dir_jstr,
+                                                           jstring requested_mode_jstr) {
     (void)thiz;
     const std::string meta_json = jstring_to_utf8(env, meta_json_jstr);
     const std::string stage_dir = jstring_to_utf8(env, stage_dir_jstr);
+    const std::string requested_str = jstring_to_utf8(env, requested_mode_jstr);
+    wse::platform::DriverMode requested = wse::platform::DriverMode::system;
+    if (!wse::platform::parse_driver_mode(requested_str, requested)) {
+        return utf8_to_jstring(env, "ERROR: unknown GPU driver selection \"" + requested_str + "\"");
+    }
     if (stage_dir.empty() || icd_bytes_jarr == nullptr) {
         return utf8_to_jstring(env, "ERROR: missing stage directory or driver bytes");
     }
@@ -614,15 +626,22 @@ Java_org_wse2_android_WseSafBridge_nativeStageDriverPackage(JNIEnv* env,
         }
     }
 
+    wse::platform::DriverPackageMeta meta{};
+    std::string err;
+    if (!wse::platform::parse_driver_meta_json(meta_json, meta, &err) ||
+        !wse::platform::check_driver_package_compat(meta, android_get_device_api_level(), requested,
+                                                    &err)) {
+        return utf8_to_jstring(env, "ERROR: " + err);
+    }
+
     std::error_code ec;
     std::filesystem::create_directories(stage_dir, ec);
     wse::platform::HostVfs vfs(stage_dir);
-    wse::platform::DriverPackageMeta meta{};
     std::string staged_rel;
     std::size_t patched = 0;
-    std::string err;
-    if (!wse::platform::stage_driver_package_to_vfs(vfs, "", meta_json, icd, meta, staged_rel,
-                                                    &patched, &err)) {
+    // The bytes are patched in place (no second multi-megabyte copy).
+    if (!wse::platform::stage_driver_package_to_vfs(vfs, "", meta_json, std::move(icd), meta,
+                                                    staged_rel, &patched, &err)) {
         return utf8_to_jstring(env, "ERROR: " + err);
     }
     std::string abs = stage_dir;
