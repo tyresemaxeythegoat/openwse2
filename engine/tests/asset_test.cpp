@@ -617,16 +617,43 @@ void test_dds_hardening() {
                "rejects legacy multi-slice volume DDS");
     }
     {
-        // DDSCAPS2_VOLUME without DDSD_DEPTH + depth == 1 is rejected.
+        // DDSCAPS2_VOLUME without DDSD_DEPTH is still a single slice when dwDepth is 0 or 1.
+        for (const std::uint32_t depth : {0U, 1U}) {
+            wse::io::BinaryWriter w;
+            write_dds_header(w, 4, 4, 0x1007U, 1, 0x41U, 0U, 32U, argb_masks[0], argb_masks[1],
+                             argb_masks[2], argb_masks[3], 0x1000U, 0x200000U, depth);
+            const std::vector<std::byte> px(4U * 4U * 4U);
+            w.write_bytes(px);
+            wse::asset::DdsImageView img;
+            err.clear();
+            expect(wse::asset::parse_dds(w.bytes(), img, &err) && img.slices.size() == 1U,
+                   "accepts single-slice DDSCAPS2_VOLUME without DDSD_DEPTH");
+        }
+    }
+    {
+        // DDSCAPS2_VOLUME without DDSD_DEPTH but dwDepth = 4 is a multi-slice volume.
         wse::io::BinaryWriter w;
         write_dds_header(w, 4, 4, 0x1007U, 1, 0x41U, 0U, 32U, argb_masks[0], argb_masks[1],
-                         argb_masks[2], argb_masks[3], 0x1000U, 0x200000U, 1U);
-        const std::vector<std::byte> px(4U * 4U * 4U);
+                         argb_masks[2], argb_masks[3], 0x1000U, 0x200000U, 4U);
+        const std::vector<std::byte> px(4U * 4U * 4U * 4U);
         w.write_bytes(px);
         wse::asset::DdsImageView img;
         err.clear();
         expect(!wse::asset::parse_dds(w.bytes(), img, &err) && contains(err, "volume"),
-               "rejects DDSCAPS2_VOLUME without explicit depth == 1");
+               "rejects DDSCAPS2_VOLUME with dwDepth > 1 and no DDSD_DEPTH");
+    }
+    {
+        // Plain 2D texture (no DDSD_DEPTH, no DDSCAPS2_VOLUME) with junk dwDepth: depth ignored.
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 4, 4, 0x1007U, 1, 0x41U, 0U, 32U, argb_masks[0], argb_masks[1],
+                         argb_masks[2], argb_masks[3], 0x1000U, 0U, 7U);
+        const std::vector<std::byte> px(4U * 4U * 4U);
+        w.write_bytes(px);
+        wse::asset::DdsImageView img;
+        err.clear();
+        expect(wse::asset::parse_dds(w.bytes(), img, &err) && img.slices.size() == 1U &&
+                   img.width == 4U && img.height == 4U,
+               "ignores dwDepth on a 2D DDS without DDSD_DEPTH");
     }
     {
         // Single-slice DDSCAPS2_VOLUME + DDSD_DEPTH + depth == 1 (retail Warband cnt/font.dds).
@@ -641,7 +668,20 @@ void test_dds_hardening() {
                "accepts single-slice DDSCAPS2_VOLUME with DDSD_DEPTH and depth == 1");
     }
     {
-        // DX10 TEXTURE3D.
+        // DX10 TEXTURE3D with dwDepth = 4.
+        wse::io::BinaryWriter w;
+        write_dds_header(w, 4, 4, 0x1007U | 0x800000U, 1, 0x4U, wse::asset::dds_detail::fourcc('D', 'X', '1', '0'),
+                         0, 0, 0, 0, 0, 0x1000U, 0x200000U, 4U);
+        write_dx10_header(w, 28U, 4U, 0U, 1U);
+        const std::vector<std::byte> px(4U * 4U * 4U * 4U);
+        w.write_bytes(px);
+        wse::asset::DdsImageView img;
+        err.clear();
+        expect(!wse::asset::parse_dds(w.bytes(), img, &err) && contains(err, "volume"),
+               "rejects multi-slice DX10 TEXTURE3D");
+    }
+    {
+        // DX10 TEXTURE3D with a single slice (legacy header depth 1, no DDSD_DEPTH) is 2D.
         wse::io::BinaryWriter w;
         write_dds_header(w, 4, 4, 0x1007U, 1, 0x4U, wse::asset::dds_detail::fourcc('D', 'X', '1', '0'),
                          0, 0, 0, 0, 0);
@@ -649,9 +689,11 @@ void test_dds_hardening() {
         const std::vector<std::byte> px(4U * 4U * 4U);
         w.write_bytes(px);
         wse::asset::DdsImageView img;
+        std::vector<std::uint8_t> rgba;
         err.clear();
-        expect(!wse::asset::parse_dds(w.bytes(), img, &err) && contains(err, "volume"),
-               "rejects DX10 TEXTURE3D");
+        expect(wse::asset::parse_dds(w.bytes(), img, &err) && img.slices.size() == 1U &&
+                   wse::asset::decode_dds_mip_rgba8(img, 0, 0, rgba) && rgba.size() == 64U,
+               "accepts single-slice DX10 TEXTURE3D");
     }
     {
         // DX10 cube array of 2 cubes with the legacy face bits also set: 12 faces.
@@ -967,6 +1009,21 @@ void test_dds_formats_and_resolver() {
         expect(wse::asset::resolve_texture_path(vfs, "waterbump", "warband", "", "", false, 5) ==
                    "warband/Textures/waterbump_5.dds",
                "indexed frame formats <stem>_<frame>.dds");
+
+        // An empty warband_root is the VFS root (vfs_join_path("", x) == x).
+        wse::platform::MemoryVfs root_vfs;
+        root_vfs.write_file("Textures/rootless.dds", dummy);
+        root_vfs.write_file("TexturesHD/rootless_hd.dds", dummy);
+        root_vfs.write_file("Textures/languages/fr/rootless_lang.dds", dummy);
+        root_vfs.write_file("Textures/rootless_anim_2.dds", dummy);
+        expect(wse::asset::resolve_texture_path(root_vfs, "rootless", "") == "Textures/rootless.dds" &&
+                   wse::asset::resolve_texture_path(root_vfs, "rootless_hd", "", "", "", true) ==
+                       "TexturesHD/rootless_hd.dds" &&
+                   wse::asset::resolve_texture_path(root_vfs, "rootless_lang", "", "", "fr") ==
+                       "Textures/languages/fr/rootless_lang.dds" &&
+                   wse::asset::resolve_texture_path(root_vfs, "rootless_anim", "", "", "", false, 2) ==
+                       "Textures/rootless_anim_2.dds",
+               "empty warband_root probes base directories at the VFS root");
     }
 }
 
