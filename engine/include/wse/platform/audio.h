@@ -369,6 +369,8 @@ public:
 
     // The callback runs after the mixer's own state is consistent (never in the
     // middle of a mix or a channel scan), so it may freely play or stop sounds.
+    // Sounds it starts take a free slot only: they never evict another channel
+    // (`play_sound*` returns `-1` when every channel is busy).
     void set_channel_end_callback(ChannelEndCallback cb) {
         on_channel_end_ = std::move(cb);
     }
@@ -757,15 +759,14 @@ private:
         const std::int32_t prio =
             compute_sound_priority(eff_flags, dist_sq, config_.distance_priority_factor);
 
-        bool evicted = false;
-        const std::int32_t slot = allocate_channel_slot(prio, evicted);
+        const std::int32_t slot = allocate_channel_slot(prio);
         if (slot < 0) {
             return -1;
         }
-        // If an earlier callback inside the active `flush_channel_ends()` loop
-        // triggered this play into an already-ended (non-evicted) slot, cancel
-        // that slot's stale queued end notification so it cannot wipe the new sound.
-        if (!evicted && dispatching_ends_) {
+        // A callback inside the active `flush_channel_ends()` loop may only reuse an
+        // already-ended slot (no eviction while dispatching); cancel that slot's
+        // stale queued end notification so it cannot wipe the new sound.
+        if (dispatching_ends_) {
             for (std::size_t j = dispatch_cursor_ + 1U; j < pending_channel_ends_.size(); ++j) {
                 if (pending_channel_ends_[j] == slot) {
                     pending_channel_ends_[j] = -1;
@@ -881,9 +882,7 @@ private:
         return -1;
     }
 
-    [[nodiscard]] std::int32_t allocate_channel_slot(std::int32_t new_prio,
-                                                     bool& out_evicted) {
-        out_evicted = false;
+    [[nodiscard]] std::int32_t allocate_channel_slot(std::int32_t new_prio) {
         for (std::size_t i = 0; i < channels_.size(); ++i) {
             if (!channels_[i].active) {
                 return static_cast<std::int32_t>(i);
@@ -901,10 +900,16 @@ private:
         if (channels_.empty() || new_prio > channels_[worst].priority) {
             return -1;
         }
+        // Port deviation: a sound started from inside a channel-end callback never
+        // evicts. Its caller would record the evicted slot as its own before the
+        // queued end of the evicted sound is delivered, and the callback (which only
+        // carries a channel number) would then look like the new sound ending.
+        if (dispatching_ends_) {
+            return -1;
+        }
         // The end notification is queued and delivered by the caller's flush, after
         // the new sound owns the slot, so a re-entrant callback cannot steal it.
         end_channel(worst);
-        out_evicted = true;
         return static_cast<std::int32_t>(worst);
     }
 

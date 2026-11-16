@@ -116,6 +116,8 @@ namespace {
     case SDL_SCANCODE_PAGEDOWN: return RawKey::kPageDown;
     case SDL_SCANCODE_INSERT: return RawKey::kInsert;
     case SDL_SCANCODE_DELETE: return RawKey::kDelete;
+    // Android's system Back button opens / closes menus like Esc on PC.
+    case SDL_SCANCODE_AC_BACK: return RawKey::kEscape;
     default: return -1;
     }
 }
@@ -196,6 +198,8 @@ public:
         }
     }
 
+    // Fallback size; events carrying a window id are normalized by that window's
+    // current size, so the first frame and resizes never use a stale viewport.
     void set_viewport_size(int width, int height) noexcept override {
         std::lock_guard<std::mutex> lock(mutex_);
         viewport_w_ = std::max(width, 1);
@@ -208,6 +212,16 @@ public:
         }
         const auto& ev = *static_cast<const SDL_Event*>(sdl_event);
         std::lock_guard<std::mutex> lock(mutex_);
+        float vw = static_cast<float>(viewport_w_);
+        float vh = static_cast<float>(viewport_h_);
+        if (SDL_Window* win = SDL_GetWindowFromEvent(&ev); win != nullptr) {
+            int w = 0;
+            int h = 0;
+            if (SDL_GetWindowSize(win, &w, &h) && w > 0 && h > 0) {
+                vw = static_cast<float>(w);
+                vh = static_cast<float>(h);
+            }
+        }
 
         switch (ev.type) {
         case SDL_EVENT_KEY_DOWN:
@@ -238,8 +252,8 @@ public:
                            ? RawInputEvent::Type::MouseButtonDown
                            : RawInputEvent::Type::MouseButtonUp;
             out.raw_key = rk;
-            out.x = std::clamp(ev.button.x / static_cast<float>(viewport_w_), 0.0f, 1.0f);
-            out.y = std::clamp(ev.button.y / static_cast<float>(viewport_h_), 0.0f, 1.0f);
+            out.x = std::clamp(ev.button.x / vw, 0.0f, 1.0f);
+            out.y = std::clamp(ev.button.y / vh, 0.0f, 1.0f);
             queue_.push_back(out);
             return true;
         }
@@ -249,7 +263,8 @@ public:
             }
             RawInputEvent out{};
             out.type = RawInputEvent::Type::MouseWheel;
-            out.dy = ev.wheel.y;
+            // Undo "natural" scrolling so wheel-up always means `Scroll Up`.
+            out.dy = (ev.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -ev.wheel.y : ev.wheel.y;
             queue_.push_back(out);
             return true;
         }
@@ -259,10 +274,10 @@ public:
             }
             RawInputEvent out{};
             out.type = RawInputEvent::Type::MouseMotion;
-            out.x = std::clamp(ev.motion.x / static_cast<float>(viewport_w_), 0.0f, 1.0f);
-            out.y = std::clamp(ev.motion.y / static_cast<float>(viewport_h_), 0.0f, 1.0f);
-            out.dx = ev.motion.xrel / static_cast<float>(viewport_w_);
-            out.dy = ev.motion.yrel / static_cast<float>(viewport_h_);
+            out.x = std::clamp(ev.motion.x / vw, 0.0f, 1.0f);
+            out.y = std::clamp(ev.motion.y / vh, 0.0f, 1.0f);
+            out.dx = ev.motion.xrel / vw;
+            out.dy = ev.motion.yrel / vh;
             queue_.push_back(out);
             return true;
         }
@@ -271,7 +286,13 @@ public:
             if (open_pads_.find(jid) != open_pads_.end()) {
                 return false;
             }
-            open_pads_.emplace(jid, SDL_OpenGamepad(jid));
+            SDL_Gamepad* pad = SDL_OpenGamepad(jid);
+            if (pad == nullptr) {
+                // Never report a controller that will not deliver input (it would
+                // hide the touch overlay for nothing).
+                return false;
+            }
+            open_pads_.emplace(jid, pad);
             RawInputEvent out{};
             out.type = RawInputEvent::Type::GamepadConnected;
             out.device_id = static_cast<std::uint64_t>(jid);
@@ -348,18 +369,35 @@ public:
         }
         case SDL_EVENT_FINGER_DOWN:
         case SDL_EVENT_FINGER_MOTION:
-        case SDL_EVENT_FINGER_UP: {
+        case SDL_EVENT_FINGER_UP:
+        case SDL_EVENT_FINGER_CANCELED: {
+            if (ev.tfinger.touchID == SDL_MOUSE_TOUCHID) {
+                // Synthesized from a real mouse; it already arrived as mouse events.
+                return false;
+            }
             RawInputEvent out{};
             if (ev.type == SDL_EVENT_FINGER_DOWN) {
                 out.type = RawInputEvent::Type::TouchDown;
             } else if (ev.type == SDL_EVENT_FINGER_MOTION) {
                 out.type = RawInputEvent::Type::TouchMove;
-            } else {
+            } else if (ev.type == SDL_EVENT_FINGER_UP) {
                 out.type = RawInputEvent::Type::TouchUp;
+            } else {
+                // System gesture / palm rejection took the finger: no UP will follow.
+                out.type = RawInputEvent::Type::TouchCancel;
             }
             out.finger_id = static_cast<std::int64_t>(ev.tfinger.fingerID);
             out.x = std::clamp(ev.tfinger.x, 0.0f, 1.0f);
             out.y = std::clamp(ev.tfinger.y, 0.0f, 1.0f);
+            queue_.push_back(out);
+            return true;
+        }
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+        case SDL_EVENT_WINDOW_MINIMIZED:
+        case SDL_EVENT_DID_ENTER_BACKGROUND: {
+            // Key / button UP events for anything held now go elsewhere.
+            RawInputEvent out{};
+            out.type = RawInputEvent::Type::FocusLost;
             queue_.push_back(out);
             return true;
         }

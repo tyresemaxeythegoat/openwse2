@@ -169,6 +169,9 @@ struct WseInputState {
     std::array<bool, kMaxGameKeys> game_key_clicked{};
     std::array<std::string, kMaxGameKeys> game_key_names{};
     std::array<std::string, kMaxGameKeys> game_key_alt_names{};
+    // Port bookkeeping: `WseGameKeyManager::revision()` last copied into the name /
+    // mapping tables (`0` = never), so unchanged bindings are not re-formatted per frame.
+    std::uint64_t bindings_revision = 0U;
 };
 
 struct WseMusicState {

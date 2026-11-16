@@ -311,9 +311,9 @@ void test_touch_overlay_controls() {
                           atk.cy + dirs[i].second},
             RawInputEvent{RawInputEvent::Type::TouchUp, -1, 0, 20},
         }});
-        expect(mgr.frame_state().block_dir == expected_dirs[i] ||
-                   !mgr.frame_state().block_active,
-               "block swipe releases cleanly after direction");
+        expect(mgr.frame_state().block_dir == TouchCombatDirection::None &&
+                   mgr.game_key_clicked()[7] && mgr.frame_state().block_active,
+               "block swipe inside one frame still registers one Defend press");
         // Verify active block dir before TouchUp
         mgr.process_frame(std::array<RawInputEvent, 2>{{
             RawInputEvent{RawInputEvent::Type::TouchDown, -1, 0, 21, blk.cx, blk.cy},
@@ -525,10 +525,11 @@ void test_vm_and_world_input_bridge() {
                run_stmt(ctx, 72U, {54}) && run_stmt(ctx, 73U, {54}),
            "70..73 key/game_key down and clicked evaluate true on press frame");
 
-    // 75 mouse_get_position
+    // 75 mouse_get_position: Warband UI space (x 0..1, y 0..0.75 growing upwards), so a
+    // cursor 3/4 down the screen reads y = 0.25 * 0.75.
     expect(run_stmt(ctx, 75U, {0}) && close(ctx.positions[0].o.x, 0.25f) &&
-               close(ctx.positions[0].o.y, 0.75f),
-           "75 mouse_get_position returns synchronized normalized cursor position");
+               close(ctx.positions[0].o.y, 0.1875f),
+           "75 mouse_get_position returns the cursor in Warband UI space (y up, 0..0.75)");
 
     // 3100 game_key_get_key
     expect(run_stmt(ctx, 3100U, {reg(0), 54, 0, 0}) && ctx.registers[0] == RawKey::kJ &&
@@ -550,6 +551,332 @@ void test_vm_and_world_input_bridge() {
            "3101 key_released and 3102 game_key_released fire on key release");
 }
 
+// Regressions from the review of the first P7 commit (`4793c11`).
+void test_review_regressions() {
+    using namespace wse::platform;
+    using T = RawInputEvent::Type;
+    const auto key = [](T type, std::int32_t raw) {
+        RawInputEvent e{};
+        e.type = type;
+        e.raw_key = raw;
+        return e;
+    };
+    const auto touch = [](T type, std::int64_t finger, float x, float y) {
+        RawInputEvent e{};
+        e.type = type;
+        e.finger_id = finger;
+        e.x = x;
+        e.y = y;
+        return e;
+    };
+    constexpr auto gk = [](GameKeyId id) { return static_cast<std::size_t>(id); };
+
+    // 1. A press + release inside one frame is a click (raw and game key) and a release.
+    {
+        WseInputManager mgr;
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {key(T::KeyDown, RawKey::kF), key(T::KeyUp, RawKey::kF)}});
+        expect(mgr.raw_clicked()[RawKey::kF] && mgr.raw_released()[RawKey::kF] &&
+                   !mgr.raw_down()[RawKey::kF] && mgr.game_key_clicked()[gk(GameKeyId::Use)] &&
+                   mgr.game_key_released()[gk(GameKeyId::Use)],
+               "key tapped inside one frame still clicks and releases (raw + game key)");
+    }
+
+    // 2. Every wheel notch on consecutive frames is a click.
+    {
+        WseInputManager mgr;
+        int clicks = 0;
+        for (int i = 0; i < 6; ++i) {
+            RawInputEvent w{};
+            w.type = T::MouseWheel;
+            w.dy = 1.0f;
+            mgr.process_frame(std::array<RawInputEvent, 1>{{w}});
+            clicks += mgr.game_key_clicked()[gk(GameKeyId::EquipPrimaryWeapon)] ? 1 : 0;
+        }
+        expect(clicks == 6, "six consecutive wheel notches give six EquipPrimaryWeapon clicks");
+    }
+
+    // 3. Analog movement stays proportional past the key threshold; diagonals are unit length.
+    {
+        WseInputManager mgr;
+        const auto stick = mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::MoveStick)];
+        const float r = stick.circle_radius(1.0f);
+        float prev = 0.0f;
+        bool monotonic = true;
+        bool below_full = true;
+        for (const float d : {0.3f, 0.4f, 0.5f, 0.6f, 0.7f}) {
+            mgr.reset();
+            mgr.process_frame(std::array<RawInputEvent, 1>{
+                {touch(T::TouchDown, 1, stick.cx, stick.cy - d * r)}});
+            const float my = mgr.frame_state().move_y;
+            monotonic = monotonic && my > prev;
+            below_full = below_full && my < 0.8f;
+            prev = my;
+        }
+        expect(monotonic && below_full && mgr.game_key_down()[gk(GameKeyId::MoveForward)],
+               "touch stick speed is proportional above stick_key_threshold (no jump to 1.0)");
+
+        WseInputManager kb;
+        kb.process_frame(std::array<RawInputEvent, 2>{
+            {key(T::KeyDown, RawKey::kW), key(T::KeyDown, RawKey::kD)}});
+        const float mag = std::hypot(kb.frame_state().move_x, kb.frame_state().move_y);
+        expect(close(mag, 1.0f), "W+D diagonal movement has unit length");
+
+        WseInputManager pad;
+        RawInputEvent ax{};
+        ax.type = T::GamepadAxis;
+        ax.device_id = 3;
+        ax.left_y = -0.6f;
+        pad.process_frame(std::array<RawInputEvent, 1>{{ax}});
+        expect(pad.frame_state().move_y > 0.4f && pad.frame_state().move_y < 0.7f,
+               "gamepad left stick at 60% moves at about 50% speed, not full speed");
+    }
+
+    // 4. The gamepad left stick also drives the campaign-map move keys.
+    {
+        WseInputManager mgr;
+        mgr.set_context(InputContext::CampaignMap);
+        RawInputEvent ax{};
+        ax.type = T::GamepadAxis;
+        ax.device_id = 1;
+        ax.left_y = -1.0f;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{ax}});
+        expect(mgr.game_key_down()[gk(GameKeyId::MapMoveForward)],
+               "gamepad stick forward presses MapMoveForward on the campaign map");
+    }
+
+    // 5. Unplugging a pad releases what it held; another pad keeps its own buttons.
+    {
+        WseInputManager mgr;
+        RawInputEvent a = key(T::GamepadButtonDown, RawKey::kGamepadA);
+        a.device_id = 1;
+        RawInputEvent b = key(T::GamepadButtonDown, RawKey::kGamepadB);
+        b.device_id = 2;
+        mgr.process_frame(std::array<RawInputEvent, 2>{{a, b}});
+        RawInputEvent gone{};
+        gone.type = T::GamepadDisconnected;
+        gone.device_id = 1;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{gone}});
+        expect(!mgr.game_key_down()[gk(GameKeyId::Jump)] &&
+                   mgr.game_key_released()[gk(GameKeyId::Jump)] &&
+                   mgr.game_key_down()[gk(GameKeyId::DropPrimaryWeapon)],
+               "removed gamepad's held button is released; other pad's button stays down");
+
+        // An idle second pad cannot zero the stick of the pad in use.
+        RawInputEvent move{};
+        move.type = T::GamepadAxis;
+        move.device_id = 2;
+        move.left_y = -1.0f;
+        RawInputEvent idle{};
+        idle.type = T::GamepadAxis;
+        idle.device_id = 5;
+        mgr.process_frame(std::array<RawInputEvent, 2>{{move, idle}});
+        expect(mgr.frame_state().move_y > 0.9f, "stick of the pad in use wins over an idle pad");
+    }
+
+    // 6. Focus loss releases keys, buttons, and touches; cancelled touches commit nothing.
+    {
+        WseInputManager mgr;
+        const auto stick = mgr.profile().widgets[0];
+        const auto rad = mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::CommandRadial)];
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {key(T::KeyDown, RawKey::kW), touch(T::TouchDown, 1, stick.cx, stick.cy - 0.1f)}});
+        RawInputEvent lost{};
+        lost.type = T::FocusLost;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{lost}});
+        for (int i = 0; i < 3; ++i) {
+            mgr.process_frame({});
+        }
+        expect(!mgr.game_key_down()[gk(GameKeyId::MoveForward)] &&
+                   close(mgr.frame_state().move_y, 0.0f) && !mgr.raw_down()[RawKey::kW],
+               "FocusLost releases held keys and the touch stick");
+
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchDown, 7, rad.cx, rad.cy), touch(T::TouchMove, 7, rad.cx + 0.05f, rad.cy)}});
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchCancel, 7, 0.0f, 0.0f)}});
+        expect(!mgr.frame_state().radial_open && !mgr.game_key_clicked()[gk(GameKeyId::Order3)],
+               "TouchCancel closes the command radial without issuing the highlighted order");
+
+        WseInputManager tap;
+        const auto atk = tap.profile().widgets[static_cast<std::size_t>(TouchWidgetId::AttackZone)];
+        tap.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchDown, 3, atk.cx, atk.cy), touch(T::TouchUp, 3, atk.cx, atk.cy)}});
+        expect(tap.game_key_clicked()[gk(GameKeyId::Attack)],
+               "attack-zone tap inside one frame still attacks");
+    }
+
+    // 7. Physical clicks follow keyClicked (0x1400eee90): only the main key's edge counts.
+    {
+        WseInputManager mgr;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{key(T::KeyDown, RawKey::kJ)}});
+        mgr.process_frame(std::array<RawInputEvent, 1>{{key(T::KeyDown, RawKey::kLeftCtrl)}});
+        expect(mgr.game_key_down()[gk(GameKeyId::RearHorse)] &&
+                   !mgr.game_key_clicked()[gk(GameKeyId::RearHorse)],
+               "holding J then pressing Ctrl does not click RearHorse (keyClicked semantics)");
+    }
+
+    // 8. omit_key_once swallows exactly one press of the key for game-key mapping.
+    {
+        WseInputManager mgr;
+        mgr.omit_key_once(RawKey::kF);
+        mgr.process_frame(std::array<RawInputEvent, 1>{{key(T::KeyDown, RawKey::kF)}});
+        const bool swallowed = !mgr.game_key_clicked()[gk(GameKeyId::Use)] &&
+                               !mgr.game_key_down()[gk(GameKeyId::Use)] &&
+                               mgr.raw_down()[RawKey::kF] && !mgr.omitted_keys()[RawKey::kF];
+        mgr.process_frame(std::array<RawInputEvent, 1>{{key(T::KeyUp, RawKey::kF)}});
+        const bool no_release = !mgr.game_key_released()[gk(GameKeyId::Use)];
+        mgr.process_frame(std::array<RawInputEvent, 1>{{key(T::KeyDown, RawKey::kF)}});
+        expect(swallowed && no_release && mgr.game_key_clicked()[gk(GameKeyId::Use)],
+               "omit_key_once suppresses the next press only, then is consumed");
+    }
+
+    // 9. Aspect ratio: circular stick and swipe classification in physical units.
+    {
+        WseInputManager mgr;
+        mgr.set_viewport_size(2400, 1080);
+        const float a = mgr.viewport_aspect();
+        const auto stick = mgr.profile().widgets[0];
+        const float r = stick.circle_radius(a);
+        // Same physical distance right and up must give the same deflection.
+        mgr.process_frame(std::array<RawInputEvent, 1>{
+            {touch(T::TouchDown, 1, stick.cx + 0.8f * r / a, stick.cy)}});
+        const float right = mgr.frame_state().move_x;
+        mgr.reset();
+        mgr.set_viewport_size(2400, 1080);
+        mgr.process_frame(std::array<RawInputEvent, 1>{
+            {touch(T::TouchDown, 1, stick.cx, stick.cy - 0.8f * r)}});
+        const float up = mgr.frame_state().move_y;
+        expect(close(right, up, 1e-4f) && right > 0.5f,
+               "touch stick is a circle on screen: equal pixel distances give equal deflection");
+
+        // 60 px right, 35 px up on 2400x1080 is a mostly horizontal swipe.
+        const auto atk = mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::AttackZone)];
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchDown, 4, atk.cx, atk.cy),
+             touch(T::TouchMove, 4, atk.cx + 60.0f / 2400.0f, atk.cy - 35.0f / 1080.0f)}});
+        expect(mgr.frame_state().attack_dir == TouchCombatDirection::Right,
+               "swipe direction is classified in pixels, not per-axis normalized units");
+    }
+
+    // 10. Touch brings the overlay back while a pad is connected; using the pad hides it.
+    {
+        WseInputManager mgr;
+        RawInputEvent c{};
+        c.type = T::GamepadConnected;
+        c.device_id = 9;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{c}});
+        const bool hidden = !mgr.is_touch_overlay_visible();
+        const auto stick = mgr.profile().widgets[0];
+        mgr.process_frame(std::array<RawInputEvent, 1>{
+            {touch(T::TouchDown, 1, stick.cx, stick.cy - 0.1f)}});
+        const bool shown = mgr.is_touch_overlay_visible() &&
+                           mgr.game_key_down()[gk(GameKeyId::MoveForward)];
+        RawInputEvent btn = key(T::GamepadButtonDown, RawKey::kGamepadA);
+        btn.device_id = 9;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{btn}});
+        expect(hidden && shown && !mgr.is_touch_overlay_visible() &&
+                   !mgr.game_key_down()[gk(GameKeyId::MoveForward)],
+               "touch re-shows the overlay with a pad connected; pad input hides it again");
+    }
+
+    // 11. Mouse motion does not turn the camera in menus or when mouse look is off.
+    {
+        WseInputManager mgr;
+        RawInputEvent mm{};
+        mm.type = T::MouseMotion;
+        mm.x = 0.5f;
+        mm.y = 0.5f;
+        mm.dx = 0.1f;
+        mm.dy = 0.1f;
+        mgr.set_context(InputContext::Menu);
+        mgr.process_frame(std::array<RawInputEvent, 1>{{mm}});
+        const bool menu_still = close(mgr.frame_state().look_yaw_delta, 0.0f);
+        mgr.set_context(InputContext::Mission);
+        mgr.set_mouse_look_enabled(false);
+        mgr.process_frame(std::array<RawInputEvent, 1>{{mm}});
+        const bool off_still = close(mgr.frame_state().look_yaw_delta, 0.0f);
+        mgr.set_mouse_look_enabled(true);
+        mgr.process_frame(std::array<RawInputEvent, 1>{{mm}});
+        expect(menu_still && off_still && mgr.frame_state().look_yaw_delta > 0.0f,
+               "mouse look only in gameplay contexts with mouse look enabled");
+    }
+
+    // 12. Module profile names: real names get a file, distinct names stay distinct.
+    {
+        const std::string a = input_profile_vfs_path("A World of Ice & Fire");
+        const std::string b = input_profile_vfs_path("L'Aigle");
+        const std::string c = input_profile_vfs_path("\xe4\xb8\xad\xe6\x96\x87");
+        const std::string d = input_profile_vfs_path("Foo Bar");
+        const std::string e = input_profile_vfs_path("Foo_Bar");
+        const bool single_segment =
+            a.find('/', 15U) == std::string::npos && c.find('/', 15U) == std::string::npos;
+        expect(!a.empty() && !b.empty() && !c.empty() && d != e && single_segment &&
+                   input_profile_vfs_path("native") == input_profile_vfs_path("Native") &&
+                   input_profile_vfs_path("a/b").empty() && input_profile_vfs_path(".").size() > 0U &&
+                   input_profile_vfs_path("..").empty(),
+               "module profile ids encode punctuation and UTF-8 instead of rejecting them");
+
+        MemoryVfs vfs;
+        TouchOverlayProfile p{};
+        p.look_sensitivity = 3.3f;
+        TouchOverlayProfile back{};
+        std::string err;
+        expect(save_input_profile(vfs, "A World of Ice & Fire", p, nullptr, &err) &&
+                   load_input_profile(vfs, "A World of Ice & Fire", back, nullptr, &err) &&
+                   back == p,
+               "profile with punctuation in the module name round-trips");
+    }
+
+    // 13. Bridge: same-frame tap reaches 71 / 3101, omit state round-trips, names only
+    //     re-sync when bindings change.
+    {
+        using namespace wse::game;
+        WseInputManager mgr;
+        SyntheticInputBackend backend;
+        wse::vm::VmContext ctx{};
+        ctx.world.has_game = true;
+        backend.push_batch(std::array<RawInputEvent, 2>{
+            {key(T::KeyDown, RawKey::kK), key(T::KeyUp, RawKey::kK)}});
+        WorldInputBridge::step_and_sync(mgr, backend, ctx.world);
+        expect(run_stmt(ctx, 71U, {RawKey::kK}) && run_stmt(ctx, 3101U, {RawKey::kK}) &&
+                   !run_stmt(ctx, 70U, {RawKey::kK}),
+               "71 key_clicked and 3101 key_released both see a same-frame tap");
+
+        expect(run_stmt(ctx, 77U, {RawKey::kF}), "77 omit_key_once from script");
+        backend.push(key(T::KeyDown, RawKey::kF));
+        WorldInputBridge::step_and_sync(mgr, backend, ctx.world);
+        const bool swallowed = !run_stmt(ctx, 73U, {static_cast<std::int64_t>(GameKeyId::Use)});
+        backend.push(key(T::KeyUp, RawKey::kF));
+        WorldInputBridge::step_and_sync(mgr, backend, ctx.world);
+        backend.push(key(T::KeyDown, RawKey::kF));
+        WorldInputBridge::step_and_sync(mgr, backend, ctx.world);
+        expect(swallowed && !ctx.world.input.omitted_keys[RawKey::kF] &&
+                   run_stmt(ctx, 70U, {RawKey::kF}) &&
+                   run_stmt(ctx, 73U, {static_cast<std::int64_t>(GameKeyId::Use)}),
+               "omit_key_once from a script is consumed by the next press, then expires");
+
+        const std::uint64_t rev = ctx.world.input.bindings_revision;
+        WorldInputBridge::step_and_sync(mgr, backend, ctx.world);
+        const bool unchanged = ctx.world.input.bindings_revision == rev;
+        (void)mgr.game_keys().set_key(0, 0, KeyChord::make(RawKey::kUpArrow));
+        WorldInputBridge::step_and_sync(mgr, backend, ctx.world);
+        expect(unchanged && ctx.world.input.bindings_revision != rev &&
+                   ctx.world.input.game_key_names[0] == "Up Arrow",
+               "binding names re-sync only after a binding changes");
+    }
+
+    // 14. FreeCameraController keeps yaw wrapped.
+    {
+        FreeCameraController cam{};
+        InputFrameState in{};
+        in.look_yaw_delta = 4.0f;
+        for (int i = 0; i < 1000; ++i) {
+            cam.apply_input(in, 0.0f);
+        }
+        expect(cam.yaw_rad > -3.1416f && cam.yaw_rad <= 3.1416f, "free camera yaw stays wrapped");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -563,6 +890,7 @@ int run_input_suite(const char* fixture_path) {
     test_layout_editor_and_module_profiles();
     test_touch_overlay_drives_free_camera_in_p4_viewer();
     test_vm_and_world_input_bridge();
+    test_review_regressions();
 
     if (g_failures == 0) {
         std::printf("input tests: PASS\n");
