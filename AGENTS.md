@@ -23,27 +23,28 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
   - Linux / cloud sessions (no PowerShell or Zig needed; verified with Ubuntu `clang++` 18.1.3). Run from the repository root and build outside the tree. The `wse_dict`, `wse_array`, `platform`, `module_loaders`, and `headless` suites write fixed-name scratch files under the system temp directory, so do not run two copies of the gate at once:
     ```sh
     out="$(mktemp -d)"; root="$PWD"
-    for t in operand trigger savegame script wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 platform module_loaders headless asset input; do
-      extra=""  # platform also links the Vulkan driver loader (vendored Vulkan headers, libdl)
-      [ "$t" = platform ] && extra="-I platform/vulkan -I runtime/android/third_party platform/vulkan/driver_loader.cpp -ldl"
+    for t in operand trigger savegame script wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 module_loaders headless input; do
       clang++ -std=c++20 -O2 -Wall -Wextra -Werror -I engine/include \
-        -o "$out/${t}_test" "engine/tests/${t}_test.cpp" $extra || exit 1
+        -o "$out/${t}_test" "engine/tests/${t}_test.cpp" || exit 1
     done
-    cd "$out" && for t in operand trigger savegame wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 platform module_loaders headless asset input; do ./${t}_test || exit 1; done \
+    cd "$out" && for t in operand trigger savegame wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 module_loaders headless input; do ./${t}_test || exit 1; done \
       && ./script_test "$root/engine/fixtures/scripts.txt" && echo "engine host tests: PASS"
     ```
     Every suite must print `<name> tests: PASS`. The `platform` suite touches the real host Vulkan loader (and any GPU driver it finds) only when `WSE_TEST_SYSTEM_VULKAN=1` is set; otherwise it uses the in-process mock ICD. `wse_string`, `wse_dict`, `wse_array`, and `block_vm` take ~5–15 s each to compile.
 
-    The loop above covers the header-only suites (each `*_test.cpp` keeps its own `main()` for it). The `lua` and `audio` suites (and `wse_headless` / `wse_brf`) build through CMake (`lua_test` / `wse_headless` link `lua51` + `wse_lua`; `audio_test` links `wse_audio`) — required on every edit under `engine/src/lua/`, the Lua hooks in `block_vm.h` / `lua_bridge.h`, `engine/src/audio/`, or the audio headers (`wse/asset/audio*.h`, `wse/platform/audio.h`, `wse/game/{audio_runtime,world_audio}.h`, and the sound opcodes):
+    The loop above covers the header-only suites (each `*_test.cpp` keeps its own `main()` for it). The `lua`, `audio`, `asset`, and `platform` suites (and `wse_headless` / `wse_brf`) build through CMake (`lua_test` / `wse_headless` link `lua51` + `wse_lua`; `audio_test` links `wse_audio`; `asset_test`, `platform_test`, and `wse_brf` link `wse_shader` + `wse_glslang`, and `platform_test` also `wse_vulkan`) — always run them; they are required on every edit under `engine/src/`, the Lua hooks in `block_vm.h` / `lua_bridge.h`, the audio headers (`wse/asset/audio*.h`, `wse/platform/audio.h`, `wse/game/{audio_runtime,world_audio}.h`, and the sound opcodes), or `wse/asset/shader*.h`:
     ```sh
-    cmake -S . -B "$out/cmake" -DCMAKE_CXX_COMPILER=clang++ && cmake --build "$out/cmake" -j4 --target lua_test audio_test wse_headless wse_brf \
-      && ctest --test-dir "$out/cmake" -R '^(lua|audio)$' --output-on-failure
+    cmake -S . -B "$out/cmake" -DCMAKE_CXX_COMPILER=clang++ && cmake --build "$out/cmake" -j4 --target lua_test audio_test asset_test platform_test wse_headless wse_brf \
+      && ctest --test-dir "$out/cmake" -R '^(lua|audio|asset|platform)$' --output-on-failure
     ```
+    `WSE_DUMP_SPIRV_DIR=<dir> ./asset_test` writes every SPIR-V module the suite compiles; CI validates them with `spirv-val --target-env vulkan1.0`.
     The CMake build compiles each suite once into the `wse_selftest` static library; every `<name>_test` executable is `engine/tests/suite_main.cpp` linked against it, and `selftest_host_test` (CTest `selftest_host`) runs all 21 in one process, as the Android self-test APK does. A new suite needs a `run_<name>_suite` entry in `engine/tests/wse_selftest.{h,cpp}` and in both `CMakeLists.txt` lists.
 
     CMake downloads `lua-5.1.5.tar.gz` from `www.lua.org` (SHA-256 pinned). Where that host is blocked, unpack the same tarball (the Ubuntu archive's `lua5.1_5.1.5.orig.tar.gz` is byte-identical) and pass `-DWSE_LUA_SOURCE_DIR=<dir containing src/lua.h>`. Lua is compiled **as C++** so Lua errors unwind as exceptions; never wrap `<lua.h>` in `extern "C"`.
 
     CMake also fetches `stb_vorbis.c` and `dr_mp3.h` (pinned commits) from `raw.githubusercontent.com` into the build directory, and re-checks their SHA-256 on every configure. Offline, put both files in one directory and pass `-DWSE_AUDIO_THIRD_PARTY_DIR=<dir>` (a mismatch there is fatal); `engine/build/third_party/audio/` (filled by `build_host.ps1`) is picked up automatically.
+
+    CMake also downloads the Khronos `glslang` `16.6.0` source archive from `github.com` (SHA-256 pinned) and builds it as `wse_glslang`. Offline, pass `-DWSE_GLSLANG_SOURCE_DIR=<dir containing glslang/Public/ShaderLang.h>` (a checkout of tag `16.6.0` works); `engine/build/third_party/glslang-16.6.0/` (filled by `build_host.ps1`) is picked up automatically. `wse_shader` uses glslang's internal `glslang/Include/Types.h`, so a distro `glslang-dev` package cannot stand in for the source tree.
 - **Sanitizer gate (CI job `host-sanitizers`, required when touching VM control flow, loaders, or object lifetimes):**
   ```sh
   cmake -S . -B build-san -DCMAKE_CXX_COMPILER=clang++ -DWSE_SANITIZE=ON && cmake --build build-san -j && ctest --test-dir build-san --output-on-failure

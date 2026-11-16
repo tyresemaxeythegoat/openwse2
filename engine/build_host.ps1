@@ -215,9 +215,7 @@ $glslangFiles = @(
     "glslang\MachineIndependent\preprocessor\PpScanner.cpp",
     "glslang\MachineIndependent\preprocessor\PpTokens.cpp",
     "glslang\MachineIndependent\propagateNoContraction.cpp",
-    "glslang\CInterface\glslang_c_interface.cpp",
     "glslang\ResourceLimits\ResourceLimits.cpp",
-    "glslang\ResourceLimits\resource_limits_c.cpp",
     "glslang\OSDependent\Windows\ossource.cpp",
     "SPIRV\GlslangToSpv.cpp",
     "SPIRV\InReadableOrder.cpp",
@@ -226,8 +224,7 @@ $glslangFiles = @(
     "SPIRV\SpvPostProcess.cpp",
     "SPIRV\doc.cpp",
     "SPIRV\SpvTools.cpp",
-    "SPIRV\disassemble.cpp",
-    "SPIRV\CInterface\spirv_c_interface.cpp"
+    "SPIRV\disassemble.cpp"
 )
 $glslangObjDir = Join-Path $out "wse_glslang_obj"
 New-Item -ItemType Directory -Force -Path $glslangObjDir | Out-Null

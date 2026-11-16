@@ -651,6 +651,24 @@ void test_ui_menus_m5() {
                close(ctx.positions[5].o.z + ray_dz * t_y50, 5.0f, 1e-3f),
            "751 unprojected ray passes through original 750 world point");
 
+    // Same round-trip with an unknown (0x0) viewport: both ops fall back to 4:3.
+    w.misc.viewport_width = 0.0f;
+    w.misc.viewport_height = 0.0f;
+    expect(run_stmt(ctx, 750U, {4, 3}), "750 with unknown viewport");
+    w.m5.cursor_pos = {ctx.positions[4].o.x, ctx.positions[4].o.y};
+    expect(run_stmt(ctx, 751U, {5, 6}), "751 with unknown viewport");
+    {
+        const float dx = ctx.positions[6].o.x - ctx.positions[5].o.x;
+        const float dy = ctx.positions[6].o.y - ctx.positions[5].o.y;
+        const float dz = ctx.positions[6].o.z - ctx.positions[5].o.z;
+        const float t = 50.0f / dy;
+        expect(close(ctx.positions[5].o.x + dx * t, 10.0f, 1e-3f) &&
+                   close(ctx.positions[5].o.z + dz * t, 5.0f, 1e-3f),
+               "750/751 round-trip with an unknown viewport (shared 4:3 fallback)");
+    }
+    w.misc.viewport_width = 1600.0f;
+    w.misc.viewport_height = 900.0f;
+
     // 911..956 presentation overlays
     w.active_presentation_no = 1;
     ctx.stringRegisters[0] = u"Click Me";

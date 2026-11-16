@@ -35,6 +35,28 @@ inline constexpr std::size_t kMaxRayObstacles = 1024;
 inline constexpr std::size_t kMaxReinforcementEvents = 512;
 inline constexpr std::size_t kMaxAiMeshFaces = 4096;
 
+// Shared perspective scales for `750 position_get_screen_projection` and `751
+// mouse_get_world_projection`, so projecting then unprojecting round-trips: vertical
+// field-of-view `tan(fov/2)` (fov clamped to [1, 179] degrees; safety deviation: a
+// non-finite fov falls back to 60) and width/height aspect (4:3 when the viewport size
+// is unknown).
+struct CameraProjectionScales {
+    float tan_half_fov = 0.0f;
+    float aspect = 4.0f / 3.0f;
+};
+
+[[nodiscard]] inline CameraProjectionScales camera_projection_scales(
+    float fov_deg, float viewport_width, float viewport_height) noexcept {
+    CameraProjectionScales s{};
+    const float fov = std::isfinite(fov_deg) ? std::clamp(fov_deg, 1.0f, 179.0f) : 60.0f;
+    s.tan_half_fov = std::tan(fov * (3.14159265358979323846f / 360.0f));
+    if (std::isfinite(viewport_width) && std::isfinite(viewport_height) && viewport_width > 0.0f &&
+        viewport_height > 0.0f) {
+        s.aspect = viewport_width / viewport_height;
+    }
+    return s;
+}
+
 // Safety deviation: float results convert with saturation (NaN -> 0) instead of UB.
 [[nodiscard]] inline std::int64_t native_f2i_saturate(float value) noexcept {
     if (std::isnan(value)) {
