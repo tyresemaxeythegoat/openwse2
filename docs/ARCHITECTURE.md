@@ -80,7 +80,12 @@ All offsets below are byte offsets on x64. `type_index` refers to the PDB TPI ty
 | 0x14 | `m_strLength` | `int32_t` |
 | 0x18 | `m_staticBuffer` | `char[48]` |
 
-This is a small-string-optimized string: 48 inline bytes, heap buffer at 0x08 once it grows.
+This is a small-string-optimized string: 48 inline bytes (`m_bufferLength`), spilling to heap
+(`reallocate` `0x14030e960`) once length >= 48. Tokenization (`getNextToken` `0x14030e810`) skips
+bytes `<= 0x20` and advances `m_cursor` across runs `> 0x20`; `swapUnderscoresWithSpaces`
+(`0x14030f240`), `swapSpacesWithUnderscores` (`0x14030f270`), decimal parsers
+(`toInt64Stream` `0x14030f6d0` / `toUInt64Stream` `0x14030f7b0`), and savegame log `"-1"` sentinel
+semantics are implemented in `engine/include/wse/core/rgl_string.h`.
 
 ### `rglStream` — 160 bytes, type 0x1b18a
 
@@ -112,6 +117,17 @@ separate `rglBinaryStream` (vftable `0x14055c780`, 30 slots) is used for savegam
 files. The binary readers use the embedded `m_contents.m_cursor` at `+0x58` and buffer at `+0x60`;
 `rglStream::m_cursor` at `+0x54` is the text-stream cursor. `readInt32` (`0x1402aebe0`),
 `readByte` (`0x1402aec00`), and `readInt64` (`0x1402aec20`) sit at `0x20`-byte strides.
+
+`rglOutputBinaryFileStreamWithChecksum` (vtable `0x140565b40`, `0x1402c8a00`–`0x1402c8c00`)
+accumulates every written unsigned byte modulo `2^64` for savegame read-back verification in
+`mbGame::save` (`0x1400e16c0`). Whole-savegame `.sav` framing writes magic `0x52445257` (`"WRDR"`),
+format version `1174` (`0x496`, accepted range `[802..1174]` in `mbLoadSaveWindow::updatePanels`
+`0x140113c10`), `g_moduleVersion` (`0x14061f0c8` checked against
+`g_compatibleSavegameModuleVersion` `0x14061f0c0`), the `mbSavegame` header (`fillSavegameHeader`
+`0x1400e1e30` / `mbSavegame::readStream` `0x1400c73b0`), and `mbGame::{writeStream,readStream}`
+(`0x1400c9a90`/`0x1400c8520`), staged through `new_game.sav` and backed up to
+`last_savegame_backup.sav`; this container codec is implemented in `engine/include/wse/game/savegame.h`
+over `wse/io/binary_stream.h`.
 
 Exact reader behaviour (v1.1.5.5 `ev_1e3c2566…0fdb0b`, 18/18 functions):
 
@@ -444,9 +460,10 @@ negative infinity.
 `mbSimpleTrigger::execute` (`0x14020fb80`): if `interval < -1.0`, require
 `interval_key(interval) == key`; otherwise require `key >= 0` and `interval <= elapsed(timer)`, then
 latch `timer.value = now`. Execute the single block; the return value is ignored.
-`mbSimpleTriggerManager::execute` (`0x1402101a0`) aborts its loop when the key is odd and positive
-and a game-event queue transition is detected (`DAT_1405d0f28 + 0x4a0` vs `+0x4a8`, tail int
-`0x12`); that check needs `mbGame` state and is not reconstructed yet.
+`mbSimpleTriggerManager::execute` (`0x1402101a0`) aborts its loop when `key > 0` is odd and a
+type-`0x12` queued window is at the back of `mbGame` `+0x04b0` (`0x1402101d2..0x1402101f7`);
+reconstructed in `wse/vm/block_vm.h` (`execute_simple_trigger_manager`) checking
+`ctx.world.m5.enqueued_windows.back().first == game::kQueuedWindowSaveExitBreakType` (`0x12`).
 
 ### Trigger savegames
 
@@ -894,10 +911,17 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
 ## 8. Evidence gaps / next measurements
 
-1. Portable savegame support: the binary `rglBinaryStream` slot semantics and savegame file framing
-   (header/version) are documented only at the trigger-record level.
-2. `mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state
-   (`DAT_1405d0f28 + 0x4a0/0x4a8`, tail int `0x12`); the queue lifecycle is not reconstructed.
+1. ~~Portable savegame support: the binary `rglBinaryStream` slot semantics and savegame file framing
+   (header/version) are documented only at the trigger-record level.~~ **Resolved (Phase 2A):**
+   `mbGame::save` (`0x1400e16c0`), `fillSavegameHeader` (`0x1400e1e30`), `mbSavegame::readStream`
+   (`0x1400c73b0`), `mbLoadSaveWindow::updatePanels` (`0x140113c10`), `rglOutputBinaryFileStreamWithChecksum`
+   (`0x140565b40`), and all `mbGame::{writeStream,readStream}` (`0x1400c9a90`/`0x1400c8520`) section
+   codecs are verified and implemented in `wse/io/binary_stream.h` and `wse/game/savegame.h`.
+2. ~~`mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state~~ **Resolved (Phase 2C):**
+   disassembly at `0x1402101a0` (`0x1402101d2..0x1402101f7`) shows the check tests positive odd
+   event keys when the queued-window stack (`g_game` `0x14061f070` `+0x04b0`) back entry has type
+   `0x12`; wired into `execute_simple_trigger_manager` (`wse/vm/block_vm.h`) over
+   `world.m5.enqueued_windows`.
 3. ~~Locate `gameOperation` table construction in `WSELuaManager`.~~ **Resolved (2F):** Disassembly of
    `WSELuaManager::initialize` (`0x14033ca80`), `loadOperations` (`0x14033dff0`), `loadGameConstants`
    (`0x14033f630`), `loadGlobalVars` (`0x14033f400`), `initLGameTable` (`0x140340920`), `doMainScript`

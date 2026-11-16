@@ -55,7 +55,7 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 **2A. Streams and module text**
 - [x] `rglTextStream` token reader (`wse/io/text_stream.h`)
 - [x] `rglBinaryStream` little-endian reader/writer (`wse/io/binary_stream.h`)
-- [ ] Whole-savegame framing (only the trigger records are reconstructed)
+- [x] Whole-savegame framing (`WRDR` container, `mbSavegame` header, 64-bit byte-sum checksum + `new_game.sav`/`last_savegame_backup.sav` VFS staging, and all `mbGame` section codecs in `wse/game/savegame.h` / `wse/io/binary_stream.h`)
 - [ ] Remaining module files: `troops.txt`, `item_kinds1.txt`, `factions.txt`, `parties.txt`,
       `party_templates.txt`, `strings.txt`, `quick_strings.txt`, `skills.txt`, `quests.txt`,
       `scenes.txt`, `mission_templates.txt`, `menus.txt`, `presentations.txt`, `module.ini`, …
@@ -73,7 +73,7 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 **2C. Scripts and triggers**
 - [x] `mbScriptManager` / `mbScript` readers and the 65-name mapped-script table (`wse/game/script.h`)
 - [x] Trigger and simple-trigger loaders, event-key state machines, and savegames (`wse/game/trigger.h`)
-- [ ] `mbSimpleTriggerManager::execute` early-out (depends on the `mbGame` event queue)
+- [x] `mbSimpleTriggerManager::execute` early-out (`0x1402101a0`, stopping on positive odd event keys when type `0x12` is queued in `m5.enqueued_windows`, `wse/vm/block_vm.h`)
 
 **2D. WSE extended opcodes**
 - [x] Opcode map and generated enum (`docs/wse_opcodes.json`, `wse/vm/wse_opcodes.h`)
@@ -103,7 +103,7 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
       local/global rotations and parent/local transforms in `wse/core/math.h`; 35 native position
       ops `700–746` in `wse/vm/native_ops.h`; WSE vector ops `4100/4102–4104` in
       `wse/vm/ops/position.h`)
-- [~] `rglString` semantics as a shared type (open); `.brf` mesh/material/texture/shader/body/skeleton/animation + `.dds` texture decoders and `module.ini` resource catalog implemented in `wse/asset/{brf,dds}.h` (done)
+- [x] `rglString` semantics as a shared value/token/sentinel type (`wse/core/rgl_string.h`), plus `.brf` mesh/material/texture/shader/body/skeleton/animation + `.dds` texture decoders and `module.ini` resource catalog (`wse/asset/{brf,dds}.h`)
 
 **2H. Phase exit: headless `Native` run**
 - [x] Load a user-supplied `Native` module and execute `game_start` plus simulated frames of
@@ -162,7 +162,8 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
-| 2026-11-16 | — | Slice P8 review fixes (`9411644`): restore `WseActivity.getLibraries()` (launch loaded a missing `libmain.so`), hold the last valid thermal headroom across headroom-less readings and recover one tier per update, create `config/` / `input_profiles/` before saving (`make_parent_dirs`), remap gyro axes for screen rotation, frame-rate-independent gyro smoothing with sample-and-hold, log-ratio pinch zoom, exact GLSL type names / `for` scopes / integer samplers / kept parse warnings; add compatibility-profile built-ins + GLSL 1.30 `in`/`out` lowering, a 30 Hz cap, `FrameTimeStats`, controller gyro, display-filtered launcher caps, and `wse_brf --jobs` (`STATUS.md` §7). |
+| 2026-11-17 | — | Phase 2A/2C/2G savegame container, early-out & `rglString` + P8 `map_zoom_delta` camera consumer (`e8b3594` PR #20 Windows/retail confirmation): add `RglString` (`wse/core/rgl_string.h`, 48-byte SSO + `getNextToken`/`swap*`/`-1` sentinel), `BinaryChecksumWriter` (`wse/io/binary_stream.h`, `0x140565b40`), whole `.sav` container framing/header/checksum/staging & all `mbGame` section codecs (`wse/game/savegame.h`), `mbSimpleTriggerManager::execute` `0x1402101d2..0x1402101f7` type-`0x12` early-out over `world.m5.enqueued_windows` (`wse/vm/block_vm.h`), and `WorldInputBridge` campaign-map `map_camera_distance` `exp(-map_zoom_delta)` consumer (`wse/game/world_input.h`); `SYMBOL_MAP.json` updated (`tools/build_symbol_map.py`) and host tests extended (`STATUS.md` §2, §5, §7). |
+| 2026-11-16 | `e8b3594` | Slice P8 review fixes (`9411644`): restore `WseActivity.getLibraries()` (launch loaded a missing `libmain.so`), hold the last valid thermal headroom across headroom-less readings and recover one tier per update, create `config/` / `input_profiles/` before saving (`make_parent_dirs`), remap gyro axes for screen rotation, frame-rate-independent gyro smoothing with sample-and-hold, log-ratio pinch zoom, exact GLSL type names / `for` scopes / integer samplers / kept parse warnings; add compatibility-profile built-ins + GLSL 1.30 `in`/`out` lowering, a 30 Hz cap, `FrameTimeStats`, controller gyro, display-filtered launcher caps, and `wse_brf --jobs` (`STATUS.md` §7). |
 | 2026-11-16 | `9411644` | Slice P8 Sensors & performance hooks + `aa754f6` PR #19 Windows/retail confirmation (`271/271` shaders at generator `4`): add `wse/platform/performance.h` (`FrameRateCap` 60/90/120 Hz + uncapped, `PresentModePreference`, hysteretic `ThermalPerformanceController` -> resolution scale / LOD bias / FPS step-down, drift-free `FramePacer`, `RuntimePerformanceHub`, persisted JSON settings), opt-in filtered `Mission` gyro aiming + `CampaignMap` pinch-to-zoom (`wse/platform/input.h`, `wse/game/world_input.h`), `SDL_INIT_SENSOR` `SDL_SENSOR_GYRO` (`platform/sdl/sdl_input.{h,cpp}`), Android `PowerManager` thermal listener/`getThermalHeadroom` + `ANativeWindow_setFrameRate*` + SDL3 pacing (`platform/sdl/sdl_selftest_main.cpp`, `platform/android/saf_vfs_jni.cpp`, `WseActivity.kt`, `WseSafBridge.kt`), and persisted launcher toggles (`WseLauncherActivity.kt`); `21/21` suites / `158` functions (`selftest_host` `7371 ms`). |
 | 2026-11-16 | `aa754f6` | Slice P5 lowering review fixes (`6b85ed7`): shared VS/FS interface layout (`partner_glsl`, type-sized slots, collision fallback), glslang preprocessing before lowering, scope-aware uniform renaming, uniform initializers/`bool` arrays/struct uniforms/`shadow2D`/`textureCube`/`gl_FragData`/interpolation qualifiers, `std140` byte-size reflection with Warband names served on cache hits (`.refl` sidecar), content-keyed cache with backend identity (generator `4`), concurrent compiles, shared `750`/`751` projection scales. Windows + retail `271/271` re-verified (`STATUS.md` §5 "P5 lowering review" #1–#2 closed). |
 | 2026-11-16 | — | Slice P5 GLSL → SPIR-V 1.0 translator & P7 v1.1.5.5 evidence follow-ups: replace placeholder `emit_placeholder_spirv_module` with `lower_warband_glsl_to_vulkan450` + `wse_shader` (`Khronos glslang 16.6.0` isolated behind `wse/asset/shader_compiler.h`, `kWseSpirvGeneratorVersion = 3` `OpString` cache validation, `271/271` retail Warband techniques compiled + `spirv-val --target-env vulkan1.0` in CI); resolve `STATUS.md` §5 P7 #1–#4 from v1.1.5.5 (`0x1400eedf0` chords, `0x140057010` unclamped pitch, `0x1402ff7b0`/`0x1402ff940` `f`=up/`-u`=forward camera + `[0,1]x[0,0.75]` projection, `0x1401c69b5` `omit_key_once` leaving raw script `70`/`71` active + same-frame release+repress fix). |

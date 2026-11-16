@@ -11,15 +11,16 @@ counts and gate results are kept only in [`../STATUS.md`](../STATUS.md); the pla
 
 ```
 engine/
-  include/wse/core/   math.h, encoding.h, json.h              pure STL math, UTF/MD5/URL/LE, JSON helpers
-  include/wse/io/     text_stream.h, binary_stream.h          module text + savegame streams
+  include/wse/core/   math.h, encoding.h, json.h,             pure STL math, UTF/MD5/URL/LE, JSON, and rglString
+                      rgl_string.h
+  include/wse/io/     text_stream.h, binary_stream.h          module text + savegame streams (incl. checksum writer)
   include/wse/vm/     operand.h, slots.h, statement.h         statement encoding
                       block_vm.h, native_*.h                  block interpreter + native opcodes
                       wse_state.h, execute_wse.h              WSE VM state & top-level dispatcher
                       lua_runtime.h, lua_manager.h            abstract Lua runtime & factory interface
                       ops/{bitwise,system,world,string,fp_expr,fp,dict,array,position,lua_bridge}.h
                       wse_opcodes.h (generated)               WSE extended opcode enum
-  include/wse/game/   script.h, trigger.h, world_state.h,    managers, module loaders, campaign helpers, headless runner, audio bridge, and state model
+  include/wse/game/   script.h, trigger.h, savegame.h,        managers, savegame framing, module loaders, campaign helpers, headless runner, audio bridge, and state model
                       world_subsystem_types.h, world_campaign_helpers.h,
                       module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h,
                       headless_runner.h, audio_runtime.h, world_audio.h, world_input.h
@@ -46,7 +47,9 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | File | Reconstructs | Evidence |
 | --- | --- | --- |
 | `include/wse/io/text_stream.h` | whitespace token reader and typed decimal parsers | `rglInputTextFileStream` vftable `0x1405651e0`, `rglTextStream` readers `0x1402afa80`–`0x1402afe60`, `mbGame::readTriggers` `0x1400ccf20` |
-| `include/wse/io/binary_stream.h` | little-endian savegame reader/writer | `rglBinaryStream` vftable `0x14055c780`; writers `0x1402ae980/0x1402ae9d0/0x1402aea30`; readers `0x1402aebe0/0x1402aec00/0x1402aec20` |
+| `include/wse/io/binary_stream.h` | little-endian savegame reader/writer + `BinaryChecksumWriter` byte-sum stream | `rglBinaryStream` `0x14055c780`; `rglOutputBinaryFileStreamWithChecksum` `0x140565b40` (`0x1402c8a00`–`0x1402c8c00`); writers `0x1402ae980`/`0x1402ae9d0`/`0x1402aea30`; readers `0x1402aebe0`/`0x1402aec00`/`0x1402aec20` |
+| `include/wse/game/savegame.h` | whole `.sav` container framing (`WRDR` magic, `[802..1174]` version, module version, `mbSavegame` header, `new_game.sav` -> `last_savegame_backup.sav` VFS staging + checksum read-back, all `mbGame` sections) | `mbGame::save` `0x1400e16c0`, `fillSavegameHeader` `0x1400e1e30`, `mbSavegame::readStream` `0x1400c73b0`, `mbLoadSaveWindow::updatePanels` `0x140113c10`, `mbGame::{writeStream,readStream}` `0x1400c9a90`/`0x1400c8520` |
+| `include/wse/core/rgl_string.h` | `RglString` 48-byte SSO string, token cursor (`<= 0x20` skip), underscore/space swaps, int parsers, savegame `"-1"` sentinel | `rglString` (`0x35f5`): `getNextToken` `0x14030e810`, `reallocate` `0x14030e960`, `swap*` `0x14030f240`/`0x14030f270`, `to*64Stream` `0x14030f6d0`/`0x14030f7b0` |
 | `include/wse/vm/operand.h` | tagged operand decode and lvalue write-back | `mbStatement::parseOperand` `0x1401c6070`, `mbStatement::returnValue` `0x1401c6100`, `mbStatementBlock::execute` `0x1401f69d0`, `analyze` `0x1401f6740` |
 | `include/wse/vm/slots.h` | `mbSlots` (`std::vector<int64_t>`) get/set semantics | PDB type `0x1b0f8`; `parseOperand` bounds check; `returnValue` write path |
 | `include/wse/vm/statement.h` | statement record and text reader | `mbStatementBlock::readStream` `0x1401f6600`, PDB type `0xb91e` |
@@ -72,7 +75,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `include/wse/game/headless_runner.h` | **port infrastructure:** `HeadlessRunOptions`, `HeadlessRunReport`, `HeadlessSession`, and `run_headless_module()` / `run_headless_session()` executing `load_module`, `game_start`, and simulated trigger frames via `Vfs` and `LogSink`; unimplemented opcodes stop and fail the run only when `fail_on_unimplemented` is set (otherwise they are counted and reported) | clean-room orchestration over `module_bundle.h`, `trigger.h`, `block_vm.h` |
 | `include/wse/asset/{brf,dds,shader}.h` | `.brf` container decoder (all 8 resource types, `MetaMesh` LOD grouper, `module.ini` resource catalog), `.dds` parser/RGBA8 decoder (`BC1`–`BC5`, uncompressed/`L8`/`L16`/`A8L8`/`A8`, `DX10`) + Warband `Vfs` texture resolver, and P5 effect search / `wse2_shaders.{brf,ini}` / `rglShader` suitability / `rglMaterial` state / `GLShaders` + WSE2 SPIR-V 1.0 cache pipeline | `rglResourceManager`, `rglMesh`, `rglMetaMesh`, `rglTexture`, `rglShader`, `rglMaterial`, `rglPhysicsMaterial`, `rglBody`, `rglSkeletonModel`, `rglSkeletonAnimation`, `rglGraphicsContext::initEffect`, `rglPostProcess::initEffect` |
 | `include/wse/asset/{audio,audio_codecs}.h`, `src/audio/` | RIFF/WAVE PCM (`8`/`16`/`24`/`32`-bit & IEEE float/`0xFFFE`) decoder, retail 4-step sound & 2-step music path resolvers, `mbSoundSample` / `mbMusicTrack` flag/priority/volume/culture helpers, and static `wse_audio` (`stb_vorbis` v1.24 + `dr_mp3` v0.7.5) memory + streaming decoder backend isolated from public headers | `mbSoundSample::readStream` `0x1403317c0`, `mbSoundSample::playSound` `0x140331cb0`, `mbSoundManager::readStream` `0x1403322e0`, `mbMusicTrack::readStream` `0x140290710`, `mbMusicManager::readStream` `0x140290ad0` |
-| `include/wse/game/{audio_runtime,world_audio,world_input}.h` | non-owning `WseAudioRuntime` VM hook + `WorldAudioBridge` (`599..604`, `609`, `615..616`, `1750`, `1808`, `1881..1882`, `3618`), plus `WorldInputBridge` syncing `WseInputManager` into `WseWorldState` (`65`, `70..73`, `75`, `77..78`, `3100..3102`) | clean-room bridge over `0x140057010`, `0x1400e3900`, `0x140154340`, `0x140290c40`, `0x140332ac0`, `0x1401c6752`, `0x1401e6a42` |
+| `include/wse/game/{audio_runtime,world_audio,world_input}.h` | non-owning `WseAudioRuntime` VM hook + `WorldAudioBridge` (`599..604`, `609`, `615..616`, `1750`, `1808`, `1881..1882`, `3618`), plus `WorldInputBridge` syncing `WseInputManager` into `WseWorldState` (`65`, `70..73`, `75`, `77..78`, `3100..3102`, `map_zoom_delta` -> `map_camera_distance` via `exp(-delta)`) | clean-room bridge over `0x140057010`, `0x1400e3900`, `0x140154340`, `0x140290c40`, `0x140332ac0`, `0x1401c6752`, `0x1401e6a42` |
 | `tools/wse_headless.cpp` | portable Phase 2H CLI runner (`<warband_root> [module_rel_dir] [--frames N] [--step-ticks T] [--allow-unimplemented]`) using `HostVfs` + `StderrLog` | Phase 2H headless `Native` exit runner |
 | `tools/wse_brf.cpp` | portable Slice P3/P5 / Phase 2G CLI inspector (`--brf <file>`, `--dds <file>`, `--dir <dir>`, `--root <warband_root> [--module <name>]`, `--json`) using `HostVfs` | Slice P3/P5 `.brf` / `.dds` / shader & material corpus validator |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
@@ -85,7 +88,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/platform_test.cpp` | host tests for path normalisation and escape rejection, one `Vfs` contract run across `MemoryVfs`, `HostVfs`, and `SafVfs`, `SafVfs` one-time index / `scan_warband_modules` / `verify_module_scripts` / `import_to`, `Vfs` → `TokenReader`, clocks, log sinks, `test_rhi_and_driver_loader` (Turnip/PanVK `meta.json`, `.dynstr` `libpanvk_hw.so` patcher, Mock ICD v5, BRF/DDS textured mesh screenshot & Z-buffer tests), `test_p5_shader_modules_d3d9_and_material_rhi` (`PresentationPath` WSI vs `AHardwareBuffer` bridge, `VkShaderModule` lifecycle, D3D9 projection/half-pixel/sRGB helpers, normal/specular/alpha-test/blend material RHI), `test_p4_review_fixes` (mode ids, name allow-list, nested `meta.json`, atomic re-staging, front face, handle wrap, device generations, mock object accounting), `test_p5_rhi_review_fixes`, and `test_p8_performance_and_frame_pacing` (`FrameRateCap`, `PresentModePreference`, `PerformanceSettings` JSON round-trip & sanitization, `ThermalPerformanceController` headroom/status hysteresis & toggles, `FramePacer` 60/90/120 Hz drift-free cadence over `ManualClock`). The real host Vulkan loader is exercised only with `WSE_TEST_SYSTEM_VULKAN=1` | temp directory + in-memory trees |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
-| `tests/savegame_test.cpp` | host tests for the binary stream and trigger savegames | local test doubles only |
+| `tests/savegame_test.cpp` | host tests for binary streams, checksum writer, `RglString`, trigger savegames, whole `.sav` container round-trips, validation, and VFS backup rotation | `MemoryVfs` + local test doubles |
 | `tests/script_test.cpp` + `fixtures/scripts.txt` | host tests for script records, header errors, duplicate mapping, and missing-name reporting | local fixture mirroring the retail grammar |
 | `tests/wse_test_common.h` + `tests/wse_{bitwise_fp,system,string,dict,array,world}_test.cpp` | host tests for opcode enum values, all implemented handlers (including `*_slot_gt`, scalar/config/skill/savegame MD5, troop HP cap/nibble/proficiency, item/cur_item, edit-mode selection/highlight, `agent_{set,get}_action_speed_modifier` `3340–3341`, party `3900–3911`, `feval`/`parseString`, `.wsedict`/INI/JSON/URL dict I/O, `.wsearray` binary I/O, path sandboxing, natural merge sort, and array relations), operand bounds, and opcode masking | local test doubles only |
 | `tests/block_vm_test.cpp` + `tests/native_world_test.cpp` | host tests for analyze/modifiers/loops (live entity iterators `11/12/16/17`, `try_for_dict_keys`), `currentCaller` preservation, default local-variable zeroing (`0x140617819`), core math/scripts/recursion/return values/positions/trigger VM integration/`feval`, `array_sort_custom` script callbacks, `WseWorldState` script integration, unimplemented histogram/`failOnUnimplemented`, Milestone 1 `entity_slots`/`arithmetic`/`positions_and_math`/`strings` suites, Milestone 2 `108` entity/player/quest/UI/site/troop/party + `66` agent/team/prop/mission/timer opcodes, Milestone 3 `284` campaign/mission/item/troop/party/face-key opcodes, and Milestone 4 `218` opcodes + `473/477/1004/1070/1104/1302/1491` non-switch/fallback + `1802/1930/1969` upgrades | local test doubles and module fixtures |
@@ -137,13 +140,18 @@ check interval (`-112` = agent exit status, `-105`/`-106` = ranged attack, `-26`
 
 ## Savegames
 
-`rglBinaryStream` stores raw little-endian values with no header or per-value metadata. Trigger
-savegames are an `int32` count, then per manager trigger `int32` status plus `int64` check, delay,
-and rearm timer values; simple triggers store one `int64` timer value. The portable
-`read_trigger_savegame`/`write_trigger_savegame`/`read_simple_trigger_savegame` use
-`SavegameResult`: `count_exceeded` reproduces the retail message-box path while consuming every
-entry, and `negative_count`/`truncated` reject malformed input. Retail performs no bounds checks on
-binary reads, so truncated files would read past the buffer there.
+`rglBinaryStream` stores raw little-endian values with no header or per-value metadata;
+`BinaryChecksumWriter` (`rglOutputBinaryFileStreamWithChecksum`) mirrors retail byte-sum tracking
+modulo `2^64`. Trigger savegames are an `int32` count, then per manager trigger `int32` status
+plus `int64` check, delay, and rearm timer values; simple triggers store one `int64` timer value.
+Whole-savegame framing (`wse/game/savegame.h`) wraps `"WRDR"` magic (`0x52445257`), container
+version (`[802..1174]`), module version (`>= compatible_savegame_module_version`), `mbSavegame`
+header (`fill_savegame_header` / `read_savegame_header`), and all `mbGame` section codecs
+(`save_world_to_vfs` -> `new_game.sav` -> read-back checksum -> `last_savegame_backup.sav`). Note:
+`ctx.world->troops` must already hold module troop hero flags before loading (`loadParties`
+`0x1400c92c0`). `read_trigger_savegame`/`write_trigger_savegame`/`read_simple_trigger_savegame` and
+`read_savegame_container` use explicit status enums (`SavegameResult` / `SavegameContainerResult`)
+to validate counts/bounds instead of reading past buffers like retail.
 
 ## Scripts
 

@@ -217,6 +217,7 @@ struct WseTroop {
     std::int32_t attribute_points = 0;
     std::int32_t proficiency_points = 0;
     wse::vm::Slots slots{};
+    bool renamed = false;       // mbTroop +0x0 m_renamed
     std::string name{};
     std::string plural_name{};
     std::int32_t faction_no = 0;  // mbTroop::m_factionNo (0x1401dd9d8)
@@ -642,6 +643,7 @@ struct WseFaction {
     std::string name{};
     std::string id{};
     wse::vm::Slots slots{};
+    bool renamed = false;       // mbFaction +0x48 m_renamed
     std::uint32_t color = 0xffffffffu;
     std::vector<float> relations{};
     bool note_available = true;
@@ -672,6 +674,7 @@ struct WseQuest {
     std::int32_t note_tableau_material_no = -1;
     std::array<WseQuestNote, kNumQuestNotes> notes{};
     std::string text{};
+    std::string giver_name{};   // mbQuest +0x90 m_giverName
     std::int32_t number = 0;
     std::int32_t item_no = -1;
     std::int32_t troop_no = -1;
@@ -700,14 +703,18 @@ struct WseParty {
     std::string name{};
     std::string id{};
     bool active = true;
+    bool renamed = false;       // mbParty +0x58 m_renamed
     wse::vm::Slots slots{};
     std::int32_t faction_no = 0;  // mbParty::m_factionNo (0x1401ddd7f)
     std::uint64_t flags = 0;
     std::int32_t icon_no = 0;
     std::int32_t banner_icon_no = -1;
+    std::int32_t menu_no = 0;     // mbParty +0x138 m_menuNo
+    float bearing = 0.0f;         // mbParty +0xc0 m_bearing
     std::string extra_text{};
     std::int32_t behavior = 0;
     std::int32_t behavior_object = -1;
+    wse::core::WseVec2 behavior_position{};  // mbParty +0x208 m_behaviorPosition
     std::int32_t ai_state = 0;
     std::int32_t attached_to_party_no = -1;
     std::int32_t battle_opponent_no = -1;
@@ -1215,6 +1222,39 @@ struct WseWorldState {
     std::vector<WseInfoPage> info_pages{};
     std::vector<WseBattleEvent> battle_events{};
     std::vector<std::string> mesh_names{};
+
+    // Whole-savegame framing + Phase 2C queued-window runtime fields (v1.1.5.5 PE/PDB).
+    std::int32_t savegame_no = 0;                         // mbGame +0x0000
+    std::int32_t seed = 0;                                // mbGame +0x0004
+    std::string savegame_name{};                          // mbGame +0x0008
+    std::int32_t module_version = 0;                      // g_moduleVersion (0x14061f0c8)
+    std::int32_t compatible_savegame_module_version = 0;  // g_compatibleSavegameModuleVersion (0x14061f0c0)
+    std::uint32_t encounter_flags = 0;                    // mbGame +0x0454
+    std::int32_t default_prisoner_price = 0;              // mbGame +0x13e58
+    std::uint32_t tutorial_flags = 0;                     // mbGame +0x13f98
+    std::int32_t rest_no_attack = 0;                      // mbGame +0x13f84
+    float rest_period = 0.0f;                             // mbGame +0x13f80
+    std::int32_t screen_troop_no = -1;                    // mbGame +0x13fa0
+    std::int32_t mission_template_no = -1;                // mbGame +0x13fac
+    std::int32_t date_timer_no = 0;                       // mbGame +0x13fc0
+    std::int64_t date_timer_value = 0;                    // mbGame +0x13fc8
+    std::int32_t game_day = 0;                            // mbGame +0x13fd8
+    std::int32_t game_week = 0;                           // mbGame +0x13fdc
+    std::int32_t game_month = 0;                          // mbGame +0x13fe0
+    float cloud_amount = 0.0f;                            // mbGame +0x13fe8
+    float haze_amount = 0.0f;                             // mbGame +0x13fec
+    std::string game_log{};                               // mbGame +0x14000
+    std::int32_t combat_damage_to_self = 0;               // 0..2 from fDamageToSelf
+    std::int32_t combat_damage_to_friends = 0;            // 0..2 from fDamageToFriends
+    std::int32_t reduce_battle_ai = 0;                    // iReduceBattleAi
+    std::int32_t combat_speed = 2;                        // iCombatSpeed
+    std::int32_t player_kill_count = 0;                   // mbGame +0x0440
+    std::int32_t player_teamkill_count = 0;               // mbGame +0x0444
+    std::int32_t player_wound_count = 0;                  // mbGame +0x0448
+    std::int32_t player_teamwound_count = 0;              // mbGame +0x044c
+    std::vector<WseSavegameTrack> tracks{};               // mbGame +0x13eb8
+    std::vector<WseSavegameEvent> events{};               // mbGame +0x04c8
+    std::array<std::int32_t, 32 * 32> main_party_dnas{};  // mbGame +0x15ec8
 
     [[nodiscard]] bool is_valid_item(std::int32_t id) const noexcept {
         return id >= 0 && static_cast<std::size_t>(id) < items.size();

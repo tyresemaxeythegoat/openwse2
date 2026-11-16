@@ -196,6 +196,8 @@ struct WseInputState {
     std::uint64_t bindings_revision = 0U;
     // Slice P8: two-finger campaign map pinch zoom impulse (>0 zoom in, <0 zoom out).
     float map_zoom_delta = 0.0f;
+    // mbBasicGame +0x5050 m_cameraDistance; scaled by exp(-map_zoom_delta) on zoom gestures.
+    float map_camera_distance = 20.0f;
 };
 
 struct WseMusicState {
@@ -477,6 +479,29 @@ struct WseMiscRuntimeState {
     float battle_simulation_time = 0.0f;
     std::int32_t camp_bandits_party_no = -1;
     std::unordered_map<std::int32_t, WseQuestStrings> quest_strings{};
+};
+
+// mbQueuedWindow (8 B) entry type 0x12 stops mbSimpleTriggerManager::execute early
+// after an odd event key (0x1402101d2..0x1402101f7).
+inline constexpr std::int32_t kQueuedWindowSaveExitBreakType = 0x12;
+
+// mbTrack (0x5c B) savegame fields serialized by saveTracks (0x1400ca420) / loadTracks (0x1400c90e0).
+struct WseSavegameTrack {
+    wse::core::WseVec4 position{};
+    float rotation_z = 0.0f;
+    float age = 0.0f;
+    std::uint32_t flags = 0;
+};
+
+// mbEvent (152 B) fields serialized by mbEvent::writeStream (0x1400baf90) / readStream (0x1400bae70).
+struct WseSavegameEvent {
+    std::string extra{};
+    std::int32_t active = 0;
+    wse::core::WseVec4 position{};
+    std::int32_t party_1_no = -1;
+    std::int32_t party_2_no = -1;
+    std::int64_t timer_value = 0;
+    float duration = 0.0f;
 };
 
 }  // namespace wse::game

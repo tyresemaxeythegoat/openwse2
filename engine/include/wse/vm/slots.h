@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace wse::vm {
@@ -40,6 +41,8 @@ public:
         return true;
     }
 
+    [[nodiscard]] std::span<const std::int64_t> values() const noexcept { return values_; }
+    void assign(std::span<const std::int64_t> src) { values_.assign(src.begin(), src.end()); }
     [[nodiscard]] std::size_t size() const noexcept { return values_.size(); }
     [[nodiscard]] bool empty() const noexcept { return values_.empty(); }
     void clear() noexcept { values_.clear(); }

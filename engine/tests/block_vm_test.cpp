@@ -438,6 +438,41 @@ void test_triggers_and_wse_integration() {
            "simple trigger runs WSE ops");
     expect(ctx.registers[5] == 314 && ctx.globalVariables.get(2) == 314,
            "simple trigger mutates register and reads it into global slot");
+
+    // Phase 2C: mbSimpleTriggerManager::execute early-out when positive odd eventKey sees
+    // queued window type 0x12 at the back of world.m5.enqueued_windows.
+    {
+        SimpleTriggerManager twoMgr;
+        SimpleTrigger t0;
+        t0.interval = 0.0;
+        t0.timer.value = 0;
+        t0.block.statements = {make_stmt(core_op::kAssign, {glob(10), 11})};
+        SimpleTrigger t1;
+        t1.interval = 0.0;
+        t1.timer.value = 0;
+        t1.block.statements = {make_stmt(core_op::kAssign, {glob(11), 22})};
+        twoMgr.triggers = {t0, t1};
+
+        VmContext oddCtx;
+        oddCtx.world.m5.enqueued_windows.emplace_back(kQueuedWindowSaveExitBreakType, -1);
+        expect(execute_simple_trigger_manager(twoMgr, 1, timersTotal, oddCtx) &&
+                   oddCtx.globalVariables.get(10) == 11 && oddCtx.globalVariables.get(11) == 0,
+               "simple trigger manager stops after trigger 0 on odd eventKey with type-0x12 window");
+
+        // Even eventKey or non-0x12 window runs both triggers normally.
+        VmContext evenCtx;
+        evenCtx.world.m5.enqueued_windows.emplace_back(kQueuedWindowSaveExitBreakType, -1);
+        expect(execute_simple_trigger_manager(twoMgr, 2, timersTotal, evenCtx) &&
+                   evenCtx.globalVariables.get(10) == 11 && evenCtx.globalVariables.get(11) == 22,
+               "simple trigger manager does not break on even eventKey");
+
+        VmContext otherWinCtx;
+        otherWinCtx.world.m5.enqueued_windows.emplace_back(0x11, -1);
+        expect(execute_simple_trigger_manager(twoMgr, 1, timersTotal, otherWinCtx) &&
+                   otherWinCtx.globalVariables.get(10) == 11 &&
+                   otherWinCtx.globalVariables.get(11) == 22,
+               "simple trigger manager ignores non-0x12 queued windows");
+    }
 }
 
 void test_return_values_positions_and_dict_loop() {

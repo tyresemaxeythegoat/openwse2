@@ -16,6 +16,12 @@
 //     +0x60 readBool / readByte        0x1402aec00  (also +0x88)
 //     +0x68 readUInt64 / readInt64     0x1402aec20  (also +0x70)
 //     +0x90 readString                 0x1402aec40
+//   rglOutputBinaryFileStreamWithChecksum vftable 0x140565b40:
+//     writeInt32/writeUInt32/writeFloat (0x1402c8a00), writeByte/writeBool
+//     (0x1402c8a60), writeInt64/writeUInt64 (0x1402c8a90), writeCString
+//     (0x1402c8b40), writeString (0x1402c8c00) accumulate every written
+//     unsigned byte modulo 2^64 into a 64-bit checksum verified after closing
+//     by mbGame::save (0x1400e1a8f..0x1400e1af0).
 //   writeFloat (0x1402ae980) appends the raw 4 bytes of its argument,
 //   writeInt64 (0x1402ae9d0) the raw 8 bytes, and writeBool (0x1402aea30) the
 //   raw byte, into the buffered rglString at stream+0x58. writeString
@@ -214,6 +220,81 @@ private:
 
     std::span<const std::byte> bytes_;
     std::size_t cursor_ = 0;
+};
+
+// Mirrors mbGame::save (0x1400e1a8f..0x1400e1aee) byte-sum savegame checksum.
+[[nodiscard]] inline std::uint64_t compute_savegame_checksum(
+    std::span<const std::byte> data) noexcept {
+    std::uint64_t sum = 0U;
+    for (const std::byte b : data) {
+        sum += static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(b));
+    }
+    return sum;
+}
+
+// Mirrors rglOutputBinaryFileStreamWithChecksum (0x140565b40): forwards writes
+// to BinaryWriter while accumulating the running uint64 byte sum.
+class BinaryChecksumWriter {
+public:
+    void write_i32(std::int32_t value) {
+        record_delta([&] { writer_.write_i32(value); });
+    }
+    void write_u32(std::uint32_t value) {
+        record_delta([&] { writer_.write_u32(value); });
+    }
+    void write_i64(std::int64_t value) {
+        record_delta([&] { writer_.write_i64(value); });
+    }
+    void write_u64(std::uint64_t value) {
+        record_delta([&] { writer_.write_u64(value); });
+    }
+    void write_f32(float value) {
+        record_delta([&] { writer_.write_f32(value); });
+    }
+    void write_bool(bool value) {
+        record_delta([&] { writer_.write_bool(value); });
+    }
+    void write_byte(std::uint8_t value) {
+        record_delta([&] { writer_.write_byte(value); });
+    }
+    void write_bytes(std::span<const std::byte> data) {
+        record_delta([&] { writer_.write_bytes(data); });
+    }
+    void write_string(std::string_view text) {
+        record_delta([&] { writer_.write_string(text); });
+    }
+
+    // Allows helpers written against BinaryWriter& to participate in checksum tracking.
+    template <typename Fn>
+    void write_via(Fn&& fn) {
+        record_delta([&] { fn(writer_); });
+    }
+
+    [[nodiscard]] std::span<const std::byte> bytes() const noexcept { return writer_.bytes(); }
+    [[nodiscard]] std::size_t size() const noexcept { return writer_.size(); }
+    [[nodiscard]] std::uint64_t checksum() const noexcept { return checksum_; }
+    [[nodiscard]] bool verify_checksum() const noexcept {
+        return compute_savegame_checksum(writer_.bytes()) == checksum_;
+    }
+
+    void clear() noexcept {
+        writer_.clear();
+        checksum_ = 0U;
+    }
+
+private:
+    template <typename Fn>
+    void record_delta(Fn&& fn) {
+        const std::size_t before = writer_.size();
+        fn();
+        const std::span<const std::byte> written = writer_.bytes();
+        for (std::size_t i = before; i < written.size(); ++i) {
+            checksum_ += static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(written[i]));
+        }
+    }
+
+    BinaryWriter writer_{};
+    std::uint64_t checksum_ = 0U;
 };
 
 }  // namespace wse::io

@@ -160,6 +160,9 @@ SYMBOL_TOKENS = [
     "rglMeshVertexKey",
     "rglMetaMesh",
     "mbCoreGame",
+    "mbSavegame",
+    "mbLoadSaveWindow",
+    "rglOutputBinaryFileStreamWithChecksum",
 ]
 
 GLOBAL_NAMES = {
@@ -183,6 +186,8 @@ GLOBAL_NAMES = {
     "g_levelTable",
     "s_randSeed",
     "g_resourceManager",
+    "g_moduleVersion",
+    "g_compatibleSavegameModuleVersion",
 }
 
 HELPER_SYMBOLS = {
@@ -243,6 +248,21 @@ HELPER_SYMBOLS = {
     "__real@447a0000",
     "?_Get_bits@?$_Rng_from_urng@IV?$mersenne_twister_engine@I$0CA@$0CHA@$0BIN@$0BP@$0JJAILANP@$0L@$0PPPPPPPP@$06$0JNCMFGIA@$0P@$0OPMGAAAA@$0BC@$0GMAHIJGF@@std@@@std@@AEAAIXZ",
     "?_Refill_lower@?$mersenne_twister@I$0CA@$0CHA@$0BIN@$0BP@$0JJAILANP@$0L@$06$0JNCMFGIA@$0P@$0OPMGAAAA@$0BC@@std@@IEAAXXZ",
+    "?getProjectionMatrix@rglCamera@@QEBA?AU_D3DXMATRIXA16@@XZ",
+    "?initDeviceObjects@rglEffectManager@@QEAAXXZ",
+    "?reapplyScriptParams@rglEffectManager@@QEAAXPEAUID3DXEffect@@PEBD@Z",
+    "?checkLoadingPostEffects@rglGraphicsContext@@QEAAXXZ",
+    "?initEffectHandles@rglGraphicsContext@@QEAAXXZ",
+    "?createBlendStates@rglGraphicsContext@@QEAAXXZ",
+    "?createBlendState@rglGraphicsContext@@QEBAPEAVrglBlendState@@_NW4_D3DBLEND@@1W4_D3DBLENDOP@@@Z",
+    "?setFogEnabled@rglGraphicsContext@@QEAAX_N@Z",
+    "?setAlphaTestMode@rglGraphicsContext@@QEAAXH_N@Z",
+    "?initDeviceObjects@rglTechnique@@QEAAXXZ",
+    "?initEarlyZHandle@rglTechnique@@QEAAXXZ",
+    "?setSourceContext@rglRenderContext@@QEAAXPEAV1@@Z",
+    "__imp_D3DXMatrixPerspectiveOffCenterRH",
+    "__imp_D3DXCreateEffectFromFileA",
+    "__imp_D3DXMatrixOrthoOffCenterRH",
 }
 
 ARRAY_OBJECT_SIZES = {

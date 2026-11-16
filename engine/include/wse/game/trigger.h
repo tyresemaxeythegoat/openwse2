@@ -256,8 +256,9 @@ struct SimpleTriggerManager {
 // every file entry, discarding the surplus.
 // mbSimpleTriggerManager::readSavegameStream 0x14020ffa0 reads an int32 count
 // and one int64 timer value per entry, with the analogous
-// "Load error: Number of simple triggers in file: %d, exceeds %d" error. No
-// simple-trigger write counterpart appears in the binary.
+// "Load error: Number of simple triggers in file: %d, exceeds %d" error.
+// mbGame::writeStream (0x1400c9ba5..0x1400c9bea) writes the matching int32 count
+// followed by each simple trigger's int64 timer value inline.
 
 enum class SavegameResult : std::uint8_t {
     ok = 0,
@@ -325,6 +326,14 @@ inline void write_trigger_savegame(const TriggerManager& manager, io::BinaryWrit
     }
 
     return exceeded ? SavegameResult::count_exceeded : SavegameResult::ok;
+}
+
+inline void write_simple_trigger_savegame(const SimpleTriggerManager& manager,
+                                          io::BinaryWriter& writer) {
+    writer.write_i32(static_cast<std::int32_t>(manager.triggers.size()));
+    for (const SimpleTrigger& trigger : manager.triggers) {
+        writer.write_i64(trigger.timer.value);
+    }
 }
 
 [[nodiscard]] inline SavegameResult read_simple_trigger_savegame(SimpleTriggerManager& manager,
