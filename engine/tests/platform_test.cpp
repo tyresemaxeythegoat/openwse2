@@ -1228,9 +1228,11 @@ void test_p5_shader_modules_d3d9_and_material_rhi() {
         SpirvCompileOutput fs_out{};
         const bool compiled_ok =
             compile_warband_glsl_to_spirv(*shader_compiler, tech->vs_glsl, SpirvStage::Vertex,
-                                          tech->name, VertexDeclType::BumpedSkinned, vs_out) &&
+                                          tech->name, VertexDeclType::BumpedSkinned, vs_out,
+                                          tech->fs_glsl) &&
             compile_warband_glsl_to_spirv(*shader_compiler, tech->fs_glsl, SpirvStage::Fragment,
-                                          tech->name, VertexDeclType::BumpedSkinned, fs_out);
+                                          tech->name, VertexDeclType::BumpedSkinned, fs_out,
+                                          tech->vs_glsl);
         bool refl_ok = !vs_out.reflection.uniform_blocks.empty() &&
                        vs_out.reflection.uniform_blocks[0].binding == 0U &&
                        vs_out.reflection.uniform_blocks[0].size_bytes >= 64U &&

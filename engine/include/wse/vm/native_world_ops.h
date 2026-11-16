@@ -159,16 +159,11 @@ template <std::size_t N>
     std::int32_t key,
     bool allow_in_edit_mode,
     const std::array<bool, N>& states,
-    const std::array<bool, game::kMaxRawKeys>* omitted,
     const game::WseWorldState& world) noexcept {
     if (key < 0 || static_cast<std::size_t>(key) >= N) {
         return NativeDispatch::condition_false;
     }
     if (!allow_in_edit_mode && world.edit_mode.active) {
-        return NativeDispatch::condition_false;
-    }
-    if (omitted != nullptr &&
-        (*omitted)[static_cast<std::size_t>(key)]) {
         return NativeDispatch::condition_false;
     }
     return states[static_cast<std::size_t>(key)] ? NativeDispatch::handled
@@ -305,20 +300,20 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         return NativeDispatch::handled;
     case 70: // key_is_down (0x1401c67e5)
         return native_world_check_key_state(
-            narrow[0], statement.numOperands >= 2 && narrow[1] != 0, world.input.key_down,
-            nullptr, world);
+            narrow[0], statement.numOperands >= 2 && narrow[1] != 0,
+            world.input.key_down, world);
     case 71: // key_clicked (0x1401c683f)
         return native_world_check_key_state(
-            narrow[0], statement.numOperands >= 2 && narrow[1] != 0, world.input.key_clicked,
-            nullptr, world);
+            narrow[0], statement.numOperands >= 2 && narrow[1] != 0,
+            world.input.key_clicked, world);
     case 72: // game_key_is_down (0x1401c6899)
         return native_world_check_key_state(
-            narrow[0], statement.numOperands >= 2 && narrow[1] != 0, world.input.game_key_down,
-            nullptr, world);
+            narrow[0], statement.numOperands >= 2 && narrow[1] != 0,
+            world.input.game_key_down, world);
     case 73: // game_key_clicked (0x1401c68f1)
         return native_world_check_key_state(
             narrow[0], statement.numOperands >= 2 && narrow[1] != 0,
-            world.input.game_key_clicked, nullptr, world);
+            world.input.game_key_clicked, world);
     case 77: // omit_key_once (0x1401c69b5)
         if (narrow[0] >= 0 && narrow[0] < game::kMaxRawKeys) {
             world.input.omitted_keys[static_cast<std::size_t>(narrow[0])] = true;
@@ -358,15 +353,11 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
             if (cz <= 1e-4f) {
                 out = wse::core::WseVec4{-1.0f, -1.0f, 0.0f, 0.0f};
             } else {
-                const float half_fov_rad =
-                    std::clamp(world.misc.camera_fov_deg, 1.0f, 179.0f) * 0.5f *
-                    (3.14159265f / 180.0f);
-                const float tan_half = std::tan(half_fov_rad);
-                const float w = std::max(1.0f, world.misc.viewport_width);
-                const float h = std::max(1.0f, world.misc.viewport_height);
-                const float aspect = w / h;
-                const float ndc_x = cx / (cz * tan_half * aspect);
-                const float ndc_y = cy / (cz * tan_half);
+                const game::CameraProjectionScales proj = game::camera_projection_scales(
+                    world.misc.camera_fov_deg, world.misc.viewport_width,
+                    world.misc.viewport_height);
+                const float ndc_x = cx / (cz * proj.tan_half_fov * proj.aspect);
+                const float ndc_y = cy / (cz * proj.tan_half_fov);
                 out = wse::core::WseVec4{(ndc_x + 1.0f) * 0.5f,
                                          (ndc_y + 1.0f) * 0.5f * 0.75f, 0.0f, 0.0f};
             }

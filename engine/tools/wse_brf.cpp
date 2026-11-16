@@ -391,23 +391,35 @@ int run_module_catalog(const std::filesystem::path& root,
         const auto compiler = wse::asset::create_glslang_shader_compiler();
         for (const auto& kv : tech_cat.techniques_by_lower) {
             const wse::asset::GlTechniqueEntry& tech = kv.second;
+            if (tech.vs_glsl.empty() || tech.fs_glsl.empty()) {
+                ++spirv_fail;
+                std::fprintf(stderr, "SHADER_FAIL %s: missing %s GLSL source\n",
+                             tech.name.c_str(), tech.vs_glsl.empty() ? "vertex" : "fragment");
+                continue;
+            }
+            // No mesh here, so take the declaration the vertex shader's attributes ask for.
             const wse::asset::VertexDeclType decl =
-                tech.synthesized_wse2_variant ? wse::asset::VertexDeclType::BumpedSkinned
-                                              : wse::asset::VertexDeclType::Standard;
+                wse::asset::infer_vertex_decl_from_glsl(tech.vs_glsl);
             wse::asset::SpirvCompileOutput vs_out{};
             wse::asset::SpirvCompileOutput fs_out{};
-            if (!tech.vs_glsl.empty() && !tech.fs_glsl.empty() &&
-                wse::asset::compile_warband_glsl_to_spirv(
-                    *compiler, tech.vs_glsl, wse::asset::SpirvStage::Vertex, tech.name, decl,
-                    vs_out) &&
-                wse::asset::compile_warband_glsl_to_spirv(
-                    *compiler, tech.fs_glsl, wse::asset::SpirvStage::Fragment, tech.name, decl,
-                    fs_out)) {
+            const bool vs_ok = wse::asset::compile_warband_glsl_to_spirv(
+                *compiler, tech.vs_glsl, wse::asset::SpirvStage::Vertex, tech.name, decl, vs_out,
+                tech.fs_glsl);
+            const bool fs_ok = wse::asset::compile_warband_glsl_to_spirv(
+                *compiler, tech.fs_glsl, wse::asset::SpirvStage::Fragment, tech.name, decl,
+                fs_out, tech.vs_glsl);
+            if (vs_ok && fs_ok) {
                 ++spirv_ok;
-            } else {
-                ++spirv_fail;
-                std::fprintf(stderr, "SHADER_FAIL %s: %s / %s\n", tech.name.c_str(),
-                             vs_out.info_log.c_str(), fs_out.info_log.c_str());
+                continue;
+            }
+            ++spirv_fail;
+            if (!vs_ok) {
+                std::fprintf(stderr, "SHADER_FAIL %s (vertex): %s\n", tech.name.c_str(),
+                             vs_out.info_log.c_str());
+            }
+            if (!fs_ok) {
+                std::fprintf(stderr, "SHADER_FAIL %s (fragment): %s\n", tech.name.c_str(),
+                             fs_out.info_log.c_str());
             }
         }
     }
@@ -510,6 +522,10 @@ int run_cli(int argc, char** argv) {
                       (!dir_path.empty() ? 1 : 0) + (!root_path.empty() ? 1 : 0);
     if (modes != 1) {
         print_usage(argv[0]);
+        return 2;
+    }
+    if (compile_shaders && root_path.empty()) {
+        std::fprintf(stderr, "--compile-shaders requires --root\n");
         return 2;
     }
 

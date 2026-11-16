@@ -156,12 +156,11 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
     case 751: // mouse_get_world_projection (0x1401cbcc9)
         if (wse_register_ok(narrow[0]) && wse_register_ok(narrow[1])) {
             const auto& cam = world.misc.camera_transform;
-            const float fov_deg = std::clamp(world.misc.camera_fov_deg, 1.0f, 179.0f);
-            const float tan_half = std::tan(fov_deg * (3.14159265358979323846f / 360.0f));
-            const float aspect = world.misc.viewport_height > 0.0f
-                                     ? (world.misc.viewport_width /
-                                        world.misc.viewport_height)
-                                     : (4.0f / 3.0f);
+            const game::CameraProjectionScales proj = game::camera_projection_scales(
+                world.misc.camera_fov_deg, world.misc.viewport_width,
+                world.misc.viewport_height);
+            const float tan_half = proj.tan_half_fov;
+            const float aspect = proj.aspect;
             const float ndc_x = (world.m5.cursor_pos.x - 0.5f) * 2.0f;
             const float ndc_y = (world.m5.cursor_pos.y - 0.375f) * (2.0f / 0.75f);
             // Warband rglTransform camera frame: s = right, f = up, -u = forward.

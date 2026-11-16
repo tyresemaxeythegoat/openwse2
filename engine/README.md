@@ -500,16 +500,42 @@ Platform P5 (`wse/asset/shader.h`, `wse/platform/rhi.h`, `platform/vulkan/driver
     effect search order, `wse2_shaders.{brf,ini}`, cycle-guarded `rglShader` suitability/alternative
     fallback, `rglMaterial` state/slots, `GLShaders/*.xml` + `GLShadersOptimized` + the 5 synthesized
     WSE2 skinning variants, Warband GLSL → Vulkan `#version 450` lowering + Khronos `glslang 16.6.0`
-    SPIR-V 1.0 compilation, and persistent VFS `SpirvShaderCache` (`kWseSpirvGeneratorVersion = 3`).
+    SPIR-V 1.0 compilation, and persistent VFS `SpirvShaderCache` (`kWseSpirvGeneratorVersion = 4`).
 
 Platform P5 review fixes (behaviour notes and safety deviations):
-  - **SPIR-V 1.0 compiler backend:** `lower_warband_glsl_to_vulkan450` translates legacy Warband GLSL
-    (`attribute` → fixed vertex locations `0..8`, `varying` → conflict-free 9-location table `0..8`,
-    per-stage `std140` uniform blocks at binding `0` VS / `1` FS with `bool` lowered to `uint`,
-    samplers at bindings `2..13`, `gl_FragColor` → location `0` output, `texture2D*` → `texture*`)
-    and `create_glslang_shader_compiler()` compiles via `glslang 16.6.0` into SPIR-V 1.0 tagged by
-    an `OpString` metadata instruction (`inspect_spirv_module` rejects placeholder `WSE2` modules,
-    truncation, and mismatched stage/decl/source hash).
+  - **SPIR-V 1.0 compiler backend:** `compile_warband_glsl_to_spirv` runs glslang's preprocessor on
+    the legacy source (after splicing `\` line continuations, which glslang rejects below 4.20), then
+    `lower_warband_glsl_to_vulkan450` rewrites it to `#version 450` and `create_glslang_shader_compiler()`
+    compiles it to SPIR-V 1.0 tagged by an `OpString` (`wse2:tech=…:be=<glslang version>:decl=…:feat=…:
+    src=…:gen=4`; `inspect_spirv_module` rejects placeholder `WSE2` modules, truncation, and mismatched
+    stage/decl/source). Compiles may run concurrently on one backend.
+  - **Interface layout (port choice, no retail counterpart):** pass the technique's other stage as
+    `partner_glsl`. Varying locations and sampler bindings are assigned from the union of both
+    stages' declarations in sorted-name order: names in the fixed Warband tables keep their slot
+    (`attribute` `0..8`, `varying` `0..8`, samplers `2..13`) unless an earlier name already holds
+    it; everything else gets the first free run of slots (varyings from `9`, samplers from `14`,
+    attributes from `9`), sized by matrix columns and array length. Uniform blocks: binding `0`
+    VS / `1` FS, `std140`, members `_wse_u_<name>`; `bool` stays `bool` (glslang lays it out as a
+    32-bit value).
+  - **Rewriting:** loose uniforms → block members, except where a local, parameter, `for` variable,
+    or struct member shadows the name; `#define` bodies get the same renaming (macro parameters
+    excluded) when the source is not preprocessed. Top-level `struct` definitions are emitted
+    before the uniform block. `gl_FragColor` → location-0 output; `gl_FragData[n]` → a location-0
+    output array sized by the highest literal index (`4` for a computed index); writing both is
+    an error. `texture{1D,2D,3D,Cube}{,Proj,Lod,ProjLod}` and the `*ARB` lod/grad forms →
+    `texture*`; `shadow2D{,Proj,Lod,ProjLod}` → `_wse_shadow2D*` helpers returning `(r, r, r, 1)`
+    (the GLSL 1.20 `vec4` result in `GL_LUMINANCE` depth mode). `invariant` is kept on vertex
+    outputs only; `centroid` / `flat` / `smooth` / `noperspective` are kept.
+  - **Uniform initializers:** `uniform T x = v;` becomes a plain member; `v` is reported in
+    `ShaderStageReflection::uniform_defaults` for the uploader to write.
+  - **Reflection:** member names are the Warband uniform names; `size_bytes` is the `std140`
+    footprint (`array_stride_bytes * array_size` for arrays, `matrix_stride_bytes * columns` for
+    matrices), not glslang's element count.
+  - **Cache:** files are keyed by stage, vertex declaration, and the source of both stages, not the
+    technique name, so techniques that share GLSL share a module. `<hash>.refl` stores the
+    reflection next to `<hash>.spv`; a hit that needs reflection but has no valid sidecar is a
+    miss. With a backend set, a module tagged by another backend identity (e.g. an older glslang)
+    is recompiled; with no backend, any identity is accepted.
   - **Technique XML:** `<technique` must be followed by a tag boundary (a `<techniques>` root no
     longer swallows the first technique); comments, CDATA, `<?…?>`, and `>` inside quoted values are
     skipped; `<vertex_shader name="…"/>` and `<vertex_shader>…</vertex_shader>` are both read.

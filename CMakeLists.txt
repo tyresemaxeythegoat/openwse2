@@ -286,15 +286,16 @@ if(NOT EXISTS "${wse_glslang_src_dir}/glslang/Public/ShaderLang.h")
 endif()
 
 set(wse_glslang_gen_dir "${CMAKE_CURRENT_BINARY_DIR}/_third_party/glslang_gen")
-set(major 16)
-set(minor 6)
-set(patch 0)
-set(flavor "")
-configure_file(
-    "${wse_glslang_src_dir}/build_info.h.tmpl"
-    "${wse_glslang_gen_dir}/glslang/build_info.h"
-    @ONLY
-)
+# build_info.h.tmpl expands @major@/@minor@/@patch@/@flavor@; a function keeps those
+# generic names out of the directory scope.
+function(wse_configure_glslang_build_info src_dir gen_dir)
+    set(major 16)
+    set(minor 6)
+    set(patch 0)
+    set(flavor "")
+    configure_file("${src_dir}/build_info.h.tmpl" "${gen_dir}/glslang/build_info.h" @ONLY)
+endfunction()
+wse_configure_glslang_build_info("${wse_glslang_src_dir}" "${wse_glslang_gen_dir}")
 
 if(WIN32)
     set(_wse_glslang_os_src "${wse_glslang_src_dir}/glslang/OSDependent/Windows/ossource.cpp")
@@ -302,6 +303,7 @@ else()
     set(_wse_glslang_os_src "${wse_glslang_src_dir}/glslang/OSDependent/Unix/ossource.cpp")
 endif()
 
+# Only the C++ API is used, so glslang's C interface sources are left out.
 add_library(wse_glslang STATIC
     "${wse_glslang_src_dir}/glslang/GenericCodeGen/CodeGen.cpp"
     "${wse_glslang_src_dir}/glslang/GenericCodeGen/Link.cpp"
@@ -333,9 +335,7 @@ add_library(wse_glslang STATIC
     "${wse_glslang_src_dir}/glslang/MachineIndependent/preprocessor/PpScanner.cpp"
     "${wse_glslang_src_dir}/glslang/MachineIndependent/preprocessor/PpTokens.cpp"
     "${wse_glslang_src_dir}/glslang/MachineIndependent/propagateNoContraction.cpp"
-    "${wse_glslang_src_dir}/glslang/CInterface/glslang_c_interface.cpp"
     "${wse_glslang_src_dir}/glslang/ResourceLimits/ResourceLimits.cpp"
-    "${wse_glslang_src_dir}/glslang/ResourceLimits/resource_limits_c.cpp"
     "${_wse_glslang_os_src}"
     "${wse_glslang_src_dir}/SPIRV/GlslangToSpv.cpp"
     "${wse_glslang_src_dir}/SPIRV/InReadableOrder.cpp"
@@ -345,7 +345,6 @@ add_library(wse_glslang STATIC
     "${wse_glslang_src_dir}/SPIRV/doc.cpp"
     "${wse_glslang_src_dir}/SPIRV/SpvTools.cpp"
     "${wse_glslang_src_dir}/SPIRV/disassemble.cpp"
-    "${wse_glslang_src_dir}/SPIRV/CInterface/spirv_c_interface.cpp"
 )
 set_target_properties(wse_glslang PROPERTIES
     CXX_STANDARD 17

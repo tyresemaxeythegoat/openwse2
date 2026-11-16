@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -1312,7 +1313,7 @@ void test_p5_shader_review_regressions() {
         const std::string src =
             "uniform sampler2D specular_texture; void main() { gl_FragColor = vec4(1.0); }";
         const std::string fname = SpirvShaderCache::compute_cache_filename(
-            "t", SpirvStage::Fragment, VertexDeclType::Standard, src);
+            SpirvStage::Fragment, VertexDeclType::Standard, src);
         std::vector<std::uint8_t> trunc(24U, 0U);
         const std::uint32_t hdr[6] = {0x07230203U, 0x00010000U,
                                       shader_detail::kLegacyPlaceholderSpirvMagic,
@@ -1362,7 +1363,7 @@ void test_p5_shader_review_regressions() {
         // Changing VertexDeclType for identical source/cache slot must also invalidate.
         SpirvShaderCache c4(compiler);
         const std::string fname_bumped = SpirvShaderCache::compute_cache_filename(
-            "t", SpirvStage::Fragment, VertexDeclType::Bumped, src);
+            SpirvStage::Fragment, VertexDeclType::Bumped, src);
         v.write_file("c/" + fname_bumped,
                      std::span<const std::uint8_t>(
                          reinterpret_cast<const std::uint8_t*>(w.data()), w.size() * 4U));
@@ -1683,11 +1684,11 @@ void test_p5_shaders_materials_and_spirv_cache() {
             expect(cache1.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name,
                                          SpirvStage::Vertex, VertexDeclType::BumpedSkinned,
                                          wse2_face->vs_glsl, vs_words1, &hit_vs1, &vs_flags,
-                                         &vs_refl) &&
+                                         &vs_refl, wse2_face->fs_glsl) &&
                        cache1.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name,
                                              SpirvStage::Fragment, VertexDeclType::BumpedSkinned,
                                              wse2_face->fs_glsl, fs_words1, &hit_fs1, &fs_flags,
-                                             &fs_refl),
+                                             &fs_refl, wse2_face->vs_glsl),
                    "first SpirvShaderCache compile produces real SPIR-V 1.0");
             const auto vs_info = inspect_spirv_module(vs_words1);
             const auto fs_info = inspect_spirv_module(fs_words1);
@@ -1723,16 +1724,52 @@ void test_p5_shaders_materials_and_spirv_cache() {
             std::vector<std::uint32_t> fs_words2;
             bool hit_vs2 = false;
             bool hit_fs2 = false;
+            ShaderStageReflection vs_refl2{};
+            ShaderStageReflection fs_refl2{};
             expect(cache2.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name,
                                          SpirvStage::Vertex, VertexDeclType::BumpedSkinned,
-                                         wse2_face->vs_glsl, vs_words2, &hit_vs2) &&
+                                         wse2_face->vs_glsl, vs_words2, &hit_vs2, nullptr,
+                                         &vs_refl2, wse2_face->fs_glsl) &&
                        cache2.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name,
                                              SpirvStage::Fragment, VertexDeclType::BumpedSkinned,
-                                             wse2_face->fs_glsl, fs_words2, &hit_fs2) &&
+                                             wse2_face->fs_glsl, fs_words2, &hit_fs2, nullptr,
+                                             &fs_refl2, wse2_face->vs_glsl) &&
                        hit_vs2 && hit_fs2 && cache2.compile_count == 0U &&
                        cache2.cache_hits == 2U && vs_words1 == vs_words2 &&
                        fs_words1 == fs_words2,
                    "second launch SpirvShaderCache hits persisted binaries with compile_count==0");
+            // Cache hits return the reflection the compile produced (`.refl` sidecar).
+            const auto same_reflection = [](const ShaderStageReflection& a,
+                                             const ShaderStageReflection& b) {
+                return serialize_shader_reflection(a, 0U) == serialize_shader_reflection(b, 0U);
+            };
+            expect(!vs_refl.uniform_blocks.empty() && same_reflection(vs_refl, vs_refl2) &&
+                       !fs_refl.samplers.empty() && same_reflection(fs_refl, fs_refl2),
+                   "cache hits return the same reflection as the compile");
+
+            // A hit that needs reflection but has no sidecar recompiles (or fails cleanly
+            // without a backend) instead of returning empty reflection.
+            const std::string vs_fname = SpirvShaderCache::compute_cache_filename(
+                SpirvStage::Vertex, VertexDeclType::BumpedSkinned, wse2_face->vs_glsl,
+                wse2_face->fs_glsl);
+            expect(vfs.remove_file("wb/cache/spirv/" +
+                                   vs_fname.substr(0, vs_fname.size() - 4U) + ".refl"),
+                   "remove VS reflection sidecar");
+            SpirvShaderCache cache3{};
+            ShaderStageReflection vs_refl3{};
+            std::vector<std::uint32_t> vs_words3;
+            const bool no_refl_hit = cache3.get_or_compile(
+                vfs, "wb/cache/spirv", wse2_face->name, SpirvStage::Vertex,
+                VertexDeclType::BumpedSkinned, wse2_face->vs_glsl, vs_words3, nullptr, nullptr,
+                &vs_refl3, wse2_face->fs_glsl);
+            SpirvShaderCache cache4(compiler);
+            expect(!no_refl_hit &&
+                       cache4.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name,
+                                             SpirvStage::Vertex, VertexDeclType::BumpedSkinned,
+                                             wse2_face->vs_glsl, vs_words3, nullptr, nullptr,
+                                             &vs_refl3, wse2_face->fs_glsl) &&
+                       cache4.compile_count == 1U && same_reflection(vs_refl, vs_refl3),
+                   "missing .refl sidecar is a miss when reflection is requested");
         }
     }
 
@@ -1843,10 +1880,10 @@ void test_p5_shaders_materials_and_spirv_cache() {
                     std::vector<std::uint32_t> fs_spv;
                     const bool vs_ok = corpus_cache.get_or_compile(
                         corpus_cache_vfs, "spv", tech.name, SpirvStage::Vertex, decl, tech.vs_glsl,
-                        vs_spv);
+                        vs_spv, nullptr, nullptr, nullptr, tech.fs_glsl);
                     const bool fs_ok = corpus_cache.get_or_compile(
                         corpus_cache_vfs, "spv", tech.name, SpirvStage::Fragment, decl, tech.fs_glsl,
-                        fs_spv);
+                        fs_spv, nullptr, nullptr, nullptr, tech.vs_glsl);
                     if (vs_ok && fs_ok && inspect_spirv_module(vs_spv).has_value() &&
                         inspect_spirv_module(fs_spv).has_value()) {
                         ++compiled_techs;
@@ -1872,8 +1909,10 @@ void test_p5_shaders_materials_and_spirv_cache() {
                                     corpus_cache.last_error.c_str());
                     }
                 }
+                // Techniques sharing both GLSL files share cache entries (content-keyed).
                 expect(failed_techs == 0U && compiled_techs >= 271U &&
-                           corpus_cache.compile_count == compiled_techs * 2U,
+                           corpus_cache.compile_count + corpus_cache.cache_hits ==
+                               compiled_techs * 2U,
                        "retail Warband shader corpus compiles 271+ techniques to valid SPIR-V 1.0");
 
                 SpirvShaderCache warm_cache{};
@@ -1889,10 +1928,10 @@ void test_p5_shaders_materials_and_spirv_cache() {
                     bool hf = false;
                     if (warm_cache.get_or_compile(corpus_cache_vfs, "spv", tech.name,
                                                   SpirvStage::Vertex, decl, tech.vs_glsl, vs_spv,
-                                                  &hv) &&
+                                                  &hv, nullptr, nullptr, tech.fs_glsl) &&
                         warm_cache.get_or_compile(corpus_cache_vfs, "spv", tech.name,
                                                   SpirvStage::Fragment, decl, tech.fs_glsl, fs_spv,
-                                                  &hf) &&
+                                                  &hf, nullptr, nullptr, tech.vs_glsl) &&
                         hv && hf) {
                         ++warm_hits;
                     }
@@ -1902,6 +1941,362 @@ void test_p5_shaders_materials_and_spirv_cache() {
             }
         }
     }
+}
+
+// Regressions for the P5 lowering / compiler review: each case failed to compile, or
+// compiled into mismatched stages, before the fix. Every module produced here is also
+// written to `WSE_DUMP_SPIRV_DIR` (when set) for the CI `spirv-val` step.
+void test_p5_lowering_review_regressions() {
+    using namespace wse::asset;
+    const auto compiler = create_glslang_shader_compiler();
+    const char* dump_dir = std::getenv("WSE_DUMP_SPIRV_DIR");
+    const auto dump = [&](std::string_view name, const std::vector<std::uint32_t>& words) {
+        if (dump_dir == nullptr || dump_dir[0] == '\0' || words.empty()) {
+            return;
+        }
+        std::error_code ec;
+        std::filesystem::create_directories(dump_dir, ec);
+        const std::filesystem::path p =
+            std::filesystem::path(dump_dir) / ("review_" + std::string(name) + ".spv");
+        if (std::FILE* fp = std::fopen(p.string().c_str(), "wb")) {
+            std::fwrite(words.data(), sizeof(std::uint32_t), words.size(), fp);
+            std::fclose(fp);
+        }
+    };
+    struct Pair {
+        bool ok = false;
+        SpirvCompileOutput vs;
+        SpirvCompileOutput fs;
+    };
+    const auto compile_pair = [&](std::string_view name, std::string_view vs,
+                                  std::string_view fs) {
+        Pair p{};
+        const bool vs_ok = compile_warband_glsl_to_spirv(*compiler, vs, SpirvStage::Vertex, name,
+                                                         VertexDeclType::Standard, p.vs, fs);
+        const bool fs_ok = compile_warband_glsl_to_spirv(*compiler, fs, SpirvStage::Fragment,
+                                                         name, VertexDeclType::Standard, p.fs, vs);
+        p.ok = vs_ok && fs_ok;
+        if (!p.ok) {
+            std::printf("      %.*s: vs=[%s] fs=[%s]\n", static_cast<int>(name.size()),
+                        name.data(), p.vs.info_log.c_str(), p.fs.info_log.c_str());
+        }
+        dump(std::string(name) + "_vs", p.vs.spirv_words);
+        dump(std::string(name) + "_fs", p.fs.spirv_words);
+        return p;
+    };
+    const auto compile_fs = [&](std::string_view name, std::string_view fs) {
+        SpirvCompileOutput out{};
+        const bool ok = compile_warband_glsl_to_spirv(*compiler, fs, SpirvStage::Fragment, name,
+                                                      VertexDeclType::Standard, out);
+        if (!ok) {
+            std::printf("      %.*s: %s\n", static_cast<int>(name.size()), name.data(),
+                        out.info_log.c_str());
+        }
+        dump(name, out.spirv_words);
+        return ok;
+    };
+    // `layout(location = N) <...> <name>;` in lowered GLSL, or -1.
+    const auto location_of = [](std::string_view glsl, std::string_view name) -> int {
+        std::size_t pos = 0;
+        while (pos < glsl.size()) {
+            const std::size_t eol = glsl.find('\n', pos);
+            const std::string_view line =
+                glsl.substr(pos, (eol == std::string_view::npos ? glsl.size() : eol) - pos);
+            pos = (eol == std::string_view::npos) ? glsl.size() : eol + 1U;
+            const std::string suffix = " " + std::string(name) + ";";
+            const std::string_view head = "layout(location = ";
+            if (line.starts_with(head) && line.ends_with(suffix)) {
+                return std::atoi(std::string(line.substr(head.size())).c_str());
+            }
+        }
+        return -1;
+    };
+    const auto binding_of = [](const ShaderStageReflection& r, std::string_view name) -> int {
+        for (const auto& s : r.samplers) {
+            if (s.name == name) {
+                return static_cast<int>(s.binding);
+            }
+        }
+        return -1;
+    };
+    const std::string kVsBase = "attribute vec3 inPosition;\n";
+    const std::string kVsMain = "gl_Position = vec4(inPosition, 1.0);";
+
+    // 1-2. Names outside the fixed tables (different order, subset, multi-location types)
+    // land on the same location in both stages; samplers never share a binding.
+    {
+        const std::string vs = kVsBase +
+                               "varying vec2 myA; varying mat3 tbn; varying vec3 myB;\n"
+                               "varying vec4 extra[2];\n"
+                               "uniform sampler2D vtex;\n"
+                               "void main() { myA = vec2(0.0); tbn = mat3(1.0);\n"
+                               "  myB = texture2DLod(vtex, vec2(0.0), 0.0).xyz;\n"
+                               "  extra[0] = vec4(0.0); extra[1] = vec4(1.0); " +
+                               kVsMain + " }\n";
+        const std::string fs = "varying vec4 extra[2]; varying vec3 myB; varying mat3 tbn;\n"
+                               "uniform sampler2D ftex;\n"
+                               "void main() { gl_FragColor = texture2D(ftex, myB.xy)\n"
+                               "  * vec4(tbn[2], 1.0) * extra[1]; }\n";
+        const Pair p = compile_pair("cross_stage_unknown", vs, fs);
+        bool same = p.ok;
+        for (const char* n : {"myB", "tbn", "extra[2]"}) {
+            const int a = location_of(p.vs.lowered_glsl, n);
+            const int b = location_of(p.fs.lowered_glsl, n);
+            same = same && a >= 0 && a == b;
+        }
+        const int tbn = location_of(p.vs.lowered_glsl, "tbn");
+        const int myb = location_of(p.vs.lowered_glsl, "myB");
+        const int extra = location_of(p.vs.lowered_glsl, "extra[2]");
+        const bool no_overlap = !(myb >= tbn && myb < tbn + 3) &&
+                                !(extra >= tbn && extra < tbn + 3) && !(myb >= extra && myb < extra + 2) &&
+                                !(tbn >= extra && tbn < extra + 2);
+        const int vtex = binding_of(p.vs.reflection, "vtex");
+        const int ftex = binding_of(p.fs.reflection, "ftex");
+        expect(same && no_overlap && vtex >= 14 && ftex >= 14 && vtex != ftex,
+               "unknown varyings/samplers get one interface across both stages, sized by type");
+    }
+
+    // 3. Two fixed-table names sharing a slot (Color / VertexColor are both 3).
+    {
+        const std::string vs = kVsBase + "varying vec4 Color; varying vec4 VertexColor;\n"
+                                         "void main() { Color = vec4(1.0); VertexColor = vec4(0.5); " +
+                               kVsMain + " }\n";
+        const std::string fs = "varying vec4 Color; varying vec4 VertexColor;\n"
+                               "void main() { gl_FragColor = Color * VertexColor; }\n";
+        const Pair p = compile_pair("fixed_slot_collision", vs, fs);
+        const int c = location_of(p.vs.lowered_glsl, "Color");
+        const int vc = location_of(p.vs.lowered_glsl, "VertexColor");
+        expect(p.ok && c == 3 && vc >= 0 && vc != c &&
+                   vc == location_of(p.fs.lowered_glsl, "VertexColor"),
+               "colliding fixed varying names fall back to a shared dynamic slot");
+    }
+
+    // 5-6. Preprocessor: `#if`/`#else` alternatives, macros naming uniforms and legacy
+    // built-ins, line continuations, spaced `# version`, and block comments.
+    {
+        expect(compile_fs("pp_alternatives",
+                          "#define HQ 1\n#if HQ\nfloat f() { return 1.0; }\n#else\n"
+                          "float f() { return 0.0; }\n#endif\n"
+                          "void main() { gl_FragColor = vec4(f()); }\n"),
+               "#if/#else alternative definitions are not both emitted");
+        expect(compile_fs("pp_macro_uniform",
+                          "uniform vec4 fog_color;\n#define FOG fog_color\n"
+                          "uniform sampler2D diffuse_texture;\n"
+                          "#define SAMPLE(uv) texture2D(diffuse_texture, uv)\n"
+                          "#define OUTC gl_FragColor\n"
+                          "void main() { OUTC = FOG * SAMPLE(vec2(0.0)); }\n"),
+               "macros naming uniforms, texture2D, and gl_FragColor are lowered");
+        expect(compile_fs("pp_line_continuation",
+                          "#version 120\n#define M(a) \\\n  (a * 2.0)\nuniform float k;\n"
+                          "void main() { gl_FragColor = vec4(M(k)); }\n"),
+               "backslash line continuations in a 1.20 shader are spliced");
+        expect(compile_fs("pp_spaced_version", "# version 120\nvoid main() { gl_FragColor = vec4(1.0); }\n"),
+               "`# version` with a space is replaced, not duplicated");
+        expect(compile_fs("block_comment_token", "uniform/**/float k;\n"
+                                                 "void main() { gl_FragColor = vec4(k); }\n"),
+               "a block comment separates tokens");
+
+        // Same on the raw path (no preprocessing backend).
+        const LoweredVulkanGlsl raw = lower_warband_glsl_to_vulkan450(
+            "uniform vec4 fog_color;\n#define FOG fog_color\n#if 1\nfloat f() { return 1.0; }\n"
+            "#else\nfloat f() { return 0.0; }\n#endif\n"
+            "void main() { gl_FragColor = FOG * f(); }\n",
+            SpirvStage::Fragment);
+        std::vector<std::uint32_t> raw_spv;
+        std::string raw_log;
+        expect(raw.ok && raw.glsl.find("#define FOG _wse_fs_u._wse_u_fog_color") != std::string::npos &&
+                   compiler->compile_vulkan_glsl_to_spirv(raw.glsl, SpirvStage::Fragment, "main",
+                                                          raw_spv, nullptr, &raw_log),
+               "raw lowering keeps #if blocks in place and renames macro bodies");
+    }
+
+    // 7-11. Declarations and scoping.
+    {
+        SpirvCompileOutput out{};
+        const bool init_ok = compile_warband_glsl_to_spirv(
+            *compiler, "uniform float k = 0.25, j;\nuniform vec2 v = vec2(1.0, 2.0);\n"
+                       "void main() { gl_FragColor = vec4(k, j, v); }\n",
+            SpirvStage::Fragment, "init", VertexDeclType::Standard, out);
+        dump("uniform_initializer", out.spirv_words);
+        const auto& defs = out.reflection.uniform_defaults;
+        expect(init_ok && defs.size() == 2U && defs[0].name == "k" &&
+                   defs[0].initializer_glsl == "0.25" && defs[1].name == "v" &&
+                   defs[1].initializer_glsl == "vec2(1.0, 2.0)",
+               "uniform initializers become reported defaults, not garbage block members");
+
+        expect(compile_fs("bool_array", "uniform bool flags[2]; uniform bvec2 bv;\n"
+                                        "void main() { gl_FragColor = vec4(flags[1] && bv.y ? 1.0 : 0.0); }\n"),
+               "bool / bvec / bool-array uniforms compile inside the uniform block");
+        expect(compile_fs("shadowing",
+                          "uniform float k;\nstruct S { float k; };\n"
+                          "float g(float k) { return k * 2.0; }\n"
+                          "float h(float k);\n"
+                          "void main() {\n  S s; s.k = k;\n  float a = k, k2 = 1.0;\n"
+                          "  { float k = 2.0; a += k; }\n"
+                          "  for (int i = 0; i < 2; ++i) { float k = 3.0; a += k; }\n"
+                          "  gl_FragColor = vec4(s.k + g(k) + a + k + k2);\n}\n"
+                          "float h(float k) { return k; }\n"),
+               "locals, parameters, and struct members shadowing a uniform are not renamed");
+        expect(compile_fs("struct_uniform", "struct L { vec3 d; float i; };\nuniform L light;\n"
+                                            "void main() { gl_FragColor = vec4(light.d * light.i, 1.0); }\n"),
+               "struct-typed uniforms are declared after their struct");
+        expect(compile_fs("float_exponent", "uniform float e5;\n"
+                                            "void main() { gl_FragColor = vec4(1.0e5 * e5, 1e-3, .5e+2, 0.0); }\n"),
+               "float literals with exponents are not split into identifiers");
+    }
+
+    // 12. Legacy built-ins and qualifiers.
+    {
+        expect(compile_fs("shadow2d",
+                          "uniform sampler2DShadow shadowmap_texture;\n"
+                          "void main() {\n"
+                          "  vec4 a = shadow2D(shadowmap_texture, vec3(0.5));\n"
+                          "  vec4 b = shadow2DProj(shadowmap_texture, vec4(0.5), 0.0);\n"
+                          "  gl_FragColor = a * b.r;\n}\n"),
+               "shadow2D / shadow2DProj keep their GLSL 1.20 vec4 result");
+        expect(compile_fs("texture_cube", "uniform samplerCube env_texture;\n"
+                                          "void main() { gl_FragColor = textureCube(env_texture, vec3(1.0)); }\n"),
+               "textureCube is lowered");
+        SpirvCompileOutput fd{};
+        const bool fd_ok = compile_warband_glsl_to_spirv(
+            *compiler, "void main() { gl_FragData[0] = vec4(1.0); gl_FragData[1] = vec4(0.5); }\n",
+            SpirvStage::Fragment, "frag_data", VertexDeclType::Standard, fd);
+        dump("frag_data", fd.spirv_words);
+        expect(fd_ok && fd.lowered_glsl.find("out vec4 _wse_frag_data[2];") != std::string::npos,
+               "gl_FragData[n] becomes a location-0 output array sized by its highest index");
+        SpirvCompileOutput both{};
+        expect(!compile_warband_glsl_to_spirv(
+                   *compiler, "void main() { gl_FragColor = vec4(1.0); gl_FragData[1] = vec4(0.5); }\n",
+                   SpirvStage::Fragment, "both", VertexDeclType::Standard, both) &&
+                   both.info_log.find("gl_FragData") != std::string::npos,
+               "writing gl_FragColor and gl_FragData is reported");
+        const Pair q = compile_pair(
+            "interp_qualifiers",
+            kVsBase + "invariant varying vec4 Color; centroid varying vec2 Tex0;\n"
+                      "void main() { Color = vec4(1.0); Tex0 = vec2(0.0); " + kVsMain + " }\n",
+            "invariant varying vec4 Color; centroid varying vec2 Tex0;\n"
+            "void main() { gl_FragColor = Color * Tex0.x; }\n");
+        expect(q.ok && q.vs.lowered_glsl.find(") invariant out vec4 Color;") != std::string::npos &&
+                   q.vs.lowered_glsl.find(") centroid out vec2 Tex0;") != std::string::npos &&
+                   q.fs.lowered_glsl.find(") in vec4 Color;") != std::string::npos &&
+                   q.fs.lowered_glsl.find(") centroid in vec2 Tex0;") != std::string::npos,
+               "invariant (outputs only) / centroid varyings keep their qualifiers");
+    }
+
+    // 14. Reflection: Warband names, byte sizes, array and matrix strides.
+    {
+        SpirvCompileOutput out{};
+        const bool ok = compile_warband_glsl_to_spirv(
+            *compiler, "uniform vec4 vMaterialColor; uniform mat4 matWorld; uniform float fa[3];\n"
+                       "void main() { gl_FragColor = vMaterialColor * matWorld[0] * fa[2]; }\n",
+            SpirvStage::Fragment, "refl", VertexDeclType::Standard, out);
+        const ShaderUniformMemberInfo* color = nullptr;
+        const ShaderUniformMemberInfo* mat = nullptr;
+        const ShaderUniformMemberInfo* arr = nullptr;
+        if (ok && !out.reflection.uniform_blocks.empty()) {
+            for (const auto& m : out.reflection.uniform_blocks[0].members) {
+                if (m.name == "vMaterialColor") color = &m;
+                if (m.name == "matWorld") mat = &m;
+                if (m.name == "fa") arr = &m;
+            }
+        }
+        expect(color != nullptr && color->size_bytes == 16U && color->array_size == 0U &&
+                   mat != nullptr && mat->size_bytes == 64U && mat->matrix_stride_bytes == 16U &&
+                   arr != nullptr && arr->array_size == 3U && arr->array_stride_bytes == 16U &&
+                   arr->size_bytes == 48U,
+               "reflection reports Warband uniform names and std140 byte sizes / strides");
+    }
+
+    // Backend identity in the tag: a different compiler version recompiles cached modules.
+    {
+        struct RenamedBackend final : SpirvCompilerBackend {
+            std::shared_ptr<SpirvCompilerBackend> inner;
+            [[nodiscard]] const char* backend_name() const noexcept override { return "glslang"; }
+            [[nodiscard]] std::string cache_identity() const override { return "glslang-99.0.0"; }
+            [[nodiscard]] bool supports_preprocessing() const noexcept override { return true; }
+            [[nodiscard]] bool preprocess_legacy_glsl(std::string_view s, SpirvStage st,
+                                                      std::string& o, std::string* log) override {
+                return inner->preprocess_legacy_glsl(s, st, o, log);
+            }
+            [[nodiscard]] bool compile_vulkan_glsl_to_spirv(std::string_view s, SpirvStage st,
+                                                            std::string_view e,
+                                                            std::vector<std::uint32_t>& w,
+                                                            ShaderStageReflection* r,
+                                                            std::string* log) override {
+                return inner->compile_vulkan_glsl_to_spirv(s, st, e, w, r, log);
+            }
+        };
+        auto renamed = std::make_shared<RenamedBackend>();
+        renamed->inner = compiler;
+        wse::platform::MemoryVfs v;
+        const std::string src = "void main() { gl_FragColor = vec4(1.0); }";
+        std::vector<std::uint32_t> w;
+        bool hit = true;
+        SpirvShaderCache first(compiler);
+        SpirvShaderCache upgraded(renamed);
+        SpirvShaderCache headless{};
+        const bool a = first.get_or_compile(v, "c", "t", SpirvStage::Fragment,
+                                            VertexDeclType::Standard, src, w);
+        const auto info = inspect_spirv_module(w);
+        const bool b = upgraded.get_or_compile(v, "c", "t", SpirvStage::Fragment,
+                                               VertexDeclType::Standard, src, w, &hit);
+        const bool c = headless.get_or_compile(v, "c", "t", SpirvStage::Fragment,
+                                               VertexDeclType::Standard, src, w);
+        expect(a && info && info->backend_identity == compiler->cache_identity() && b && !hit &&
+                   upgraded.compile_count == 1U && c && headless.cache_hits == 1U,
+               "a different backend identity recompiles; no backend accepts any identity");
+    }
+
+    // Corrupt reflection sidecars are rejected.
+    {
+        ShaderStageReflection r{};
+        r.samplers.push_back({"diffuse_texture", 0U, 3U});
+        r.uniform_defaults.push_back({"k", "0.25"});
+        const std::vector<std::uint8_t> bytes = serialize_shader_reflection(r, 42U);
+        std::vector<std::uint8_t> truncated(bytes.begin(), bytes.end() - 1);
+        std::vector<std::uint8_t> huge_count = bytes;
+        huge_count[16] = 0xFF;  // uniform block count
+        const auto back = deserialize_shader_reflection(bytes, 42U);
+        expect(back && back->samplers.size() == 1U && back->samplers[0].binding == 3U &&
+                   back->uniform_defaults.size() == 1U &&
+                   !deserialize_shader_reflection(bytes, 43U) &&
+                   !deserialize_shader_reflection(truncated, 42U) &&
+                   !deserialize_shader_reflection(huge_count, 42U),
+               "reflection sidecar round-trips and rejects wrong key / truncation / bad counts");
+    }
+
+    // Compiles run concurrently on one backend.
+    {
+        std::array<bool, 4> ok{};
+        std::vector<std::thread> threads;
+        for (std::size_t t = 0; t < ok.size(); ++t) {
+            threads.emplace_back([&, t] {
+                bool all = true;
+                for (int n = 0; n < 8; ++n) {
+                    SpirvCompileOutput o{};
+                    all = all && compile_warband_glsl_to_spirv(
+                                     *compiler,
+                                     "uniform vec4 c; uniform sampler2D diffuse_texture;\n"
+                                     "varying vec2 Tex0;\n"
+                                     "void main() { gl_FragColor = c * texture2D(diffuse_texture, Tex0); }\n",
+                                     SpirvStage::Fragment, "mt", VertexDeclType::Standard, o);
+                }
+                ok[t] = all;
+            });
+        }
+        for (std::thread& th : threads) {
+            th.join();
+        }
+        expect(ok[0] && ok[1] && ok[2] && ok[3], "concurrent compiles on one backend succeed");
+    }
+
+    expect(infer_vertex_decl_from_glsl("attribute vec4 inTangent; attribute vec4 inBlendIndices;") ==
+                   VertexDeclType::BumpedSkinned &&
+               infer_vertex_decl_from_glsl("attribute vec4 inBlendWeight;") ==
+                   VertexDeclType::Skinned &&
+               infer_vertex_decl_from_glsl("attribute vec3 inPosition;") ==
+                   VertexDeclType::Standard,
+           "infer_vertex_decl_from_glsl reads the attributes a vertex shader uses");
 }
 
 }  // namespace
@@ -1920,6 +2315,7 @@ int run_asset_suite(const char* fixture_path) {
     test_dds_decode_blocks_and_resolver_probes();
     test_p5_shaders_materials_and_spirv_cache();
     test_p5_shader_review_regressions();
+    test_p5_lowering_review_regressions();
 
     if (failures == 0) {
         std::printf("asset tests: PASS\n");
