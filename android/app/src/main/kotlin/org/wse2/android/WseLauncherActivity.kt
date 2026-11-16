@@ -55,6 +55,10 @@ class WseLauncherActivity : Activity() {
     private lateinit var moduleDetailText: TextView
     private lateinit var driverSpinner: Spinner
     private lateinit var driverStatusText: TextView
+    private lateinit var frameRateSpinner: Spinner
+    private lateinit var gyroAimCheck: CheckBox
+    private lateinit var pinchZoomCheck: CheckBox
+    private lateinit var thermalThrottleCheck: CheckBox
     private lateinit var mockFallbackCheck: CheckBox
     private lateinit var outputStatusText: TextView
     private lateinit var rescanButton: Button
@@ -65,6 +69,8 @@ class WseLauncherActivity : Activity() {
     private val driverOptions = listOf("System Vulkan", "Turnip (Adreno custom)", "PanVK (Mali direct ICD)")
     // Native `parse_driver_mode` keys, index-aligned with driverOptions.
     private val driverModeKeys = listOf("system", "turnip", "panvk")
+    private val frameRateValues = listOf(60, 90, 120, 0)
+    private val frameRateLabels = listOf("60 Hz", "90 Hz", "120 Hz", "Uncapped")
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var probeConnection: ServiceConnection? = null
@@ -186,6 +192,34 @@ class WseLauncherActivity : Activity() {
         }
         container.addView(probeButton)
 
+        addSectionTitle("Sensors & Performance (P8)")
+        frameRateSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@WseLauncherActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                frameRateLabels
+            )
+        }
+        container.addView(frameRateSpinner)
+
+        gyroAimCheck = CheckBox(this).apply {
+            text = "Opt-in gyro aiming (Mission)"
+            isChecked = false
+        }
+        container.addView(gyroAimCheck)
+
+        pinchZoomCheck = CheckBox(this).apply {
+            text = "Pinch-to-zoom (Campaign map)"
+            isChecked = true
+        }
+        container.addView(pinchZoomCheck)
+
+        thermalThrottleCheck = CheckBox(this).apply {
+            text = "Thermal headroom throttling (res / LOD / FPS)"
+            isChecked = true
+        }
+        container.addView(thermalThrottleCheck)
+
         addSectionTitle("Runtime")
         container.addView(Button(this).apply {
             text = "Launch WSE2 SDL3 Self-Test (WseActivity)"
@@ -225,6 +259,33 @@ class WseLauncherActivity : Activity() {
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        val savedCapHz = prefs.getInt(KEY_FRAME_RATE_CAP, 60)
+        val capIdx = frameRateValues.indexOf(savedCapHz).let { if (it >= 0) it else 0 }
+        frameRateSpinner.setSelection(capIdx)
+        frameRateSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                val hz = frameRateValues[pos.coerceIn(0, frameRateValues.size - 1)]
+                prefs.edit().putInt(KEY_FRAME_RATE_CAP, hz).apply()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        gyroAimCheck.isChecked = prefs.getBoolean(KEY_GYRO_AIM, false)
+        gyroAimCheck.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(KEY_GYRO_AIM, checked).apply()
+        }
+
+        pinchZoomCheck.isChecked = prefs.getBoolean(KEY_PINCH_ZOOM, true)
+        pinchZoomCheck.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(KEY_PINCH_ZOOM, checked).apply()
+        }
+
+        thermalThrottleCheck.isChecked = prefs.getBoolean(KEY_THERMAL_THROTTLE, true)
+        thermalThrottleCheck.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(KEY_THERMAL_THROTTLE, checked).apply()
         }
 
         val savedTree = prefs.getString(KEY_TREE_URI, null)
@@ -429,6 +490,9 @@ class WseLauncherActivity : Activity() {
             }
         }
     }
+
+    private fun selectedFrameRateCapHz(): Int =
+        frameRateValues[frameRateSpinner.selectedItemPosition.coerceIn(0, frameRateValues.size - 1)]
 
     private fun selectedDriverModeKey(): String =
         driverModeKeys[driverSpinner.selectedItemPosition.coerceIn(0, driverModeKeys.size - 1)]
@@ -695,6 +759,10 @@ class WseLauncherActivity : Activity() {
             putExtra(EXTRA_MODULE_NAME, selectedMod)
             // Stable mode id ("system" / "turnip" / "panvk"), as parse_driver_mode expects.
             putExtra(EXTRA_GPU_DRIVER, selectedDriverModeKey())
+            putExtra(EXTRA_FRAME_RATE_CAP, selectedFrameRateCapHz())
+            putExtra(EXTRA_GYRO_AIM, gyroAimCheck.isChecked)
+            putExtra(EXTRA_PINCH_ZOOM, pinchZoomCheck.isChecked)
+            putExtra(EXTRA_THERMAL_THROTTLE, thermalThrottleCheck.isChecked)
         }
         startActivity(intent)
     }
@@ -710,9 +778,17 @@ class WseLauncherActivity : Activity() {
         private const val KEY_TREE_URI = "tree_uri"
         private const val KEY_SELECTED_MODULE = "selected_module"
         private const val KEY_GPU_DRIVER = "gpu_driver"
+        private const val KEY_FRAME_RATE_CAP = "frame_rate_cap_hz"
+        private const val KEY_GYRO_AIM = "gyro_aim_enabled"
+        private const val KEY_PINCH_ZOOM = "pinch_zoom_enabled"
+        private const val KEY_THERMAL_THROTTLE = "thermal_throttling_enabled"
 
         const val EXTRA_TREE_URI = "wse2.extra.TREE_URI"
         const val EXTRA_MODULE_NAME = "wse2.extra.MODULE_NAME"
         const val EXTRA_GPU_DRIVER = "wse2.extra.GPU_DRIVER"
+        const val EXTRA_FRAME_RATE_CAP = "wse2.extra.FRAME_RATE_CAP"
+        const val EXTRA_GYRO_AIM = "wse2.extra.GYRO_AIM"
+        const val EXTRA_PINCH_ZOOM = "wse2.extra.PINCH_ZOOM"
+        const val EXTRA_THERMAL_THROTTLE = "wse2.extra.THERMAL_THROTTLE"
     }
 }

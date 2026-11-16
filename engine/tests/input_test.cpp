@@ -894,6 +894,159 @@ void test_review_regressions() {
     }
 }
 
+void test_p8_sensors_and_pinch_zoom() {
+    using namespace wse::platform;
+    using T = RawInputEvent::Type;
+    const auto gyro = [](float yaw_rate, float pitch_rate) {
+        RawInputEvent ev{};
+        ev.type = T::GyroSample;
+        ev.dx = yaw_rate;
+        ev.dy = pitch_rate;
+        return ev;
+    };
+    const auto touch = [](T t, std::int64_t id, float x, float y) {
+        RawInputEvent ev{};
+        ev.type = t;
+        ev.finger_id = id;
+        ev.x = x;
+        ev.y = y;
+        return ev;
+    };
+
+    // 1. Gyro aiming is opt-in and Mission-only, smoothed with radial deadzone and FocusLost reset.
+    {
+        WseInputManager mgr;
+        expect(!mgr.profile().gyro_aim_enabled, "gyro aim defaults to opt-in disabled");
+        mgr.process_frame(std::array<RawInputEvent, 1>{{gyro(1.5f, -0.5f)}}, 1.0f / 60.0f);
+        expect(close(mgr.frame_state().look_yaw_delta, 0.0f) &&
+                   close(mgr.frame_state().look_pitch_delta, 0.0f),
+               "disabled gyro produces zero look delta");
+
+        mgr.profile().gyro_aim_enabled = true;
+        mgr.profile().gyro_smoothing = 0.5f;
+        mgr.profile().gyro_deadzone = 0.02f;
+        mgr.profile().gyro_sensitivity = 1.0f;
+
+        mgr.set_context(InputContext::CampaignMap);
+        mgr.process_frame(std::array<RawInputEvent, 1>{{gyro(1.5f, 0.5f)}}, 1.0f / 60.0f);
+        expect(close(mgr.frame_state().look_yaw_delta, 0.0f) &&
+                   close(mgr.frame_state().look_pitch_delta, 0.0f),
+               "gyro does not trigger on CampaignMap");
+
+        mgr.set_context(InputContext::Mission);
+        mgr.process_frame(std::array<RawInputEvent, 1>{{gyro(0.015f, 0.01f)}}, 1.0f / 60.0f);
+        expect(close(mgr.frame_state().look_yaw_delta, 0.0f) &&
+                   close(mgr.frame_state().look_pitch_delta, 0.0f),
+               "gyro drift inside deadzone produces zero output");
+
+        // Reset filter cleanly, test step response (0.5 smoothing -> 0.50 -> 0.75 of 1.0 rad/s).
+        RawInputEvent reset_fl{};
+        reset_fl.type = T::FocusLost;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{reset_fl}}, 1.0f / 60.0f);
+        mgr.profile().gyro_deadzone = 0.0f;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{gyro(1.0f, 0.0f)}}, 1.0f / 60.0f);
+        const float y1 = mgr.frame_state().look_yaw_delta;
+        mgr.process_frame(std::array<RawInputEvent, 2>{{gyro(0.8f, 0.4f), gyro(1.2f, 0.4f)}},
+                          1.0f / 60.0f);
+        const float y2 = mgr.frame_state().look_yaw_delta;
+        const float p2 = mgr.frame_state().look_pitch_delta;
+        expect(close(y1, 0.5f / 60.0f, 1e-5f) && close(y2, 0.75f / 60.0f, 1e-5f) &&
+                   p2 > 0.0f,
+               "gyro low-pass filter averages per-frame samples and smooths step response");
+
+        // FocusLost clears filter history; invert_gyro_y reverses vertical axis.
+        RawInputEvent fl{};
+        fl.type = T::FocusLost;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{fl}}, 1.0f / 60.0f);
+        mgr.process_frame({}, 1.0f / 60.0f);
+        const bool reset_clean = close(mgr.frame_state().look_yaw_delta, 0.0f);
+        mgr.profile().invert_gyro_y = true;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{gyro(0.0f, 1.0f)}}, 1.0f / 60.0f);
+        expect(reset_clean && mgr.frame_state().look_pitch_delta < 0.0f,
+               "FocusLost clears gyro filter state and invert_gyro_y flips pitch");
+    }
+
+    // 2. Two-finger pinch zooms CampaignMap without contaminating look, respecting aspect and toggle.
+    {
+        WseInputManager mgr;
+        mgr.set_viewport_size(2400, 1080);
+        mgr.set_context(InputContext::CampaignMap);
+        mgr.profile().pinch_zoom_enabled = true;
+        mgr.profile().pinch_zoom_sensitivity = 1.0f;
+
+        // Place one finger outside LookArea (non-stick) and one inside LookArea.
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchDown, 10, 0.30f, 0.50f), touch(T::TouchDown, 11, 0.60f, 0.50f)}});
+        expect(mgr.frame_state().pinch_active && close(mgr.frame_state().map_zoom_delta, 0.0f),
+               "two non-stick touches activate CampaignMap pinch state");
+
+        // Spread fingers outward -> positive map_zoom_delta and zero camera look rotation.
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchMove, 10, 0.25f, 0.50f), touch(T::TouchMove, 11, 0.65f, 0.50f)}});
+        const float zoom_in = mgr.frame_state().map_zoom_delta;
+        const bool no_look_on_spread =
+            close(mgr.frame_state().look_yaw_delta, 0.0f) &&
+            close(mgr.frame_state().look_pitch_delta, 0.0f);
+
+        // Pinch inward -> negative map_zoom_delta, propagated through WorldInputBridge.
+        wse::game::WseWorldState world{};
+        wse::platform::SyntheticInputBackend backend;
+        backend.push_batch(std::array<RawInputEvent, 2>{
+            {touch(T::TouchMove, 10, 0.35f, 0.50f), touch(T::TouchMove, 11, 0.55f, 0.50f)}});
+        wse::game::WorldInputBridge::step_and_sync(mgr, backend, world);
+        const float zoom_out = mgr.frame_state().map_zoom_delta;
+        const bool bridged = close(world.input.map_zoom_delta, zoom_out);
+
+        // Lifting one finger exits pinch without jumping look; re-check context/toggle gating.
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchUp, 10, 0.35f, 0.50f)}});
+        const bool lifted = !mgr.frame_state().pinch_active;
+
+        // MoveStick + LookArea in CampaignMap must NOT count as a pinch.
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchUp, 11, 0.55f, 0.50f)}});
+        const auto stick = mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::MoveStick)];
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchDown, 20, stick.cx, stick.cy),
+             touch(T::TouchDown, 21, 0.70f, 0.50f)}});
+        const bool stick_not_pinch = !mgr.frame_state().pinch_active;
+
+        // Disabling pinch_zoom_enabled prevents pinch activation.
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchUp, 20, stick.cx, stick.cy), touch(T::TouchUp, 21, 0.70f, 0.50f)}});
+        mgr.profile().pinch_zoom_enabled = false;
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchDown, 30, 0.50f, 0.50f), touch(T::TouchDown, 31, 0.70f, 0.50f)}});
+        expect(zoom_in > 0.0f && no_look_on_spread && zoom_out < 0.0f && bridged && lifted &&
+                   stick_not_pinch && !mgr.frame_state().pinch_active,
+               "pinch zooms in/out without look contamination, bridges to world, and honors toggles");
+    }
+
+    // 3. Profile JSON round-trip preserves P8 fields while staying backward-compatible with v1 JSON.
+    {
+        TouchOverlayProfile legacy{};
+        std::string err;
+        expect(deserialize_input_profile_json("{\"version\":\"1\",\"look_sensitivity\":\"3.0\"}",
+                                              legacy, nullptr, &err) &&
+                   !legacy.gyro_aim_enabled && legacy.pinch_zoom_enabled &&
+                   close(legacy.gyro_sensitivity, 1.0f),
+               "legacy v1 JSON without P8 keys loads with P8 defaults");
+
+        MemoryVfs vfs;
+        TouchOverlayProfile p{};
+        p.gyro_aim_enabled = true;
+        p.gyro_sensitivity = 2.1f;
+        p.gyro_smoothing = 0.65f;
+        p.gyro_deadzone = 0.04f;
+        p.invert_gyro_y = true;
+        p.pinch_zoom_enabled = false;
+        p.pinch_zoom_sensitivity = 2.4f;
+        TouchOverlayProfile back{};
+        expect(save_input_profile(vfs, "Native", p, nullptr, &err) &&
+                   load_input_profile(vfs, "Native", back, nullptr, &err) &&
+                   back == p,
+               "P8 sensor & pinch toggles round-trip through module JSON profile");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -908,6 +1061,7 @@ int run_input_suite(const char* fixture_path) {
     test_touch_overlay_drives_free_camera_in_p4_viewer();
     test_vm_and_world_input_bridge();
     test_review_regressions();
+    test_p8_sensors_and_pinch_zoom();
 
     if (g_failures == 0) {
         std::printf("input tests: PASS\n");

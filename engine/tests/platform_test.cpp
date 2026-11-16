@@ -30,6 +30,7 @@
 #include "wse/platform/clock.h"
 #include "wse/platform/log.h"
 #include "wse/platform/driver_package.h"
+#include "wse/platform/performance.h"
 #include "wse/platform/rhi.h"
 #include "wse/platform/rhi_brf.h"
 #include "wse/platform/rhi_material.h"
@@ -2117,6 +2118,160 @@ void test_p4_review_fixes() {
     }
 }
 
+void test_p8_performance_and_frame_pacing() {
+    using namespace wse::platform;
+
+    // 1. FrameRateCap & PresentMode helpers.
+    {
+        FrameRateCap cap{};
+        expect(parse_frame_rate_cap("60", cap) && cap == FrameRateCap::Fps60 &&
+                   parse_frame_rate_cap("90Hz", cap) && cap == FrameRateCap::Fps90 &&
+                   parse_frame_rate_cap(" 120 ", cap) && cap == FrameRateCap::Fps120 &&
+                   parse_frame_rate_cap("uncapped", cap) && cap == FrameRateCap::Uncapped &&
+                   parse_frame_rate_cap("0", cap) && cap == FrameRateCap::Uncapped &&
+                   !parse_frame_rate_cap("not60", cap),
+               "frame rate cap parsing supports 60/90/120/uncapped and rejects junk");
+
+        expect(select_present_mode(FrameRateCap::Uncapped, PresentModePreference::Immediate,
+                                   true, true, true) == PresentModePreference::Immediate &&
+                   select_present_mode(FrameRateCap::Fps60, PresentModePreference::Immediate,
+                                       false, true, true) == PresentModePreference::FifoRelaxed &&
+                   select_present_mode(FrameRateCap::Fps90, PresentModePreference::Mailbox,
+                                       true, false, false) == PresentModePreference::Mailbox &&
+                   sdl_vsync_for_present_mode(PresentModePreference::Fifo, FrameRateCap::Fps60) == 1 &&
+                   sdl_vsync_for_present_mode(PresentModePreference::Immediate, FrameRateCap::Uncapped) == 0 &&
+                   sdl_vsync_for_present_mode(PresentModePreference::FifoRelaxed, FrameRateCap::Fps60) == -1,
+               "present mode negotiation and SDL vsync mapping follow cap & support flags");
+    }
+
+    // 2. PerformanceSettings Vfs JSON round-trip and sanitization.
+    {
+        MemoryVfs vfs;
+        PerformanceSettings s{};
+        s.frame_rate_cap = FrameRateCap::Fps90;
+        s.present_mode = PresentModePreference::Mailbox;
+        s.thermal_throttling_enabled = true;
+        s.dynamic_resolution_enabled = false;
+        s.lod_bias_scaling_enabled = true;
+        s.min_resolution_scale = 0.72f;
+        s.max_lod_bias = 1.25f;
+        std::string err;
+        PerformanceSettings loaded{};
+        expect(save_performance_settings(vfs, s, &err) &&
+                   load_performance_settings(vfs, loaded, &err) &&
+                   loaded == s,
+               "performance settings save/load round-trips via Vfs");
+
+        PerformanceSettings bad{};
+        expect(!deserialize_performance_settings_json("{\"version\":\"9\"}", bad, &err) &&
+                   !deserialize_performance_settings_json("{\"frame_rate_cap\":\"144\"}", bad, &err),
+               "malformed version or invalid frame rate cap rejected");
+
+        PerformanceSettings dirty{};
+        dirty.min_resolution_scale = std::numeric_limits<float>::quiet_NaN();
+        dirty.max_lod_bias = 99.0f;
+        sanitize_performance_settings(dirty);
+        expect(std::fabs(dirty.min_resolution_scale - 0.65f) < 1e-5f &&
+                   std::fabs(dirty.max_lod_bias - 3.0f) < 1e-5f,
+               "sanitize_performance_settings replaces NaN and clamps bounds");
+    }
+
+    // 3. ThermalPerformanceController: headroom + status + hysteresis + toggles + resolution extent.
+    {
+        ThermalPerformanceController ctrl;
+        PerformanceSettings s{};
+        s.frame_rate_cap = FrameRateCap::Fps120;
+        s.present_mode = PresentModePreference::Mailbox;
+        s.min_resolution_scale = 0.65f;
+        s.max_lod_bias = 1.5f;
+        ctrl.set_settings(s);
+        ctrl.set_present_capabilities(true, true, true);
+
+        ctrl.update_thermal(0, 0.25f);
+        auto a = ctrl.evaluate();
+        expect(a.tier == ThermalTier::Nominal && std::fabs(a.resolution_scale - 1.0f) < 1e-5f &&
+                   std::fabs(a.lod_bias) < 1e-5f && a.effective_fps_cap == 120,
+               "nominal thermal leaves 120 Hz, 1.0 scale, 0 LOD bias");
+
+        // Escalate -> Elevated (headroom 0.68 >= 0.65).
+        ctrl.update_thermal(0, 0.68f);
+        a = ctrl.evaluate();
+        expect(a.tier == ThermalTier::Elevated && a.effective_fps_cap == 90 &&
+                   std::fabs(a.resolution_scale - 0.90f) < 1e-5f &&
+                   std::fabs(a.lod_bias - 0.35f) < 1e-5f,
+               "elevated thermal headroom scales down resolution, LOD bias, and 90 Hz cap");
+
+        // Escalate -> Critical (headroom 0.96 >= 0.95) and test downward hysteresis.
+        ctrl.update_thermal(0, 0.96f);
+        a = ctrl.evaluate();
+        expect(a.tier == ThermalTier::Critical && a.effective_fps_cap == 30 &&
+                   std::fabs(a.resolution_scale - 0.65f) < 1e-5f &&
+                   std::fabs(a.lod_bias - 1.5f) < 1e-5f,
+               "critical headroom drops to min resolution scale, max LOD bias, and 30 Hz fallback");
+
+        // Dropping to 0.90 must hold Critical (above exit bound 0.87).
+        ctrl.update_thermal(0, 0.90f);
+        expect(ctrl.tier() == ThermalTier::Critical,
+               "thermal hysteresis avoids flapping near critical boundary");
+
+        // Dropping to 0.85 enters Throttled (60 Hz), and 0.50 restores Nominal.
+        ctrl.update_thermal(0, 0.85f);
+        expect(ctrl.tier() == ThermalTier::Throttled && ctrl.evaluate().effective_fps_cap == 60,
+               "stepping below exit hysteresis reaches Throttled (60 Hz)");
+
+        // OS Severe status alone (with NaN/unavailable headroom) triggers Critical cleanly.
+        ctrl.update_thermal(static_cast<std::int32_t>(ThermalStatus::Severe),
+                            std::numeric_limits<float>::quiet_NaN());
+        expect(!ctrl.thermal().headroom_valid && ctrl.tier() == ThermalTier::Critical,
+               "NaN headroom degrades safely while ThermalStatus still drives scaling");
+
+        // Toggles override scaling individually.
+        s.dynamic_resolution_enabled = false;
+        ctrl.set_settings(s);
+        expect(std::fabs(ctrl.evaluate().resolution_scale - 1.0f) < 1e-5f &&
+                   ctrl.evaluate().lod_bias > 1.0f,
+               "dynamic_resolution_enabled=false keeps 1.0x while keeping LOD/FPS scaling");
+        s.thermal_throttling_enabled = false;
+        ctrl.set_settings(s);
+        expect(ctrl.tier() == ThermalTier::Nominal && ctrl.evaluate().effective_fps_cap == 120,
+               "thermal_throttling_enabled=false disables all thermal throttling");
+
+        const ScaledExtent ext = scale_render_extent(1920U, 1080U, 0.80f);
+        expect(ext.width == 1536U && ext.height == 864U,
+               "scale_render_extent computes expected scaled pixel dimensions");
+    }
+
+    // 4. Deterministic FramePacer pacing across 60 / 90 / 120 Hz + Uncapped + hitch reset.
+    {
+        for (const std::int32_t fps : {60, 90, 120}) {
+            ManualClock clock;
+            FramePacer pacer(clock);
+            pacer.set_target_fps(fps);
+            for (int f = 0; f < fps; ++f) {
+                pacer.begin_frame();
+                clock.advance_ticks(200);  // 2 ms simulated frame work
+                clock.advance_ticks(pacer.remaining_wait_ticks());
+            }
+            const std::int64_t ticks_per_sec = clock.ticks();
+            expect(std::llabs(ticks_per_sec - kTicksPerSecond) <= 1,
+                   "FramePacer holds drift-free 1.000s cadence over 1 full second");
+        }
+
+        ManualClock clock;
+        FramePacer pacer(clock);
+        pacer.set_target_fps(60);
+        pacer.begin_frame();
+        clock.advance_ticks(50000);  // 500 ms background pause
+        expect(pacer.remaining_wait_ticks() == 0, "stalled frame does not wait");
+        pacer.begin_frame();  // resyncs past hitch so next wait is ~1 frame, not 0 burst
+        expect(pacer.remaining_wait_ticks() > 1500, "FramePacer resyncs smoothly after long hitch");
+
+        pacer.set_target_fps(0);
+        pacer.begin_frame();
+        expect(pacer.remaining_wait_ticks() == 0, "Uncapped mode adds zero pacing wait");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -2136,6 +2291,7 @@ int run_platform_suite(const char* fixture_path) {
     test_p5_shader_modules_d3d9_and_material_rhi();
     test_p4_review_fixes();
     test_p5_rhi_review_fixes();
+    test_p8_performance_and_frame_pacing();
     if (failures != 0) {
         std::printf("platform tests: FAIL (%d)\n", failures);
         return 1;

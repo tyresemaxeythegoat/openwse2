@@ -148,6 +148,20 @@ class WseSafBridge(
     ): String
 
     companion object {
+        @JvmStatic
+        external fun nativeSetPerformanceAndInputConfig(
+            frameRateCapHz: Int,
+            gyroAimEnabled: Boolean,
+            pinchZoomEnabled: Boolean,
+            thermalThrottlingEnabled: Boolean
+        )
+
+        @JvmStatic
+        external fun nativeUpdateThermalState(
+            thermalStatus: Int,
+            thermalHeadroom: Float
+        )
+
         init {
             System.loadLibrary("SDL3")
             System.loadLibrary("wse2")

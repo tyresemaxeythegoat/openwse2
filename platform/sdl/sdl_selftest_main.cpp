@@ -8,6 +8,13 @@
 
 #include "sdl_audio.h"
 #include "sdl_input.h"
+#include "wse/platform/clock.h"
+#include "wse/platform/performance.h"
+
+#ifdef __ANDROID__
+#include <android/native_window.h>
+#include <dlfcn.h>
+#endif
 #include "wse_selftest.h"
 
 #include <algorithm>
@@ -150,6 +157,44 @@ void draw_filled_rect(SDL_Renderer* renderer, float x, float y, float w, float h
     SDL_RenderFillRect(renderer, &rect);
 }
 
+void apply_display_frame_rate(SDL_Window* window,
+                              SDL_Renderer* renderer,
+                              std::int32_t target_fps,
+                              wse::platform::PresentModePreference present_mode) noexcept {
+    if (renderer != nullptr) {
+        const wse::platform::FrameRateCap cap =
+            wse::platform::frame_rate_cap_from_hz(target_fps);
+        SDL_SetRenderVSync(renderer,
+                           wse::platform::sdl_vsync_for_present_mode(present_mode, cap));
+    }
+#ifdef __ANDROID__
+    if (window != nullptr) {
+        using SetFrameRateWithStrategyFn =
+            int32_t (*)(ANativeWindow*, float, int8_t, int8_t);
+        using SetFrameRateFn = int32_t (*)(ANativeWindow*, float, int8_t);
+        void* nw_ptr = SDL_GetPointerProperty(
+            SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+        auto* anw = static_cast<ANativeWindow*>(nw_ptr);
+        if (anw != nullptr) {
+            constexpr int8_t kCompatDefault = 0;      // ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_DEFAULT
+            constexpr int8_t kOnlyIfSeamless = 0;   // ANATIVEWINDOW_CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
+            const float rate = (target_fps > 0) ? static_cast<float>(target_fps) : 0.0f;
+            if (auto fn31 = reinterpret_cast<SetFrameRateWithStrategyFn>(
+                    dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRateWithChangeStrategy"));
+                fn31 != nullptr) {
+                (void)fn31(anw, rate, kCompatDefault, kOnlyIfSeamless);
+            } else if (auto fn30 = reinterpret_cast<SetFrameRateFn>(
+                           dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate"));
+                       fn30 != nullptr) {
+                (void)fn30(anw, rate, kCompatDefault);
+            }
+        }
+    }
+#else
+    (void)window;
+#endif
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -171,6 +216,27 @@ int main(int argc, char* argv[]) {
     wse::platform::WseInputManager input_mgr;
     if (sdl_input) {
         SDL_Log("SDL3 input backend ready (%s)", sdl_input->backend_name());
+    }
+    wse::platform::SteadyClock pacer_clock;
+    wse::platform::FramePacer frame_pacer(pacer_clock);
+    wse::platform::ThermalPerformanceController perf_ctrl;
+    wse::platform::RuntimeLaunchPerfConfig launch_cfg{};
+    std::uint64_t launch_cfg_rev = 0U;
+    std::int32_t last_applied_fps_cap = -1;
+    if (wse::platform::RuntimePerformanceHub::global().poll_launch_config(launch_cfg_rev,
+                                                                           launch_cfg)) {
+        auto prof = input_mgr.profile();
+        prof.gyro_aim_enabled = launch_cfg.gyro_aim_enabled;
+        prof.pinch_zoom_enabled = launch_cfg.pinch_zoom_enabled;
+        wse::platform::sanitize_input_profile(prof);
+        input_mgr.profile() = prof;
+        auto ps = perf_ctrl.settings();
+        ps.frame_rate_cap = launch_cfg.frame_rate_cap;
+        ps.thermal_throttling_enabled = launch_cfg.thermal_throttling_enabled;
+        perf_ctrl.set_settings(ps);
+        if (sdl_input) {
+            sdl_input->set_gyro_enabled(prof.gyro_aim_enabled);
+        }
     }
 
     std::string cli_fixture;
@@ -308,11 +374,42 @@ int main(int argc, char* argv[]) {
     // Window points -> logical UI units (the UI is drawn under SDL_SetRenderScale).
     float points_to_logical = 1.0f;
     std::uint64_t last_input_ns = SDL_GetTicksNS();
+    std::uint64_t thermal_rev = 0U;
 
     while (!quit) {
         if (terminating.load()) {
             break;
         }
+        if (wse::platform::RuntimePerformanceHub::global().poll_launch_config(launch_cfg_rev,
+                                                                               launch_cfg)) {
+            auto prof = input_mgr.profile();
+            prof.gyro_aim_enabled = launch_cfg.gyro_aim_enabled;
+            prof.pinch_zoom_enabled = launch_cfg.pinch_zoom_enabled;
+            wse::platform::sanitize_input_profile(prof);
+            input_mgr.profile() = prof;
+            auto ps = perf_ctrl.settings();
+            ps.frame_rate_cap = launch_cfg.frame_rate_cap;
+            ps.thermal_throttling_enabled = launch_cfg.thermal_throttling_enabled;
+            perf_ctrl.set_settings(ps);
+            if (sdl_input) {
+                sdl_input->set_gyro_enabled(prof.gyro_aim_enabled);
+            }
+        }
+        std::uint64_t next_thermal_rev = thermal_rev;
+        const auto therm =
+            wse::platform::RuntimePerformanceHub::global().thermal_snapshot(&next_thermal_rev);
+        if (next_thermal_rev != thermal_rev) {
+            thermal_rev = next_thermal_rev;
+            perf_ctrl.update_thermal(therm);
+        }
+        const auto loop_adapt = perf_ctrl.evaluate();
+        if (loop_adapt.effective_fps_cap != last_applied_fps_cap) {
+            last_applied_fps_cap = loop_adapt.effective_fps_cap;
+            frame_pacer.set_target_fps(last_applied_fps_cap);
+            apply_display_frame_rate(window, renderer, last_applied_fps_cap,
+                                     loop_adapt.active_present_mode);
+        }
+        frame_pacer.begin_frame();
         SDL_Event ev;
         bool was_finished = false;
         {
@@ -381,7 +478,6 @@ int main(int argc, char* argv[]) {
                     quit = true;
                 }
             }
-            SDL_Delay(16);
         }
 
         int win_w = 800;
@@ -549,10 +645,24 @@ int main(int argc, char* argv[]) {
         SDL_SetRenderClipRect(renderer, nullptr);
 
         // Footer bar + Re-run button (in logical & pixel coordinates)
+        const auto adaptation = perf_ctrl.evaluate();
         draw_filled_rect(renderer, ox, body_bot, lw, footer_h, 24, 29, 38);
         SDL_SetRenderDrawColor(renderer, 185, 195, 210, 255);
-        SDL_RenderDebugText(renderer, ox + pad, body_bot + 10.0f,
-                            "Back: exit | Drag: scroll");
+        char footer_buf[96];
+        const auto tier_sv = wse::platform::thermal_tier_name(adaptation.tier);
+        if (adaptation.effective_fps_cap > 0) {
+            std::snprintf(footer_buf, sizeof(footer_buf),
+                          "Back: exit | %dHz [%.*s %.2fx]",
+                          adaptation.effective_fps_cap,
+                          static_cast<int>(tier_sv.size()), tier_sv.data(),
+                          static_cast<double>(adaptation.resolution_scale));
+        } else {
+            std::snprintf(footer_buf, sizeof(footer_buf),
+                          "Back: exit | Uncapped [%.*s %.2fx]",
+                          static_cast<int>(tier_sv.size()), tier_sv.data(),
+                          static_cast<double>(adaptation.resolution_scale));
+        }
+        SDL_RenderDebugText(renderer, ox + pad, body_bot + 10.0f, footer_buf);
 
         const float btn_w = 82.0f;
         const float btn_h = 20.0f;
@@ -569,6 +679,12 @@ int main(int argc, char* argv[]) {
         }
 
         SDL_RenderPresent(renderer);
+        const std::uint64_t wait_ticks =
+            static_cast<std::uint64_t>(frame_pacer.remaining_wait_ticks());
+        if (wait_ticks > 0U && adaptation.effective_fps_cap > 0) {
+            SDL_DelayNS(wait_ticks *
+                        static_cast<std::uint64_t>(wse::platform::FramePacer::kNsPerTick));
+        }
     }
 
     stop_requested.store(true);

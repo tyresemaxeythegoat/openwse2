@@ -194,6 +194,8 @@ struct WseInputState {
     // Port bookkeeping: `WseGameKeyManager::revision()` last copied into the name /
     // mapping tables (`0` = never), so unchanged bindings are not re-formatted per frame.
     std::uint64_t bindings_revision = 0U;
+    // Slice P8: two-finger campaign map pinch zoom impulse (>0 zoom in, <0 zoom out).
+    float map_zoom_delta = 0.0f;
 };
 
 struct WseMusicState {

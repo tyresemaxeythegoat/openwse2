@@ -186,6 +186,7 @@ public:
 
     ~SdlInputBackendImpl() override {
         std::lock_guard<std::mutex> lock(mutex_);
+        close_gyro_locked();
         for (auto& [id, pad] : open_pads_) {
             (void)id;
             if (pad != nullptr) {
@@ -196,6 +197,29 @@ public:
         if (owns_gamepad_subsys_) {
             SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
         }
+    }
+
+    void set_gyro_enabled(bool enabled) noexcept override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (gyro_enabled_ == enabled) {
+            return;
+        }
+        gyro_enabled_ = enabled;
+        if (gyro_enabled_) {
+            open_gyro_locked();
+        } else {
+            close_gyro_locked();
+        }
+    }
+
+    [[nodiscard]] bool is_gyro_enabled() const noexcept override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return gyro_enabled_;
+    }
+
+    [[nodiscard]] bool has_gyro_sensor() const noexcept override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return open_gyro_ != nullptr;
     }
 
     // Fallback size; events carrying a window id are normalized by that window's
@@ -401,6 +425,18 @@ public:
             queue_.push_back(out);
             return true;
         }
+        case SDL_EVENT_SENSOR_UPDATE: {
+            if (!gyro_enabled_ || open_gyro_ == nullptr || ev.sensor.which != gyro_id_) {
+                return false;
+            }
+            RawInputEvent out{};
+            out.type = RawInputEvent::Type::GyroSample;
+            // SDL3 gyro reports rad/s CCW around +X (pitch up) and +Y (yaw left).
+            out.dx = -ev.sensor.data[1];
+            out.dy = ev.sensor.data[0];
+            queue_.push_back(out);
+            return true;
+        }
         default:
             return false;
         }
@@ -415,6 +451,42 @@ public:
     [[nodiscard]] const char* backend_name() const noexcept override { return "sdl3"; }
 
 private:
+    void open_gyro_locked() noexcept {
+        if (open_gyro_ != nullptr) {
+            return;
+        }
+        if ((SDL_WasInit(SDL_INIT_SENSOR) & SDL_INIT_SENSOR) == 0U) {
+            if (!SDL_InitSubSystem(SDL_INIT_SENSOR)) {
+                return;
+            }
+            owns_sensor_subsys_ = true;
+        }
+        int scount = 0;
+        if (SDL_SensorID* sensors = SDL_GetSensors(&scount); sensors != nullptr) {
+            for (int i = 0; i < scount; ++i) {
+                if (SDL_GetSensorTypeForID(sensors[i]) == SDL_SENSOR_GYRO) {
+                    if (SDL_Sensor* s = SDL_OpenSensor(sensors[i]); s != nullptr) {
+                        open_gyro_ = s;
+                        gyro_id_ = sensors[i];
+                        break;
+                    }
+                }
+            }
+            SDL_free(sensors);
+        }
+    }
+
+    void close_gyro_locked() noexcept {
+        if (open_gyro_ != nullptr) {
+            SDL_CloseSensor(open_gyro_);
+            open_gyro_ = nullptr;
+            gyro_id_ = 0;
+        }
+        if (owns_sensor_subsys_) {
+            SDL_QuitSubSystem(SDL_INIT_SENSOR);
+            owns_sensor_subsys_ = false;
+        }
+    }
     struct AxisSnapshot {
         float lx = 0.0f;
         float ly = 0.0f;
@@ -426,11 +498,15 @@ private:
 
     mutable std::mutex mutex_{};
     bool owns_gamepad_subsys_ = false;
+    bool owns_sensor_subsys_ = false;
+    bool gyro_enabled_ = false;
     int viewport_w_ = 1;
     int viewport_h_ = 1;
     std::vector<RawInputEvent> queue_{};
     std::unordered_map<SDL_JoystickID, SDL_Gamepad*> open_pads_{};
     std::unordered_map<SDL_JoystickID, AxisSnapshot> pad_axes_{};
+    SDL_Sensor* open_gyro_ = nullptr;
+    SDL_SensorID gyro_id_ = 0;
 };
 
 }  // namespace

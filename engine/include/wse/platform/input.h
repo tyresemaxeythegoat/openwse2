@@ -860,6 +860,14 @@ struct TouchOverlayProfile {
     float radial_deadzone = 0.02f;
     bool invert_look_y = false;
     bool touch_overlay_enabled = true;
+    // Slice P8 sensor & gesture toggles (gyro aim is strictly opt-in).
+    bool gyro_aim_enabled = false;
+    float gyro_sensitivity = 1.0f;
+    float gyro_smoothing = 0.35f;
+    float gyro_deadzone = 0.02f;
+    bool invert_gyro_y = false;
+    bool pinch_zoom_enabled = true;
+    float pinch_zoom_sensitivity = 1.0f;
     std::array<TouchWidgetLayout, kNumTouchWidgets> widgets = default_touch_widgets();
 
     [[nodiscard]] bool operator==(const TouchOverlayProfile&) const noexcept = default;
@@ -894,6 +902,14 @@ inline void sanitize_input_profile(TouchOverlayProfile& p) noexcept {
         std::clamp(finite_or(p.swipe_threshold, def.swipe_threshold), 0.005f, 0.25f);
     p.radial_deadzone =
         std::clamp(finite_or(p.radial_deadzone, def.radial_deadzone), 0.005f, 0.20f);
+    p.gyro_sensitivity =
+        std::clamp(finite_or(p.gyro_sensitivity, def.gyro_sensitivity), 0.1f, 5.0f);
+    p.gyro_smoothing =
+        std::clamp(finite_or(p.gyro_smoothing, def.gyro_smoothing), 0.0f, 0.95f);
+    p.gyro_deadzone =
+        std::clamp(finite_or(p.gyro_deadzone, def.gyro_deadzone), 0.0f, 0.5f);
+    p.pinch_zoom_sensitivity =
+        std::clamp(finite_or(p.pinch_zoom_sensitivity, def.pinch_zoom_sensitivity), 0.1f, 5.0f);
     for (auto& w : p.widgets) {
         sanitize_touch_widget(w);
     }
@@ -1094,6 +1110,13 @@ inline std::string fmt_float(float v) {
     kv["radial_deadzone"] = input_detail::fmt_float(profile.radial_deadzone);
     kv["invert_look_y"] = profile.invert_look_y ? "true" : "false";
     kv["touch_overlay_enabled"] = profile.touch_overlay_enabled ? "true" : "false";
+    kv["gyro_aim_enabled"] = profile.gyro_aim_enabled ? "true" : "false";
+    kv["gyro_sensitivity"] = input_detail::fmt_float(profile.gyro_sensitivity);
+    kv["gyro_smoothing"] = input_detail::fmt_float(profile.gyro_smoothing);
+    kv["gyro_deadzone"] = input_detail::fmt_float(profile.gyro_deadzone);
+    kv["invert_gyro_y"] = profile.invert_gyro_y ? "true" : "false";
+    kv["pinch_zoom_enabled"] = profile.pinch_zoom_enabled ? "true" : "false";
+    kv["pinch_zoom_sensitivity"] = input_detail::fmt_float(profile.pinch_zoom_sensitivity);
 
     for (std::size_t i = 0; i < kNumTouchWidgets; ++i) {
         const auto id = static_cast<TouchWidgetId>(i);
@@ -1167,7 +1190,14 @@ inline std::string fmt_float(float v) {
         !read_f("swipe_threshold", parsed.swipe_threshold) ||
         !read_f("radial_deadzone", parsed.radial_deadzone) ||
         !read_b("invert_look_y", parsed.invert_look_y) ||
-        !read_b("touch_overlay_enabled", parsed.touch_overlay_enabled)) {
+        !read_b("touch_overlay_enabled", parsed.touch_overlay_enabled) ||
+        !read_b("gyro_aim_enabled", parsed.gyro_aim_enabled) ||
+        !read_f("gyro_sensitivity", parsed.gyro_sensitivity) ||
+        !read_f("gyro_smoothing", parsed.gyro_smoothing) ||
+        !read_f("gyro_deadzone", parsed.gyro_deadzone) ||
+        !read_b("invert_gyro_y", parsed.invert_gyro_y) ||
+        !read_b("pinch_zoom_enabled", parsed.pinch_zoom_enabled) ||
+        !read_f("pinch_zoom_sensitivity", parsed.pinch_zoom_sensitivity)) {
         return fail("invalid scalar in input profile JSON");
     }
 
@@ -1323,6 +1353,10 @@ struct RawInputEvent {
         // The OS took the touch over (system gesture, palm rejection): drop the
         // finger without committing it (no radial order fires).
         TouchCancel = 15,
+        // Angular velocity sample from a gyroscope (`dx` = yaw rate rad/s
+        // +right, `dy` = pitch rate rad/s +up). Used only in `Mission` while
+        // `gyro_aim_enabled` is true.
+        GyroSample = 16,
     };
 
     Type type = Type::KeyDown;
@@ -1390,6 +1424,9 @@ struct InputFrameState {
     std::int32_t radial_sector = -1;  // 0..7 when hovered, else -1
     float stick_knob_x = 0.0f;
     float stick_knob_y = 0.0f;
+    // CampaignMap 2-finger pinch zoom delta (>0 zooms in, <0 zooms out).
+    float map_zoom_delta = 0.0f;
+    bool pinch_active = false;
 };
 
 // Maps physical devices (`RawInputEvent`) + virtual touch overlay + `InputContext`
@@ -1409,6 +1446,8 @@ class WseInputManager {
 public:
     static constexpr float kGamepadTriggerThreshold = 0.35f;
     static constexpr std::size_t kMaxTrackedFingers = 10U;
+    // Maps two-finger spread/pinch in screen-height units onto campaign map zoom delta.
+    static constexpr float kPinchZoomScale = 4.0f;
     // Gamepad raw keys occupy `0xf0..0xff` in `rglInputManager::getKeyName` (`0x1402ad360`).
     static constexpr std::int32_t kFirstGamepadRawKey = RawKey::kGamepadA;
     static constexpr std::size_t kNumGamepadRawKeys = 16U;
@@ -1443,6 +1482,12 @@ public:
         block_dir_ = TouchCombatDirection::None;
         radial_sector_ = -1;
         radial_open_ = false;
+        pinch_active_ = false;
+        pinch_prev_dist_ = 0.0f;
+        pinch_id0_ = -1;
+        pinch_id1_ = -1;
+        gyro_filt_yaw_ = 0.0f;
+        gyro_filt_pitch_ = 0.0f;
         cursor_x_ = 0.5f;
         cursor_y_ = 0.5f;
         frame_ = {};
@@ -1461,8 +1506,20 @@ public:
     void set_context(InputContext ctx) noexcept {
         if (context_ != ctx) {
             context_ = ctx;
+            if (ctx != InputContext::Mission) {
+                gyro_filt_yaw_ = 0.0f;
+                gyro_filt_pitch_ = 0.0f;
+            }
+            if (ctx != InputContext::CampaignMap) {
+                pinch_active_ = false;
+                pinch_prev_dist_ = 0.0f;
+                pinch_id0_ = -1;
+                pinch_id1_ = -1;
+            }
             if (!is_touch_overlay_visible()) {
                 clear_touch_state();
+            } else {
+                update_pinch_state();
             }
         }
     }
@@ -1543,6 +1600,17 @@ public:
         ++frame_counter_;
         float look_dx = 0.0f;  // screen-height units
         float look_dy = 0.0f;
+        float map_zoom_delta = 0.0f;
+        float gyro_sum_yaw = 0.0f;
+        float gyro_sum_pitch = 0.0f;
+        int gyro_samples = 0;
+
+        if (!profile_.pinch_zoom_enabled || context_ != InputContext::CampaignMap) {
+            pinch_active_ = false;
+            pinch_prev_dist_ = 0.0f;
+            pinch_id0_ = -1;
+            pinch_id1_ = -1;
+        }
 
         for (const RawInputEvent& ev : events) {
             switch (ev.type) {
@@ -1633,7 +1701,8 @@ public:
                     cursor_x_ = std::clamp(ev.x, 0.0f, 1.0f);
                     cursor_y_ = std::clamp(ev.y, 0.0f, 1.0f);
                     if (is_touch_overlay_visible()) {
-                        handle_touch_move(ev.finger_id, cursor_x_, cursor_y_, look_dx, look_dy);
+                        handle_touch_move(ev.finger_id, cursor_x_, cursor_y_, look_dx, look_dy,
+                                          map_zoom_delta);
                     }
                 }
                 break;
@@ -1645,6 +1714,17 @@ public:
                 break;
             case RawInputEvent::Type::FocusLost:
                 release_everything();
+                gyro_sum_yaw = 0.0f;
+                gyro_sum_pitch = 0.0f;
+                gyro_samples = 0;
+                break;
+            case RawInputEvent::Type::GyroSample:
+                if (profile_.gyro_aim_enabled && context_ == InputContext::Mission &&
+                    std::isfinite(ev.dx) && std::isfinite(ev.dy)) {
+                    gyro_sum_yaw += ev.dx;
+                    gyro_sum_pitch += ev.dy;
+                    ++gyro_samples;
+                }
                 break;
             }
         }
@@ -1733,13 +1813,46 @@ public:
         frame_.move_x = mx;
         frame_.move_y = my;
 
+        float gyro_yaw_delta = 0.0f;
+        float gyro_pitch_delta = 0.0f;
+        if (!profile_.gyro_aim_enabled || context_ != InputContext::Mission) {
+            gyro_filt_yaw_ = 0.0f;
+            gyro_filt_pitch_ = 0.0f;
+        } else {
+            const float target_yaw =
+                (gyro_samples > 0) ? (gyro_sum_yaw / static_cast<float>(gyro_samples)) : 0.0f;
+            const float target_pitch =
+                (gyro_samples > 0) ? (gyro_sum_pitch / static_cast<float>(gyro_samples)) : 0.0f;
+            const float alpha = std::clamp(profile_.gyro_smoothing, 0.0f, 0.95f);
+            gyro_filt_yaw_ = alpha * gyro_filt_yaw_ + (1.0f - alpha) * target_yaw;
+            gyro_filt_pitch_ = alpha * gyro_filt_pitch_ + (1.0f - alpha) * target_pitch;
+            if (gyro_samples == 0) {
+                if (std::fabs(gyro_filt_yaw_) < 1e-6f) {
+                    gyro_filt_yaw_ = 0.0f;
+                }
+                if (std::fabs(gyro_filt_pitch_) < 1e-6f) {
+                    gyro_filt_pitch_ = 0.0f;
+                }
+            }
+            const float filt_mag = std::hypot(gyro_filt_yaw_, gyro_filt_pitch_);
+            const float dz = profile_.gyro_deadzone;
+            if (filt_mag > dz && filt_mag > 0.0f && safe_dt > 0.0f) {
+                const float mag_scale = (dz > 0.0f) ? ((filt_mag - dz) / filt_mag) : 1.0f;
+                const float gyro_y_sign = profile_.invert_gyro_y ? -1.0f : 1.0f;
+                gyro_yaw_delta =
+                    gyro_filt_yaw_ * mag_scale * profile_.gyro_sensitivity * safe_dt;
+                gyro_pitch_delta =
+                    gyro_filt_pitch_ * mag_scale * profile_.gyro_sensitivity * safe_dt * gyro_y_sign;
+            }
+        }
+
         const float y_sign = profile_.invert_look_y ? -1.0f : 1.0f;
         // Dragging right (+look_dx) turns right (+yaw); dragging up (-look_dy) pitches up (+pitch).
-        frame_.look_yaw_delta =
-            look_dx * profile_.look_sensitivity + grx * profile_.look_sensitivity * safe_dt;
-        frame_.look_pitch_delta =
-            (-look_dy * profile_.look_sensitivity + gry * profile_.look_sensitivity * safe_dt) *
-            y_sign;
+        frame_.look_yaw_delta = look_dx * profile_.look_sensitivity +
+                                grx * profile_.look_sensitivity * safe_dt + gyro_yaw_delta;
+        frame_.look_pitch_delta = (-look_dy * profile_.look_sensitivity +
+                                   gry * profile_.look_sensitivity * safe_dt + gyro_pitch_delta) *
+                                  y_sign;
 
         frame_.attack_dir = attack_dir_;
         frame_.attack_active =
@@ -1753,6 +1866,8 @@ public:
         frame_.radial_sector = radial_sector_;
         frame_.stick_knob_x = stick_x_;
         frame_.stick_knob_y = stick_y_;
+        frame_.map_zoom_delta = map_zoom_delta;
+        frame_.pinch_active = pinch_active_;
     }
 
     [[nodiscard]] const InputFrameState& frame_state() const noexcept { return frame_; }
@@ -1794,6 +1909,7 @@ private:
         float last_x = 0.0f;
         float last_y = 0.0f;
         std::uint64_t down_frame = 0U;
+        bool look_enabled = true;
     };
 
     struct GamepadState {
@@ -1925,6 +2041,8 @@ private:
             p = GamepadState{};
             p.id = id;
         }
+        gyro_filt_yaw_ = 0.0f;
+        gyro_filt_pitch_ = 0.0f;
         clear_touch_state();
     }
 
@@ -1945,6 +2063,46 @@ private:
         block_dir_ = TouchCombatDirection::None;
         radial_open_ = false;
         radial_sector_ = -1;
+        pinch_active_ = false;
+        pinch_prev_dist_ = 0.0f;
+        pinch_id0_ = -1;
+        pinch_id1_ = -1;
+    }
+
+    void update_pinch_state() noexcept {
+        if (context_ != InputContext::CampaignMap || !profile_.pinch_zoom_enabled) {
+            pinch_active_ = false;
+            pinch_prev_dist_ = 0.0f;
+            pinch_id0_ = -1;
+            pinch_id1_ = -1;
+            return;
+        }
+        const ActiveFinger* f0 = nullptr;
+        const ActiveFinger* f1 = nullptr;
+        for (const auto& f : fingers_) {
+            if (f.widget == TouchWidgetId::LookArea) {
+                if (f0 == nullptr) {
+                    f0 = &f;
+                } else {
+                    f1 = &f;
+                    break;
+                }
+            }
+        }
+        if (f0 == nullptr || f1 == nullptr) {
+            pinch_active_ = false;
+            pinch_prev_dist_ = 0.0f;
+            pinch_id0_ = -1;
+            pinch_id1_ = -1;
+            return;
+        }
+        if (!pinch_active_ || pinch_id0_ != f0->finger_id || pinch_id1_ != f1->finger_id) {
+            pinch_active_ = true;
+            pinch_id0_ = f0->finger_id;
+            pinch_id1_ = f1->finger_id;
+            pinch_prev_dist_ = std::hypot((f1->last_x - f0->last_x) * viewport_aspect_,
+                                          f1->last_y - f0->last_y);
+        }
     }
 
     static void apply_radial_deadzone(float x,
@@ -2028,17 +2186,26 @@ private:
         if (fingers_.size() >= kMaxTrackedFingers) {
             return;
         }
-        const TouchWidgetId target = pick_widget_for_touch(x, y);
+        TouchWidgetId target = pick_widget_for_touch(x, y);
+        bool look_enabled = (target == TouchWidgetId::LookArea);
         if (target == TouchWidgetId::Count) {
-            return;
+            if (context_ == InputContext::CampaignMap && profile_.pinch_zoom_enabled) {
+                target = TouchWidgetId::LookArea;
+                look_enabled = false;
+            } else {
+                return;
+            }
         }
-        fingers_.push_back(ActiveFinger{finger_id, target, x, y, x, y, frame_counter_});
+        fingers_.push_back(
+            ActiveFinger{finger_id, target, x, y, x, y, frame_counter_, look_enabled});
         if (target == TouchWidgetId::MoveStick) {
             update_stick_from_point(x, y);
         } else if (target == TouchWidgetId::CommandRadial) {
             radial_open_ = true;
             radial_sector_ = -1;
             virtual_pulse_gk_[static_cast<std::size_t>(GameKeyId::ViewOrders)] = true;
+        } else if (target == TouchWidgetId::LookArea) {
+            update_pinch_state();
         }
     }
 
@@ -2046,7 +2213,8 @@ private:
                            float x,
                            float y,
                            float& look_dx,
-                           float& look_dy) noexcept {
+                           float& look_dy,
+                           float& map_zoom_delta) noexcept {
         const float a = viewport_aspect_;
         for (auto& f : fingers_) {
             if (f.finger_id != finger_id) {
@@ -2055,8 +2223,34 @@ private:
             if (f.widget == TouchWidgetId::MoveStick) {
                 update_stick_from_point(x, y);
             } else if (f.widget == TouchWidgetId::LookArea) {
-                look_dx += (x - f.last_x) * a;
-                look_dy += (y - f.last_y);
+                if (context_ == InputContext::CampaignMap && profile_.pinch_zoom_enabled &&
+                    pinch_active_) {
+                    f.last_x = x;
+                    f.last_y = y;
+                    if (finger_id == pinch_id0_ || finger_id == pinch_id1_) {
+                        const ActiveFinger* f0 = nullptr;
+                        const ActiveFinger* f1 = nullptr;
+                        for (const auto& cand : fingers_) {
+                            if (cand.finger_id == pinch_id0_) {
+                                f0 = &cand;
+                            } else if (cand.finger_id == pinch_id1_) {
+                                f1 = &cand;
+                            }
+                        }
+                        if (f0 != nullptr && f1 != nullptr) {
+                            const float new_d = std::hypot((f1->last_x - f0->last_x) * a,
+                                                           f1->last_y - f0->last_y);
+                            map_zoom_delta += (new_d - pinch_prev_dist_) *
+                                              profile_.pinch_zoom_sensitivity * kPinchZoomScale;
+                            pinch_prev_dist_ = new_d;
+                        }
+                    }
+                    return;
+                }
+                if (f.look_enabled) {
+                    look_dx += (x - f.last_x) * a;
+                    look_dy += (y - f.last_y);
+                }
             } else if (f.widget == TouchWidgetId::AttackZone) {
                 const auto dir = classify_swipe((x - f.anchor_x) * a, y - f.anchor_y,
                                                 profile_.swipe_threshold);
@@ -2100,6 +2294,8 @@ private:
             if (w == TouchWidgetId::MoveStick && !has_finger_for(TouchWidgetId::MoveStick)) {
                 stick_x_ = 0.0f;
                 stick_y_ = 0.0f;
+            } else if (w == TouchWidgetId::LookArea) {
+                update_pinch_state();
             } else if (w == TouchWidgetId::AttackZone &&
                        !has_finger_for(TouchWidgetId::AttackZone)) {
                 attack_dir_ = TouchCombatDirection::None;
@@ -2197,6 +2393,12 @@ private:
     TouchCombatDirection block_dir_ = TouchCombatDirection::None;
     std::int32_t radial_sector_ = -1;
     bool radial_open_ = false;
+    bool pinch_active_ = false;
+    float pinch_prev_dist_ = 0.0f;
+    std::int64_t pinch_id0_ = -1;
+    std::int64_t pinch_id1_ = -1;
+    float gyro_filt_yaw_ = 0.0f;
+    float gyro_filt_pitch_ = 0.0f;
     float cursor_x_ = 0.5f;
     float cursor_y_ = 0.5f;
     std::uint64_t frame_counter_ = 0U;

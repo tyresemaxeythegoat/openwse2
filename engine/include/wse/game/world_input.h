@@ -101,6 +101,7 @@ public:
         // is screen-normalized with y growing downwards.
         const auto& fs = mgr.frame_state();
         world.m5.cursor_pos = wse::core::WseVec2{fs.cursor_x, (1.0f - fs.cursor_y) * 0.75f};
+        world.input.map_zoom_delta = fs.map_zoom_delta;
 
         if (world.input.bindings_revision != mgr.game_keys().revision()) {
             sync_bindings_to_world(mgr, world);

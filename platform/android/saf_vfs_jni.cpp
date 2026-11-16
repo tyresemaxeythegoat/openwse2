@@ -25,6 +25,7 @@
 #include "driver_loader.h"
 #include "wse/core/json.h"
 #include "wse/platform/clock.h"
+#include "wse/platform/performance.h"
 #include "wse/platform/driver_package.h"
 #include "wse/platform/rhi.h"
 #include "wse/platform/saf_vfs.h"
@@ -587,6 +588,36 @@ Java_org_wse2_android_WseSafBridge_nativeVerifyModule(JNIEnv* env,
     summary.append(cache_hit ? "cached index, " : ("index " + std::to_string(index_ms) + " ms, "));
     summary.append("parse " + std::to_string(parse_ms) + " ms)");
     return utf8_to_jstring(env, summary);
+}
+
+JNIEXPORT void JNICALL
+Java_org_wse2_android_WseSafBridge_nativeSetPerformanceAndInputConfig(
+    JNIEnv* env,
+    jclass clazz,
+    jint frame_rate_cap_hz,
+    jboolean gyro_aim_enabled,
+    jboolean pinch_zoom_enabled,
+    jboolean thermal_throttling_enabled) {
+    (void)env;
+    (void)clazz;
+    wse::platform::RuntimeLaunchPerfConfig cfg{};
+    cfg.frame_rate_cap =
+        wse::platform::frame_rate_cap_from_hz(static_cast<std::int32_t>(frame_rate_cap_hz));
+    cfg.gyro_aim_enabled = (gyro_aim_enabled == JNI_TRUE);
+    cfg.pinch_zoom_enabled = (pinch_zoom_enabled == JNI_TRUE);
+    cfg.thermal_throttling_enabled = (thermal_throttling_enabled == JNI_TRUE);
+    wse::platform::RuntimePerformanceHub::global().set_launch_config(cfg);
+}
+
+JNIEXPORT void JNICALL
+Java_org_wse2_android_WseSafBridge_nativeUpdateThermalState(JNIEnv* env,
+                                                            jclass clazz,
+                                                            jint thermal_status,
+                                                            jfloat thermal_headroom) {
+    (void)env;
+    (void)clazz;
+    wse::platform::RuntimePerformanceHub::global().update_thermal_state(
+        static_cast<std::int32_t>(thermal_status), static_cast<float>(thermal_headroom));
 }
 
 // Stages an AdrenoTools-style driver package (meta.json + ICD bytes, already
