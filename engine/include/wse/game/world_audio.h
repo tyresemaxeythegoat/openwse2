@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -38,8 +39,10 @@ public:
 
     // Binds the bridge to `world`, resolves module sound/music paths in `vfs`
     // (`0x1403317c0` / `0x140290710`), and configures `WseAudioMixer`. When
-    // `preload_samples` is true, non-uncached (`!(flags & 0x8)`) sound samples
-    // are decoded eagerly; otherwise samples decode lazily on first playback.
+    // `preload_samples` is true, every sample whose file resolved is decoded
+    // eagerly; otherwise samples decode lazily on first playback (synchronously,
+    // on the calling thread). A sample that fails to read or decode is remembered
+    // and not retried on later plays.
     WorldAudioStats initialize(wse::platform::Vfs& vfs,
                                WseWorldState& world,
                                const LoadedSoundBank& sound_bank,
@@ -57,13 +60,12 @@ public:
 
         WorldAudioStats stats{};
         resolved_sample_paths_.assign(sound_bank.samples.size(), {});
-        sample_flags_.assign(sound_bank.samples.size(), 0U);
         decoded_samples_.assign(sound_bank.samples.size(), nullptr);
+        decode_failed_.assign(sound_bank.samples.size(), 0U);
 
         std::vector<wse::platform::MixerSoundSample> mixer_samples(sound_bank.samples.size());
         for (std::size_t i = 0; i < sound_bank.samples.size(); ++i) {
             const LoadedSoundSample& src = sound_bank.samples[i];
-            sample_flags_[i] = src.flags;
             mixer_samples[i].flags = src.flags;
             resolved_sample_paths_[i] =
                 wse::asset::resolve_sound_sample_path(vfs, module_dir_, language_, src.file);
@@ -157,6 +159,28 @@ public:
     }
 
     void stop_channel(std::int32_t channel_no) override { mixer_.stop_sound(channel_no); }
+    [[nodiscard]] bool is_channel_looping(std::int32_t channel_no) const override {
+        return mixer_.is_channel_looping(channel_no);
+    }
+
+    // Per-frame tick: moves every live agent / prop channel to its owner's current
+    // position (sounds follow moving agents and props), then runs the mixer's
+    // music scheduler and occlusion update at `now_seconds`.
+    void update(double now_seconds) {
+        if (world_ != nullptr) {
+            for (const auto& ag : world_->agents) {
+                if (ag.m5.sound_channel >= 0) {
+                    mixer_.set_channel_position(ag.m5.sound_channel, ag.position.o);
+                }
+            }
+            for (const auto& mo : world_->mission_objects) {
+                if (mo.m5.sound_channel >= 0) {
+                    mixer_.set_channel_position(mo.m5.sound_channel, mo.position.o);
+                }
+            }
+        }
+        mixer_.update(now_seconds);
+    }
     void stop_all_sounds(bool include_non_looping) override {
         mixer_.stop_all_sounds(include_non_looping);
     }
@@ -188,16 +212,15 @@ private:
         if (decoded_samples_[idx] != nullptr) {
             return decoded_samples_[idx];
         }
-        if (vfs_ == nullptr || idx >= resolved_sample_paths_.size() ||
+        if (vfs_ == nullptr || decode_failed_[idx] != 0U ||
             resolved_sample_paths_[idx].empty()) {
             return nullptr;
         }
         std::vector<std::uint8_t> bytes;
-        if (!vfs_->read_file(resolved_sample_paths_[idx], bytes)) {
-            return nullptr;
-        }
         auto pcm = std::make_shared<wse::asset::AudioPcmBuffer>();
-        if (!wse::asset::decode_audio_bytes(bytes, resolved_sample_paths_[idx], codecs_, *pcm)) {
+        if (!vfs_->read_file(resolved_sample_paths_[idx], bytes) ||
+            !wse::asset::decode_audio_bytes(bytes, resolved_sample_paths_[idx], codecs_, *pcm)) {
+            decode_failed_[idx] = 1U;
             return nullptr;
         }
         decoded_samples_[idx] = pcm;
@@ -217,7 +240,8 @@ private:
                     continue;
                 }
                 const auto si = static_cast<std::size_t>(v.sample_index);
-                if (decoded_samples_[si] == nullptr && !resolved_sample_paths_[si].empty()) {
+                if (decoded_samples_[si] == nullptr && decode_failed_[si] == 0U &&
+                    !resolved_sample_paths_[si].empty()) {
                     auto pcm = ensure_sample_decoded(si);
                     if (pcm != nullptr) {
                         mixer_.set_sample_pcm(si, std::move(pcm));
@@ -267,8 +291,8 @@ private:
     std::string module_dir_{};
     std::string language_{};
     std::vector<std::string> resolved_sample_paths_{};
-    std::vector<std::uint32_t> sample_flags_{};
     std::vector<std::shared_ptr<const wse::asset::AudioPcmBuffer>> decoded_samples_{};
+    std::vector<std::uint8_t> decode_failed_{};
     std::vector<wse::platform::MixerSoundDef> sounds_{};
     std::vector<std::string> resolved_music_paths_{};
     wse::platform::WseAudioMixer mixer_{};

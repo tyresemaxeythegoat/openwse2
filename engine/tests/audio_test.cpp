@@ -13,6 +13,7 @@
 #include <cstring>
 #include <filesystem>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <span>
 #include <string>
@@ -319,10 +320,10 @@ void test_wav_decoding_and_path_resolution() {
         expect(decode_wav_pcm(wav_ext, pcm, &err) && pcm.channels == 2U && pcm.frame_count() == 256U,
                "WAVE_FORMAT_EXTENSIBLE 4-channel downmixes to stereo");
 
-        // WavStreamDecoder chunked read + seek_start
-        WavStreamDecoder stream(pcm);
+        // PcmBufferStreamDecoder chunked read + seek_start
+        PcmBufferStreamDecoder stream(pcm);
         expect(stream.sample_rate() == 44100U && stream.channels() == 2U && stream.total_frames() == 256U,
-               "WavStreamDecoder metadata matches");
+               "PcmBufferStreamDecoder metadata matches");
         std::vector<float> chunk;
         std::size_t total = 0U;
         while (true) {
@@ -332,9 +333,22 @@ void test_wav_decoding_and_path_resolution() {
             }
             total += n;
         }
-        expect(total == 256U && stream.cursor_frame() == 256U, "WavStreamDecoder reads all frames to EOF");
+        expect(total == 256U && stream.cursor_frame() == 256U,
+               "PcmBufferStreamDecoder reads all frames to EOF");
         expect(stream.seek_start() && stream.cursor_frame() == 0U && stream.read_frames(64U, chunk) == 64U,
-               "WavStreamDecoder seek_start rewinds cursor cleanly");
+               "PcmBufferStreamDecoder seek_start rewinds cursor cleanly");
+
+        // WavStreamDecoder converts from the file bytes on demand and matches a full decode.
+        auto wav_stream = WavStreamDecoder::open(std::vector<std::uint8_t>(wav_ext.begin(), wav_ext.end()));
+        std::vector<float> streamed;
+        if (wav_stream != nullptr) {
+            while (wav_stream->read_frames(100U, chunk) > 0U) {
+                streamed.insert(streamed.end(), chunk.begin(), chunk.end());
+            }
+        }
+        expect(wav_stream != nullptr && wav_stream->channels() == 2U &&
+                   wav_stream->total_frames() == 256U && streamed == pcm.samples,
+               "WavStreamDecoder streams 4-channel WAV identically to decode_wav_pcm");
     }
 
     // 2. Hardening against truncated/corrupt headers
@@ -348,9 +362,11 @@ void test_wav_decoding_and_path_resolution() {
         bad[0] = 'X';
         expect(!decode_wav_pcm(bad, pcm, &err) && !pcm.valid(), "rejects non-RIFF header");
 
+        // Safety deviation: a short data chunk plays the frames that are present.
         auto trunc = make_wav_pcm(1U, 1U, 44100U, 16U, 64U);
         trunc.resize(trunc.size() - 20U);
-        expect(!decode_wav_pcm(trunc, pcm, &err), "rejects truncated data chunk");
+        expect(decode_wav_pcm(trunc, pcm, &err) && pcm.frame_count() == 54U,
+               "truncated data chunk decodes the frames present");
     }
 
     // 3. Path resolution precedence + sound/music flags
@@ -904,6 +920,394 @@ void test_retail_warband_audio_gate() {
     }
 }
 
+
+// Builds a 16-bit PCM WAV from explicit interleaved samples; `data_size_field`
+// overrides the declared data chunk size (0 = actual size).
+std::vector<std::uint8_t> make_wav_i16(std::uint16_t channels, std::uint32_t sample_rate,
+                                       const std::vector<std::int16_t>& interleaved,
+                                       std::uint32_t data_size_field = 0U) {
+    std::vector<std::uint8_t> out;
+    push_ascii4(out, "RIFF");
+    push_u32_le(out, 0xFFFFFFFFU);
+    push_ascii4(out, "WAVE");
+    push_ascii4(out, "fmt ");
+    push_u32_le(out, 16U);
+    push_u16_le(out, 1U);
+    push_u16_le(out, channels);
+    push_u32_le(out, sample_rate);
+    push_u32_le(out, sample_rate * 2U * channels);
+    push_u16_le(out, static_cast<std::uint16_t>(2U * channels));
+    push_u16_le(out, 16U);
+    push_ascii4(out, "data");
+    const auto actual = static_cast<std::uint32_t>(interleaved.size() * 2U);
+    push_u32_le(out, data_size_field != 0U ? data_size_field : actual);
+    for (std::int16_t v : interleaved) {
+        push_u16_le(out, static_cast<std::uint16_t>(v));
+    }
+    return out;
+}
+
+std::shared_ptr<wse::asset::AudioPcmBuffer> make_const_pcm(std::uint32_t sr, std::size_t frames,
+                                                           float value) {
+    auto buf = std::make_shared<wse::asset::AudioPcmBuffer>();
+    buf->sample_rate = sr;
+    buf->channels = 1U;
+    buf->samples.assign(frames, value);
+    return buf;
+}
+
+[[nodiscard]] float peak_abs(const std::vector<float>& v) noexcept {
+    float p = 0.0f;
+    for (float s : v) {
+        p = std::max(p, std::fabs(s));
+    }
+    return p;
+}
+
+// Regression tests for the P6 review findings (crash, UB, scheduler, decoder fixes).
+void test_review_regressions() {
+    using namespace wse::asset;
+    using namespace wse::platform;
+
+    // 1. An end callback that stops every channel mid-mix must not leave the mix
+    //    loop dereferencing a released sample (was a null shared_ptr deref).
+    {
+        AudioConfig cfg{};
+        cfg.max_virtual_channels = 4;
+        WseAudioMixer m(cfg);
+        m.load_sound_bank({MixerSoundSample{kSoundFlag2D, make_const_pcm(48000U, 10U, 0.1f)},
+                           MixerSoundSample{kSoundFlag2D, make_const_pcm(48000U, 48000U, 0.1f)}},
+                          {MixerSoundDef{0U, {MixerSoundVariant{0, 0U}}},
+                           MixerSoundDef{0U, {MixerSoundVariant{1, 0U}}}});
+        m.play_sound_2d(0);
+        m.play_sound_2d(1);
+        m.play_sound_2d(1);
+        int ends = 0;
+        m.set_channel_end_callback([&](std::int32_t) {
+            ++ends;
+            m.stop_all_sounds(true);
+        });
+        std::vector<float> out;
+        m.mix_frames(256U, out);
+        expect(ends == 3 && m.active_sound_channel_count() == 0U,
+               "end callback may stop all sounds during a mix without a crash");
+    }
+
+    // 2. Eviction: the callback runs after the new sound owns the evicted slot.
+    {
+        AudioConfig cfg{};
+        cfg.max_virtual_channels = 1;
+        WseAudioMixer m(cfg);
+        m.load_sound_bank({MixerSoundSample{kSoundFlag2D, make_const_pcm(48000U, 4800U, 0.1f)}},
+                          {MixerSoundDef{0U, {MixerSoundVariant{0, 0U}}}});
+        const std::int32_t first = m.play_sound_2d(0);
+        bool owner_visible = false;
+        m.set_channel_end_callback([&](std::int32_t ch) {
+            owner_visible = m.is_channel_playing(ch);
+        });
+        const std::int32_t second = m.play_sound_2d(0);
+        expect(first == 0 && second == 0 && owner_visible,
+               "eviction callback fires after the new sound owns the slot");
+    }
+
+    // 3. Changing volume keeps sounds playing; shrinking the channel pool ends
+    //    the dropped channels through the callback.
+    {
+        WseAudioMixer m;
+        m.load_sound_bank({MixerSoundSample{kSoundFlag2D, make_const_pcm(48000U, 480000U, 0.1f)}},
+                          {MixerSoundDef{0U, {MixerSoundVariant{0, 0U}}}});
+        std::vector<std::int32_t> ended;
+        m.set_channel_end_callback([&](std::int32_t ch) { ended.push_back(ch); });
+        const std::int32_t a = m.play_sound_2d(0);
+        const std::int32_t b = m.play_sound_2d(0);
+        AudioConfig cfg = m.config();
+        cfg.sound_volume = 0.8f;
+        m.set_config(cfg);
+        expect(m.is_channel_playing(a) && m.is_channel_playing(b) && ended.empty(),
+               "set_config volume change keeps playing sounds alive");
+        cfg.max_virtual_channels = 1;
+        m.set_config(cfg);
+        expect(m.is_channel_playing(a) && !m.is_channel_playing(b) && ended.size() == 1U &&
+                   ended[0] == b,
+               "shrinking max_virtual_channels ends dropped channels via callback");
+    }
+
+    // 4. Voice pitch hash: wrapping arithmetic on extreme inputs (UB before; the
+    //    sanitizer job catches a regression), result within the clamp.
+    {
+        const float hi = compute_agent_voice_pitch(std::numeric_limits<std::int32_t>::max(),
+                                                   std::numeric_limits<std::int32_t>::max(),
+                                                   std::numeric_limits<std::int32_t>::max());
+        const float lo = compute_agent_voice_pitch(std::numeric_limits<std::int32_t>::min(), -1,
+                                                   std::numeric_limits<std::int32_t>::min());
+        const float typical = compute_agent_voice_pitch(5, 100, 12345);
+        expect(hi >= 0.85f && hi <= 1.15f && lo >= 0.85f && lo <= 1.15f &&
+                   typical >= 0.85f && typical <= 1.15f,
+               "compute_agent_voice_pitch is defined and clamped for extreme inputs");
+    }
+
+    // 5. Random start position reaches the whole sample, not just frame < 32767.
+    {
+        WseAudioMixer m;
+        m.set_seed(9U);
+        m.load_sound_bank({MixerSoundSample{kSoundFlag2D, make_const_pcm(48000U, 960000U, 0.1f)}},
+                          {MixerSoundDef{0U, {MixerSoundVariant{0, 0U}}}});
+        std::int32_t best = 0;
+        for (int i = 0; i < 200; ++i) {
+            m.stop_all_sounds(true);
+            best = std::max(best, m.get_sound_progress(m.play_sound_2d(0, kSoundFlagRandomStartPos)));
+        }
+        expect(best >= 90, "random start position spans the whole 20 s sample");
+    }
+
+    // 6. Requesting the track that is already playing keeps it playing.
+    for (const std::int32_t option : {1, 2}) {
+        AudioConfig cfg{};
+        cfg.music_volume = 1.0f;
+        WseAudioMixer m(cfg);
+        m.load_music_tracks({MixerMusicTrack{"a", normalize_music_track_flags(0U, 0U),
+                                             make_const_pcm(48000U, 48000U * 60U, 0.25f)}});
+        m.play_track(0, 0);
+        m.update(0.0);
+        m.play_track(0, option);
+        m.update(1.0);
+        m.update(7.0);
+        std::vector<float> out;
+        m.mix_frames(480U, out);
+        expect(m.active_music_track() == 0 && !m.is_music_fading() && peak_abs(out) > 0.2f,
+               option == 1 ? "play_track(current, 1) keeps the current track playing"
+                           : "play_track(current, 2) keeps the current track playing");
+    }
+
+    // 7. Streamed music interpolates across chunk boundaries exactly like the
+    //    predecoded path (44.1 kHz -> 48 kHz, several 2048-frame refills).
+    {
+        auto pcm = std::make_shared<AudioPcmBuffer>();
+        pcm->sample_rate = 44100U;
+        pcm->channels = 1U;
+        for (int i = 0; i < 44100; ++i) {
+            pcm->samples.push_back(0.5f * std::sin(static_cast<float>(i) * 0.05f));
+        }
+        const auto render = [&](bool stream) {
+            AudioConfig cfg{};
+            cfg.music_volume = 1.0f;
+            WseAudioMixer m(cfg);
+            m.load_music_tracks({MixerMusicTrack{"t", normalize_music_track_flags(0U, 0U),
+                                                 stream ? nullptr : pcm}});
+            m.set_music_stream_opener([&](std::size_t) -> std::unique_ptr<AudioStreamDecoder> {
+                return std::make_unique<PcmBufferStreamDecoder>(*pcm);
+            });
+            m.play_track(0, 0);
+            m.update(0.0);
+            std::vector<float> all;
+            std::vector<float> block;
+            for (int k = 0; k < 20; ++k) {
+                m.mix_frames(480U, block);
+                all.insert(all.end(), block.begin(), block.end());
+            }
+            return all;
+        };
+        const auto a = render(false);
+        const auto b = render(true);
+        float max_diff = 0.0f;
+        for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) {
+            max_diff = std::max(max_diff, std::fabs(a[i] - b[i]));
+        }
+        expect(a.size() == b.size() && max_diff < 1e-5f,
+               "streamed music matches predecoded output across chunk boundaries");
+    }
+
+    // 8. Looping samples interpolate across the loop point (frame 1 -> frame 0).
+    {
+        auto two = std::make_shared<AudioPcmBuffer>();
+        two->sample_rate = 24000U;  // step 0.5 at 48 kHz
+        two->channels = 1U;
+        two->samples = {0.6f, -0.6f};
+        WseAudioMixer m;
+        m.load_sound_bank({MixerSoundSample{kSoundFlag2D | kSoundFlagLooping, two}},
+                          {MixerSoundDef{0U, {MixerSoundVariant{0, 0U}}}});
+        m.play_sound_2d(0);
+        std::vector<float> out;
+        m.mix_frames(4U, out);
+        const float g = decode_sound_volume(0U);
+        expect(close(out[0], 0.6f * g, 1e-5f) && close(out[2], 0.0f, 1e-5f) &&
+                   close(out[4], -0.6f * g, 1e-5f) && close(out[6], 0.0f, 1e-5f),
+               "looping sample wraps interpolation from the last frame to frame 0");
+    }
+
+    // 9. Surround fold: centre to both sides, LFE dropped, symmetric 3-channel.
+    {
+        AudioPcmBuffer pcm{};
+        std::vector<std::int16_t> centre;
+        std::vector<std::int16_t> lfe;
+        std::vector<std::int16_t> three;
+        for (int f = 0; f < 16; ++f) {
+            for (int c = 0; c < 6; ++c) {
+                centre.push_back(c == 2 ? 16384 : 0);
+                lfe.push_back(c == 3 ? 16384 : 0);
+            }
+            three.insert(three.end(), {9000, 9000, 9000});
+        }
+        const bool c_ok = decode_wav_pcm(make_wav_i16(6U, 44100U, centre), pcm) &&
+                          pcm.channels == 2U && pcm.samples[0] > 0.1f &&
+                          close(pcm.samples[0], pcm.samples[1], 1e-6f);
+        const bool lfe_ok = decode_wav_pcm(make_wav_i16(6U, 44100U, lfe), pcm) &&
+                            peak_abs(pcm.samples) == 0.0f;
+        const bool three_ok = decode_wav_pcm(make_wav_i16(3U, 44100U, three), pcm) &&
+                              close(pcm.samples[0], pcm.samples[1], 1e-6f);
+        expect(c_ok && lfe_ok && three_ok,
+               "5.1 / 3.0 fold sends centre to both sides and drops LFE");
+    }
+
+    // 10. Streamed WAV writers leave the data size at 0xFFFFFFFF.
+    {
+        AudioPcmBuffer pcm{};
+        std::string err;
+        const std::vector<std::int16_t> mono(1000, 1000);
+        expect(decode_wav_pcm(make_wav_i16(1U, 44100U, mono, 0xFFFFFFFFU), pcm, &err) &&
+                   pcm.frame_count() == 1000U,
+               "WAV with unpatched 0xFFFFFFFF data size decodes the frames present");
+    }
+
+    // 11. Invalid distances from config are sanitised (std::clamp lo > hi was UB).
+    {
+        AudioConfig cfg{};
+        cfg.min_distance_3d = 50.0f;
+        cfg.max_distance_3d = 10.0f;
+        cfg.sound_volume = std::numeric_limits<float>::quiet_NaN();
+        WseAudioMixer m(cfg);
+        m.load_sound_bank({MixerSoundSample{0U, make_const_pcm(48000U, 4800U, 0.3f)}},
+                          {MixerSoundDef{0U, {MixerSoundVariant{0, 0U}}}});
+        m.play_sound_at_position(0, wse::core::WseVec4{20.0f, 0.0f, 0.0f, 0.0f});
+        std::vector<float> out;
+        m.mix_frames(64U, out);
+        expect(m.config().max_distance_3d >= m.config().min_distance_3d &&
+                   std::isfinite(m.config().sound_volume) && std::isfinite(out[1]),
+               "min > max 3D distance and NaN volume are sanitised");
+    }
+
+    // 12. A clock that jumps backwards (new mission timer) does not stall music.
+    {
+        WseAudioMixer m;
+        m.load_music_tracks({
+            MixerMusicTrack{"a", normalize_music_track_flags(0U, 0U),
+                            make_const_pcm(48000U, 48000U * 60U, 0.2f)},
+            MixerMusicTrack{"b", normalize_music_track_flags(0U, 0U),
+                            make_const_pcm(48000U, 48000U * 60U, 0.2f)},
+        });
+        m.play_track(0, 0);
+        m.update(100.0);
+        m.update(0.0);  // clock reset
+        m.play_track(1, 1);
+        m.update(0.6);
+        const bool fading = m.is_music_fading();
+        m.update(6.0);
+        expect(fading && m.active_music_track() == 1,
+               "music scheduler keeps running after the clock jumps backwards");
+    }
+
+    // 13. last_sound_channel reports -1 after a failed play.
+    {
+        WseAudioMixer m;
+        m.load_sound_bank({MixerSoundSample{kSoundFlag2D, make_const_pcm(48000U, 480U, 0.1f)}},
+                          {MixerSoundDef{0U, {MixerSoundVariant{0, 0U}}}});
+        const std::int32_t ok = m.play_sound_2d(0);
+        const bool ok_reported = m.last_sound_channel() == ok;
+        m.play_sound_2d(7);
+        expect(ok >= 0 && ok_reported && m.last_sound_channel() == -1,
+               "last_sound_channel is -1 after a failed play");
+    }
+
+    // 14. Soft clipper, pacing helper, and MP3 / AAC sync disambiguation.
+    {
+        expect(soft_clip_sample(0.5f) == 0.5f && soft_clip_sample(4.0f) <= 1.0f &&
+                   soft_clip_sample(0.9f) < 0.9f && soft_clip_sample(0.9f) > 0.85f &&
+                   soft_clip_sample(-4.0f) >= -1.0f &&
+                   soft_clip_sample(std::numeric_limits<float>::quiet_NaN()) == 0.0f,
+               "soft clipper is identity below the knee, bounded above, NaN-safe");
+        WseAudioMixer m;
+        NullAudioDevice dev;
+        dev.open(AudioDeviceSpec{48000U, 2U});
+        expect(m.pump_to_latency(dev, 1500U, 512U) == 1500U && dev.submitted_frames() == 1500U,
+               "pump_to_latency tops the queue up in bounded blocks");
+        const std::array<std::uint8_t, 4> adts = {0xFFU, 0xF1U, 0x50U, 0x80U};
+        const std::array<std::uint8_t, 4> mpeg = {0xFFU, 0xFBU, 0x90U, 0xC4U};
+        expect(detect_audio_codec(adts, "") == AudioCodecKind::unknown &&
+                   detect_audio_codec(mpeg, "") == AudioCodecKind::mp3,
+               "AAC ADTS sync word is not mistaken for MP3");
+    }
+}
+
+// Opcode-level regression tests: replayed prop / looping agent sounds do not
+// leak channels, and agent sounds follow the agent.
+void test_review_regressions_vm() {
+    using namespace wse::asset;
+    using namespace wse::game;
+    using namespace wse::platform;
+
+    MemoryVfs vfs;
+    std::vector<std::int16_t> tone;
+    for (int i = 0; i < 48000; ++i) {
+        tone.push_back(static_cast<std::int16_t>(8000.0f * std::sin(static_cast<float>(i) * 0.06f)));
+    }
+    vfs.write_file("Modules/T/Sounds/hum.wav", make_wav_i16(1U, 48000U, tone));
+    vfs.write_file("Modules/T/Sounds/bad.wav", std::vector<std::uint8_t>{'R', 'I', 'F', 'F'});
+    LoadedSoundBank bank{};
+    bank.version = 3;
+    bank.samples = {LoadedSoundSample{"hum.wav", kSoundFlagLooping},
+                    LoadedSoundSample{"bad.wav", 0U}};
+    bank.sounds = {LoadedSound{"snd_hum", kSoundFlagLooping, {LoadedSoundRef{0, 0U}}},
+                   LoadedSound{"snd_bad", 0U, {LoadedSoundRef{1, 0U}}}};
+
+    wse::vm::VmContext ctx{};
+    auto& w = ctx.world;
+    w.has_game = true;
+    w.m5.num_sounds = 2;
+    w.misc.num_sound_channels = 64;
+    w.agents.resize(1);
+    w.agents[0].active = true;
+    w.agents[0].troop_no = 3;
+    w.agents[0].position.o = {10.0f, 0.0f, 0.0f, 0.0f};
+    w.mission_objects.resize(1);
+    w.mission_objects[0].active = true;
+
+    WorldAudioBridge bridge;
+    (void)bridge.initialize(vfs, w, bank, {}, "Modules/T", "", nullptr, false);
+
+    expect(run_stmt(ctx, 1881U, {0, 0}) && run_stmt(ctx, 1881U, {0, 0}) &&
+               bridge.mixer().active_sound_channel_count() == 1U &&
+               w.mission_objects[0].m5.sound_channel >= 0 &&
+               w.mission_objects[0].m5.active_sound_no == 0 &&
+               w.mission_objects[0].m5.sound_playing,
+           "1881 replaying a looping prop sound replaces its channel instead of leaking it");
+    expect(run_stmt(ctx, 1882U, {0}) && bridge.mixer().active_sound_channel_count() == 0U,
+           "1882 stops the prop's only channel");
+
+    expect(run_stmt(ctx, 1750U, {0, 0}) && run_stmt(ctx, 1750U, {0, 0}) &&
+               bridge.mixer().active_sound_channel_count() == 1U,
+           "1750 replaying a looping agent sound does not orphan the previous channel");
+
+    // Agent sound follows the agent from +X (right) to -X (left).
+    CaptureAudioDevice right;
+    right.open(AudioDeviceSpec{48000U, 2U});
+    bridge.mixer().pump(right, 4800U);
+    w.agents[0].position.o = {-10.0f, 0.0f, 0.0f, 0.0f};
+    bridge.update(0.1);
+    CaptureAudioDevice left;
+    left.open(AudioDeviceSpec{48000U, 2U});
+    bridge.mixer().pump(left, 4800U);  // first block ramps from the old pan
+    left.clear();
+    bridge.mixer().pump(left, 4800U);
+    expect(right.rms_right() > right.rms_left() * 3.0 && left.rms_left() > left.rms_right() * 3.0,
+           "WorldAudioBridge::update moves an agent's channel with the agent");
+
+    // A sample that fails to decode is reported as unplayable on every attempt.
+    expect(run_stmt(ctx, 600U, {1, 0}) && w.music.last_sound_channel == -1 &&
+               run_stmt(ctx, 600U, {1, 0}) && w.music.last_sound_channel == -1 &&
+               run_stmt(ctx, 615U, {reg(0)}) && ctx.registers[0] == -1,
+           "undecodable sample fails consistently and 615 reports -1");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -916,6 +1320,8 @@ int run_audio_suite(const char* fixture_path) {
     test_mixer_3d_panning_lod_priority_occlusion_and_determinism();
     test_mixer_music_scheduler_and_streaming();
     test_vm_and_world_audio_bridge_integration();
+    test_review_regressions();
+    test_review_regressions_vm();
     test_retail_warband_audio_gate();
 
     if (g_failures == 0) {

@@ -26,9 +26,11 @@ public:
                                                      std::uint32_t flags) = 0;
 
     virtual void stop_channel(std::int32_t channel_no) = 0;
+    [[nodiscard]] virtual bool is_channel_looping(std::int32_t channel_no) const = 0;
     virtual void stop_all_sounds(bool include_non_looping) = 0;
 
     [[nodiscard]] virtual std::int32_t get_sound_progress(std::int32_t channel_no) const = 0;
+    // Channel of the most recent play request, `-1` when that request failed.
     [[nodiscard]] virtual std::int32_t last_sound_channel() const = 0;
 
     virtual void play_track(std::int32_t track_no, std::int32_t option) = 0;

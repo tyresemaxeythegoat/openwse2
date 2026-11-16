@@ -112,9 +112,9 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `headless_test.cpp` | 5 |
 | `lua_test.cpp` | 7 |
 | `asset_test.cpp` | 9 |
-| `audio_test.cpp` | 6 |
+| `audio_test.cpp` | 8 |
 | `selftest_host_test.cpp` *(aggregate runner over the 20 suites)* | 20 suites |
-| **Total (20 standalone suites + aggregate runner)** | **146** |
+| **Total (20 standalone suites + aggregate runner)** | **148** |
 
 ## 4. Blocked
 
@@ -224,6 +224,28 @@ Each needs a translator choice, the retail PDB/binary, hardware, or a change to 
    `check_citations.py --self-test --docs` PASS. Android NDK/APK CI jobs and an on-device WSI
    probe (`VK_KHR_swapchain` enablement) remain pending CI/hardware.
 
+### P6 review: items not fixed yet
+
+Found in the review of `f0b4f19`; the bugs it found are fixed (§7, "Slice P6 review fixes").
+These remain because they need retail evidence, hardware, or a design decision.
+
+1. **Audio is not wired into the app.** Nothing outside `audio_test` constructs
+   `WorldAudioBridge` or pumps a device; `platform/sdl/sdl_selftest_main.cpp` only opens and closes
+   the SDL stream. The embedder still has to: call `WorldAudioBridge::update` per frame, feed the
+   listener from the camera (`listener_from_camera_transform`), drive `pump_to_latency` from one
+   thread, and connect Android pause/resume to `AudioDevice::set_paused`.
+2. **Decoding and mixing run on the caller's thread.** Lazy sample decode inside a play opcode is a
+   synchronous file read + decode (preload or a worker thread would remove the hitch), and the
+   mixer has no locking, so it must not move to SDL's audio callback thread without a command
+   queue.
+3. **Unverified retail details.** The random-start formula, the `compute_agent_voice_pitch` input
+   mapping (`troop_no`, `dna`), the meaning of `bDistanceFilter`, and the random frequency
+   variation that flag `0x8` disables need a look at `0x140332d80` / `0x140057010` in Ghidra.
+   Doppler and HRTF are not implemented.
+4. **No pinned mix hash.** The determinism test still compares two runs with each other; a golden
+   hash would differ between glibc, Bionic and MinGW `libm` (`sin`/`cos`/`exp`/`tanh`), so the
+   regression tests pin exact sample values on paths that avoid those functions instead.
+
 ## 6. Open documentation questions
 
 ~~One open question (2026-11-14 review): `mbStatementBlock::execute` (`0x1401f69d0`) local-variable zeroing condition.~~ **Resolved:** At `0x1401f6c59` (inside `mbStatementBlock::execute` `0x1401f69d0`), the VM checks `rglConfig::General::bLocalVariablesZeroInitialization` (`0x140617819`, loaded from `[General] bLocalVariablesZeroInitialization` in `rglConfig::load` at `0x14026f716` via `rglIni::getBool` `0x1402a84d0`), whose `.data` default is `1` (`true`). `VmContext::clearLocalsBetweenCalls` now defaults to `true` (`docs/ARCHITECTURE.md` §5 Block execution).
@@ -248,6 +270,7 @@ Previously closed: the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vta
 | Module stream identification | PASS | `0x1405651e0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x1405653e0` = `rglOutputTextFileStream` writers; module files are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
 | Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse_bitwise_fp tests: PASS`, `wse_system tests: PASS`, `wse_string tests: PASS`, `wse_dict tests: PASS`, `wse_array tests: PASS`, `wse_world tests: PASS`, `block_vm tests: PASS`, `PASS native_world_test`, `PASS native_m5_test`, `PASS wse_m6_test`, `platform tests: PASS`, `module_loaders tests: PASS`, `headless tests: PASS`, `lua tests: PASS`, `asset tests: PASS`, `selftest_host tests: PASS (19/19, 3549 ms)` (Zig clang++ `-std=c++20 -O2 -Wall -Wextra -Werror`) |
+| Slice P6 review fixes | PASS (Linux host: standalone gate `18/18` + `script`, CMake CTest `21/21` incl. `audio` + `selftest_host`, g++ ASan/UBSan CTest `21/21`; Windows, NDK/APK CI & device pending push) | Fixed in `wse/platform/audio.h`: null `shared_ptr` dereference when a channel-end callback stopped or evicted channels mid-mix (callbacks now queued and delivered once consistent); `set_config` silently ending every channel; `std::clamp` UB on `min_distance_3d > max_distance_3d` (config sanitised); `play_track` of the playing track stopping it and then dropping the request; random start limited to frame `< 32767`; streamed music interpolating against a clamped last frame at every 2048-frame refill (max error `0.0166` -> `7e-10` vs predecoded); loop points not interpolated; backwards clock stalling the scheduler and fades; `last_sound_channel` disagreeing with `615`. In `wse/asset/audio.h`: `compute_agent_voice_pitch` signed overflow (now wrapping `uint32_t`); 5.1 centre to left only and LFE to right only (speaker-position fold); `0xFFFFFFFF` WAV `data` size rejected; AAC ADTS taken for MP3. Opcodes `1881`/`1750` leaked replaced channels; agent/prop sounds never moved; voice pitch never applied; failed sample decodes retried on every play. Performance: no allocation per mix block or stream refill (member scratch buffers, decoders write into the caller's buffer, in-place fold, no `drmp3_get_pcm_frame_count` scan, reserved Vorbis decode), `nth_element` instead of a full sort, no gain/pan work for virtual voices (100-voice bench `1.45%` -> `1.07%` of real time on the host); gain ramps + soft clipper; `pump_to_latency`. CMake re-hashes vendored `stb_vorbis.c` / `dr_mp3.h` on every configure. |
 | P4/P5 review follow-ups & Windows retail check | PASS (Windows host + retail Warband; Android NDK/APK CI & device pending push) | Fixed `face_shader_high` base typo (synthetic test + `kWse2SkinMappings[0]`, all 5 WSE2 variants incl. `face_shader_skin_high` synthesize with `0` warnings); confirmed `v1.1.5.5` `render_order` nibble (`0x1402b9e50`, `0x1402b9ef5`), blend `7` vertex-alpha dispatch (`0x1402e913f`), blended `D3DRS_ALPHAREF` (`0x1402e8439`/`0x1402a00b0`), `kShaderFlagHasSpecular` `0x20` gate (`0x1402e8454`), shader-only gamma (`0x1402c02b0`), and `FrontFace::counter_clockwise` (`0x1402e8ccd`/`0x14025ac20`/`0x140501b60`, `rhi_material.h` fixed); fixed composed Vulkan `1.0` + WSI refusal fallback loop (`driver_loader.{h,cpp}`), `rhi_brf.h` `>= 65536` vertex guard, `saf_vfs_jni.cpp` display-name control-char sanitization, and `WseLauncherActivity.kt` atomic ICD read-only backup swap; `engine/build_host.ps1` (`19/19` / `140` tests, `3549 ms`), retail `wse_brf.exe` (`Native` & `Phantasy Calradia`), `check_citations.py --self-test --docs`, and `extract_wse_opcodes.py --check` all PASS |
 | Slice P5 review fixes | PASS (`PR #16`; Windows/retail gaps now closed above) | Fixed: `<techniques>` root swallowing the first technique; catalog never failing (5 variants always synthesized, so a Windows install without `GLShaders/` rejected nearly every shader); placeholder SPIR-V presented as a translator (renamed `emit_placeholder_spirv_module`, P5 reopened); wrong VAs in this file and `docs/ARCHITECTURE.md`; WSI detected but not enabled (now instance WSI + `VK_KHR_swapchain`, with fallback); exponential alternative search (now BFS + `SuitableShaderResolver`); SPIR-V cache accepting truncated/foreign modules (full validation, source-hash/stage/generator check, `.partial` + rename); draws failing after legal shader-module destroy; silent `VkShaderModule`-less success; allocating `noexcept` feature scan + substring false positives; INI BOM/duplicate keys; PostFx `#if WSE2` substring test; `uses_specular` inconsistency; half-pixel clip helper ignoring `w`/Y convention; object-space lighting and arbitrary tangents (now `MeshDrawCall::model` + UV tangents); D3D9 alpha-channel blending; NaN UNORM writes; stage/entry-point validation; `rhi_material.h` converters; retail test path via `WSE_WARBAND_ROOT`; `wse_brf` memoized/names-only/no copies. Not changed: `SYMBOL_MAP.json` churn/date (needs the PDB to regenerate) and the `Dev <dev@localhost>` author of `6be524d` (history is pushed). |
 | Slice P5 shaders, materials & D3D9/Vulkan RHI | PASS (host + retail Warband modules; CI & device pending) | Verified v1.1.5.5 effect search (`0x14028bce0`, `0x14029c930`, `0x1402db690`), `wse2_shaders.{brf,ini}` fallbacks (`0x1402eeec0`, `0x1402ed3c0`), shader suitability & alternatives (`0x140301ab0`, `0x1402f3db0`, `0x1402f3eb0`, `0x1402f1ef0`), material flags/slots (`0x1402f5390`, `0x14029f590`, `0x1402a00b0`, `0x1402e7f50`), and `VertexDeclType` `0..4` (`0x1402baa30`) in `docs/SYMBOL_MAP.json`; added `engine/include/wse/asset/shader.h` (effect/INI/shader/material resolution, `GLShaders` catalog + 5 WSE2 skinning variants, deterministic SPIR-V 1.0 generator, persistent `SpirvShaderCache`), extended `wse/platform/rhi.h` + `platform/vulkan/driver_loader.{h,cpp}` (`PresentationPath` `android_surface_wsi` vs `offscreen_hardware_buffer_bridge`, `VkShaderModule` lifecycle via `MockVulkanIcd` v5 + `VulkanRhiDevice`, D3D9 RH perspective/ortho/half-pixel/sRGB helpers, Blinn-Phong lighting + normal/specular maps + alpha-test-before-depth-write + 5 blend modes in `SoftwareRhiDevice`), and extended `wse_brf`, `asset_test.cpp` (`8` tests), and `platform_test.cpp` (`10` tests); `build_host.ps1` (`19/19` / `137` tests, `8473 ms`) and retail `wse_brf.exe` PASS on `Native` (`221/221`, `warnings=0`, `gl_tech=271`, `144` shaders [`111` suitable, `33` fallback], `633/633` resolved materials, `58` INI pairs) and `Phantasy Calradia` (`333/333`, `warnings=0`, `gl_tech=271`, `144` shaders, `1,963/1,963` resolved materials) |

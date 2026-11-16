@@ -407,13 +407,20 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             world.played_sounds.push_back(
                 game::WseBattleEvent{0, narrow[1], -1, flags, obj.position.o});
             if (world.audio_runtime != nullptr) {
+                // One sound per prop instance (`active_sound_no`): replaying stops the
+                // previous channel instead of leaking it (looping props would
+                // otherwise pile up until the virtual channels run out).
+                if (obj.m5.sound_channel >= 0) {
+                    world.audio_runtime->stop_channel(obj.m5.sound_channel);
+                }
                 const std::int32_t ch = world.audio_runtime->play_sound(
                     narrow[1], obj.position.o, static_cast<std::uint32_t>(flags), 1.0f, 0);
+                // Stopping the old channel ran the end callback, which cleared the
+                // prop's sound fields; set them from the new channel.
                 obj.m5.sound_channel = ch;
                 obj.m5.sound_playing = (ch >= 0);
-                if (ch < 0) {
-                    obj.m5.active_sound_no = -1;
-                }
+                obj.m5.active_sound_no = (ch >= 0) ? narrow[1] : -1;
+                obj.m5.active_sound_flags = flags;
                 world.music.last_sound_channel = ch;
             }
         }
