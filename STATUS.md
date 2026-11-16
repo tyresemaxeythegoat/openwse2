@@ -11,8 +11,8 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows after Slice P7 Input & P6 follow-ups (`engine/build_host.ps1` with `WSE_WARBAND_ROOT`, Zig `clang++ -std=c++20 -O2 -Wall -Wextra -Werror`: all `72` headers standalone + `wse_audio` + `21/21` suites / `154` test functions + `selftest_host` `21/21` + `wse_headless` + `wse_brf`; plus `audio_test` & `input_test` under `-fsanitize=undefined` PASS over synthetic fixtures and retail `Native` & `Phantasy Calradia` WAV/OGG/MP3 mixes). Linux CI (`Engine CI`) passed `4/4` on `92fcab9` and re-runs on push |
-| Android arm64 gate | **PASS (CI run `43814748392` on `92fcab9`; re-runs on Slice P7 push)** — `.github/workflows/ci.yml` (`android-arm64` + `android-apk`) compiles all headers standalone, cross-compiles CMake targets (`engine`, `lua51`, `wse_lua`, `wse_vulkan`, `wse_audio`, `wse_selftest`), and builds `arm64-v8a` debug APK (`libwse2.so` + `libpanvk_hw.so` + `libSDL3.so` + `assets/scripts.txt` with `WseLauncherActivity` + `WseSafBridge`); on-device runtime tests remain unrun |
+| Host gate | **PASS** on Windows after Slice P7 Input & P6 follow-ups (`engine/build_host.ps1` with `WSE_WARBAND_ROOT`, Zig `clang++ -std=c++20 -O2 -Wall -Wextra -Werror`: all `72` headers standalone + `wse_audio` + `21/21` suites / `154` test functions + `selftest_host` `21/21` + `wse_headless` + `wse_brf`; plus `audio_test` & `input_test` under `-fsanitize=undefined` PASS over synthetic fixtures and retail `Native` & `Phantasy Calradia` WAV/OGG/MP3 mixes). Linux CI (`Engine CI`) passed `4/4` on `4793c11` (run `43842819923`). After the P7 review fixes: Linux standalone gate `19/19` + `script` and CMake CTest `lua`/`audio`/`input`/`selftest_host` PASS (`155` test functions); Windows not re-run |
+| Android arm64 gate | **PASS (CI run `43842819923` on `4793c11`; re-runs on push)** — `.github/workflows/ci.yml` (`android-arm64` + `android-apk`) compiles all headers standalone, cross-compiles CMake targets (`engine`, `lua51`, `wse_lua`, `wse_vulkan`, `wse_audio`, `wse_selftest`), and builds `arm64-v8a` debug APK (`libwse2.so` + `libpanvk_hw.so` + `libSDL3.so` + `assets/scripts.txt` with `WseLauncherActivity` + `WseSafBridge`); on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **440/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` live handlers `53, 2180, 2749` have no SDK constant and carry community names); **1,053/1,053 implemented (100%, 20/20 categories)** (`16` control-flow incl. 4 live entity iterators + `1,037` switch across `block_vm.h`, `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, `native_campaign_ops.h`, `native_campaign_ops_2.h`, `native_world_ops.h`, `native_world_ops_2.h`, `native_world_ops_3.h`, `native_agent_ops.h`, `native_mp_ops.h`, `native_scene_ops.h`, and `native_ui_ops.h`) |
 | Module loaders | Clean-room module loaders implemented across `wse/game/module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h` reading exclusively via `wse::platform::Vfs` + `wse::io::TokenReader` (`skills`, `factions`, `troops` v1/v2, `item_kinds` v1/v3, `party_templates`, `parties`, `scenes`, `quests`, `info_pages`, `strings`, `quick_strings`, `game_variables`, `module.ini`, `module_config.ini`, `meshes`, `actions`, `skins`, `sounds` v2/v3, `music`, `particle_systems`, `postfx`, `map_icons`, `scene_props`, `menus`, `presentations`, `mission_templates`, `tableau_materials`, `conversation` v1/v2, `scripts`, `triggers`, `simple_triggers`, `Data/{item_modifiers,flora_kinds,ground_specs,skyboxes}.txt`) |
@@ -113,9 +113,9 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `lua_test.cpp` | 7 |
 | `asset_test.cpp` | 9 |
 | `audio_test.cpp` | 8 |
-| `input_test.cpp` | 6 |
+| `input_test.cpp` | 7 |
 | `selftest_host_test.cpp` *(aggregate runner over the 21 suites)* | 21 suites |
-| **Total (21 standalone suites + aggregate runner)** | **154** |
+| **Total (21 standalone suites + aggregate runner)** | **155** |
 
 ## 4. Blocked
 
@@ -256,6 +256,49 @@ These remain because they need retail evidence, hardware, or a design decision.
    hash would differ between glibc, Bionic and MinGW `libm` (`sin`/`cos`/`exp`/`tanh`), so the
    regression tests pin exact sample values on paths that avoid those functions instead.
 
+### P7 review: items not fixed yet
+
+Found in the review of `4793c11`; the bugs it found are fixed (§7, "Slice P7 review fixes").
+These remain because they need retail evidence, hardware, or a design decision.
+
+1. **Chords do not exclude extra modifiers.** With the `0x1400e96a0` defaults, Ctrl+H fires
+   `HideUi` *and* `DropSecondaryWeapon` (H), and Ctrl+J fires `RearHorse` *and* `Walk` (Left Ctrl).
+   `chord_matches` mirrors the reconstruction of `mbGameKeyManager::keyDown` (`0x1400eedf0`), which
+   only checks that the chord's own modifiers are held. Check in Ghidra whether retail also rejects
+   a chord when a longer chord on the same main key matches; if it does not, decide whether the
+   port should deviate (and document it in `engine/README.md`).
+2. **Voice-pitch clamp has no evidence.** `compute_agent_voice_pitch` still clamps `delta` to
+   `±0.15f`. Negative hash remainders give `delta` down to `-0.45f`, so without the clamp the lowest
+   pitch would be `0.69` instead of `0.87`. Confirm against `mbAgent::playSound` (`0x140057010`).
+3. **Two camera-frame conventions.** `listener_from_camera_transform` (`0x140332970`) and
+   `FreeCameraController::to_transform` use `s` = right, `f` = up, `-u` = forward, but the
+   handlers for `position_get_screen_projection` (`750`) and `mouse_get_world_projection` (`751`)
+   read `f` as forward and `u` as up. One of them is wrong; settle it from the `750`/`751`
+   disassembly before the camera is wired to a real scene.
+4. **`omit_key_once` also hides the key from scripts.** `70 key_is_down` / `71 key_clicked` return
+   false while the key is omitted (pre-existing `native_world_check_key_state`). The module
+   system's `header_operations.py` describes `77` as only suppressing the game's default action.
+   Now that the next press consumes the omission it no longer sticks, but whether retail hides it
+   from `70`/`71` at all needs `0x1401c69b5` / `0x1401c67e5`.
+5. **SDL backend not run on a device.** Finger cancel, focus loss / background, Android Back → Esc,
+   flipped wheel, and per-event window sizing compile against SDL `3.4.20` headers and the core
+   logic is host-tested, but nothing has exercised `sdl_input.cpp` on hardware. Gamepad Guide and
+   paddle buttons stay unmapped (no retail raw key in `0x1402ad360`).
+6. **Touch-control design work (not bugs, not started):**
+   - The attack zone presses `Attack` on touch-down, before a swipe direction exists, and nothing
+     turns `attack_dir` / `block_dir` into the mouse movement Warband reads the direction from.
+     Delay the press until the swipe is classified (tap = default direction) and feed the
+     direction into the look delta.
+   - The command radial is single-level (`Order1..8` = F1..F8), so sub-orders such as "Hold this
+     position" (F1 → F1) are unreachable, and the `ViewOrders` pulse on every open may toggle the
+     order panel closed. Needs a two-level radial (group → order).
+   - Default widget positions ignore the display safe area (notch / rounded corners); no haptics,
+     no floating stick re-centred on the thumb, no overlap warning in `TouchLayoutEditor`, and no
+     per-device default profile alongside the per-module one.
+7. **History of `4793c11` itself.** It was pushed straight to `main` as author `Dev <dev@localhost>`,
+   its message says "Merge P6 review commit 92fcab9" although it has one parent, and it bundles the
+   P6 follow-ups with the whole P7 slice. Rewriting `main` is not worth it; noted for future commits.
+
 ## 6. Open documentation questions
 
 ~~One open question (2026-11-14 review): `mbStatementBlock::execute` (`0x1401f69d0`) local-variable zeroing condition.~~ **Resolved:** At `0x1401f6c59` (inside `mbStatementBlock::execute` `0x1401f69d0`), the VM checks `rglConfig::General::bLocalVariablesZeroInitialization` (`0x140617819`, loaded from `[General] bLocalVariablesZeroInitialization` in `rglConfig::load` at `0x14026f716` via `rglIni::getBool` `0x1402a84d0`), whose `.data` default is `1` (`true`). `VmContext::clearLocalsBetweenCalls` now defaults to `true` (`docs/ARCHITECTURE.md` §5 Block execution).
@@ -276,6 +319,7 @@ Previously closed: the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vta
 | Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (83 classes, 3,466 symbols, 76 vtables, 4,759 function ranges, 20 global objects, 2,888 curated superseded VAs), v1.1.5.5 target |
 | v1.1.5.5 REA VM/stream batches | PASS | 75 procedures across 9 `decompile_all` exports (`stmt_core` `ev_3ebcea85…` 4/4, `stmt_block` `ev_ffc38aa5…` 10/10, `script` `ev_8d37a0c8…` 4/4, `simple_trigger` `ev_3157906d…` 12/12, `trigger` `ev_f62843ac…` 12/12, `game_scripts` `ev_fc9bd1a4…` 4/4, `game_triggers` `ev_052f2d86…` 2/2, `streams_bin` `ev_8cc48986…` 9/9, `streams_txt` `ev_1e3c2566…` 18/18), plus `read_bytes`/`0x140615ad0` (`ev_f09662c6…`/`ev_2ddf7a62…`) and 6 single-procedure exports |
 | Superseded 2026-10-14 REA runs | PASS (superseded) | Historical 2026-10-14 entries kept for provenance only: `ev_7cd99ccc…157d7a` (`mbScript` 5), `ev_8d91b175…99b11` (`mbStatement` 14), `ev_25469ff4…84af8` (3), `ev_e3530f99…e8d05` (`Trigger` 52), `ev_cebc7ae0…e8c8d3` (`rglTextStream` 18), `ev_24eecfa4…f18c0b6` (`rglBinaryStream` 9), `ev_130d8023…2c62e6` (2) |
+| Slice P7 review fixes | PASS (Linux host: standalone gate `19/19` + `script`, CMake CTest `lua`/`audio`/`input`/`selftest_host`, g++ ASan/UBSan `audio` + `input`; `sdl_input.cpp` / `sdl_selftest_main.cpp` syntax-checked against SDL `3.4.20` headers; NDK/APK CI & device pending push) | Fixed in `wse/platform/input.h`: analog touch/gamepad movement snapping to full speed past `stick_key_threshold` (synthesized keys double-counted) and unnormalized diagonals; key/button taps and attack/block touch taps inside one frame lost; every other consecutive wheel notch lost; buttons stuck after a gamepad unplug, and one pad's idle axes zeroing another's; nothing released on focus loss; physical game-key clicks not following `keyClicked`/`keyRaised` (`0x1400eee90`/`0x1400eef50`); `omit_key_once` never consumed; gamepad stick not driving `MapMove*`; non-circular stick and swipe/radial/look skew on non-square screens; mouse look in menus; overlay hidden for good on devices that always report a controller; profile names with punctuation or UTF-8 refused; locale-dependent `%g` profile floats; unbounded free-camera yaw. In `wse/game/world_input.h`: `75` cursor Y inverted and in the wrong range (now Warband UI space), `3101`/`3102` missing same-frame taps, omit state not round-tripped, 190 key names re-formatted every frame. In `platform/sdl/sdl_input.cpp`: `FINGER_CANCELED`, focus/background, Android Back, flipped wheel, mouse-synthesized touches, failed `SDL_OpenGamepad`, stale first-frame viewport; `sdl_selftest_main.cpp` passes the real frame time. In `wse/platform/audio.h`: a sound started from an end callback could evict a slot whose queued end then hit the new owner (no eviction while dispatching). Open items: §5 "P7 review". |
 | Binary savegame format | PASS | `rglBinaryStream` raw little-endian 8/4/1-byte values; strings are `int32` length + bytes; no header or checksum |
 | Module stream identification | PASS | `0x1405651e0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x1405653e0` = `rglOutputTextFileStream` writers; module files are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |

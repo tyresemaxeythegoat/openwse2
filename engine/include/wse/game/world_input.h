@@ -31,6 +31,7 @@ namespace wse::game {
 
 class WorldInputBridge {
 public:
+    // Copies the binding tables unconditionally (names for `65`, chords for `3100`).
     static void sync_bindings_to_world(const wse::platform::WseInputManager& mgr,
                                        WseWorldState& world) {
         const auto& km = mgr.game_keys();
@@ -57,29 +58,53 @@ public:
                 b->alt.num_modifiers > 1 ? b->alt.modifiers[1] : -1,
             };
         }
+        world.input.bindings_revision = km.revision();
+    }
+
+    // Hands script-side `omit_key_once` (`77`) / `clear_omitted_keys` (`78`) state to the
+    // manager. Call before `WseInputManager::step` / `process_frame` when not using
+    // `step_and_sync`.
+    static void pull_from_world(wse::platform::WseInputManager& mgr,
+                                const WseWorldState& world) {
+        mgr.set_omitted_keys(world.input.omitted_keys);
     }
 
     static void sync_to_world(const wse::platform::WseInputManager& mgr,
                               WseWorldState& world) {
+        // `prev_*` are written so the VM's `!down && prev` tests in `3101` / `3102`
+        // equal the manager's release edges, including a press + release inside
+        // one frame.
         const std::size_t raw_n =
             std::min(world.input.key_down.size(), mgr.raw_down().size());
         for (std::size_t k = 0; k < raw_n; ++k) {
-            world.input.key_down[k] = mgr.raw_down()[k];
+            const bool down = mgr.raw_down()[k];
+            world.input.key_down[k] = down;
             world.input.key_clicked[k] = mgr.raw_clicked()[k];
-            world.m6.ui.prev_key_down[k] = mgr.raw_prev_down()[k];
+            world.m6.ui.prev_key_down[k] = down ? mgr.raw_prev_down()[k] : mgr.raw_released()[k];
         }
 
         const std::size_t gk_n =
             std::min(world.input.game_key_down.size(), mgr.game_key_down().size());
         for (std::size_t g = 0; g < gk_n; ++g) {
-            world.input.game_key_down[g] = mgr.game_key_down()[g];
+            const bool down = mgr.game_key_down()[g];
+            world.input.game_key_down[g] = down;
             world.input.game_key_clicked[g] = mgr.game_key_clicked()[g];
-            world.m6.ui.prev_game_key_down[g] = mgr.game_key_prev_down()[g];
+            world.m6.ui.prev_game_key_down[g] =
+                down ? mgr.game_key_prev_down()[g] : mgr.game_key_released()[g];
         }
 
+        // Consumed `omit_key_once` requests expire for scripts too.
+        world.input.omitted_keys = mgr.omitted_keys();
+
+        // Warband UI space (`mouse_get_position` `0x1401c6949`, `mouse_get_world_projection`
+        // `0x1401cbcc9`): x in [0, 1], y in [0, 0.75] growing upwards; the manager's cursor
+        // is screen-normalized with y growing downwards.
         const auto& fs = mgr.frame_state();
-        world.m5.cursor_pos = wse::core::WseVec2{fs.cursor_x, fs.cursor_y};
-        sync_bindings_to_world(mgr, world);
+        world.m5.cursor_pos = wse::core::WseVec2{fs.cursor_x, (1.0f - fs.cursor_y) * 0.75f};
+
+        if (world.input.bindings_revision != mgr.game_keys().revision()) {
+            sync_bindings_to_world(mgr, world);
+        }
     }
 
     // Processes one frame via `backend` and mirrors everything into `world`.
@@ -87,6 +112,7 @@ public:
                               wse::platform::InputBackend& backend,
                               WseWorldState& world,
                               float dt_seconds = 1.0f / 60.0f) {
+        pull_from_world(mgr, world);
         mgr.step(backend, dt_seconds);
         sync_to_world(mgr, world);
     }

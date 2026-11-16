@@ -557,7 +557,10 @@ P6 audio (`wse/asset/audio.h`, `wse/platform/audio.h`, `wse/game/world_audio.h`,
 - **Mixer:** channel-end callbacks are queued and delivered once the mixer is consistent (after the
   mix block, after the stop, or after the new sound owns an evicted slot), so callbacks may play or
   stop sounds; starting a new sound into a previously inactive sibling slot mid-flush cancels any
-  still-queued stale end notification for that slot. `set_config` sanitises values (`max_distance_3d >= min_distance_3d > 0`, finite
+  still-queued stale end notification for that slot. **Deviation:** a sound started from inside an
+  end callback never evicts (it gets a free slot or `-1`); otherwise the evicted sound's queued end,
+  which carries only a channel number, would be delivered after the caller recorded that channel as
+  its own. `set_config` sanitises values (`max_distance_3d >= min_distance_3d > 0`, finite
   non-negative volumes, channel counts in `[1, 256]`) and only ends channels when
   `max_virtual_channels` shrinks. Per-voice and per-music-slot gains ramp linearly across each
   block; the bus uses `soft_clip_sample` (identity to 0.8, tanh knee) instead of a hard clamp; the
@@ -592,14 +595,42 @@ P7 input (`wse/platform/input.h`, `wse/game/world_input.h`, `platform/sdl/sdl_in
   alt bindings `0xf0..0xff`), primary+alt `keyDown`/`keyClicked`/`keyRaised` (`0x1400eedf0`..
   `0x1400eef50`), `getKeyData` (`0x1400ef190`), and `3100` `game_key_get_key` (`0x1401e6a42`:
   `[key, mod0, mod1]` indices `0..2`).
+- **Edges (`WseInputManager`):** raw clicks/releases are latched when the transition happens, so a
+  key pressed and released inside one frame still clicks (and releases), and every wheel notch is
+  a click. Physical game-key clicks/releases use `keyClicked`/`keyRaised` semantics (modifiers held,
+  main key changes state); overlay- and gamepad-synthesized keys and one-frame pulses (radial
+  orders, same-frame attack/block taps) add their own edges. A release is only reported once the
+  game key is no longer held by any source. `WorldInputBridge` writes `prev_key_down` /
+  `prev_game_key_down` so `3101`/`3102` see exactly these release edges.
+- **`omit_key_once` (`77`):** the next fresh press of the key is masked out of game-key mapping
+  until it is released, and the request is consumed (also in `world.input.omitted_keys`, so it
+  expires for scripts). `70`/`71` still return false while it is pending (see `STATUS.md` §5).
+- **Safety / robustness deviations:** `FocusLost` (window focus lost, minimized, or app in the
+  background) releases every key, button, and touch; `TouchCancel` (SDL `FINGER_CANCELED`) drops
+  the finger without issuing the highlighted radial order; a removed gamepad releases the buttons it
+  held; per-pad state is kept and the most-deflected stick wins. Android Back maps to `Esc`;
+  "natural" wheel direction is undone; touches synthesized from a mouse are ignored.
+- **Analog movement:** `move_x/move_y` = touch stick + gamepad stick (+1 per *physical* move key),
+  limited to unit length. Keys synthesized past `stick_key_threshold` feed `game_key_down` only, so
+  the stick stays proportional. The gamepad stick also drives `MapMove*` on the campaign map.
+- **Cursor (`75`):** `world.m5.cursor_pos` is in Warband UI space: x `0..1`, y `0..0.75` growing
+  upwards (`y = (1 - screen_y) * 0.75`), the space `751` already assumed.
 - **Context-sensitive touch overlay & layout profiles:** `InputContext` (`Mission`, `CampaignMap`,
   `Menu`, `Inventory`, `Presentation`, `Dialog`) suppresses combat zones in `CampaignMap` and hides
-  the overlay (cancelling active touch latches) in non-gameplay contexts or when a gamepad connects;
-  multi-touch latches each finger by hit priority (`MoveStick`, `CommandRadial`, `AttackZone`,
+  the overlay (cancelling active touch latches) in non-gameplay contexts or while a connected
+  gamepad is the device in use; touching the screen shows it again until the gamepad is used.
+  Geometry is aspect-correct (`set_viewport_size`): circular widgets are circles on screen,
+  swipe/radial classification and look deltas use screen-height units. Mouse motion turns the
+  camera only in `Mission`/`CampaignMap` with `set_mouse_look_enabled(true)`.
+  Multi-touch latches each finger by hit priority (`MoveStick`, `CommandRadial`, `AttackZone`,
   `BlockZone`, fallback `LookArea`), classifies 4-direction attack/block swipes, maps radial release
   to `Order1..8`, clamps `TouchLayoutEditor` edits to safe screen/scale bounds, and persists
-  sanitized per-module JSON profiles (`input_profiles/<module>.json`) via `Vfs` with `%.9g`
-  exact float round-tripping. `FreeCameraController` matches `make_orbit_mvp_matrix` orientation.
+  sanitized per-module JSON profiles via `Vfs` with locale-independent `to_chars` floats. Profile
+  file names (`input_profiles/<id>.json`) fold ASCII case and `%XX`-encode every other byte except
+  `[a-z0-9_-]` and inner `.`, so punctuation and non-Latin module names get their own file; names
+  with `/`, `\`, control bytes, or `..` are refused. Binding names are re-copied into the world only
+  when `WseGameKeyManager::revision()` changes. `FreeCameraController` matches
+  `make_orbit_mvp_matrix` orientation and wraps yaw.
 
 ## Handler design decisions and limits
 

@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -546,7 +547,12 @@ public:
     void reset() {
         bindings_ = default_game_key_bindings();
         stored_.reset();
+        bump_revision();
     }
+
+    // Process-wide unique stamp that changes whenever any binding changes, so
+    // `WorldInputBridge` can skip re-formatting 190 key names every frame.
+    [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }
 
     [[nodiscard]] const GameKeyBinding* get(std::int32_t gk) const noexcept {
         if (gk < 0 || gk >= kNumGameInputKeys) {
@@ -589,6 +595,7 @@ public:
         } else {
             b.alt = sanitized;
         }
+        bump_revision();
         return true;
     }
 
@@ -599,6 +606,7 @@ public:
             return false;
         }
         bindings_ = *stored_;
+        bump_revision();
         return true;
     }
 
@@ -689,6 +697,11 @@ public:
 private:
     enum class Mode : std::uint8_t { Down, Clicked, Raised };
 
+    void bump_revision() noexcept {
+        static std::atomic<std::uint64_t> next{1U};
+        revision_ = next.fetch_add(1U, std::memory_order_relaxed);
+    }
+
     [[nodiscard]] static bool chord_matches(
         const KeyChord& chord,
         const std::array<bool, kMaxRawInputKeys>& down,
@@ -718,6 +731,7 @@ private:
 
     std::array<GameKeyBinding, kNumGameInputKeys> bindings_{};
     std::optional<std::array<GameKeyBinding, kNumGameInputKeys>> stored_{};
+    std::uint64_t revision_ = 0U;
 };
 
 // -----------------------------------------------------------------------------
@@ -768,6 +782,13 @@ inline constexpr std::size_t kNumTouchWidgets =
     }
 }
 
+// Viewport width / height. Touch coordinates are normalized per axis, so every
+// distance or angle is converted to screen-height units (`dx * aspect`) first;
+// otherwise circles become ellipses and swipes/radial sectors skew on wide screens.
+[[nodiscard]] inline float sanitize_viewport_aspect(float aspect) noexcept {
+    return (std::isfinite(aspect) && aspect >= 0.25f && aspect <= 4.0f) ? aspect : 1.0f;
+}
+
 struct TouchWidgetLayout {
     float cx = 0.5f;
     float cy = 0.5f;
@@ -778,19 +799,27 @@ struct TouchWidgetLayout {
     bool circular = false;
     bool enabled = true;
 
-    [[nodiscard]] bool contains(float x, float y) const noexcept {
+    // Radius of a circular widget in screen-height units: the largest circle that
+    // fits the `half_w` x `half_h` box on a viewport of the given aspect.
+    [[nodiscard]] float circle_radius(float aspect) const noexcept {
+        const float a = sanitize_viewport_aspect(aspect);
+        return std::max(0.01f, std::min(half_w * scale * a, half_h * scale));
+    }
+
+    [[nodiscard]] bool contains(float x, float y, float aspect = 1.0f) const noexcept {
         if (!enabled || !std::isfinite(x) || !std::isfinite(y)) {
             return false;
         }
-        const float eff_w = std::max(0.01f, half_w * scale);
-        const float eff_h = std::max(0.01f, half_h * scale);
         const float dx = x - cx;
         const float dy = y - cy;
         if (circular) {
-            const float nx = dx / eff_w;
-            const float ny = dy / eff_h;
-            return (nx * nx + ny * ny) <= 1.0f;
+            const float a = sanitize_viewport_aspect(aspect);
+            const float r = circle_radius(a);
+            const float px = dx * a;
+            return (px * px + dy * dy) <= r * r;
         }
+        const float eff_w = std::max(0.01f, half_w * scale);
+        const float eff_h = std::max(0.01f, half_h * scale);
         return std::fabs(dx) <= eff_w && std::fabs(dy) <= eff_h;
     }
 
@@ -886,12 +915,13 @@ public:
 
     [[nodiscard]] TouchWidgetId hit_test(const TouchOverlayProfile& profile,
                                          float x,
-                                         float y) const noexcept {
+                                         float y,
+                                         float aspect = 1.0f) const noexcept {
         static constexpr std::array<TouchWidgetId, kNumTouchWidgets> kOrder = {
             TouchWidgetId::MoveStick, TouchWidgetId::CommandRadial, TouchWidgetId::AttackZone,
             TouchWidgetId::BlockZone, TouchWidgetId::LookArea};
         for (const TouchWidgetId id : kOrder) {
-            if (profile.widgets[static_cast<std::size_t>(id)].contains(x, y)) {
+            if (profile.widgets[static_cast<std::size_t>(id)].contains(x, y, aspect)) {
                 return id;
             }
         }
@@ -998,35 +1028,46 @@ inline bool parse_bool_exact(std::string_view s, bool& out) noexcept {
     return false;
 }
 
+// Locale-independent shortest round-trip form (`snprintf("%g")` follows the C
+// locale's decimal point, which `from_chars` would then refuse to read back).
 inline std::string fmt_float(float v) {
     char buf[48];
-    const int n = std::snprintf(buf, sizeof(buf), "%.9g", static_cast<double>(v));
-    return (n > 0) ? std::string(buf, static_cast<std::size_t>(n)) : std::string("0");
+    const auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), v);
+    return (ec == std::errc{}) ? std::string(buf, ptr) : std::string("0");
 }
 
 }  // namespace input_detail
 
-// Validates and normalizes a module name into a safe single-segment filename stem.
-// Returns "" for empty, traversal, separator, or non-alphanumeric names.
+// Maps a module name onto a safe single-segment filename stem. ASCII letters fold
+// to lower case (module folders are case-insensitive); `[a-z0-9_-]` and inner `.`
+// are kept; every other byte (space, `&`, `'`, `+`, UTF-8, a leading/trailing `.`)
+// becomes `%XX`, so real names such as "A World of Ice & Fire" or non-Latin
+// module names still get their own profile. Returns "" for empty or over-long
+// names and for anything containing a path separator, a control byte, or `..`.
 [[nodiscard]] inline std::string sanitize_module_profile_id(std::string_view module_name) {
-    if (module_name.empty() || module_name.size() > 64U) {
-        return {};
-    }
-    if (module_name == "." || module_name == ".." ||
+    if (module_name.empty() || module_name.size() > 128U ||
         module_name.find("..") != std::string_view::npos) {
         return {};
     }
+    static constexpr char kHex[] = "0123456789ABCDEF";
     std::string out;
-    out.reserve(module_name.size());
-    for (const char c : module_name) {
-        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+    out.reserve(module_name.size() * 3U);
+    for (std::size_t i = 0; i < module_name.size(); ++i) {
+        const char c = module_name[i];
+        const auto u = static_cast<unsigned char>(c);
+        if (c == '/' || c == '\\' || u < 0x20U || u == 0x7fU) {
+            return {};
+        }
+        const bool edge = (i == 0U || i + 1U == module_name.size());
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' ||
+            (c == '.' && !edge)) {
             out.push_back(c);
         } else if (c >= 'A' && c <= 'Z') {
             out.push_back(static_cast<char>(c - 'A' + 'a'));
-        } else if (c == ' ') {
-            out.push_back('_');
         } else {
-            return {};
+            out.push_back('%');
+            out.push_back(kHex[u >> 4U]);
+            out.push_back(kHex[u & 0x0fU]);
         }
     }
     return out;
@@ -1277,6 +1318,11 @@ struct RawInputEvent {
         TouchDown = 11,
         TouchMove = 12,
         TouchUp = 13,
+        // Window lost focus / app went to the background: release everything held.
+        FocusLost = 14,
+        // The OS took the touch over (system gesture, palm rejection): drop the
+        // finger without committing it (no radial order fires).
+        TouchCancel = 15,
     };
 
     Type type = Type::KeyDown;
@@ -1348,10 +1394,24 @@ struct InputFrameState {
 
 // Maps physical devices (`RawInputEvent`) + virtual touch overlay + `InputContext`
 // onto `WseGameKeyManager` states (`game_key_down`/`clicked`/`released`) and `InputFrameState`.
+//
+// Edge semantics:
+//   - A raw key "click" / "release" is latched when the transition happens, so a
+//     key pressed and released inside one frame still reports a click (and a
+//     release) instead of vanishing. Each wheel notch is its own click.
+//   - Physical game-key clicks / releases follow `mbGameKeyManager::keyClicked`
+//     (`0x1400eee90`) / `keyRaised` (`0x1400eef50`): the chord's modifiers must be
+//     held and the *main* key must change state, so holding J and then pressing
+//     Ctrl does not click `RearHorse`.
+//   - `omit_key_once(raw)` suppresses the next press of that key for game-key
+//     purposes (until it is released) and is then consumed.
 class WseInputManager {
 public:
     static constexpr float kGamepadTriggerThreshold = 0.35f;
     static constexpr std::size_t kMaxTrackedFingers = 10U;
+    // Gamepad raw keys occupy `0xf0..0xff` in `rglInputManager::getKeyName` (`0x1402ad360`).
+    static constexpr std::int32_t kFirstGamepadRawKey = RawKey::kGamepadA;
+    static constexpr std::size_t kNumGamepadRawKeys = 16U;
 
     WseInputManager() { reset(); }
 
@@ -1365,21 +1425,20 @@ public:
         raw_clicked_.fill(false);
         raw_released_.fill(false);
         omitted_keys_.fill(false);
+        suppressed_keys_.fill(false);
         game_down_.fill(false);
         game_prev_down_.fill(false);
         game_clicked_.fill(false);
         game_released_.fill(false);
+        virtual_held_.fill(false);
+        virtual_prev_held_.fill(false);
         virtual_pulse_gk_.fill(false);
-        active_gamepads_.clear();
+        pulse_prev_.fill(false);
+        gamepads_.clear();
+        gamepad_active_ = false;
         fingers_.clear();
         stick_x_ = 0.0f;
         stick_y_ = 0.0f;
-        gamepad_lx_ = 0.0f;
-        gamepad_ly_ = 0.0f;
-        gamepad_rx_ = 0.0f;
-        gamepad_ry_ = 0.0f;
-        gamepad_lt_ = 0.0f;
-        gamepad_rt_ = 0.0f;
         attack_dir_ = TouchCombatDirection::None;
         block_dir_ = TouchCombatDirection::None;
         radial_sector_ = -1;
@@ -1409,10 +1468,28 @@ public:
     }
     [[nodiscard]] InputContext context() const noexcept { return context_; }
 
-    [[nodiscard]] bool is_gamepad_connected() const noexcept { return !active_gamepads_.empty(); }
+    // Viewport size in the same units the backend normalizes touch/mouse with.
+    void set_viewport_size(int width, int height) noexcept {
+        viewport_aspect_ = (width > 0 && height > 0)
+                               ? sanitize_viewport_aspect(static_cast<float>(width) /
+                                                          static_cast<float>(height))
+                               : 1.0f;
+    }
+    [[nodiscard]] float viewport_aspect() const noexcept { return viewport_aspect_; }
 
+    // Mouse motion turns the camera only while this is set (typically: relative /
+    // captured mouse mode) and only in `Mission` / `CampaignMap`, so moving the
+    // cursor over menus or the inventory never spins the view.
+    void set_mouse_look_enabled(bool enabled) noexcept { mouse_look_enabled_ = enabled; }
+    [[nodiscard]] bool mouse_look_enabled() const noexcept { return mouse_look_enabled_; }
+
+    [[nodiscard]] bool is_gamepad_connected() const noexcept { return !gamepads_.empty(); }
+
+    // The overlay hides while a connected gamepad is the device in use; touching the
+    // screen brings it back (until the gamepad is used again). Devices that always
+    // report a controller (TV boxes, some phones) therefore keep touch controls.
     [[nodiscard]] bool is_touch_overlay_visible() const noexcept {
-        return profile_.touch_overlay_enabled && !is_gamepad_connected() &&
+        return profile_.touch_overlay_enabled && !(is_gamepad_connected() && gamepad_active_) &&
                context_allows_touch_overlay(context_);
     }
 
@@ -1424,12 +1501,17 @@ public:
                                       is_touch_overlay_visible());
     }
 
+    // `omit_key_once` (opcode `77`): the next press of `raw_key` is ignored by game-key
+    // mapping until that key is released; the request is then consumed.
     void omit_key_once(std::int32_t raw_key) noexcept {
         if (raw_key >= 0 && raw_key < kMaxRawInputKeys) {
             omitted_keys_[static_cast<std::size_t>(raw_key)] = true;
         }
     }
     void clear_omitted_keys() noexcept { omitted_keys_.fill(false); }
+    void set_omitted_keys(const std::array<bool, kMaxRawInputKeys>& keys) noexcept {
+        omitted_keys_ = keys;
+    }
     [[nodiscard]] const std::array<bool, kMaxRawInputKeys>& omitted_keys() const noexcept {
         return omitted_keys_;
     }
@@ -1445,38 +1527,56 @@ public:
     void process_frame(std::span<const RawInputEvent> events, float dt_seconds = 1.0f / 60.0f) {
         const float safe_dt =
             (std::isfinite(dt_seconds) && dt_seconds > 0.0f) ? std::min(dt_seconds, 0.25f) : 0.0f;
+        const float aspect = viewport_aspect_;
 
         raw_prev_down_ = raw_down_;
         game_prev_down_ = game_down_;
-        // Transient wheel impulses last one frame.
-        raw_down_[static_cast<std::size_t>(RawKey::kScrollUp)] = false;
-        raw_down_[static_cast<std::size_t>(RawKey::kScrollDown)] = false;
+        virtual_prev_held_ = virtual_held_;
+        pulse_prev_ = virtual_pulse_gk_;
+        raw_clicked_.fill(false);
+        raw_released_.fill(false);
         virtual_pulse_gk_.fill(false);
+        // Wheel notches are one-frame impulses.
+        release_raw(RawKey::kScrollUp);
+        release_raw(RawKey::kScrollDown);
 
-        float look_dx = 0.0f;
+        ++frame_counter_;
+        float look_dx = 0.0f;  // screen-height units
         float look_dy = 0.0f;
 
         for (const RawInputEvent& ev : events) {
             switch (ev.type) {
             case RawInputEvent::Type::KeyDown:
             case RawInputEvent::Type::MouseButtonDown:
-            case RawInputEvent::Type::GamepadButtonDown:
-                if (ev.raw_key >= 0 && ev.raw_key < kMaxRawInputKeys) {
-                    raw_down_[static_cast<std::size_t>(ev.raw_key)] = true;
-                }
+                press_raw(ev.raw_key);
                 break;
             case RawInputEvent::Type::KeyUp:
             case RawInputEvent::Type::MouseButtonUp:
-            case RawInputEvent::Type::GamepadButtonUp:
-                if (ev.raw_key >= 0 && ev.raw_key < kMaxRawInputKeys) {
-                    raw_down_[static_cast<std::size_t>(ev.raw_key)] = false;
+                release_raw(ev.raw_key);
+                break;
+            case RawInputEvent::Type::GamepadButtonDown:
+            case RawInputEvent::Type::GamepadButtonUp: {
+                const bool down = (ev.type == RawInputEvent::Type::GamepadButtonDown);
+                GamepadState& pad = pad_for(ev.device_id);
+                const std::int32_t slot = ev.raw_key - kFirstGamepadRawKey;
+                if (slot >= 0 && static_cast<std::size_t>(slot) < kNumGamepadRawKeys) {
+                    pad.buttons[static_cast<std::size_t>(slot)] = down;
+                    refresh_gamepad_key(ev.raw_key);
+                } else if (down) {
+                    press_raw(ev.raw_key);
+                } else {
+                    release_raw(ev.raw_key);
+                }
+                if (down) {
+                    mark_gamepad_used();
                 }
                 break;
+            }
             case RawInputEvent::Type::MouseWheel:
                 if (ev.dy > 0.0f) {
-                    raw_down_[static_cast<std::size_t>(RawKey::kScrollUp)] = true;
+                    press_raw(RawKey::kScrollUp);
                 } else if (ev.dy < 0.0f) {
-                    raw_down_[static_cast<std::size_t>(RawKey::kScrollDown)] = true;
+                    press_raw(RawKey::kScrollDown);
                 }
                 break;
             case RawInputEvent::Type::MouseMotion:
@@ -1484,54 +1584,45 @@ public:
                     cursor_x_ = std::clamp(ev.x, 0.0f, 1.0f);
                     cursor_y_ = std::clamp(ev.y, 0.0f, 1.0f);
                 }
-                if (std::isfinite(ev.dx) && std::isfinite(ev.dy)) {
-                    look_dx += ev.dx;
+                if (mouse_look_enabled_ && context_allows_touch_overlay(context_) &&
+                    std::isfinite(ev.dx) && std::isfinite(ev.dy)) {
+                    look_dx += ev.dx * aspect;
                     look_dy += ev.dy;
                 }
                 break;
             case RawInputEvent::Type::GamepadConnected:
-                add_gamepad(ev.device_id);
-                clear_touch_state();
+                (void)pad_for(ev.device_id);
+                mark_gamepad_used();
                 break;
             case RawInputEvent::Type::GamepadDisconnected:
                 remove_gamepad(ev.device_id);
-                if (!is_gamepad_connected()) {
-                    gamepad_lx_ = gamepad_ly_ = gamepad_rx_ = gamepad_ry_ = 0.0f;
-                    gamepad_lt_ = gamepad_rt_ = 0.0f;
-                    raw_down_[static_cast<std::size_t>(RawKey::kLeftTrigger)] = false;
-                    raw_down_[static_cast<std::size_t>(RawKey::kRightTrigger)] = false;
+                break;
+            case RawInputEvent::Type::GamepadAxis: {
+                GamepadState& pad = pad_for(ev.device_id);
+                const auto set_axis = [](float v, float lo, float& dst) {
+                    if (std::isfinite(v)) {
+                        dst = std::clamp(v, lo, 1.0f);
+                    }
+                };
+                set_axis(ev.left_x, -1.0f, pad.lx);
+                set_axis(ev.left_y, -1.0f, pad.ly);
+                set_axis(ev.right_x, -1.0f, pad.rx);
+                set_axis(ev.right_y, -1.0f, pad.ry);
+                set_axis(ev.left_trigger, 0.0f, pad.lt);
+                set_axis(ev.right_trigger, 0.0f, pad.rt);
+                refresh_trigger_keys();
+                const float dz = profile_.gamepad_deadzone;
+                if (std::hypot(pad.lx, pad.ly) > dz || std::hypot(pad.rx, pad.ry) > dz ||
+                    pad.lt >= kGamepadTriggerThreshold || pad.rt >= kGamepadTriggerThreshold) {
+                    mark_gamepad_used();
                 }
                 break;
-            case RawInputEvent::Type::GamepadAxis:
-                add_gamepad(ev.device_id);
-                if (std::isfinite(ev.left_x)) {
-                    gamepad_lx_ = std::clamp(ev.left_x, -1.0f, 1.0f);
-                }
-                if (std::isfinite(ev.left_y)) {
-                    gamepad_ly_ = std::clamp(ev.left_y, -1.0f, 1.0f);
-                }
-                if (std::isfinite(ev.right_x)) {
-                    gamepad_rx_ = std::clamp(ev.right_x, -1.0f, 1.0f);
-                }
-                if (std::isfinite(ev.right_y)) {
-                    gamepad_ry_ = std::clamp(ev.right_y, -1.0f, 1.0f);
-                }
-                if (std::isfinite(ev.left_trigger)) {
-                    gamepad_lt_ = std::clamp(ev.left_trigger, 0.0f, 1.0f);
-                    raw_down_[static_cast<std::size_t>(RawKey::kLeftTrigger)] =
-                        (gamepad_lt_ >= kGamepadTriggerThreshold);
-                }
-                if (std::isfinite(ev.right_trigger)) {
-                    gamepad_rt_ = std::clamp(ev.right_trigger, 0.0f, 1.0f);
-                    raw_down_[static_cast<std::size_t>(RawKey::kRightTrigger)] =
-                        (gamepad_rt_ >= kGamepadTriggerThreshold);
-                }
-                clear_touch_state();
-                break;
+            }
             case RawInputEvent::Type::TouchDown:
                 if (std::isfinite(ev.x) && std::isfinite(ev.y)) {
                     cursor_x_ = std::clamp(ev.x, 0.0f, 1.0f);
                     cursor_y_ = std::clamp(ev.y, 0.0f, 1.0f);
+                    gamepad_active_ = false;  // touching the screen re-shows the overlay
                     if (is_touch_overlay_visible()) {
                         handle_touch_down(ev.finger_id, cursor_x_, cursor_y_);
                     }
@@ -1547,7 +1638,13 @@ public:
                 }
                 break;
             case RawInputEvent::Type::TouchUp:
-                handle_touch_up(ev.finger_id);
+                handle_touch_up(ev.finger_id, true);
+                break;
+            case RawInputEvent::Type::TouchCancel:
+                handle_touch_up(ev.finger_id, false);
+                break;
+            case RawInputEvent::Type::FocusLost:
+                release_everything();
                 break;
             }
         }
@@ -1556,26 +1653,49 @@ public:
             clear_touch_state();
         }
 
-        // Raw key edges
+        // `omit_key_once`: a fresh press of an omitted key is swallowed (until release).
         for (std::size_t k = 0; k < static_cast<std::size_t>(kMaxRawInputKeys); ++k) {
-            const bool d = raw_down_[k];
-            const bool p = raw_prev_down_[k];
-            raw_clicked_[k] = d && !p;
-            raw_released_[k] = !d && p;
+            if (raw_clicked_[k] && omitted_keys_[k]) {
+                omitted_keys_[k] = false;
+                suppressed_keys_[k] = true;
+            }
         }
 
-        // Combine physical chords with active virtual overlay + gamepad analog stick.
-        std::array<bool, kNumGameInputKeys> touch_gk_held{};
-        synthesize_overlay_game_keys(touch_gk_held);
+        // Key views for chord matching with suppressed keys masked out.
+        std::array<bool, kMaxRawInputKeys> down_now{};
+        std::array<bool, kMaxRawInputKeys> seen_down{};
+        std::array<bool, kMaxRawInputKeys> prev_for_click{};
+        std::array<bool, kMaxRawInputKeys> prev_for_raise{};
+        for (std::size_t k = 0; k < static_cast<std::size_t>(kMaxRawInputKeys); ++k) {
+            const bool live = !suppressed_keys_[k];
+            down_now[k] = live && raw_down_[k];
+            seen_down[k] = live && (raw_down_[k] || raw_clicked_[k]);
+            prev_for_click[k] = live && raw_prev_down_[k] && !raw_clicked_[k];
+            prev_for_raise[k] = live && (raw_prev_down_[k] || raw_clicked_[k]);
+        }
+
+        virtual_held_.fill(false);
+        synthesize_overlay_game_keys(virtual_held_);
 
         for (std::size_t g = 0; g < static_cast<std::size_t>(kNumGameInputKeys); ++g) {
             const std::int32_t gid = static_cast<std::int32_t>(g);
-            const bool d = key_mgr_.key_down(gid, raw_down_) || touch_gk_held[g] ||
-                           virtual_pulse_gk_[g];
-            const bool p = game_prev_down_[g];
+            const bool phys_down = key_mgr_.key_down(gid, down_now);
+            const bool phys_click = key_mgr_.key_clicked(gid, seen_down, prev_for_click);
+            const bool phys_raise = key_mgr_.key_raised(gid, down_now, prev_for_raise);
+            const bool virt_click = virtual_held_[g] && !virtual_prev_held_[g];
+            const bool virt_raise = !virtual_held_[g] && virtual_prev_held_[g];
+            const bool pulse_raise = pulse_prev_[g] && !virtual_pulse_gk_[g];
+            const bool d = phys_down || virtual_held_[g] || virtual_pulse_gk_[g];
             game_down_[g] = d;
-            game_clicked_[g] = (d && !p) || virtual_pulse_gk_[g];
-            game_released_[g] = !d && p;
+            game_clicked_[g] =
+                phys_click || ((virt_click || virtual_pulse_gk_[g]) && !game_prev_down_[g]);
+            game_released_[g] = !d && (phys_raise || virt_raise || pulse_raise);
+        }
+
+        for (std::size_t k = 0; k < static_cast<std::size_t>(kMaxRawInputKeys); ++k) {
+            if (!raw_down_[k]) {
+                suppressed_keys_[k] = false;
+            }
         }
 
         // Build consolidated analog + look + combat frame state.
@@ -1585,33 +1705,30 @@ public:
         frame_.cursor_x = cursor_x_;
         frame_.cursor_y = cursor_y_;
 
-        float mx = stick_x_;
-        float my = stick_y_;
-        // Apply gamepad left stick (with radial deadzone)
         float glx = 0.0f;
         float gly = 0.0f;
-        apply_radial_deadzone(gamepad_lx_, -gamepad_ly_, profile_.gamepad_deadzone, glx, gly);
-        mx += glx;
-        my += gly;
-        // Apply keyboard WASD / game keys
-        if (game_down_[static_cast<std::size_t>(GameKeyId::MoveRight)]) {
-            mx += 1.0f;
-        }
-        if (game_down_[static_cast<std::size_t>(GameKeyId::MoveLeft)]) {
-            mx -= 1.0f;
-        }
-        if (game_down_[static_cast<std::size_t>(GameKeyId::MoveForward)]) {
-            my += 1.0f;
-        }
-        if (game_down_[static_cast<std::size_t>(GameKeyId::MoveBackward)]) {
-            my -= 1.0f;
-        }
-        frame_.move_x = std::clamp(mx, -1.0f, 1.0f);
-        frame_.move_y = std::clamp(my, -1.0f, 1.0f);
-
         float grx = 0.0f;
         float gry = 0.0f;
-        apply_radial_deadzone(gamepad_rx_, -gamepad_ry_, profile_.gamepad_deadzone, grx, gry);
+        gamepad_sticks(glx, gly, grx, gry);
+
+        // Analog sources add directly; only *physical* move keys add a full unit
+        // (the keys the overlay / gamepad synthesize must not double-count).
+        float mx = stick_x_ + glx;
+        float my = stick_y_ + gly;
+        const auto phys = [&](GameKeyId id) {
+            return key_mgr_.key_down(static_cast<std::int32_t>(id), down_now);
+        };
+        mx += (phys(GameKeyId::MoveRight) ? 1.0f : 0.0f) - (phys(GameKeyId::MoveLeft) ? 1.0f : 0.0f);
+        my += (phys(GameKeyId::MoveForward) ? 1.0f : 0.0f) -
+              (phys(GameKeyId::MoveBackward) ? 1.0f : 0.0f);
+        const float mag = std::sqrt(mx * mx + my * my);
+        if (mag > 1.0f) {  // diagonals are not faster than straight lines
+            mx /= mag;
+            my /= mag;
+        }
+        frame_.move_x = mx;
+        frame_.move_y = my;
+
         const float y_sign = profile_.invert_look_y ? -1.0f : 1.0f;
         // Dragging right (+look_dx) turns right (+yaw); dragging up (-look_dy) pitches up (+pitch).
         frame_.look_yaw_delta =
@@ -1642,9 +1759,12 @@ public:
     [[nodiscard]] const std::array<bool, kMaxRawInputKeys>& raw_prev_down() const noexcept {
         return raw_prev_down_;
     }
+    // Keys that went down at any point this frame (also set for a press + release
+    // inside the frame, and for every wheel notch).
     [[nodiscard]] const std::array<bool, kMaxRawInputKeys>& raw_clicked() const noexcept {
         return raw_clicked_;
     }
+    // Keys that went up at any point this frame.
     [[nodiscard]] const std::array<bool, kMaxRawInputKeys>& raw_released() const noexcept {
         return raw_released_;
     }
@@ -1669,19 +1789,139 @@ private:
         float anchor_y = 0.0f;
         float last_x = 0.0f;
         float last_y = 0.0f;
+        std::uint64_t down_frame = 0U;
     };
 
-    void add_gamepad(std::uint64_t id) {
-        if (std::find(active_gamepads_.begin(), active_gamepads_.end(), id) ==
-            active_gamepads_.end()) {
-            active_gamepads_.push_back(id);
+    struct GamepadState {
+        std::uint64_t id = 0;
+        float lx = 0.0f;
+        float ly = 0.0f;
+        float rx = 0.0f;
+        float ry = 0.0f;
+        float lt = 0.0f;
+        float rt = 0.0f;
+        std::array<bool, kNumGamepadRawKeys> buttons{};
+    };
+
+    void press_raw(std::int32_t raw_key) noexcept {
+        if (raw_key < 0 || raw_key >= kMaxRawInputKeys) {
+            return;
         }
+        const auto k = static_cast<std::size_t>(raw_key);
+        if (!raw_down_[k]) {
+            raw_clicked_[k] = true;
+        }
+        raw_down_[k] = true;
+    }
+
+    void release_raw(std::int32_t raw_key) noexcept {
+        if (raw_key < 0 || raw_key >= kMaxRawInputKeys) {
+            return;
+        }
+        const auto k = static_cast<std::size_t>(raw_key);
+        if (raw_down_[k]) {
+            raw_released_[k] = true;
+        }
+        raw_down_[k] = false;
+    }
+
+    GamepadState& pad_for(std::uint64_t id) {
+        for (auto& p : gamepads_) {
+            if (p.id == id) {
+                return p;
+            }
+        }
+        gamepads_.push_back(GamepadState{});
+        gamepads_.back().id = id;
+        return gamepads_.back();
     }
 
     void remove_gamepad(std::uint64_t id) {
-        active_gamepads_.erase(
-            std::remove(active_gamepads_.begin(), active_gamepads_.end(), id),
-            active_gamepads_.end());
+        gamepads_.erase(std::remove_if(gamepads_.begin(), gamepads_.end(),
+                                       [id](const GamepadState& p) { return p.id == id; }),
+                        gamepads_.end());
+        // Buttons the removed pad was holding must not stay stuck down.
+        for (std::size_t i = 0; i < kNumGamepadRawKeys; ++i) {
+            refresh_gamepad_key(kFirstGamepadRawKey + static_cast<std::int32_t>(i));
+        }
+        refresh_trigger_keys();
+        if (gamepads_.empty()) {
+            gamepad_active_ = false;
+        }
+    }
+
+    void mark_gamepad_used() noexcept {
+        if (!gamepad_active_) {
+            gamepad_active_ = true;
+            clear_touch_state();
+        }
+    }
+
+    // A gamepad raw key is down while any connected pad holds it (triggers also
+    // count past `kGamepadTriggerThreshold`).
+    void refresh_gamepad_key(std::int32_t raw_key) noexcept {
+        const std::int32_t slot = raw_key - kFirstGamepadRawKey;
+        if (slot < 0 || static_cast<std::size_t>(slot) >= kNumGamepadRawKeys) {
+            return;
+        }
+        bool held = false;
+        for (const auto& p : gamepads_) {
+            held = held || p.buttons[static_cast<std::size_t>(slot)];
+            if (raw_key == RawKey::kLeftTrigger) {
+                held = held || p.lt >= kGamepadTriggerThreshold;
+            } else if (raw_key == RawKey::kRightTrigger) {
+                held = held || p.rt >= kGamepadTriggerThreshold;
+            }
+        }
+        if (held) {
+            press_raw(raw_key);
+        } else {
+            release_raw(raw_key);
+        }
+    }
+
+    void refresh_trigger_keys() noexcept {
+        refresh_gamepad_key(RawKey::kLeftTrigger);
+        refresh_gamepad_key(RawKey::kRightTrigger);
+    }
+
+    // Per stick, the pad deflected furthest wins (an idle second pad cannot zero
+    // the stick of the pad being used). Deadzone applied.
+    void gamepad_sticks(float& lx, float& ly, float& rx, float& ry) const noexcept {
+        float best_l = -1.0f;
+        float best_r = -1.0f;
+        float raw_lx = 0.0f;
+        float raw_ly = 0.0f;
+        float raw_rx = 0.0f;
+        float raw_ry = 0.0f;
+        for (const auto& p : gamepads_) {
+            const float ml = std::hypot(p.lx, p.ly);
+            if (ml > best_l) {
+                best_l = ml;
+                raw_lx = p.lx;
+                raw_ly = p.ly;
+            }
+            const float mr = std::hypot(p.rx, p.ry);
+            if (mr > best_r) {
+                best_r = mr;
+                raw_rx = p.rx;
+                raw_ry = p.ry;
+            }
+        }
+        apply_radial_deadzone(raw_lx, -raw_ly, profile_.gamepad_deadzone, lx, ly);
+        apply_radial_deadzone(raw_rx, -raw_ry, profile_.gamepad_deadzone, rx, ry);
+    }
+
+    void release_everything() noexcept {
+        for (std::size_t k = 0; k < static_cast<std::size_t>(kMaxRawInputKeys); ++k) {
+            release_raw(static_cast<std::int32_t>(k));
+        }
+        for (auto& p : gamepads_) {
+            const std::uint64_t id = p.id;
+            p = GamepadState{};
+            p.id = id;
+        }
+        clear_touch_state();
     }
 
     [[nodiscard]] bool has_finger_for(TouchWidgetId w) const noexcept {
@@ -1721,6 +1961,7 @@ private:
         out_y = y * scale;
     }
 
+    // `dx` / `dy` in screen-height units.
     [[nodiscard]] static TouchCombatDirection classify_swipe(float dx,
                                                              float dy,
                                                              float threshold) noexcept {
@@ -1734,6 +1975,7 @@ private:
         return (dy < 0.0f) ? TouchCombatDirection::Up : TouchCombatDirection::Down;
     }
 
+    // `dx` / `dy` in screen-height units.
     [[nodiscard]] static std::int32_t classify_radial_sector(float dx,
                                                              float dy,
                                                              float deadzone) noexcept {
@@ -1759,7 +2001,8 @@ private:
             TouchWidgetId::BlockZone, TouchWidgetId::LookArea};
         for (const TouchWidgetId id : kPriority) {
             const TouchWidgetLayout& w = profile_.widgets[static_cast<std::size_t>(id)];
-            if (is_touch_widget_active(id, context_, w, true) && w.contains(x, y)) {
+            if (is_touch_widget_active(id, context_, w, true) &&
+                w.contains(x, y, viewport_aspect_)) {
                 return id;
             }
         }
@@ -1768,14 +2011,16 @@ private:
 
     void update_stick_from_point(float x, float y) noexcept {
         const auto& w = profile_.widgets[static_cast<std::size_t>(TouchWidgetId::MoveStick)];
-        const float rx = std::max(0.01f, w.half_w * w.scale);
-        const float ry = std::max(0.01f, w.half_h * w.scale);
-        const float raw_x = (x - w.cx) / rx;
-        const float raw_y = -(y - w.cy) / ry;  // Screen top = forward (+Y)
+        const float a = viewport_aspect_;
+        const float r = w.circle_radius(a);
+        const float raw_x = (x - w.cx) * a / r;
+        const float raw_y = -(y - w.cy) / r;  // Screen top = forward (+Y)
         apply_radial_deadzone(raw_x, raw_y, profile_.stick_deadzone, stick_x_, stick_y_);
     }
 
     void handle_touch_down(std::int64_t finger_id, float x, float y) {
+        // A repeated DOWN for a tracked finger (missed UP) restarts that finger.
+        handle_touch_up(finger_id, false);
         if (fingers_.size() >= kMaxTrackedFingers) {
             return;
         }
@@ -1783,15 +2028,7 @@ private:
         if (target == TouchWidgetId::Count) {
             return;
         }
-        for (auto& existing : fingers_) {
-            if (existing.finger_id == finger_id) {
-                existing.widget = target;
-                existing.anchor_x = existing.last_x = x;
-                existing.anchor_y = existing.last_y = y;
-                return;
-            }
-        }
-        fingers_.push_back(ActiveFinger{finger_id, target, x, y, x, y});
+        fingers_.push_back(ActiveFinger{finger_id, target, x, y, x, y, frame_counter_});
         if (target == TouchWidgetId::MoveStick) {
             update_stick_from_point(x, y);
         } else if (target == TouchWidgetId::CommandRadial) {
@@ -1806,6 +2043,7 @@ private:
                            float y,
                            float& look_dx,
                            float& look_dy) noexcept {
+        const float a = viewport_aspect_;
         for (auto& f : fingers_) {
             if (f.finger_id != finger_id) {
                 continue;
@@ -1813,22 +2051,22 @@ private:
             if (f.widget == TouchWidgetId::MoveStick) {
                 update_stick_from_point(x, y);
             } else if (f.widget == TouchWidgetId::LookArea) {
-                look_dx += (x - f.last_x);
+                look_dx += (x - f.last_x) * a;
                 look_dy += (y - f.last_y);
             } else if (f.widget == TouchWidgetId::AttackZone) {
-                const auto dir =
-                    classify_swipe(x - f.anchor_x, y - f.anchor_y, profile_.swipe_threshold);
+                const auto dir = classify_swipe((x - f.anchor_x) * a, y - f.anchor_y,
+                                                profile_.swipe_threshold);
                 if (dir != TouchCombatDirection::None) {
                     attack_dir_ = dir;
                 }
             } else if (f.widget == TouchWidgetId::BlockZone) {
-                const auto dir =
-                    classify_swipe(x - f.anchor_x, y - f.anchor_y, profile_.swipe_threshold);
+                const auto dir = classify_swipe((x - f.anchor_x) * a, y - f.anchor_y,
+                                                profile_.swipe_threshold);
                 if (dir != TouchCombatDirection::None) {
                     block_dir_ = dir;
                 }
             } else if (f.widget == TouchWidgetId::CommandRadial) {
-                radial_sector_ = classify_radial_sector(x - f.anchor_x, y - f.anchor_y,
+                radial_sector_ = classify_radial_sector((x - f.anchor_x) * a, y - f.anchor_y,
                                                         profile_.radial_deadzone);
             }
             f.last_x = x;
@@ -1837,12 +2075,23 @@ private:
         }
     }
 
-    void handle_touch_up(std::int64_t finger_id) noexcept {
+    // `commit == false` (cancelled touch) releases the finger without issuing the
+    // highlighted radial order.
+    void handle_touch_up(std::int64_t finger_id, bool commit) noexcept {
         for (std::size_t i = 0; i < fingers_.size(); ++i) {
             if (fingers_[i].finger_id != finger_id) {
                 continue;
             }
             const TouchWidgetId w = fingers_[i].widget;
+            // A tap that starts and ends inside one frame never shows up as "held";
+            // pulse the game key so it still attacks / blocks for one frame.
+            if (commit && fingers_[i].down_frame == frame_counter_) {
+                if (w == TouchWidgetId::AttackZone) {
+                    virtual_pulse_gk_[static_cast<std::size_t>(GameKeyId::Attack)] = true;
+                } else if (w == TouchWidgetId::BlockZone) {
+                    virtual_pulse_gk_[static_cast<std::size_t>(GameKeyId::Defend)] = true;
+                }
+            }
             fingers_.erase(fingers_.begin() + static_cast<std::ptrdiff_t>(i));
             if (w == TouchWidgetId::MoveStick && !has_finger_for(TouchWidgetId::MoveStick)) {
                 stick_x_ = 0.0f;
@@ -1855,7 +2104,7 @@ private:
                 block_dir_ = TouchCombatDirection::None;
             } else if (w == TouchWidgetId::CommandRadial &&
                        !has_finger_for(TouchWidgetId::CommandRadial)) {
-                if (radial_sector_ >= 0 && radial_sector_ < 8) {
+                if (commit && radial_sector_ >= 0 && radial_sector_ < 8) {
                     static constexpr std::array<GameKeyId, 8> kOrderKeys = {
                         GameKeyId::Order1, GameKeyId::Order2, GameKeyId::Order3, GameKeyId::Order4,
                         GameKeyId::Order5, GameKeyId::Order6, GameKeyId::Order7, GameKeyId::Order8};
@@ -1871,49 +2120,36 @@ private:
     }
 
     void synthesize_overlay_game_keys(std::array<bool, kNumGameInputKeys>& out) const noexcept {
-        // Virtual stick -> Mission move keys and CampaignMap move keys.
         const float thresh = profile_.stick_key_threshold;
-        if (stick_y_ >= thresh) {
-            out[static_cast<std::size_t>(GameKeyId::MoveForward)] = true;
-            if (context_ == InputContext::CampaignMap) {
-                out[static_cast<std::size_t>(GameKeyId::MapMoveForward)] = true;
+        const bool on_map = (context_ == InputContext::CampaignMap);
+        const auto press = [&](GameKeyId mission_key, GameKeyId map_key) {
+            out[static_cast<std::size_t>(mission_key)] = true;
+            if (on_map) {
+                out[static_cast<std::size_t>(map_key)] = true;
             }
-        }
-        if (stick_y_ <= -thresh) {
-            out[static_cast<std::size_t>(GameKeyId::MoveBackward)] = true;
-            if (context_ == InputContext::CampaignMap) {
-                out[static_cast<std::size_t>(GameKeyId::MapMoveBackward)] = true;
+        };
+        const auto emit_stick = [&](float x, float y) {
+            if (y >= thresh) {
+                press(GameKeyId::MoveForward, GameKeyId::MapMoveForward);
             }
-        }
-        if (stick_x_ <= -thresh) {
-            out[static_cast<std::size_t>(GameKeyId::MoveLeft)] = true;
-            if (context_ == InputContext::CampaignMap) {
-                out[static_cast<std::size_t>(GameKeyId::MapMoveLeft)] = true;
+            if (y <= -thresh) {
+                press(GameKeyId::MoveBackward, GameKeyId::MapMoveBackward);
             }
-        }
-        if (stick_x_ >= thresh) {
-            out[static_cast<std::size_t>(GameKeyId::MoveRight)] = true;
-            if (context_ == InputContext::CampaignMap) {
-                out[static_cast<std::size_t>(GameKeyId::MapMoveRight)] = true;
+            if (x <= -thresh) {
+                press(GameKeyId::MoveLeft, GameKeyId::MapMoveLeft);
             }
-        }
-
-        // Physical gamepad left stick -> movement game keys.
+            if (x >= thresh) {
+                press(GameKeyId::MoveRight, GameKeyId::MapMoveRight);
+            }
+        };
+        // Virtual stick and physical gamepad left stick -> Mission and CampaignMap move keys.
+        emit_stick(stick_x_, stick_y_);
         float glx = 0.0f;
         float gly = 0.0f;
-        apply_radial_deadzone(gamepad_lx_, -gamepad_ly_, profile_.gamepad_deadzone, glx, gly);
-        if (gly >= thresh) {
-            out[static_cast<std::size_t>(GameKeyId::MoveForward)] = true;
-        }
-        if (gly <= -thresh) {
-            out[static_cast<std::size_t>(GameKeyId::MoveBackward)] = true;
-        }
-        if (glx <= -thresh) {
-            out[static_cast<std::size_t>(GameKeyId::MoveLeft)] = true;
-        }
-        if (glx >= thresh) {
-            out[static_cast<std::size_t>(GameKeyId::MoveRight)] = true;
-        }
+        float grx = 0.0f;
+        float gry = 0.0f;
+        gamepad_sticks(glx, gly, grx, gry);
+        emit_stick(glx, gly);
 
         if (has_finger_for(TouchWidgetId::AttackZone)) {
             out[static_cast<std::size_t>(GameKeyId::Attack)] = true;
@@ -1927,37 +2163,39 @@ private:
     TouchOverlayProfile profile_{};
     TouchLayoutEditor editor_{};
     InputContext context_ = InputContext::Mission;
+    float viewport_aspect_ = 1.0f;
+    bool mouse_look_enabled_ = true;
 
     std::array<bool, kMaxRawInputKeys> raw_down_{};
     std::array<bool, kMaxRawInputKeys> raw_prev_down_{};
     std::array<bool, kMaxRawInputKeys> raw_clicked_{};
     std::array<bool, kMaxRawInputKeys> raw_released_{};
     std::array<bool, kMaxRawInputKeys> omitted_keys_{};
+    std::array<bool, kMaxRawInputKeys> suppressed_keys_{};
 
     std::array<bool, kNumGameInputKeys> game_down_{};
     std::array<bool, kNumGameInputKeys> game_prev_down_{};
     std::array<bool, kNumGameInputKeys> game_clicked_{};
     std::array<bool, kNumGameInputKeys> game_released_{};
+    std::array<bool, kNumGameInputKeys> virtual_held_{};
+    std::array<bool, kNumGameInputKeys> virtual_prev_held_{};
     std::array<bool, kNumGameInputKeys> virtual_pulse_gk_{};
+    std::array<bool, kNumGameInputKeys> pulse_prev_{};
 
-    std::vector<std::uint64_t> active_gamepads_{};
+    std::vector<GamepadState> gamepads_{};
+    bool gamepad_active_ = false;
     std::vector<ActiveFinger> fingers_{};
     std::vector<RawInputEvent> poll_scratch_{};
 
     float stick_x_ = 0.0f;
     float stick_y_ = 0.0f;
-    float gamepad_lx_ = 0.0f;
-    float gamepad_ly_ = 0.0f;
-    float gamepad_rx_ = 0.0f;
-    float gamepad_ry_ = 0.0f;
-    float gamepad_lt_ = 0.0f;
-    float gamepad_rt_ = 0.0f;
     TouchCombatDirection attack_dir_ = TouchCombatDirection::None;
     TouchCombatDirection block_dir_ = TouchCombatDirection::None;
     std::int32_t radial_sector_ = -1;
     bool radial_open_ = false;
     float cursor_x_ = 0.5f;
     float cursor_y_ = 0.5f;
+    std::uint64_t frame_counter_ = 0U;
     InputFrameState frame_{};
 };
 
@@ -1976,7 +2214,8 @@ struct FreeCameraController {
 
     void apply_input(const InputFrameState& input, float dt_seconds) noexcept {
         if (std::isfinite(input.look_yaw_delta)) {
-            yaw_rad += input.look_yaw_delta;
+            // Wrapped to (-pi, pi] so float precision does not decay over long sessions.
+            yaw_rad = std::remainder(yaw_rad + input.look_yaw_delta, 6.283185307179586f);
         }
         if (std::isfinite(input.look_pitch_delta)) {
             pitch_rad = std::clamp(pitch_rad + input.look_pitch_delta, -1.48f, 1.48f);
@@ -2061,7 +2300,9 @@ struct FreeCameraController {
         }
     }
 
-    // Exports into Warband camera transform convention (`s`=right, `f`=up, `-u`=forward, `o`=pos).
+    // Exports into the Warband camera frame (`s`=right, `f`=up, `-u`=forward, `o`=pos),
+    // the convention `mbSoundManager::setTransform` (`0x140332970`) consumes (see
+    // `listener_from_camera_transform` in `wse/platform/audio.h`).
     [[nodiscard]] wse::core::WseTransform to_transform() const noexcept {
         const float cp = std::cos(pitch_rad);
         const float sp = std::sin(pitch_rad);

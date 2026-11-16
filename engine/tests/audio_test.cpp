@@ -1259,12 +1259,11 @@ void test_review_regressions() {
         m.set_channel_end_callback([&](std::int32_t ch) {
             fired.push_back(ch);
             if (ch == c0 && restarted_ch < 0) {
-                // Slot 0 ends first; slot 1 is already inactive with a pending end,
-                // so play_sound picks slot 0 (first free) -> then wait, stop c0 first?
-                // Actually starting 2 sounds fills c0 and c1, so slot 0 AND slot 1 get active
-                // BEFORE c1's queued callback runs!
-                (void)m.play_sound_2d(1);  // claims c0
-                restarted_ch = m.play_sound_2d(1);  // claims inactive c1!
+                // Both short sounds ended in this mix, so ends for c0 and c1 are queued.
+                // While c0's end is delivered, refill slot 0 and then slot 1 (still
+                // inactive, its end not yet delivered): c1's queued end must be dropped.
+                (void)m.play_sound_2d(1);           // claims slot 0
+                restarted_ch = m.play_sound_2d(1);  // claims slot 1
             } else if (ch == restarted_ch) {
                 stale_wipe_happened = true;
             }
@@ -1275,6 +1274,38 @@ void test_review_regressions() {
                    !stale_wipe_happened && m.is_channel_playing(c1) &&
                    m.active_sound_channel_count() == 2U,
                "re-entrant play into ended sibling slot suppresses stale queued end callback");
+    }
+
+    // 16. A sound started from an end callback never evicts: otherwise the evicted
+    //     sound's queued end (channel number only) would be delivered after the
+    //     caller had recorded that channel as its own.
+    {
+        AudioConfig cfg{};
+        cfg.max_virtual_channels = 2;
+        WseAudioMixer m(cfg);
+        m.load_sound_bank({MixerSoundSample{kSoundFlag2D, make_const_pcm(48000U, 48000U, 0.1f)}},
+                          {MixerSoundDef{0U, {MixerSoundVariant{0, 0U}}}});
+        const std::int32_t c0 = m.play_sound_2d(0);
+        const std::int32_t c1 = m.play_sound_2d(0);
+        std::vector<std::int32_t> fired;
+        std::int32_t refill = -2;
+        std::int32_t evict_attempt = -2;
+        m.set_channel_end_callback([&](std::int32_t ch) {
+            fired.push_back(ch);
+            if (ch == c0 && refill == -2) {
+                refill = m.play_sound_2d(0);         // free slot 0: allowed
+                evict_attempt = m.play_sound_2d(0);  // all busy: must not evict c1
+            }
+        });
+        m.stop_sound(c0);
+        expect(c0 == 0 && c1 == 1 && refill == c0 && evict_attempt == -1 &&
+                   fired.size() == 1U && m.is_channel_playing(c1) &&
+                   m.active_sound_channel_count() == 2U,
+               "play from a channel-end callback takes free slots only and never evicts");
+
+        // Outside a callback, eviction still works as before.
+        const std::int32_t outside = m.play_sound_2d(0);
+        expect(outside >= 0 && fired.size() == 2U, "eviction outside callbacks is unchanged");
     }
 }
 

@@ -307,6 +307,7 @@ int main(int argc, char* argv[]) {
     int last_win_h = 1;
     // Window points -> logical UI units (the UI is drawn under SDL_SetRenderScale).
     float points_to_logical = 1.0f;
+    std::uint64_t last_input_ns = SDL_GetTicksNS();
 
     while (!quit) {
         if (terminating.load()) {
@@ -397,8 +398,13 @@ int main(int argc, char* argv[]) {
         last_win_w = std::max(win_w, 1);
         last_win_h = std::max(win_h, 1);
         if (sdl_input) {
+            const std::uint64_t now_ns = SDL_GetTicksNS();
+            const float dt = static_cast<float>(now_ns - last_input_ns) * 1e-9f;
+            last_input_ns = now_ns;
             sdl_input->set_viewport_size(last_win_w, last_win_h);
-            input_mgr.step(*sdl_input, 1.0f / 60.0f);
+            input_mgr.set_viewport_size(last_win_w, last_win_h);
+            input_mgr.set_mouse_look_enabled(SDL_GetWindowRelativeMouseMode(window));
+            input_mgr.step(*sdl_input, dt);
         }
         const float px_scale_x =
             win_w > 0 ? static_cast<float>(out_w) / static_cast<float>(win_w) : 1.0f;
