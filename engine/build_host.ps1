@@ -110,6 +110,53 @@ foreach ($cpp in $wseLuaFiles) {
 & $zig ar rcs $wseLuaLib @wseLuaObjs
 if ($LASTEXITCODE -ne 0) { throw "wse_lua archive failed" }
 
+# Ensure stb_vorbis.c and dr_mp3.h are cached and verified under engine/build/third_party/audio/.
+$audioThirdParty = Join-Path $thirdParty "audio"
+New-Item -ItemType Directory -Force -Path $audioThirdParty | Out-Null
+$audioDownloads = @(
+    @{
+        Name = "stb_vorbis.c";
+        Url  = "https://raw.githubusercontent.com/nothings/stb/9600522de53973336fa033a289858a4354cbb04c/stb_vorbis.c";
+        Hash = "B52CF518355F7B2D181F18B97B812F361FFEB26299D935C8CF29E842401D60A6"
+    },
+    @{
+        Name = "dr_mp3.h";
+        Url  = "https://raw.githubusercontent.com/mackron/dr_libs/f12e197fd462e4c22873fbd70d11b1d2f2c1dc3c/dr_mp3.h";
+        Hash = "7A6CC38B0AFDB55CFC9EEC991D9169D67BEB8FD910BE2995121510CDAA99C356"
+    }
+)
+foreach ($item in $audioDownloads) {
+    $dst = Join-Path $audioThirdParty $item.Name
+    if (-not (Test-Path $dst)) {
+        Write-Host ("downloading  {0}" -f $item.Name)
+        Invoke-WebRequest -Uri $item.Url -OutFile $dst -UseBasicParsing
+    }
+    $actualHash = (Get-FileHash -Path $dst -Algorithm SHA256).Hash
+    if ($actualHash -ne $item.Hash) {
+        Remove-Item -Force $dst -ErrorAction SilentlyContinue
+        throw ("{0} SHA-256 mismatch: expected {1}, got {2}" -f $item.Name, $item.Hash, $actualHash)
+    }
+}
+
+$audioSrcDir = Join-Path $here "src\audio"
+$wseAudioObjDir = Join-Path $out "wse_audio_obj"
+New-Item -ItemType Directory -Force -Path $wseAudioObjDir | Out-Null
+$wseAudioLib = Join-Path $out "libwse_audio.a"
+if (Test-Path $wseAudioLib) { Remove-Item -Force $wseAudioLib }
+Write-Host "building     wse_audio"
+$audioVendorObj = Join-Path $wseAudioObjDir "wse_audio_vendor.o"
+& $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -w `
+    -I $include -I $audioThirdParty -I $audioSrcDir `
+    -c (Join-Path $audioSrcDir "wse_audio_vendor.cpp") -o $audioVendorObj
+if ($LASTEXITCODE -ne 0) { throw "wse_audio_vendor compile failed" }
+$audioCodecsObj = Join-Path $wseAudioObjDir "wse_audio_codecs.o"
+& $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
+    -I $include -I $audioSrcDir `
+    -c (Join-Path $audioSrcDir "wse_audio_codecs.cpp") -o $audioCodecsObj
+if ($LASTEXITCODE -ne 0) { throw "wse_audio_codecs compile failed" }
+& $zig ar rcs $wseAudioLib $audioVendorObj $audioCodecsObj
+if ($LASTEXITCODE -ne 0) { throw "wse_audio archive failed" }
+
 $tests = @(
     @{ Name = "operand"; Source = Join-Path $here "tests\operand_test.cpp" },
     @{ Name = "trigger"; Source = Join-Path $here "tests\trigger_test.cpp" },
@@ -130,7 +177,8 @@ $tests = @(
     @{ Name = "module_loaders"; Source = Join-Path $here "tests\module_loaders_test.cpp" },
     @{ Name = "headless"; Source = Join-Path $here "tests\headless_test.cpp" },
     @{ Name = "lua"; Source = Join-Path $here "tests\lua_test.cpp"; LinkLua = $true },
-    @{ Name = "asset"; Source = Join-Path $here "tests\asset_test.cpp" }
+    @{ Name = "asset"; Source = Join-Path $here "tests\asset_test.cpp" },
+    @{ Name = "audio"; Source = Join-Path $here "tests\audio_test.cpp"; LinkAudio = $true }
 )
 
 Write-Host "zig          $zig"
@@ -153,6 +201,9 @@ foreach ($test in $tests) {
     $extraLibs = @()
     if ($test.ContainsKey("LinkLua") -and $test.LinkLua) {
         $extraLibs += @($wseLuaLib, $luaLib)
+    }
+    if ($test.ContainsKey("LinkAudio") -and $test.LinkAudio) {
+        $extraLibs += @($wseAudioLib)
     }
     if ($test.ContainsKey("LinkDriverLoader") -and $test.LinkDriverLoader) {
         $extraLibs += @($driverLoaderObj)
@@ -191,7 +242,7 @@ foreach ($src in $selftestSources) {
 $selftestBinary = Join-Path $out "selftest_host_test.exe"
 & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
     -I $include -o $selftestBinary (Join-Path $here "tests\selftest_host_test.cpp") `
-    @selftestObjs $driverLoaderObj $wseLuaLib $luaLib
+    @selftestObjs $driverLoaderObj $wseLuaLib $luaLib $wseAudioLib
 if ($LASTEXITCODE -ne 0) {
     throw "selftest_host link failed"
 }

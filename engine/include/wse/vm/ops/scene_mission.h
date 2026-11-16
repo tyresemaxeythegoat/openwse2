@@ -361,7 +361,10 @@ template <typename Fn>
         }
         const auto& mo =
             world->mission_objects[static_cast<std::size_t>(narrow[1])];
-        if (mo.m5.active_sound_no < 0 && !mo.m5.sound_playing) {
+        if (world->audio_runtime != nullptr && mo.m5.sound_channel >= 0) {
+            effect.value =
+                world->audio_runtime->get_sound_progress(mo.m5.sound_channel);
+        } else if (mo.m5.active_sound_no < 0 && !mo.m5.sound_playing) {
             effect.value = -1;
         } else {
             const auto* mox = wse_m6_find_mission_object(*world, narrow[1]);

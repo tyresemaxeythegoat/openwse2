@@ -145,6 +145,84 @@ target_include_directories(wse_lua PRIVATE "${wse_lua51_src_dir}")
 target_link_libraries(wse_lua PRIVATE wse_engine lua51)
 wse_apply_strict_warnings(wse_lua)
 
+# Third-party public-domain / MIT-0 compressed audio decoders (slice P6):
+# stb_vorbis.c (Ogg Vorbis) and dr_mp3.h (MP3). Cached under engine/build/third_party/audio/
+# when built via build_host.ps1, or fetched per build directory with SHA-256 verification.
+set(WSE_STB_VORBIS_URL
+    "https://raw.githubusercontent.com/nothings/stb/9600522de53973336fa033a289858a4354cbb04c/stb_vorbis.c")
+set(WSE_STB_VORBIS_SHA256
+    "b52cf518355f7b2d181f18b97b812f361ffeb26299d935c8cf29e842401d60a6")
+set(WSE_DR_MP3_URL
+    "https://raw.githubusercontent.com/mackron/dr_libs/f12e197fd462e4c22873fbd70d11b1d2f2c1dc3c/dr_mp3.h")
+set(WSE_DR_MP3_SHA256
+    "7a6cc38b0afdb55cfc9eec991d9169d67beb8fd910be2995121510cdaa99c356")
+
+if(NOT DEFINED WSE_AUDIO_THIRD_PARTY_DIR AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/build/third_party/audio/stb_vorbis.c" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/build/third_party/audio/dr_mp3.h")
+    set(WSE_AUDIO_THIRD_PARTY_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/engine/build/third_party/audio")
+endif()
+
+if(DEFINED WSE_AUDIO_THIRD_PARTY_DIR)
+    set(wse_audio_third_party_dir "${WSE_AUDIO_THIRD_PARTY_DIR}")
+else()
+    set(wse_audio_third_party_dir "${CMAKE_CURRENT_BINARY_DIR}/_third_party/audio")
+    file(MAKE_DIRECTORY "${wse_audio_third_party_dir}")
+    if(NOT EXISTS "${wse_audio_third_party_dir}/stb_vorbis.c")
+        message(STATUS "Downloading stb_vorbis.c (SHA-256 verified)...")
+        file(DOWNLOAD "${WSE_STB_VORBIS_URL}"
+             "${wse_audio_third_party_dir}/stb_vorbis.c"
+             EXPECTED_HASH "SHA256=${WSE_STB_VORBIS_SHA256}"
+             TLS_VERIFY ON
+             STATUS _wse_vorbis_dl_status)
+        list(GET _wse_vorbis_dl_status 0 _wse_vorbis_dl_code)
+        if(NOT _wse_vorbis_dl_code EQUAL 0)
+            message(FATAL_ERROR "Failed to download stb_vorbis.c: ${_wse_vorbis_dl_status}")
+        endif()
+    endif()
+    if(NOT EXISTS "${wse_audio_third_party_dir}/dr_mp3.h")
+        message(STATUS "Downloading dr_mp3.h (SHA-256 verified)...")
+        file(DOWNLOAD "${WSE_DR_MP3_URL}"
+             "${wse_audio_third_party_dir}/dr_mp3.h"
+             EXPECTED_HASH "SHA256=${WSE_DR_MP3_SHA256}"
+             TLS_VERIFY ON
+             STATUS _wse_mp3_dl_status)
+        list(GET _wse_mp3_dl_status 0 _wse_mp3_dl_code)
+        if(NOT _wse_mp3_dl_code EQUAL 0)
+            message(FATAL_ERROR "Failed to download dr_mp3.h: ${_wse_mp3_dl_status}")
+        endif()
+    endif()
+endif()
+
+add_library(wse_audio_vendor STATIC
+    engine/src/audio/wse_audio_vendor.cpp
+)
+set_target_properties(wse_audio_vendor PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(wse_audio_vendor PRIVATE
+    "${wse_audio_third_party_dir}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/src/audio"
+)
+target_link_libraries(wse_audio_vendor PRIVATE wse_engine)
+if(NOT WIN32)
+    target_link_libraries(wse_audio_vendor INTERFACE m)
+endif()
+if(MSVC)
+    target_compile_options(wse_audio_vendor PRIVATE /w)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(wse_audio_vendor PRIVATE -w)
+endif()
+
+add_library(wse_audio STATIC
+    engine/src/audio/wse_audio_codecs.cpp
+)
+set_target_properties(wse_audio PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(wse_audio PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/src/audio"
+)
+target_link_libraries(wse_audio PRIVATE wse_engine wse_audio_vendor)
+wse_apply_strict_warnings(wse_audio)
+
 # Vulkan runtime driver loader + VulkanRhiDevice (slice P4). Its <vulkan/vulkan.h>
 # comes from the vendored headers and stays private: callers see only rhi.h.
 add_library(wse_vulkan STATIC platform/vulkan/driver_loader.cpp)
@@ -182,13 +260,14 @@ if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
         engine/tests/headless_test.cpp
         engine/tests/lua_test.cpp
         engine/tests/asset_test.cpp
+        engine/tests/audio_test.cpp
     )
     set_target_properties(wse_selftest PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_compile_definitions(wse_selftest PRIVATE WSE_SELF_TEST_LIBRARY=1)
     target_include_directories(wse_selftest PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests"
     )
-    target_link_libraries(wse_selftest PUBLIC wse_engine wse_lua wse_vulkan)
+    target_link_libraries(wse_selftest PUBLIC wse_engine wse_lua wse_vulkan wse_audio)
     wse_apply_strict_warnings(wse_selftest)
 endif()
 
@@ -227,6 +306,7 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
     wse_add_host_test(headless)
     wse_add_host_test(lua)
     wse_add_host_test(asset)
+    wse_add_host_test(audio)
 
     add_executable(selftest_host_test engine/tests/selftest_host_test.cpp)
     target_link_libraries(selftest_host_test PRIVATE wse_selftest)
@@ -261,6 +341,7 @@ if(WSE_BUILD_ANDROID_APP)
 
     add_library(wse2 SHARED
         platform/sdl/sdl_selftest_main.cpp
+        platform/sdl/sdl_audio.cpp
         platform/android/saf_vfs_jni.cpp
     )
     target_link_libraries(wse2 PRIVATE

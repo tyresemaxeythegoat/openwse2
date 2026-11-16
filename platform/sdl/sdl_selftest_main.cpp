@@ -7,6 +7,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "sdl_audio.h"
 #include "wse_selftest.h"
 
 #include <algorithm>
@@ -42,7 +43,7 @@ struct UiState {
     bool all_passed = false;
     int completed_count = 0;
     int passed_count = 0;
-    int total_count = 18;
+    int total_count = 20;
     std::int64_t total_ms = 0;
     std::string active_name;
     std::string note;
@@ -157,6 +158,16 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Exercise the SDL3 audio stream backend non-fatally on device startup.
+    auto audio_dev = wse::platform::create_sdl_audio_device();
+    if (audio_dev && audio_dev->open(wse::platform::AudioDeviceSpec{48000U, 2U})) {
+        SDL_Log("SDL3 audio stream ready (%s, %u Hz)", audio_dev->backend_name(),
+                audio_dev->spec().sample_rate);
+        audio_dev->close();
+    } else {
+        SDL_Log("SDL3 audio probe skipped or unavailable (non-fatal)");
+    }
+
     std::string cli_fixture;
     if (argc > 1 && argv[1] && argv[1][0] != '\0') {
         cli_fixture = argv[1];
@@ -205,7 +216,7 @@ int main(int argc, char* argv[]) {
                 ui.all_passed = false;
                 ui.completed_count = 0;
                 ui.passed_count = 0;
-                ui.total_count = 18;
+                ui.total_count = 20;
                 ui.total_ms = 0;
                 ui.active_name.clear();
                 ui.note = prep_err;
@@ -400,7 +411,7 @@ int main(int argc, char* argv[]) {
         bool all_passed = false;
         int completed_count = 0;
         int passed_count = 0;
-        int total_count = 18;
+        int total_count = 20;
         std::int64_t total_ms = 0;
         std::string active_name;
         std::string note;

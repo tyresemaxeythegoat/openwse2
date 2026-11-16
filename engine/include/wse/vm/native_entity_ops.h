@@ -275,15 +275,24 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
     // Audio, Terrain, Presentation, UI
     case 599: // play_sound_at_position (0x1401ca66e)
         if (narrow[0] >= 0 && wse_register_ok(narrow[1])) {
-            world.played_sounds.push_back(game::WseBattleEvent{
-                0, narrow[0], -1, narrow[2],
-                ctx.positions[static_cast<std::size_t>(narrow[1])].o});
+            const wse::core::WseVec4 pos =
+                ctx.positions[static_cast<std::size_t>(narrow[1])].o;
+            world.played_sounds.push_back(
+                game::WseBattleEvent{0, narrow[0], -1, narrow[2], pos});
+            if (world.audio_runtime != nullptr) {
+                world.music.last_sound_channel = world.audio_runtime->play_sound(
+                    narrow[0], pos, static_cast<std::uint32_t>(narrow[2]), 1.0f, 0);
+            }
         }
         return NativeDispatch::handled;
     case 600: // play_sound (0x1401ca75d)
         if (narrow[0] >= 0) {
             world.played_sounds.push_back(
                 game::WseBattleEvent{0, narrow[0], -1, narrow[1], {}});
+            if (world.audio_runtime != nullptr) {
+                world.music.last_sound_channel = world.audio_runtime->play_sound_2d(
+                    narrow[0], static_cast<std::uint32_t>(narrow[1]));
+            }
         }
         return NativeDispatch::handled;
     case 791: // position_set_z_to_ground_level (0x1401cbd9b)

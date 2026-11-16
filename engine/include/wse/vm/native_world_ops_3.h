@@ -428,12 +428,17 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
         }
         return NativeDispatch::handled;
     case 616: // stop_sound_channel (0x1401ca8f8)
-        if (narrow[0] >= 0 && narrow[0] < world.misc.num_sound_channels) {
-            const auto ch = static_cast<std::size_t>(narrow[0]);
-            if (world.music.stopped_channels.size() <= ch) {
-                world.music.stopped_channels.resize(ch + 1, false);
+        if (narrow[0] >= 0) {
+            if (world.audio_runtime != nullptr) {
+                world.audio_runtime->stop_channel(narrow[0]);
             }
-            world.music.stopped_channels[ch] = true;
+            if (narrow[0] < world.misc.num_sound_channels) {
+                const auto ch = static_cast<std::size_t>(narrow[0]);
+                if (world.music.stopped_channels.size() <= ch) {
+                    world.music.stopped_channels.resize(ch + 1, false);
+                }
+                world.music.stopped_channels[ch] = true;
+            }
         }
         return NativeDispatch::handled;
     case 702: // get_trigger_object_position (0x1401caa95)

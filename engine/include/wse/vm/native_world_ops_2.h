@@ -189,23 +189,42 @@ inline void native_world_push_tableau_mesh(
             narrow[1] < 3) {
             world.music.current_track_no = narrow[0];
             world.music.track_options = narrow[1];
+            if (world.audio_runtime != nullptr) {
+                world.audio_runtime->play_track(narrow[0], narrow[1]);
+            }
         }
         return NativeDispatch::handled;
     case 602: // play_cue_track (0x1401ca883)
         if (world.is_valid_music_track(narrow[0])) {
             world.music.cue_track_no = narrow[0];
+            if (world.audio_runtime != nullptr) {
+                world.audio_runtime->play_cue_track(narrow[0]);
+            }
         }
         return NativeDispatch::handled;
     case 603: // music_set_situation (0x1401ca8a2)
         world.music.situation_flags = static_cast<std::uint32_t>(narrow[0]);
+        if (world.audio_runtime != nullptr) {
+            world.audio_runtime->set_music_situation(world.music.situation_flags);
+        }
         return NativeDispatch::handled;
     case 604: // music_set_culture (0x1401ca8ae)
         world.music.culture_flags = static_cast<std::uint32_t>(narrow[0]);
+        if (world.audio_runtime != nullptr) {
+            world.audio_runtime->set_music_culture(world.music.culture_flags);
+        }
         return NativeDispatch::handled;
     case 609: // stop_all_sounds (0x1401ca8ba)
         world.music.all_sounds_stopped = (narrow[0] != 0);
+        if (world.audio_runtime != nullptr) {
+            world.audio_runtime->stop_all_sounds(narrow[0] != 0);
+        }
         return NativeDispatch::handled;
     case 615: // store_last_sound_channel (0x1401ca8d1)
+        if (world.audio_runtime != nullptr) {
+            world.music.last_sound_channel =
+                world.audio_runtime->last_sound_channel();
+        }
         store_lvalue(dst, static_cast<std::int64_t>(world.music.last_sound_channel),
                      ctx, locals);
         return NativeDispatch::handled;

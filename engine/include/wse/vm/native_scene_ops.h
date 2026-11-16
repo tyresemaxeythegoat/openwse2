@@ -406,11 +406,25 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             obj.m5.sound_playing = true;
             world.played_sounds.push_back(
                 game::WseBattleEvent{0, narrow[1], -1, flags, obj.position.o});
+            if (world.audio_runtime != nullptr) {
+                const std::int32_t ch = world.audio_runtime->play_sound(
+                    narrow[1], obj.position.o, static_cast<std::uint32_t>(flags), 1.0f, 0);
+                obj.m5.sound_channel = ch;
+                obj.m5.sound_playing = (ch >= 0);
+                if (ch < 0) {
+                    obj.m5.active_sound_no = -1;
+                }
+                world.music.last_sound_channel = ch;
+            }
         }
         return NativeDispatch::handled;
     case 1882: // prop_instance_stop_sound (0x1401d8b40)
         if (world.is_valid_mission_object(narrow[0])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
+            if (world.audio_runtime != nullptr && obj.m5.sound_channel >= 0) {
+                world.audio_runtime->stop_channel(obj.m5.sound_channel);
+            }
+            obj.m5.sound_channel = -1;
             obj.m5.active_sound_no = -1;
             obj.m5.sound_playing = false;
         }

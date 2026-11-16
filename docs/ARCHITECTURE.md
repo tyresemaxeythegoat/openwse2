@@ -943,6 +943,26 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    `0x20` shader specular gate (`0x1402e8454`), `FrontFace::counter_clockwise` (`0x1402e8ccd` /
    `0x14025ac20` / `0x140501b60`), and shader-managed gamma (`rglMesh::gammaCorrect`
    `0x1402c02b0`, no DX9 `D3DSAMP_SRGBTEXTURE` / `D3DRS_SRGBWRITEENABLE`).
+10. ~~Audit v1.1.5.5 FMOD Ex audio call sites (`mbSoundManager`, `mbMusicManager`) for P6 replacement.~~
+   **Resolved (Slice P6):** PE/PDB analysis verified `rglConfig::load` (`0x140264580`),
+   `mbSoundSample::readStream` (`0x1403317c0`: 4-step `<module>/Sounds/languages/<lang>`,
+   `<module>/Sounds`, `Sounds/languages/<lang>`, `Sounds` lookup; 3D min=`2.0f`/max=`80.0f`),
+   `mbSoundSample::playSound` (`0x140331cb0`: 2D/looping priority `0`, else distance+nibble
+   priority `[2, 255]`), `mbSoundManager::readStream` (`0x1403322e0`), `playSoundAtPosition`
+   (`0x140332ac0`: `0x1000000` LOD fallback >`15m`, culture variant filter),
+   `setChannelPropertiesAndPlay` (`0x140332d80`: volume nibble / `15.0f`, random start pos,
+   freq variation), `setTransform` (`0x140332970`: `-u` forward, `+f` up), `initializeFmod`
+   (`0x140332f80`: `64` audible / `100` virtual channels, `0.47f` distance priority factor),
+   `updateOcclusionDistances` (`0x140333260`: `0.9`/`1.1` hysteresis around `80m`), `update`
+   (`0x140333490`), `stopSound`/`getSoundProgress`/`stopAllSounds` (`0x140332690`/`0x1403326d0`/
+   `0x140332770`), `mbMusicTrack::readStream` (`0x140290710`: `continue_flags |= flags`,
+   culture fallback `0x3f`), `mbMusicManager` (`0x140290ad0`, `frameMove` `0x140290c40`,
+   `startPlaying`/`stopPlaying`/`update` `0x140290e60`/`0x140290f20`/`0x140290f60`: `0.5s` tick,
+   `5.0s` fade, `500.0f` recency weight), and callers (`mbAgent::playSound` `0x140057010`,
+   `mbGame::playSound` `0x1400e3900`, `mbMissionObject::playSound` `0x140154340`), implemented
+   without FMOD via [audio.h](../engine/include/wse/asset/audio.h),
+   [platform/audio.h](../engine/include/wse/platform/audio.h),
+   [world_audio.h](../engine/include/wse/game/world_audio.h), and `wse_audio` (`stb_vorbis` + `dr_mp3`).
 
 ## 9. Evidence index
 

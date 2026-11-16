@@ -2,9 +2,9 @@
 
 This repository does not vendor third-party source. The build downloads the components below
 (SHA-256 pinned in `CMakeLists.txt`, `engine/build_host.ps1`, and `android/app/build.gradle.kts`),
-so binaries built from this tree must be distributed with this notice. Lua is linked statically
-into every engine binary; SDL3 is packaged only in the Android APK (`libSDL3.so` plus its Java
-activity classes).
+so binaries built from this tree must be distributed with this notice. Lua, `stb_vorbis`,
+and `dr_mp3` are linked statically into engine/test binaries; SDL3 is packaged only in the
+Android APK (`libSDL3.so` plus its Java activity classes).
 
 ## Lua 5.1.5
 
@@ -55,4 +55,57 @@ freely, subject to the following restrictions:
 2. Altered source versions must be plainly marked as such, and must not be
    misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
+```
+
+## stb_vorbis v1.24
+
+Source: <https://raw.githubusercontent.com/nothings/stb/9600522de53973336fa033a289858a4354cbb04c/stb_vorbis.c> (unmodified; compiled inside `wse_audio_vendor`).
+
+```
+Copyright (c) 2017 Sean Barrett
+
+Dual-licensed under MIT or Public Domain (Unlicense).
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## dr_mp3 v0.7.5 (and minimp3)
+
+Source: <https://raw.githubusercontent.com/mackron/dr_libs/f12e197fd462e4c22873fbd70d11b1d2f2c1dc3c/dr_mp3.h> (unmodified; compiled inside `wse_audio_vendor`).
+
+```
+Copyright 2023 David Reid
+
+Dual-licensed under Public Domain (Unlicense) or MIT No Attribution (MIT-0).
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Based on minimp3 (https://github.com/lieff/minimp3), dedicated to the public
+domain under CC0 1.0 (<http://creativecommons.org/publicdomain/zero/1.0/>).
 ```

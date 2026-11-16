@@ -46,6 +46,7 @@
 #include <vector>
 
 #include "wse/core/math.h"
+#include "wse/game/audio_runtime.h"
 #include "wse/game/world_subsystem_types.h"
 #include "wse/game/world_m6_types.h"
 #include "wse/platform/vfs.h"
@@ -1154,6 +1155,8 @@ struct WseWorldState {
     // Savegame directory read by str_store_savegame_md5; null means "no
     // savegames". Not owned: the embedder keeps the Vfs alive.
     wse::platform::Vfs* savegames_vfs = nullptr;
+    // Non-owning audio runtime hook driving sound/music opcodes when attached.
+    WseAudioRuntime* audio_runtime = nullptr;
     std::vector<WseDisplayedMessage> displayed_messages{};
     bool is_multiplayer = false;
     bool is_server = false;

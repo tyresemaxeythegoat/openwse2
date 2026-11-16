@@ -325,9 +325,15 @@ namespace wse::vm {
         return NativeDispatch::handled;
     case 1750: // agent_play_sound (0x1401d4d25)
         if (world.is_valid_agent(narrow[0]) && narrow[1] >= 0) {
+            auto& ag = world.agents[static_cast<std::size_t>(narrow[0])];
             world.played_sounds.push_back(game::WseBattleEvent{
-                1, narrow[1], narrow[0], 0,
-                world.agents[static_cast<std::size_t>(narrow[0])].position.o});
+                1, narrow[1], narrow[0], 0, ag.position.o});
+            if (world.audio_runtime != nullptr) {
+                const std::int32_t ch = world.audio_runtime->play_sound(
+                    narrow[1], ag.position.o, 0U, 1.0f, 0);
+                ag.m5.sound_channel = ch;
+                world.music.last_sound_channel = ch;
+            }
         }
         return NativeDispatch::handled;
     case 1756: // agent_get_attached_scene_prop (0x1401d4f83)

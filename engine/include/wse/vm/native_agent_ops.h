@@ -581,6 +581,9 @@ namespace wse::vm {
         if (world.is_valid_agent(narrow[0])) {
             auto& ag = world.agents[static_cast<std::size_t>(narrow[0])];
             if (ag.m5.sound_channel >= 0) {
+                if (world.audio_runtime != nullptr) {
+                    world.audio_runtime->stop_channel(ag.m5.sound_channel);
+                }
                 ag.m5.sound_channel = -1;
             }
         }

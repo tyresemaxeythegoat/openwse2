@@ -142,6 +142,7 @@ struct WseMissionObjectM5Ext {
     wse::core::WseVec4 bound_half_extents{0.5f, 0.5f, 0.5f, 0.0f};
     std::int32_t active_sound_no = -1;
     std::int32_t active_sound_flags = 0;
+    std::int32_t sound_channel = -1;
     bool sound_playing = false;
     std::vector<std::int32_t> particle_system_nos{};
     float deform_time = 0.0f;
