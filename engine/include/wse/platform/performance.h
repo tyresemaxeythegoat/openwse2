@@ -1,5 +1,5 @@
 // Platform seam: P8 thermal throttling awareness, display frame-rate caps
-// (60/90/120 Hz + uncapped), Vulkan/SDL present-mode selection, deterministic
+// (30/60/90/120 Hz + uncapped), Vulkan/SDL present-mode selection, deterministic
 // clock-driven frame pacing, and persistent performance settings
 // (`docs/PLATFORM_PLAN.md`, slice P8).
 //
@@ -10,10 +10,12 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <span>
@@ -29,6 +31,8 @@ namespace wse::platform {
 
 enum class FrameRateCap : std::uint8_t {
     Uncapped = 0,
+    // Battery saver: also the rate `ThermalTier::Critical` falls back to.
+    Fps30 = 30,
     Fps60 = 60,
     Fps90 = 90,
     Fps120 = 120,
@@ -38,6 +42,8 @@ enum class FrameRateCap : std::uint8_t {
     switch (cap) {
     case FrameRateCap::Uncapped:
         return 0;
+    case FrameRateCap::Fps30:
+        return 30;
     case FrameRateCap::Fps60:
         return 60;
     case FrameRateCap::Fps90:
@@ -52,6 +58,8 @@ enum class FrameRateCap : std::uint8_t {
     switch (cap) {
     case FrameRateCap::Uncapped:
         return "uncapped";
+    case FrameRateCap::Fps30:
+        return "30";
     case FrameRateCap::Fps60:
         return "60";
     case FrameRateCap::Fps90:
@@ -70,6 +78,10 @@ enum class FrameRateCap : std::uint8_t {
         text.remove_suffix(1);
     }
     const std::string lower = ascii_lower(text);
+    if (lower == "30" || lower == "30hz") {
+        out = FrameRateCap::Fps30;
+        return true;
+    }
     if (lower == "60" || lower == "60hz") {
         out = FrameRateCap::Fps60;
         return true;
@@ -92,6 +104,9 @@ enum class FrameRateCap : std::uint8_t {
 [[nodiscard]] constexpr FrameRateCap frame_rate_cap_from_hz(std::int32_t hz) noexcept {
     if (hz <= 0) {
         return FrameRateCap::Uncapped;
+    }
+    if (hz <= 30) {
+        return FrameRateCap::Fps30;
     }
     if (hz <= 60) {
         return FrameRateCap::Fps60;
@@ -481,6 +496,8 @@ inline std::string fmt_float(float v) {
     const std::string json = serialize_performance_settings_json(settings);
     const std::span<const std::uint8_t> bytes(
         reinterpret_cast<const std::uint8_t*>(json.data()), json.size());
+    // `config/` does not exist on a fresh install; a failure surfaces at the write.
+    (void)make_parent_dirs(vfs, path);
     const std::string tmp = path + ".partial";
     if (!vfs.write_file(tmp, bytes)) {
         if (error_out != nullptr) {
@@ -558,6 +575,9 @@ public:
     static constexpr float kThrottledExitHeadroom = 0.72f;
     static constexpr float kCriticalEnterHeadroom = 0.95f;
     static constexpr float kCriticalExitHeadroom = 0.87f;
+    // Headroom-less updates a valid reading is held across (`WseActivity` polls headroom
+    // every 10 s; status listener callbacks in between carry none).
+    static constexpr std::uint32_t kMaxHeldHeadroomUpdates = 16U;
 
     ThermalPerformanceController() { sanitize_performance_settings(settings_); }
 
@@ -581,8 +601,19 @@ public:
         supports_fifo_relaxed_ = supports_fifo_relaxed;
     }
 
+    // A reading without headroom (status-only listener callbacks, a rate-limited or
+    // failed `getThermalHeadroom`) carries no new headroom information, so the last
+    // valid headroom keeps steering the tier for up to `kMaxHeldHeadroomUpdates`
+    // updates instead of being read as "cool".
     void update_thermal(const ThermalSnapshot& snap) noexcept {
         snapshot_ = snap;
+        if (snap.headroom_valid) {
+            held_headroom_ = snap.headroom;
+            held_headroom_valid_ = true;
+            held_headroom_updates_ = 0U;
+        } else if (held_headroom_valid_ && ++held_headroom_updates_ > kMaxHeldHeadroomUpdates) {
+            held_headroom_valid_ = false;
+        }
         recompute_tier();
     }
 
@@ -592,6 +623,11 @@ public:
 
     [[nodiscard]] const ThermalSnapshot& thermal() const noexcept { return snapshot_; }
     [[nodiscard]] ThermalTier tier() const noexcept { return tier_; }
+    // Headroom the tier logic currently uses (the latest valid reading, possibly held).
+    [[nodiscard]] bool effective_headroom(float& out) const noexcept {
+        out = held_headroom_;
+        return held_headroom_valid_;
+    }
 
     [[nodiscard]] PerformanceAdaptation evaluate() const noexcept {
         PerformanceAdaptation out{};
@@ -646,62 +682,70 @@ public:
     }
 
 private:
+    [[nodiscard]] static constexpr ThermalTier tier_for_status(ThermalStatus s) noexcept {
+        if (s >= ThermalStatus::Severe) {
+            return ThermalTier::Critical;
+        }
+        if (s >= ThermalStatus::Moderate) {
+            return ThermalTier::Throttled;
+        }
+        return (s >= ThermalStatus::Light) ? ThermalTier::Elevated : ThermalTier::Nominal;
+    }
+
+    [[nodiscard]] static constexpr ThermalTier tier_for_headroom(float h) noexcept {
+        if (h >= kCriticalEnterHeadroom) {
+            return ThermalTier::Critical;
+        }
+        if (h >= kThrottledEnterHeadroom) {
+            return ThermalTier::Throttled;
+        }
+        return (h >= kElevatedEnterHeadroom) ? ThermalTier::Elevated : ThermalTier::Nominal;
+    }
+
+    [[nodiscard]] static constexpr float exit_headroom(ThermalTier t) noexcept {
+        switch (t) {
+        case ThermalTier::Critical:
+            return kCriticalExitHeadroom;
+        case ThermalTier::Throttled:
+            return kThrottledExitHeadroom;
+        case ThermalTier::Elevated:
+            return kElevatedExitHeadroom;
+        case ThermalTier::Nominal:
+        default:
+            return 0.0f;
+        }
+    }
+
+    // Escalation is immediate (OS status or headroom past an enter threshold). Recovery
+    // needs headroom at or below the current tier's exit bound and moves down one tier
+    // per update, so a cooled device ramps 30 -> 60 -> 90 Hz instead of jumping straight
+    // back to full load and reheating.
     void recompute_tier() noexcept {
         if (!settings_.thermal_throttling_enabled) {
             tier_ = ThermalTier::Nominal;
             return;
         }
-        const auto s = snapshot_.status;
-        const bool hv = snapshot_.headroom_valid;
-        const float h = snapshot_.headroom;
-
-        // Instant upward escalation based on raw status or headroom thresholds.
-        if (s >= ThermalStatus::Severe || (hv && h >= kCriticalEnterHeadroom)) {
-            tier_ = ThermalTier::Critical;
+        const bool hv = held_headroom_valid_;
+        const float h = held_headroom_;
+        ThermalTier target = tier_for_status(snapshot_.status);
+        if (hv) {
+            target = std::max(target, tier_for_headroom(h));
+        }
+        if (target >= tier_) {
+            tier_ = target;
             return;
         }
-        if (s >= ThermalStatus::Moderate || (hv && h >= kThrottledEnterHeadroom)) {
-            if (tier_ == ThermalTier::Critical) {
-                const bool cool_from_crit = (!hv || h <= kCriticalExitHeadroom);
-                if (cool_from_crit) {
-                    tier_ = ThermalTier::Throttled;
-                }
-            } else {
-                tier_ = ThermalTier::Throttled;
-            }
-            return;
-        }
-        if (s >= ThermalStatus::Light || (hv && h >= kElevatedEnterHeadroom)) {
-            if (tier_ == ThermalTier::Critical) {
-                if (!hv || h <= kCriticalExitHeadroom) {
-                    tier_ = (!hv || h <= kThrottledExitHeadroom) ? ThermalTier::Elevated
-                                                                 : ThermalTier::Throttled;
-                }
-            } else if (tier_ == ThermalTier::Throttled) {
-                if (!hv || h <= kThrottledExitHeadroom) {
-                    tier_ = ThermalTier::Elevated;
-                }
-            } else {
-                tier_ = ThermalTier::Elevated;
-            }
-            return;
-        }
-
-        // Recovery down to Nominal only past the lower hysteresis bound.
-        if (tier_ == ThermalTier::Critical && (!hv || h <= kCriticalExitHeadroom)) {
-            tier_ = ThermalTier::Throttled;
-        }
-        if (tier_ == ThermalTier::Throttled && (!hv || h <= kThrottledExitHeadroom)) {
-            tier_ = ThermalTier::Elevated;
-        }
-        if (tier_ == ThermalTier::Elevated && (!hv || h <= kElevatedExitHeadroom)) {
-            tier_ = ThermalTier::Nominal;
+        if (!hv || h <= exit_headroom(tier_)) {
+            tier_ = static_cast<ThermalTier>(static_cast<std::uint8_t>(tier_) - 1U);
         }
     }
 
     PerformanceSettings settings_{};
     ThermalSnapshot snapshot_{};
     ThermalTier tier_ = ThermalTier::Nominal;
+    float held_headroom_ = 0.0f;
+    bool held_headroom_valid_ = false;
+    std::uint32_t held_headroom_updates_ = 0U;
     bool supports_mailbox_ = false;
     bool supports_immediate_ = false;
     bool supports_fifo_relaxed_ = false;
@@ -789,6 +833,96 @@ private:
     bool has_deadline_ = false;
     std::int64_t next_deadline_ns_ = 0;
     std::int64_t frac_acc_ = 0;
+};
+
+// Rolling frame-time statistics over the last `kWindow` frames, for an on-screen FPS
+// readout that shows what a cap actually achieves on a device (vsync quantization,
+// thermal clocks, pacing overshoot). Gaps longer than `kMaxFrameGapNs` (a background
+// pause or a breakpoint) restart the measurement instead of counting as one frame.
+class FrameTimeStats {
+public:
+    static constexpr std::size_t kWindow = 120U;
+    static constexpr std::int64_t kMaxFrameGapNs = 250000000LL;  // 250 ms
+
+    void reset() noexcept {
+        has_origin_ = false;
+        count_ = 0U;
+        next_ = 0U;
+    }
+
+    // Call once per presented frame with a monotonic timestamp.
+    void record_frame(std::int64_t now_ns) noexcept {
+        if (!has_origin_) {
+            has_origin_ = true;
+            last_ns_ = now_ns;
+            return;
+        }
+        const std::int64_t dt = now_ns - last_ns_;
+        last_ns_ = now_ns;
+        if (dt <= 0) {
+            return;
+        }
+        if (dt > kMaxFrameGapNs) {
+            count_ = 0U;
+            next_ = 0U;
+            return;
+        }
+        samples_[next_] = dt;
+        next_ = (next_ + 1U) % kWindow;
+        count_ = std::min(count_ + 1U, kWindow);
+    }
+
+    [[nodiscard]] std::size_t sample_count() const noexcept { return count_; }
+
+    [[nodiscard]] double average_frame_ms() const noexcept {
+        if (count_ == 0U) {
+            return 0.0;
+        }
+        std::int64_t sum = 0;
+        for (std::size_t i = 0; i < count_; ++i) {
+            sum += samples_[i];
+        }
+        return static_cast<double>(sum) / static_cast<double>(count_) / 1.0e6;
+    }
+
+    [[nodiscard]] double average_fps() const noexcept {
+        const double ms = average_frame_ms();
+        return (ms > 0.0) ? 1000.0 / ms : 0.0;
+    }
+
+    [[nodiscard]] double worst_frame_ms() const noexcept {
+        std::int64_t worst = 0;
+        for (std::size_t i = 0; i < count_; ++i) {
+            worst = std::max(worst, samples_[i]);
+        }
+        return static_cast<double>(worst) / 1.0e6;
+    }
+
+    // "1% low": the frame rate over the slowest 1% of frames in the window (at least
+    // the single slowest one), so one hitch in a 120-frame window shows up.
+    [[nodiscard]] double low_1pct_fps() const noexcept {
+        if (count_ == 0U) {
+            return 0.0;
+        }
+        std::array<std::int64_t, kWindow> sorted{};
+        std::copy_n(samples_.begin(), count_, sorted.begin());
+        const std::size_t k = std::max<std::size_t>(1U, count_ / 100U);
+        std::partial_sort(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(k),
+                          sorted.begin() + static_cast<std::ptrdiff_t>(count_),
+                          std::greater<>());
+        std::int64_t sum = 0;
+        for (std::size_t i = 0; i < k; ++i) {
+            sum += sorted[i];
+        }
+        return (sum > 0) ? 1.0e9 * static_cast<double>(k) / static_cast<double>(sum) : 0.0;
+    }
+
+private:
+    std::array<std::int64_t, kWindow> samples_{};
+    std::size_t count_ = 0U;
+    std::size_t next_ = 0U;
+    std::int64_t last_ns_ = 0;
+    bool has_origin_ = false;
 };
 
 struct RuntimeLaunchPerfConfig {

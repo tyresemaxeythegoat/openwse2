@@ -142,6 +142,29 @@ public:
     }
 };
 
+// Creates each missing directory above `file_path` (`a/b/c.json` -> `a`, `a/b`), since
+// `write_file` requires the parent to exist on `HostVfs` / `SafVfs`. For savers whose
+// file lives in a subdirectory a fresh install does not have yet. False when a
+// directory cannot be created (including on a `Vfs` without `make_dir`) or the path is
+// invalid.
+[[nodiscard]] inline bool make_parent_dirs(Vfs& vfs, std::string_view file_path) {
+    const auto parts = split_path(file_path);
+    if (!parts) {
+        return false;
+    }
+    std::string dir;
+    for (std::size_t i = 0; i + 1U < parts->size(); ++i) {
+        if (i != 0U) {
+            dir.push_back('/');
+        }
+        dir += (*parts)[i];
+        if (!vfs.is_dir(dir) && !vfs.make_dir(dir)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // In-memory tree for tests and for assets unpacked at import time.
 // `write_file` creates missing parent directories.
 class MemoryVfs final : public Vfs {

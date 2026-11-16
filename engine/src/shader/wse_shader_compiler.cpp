@@ -220,7 +220,10 @@ public:
             glslang::GlslangToSpv(*intermediate, raw_spv, &logger, &spv_opts);
             out_spirv_words.assign(raw_spv.begin(), raw_spv.end());
             if (out_info_log != nullptr) {
-                *out_info_log = program.getInfoLog();
+                // Parse warnings live in the shader log; link and SPIR-V builder notes
+                // in the program log and the logger.
+                *out_info_log = shader.getInfoLog();
+                *out_info_log += program.getInfoLog();
                 *out_info_log += logger.getAllMessages();
             }
         }

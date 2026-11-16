@@ -30,6 +30,7 @@
 #include "wse/platform/clock.h"
 #include "wse/platform/log.h"
 #include "wse/platform/driver_package.h"
+#include "wse/platform/input.h"
 #include "wse/platform/performance.h"
 #include "wse/platform/rhi.h"
 #include "wse/platform/rhi_brf.h"
@@ -2269,6 +2270,112 @@ void test_p8_performance_and_frame_pacing() {
         pacer.set_target_fps(0);
         pacer.begin_frame();
         expect(pacer.remaining_wait_ticks() == 0, "Uncapped mode adds zero pacing wait");
+    }
+
+    // 5. Review of 9411644: 30 Hz battery-saver cap.
+    {
+        FrameRateCap cap{};
+        PerformanceSettings s{};
+        s.frame_rate_cap = FrameRateCap::Fps30;
+        PerformanceSettings back{};
+        expect(parse_frame_rate_cap("30Hz", cap) && cap == FrameRateCap::Fps30 &&
+                   frame_rate_cap_from_hz(30) == FrameRateCap::Fps30 &&
+                   frame_rate_cap_from_hz(24) == FrameRateCap::Fps30 &&
+                   frame_rate_cap_from_hz(31) == FrameRateCap::Fps60 &&
+                   frame_rate_cap_hz(FrameRateCap::Fps30) == 30 &&
+                   deserialize_performance_settings_json(serialize_performance_settings_json(s),
+                                                         back) &&
+                   back.frame_rate_cap == FrameRateCap::Fps30,
+               "30 Hz cap parses, maps from Hz, and round-trips");
+        ThermalPerformanceController ctrl;
+        ctrl.set_settings(s);
+        ctrl.update_thermal(0, 0.70f);  // Elevated caps at 90: 30 stays 30.
+        expect(ctrl.evaluate().effective_fps_cap == 30, "thermal tiers never raise a 30 Hz cap");
+    }
+
+    // 6. Headroom-less readings hold the last valid headroom; recovery is one tier per update.
+    {
+        ThermalPerformanceController ctrl;
+        PerformanceSettings s{};
+        s.frame_rate_cap = FrameRateCap::Fps120;
+        ctrl.set_settings(s);
+        ctrl.update_thermal(0, 0.85f);
+        const bool throttled = ctrl.tier() == ThermalTier::Throttled;
+        // The status listener (no headroom) fires: this used to drop straight to Elevated.
+        ctrl.update_thermal(static_cast<std::int32_t>(ThermalStatus::Light), -1.0f);
+        const bool held = ctrl.tier() == ThermalTier::Throttled;
+        ctrl.update_thermal(0, std::numeric_limits<float>::quiet_NaN());
+        float eff = 0.0f;
+        const bool still_held = ctrl.tier() == ThermalTier::Throttled &&
+                                ctrl.effective_headroom(eff) && std::fabs(eff - 0.85f) < 1e-6f &&
+                                !ctrl.thermal().headroom_valid;
+        expect(throttled && held && still_held,
+               "status-only / NaN updates keep the last valid headroom instead of reading cool");
+        for (std::uint32_t i = 0; i < ThermalPerformanceController::kMaxHeldHeadroomUpdates; ++i) {
+            ctrl.update_thermal(0, -1.0f);
+        }
+        expect(!ctrl.effective_headroom(eff),
+               "a held headroom expires after kMaxHeldHeadroomUpdates readings without one");
+
+        ThermalPerformanceController ramp;
+        ramp.set_settings(s);
+        ramp.update_thermal(0, 0.97f);
+        const bool crit = ramp.tier() == ThermalTier::Critical;
+        ramp.update_thermal(0, 0.10f);
+        const bool t1 = ramp.tier() == ThermalTier::Throttled && ramp.evaluate().effective_fps_cap == 60;
+        ramp.update_thermal(0, 0.10f);
+        const bool t2 = ramp.tier() == ThermalTier::Elevated && ramp.evaluate().effective_fps_cap == 90;
+        ramp.update_thermal(0, 0.10f);
+        const bool t3 = ramp.tier() == ThermalTier::Nominal && ramp.evaluate().effective_fps_cap == 120;
+        ramp.update_thermal(0, 0.99f);
+        expect(crit && t1 && t2 && t3 && ramp.tier() == ThermalTier::Critical,
+               "cooling ramps 30 -> 60 -> 90 -> 120 Hz one tier per update; heating is immediate");
+    }
+
+    // 6b. Saving to a fresh on-disk Vfs creates `config/` (MemoryVfs hid this:
+    // `HostVfs::write_file` needs the parent directory to exist).
+    {
+        std::error_code ec;
+        const std::filesystem::path root =
+            std::filesystem::temp_directory_path(ec) / "wse_platform_test_p8_settings";
+        std::filesystem::remove_all(root, ec);
+        std::filesystem::create_directories(root, ec);
+        HostVfs vfs(root);
+        PerformanceSettings s{};
+        s.frame_rate_cap = FrameRateCap::Fps90;
+        PerformanceSettings back{};
+        std::string err;
+        const bool saved = save_performance_settings(vfs, s, &err);
+        const bool loaded = load_performance_settings(vfs, back, &err) && back == s;
+        TouchOverlayProfile prof{};
+        prof.gyro_aim_enabled = true;
+        TouchOverlayProfile prof_back{};
+        const bool prof_ok = save_input_profile(vfs, "Native", prof, nullptr, &err) &&
+                             load_input_profile(vfs, "Native", prof_back, nullptr, &err) &&
+                             prof_back == prof;
+        expect(saved && loaded && prof_ok && vfs.is_dir("config") && vfs.is_dir("input_profiles"),
+               "performance settings and input profiles save into a fresh HostVfs");
+        std::filesystem::remove_all(root, ec);
+    }
+
+    // 7. FrameTimeStats: rolling average, 1% low, and pause handling.
+    {
+        FrameTimeStats st;
+        std::int64_t t = 1000;
+        st.record_frame(t);
+        for (int i = 0; i < 119; ++i) {
+            t += 16666667;
+            st.record_frame(t);
+        }
+        t += 50000000;  // one 50 ms hitch
+        st.record_frame(t);
+        const bool avg_ok = st.sample_count() == 120U && std::fabs(st.average_fps() - 59.016) < 0.01;
+        const bool low_ok = std::fabs(st.low_1pct_fps() - 20.0) < 0.01 &&
+                            std::fabs(st.worst_frame_ms() - 50.0) < 1e-6;
+        t += 2000000000LL;  // 2 s in the background
+        st.record_frame(t);
+        expect(avg_ok && low_ok && st.sample_count() == 0U,
+               "FrameTimeStats reports average / 1% low and restarts after a long pause");
     }
 }
 

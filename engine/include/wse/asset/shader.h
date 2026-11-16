@@ -1531,6 +1531,12 @@ inline constexpr NameSlotEntry kWarbandAttrLocations[] = {
     {"inBlendWeight", 7U},
     {"inBlendWeights", 7U},
     {"inBlendIndices", 8U},
+    // Compatibility-profile attributes alias the Warband slot with the same meaning.
+    {"_wse_gl_Vertex", 0U},
+    {"_wse_gl_Normal", 1U},
+    {"_wse_gl_MultiTexCoord0", 2U},
+    {"_wse_gl_Color", 3U},
+    {"_wse_gl_SecondaryColor", 4U},
 };
 
 // Graph-colored 9-location mapping covering all 39 Warband retail varying names
@@ -1717,6 +1723,57 @@ using StringMap = std::unordered_map<std::string, V, StringViewHash, std::equal_
            d == "endif";
 }
 
+// `matN`, `matNxM`, `dmatN`, `dmatNxM` (N, M in 2..4). Exact, so Warband uniforms such
+// as `matWorld` or `matWorldViewProj` are never mistaken for types.
+[[nodiscard]] inline bool is_glsl_matrix_type_name(std::string_view t) noexcept {
+    if (t.starts_with("d")) {
+        t.remove_prefix(1U);
+    }
+    if (!t.starts_with("mat")) {
+        return false;
+    }
+    t.remove_prefix(3U);
+    const auto dim = [](char c) { return c >= '2' && c <= '4'; };
+    return (t.size() == 1U && dim(t[0])) || (t.size() == 3U && dim(t[0]) && t[1] == 'x' && dim(t[2]));
+}
+
+// Opaque sampler / image types (`sampler2D`, `usampler2D`, `sampler2DShadow`,
+// `samplerCube`, `image2D`, ...): declared outside the uniform block with a binding.
+[[nodiscard]] inline bool is_glsl_opaque_type_name(std::string_view t) noexcept {
+    if (t.starts_with("i") && !t.starts_with("image")) {
+        t.remove_prefix(1U);
+    } else if (t.starts_with("u")) {
+        t.remove_prefix(1U);
+    }
+    bool sampler = false;
+    if (t.starts_with("sampler")) {
+        t.remove_prefix(7U);
+        sampler = true;
+    } else if (t.starts_with("image")) {
+        t.remove_prefix(5U);
+    } else {
+        return false;
+    }
+    if (sampler && t.ends_with("Shadow")) {
+        t.remove_suffix(6U);
+        if (t.empty()) {
+            return true;  // `samplerShadow` (Vulkan GLSL)
+        }
+    }
+    if (t.empty()) {
+        return sampler;  // `sampler` (Vulkan GLSL)
+    }
+    constexpr std::string_view kDims[] = {"1D",       "2D",        "3D",      "Cube",
+                                          "2DRect",   "1DArray",   "2DArray", "CubeArray",
+                                          "Buffer",   "2DMS",      "2DMSArray"};
+    for (const std::string_view d : kDims) {
+        if (t == d) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Built-in GLSL type names a declaration may start with (precision and storage
 // qualifiers are not types).
 [[nodiscard]] inline bool is_glsl_builtin_type_name(std::string_view t) noexcept {
@@ -1732,17 +1789,13 @@ using StringMap = std::unordered_map<std::string, V, StringViewHash, std::equal_
         has_dim_suffix("bvec") || has_dim_suffix("dvec")) {
         return true;
     }
-    if (t.starts_with("mat") || t.starts_with("dmat")) {
-        return true;
-    }
-    return t.starts_with("sampler") || t.starts_with("isampler") || t.starts_with("usampler") ||
-           t.starts_with("image") || t.starts_with("iimage") || t.starts_with("uimage");
+    return is_glsl_matrix_type_name(t) || is_glsl_opaque_type_name(t);
 }
 
 // Interface locations used by one value of `type` (GLSL 4.50 section 4.4.1): a matrix
 // takes one location per column, everything Warband declares otherwise takes one.
 [[nodiscard]] inline std::uint32_t glsl_type_location_count(std::string_view type) noexcept {
-    if (type.starts_with("mat") || type.starts_with("dmat")) {
+    if (is_glsl_matrix_type_name(type)) {
         const std::size_t p = type.find_first_of("234");
         if (p != std::string_view::npos) {
             return static_cast<std::uint32_t>(type[p] - '0');
@@ -1841,10 +1894,15 @@ struct ParsedWarbandGlsl {
     std::vector<GlslDeclItem> varyings;
     std::vector<GlslDeclItem> samplers;
     std::vector<GlslDeclItem> ubo_members;
+    std::vector<GlslDeclItem> frag_outputs;  // GLSL 1.30+ fragment `out`, in source order
     std::string struct_defs;  // top-level `struct` definitions, emitted ahead of the UBO
     std::string preamble;     // `#extension` / `#pragma` / `#define` outside any `#if`
     std::string body;         // everything else, in source order
     std::string error;
+    // Compatibility-profile built-ins replaced by synthesized declarations
+    // (`gl_Vertex` -> `_wse_gl_Vertex`); see `synthesize_compat_builtins`.
+    StringMap<std::string> builtin_renames;
+    bool needs_ftransform = false;
 };
 
 // Parses one top-level `;`-terminated statement. Returns true when it was a legacy
@@ -1902,10 +1960,23 @@ struct ParsedWarbandGlsl {
         return false;
     }
     const std::string_view qual = toks[idx++];
-    if (qual != "uniform" && qual != "attribute" && qual != "varying") {
+    if (qual != "uniform" && qual != "attribute" && qual != "varying" && qual != "in" &&
+        qual != "out") {
         return false;
     }
-    if ((invariant || !interpolation.empty()) && qual != "varying") {
+    // GLSL 1.30+ `in` / `out` at file scope: vertex `in` = attribute, `out` across the
+    // stage boundary = varying, fragment `out` = color output.
+    enum class Role : std::uint8_t { Uniform, Attribute, Varying, FragOutput };
+    Role role = Role::Uniform;
+    if (qual == "attribute" || (qual == "in" && stage == SpirvStage::Vertex)) {
+        role = Role::Attribute;
+    } else if (qual == "varying" || (qual == "out" && stage == SpirvStage::Vertex) ||
+               (qual == "in" && stage == SpirvStage::Fragment)) {
+        role = Role::Varying;
+    } else if (qual == "out") {
+        role = Role::FragOutput;
+    }
+    if ((invariant || !interpolation.empty()) && role != Role::Varying) {
         return false;
     }
     if (idx < toks.size() &&
@@ -1952,7 +2023,7 @@ struct ParsedWarbandGlsl {
             return false;
         }
         if (toks[idx] == "=") {
-            if (qual != "uniform" || type.starts_with("sampler")) {
+            if (qual != "uniform" || is_glsl_opaque_type_name(type)) {
                 return false;  // Not legal GLSL; let glslang report it in place.
             }
             const std::size_t init_begin = ++idx;
@@ -1990,15 +2061,17 @@ struct ParsedWarbandGlsl {
     }
 
     for (GlslDeclItem& item : items) {
-        if (qual == "attribute") {
+        if (role == Role::Attribute) {
             if (stage != SpirvStage::Vertex) {
                 p.error = "attribute declaration not valid in fragment shader";
                 return true;
             }
             p.attributes.push_back(std::move(item));
-        } else if (qual == "varying") {
+        } else if (role == Role::Varying) {
             p.varyings.push_back(std::move(item));
-        } else if (type.starts_with("sampler")) {
+        } else if (role == Role::FragOutput) {
+            p.frag_outputs.push_back(std::move(item));
+        } else if (is_glsl_opaque_type_name(type)) {
             p.samplers.push_back(std::move(item));
         } else {
             p.ubo_members.push_back(std::move(item));
@@ -2251,6 +2324,189 @@ inline constexpr GlslBuiltinRename kLegacyTextureBuiltins[] = {
     return v;
 }
 
+// GLSL compatibility-profile built-ins (removed from Vulkan GLSL) that mod shaders use
+// in place of Warband's own attributes and uniforms. Each becomes an ordinary legacy
+// declaration, so it takes part in the shared interface layout and reflection:
+// attributes alias the Warband slot of the same meaning (`gl_Vertex` -> location 0),
+// matrices become uniform-block members that keep their `gl_` name in reflection, and
+// `ftransform()` is `gl_ModelViewProjectionMatrix * gl_Vertex`. Fixed-function state
+// structs (`gl_LightSource[]`, `gl_Fog`, `gl_FrontMaterial`, ...) and `gl_BackColor`
+// are not provided and still fail in glslang.
+struct CompatBuiltin {
+    std::string_view name;
+    std::string_view type;
+    std::string_view replacement;  // empty: a uniform-block member keeping `name`
+    enum Kind : std::uint8_t { VsAttribute, Varying, Uniform } kind;
+};
+
+inline constexpr CompatBuiltin kCompatVertexBuiltins[] = {
+    {"gl_Vertex", "vec4", "_wse_gl_Vertex", CompatBuiltin::VsAttribute},
+    {"gl_Normal", "vec3", "_wse_gl_Normal", CompatBuiltin::VsAttribute},
+    {"gl_Color", "vec4", "_wse_gl_Color", CompatBuiltin::VsAttribute},
+    {"gl_SecondaryColor", "vec4", "_wse_gl_SecondaryColor", CompatBuiltin::VsAttribute},
+    {"gl_FogCoord", "float", "_wse_gl_FogCoord", CompatBuiltin::VsAttribute},
+    {"gl_MultiTexCoord0", "vec4", "_wse_gl_MultiTexCoord0", CompatBuiltin::VsAttribute},
+    {"gl_MultiTexCoord1", "vec4", "_wse_gl_MultiTexCoord1", CompatBuiltin::VsAttribute},
+    {"gl_MultiTexCoord2", "vec4", "_wse_gl_MultiTexCoord2", CompatBuiltin::VsAttribute},
+    {"gl_MultiTexCoord3", "vec4", "_wse_gl_MultiTexCoord3", CompatBuiltin::VsAttribute},
+    {"gl_MultiTexCoord4", "vec4", "_wse_gl_MultiTexCoord4", CompatBuiltin::VsAttribute},
+    {"gl_MultiTexCoord5", "vec4", "_wse_gl_MultiTexCoord5", CompatBuiltin::VsAttribute},
+    {"gl_MultiTexCoord6", "vec4", "_wse_gl_MultiTexCoord6", CompatBuiltin::VsAttribute},
+    {"gl_MultiTexCoord7", "vec4", "_wse_gl_MultiTexCoord7", CompatBuiltin::VsAttribute},
+    {"gl_FrontColor", "vec4", "_wse_gl_FrontColor", CompatBuiltin::Varying},
+    {"gl_FrontSecondaryColor", "vec4", "_wse_gl_FrontSecondaryColor", CompatBuiltin::Varying},
+};
+
+inline constexpr CompatBuiltin kCompatFragmentBuiltins[] = {
+    // In a fragment shader these read the interpolated front colors.
+    {"gl_Color", "vec4", "_wse_gl_FrontColor", CompatBuiltin::Varying},
+    {"gl_SecondaryColor", "vec4", "_wse_gl_FrontSecondaryColor", CompatBuiltin::Varying},
+};
+
+inline constexpr CompatBuiltin kCompatSharedBuiltins[] = {
+    {"gl_FogFragCoord", "float", "_wse_gl_FogFragCoord", CompatBuiltin::Varying},
+    {"gl_ModelViewMatrix", "mat4", "", CompatBuiltin::Uniform},
+    {"gl_ProjectionMatrix", "mat4", "", CompatBuiltin::Uniform},
+    {"gl_ModelViewProjectionMatrix", "mat4", "", CompatBuiltin::Uniform},
+    {"gl_NormalMatrix", "mat3", "", CompatBuiltin::Uniform},
+    {"gl_ModelViewMatrixInverse", "mat4", "", CompatBuiltin::Uniform},
+    {"gl_ProjectionMatrixInverse", "mat4", "", CompatBuiltin::Uniform},
+    {"gl_ModelViewProjectionMatrixInverse", "mat4", "", CompatBuiltin::Uniform},
+    {"gl_ModelViewMatrixTranspose", "mat4", "", CompatBuiltin::Uniform},
+    {"gl_ModelViewMatrixInverseTranspose", "mat4", "", CompatBuiltin::Uniform},
+};
+
+inline constexpr std::string_view kCompatTexCoordName = "_wse_gl_TexCoord";
+inline constexpr std::uint32_t kCompatMaxTextureCoords = 8U;  // GL `gl_MaxTextureCoords`
+
+// Adds the declarations for every compatibility built-in `p.body` uses (see
+// `CompatBuiltin`). `gl_TexCoord[]` and `gl_TextureMatrix[]` are sized by the largest
+// literal index used (`gl_MaxTextureCoords` = 8 for a computed index).
+inline void synthesize_compat_builtins(ParsedWarbandGlsl& p, SpirvStage stage) {
+    const bool vertex = (stage == SpirvStage::Vertex);
+    StringSet used;
+    std::uint32_t tex_coord_count = 0U;
+    std::uint32_t tex_matrix_count = 0U;
+    const std::string_view body = p.body;
+    for (std::size_t i = 0; i < body.size();) {
+        const char c = body[i];
+        if (is_glsl_digit(c)) {
+            i += std::max<std::size_t>(1U, glsl_number_length(body, i));
+            continue;
+        }
+        if (!is_glsl_ident_start(c)) {
+            ++i;
+            continue;
+        }
+        const std::size_t b = i;
+        while (i < body.size() && is_glsl_ident_char(body[i])) {
+            ++i;
+        }
+        const std::string_view tok = body.substr(b, i - b);
+        if (!tok.starts_with("gl_") && tok != "ftransform") {
+            continue;
+        }
+        const auto count_for_index = [&](std::uint32_t& count) {
+            const auto idx = frag_data_literal_index(body, i);
+            count = std::max(count, idx ? std::min(*idx + 1U, kCompatMaxTextureCoords)
+                                        : kCompatMaxTextureCoords);
+        };
+        if (tok == "gl_TexCoord") {
+            count_for_index(tex_coord_count);
+        } else if (tok == "gl_TextureMatrix") {
+            count_for_index(tex_matrix_count);
+        }
+        used.emplace(tok);
+    }
+    if (used.empty()) {
+        return;
+    }
+    if (vertex && used.contains("ftransform")) {
+        p.needs_ftransform = true;
+        p.builtin_renames.emplace("ftransform", "_wse_ftransform");
+        used.emplace("gl_Vertex");
+        used.emplace("gl_ModelViewProjectionMatrix");
+    }
+    const auto has_decl = [](const std::vector<GlslDeclItem>& list, std::string_view name) {
+        return std::any_of(list.begin(), list.end(),
+                           [&](const GlslDeclItem& d) { return d.name == name; });
+    };
+    const auto add = [&](const CompatBuiltin& bi) {
+        if (!used.contains(bi.name) || p.builtin_renames.contains(bi.name)) {
+            return;
+        }
+        GlslDeclItem d{};
+        d.type = std::string(bi.type);
+        if (bi.kind == CompatBuiltin::Uniform) {
+            d.name = std::string(bi.name);
+            if (!has_decl(p.ubo_members, d.name)) {
+                p.ubo_members.push_back(std::move(d));
+            }
+            return;
+        }
+        d.name = std::string(bi.replacement);
+        p.builtin_renames.emplace(std::string(bi.name), d.name);
+        auto& list = (bi.kind == CompatBuiltin::VsAttribute) ? p.attributes : p.varyings;
+        if (!has_decl(list, d.name)) {
+            list.push_back(std::move(d));
+        }
+    };
+    if (vertex) {
+        for (const CompatBuiltin& bi : kCompatVertexBuiltins) {
+            add(bi);
+        }
+    } else {
+        for (const CompatBuiltin& bi : kCompatFragmentBuiltins) {
+            add(bi);
+        }
+    }
+    for (const CompatBuiltin& bi : kCompatSharedBuiltins) {
+        add(bi);
+    }
+    if (tex_coord_count > 0U) {
+        // A GLSL 1.20 redeclaration (`varying vec4 gl_TexCoord[3];`) sets the size.
+        auto it = std::find_if(p.varyings.begin(), p.varyings.end(),
+                               [](const GlslDeclItem& d) { return d.name == "gl_TexCoord"; });
+        if (it != p.varyings.end()) {
+            it->name = std::string(kCompatTexCoordName);
+        } else {
+            GlslDeclItem d{};
+            d.type = "vec4";
+            d.name = std::string(kCompatTexCoordName);
+            d.array_suffix = "[" + std::to_string(tex_coord_count) + "]";
+            p.varyings.push_back(std::move(d));
+        }
+        p.builtin_renames.emplace("gl_TexCoord", std::string(kCompatTexCoordName));
+    }
+    if (tex_matrix_count > 0U && !has_decl(p.ubo_members, "gl_TextureMatrix")) {
+        GlslDeclItem d{};
+        d.type = "mat4";
+        d.name = "gl_TextureMatrix";
+        d.array_suffix = "[" + std::to_string(tex_matrix_count) + "]";
+        p.ubo_members.push_back(std::move(d));
+    }
+}
+
+// Both stages must declare a shared synthesized varying (`_wse_gl_TexCoord[N]`) with
+// the same array size, so the smaller declaration grows to the larger.
+inline void unify_compat_varying_sizes(ParsedWarbandGlsl& a, ParsedWarbandGlsl& b) {
+    for (GlslDeclItem& da : a.varyings) {
+        if (!da.name.starts_with("_wse_gl_")) {
+            continue;
+        }
+        for (GlslDeclItem& db : b.varyings) {
+            if (db.name != da.name || db.array_suffix == da.array_suffix) {
+                continue;
+            }
+            const auto na = glsl_array_element_count(da.array_suffix);
+            const auto nb = glsl_array_element_count(db.array_suffix);
+            if (na && nb) {
+                (*na >= *nb ? db : da).array_suffix = (*na >= *nb ? da : db).array_suffix;
+            }
+        }
+    }
+}
+
 }  // namespace shader_detail
 
 // Feature flags from GLSL source plus the vertex declaration. Matching is by whole
@@ -2497,6 +2753,7 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
         result.error = std::move(parsed.error);
         return result;
     }
+    synthesize_compat_builtins(parsed, stage);
     std::optional<ParsedWarbandGlsl> partner;
     if (!trim_ascii(partner_glsl).empty()) {
         const SpirvStage other =
@@ -2507,6 +2764,8 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
             result.error = "partner stage: " + partner->error;
             return result;
         }
+        synthesize_compat_builtins(*partner, other);
+        unify_compat_varying_sizes(parsed, *partner);
     }
     const WarbandInterfaceLayout layout =
         assign_interface_layout(parsed, partner ? &*partner : nullptr);
@@ -2543,6 +2802,10 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
             out.push_back('.');
             out.append(kWseUniformMemberPrefix);
             out.append(tok);
+            return true;
+        }
+        if (const auto it = parsed.builtin_renames.find(tok); it != parsed.builtin_renames.end()) {
+            out.append(it->second);
             return true;
         }
         const std::string_view modern = lookup_legacy_texture_builtin(tok);
@@ -2584,7 +2847,13 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
                 while (i < line.size() && is_glsl_ident_char(line[i])) ++i;
                 const std::string_view tok = line.substr(s, i - s);
                 const bool member = s > 0U && line[s - 1U] == '.';
-                if (member || params.contains(tok) || !global_rename(tok, out)) {
+                if (!member && !params.contains(tok) && tok == "gl_FragData" &&
+                    stage == SpirvStage::Fragment) {
+                    uses_frag_data = true;
+                    const auto idx = frag_data_literal_index(line, i);
+                    frag_data_count = std::max(frag_data_count, idx ? *idx + 1U : 4U);
+                    out.append("_wse_frag_data");
+                } else if (member || params.contains(tok) || !global_rename(tok, out)) {
                     out.append(tok);
                 }
             } else if (is_glsl_digit(c)) {
@@ -2614,6 +2883,26 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
         int decl_paren_depth = 0;
         char prev_non_ws = '\0';
         bool at_line_start = true;
+        // `for (int i = ...)` declares `i` in a scope that ends with the loop body (a
+        // `{}` block or a single statement), not with the enclosing function.
+        enum class ForPhase : std::uint8_t { Header, AwaitBody, BraceBody };
+        struct ForScope {
+            ForPhase phase;
+            int brace_depth;   // depth of the `for` keyword
+            int paren_depth;   // depth inside the header's `(`
+        };
+        std::vector<ForScope> for_scopes;
+        bool for_keyword_pending = false;
+        const auto close_finished_for_scopes = [&]() {
+            while (!for_scopes.empty() && for_scopes.back().phase == ForPhase::AwaitBody &&
+                   for_scopes.back().brace_depth == brace_depth &&
+                   paren_depth < for_scopes.back().paren_depth) {
+                for_scopes.pop_back();
+                if (scopes.size() > 1U) {
+                    scopes.pop_back();
+                }
+            }
+        };
         const auto shadowed = [&](std::string_view tok) {
             if (paren_depth > 0 && brace_depth == 0 && pending_params.contains(tok)) {
                 return true;
@@ -2668,6 +2957,9 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
                     if (tok == "struct") {
                         expect_struct_name = true;
                         rewritten_body.append(tok);
+                    } else if (tok == "for") {
+                        for_keyword_pending = true;
+                        rewritten_body.append(tok);
                     } else if (declares) {
                         if (paren_depth > 0 && brace_depth == 0) {
                             pending_params.emplace(tok);
@@ -2714,6 +3006,10 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
             }
             prev_was_type = false;
             if (c == '{') {
+                if (!for_scopes.empty() && for_scopes.back().phase == ForPhase::AwaitBody &&
+                    for_scopes.back().brace_depth == brace_depth) {
+                    for_scopes.back().phase = ForPhase::BraceBody;
+                }
                 scopes.emplace_back();
                 if (brace_depth == 0) {
                     scopes.back().swap(pending_params);
@@ -2729,18 +3025,34 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
                     --brace_depth;
                 }
                 decl_active = false;
+                if (!for_scopes.empty() && for_scopes.back().phase == ForPhase::BraceBody &&
+                    for_scopes.back().brace_depth == brace_depth) {
+                    // The loop body closed; any enclosing single-statement `for` ends too.
+                    for_scopes.back().phase = ForPhase::AwaitBody;
+                    close_finished_for_scopes();
+                }
             } else if (c == '(') {
                 ++paren_depth;
+                if (for_keyword_pending && brace_depth > 0) {
+                    scopes.emplace_back();
+                    for_scopes.push_back({ForPhase::Header, brace_depth, paren_depth});
+                }
+                for_keyword_pending = false;
             } else if (c == ')') {
                 --paren_depth;
                 if (paren_depth < decl_paren_depth) {
                     decl_active = false;
+                }
+                if (!for_scopes.empty() && for_scopes.back().phase == ForPhase::Header &&
+                    paren_depth < for_scopes.back().paren_depth) {
+                    for_scopes.back().phase = ForPhase::AwaitBody;
                 }
             } else if (c == ';') {
                 decl_active = false;
                 if (brace_depth == 0) {
                     pending_params.clear();
                 }
+                close_finished_for_scopes();
             }
             prev_non_ws = c;
         }
@@ -2752,6 +3064,10 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
     }
     if (uses_frag_color && uses_frag_data) {
         result.error = "fragment shader writes both gl_FragColor and gl_FragData";
+        return result;
+    }
+    if (!parsed.frag_outputs.empty() && (uses_frag_color || uses_frag_data)) {
+        result.error = "fragment shader mixes `out` variables with gl_FragColor / gl_FragData";
         return result;
     }
 
@@ -2806,6 +3122,15 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
     if (!vertex && uses_frag_color) {
         out.append("layout(location = 0) out vec4 _wse_frag_color;\n");
     }
+    {
+        // Color outputs take consecutive locations in declaration order (what a GL
+        // driver assigns without `glBindFragDataLocation`).
+        std::uint32_t next_location = 0U;
+        for (const GlslDeclItem& d : parsed.frag_outputs) {
+            append_decl(out, "layout(location = " + std::to_string(next_location) + ") out ", d);
+            next_location += glsl_array_element_count(d.array_suffix).value_or(1U);
+        }
+    }
     if (!vertex && uses_frag_data) {
         out.append("layout(location = 0) out vec4 _wse_frag_data[");
         out.append(std::to_string(frag_data_count));
@@ -2838,6 +3163,11 @@ inline constexpr std::string_view kWseUniformMemberPrefix = "_wse_u_";
         out.append("} ");
         out.append(ubo_inst);
         out.append(";\n");
+    }
+    if (parsed.needs_ftransform) {
+        out.append("vec4 _wse_ftransform() { return _wse_vs_u.");
+        out.append(kWseUniformMemberPrefix);
+        out.append("gl_ModelViewProjectionMatrix * _wse_gl_Vertex; }\n");
     }
     // `vec4(r, r, r, 1)`: GLSL 1.20 shadow lookups with the default luminance depth mode.
     if (used_helpers.contains("_wse_shadow2D")) {
