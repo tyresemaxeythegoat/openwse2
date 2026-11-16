@@ -1,8 +1,9 @@
 // Platform seam: maps `wse::asset` shader/material state (`wse/asset/shader.h`)
 // onto the minimal RHI (`wse/platform/rhi.h`), slice P5.
 //
-// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.5 layout
-// and carries no PE/PDB citations of its own (the decoded state it consumes does).
+// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.5 layout;
+// the front-face convention cites the retail D3D9 winding proof (consumed state
+// citations live in `wse/asset/shader.h`).
 
 #pragma once
 
@@ -42,15 +43,17 @@ namespace wse::platform {
 }
 
 // Builds the pipeline state for one decoded material. Shader handles are left 0
-// for the caller to fill; Warband `.brf` meshes are D3D9-authored, so front faces
-// are clockwise and the D3D9 half-pixel offset is compensated.
+// for the caller to fill. Retail `.brf` meshes have CCW triangles around outward
+// normals (`rglRenderer::renderMesh` 0x1402e8ccd uses RH projection 0x14025ac20
+// with `D3DCULL_CW`), and `make_orbit_mvp_matrix` + `SoftwareRhiDevice` keeps
+// those CCW outward faces when `front_face == FrontFace::counter_clockwise`.
 [[nodiscard]] inline PipelineDesc make_pipeline_desc(const wse::asset::MaterialRenderState& state,
                                                      bool srgb_framebuffer = true) noexcept {
     PipelineDesc desc{};
     desc.depth_test = state.depth_test;
     desc.depth_write = state.depth_write;
     desc.cull_mode = CullMode::back;
-    desc.front_face = FrontFace::clockwise;
+    desc.front_face = FrontFace::counter_clockwise;
     desc.blend_mode = to_rhi_blend_mode(state.blend_mode);
     desc.alpha_test = state.alpha_ref_u8 != 0U;
     desc.alpha_ref = state.alpha_ref_u8;

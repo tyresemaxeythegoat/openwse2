@@ -325,6 +325,18 @@ VKAPI_ATTR VkResult VKAPI_CALL mock_vkCreateInstance(
     if (pCreateInfo == nullptr || pInstance == nullptr) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    if (g_tls_mock_config != nullptr && g_tls_mock_config->require_api_version_1_0) {
+        const std::uint32_t requested_api =
+            (pCreateInfo->pApplicationInfo != nullptr) ? pCreateInfo->pApplicationInfo->apiVersion
+                                                       : VK_API_VERSION_1_0;
+        if (requested_api != VK_API_VERSION_1_0) {
+            return VK_ERROR_INCOMPATIBLE_DRIVER;
+        }
+    }
+    if (g_tls_mock_config != nullptr && g_tls_mock_config->refuse_wsi_instance_extensions &&
+        pCreateInfo->enabledExtensionCount != 0U) {
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
     bool wsi_enabled = false;
     const VkResult ext_res = mock_check_enabled_extensions(
         mock_config_exposes_wsi(g_tls_mock_config), kMockWsiInstanceExts,
@@ -1383,21 +1395,27 @@ bool VulkanDriverLoader::probe_and_create_device(VulkanDriverProbeResult& out) {
         inst_info.ppEnabledExtensionNames = kWsiInstanceExts.data();
     }
 
-    VkResult inst_res = create_instance(&inst_info, nullptr, &impl_->instance);
-    if (inst_res == VK_ERROR_EXTENSION_NOT_PRESENT && inst_info.enabledExtensionCount != 0U) {
-        // Offered but refused: present through the offscreen bridge instead.
+    // Both fallbacks compose regardless of which error triggers first:
+    // a 1.0-only ICD that also refuses WSI returns INCOMPATIBLE_DRIVER on 1.3,
+    // then EXTENSION_NOT_PRESENT on 1.0 + WSI, then SUCCEEDS on 1.0 without WSI.
+    VkResult inst_res = VK_ERROR_INITIALIZATION_FAILED;
+    for (int attempt = 0; attempt < 3; ++attempt) {
         impl_->instance = VK_NULL_HANDLE;
-        inst_info.enabledExtensionCount = 0U;
-        inst_info.ppEnabledExtensionNames = nullptr;
-        out.presentation_path = PresentationPath::offscreen_hardware_buffer_bridge;
-        out.presentation_note = "instance refused WSI extensions; using offscreen bridge";
         inst_res = create_instance(&inst_info, nullptr, &impl_->instance);
-    }
-    if (inst_res == VK_ERROR_INCOMPATIBLE_DRIVER && app_info.apiVersion != VK_API_VERSION_1_0) {
-        // Pre-v5 ICDs may reject apiVersion > 1.0 outright; retry as 1.0.
-        impl_->instance = VK_NULL_HANDLE;
-        app_info.apiVersion = VK_API_VERSION_1_0;
-        inst_res = create_instance(&inst_info, nullptr, &impl_->instance);
+        if (inst_res == VK_ERROR_EXTENSION_NOT_PRESENT && inst_info.enabledExtensionCount != 0U) {
+            // Offered but refused: present through the offscreen bridge instead.
+            inst_info.enabledExtensionCount = 0U;
+            inst_info.ppEnabledExtensionNames = nullptr;
+            out.presentation_path = PresentationPath::offscreen_hardware_buffer_bridge;
+            out.presentation_note = "instance refused WSI extensions; using offscreen bridge";
+            continue;
+        }
+        if (inst_res == VK_ERROR_INCOMPATIBLE_DRIVER && app_info.apiVersion != VK_API_VERSION_1_0) {
+            // Pre-v5 ICDs may reject apiVersion > 1.0 outright; retry as 1.0.
+            app_info.apiVersion = VK_API_VERSION_1_0;
+            continue;
+        }
+        break;
     }
     if (inst_res != VK_SUCCESS || impl_->instance == VK_NULL_HANDLE) {
         impl_->instance = VK_NULL_HANDLE;

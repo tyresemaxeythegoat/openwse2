@@ -113,6 +113,11 @@ inline void build_rhi_mesh_from_brf(const wse::asset::BrfMesh& mesh,
         }
         for (const std::uint16_t corner : face.corners) {
             if (remap[corner] == kUnmapped) {
+                if (out_verts.size() >= 65536U) {
+                    out_verts.clear();
+                    out_indices.clear();
+                    return;
+                }
                 const auto [it, inserted] = unique.try_emplace(
                     corner, static_cast<std::uint16_t>(out_verts.size()));
                 if (inserted) {

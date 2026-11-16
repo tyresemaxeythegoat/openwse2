@@ -52,7 +52,9 @@ namespace wse::asset {
 // -----------------------------------------------------------------------------
 
 // rglShader::m_flags (`+0x58`, rglShader::isSuitable 0x140301ab0,
-// rglMesh::getVertexDeclarationType 0x1402baa30, rglResourceManager::initShaderPairs 0x1402ed3c0).
+// rglMesh::getVertexDeclarationType 0x1402baa30, rglRenderer::renderMesh 0x1402e8454,
+// rglResourceManager::initShaderPairs 0x1402ed3c0).
+inline constexpr std::uint32_t kShaderFlagHasSpecular = 0x00000020U;
 inline constexpr std::uint32_t kShaderFlagUsesInstancing = 0x00002000U;
 inline constexpr std::uint32_t kShaderFlagRuntimeDisabled = 0x00010000U;
 inline constexpr std::uint32_t kShaderFlagSpecial = 0x00020000U;
@@ -517,7 +519,10 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
     out.depth_write = (mat.flags & kMaterialFlagNoZWrite) == 0U;
     out.depth_test = (mat.flags & kMaterialFlagNoDepthTest) == 0U;
 
-    // Values 5..7 have no createBlendStates (0x14029f590) slot; treated as opaque.
+    // `rglGraphicsContext::createBlendStates` (`0x14029f590`) allocates 5 slots (`0..4`).
+    // Values 5..6 have no slot; value 7 (`0x700`) is resolved dynamically per draw in
+    // `rglRenderer::renderMesh` (`0x1402e913f`) / `rglMesh::updateRenderOrder` (`0x1402b9ece`),
+    // selecting slot 1 (`AlphaBlend`) when mesh vertex-color alpha < 255, else slot 0 (`Opaque`).
     const std::uint32_t raw_blend = (mat.flags & kMaterialFlagBlendMask) >> 8U;
     switch (raw_blend) {
         case 1U:
@@ -539,13 +544,15 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
 
     const std::uint32_t raw_alpha_test = (mat.flags & kMaterialFlagAlphaTestMask) >> 12U;
     out.alpha_test_mode = static_cast<AlphaTestMode>(std::min<std::uint32_t>(raw_alpha_test, 3U));
-    // Matches rglRenderer::renderMesh (0x1402e7f50): alpha test threshold is suppressed when blended.
-    out.alpha_ref_u8 = (out.blend_mode == MaterialBlendMode::Opaque)
-                           ? alpha_test_ref_u8(out.alpha_test_mode)
-                           : 0U;
+    // `rglRenderer::renderMesh` (`0x1402e8439`) -> `rglGraphicsContext::setAlphaTestMode`
+    // (`0x1402a00b0`): `(mat.flags & 0x700) != 0` only zeroes the shader's `fAlphaTestVal`
+    // uniform; `D3DRS_ALPHATESTENABLE` and `D3DRS_ALPHAREF` (`8`/`136`/`251` at `0x1402a0165`)
+    // stay active whenever `alpha_test_mode != None`, even on blended materials.
+    out.alpha_ref_u8 = alpha_test_ref_u8(out.alpha_test_mode);
 
     const std::uint32_t raw_order = (mat.flags & kMaterialFlagRenderOrderMask) >> 24U;
-    // Provisional signed-nibble decode (see MaterialRenderState::render_order).
+    // Signed 4-bit nibble `-8..+7`: `rglMesh::updateRenderOrder` (`0x1402b9ef5`) computes
+    // `((flags >> 24) - 8) & 0xF` (which equals `render_order + 8` unsigned sort key).
     out.render_order = (raw_order >= 8U) ? static_cast<int>(raw_order) - 16 : static_cast<int>(raw_order);
 
     out.diffuse_a = shader_detail::normalize_material_slot(mat.texture_names[0]);
@@ -558,17 +565,21 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
     out.specular_rgb = mat.specular_rgb;
     out.srgb_diffuse = !out.diffuse_a.empty();
 
-    // One rule with or without a resolved shader: a specular map, or a positive
-    // coefficient with a non-black specular colour.
-    out.uses_specular = !out.specular_map.empty() ||
-                        (mat.specular_coeff > 0.0f &&
-                         (mat.specular_rgb.x > 0.0f || mat.specular_rgb.y > 0.0f ||
-                          mat.specular_rgb.z > 0.0f));
+    const bool material_wants_specular =
+        !out.specular_map.empty() ||
+        (mat.specular_coeff > 0.0f &&
+         (mat.specular_rgb.x > 0.0f || mat.specular_rgb.y > 0.0f || mat.specular_rgb.z > 0.0f));
     out.uses_normal_map = !out.bumpmap.empty();
     if (resolved_shader != nullptr) {
         out.uses_normal_map =
             out.uses_normal_map || (resolved_shader->flags & kShaderFlagUsesNormalMap) != 0U;
         out.uses_skinning = (resolved_shader->flags & kShaderFlagUsesSkinning) != 0U;
+        // `rglRenderer::renderMesh` (`0x1402e8454`) gates `fMaterialPower` / `vSpecularColor`
+        // on `shader->m_flags & kShaderFlagHasSpecular` (`0x20`).
+        out.uses_specular =
+            material_wants_specular && ((resolved_shader->flags & kShaderFlagHasSpecular) != 0U);
+    } else {
+        out.uses_specular = material_wants_specular;
     }
 
     return out;
@@ -1432,7 +1443,7 @@ inline void parse_techniques_xml(std::string_view xml_text,
     // The vertex stage gets a real `#define USE_SKINNING 1`; it only skins if the base
     // GLSL branches on that macro.
     static constexpr std::pair<const char*, const char*> kWse2SkinMappings[] = {
-        {"face_shader_skin_high", "faceshader_high"},
+        {"face_shader_skin_high", "face_shader_high"},
         {"faceshader_skin_high_specular", "faceshader_high_specular"},
         {"faceshader_skin_simple", "faceshader_simple"},
         {"simple_shading_with_skin", "simple_shading"},

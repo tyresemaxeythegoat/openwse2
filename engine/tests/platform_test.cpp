@@ -1604,6 +1604,22 @@ void test_p5_rhi_review_fixes() {
         expect(direct.load_mock_icd(dcfg) && direct.probe_and_create_device(probe3) &&
                    !probe3.wsi_instance_extensions_enabled && !probe3.swapchain_extension_enabled,
                "direct ICD requests no WSI extensions");
+
+        // Composed instance fallback: a 1.0-only ICD that also refuses WSI falls back
+        // through INCOMPATIBLE_DRIVER -> apiVersion 1.0 -> EXTENSION_NOT_PRESENT -> offscreen bridge.
+        VulkanDriverLoader composed;
+        VulkanMockConfig ccfg{};
+        ccfg.mode = DriverMode::system;
+        ccfg.direct_icd = false;
+        ccfg.expose_android_surface_wsi = true;
+        ccfg.require_api_version_1_0 = true;
+        ccfg.refuse_wsi_instance_extensions = true;
+        VulkanDriverProbeResult probe4{};
+        expect(composed.load_mock_icd(ccfg) && composed.probe_and_create_device(probe4) &&
+                   probe4.presentation_path == PresentationPath::offscreen_hardware_buffer_bridge &&
+                   !probe4.wsi_instance_extensions_enabled &&
+                   probe4.instance_api_version == 0x00400000U,
+               "composed 1.0 + WSI refusal instance fallbacks reach offscreen bridge");
     }
 
     const auto vs_words = emit_placeholder_spirv_module("void main() {}", SpirvStage::Vertex, "t",
@@ -1728,11 +1744,66 @@ void test_p5_rhi_review_fixes() {
         st.specular_rgb = {0.2f, 0.5f, 0.1f};
         const PipelineDesc pd = make_pipeline_desc(st);
         expect(pd.blend_mode == BlendMode::additive_alpha && !pd.alpha_test && !pd.depth_write &&
-                   pd.front_face == FrontFace::clockwise && pd.specular_power == 32.0f &&
+                   pd.front_face == FrontFace::counter_clockwise && pd.specular_power == 32.0f &&
                    pd.specular_coefficient == 0.5f &&
                    to_rhi_shader_stage(SpirvStage::Fragment) == RhiShaderStage::fragment &&
                    to_spirv_stage(RhiShaderStage::vertex) == SpirvStage::Vertex,
                "make_pipeline_desc maps decoded material state onto PipelineDesc");
+
+        // Retail BRF CCW triangle viewed under make_orbit_mvp_matrix must survive CullMode::back
+        // with make_pipeline_desc (FrontFace::counter_clockwise) and be culled under clockwise.
+        SoftwareRhiDevice wdev;
+        const std::array<MeshVertex, 3> ccw_front{{
+            {-0.5f, -0.5f, 0.0f, 0, 0, 1, 0, 0, 0xFF20E020U},
+            {0.5f, -0.5f, 0.0f, 0, 0, 1, 1, 0, 0xFF20E020U},
+            {0.0f, 0.5f, 0.0f, 0, 0, 1, 0.5f, 1, 0xFF20E020U},
+        }};
+        const std::array<std::uint16_t, 3> widx{0, 1, 2};
+        const BufferHandle wvb = wdev.create_buffer(
+            BufferUsage::vertex,
+            std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(ccw_front.data()),
+                                          sizeof(ccw_front)));
+        const BufferHandle wib = wdev.create_buffer(
+            BufferUsage::index,
+            std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(widx.data()),
+                                          sizeof(widx)));
+        PipelineDesc pd_ccw = make_pipeline_desc(MaterialRenderState{});
+        pd_ccw.depth_test = false;
+        pd_ccw.depth_write = false;
+        PipelineDesc pd_cw = pd_ccw;
+        pd_cw.front_face = FrontFace::clockwise;
+        const PipelineHandle p_ccw = wdev.create_pipeline(pd_ccw, &err);
+        const PipelineHandle p_cw = wdev.create_pipeline(pd_cw, &err);
+        MeshDrawCall wdraw{};
+        wdraw.vertex_buffer = wvb;
+        wdraw.index_buffer = wib;
+        wdraw.index_count = 3U;
+        make_orbit_mvp_matrix(1.0f, 1.8f, 0.0f, 0.0f, wdraw.mvp);
+        RenderPassDesc wpass{};
+        wpass.clear_r = 0;
+        wpass.clear_g = 0;
+        wpass.clear_b = 0;
+        std::vector<std::uint8_t> f_ccw;
+        std::vector<std::uint8_t> f_cw;
+        wdraw.pipeline = p_ccw;
+        const std::array<MeshDrawCall, 1> d_ccw{wdraw};
+        expect(wdev.render_pass_and_readback(wpass, d_ccw, f_ccw, &err), "render CCW brf tri");
+        wdraw.pipeline = p_cw;
+        const std::array<MeshDrawCall, 1> d_cw{wdraw};
+        expect(wdev.render_pass_and_readback(wpass, d_cw, f_cw, &err), "render CW culled tri");
+        auto count_lit = [](const std::vector<std::uint8_t>& img) {
+            std::size_t n = 0;
+            for (std::size_t i = 0; i + 3 < img.size(); i += 4U) {
+                if (img[i] != 0 || img[i + 1] != 0 || img[i + 2] != 0) ++n;
+            }
+            return n;
+        };
+        expect(count_lit(f_ccw) > 0U && count_lit(f_cw) == 0U,
+               "make_pipeline_desc FrontFace::counter_clockwise keeps retail CCW triangle under orbit camera");
+        wdev.destroy_pipeline(p_cw);
+        wdev.destroy_pipeline(p_ccw);
+        wdev.destroy_buffer(wib);
+        wdev.destroy_buffer(wvb);
     }
 }
 

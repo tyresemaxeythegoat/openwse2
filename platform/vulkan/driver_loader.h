@@ -75,6 +75,10 @@ struct VulkanMockConfig {
     bool expose_android_surface_wsi = false;
     // Device-level `VK_KHR_swapchain`, offered only on a WSI-enabled instance.
     bool expose_swapchain = true;
+    // Reject `vkCreateInstance` with `VK_ERROR_INCOMPATIBLE_DRIVER` unless `apiVersion == 1.0`.
+    bool require_api_version_1_0 = false;
+    // Reject `vkCreateInstance` with `VK_ERROR_EXTENSION_NOT_PRESENT` when any extension is enabled.
+    bool refuse_wsi_instance_extensions = false;
 };
 
 [[nodiscard]] std::string format_vulkan_version(std::uint32_t vk_version);

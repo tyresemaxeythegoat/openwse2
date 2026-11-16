@@ -528,15 +528,31 @@ class WseLauncherActivity : Activity() {
                 return "ERROR: cannot tell whether '${parts[3]}' is Turnip or PanVK; select one first"
             }
         }
+        val icdName = File(parts[2]).name
+        val stagedIcd = File(staging, icdName)
+        // Android 14+ refuses to load dynamically loaded code from a writable file;
+        // enforce this inside staging before swapping out any working driver directory.
+        if (!stagedIcd.setReadOnly()) {
+            staging.deleteRecursively()
+            return "ERROR: cannot mark $icdName read-only"
+        }
         val finalDir = File(root, mode)
-        finalDir.deleteRecursively()
+        val backupDir = File(root, "$mode.bak")
+        backupDir.deleteRecursively()
+        val hadExisting = finalDir.exists()
+        if (hadExisting && !finalDir.renameTo(backupDir)) {
+            staging.deleteRecursively()
+            return "ERROR: cannot back up ${finalDir.path}"
+        }
         if (!staging.renameTo(finalDir)) {
             staging.deleteRecursively()
+            if (hadExisting) {
+                backupDir.renameTo(finalDir)
+            }
             return "ERROR: cannot move driver into ${finalDir.path}"
         }
-        val icdFile = File(finalDir, File(parts[2]).name)
-        // Android 14+ refuses to load dynamically loaded code from a writable file.
-        icdFile.setReadOnly()
+        backupDir.deleteRecursively()
+        val icdFile = File(finalDir, icdName)
         return "OK\t$mode\t${icdFile.absolutePath}\t${parts[3]}\t${parts[4]}"
     }
 

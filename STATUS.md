@@ -11,7 +11,7 @@ documents link here instead of repeating them — see the ownership table in `AG
 | Area | State |
 | --- | --- |
 | Evidence baseline | WSE2 **v1.1.5.5** x64 (PDB + PE + Ghidra 12.1.4). The 2026-10-14 build is superseded. |
-| Host gate | **PASS** on Windows after Slice P5 (`engine/build_host.ps1`, Zig `clang++`: `19/19` suites / `137` test functions + `selftest_host` `19/19` (`8473 ms`) + `wse_headless` + `wse_brf`) + retail Warband `wse_brf.exe` check (`Native`: `221/221` entries `warnings=0`, `144` shaders [`111` suitable, `33` fallback], `633/633` resolved materials; `Phantasy Calradia`: `333/333` entries `warnings=0`, `144` shaders, `1,963/1,963` resolved materials; `271` `GLShaders` + WSE2 techniques, `58` INI fallback pairs; plus `1,269/1,269` `Textures/*.dds` `dds_fail=0`). Linux CI (`clang++` + `g++` ASan/UBSan) passed on PR #11 (`CI run 43712260606` on `fa4b7c2`: `19/19` / `131`) and re-runs on Slice P5 push |
+| Host gate | **PASS** on Windows after P4/P5 review follow-ups (`engine/build_host.ps1` with `WSE_WARBAND_ROOT`, Zig `clang++`: `19/19` suites / `140` test functions + `selftest_host` `19/19` (`3549 ms`) + `wse_headless` + `wse_brf`) + retail Warband `wse_brf.exe` check (`Native`: `221/221` entries `warnings=0`, `gl_techniques=271`, `144` shaders [`111` suitable, `33` fallback], `633/633` resolved materials, `48` alpha-tested, `261` blended, `58` INI pairs; `Phantasy Calradia`: `333/333` entries `warnings=0`, `gl_techniques=271`, `144` shaders [`111` suitable, `33` fallback], `1,963/1,963` resolved materials, `127` alpha-tested, `430` blended, `58` INI pairs; plus `1,269/1,269` `Textures/*.dds` `dds_fail=0`). Linux CI (`Engine CI`) verified PR #16 and re-runs on push |
 | Android arm64 gate | **PASS (CI run `43712260606` on `fa4b7c2`; re-runs on Slice P4 push)** — `.github/workflows/ci.yml` (`android-arm64` + `android-apk`) compiles all headers standalone, cross-compiles CMake targets (`engine`, `lua51`, `wse_lua`, `wse_selftest`), and builds `arm64-v8a` debug APK (`libwse2.so` + `libpanvk_hw.so` + `libSDL3.so` + `assets/scripts.txt` with `WseLauncherActivity` + `WseSafBridge`); on-device runtime tests remain unrun |
 | WSE extended opcodes | 440/440 mapped, **440/440 implemented** |
 | Native (non-WSE) opcodes | **1,053 live handlers mapped** (`16` control-flow `0–29` + `1,037` switch `30–2767`, plus `6` `noop_true` and `1` SDK-named fallback `1004`; `3` live handlers `53, 2180, 2749` have no SDK constant and carry community names); **1,053/1,053 implemented (100%, 20/20 categories)** (`16` control-flow incl. 4 live entity iterators + `1,037` switch across `block_vm.h`, `native_ops.h`, `native_entity_ops.h`, `native_mission_ops.h`, `native_campaign_ops.h`, `native_campaign_ops_2.h`, `native_world_ops.h`, `native_world_ops_2.h`, `native_world_ops_3.h`, `native_agent_ops.h`, `native_mp_ops.h`, `native_scene_ops.h`, and `native_ui_ops.h`) |
@@ -128,7 +128,7 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 
 Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
 
-1. **P5 GLSL → SPIR-V translator:** `emit_placeholder_spirv_module` still emits empty `void main()` modules, so nothing real can be drawn through Vulkan yet. Choose the translator by a spike on retail `Native` plus one large mod (`docs/PLATFORM_PLAN.md`), keep `SpirvShaderCache` keyed by generator version, and confirm the `rglMaterial` render-order sign and diffuse sRGB assumption in `rglRenderer::renderMesh`.
+1. **P5 GLSL → SPIR-V translator:** `emit_placeholder_spirv_module` still emits empty `void main()` modules, so nothing real can be drawn through Vulkan yet. Choose the translator by a spike on retail `Native` plus one large mod (`docs/PLATFORM_PLAN.md`) and keep `SpirvShaderCache` keyed by generator version.
 2. **P6 Audio (SDL3 audio-stream mixer + decoders):** P0–P5 (`wse/asset/shader.h`, `SpirvShaderCache`, `PresentationPath` WSI vs `AHardwareBuffer` bridge decision, `VkShaderModule` lifecycle, D3D9 projection/half-pixel/sRGB + material RHI) are implemented and host-verified; the next platform slice is inspecting v1.1.5.5 FMOD Ex call sites and implementing `AudioDevice` + SDL3 audio mixer (`P6`), plus touch/controller input (`P7`).
 3. **Device verification of P1/P2/P4 APK:** install the `wse2-android-selftest-debug-apk` CI artifact on an `arm64-v8a` device/emulator once available and record live on-device SAF index timing plus system / Turnip / PanVK driver probe results from `WseLauncherActivity`.
 
@@ -151,14 +151,8 @@ environment cannot make.
    (`WseVulkanProbeService`), its crash/timeout reporting, the `android_get_device_api_level()`
    `minApi` check, and the requested-mode check in `nativeStageDriverPackage` are compile-checked
    only (Kotlin against the Android 14 framework jar, JNI on the host). Needs a device (§4).
-3. **Windows changes are compile-checked only.** `LoadLibraryExA(..., LOAD_LIBRARY_SEARCH_SYSTEM32)`
-   for `vulkan-1.dll`, UTF-8 custom-driver paths through `LoadLibraryExW`, and `HostVfs::rename_file`
-   replacing an existing file were cross-compiled and linked with Zig `x86_64-windows-gnu` but not
-   run; the next `engine/build_host.ps1` run on Windows covers them.
-4. **Front face of real Warband meshes.** `PipelineDesc::front_face` exists (default
-   `counter_clockwise`), but which winding `.brf` faces have after the D3D9 -> Vulkan coordinate
-   conversion is unknown until a real mesh is rendered with culling on (P5's D3D9 projection
-   helpers do not settle it). Decide the default with the first GPU-rendered `.brf`.
+3. ~~**Windows changes are compile-checked only.**~~ **Verified on Windows:** `LoadLibraryExA(..., LOAD_LIBRARY_SEARCH_SYSTEM32)` for `vulkan-1.dll`, UTF-8 custom-driver paths via `LoadLibraryExW`, `HostVfs::rename_file`, and the composed `1.0` + WSI-refusal fallback loop in `driver_loader.cpp` now build and pass in `engine/build_host.ps1` (`platform_test.cpp`).
+4. ~~**Front face of real Warband meshes.**~~ **Resolved:** `rglCamera::getProjectionMatrix` (`0x14025ac20` / `D3DXMatrixPerspectiveOffCenterRH` `0x140501b60`) + `rglRenderer::renderMesh` (`0x1402e8ccd`) + retail `CommonRes/shields.brf` CCW winding + `SoftwareRhiDevice` + `make_orbit_mvp_matrix` (`platform_test.cpp`) confirm `FrontFace::counter_clockwise`; `make_pipeline_desc` (`wse/platform/rhi_material.h`) updated to match.
 5. **Software rasterizer throughput.** Remaining ideas, deferred because the GPU path replaces this
    rasterizer for real frames: 8x8 tile binning with empty-tile skipping and one thread per tile
    row; integer power-of-two texture wrap (`& (w - 1)`); a word-at-a-time hash (xxh3) for large
@@ -182,17 +176,28 @@ Each needs a translator choice, the retail PDB/binary, hardware, or a change to 
    (retail `Native` + one large mod), keep `SpirvShaderCache` keyed by
    `kPlaceholderSpirvGeneratorVersion` (bump it, or replace it with the translator's version),
    and validate output with `spirv-val` in CI.
-2. **Unconfirmed `rglMaterial` decoding.** The render-order nibble (bits 24..27) is decoded as
-   signed (`0xF` → `-1`), `MaterialRenderState::srgb_diffuse` is "diffuse slot names a texture",
-   and blend values 5..7 map to opaque. None is confirmed in `rglRenderer::renderMesh`
-   (`0x1402e7f50`) or `createBlendStates` (`0x14029f590`); needs the v1.1.5.5 binary in Ghidra/REA.
-3. **`make_pipeline_desc` assumes clockwise front faces** for Warband materials, which is P4
-   item 4 above: unconfirmed until a real `.brf` mesh is GPU-rendered with culling on.
-4. **Retail technique count.** The XML root-element fix can only add techniques the old parser
-   skipped, so the retail check now asserts `>= 271` instead of `== 271`. Re-run `wse_brf` /
-   `asset_test` with `WSE_WARBAND_ROOT` on the retail install and record the exact count (and the
-   `Native` / `Phantasy Calradia` suitable/fallback/resolved numbers, which the
-   `require_hlsl_technique` and resolution changes can also move).
+2. ~~**Unconfirmed `rglMaterial` decoding.**~~ **Resolved in v1.1.5.5:** `rglMesh::updateRenderOrder`
+   (`0x1402b9e50`, `0x1402b9ef5`) computes `((flags >> 24) - 8) & 0xF` (+4 bucket when blended),
+   confirming signed nibble `-8..+7` for `render_order`. `rglGraphicsContext::createBlendStates`
+   (`0x14029f590`) allocates slots `0..4`; values `5..6` have no slot, while `7` (`0x700`)
+   selects slot `1` (`AlphaBlend`) vs `0` (`Opaque`) dynamically per draw from vertex-color alpha
+   (`0x1402e913f` / `0x1402b9ece`). `rglRenderer::renderMesh` / `setAlphaTestMode` (`0x1402e8439` /
+   `0x1402a00b0`) keep `D3DRS_ALPHATESTENABLE`/`D3DRS_ALPHAREF` active even on blended materials,
+   `shader->m_flags & kShaderFlagHasSpecular` (`0x20`, `0x1402e8454`) gates material specular, and
+   DX9 sets no `D3DSAMP_SRGBTEXTURE`/`D3DRS_SRGBWRITEENABLE` (`rglMesh::gammaCorrect` `0x1402c02b0`
+   handles gamma in shaders, so `srgb_diffuse = !diffuse_a.empty()` is appropriate for Vulkan
+   `R8G8B8A8_SRGB`).
+3. ~~**`make_pipeline_desc` assumes clockwise front faces**~~ **Fixed:** updated
+   `wse/platform/rhi_material.h` to `FrontFace::counter_clockwise` (verified by `v1.1.5.5`
+   `0x1402e8ccd`/`0x14025ac20`, retail `CommonRes/shields.brf`, and the CCW orbit-camera
+   regression test in `platform_test.cpp`).
+4. ~~**Retail technique count.**~~ **Resolved:** fixed `kWse2SkinMappings[0]` base typo
+   (`"faceshader_high"` → `"face_shader_high"`) in `wse/asset/shader.h` and `asset_test.cpp`;
+   fresh `wse_brf.exe` records `gl_techniques=271` (`0` warnings, all 5 WSE2 variants incl.
+   `face_shader_skin_high` synthesized), `Native` (`221/221`, `144` shaders [`111` suitable,
+   `33` fallback], `633/633` resolved materials, `48` alpha-tested, `261` blended, `58` INI
+   pairs) and `Phantasy Calradia` (`333/333`, `144` shaders [`111` suitable, `33` fallback],
+   `1,963/1,963` resolved materials, `127` alpha-tested, `430` blended, `58` INI pairs).
 5. **Lighting is still an approximation.** `MeshVertex` carries no tangents, so the software
    rasterizer derives one flat UV tangent per triangle (no smoothing across vertices), and the
    key light, ambient term, and Blinn-Phong model are port choices, not retail shader behaviour.
@@ -209,10 +214,14 @@ Each needs a translator choice, the retail PDB/binary, hardware, or a change to 
    `0x140617819`, labeled historical/superseded sections). Curating them (as `global_objects` or
    strings) would let the baseline shrink; and because the checker accepts any VA inside a known
    function, a mislabeled interior VA still passes — only review catches that.
-9. **Windows, CI, and device runs.** The fixes were verified on Linux only (standalone gate,
-   CMake CTest, g++ ASan/UBSan). `engine/build_host.ps1`, the `Engine CI` jobs (including the new
-   `check_citations.py --docs` step), and an on-device WSI probe (`VK_KHR_swapchain` enablement)
-   are still to run.
+9. **CI and device runs (Windows now verified).** After resolving the P4/P5 review follow-ups
+   (`face_shader_high` base, `kShaderFlagHasSpecular` `0x20`, `alpha_ref_u8` on blended materials,
+   `FrontFace::counter_clockwise`, composed `1.0` + WSI refusal fallback loop in
+   `driver_loader.cpp`, `rhi_brf.h` `>= 65536` vertex guard, `saf_vfs_jni.cpp` display-name
+   control-char sanitization, and `WseLauncherActivity.kt` atomic ICD backup swap), Windows
+   `engine/build_host.ps1` + retail corpus (`WSE_WARBAND_ROOT`) + `wse_brf.exe` +
+   `check_citations.py --self-test --docs` PASS. Android NDK/APK CI jobs and an on-device WSI
+   probe (`VK_KHR_swapchain` enablement) remain pending CI/hardware.
 
 ## 6. Open documentation questions
 
@@ -237,8 +246,9 @@ Previously closed: the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vta
 | Binary savegame format | PASS | `rglBinaryStream` raw little-endian 8/4/1-byte values; strings are `int32` length + bytes; no header or checksum |
 | Module stream identification | PASS | `0x1405651e0` = `rglInputTextFileStream` (readers at `+0x58/+0x70/+0x78/+0x80/+0x90`); `0x1405653e0` = `rglOutputTextFileStream` writers; module files are decimal token text |
 | Host PanVK loader/surface test | PASS | `host loader tests: PASS` (legacy renderer path, unaffected) |
-| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse_bitwise_fp tests: PASS`, `wse_system tests: PASS`, `wse_string tests: PASS`, `wse_dict tests: PASS`, `wse_array tests: PASS`, `wse_world tests: PASS`, `block_vm tests: PASS`, `PASS native_world_test`, `PASS native_m5_test`, `PASS wse_m6_test`, `platform tests: PASS`, `module_loaders tests: PASS`, `headless tests: PASS`, `lua tests: PASS`, `asset tests: PASS`, `selftest_host tests: PASS (19/19, 8473 ms)` (Zig clang++ `-std=c++20 -O2 -Wall -Wextra -Werror`) |
-| Slice P5 review fixes | PASS (Linux host: standalone gate `19/19`, CMake CTest `lua` + `selftest_host`, g++ ASan/UBSan CTest `20/20`, `check_citations.py --self-test --docs`; Windows, retail corpus, CI & device pending) | Fixed: `<techniques>` root swallowing the first technique; catalog never failing (5 variants always synthesized, so a Windows install without `GLShaders/` rejected nearly every shader); placeholder SPIR-V presented as a translator (renamed `emit_placeholder_spirv_module`, P5 reopened); wrong VAs in this file and `docs/ARCHITECTURE.md`; WSI detected but not enabled (now instance WSI + `VK_KHR_swapchain`, with fallback); exponential alternative search (now BFS + `SuitableShaderResolver`); SPIR-V cache accepting truncated/foreign modules (full validation, source-hash/stage/generator check, `.partial` + rename); draws failing after legal shader-module destroy; silent `VkShaderModule`-less success; allocating `noexcept` feature scan + substring false positives; INI BOM/duplicate keys; PostFx `#if WSE2` substring test; `uses_specular` inconsistency; half-pixel clip helper ignoring `w`/Y convention; object-space lighting and arbitrary tangents (now `MeshDrawCall::model` + UV tangents); D3D9 alpha-channel blending; NaN UNORM writes; stage/entry-point validation; `rhi_material.h` converters; retail test path via `WSE_WARBAND_ROOT`; `wse_brf` memoized/names-only/no copies. Not changed: `SYMBOL_MAP.json` churn/date (needs the PDB to regenerate) and the `Dev <dev@localhost>` author of `6be524d` (history is pushed). |
+| Portable engine host tests | PASS | `operand tests: PASS`, `trigger tests: PASS`, `savegame tests: PASS`, `script tests: PASS`, `wse_bitwise_fp tests: PASS`, `wse_system tests: PASS`, `wse_string tests: PASS`, `wse_dict tests: PASS`, `wse_array tests: PASS`, `wse_world tests: PASS`, `block_vm tests: PASS`, `PASS native_world_test`, `PASS native_m5_test`, `PASS wse_m6_test`, `platform tests: PASS`, `module_loaders tests: PASS`, `headless tests: PASS`, `lua tests: PASS`, `asset tests: PASS`, `selftest_host tests: PASS (19/19, 3549 ms)` (Zig clang++ `-std=c++20 -O2 -Wall -Wextra -Werror`) |
+| P4/P5 review follow-ups & Windows retail check | PASS (Windows host + retail Warband; Android NDK/APK CI & device pending push) | Fixed `face_shader_high` base typo (synthetic test + `kWse2SkinMappings[0]`, all 5 WSE2 variants incl. `face_shader_skin_high` synthesize with `0` warnings); confirmed `v1.1.5.5` `render_order` nibble (`0x1402b9e50`, `0x1402b9ef5`), blend `7` vertex-alpha dispatch (`0x1402e913f`), blended `D3DRS_ALPHAREF` (`0x1402e8439`/`0x1402a00b0`), `kShaderFlagHasSpecular` `0x20` gate (`0x1402e8454`), shader-only gamma (`0x1402c02b0`), and `FrontFace::counter_clockwise` (`0x1402e8ccd`/`0x14025ac20`/`0x140501b60`, `rhi_material.h` fixed); fixed composed Vulkan `1.0` + WSI refusal fallback loop (`driver_loader.{h,cpp}`), `rhi_brf.h` `>= 65536` vertex guard, `saf_vfs_jni.cpp` display-name control-char sanitization, and `WseLauncherActivity.kt` atomic ICD read-only backup swap; `engine/build_host.ps1` (`19/19` / `140` tests, `3549 ms`), retail `wse_brf.exe` (`Native` & `Phantasy Calradia`), `check_citations.py --self-test --docs`, and `extract_wse_opcodes.py --check` all PASS |
+| Slice P5 review fixes | PASS (`PR #16`; Windows/retail gaps now closed above) | Fixed: `<techniques>` root swallowing the first technique; catalog never failing (5 variants always synthesized, so a Windows install without `GLShaders/` rejected nearly every shader); placeholder SPIR-V presented as a translator (renamed `emit_placeholder_spirv_module`, P5 reopened); wrong VAs in this file and `docs/ARCHITECTURE.md`; WSI detected but not enabled (now instance WSI + `VK_KHR_swapchain`, with fallback); exponential alternative search (now BFS + `SuitableShaderResolver`); SPIR-V cache accepting truncated/foreign modules (full validation, source-hash/stage/generator check, `.partial` + rename); draws failing after legal shader-module destroy; silent `VkShaderModule`-less success; allocating `noexcept` feature scan + substring false positives; INI BOM/duplicate keys; PostFx `#if WSE2` substring test; `uses_specular` inconsistency; half-pixel clip helper ignoring `w`/Y convention; object-space lighting and arbitrary tangents (now `MeshDrawCall::model` + UV tangents); D3D9 alpha-channel blending; NaN UNORM writes; stage/entry-point validation; `rhi_material.h` converters; retail test path via `WSE_WARBAND_ROOT`; `wse_brf` memoized/names-only/no copies. Not changed: `SYMBOL_MAP.json` churn/date (needs the PDB to regenerate) and the `Dev <dev@localhost>` author of `6be524d` (history is pushed). |
 | Slice P5 shaders, materials & D3D9/Vulkan RHI | PASS (host + retail Warband modules; CI & device pending) | Verified v1.1.5.5 effect search (`0x14028bce0`, `0x14029c930`, `0x1402db690`), `wse2_shaders.{brf,ini}` fallbacks (`0x1402eeec0`, `0x1402ed3c0`), shader suitability & alternatives (`0x140301ab0`, `0x1402f3db0`, `0x1402f3eb0`, `0x1402f1ef0`), material flags/slots (`0x1402f5390`, `0x14029f590`, `0x1402a00b0`, `0x1402e7f50`), and `VertexDeclType` `0..4` (`0x1402baa30`) in `docs/SYMBOL_MAP.json`; added `engine/include/wse/asset/shader.h` (effect/INI/shader/material resolution, `GLShaders` catalog + 5 WSE2 skinning variants, deterministic SPIR-V 1.0 generator, persistent `SpirvShaderCache`), extended `wse/platform/rhi.h` + `platform/vulkan/driver_loader.{h,cpp}` (`PresentationPath` `android_surface_wsi` vs `offscreen_hardware_buffer_bridge`, `VkShaderModule` lifecycle via `MockVulkanIcd` v5 + `VulkanRhiDevice`, D3D9 RH perspective/ortho/half-pixel/sRGB helpers, Blinn-Phong lighting + normal/specular maps + alpha-test-before-depth-write + 5 blend modes in `SoftwareRhiDevice`), and extended `wse_brf`, `asset_test.cpp` (`8` tests), and `platform_test.cpp` (`10` tests); `build_host.ps1` (`19/19` / `137` tests, `8473 ms`) and retail `wse_brf.exe` PASS on `Native` (`221/221`, `warnings=0`, `gl_tech=271`, `144` shaders [`111` suitable, `33` fallback], `633/633` resolved materials, `58` INI pairs) and `Phantasy Calradia` (`333/333`, `warnings=0`, `gl_tech=271`, `144` shaders, `1,963/1,963` resolved materials) |
 | Lua 5.1 runtime (Phase 2F) | PASS | `liblua51_cxx.a` (Lua 5.1.5 MIT compiled as C++) + `wse_lua` (`engine/src/lua/*.cpp`), `wse/vm/lua_{runtime,manager}.h`, `lua_bridge.h` (`5100`–`5114`), `block_vm.h` (`TriggerIterationScope`, `execute_statement` / `execute_script` hooks), `headless_runner.h` + `wse_headless.cpp`; verified across all 6 suites in `lua_test.cpp` (stdlib/bit/vector/pos, `msfiles` + `variables.txt` parsers & `execOperation`, entity iterators + triggers/hooks, opcodes `5100`–`5114` & 9 `On*` events, sandboxed `HostVfs` headless `main.lua` execution, and stack/defer/unwind/io/shutdown regressions) |
 | Phase 2H headless `Native` run | PASS (host local) | `wse_headless.exe` against user retail install (`Modules/Native`): `34` loaded files + `1` skipped optional `module_config.ini` (after fixing `particle_systems.txt` 35-float layout `0x140207d50`, `skins.txt` wrapping u32 color literals `0x1402afce0` + `(weight, key_index)` constraint pairs `0x140213d60`, and `Data/skyboxes.txt` scalar `flare_strength` `0x1402180c0`); `game_start` (`idx 0`, `maxDepth 5`) + `20` simulated frames across `25` triggers and `110` simple triggers (`500.0s`, resulting in `755` parties) completed with `errorCount=0` and `unimplementedCount=0` under `failOnUnimplemented=true` |

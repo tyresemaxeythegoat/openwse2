@@ -513,8 +513,13 @@ Platform P5 review fixes (behaviour notes and safety deviations):
     position but the later value everywhere, with a warning.
   - **PostFx (safety deviation):** the WSE2 include is appended unless a `#if`/`#ifdef`/`#elif`
     directive tests `WSE2` as a whole token (incl. `defined(WSE2)`), instead of a substring test.
-  - **Material state:** `uses_specular` uses one rule with or without a resolved shader.
-    `render_order` sign and `srgb_diffuse` remain port assumptions (`docs/ARCHITECTURE.md` §8).
+  - **Material state:** `uses_specular` is gated by `shader->m_flags & kShaderFlagHasSpecular`
+    (`0x20`, `0x1402e8454`) when a shader is resolved (and uses the material's specular
+    map/color/coeff rule when unshaded); `alpha_ref_u8` (`0x1402e8439`/`0x1402a00b0`) stays
+    active even on blended materials; `render_order` signed nibble (`-8..+7`) matches
+    `rglMesh::updateRenderOrder` (`0x1402b9ef5`); blend `7` (`0x700`) is per-draw vertex alpha
+    (`0x1402e913f`); DX9 sets no sRGB texture/write states (`rglMesh::gammaCorrect` `0x1402c02b0`
+    and shaders handle gamma), so `srgb_diffuse = !diffuse_a.empty()` is used for Vulkan sRGB.
   - **SPIR-V cache:** a hit requires the whole module to validate and its tag to match the source
     hash, stage, and generator version (part of the key); writes go through `.partial` +
     `Vfs::rename_file`. Hits return feature flags from the tag.

@@ -936,9 +936,13 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    which fall inside unrelated functions (`rglTechnique::initDeviceObjects`, `loadResourceBlacklist`,
    `getFormatName`, `createMetaMesh`, `gammaCorrectMeshes`, `dumpUsageInfo`) rather than the
    functions they were labeled as. The citation checker accepts any address inside a known
-   function, so it cannot catch a mislabeled interior VA; cite function entry VAs. Open evidence
-   gaps: the sign of the `rglMaterial` render-order nibble (bits 24..27) and the sRGB treatment of
-   the diffuse slot are port assumptions, not yet confirmed in `rglRenderer::renderMesh`.
+   function, so it cannot catch a mislabeled interior VA; cite function entry VAs. Subsequent
+   v1.1.5.5 verification confirmed `rglMesh::updateRenderOrder` (`0x1402b9e50`, `0x1402b9ef5`
+   signed nibble `-8..+7`), per-draw blend `7` vertex-alpha dispatch (`0x1402e913f` /
+   `0x1402b9ece`), `D3DRS_ALPHAREF` persistence on blended materials (`0x1402e8439`), the
+   `0x20` shader specular gate (`0x1402e8454`), `FrontFace::counter_clockwise` (`0x1402e8ccd` /
+   `0x14025ac20` / `0x140501b60`), and shader-managed gamma (`rglMesh::gammaCorrect`
+   `0x1402c02b0`, no DX9 `D3DSAMP_SRGBTEXTURE` / `D3DRS_SRGBWRITEENABLE`).
 
 ## 9. Evidence index
 

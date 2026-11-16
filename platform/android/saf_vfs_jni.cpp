@@ -650,12 +650,20 @@ Java_org_wse2_android_WseSafBridge_nativeStageDriverPackage(JNIEnv* env,
     }
     abs.append(staged_rel);
 
+    std::string display_name = meta.name.empty() ? meta.library_name : meta.name;
+    for (char& ch : display_name) {
+        const unsigned char uch = static_cast<unsigned char>(ch);
+        if (uch < 0x20U || uch == 0x7FU) {
+            ch = ' ';
+        }
+    }
+
     std::string out = "OK\t";
     out.append(wse::platform::driver_mode_name(meta.inferred_mode));
     out.push_back('\t');
     out.append(abs);
     out.push_back('\t');
-    out.append(meta.name.empty() ? meta.library_name : meta.name);
+    out.append(display_name);
     out.push_back('\t');
     out.append(std::to_string(patched));
     return utf8_to_jstring(env, out);
