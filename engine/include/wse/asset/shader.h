@@ -16,12 +16,14 @@
 //   rglGraphicsContext::createBlendStates (0x14029f590), setFogEnabled (0x14029ffa0)
 //
 // Port infrastructure in this header that is NOT a reconstruction:
-// - `emit_placeholder_spirv_module` is a placeholder. It does not translate GLSL: it
-//   emits a valid but empty `void main()` module tagged with the technique, vertex
-//   declaration, detected features, and a source hash. A real GLSL/HLSL -> SPIR-V
-//   translator is still open work for P5 (`ROADMAP.md`).
-// - `SpirvShaderCache` (persistent VFS cache), `detect_glsl_feature_flags`, and the
-//   synthesized WSE2 skinning techniques have no retail counterpart.
+// - `lower_warband_glsl_to_vulkan450` lowers legacy Warband GLSL 1.10/1.20 (`attribute`,
+//   `varying`, loose `uniform`, `gl_FragColor`, `texture2D`) into Vulkan `#version 450`
+//   GLSL using canonical vertex attribute locations, conflict-free varying locations,
+//   per-stage `std140` UBOs (binding 0 VS / binding 1 FS), and sampler bindings 2..13.
+// - `SpirvCompilerBackend` + `SpirvShaderCache` (persistent VFS cache),
+//   `detect_glsl_feature_flags`, and the synthesized WSE2 skinning techniques have no
+//   retail counterpart. Real SPIR-V 1.0 emission is implemented behind
+//   `wse/asset/shader_compiler.h` (`wse_shader` / Khronos `glslang`).
 #pragma once
 
 #include <algorithm>
@@ -32,6 +34,7 @@
 #include <cstring>
 #include <deque>
 #include <initializer_list>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -1474,23 +1477,17 @@ inline void parse_techniques_xml(std::string_view xml_text,
 }
 
 // -----------------------------------------------------------------------------
-// Placeholder SPIR-V 1.0 Module Emitter & Persistent VFS Cache
+// Warband GLSL -> Vulkan 450 Lowering, SPIR-V 1.0 Compiler Interface & VFS Cache
 // -----------------------------------------------------------------------------
 
-// Bumped whenever `emit_placeholder_spirv_module` output changes; part of every
-// cache key and of the module's tag, so stale cache entries are never reused.
-inline constexpr std::uint32_t kPlaceholderSpirvGeneratorVersion = 2U;
-inline constexpr std::uint32_t kPlaceholderSpirvGeneratorMagic = 0x57534532U;  // "WSE2"
+// Bumped whenever lowering/code-generation changes; stored inside every module's
+// `OpString` tag (`wse2:...gen=3`) and baked into every cache filename so stale
+// or placeholder `.spv` binaries are automatically rejected and recompiled.
+inline constexpr std::uint32_t kWseSpirvGeneratorVersion = 3U;
 
 namespace shader_detail {
 
-inline constexpr std::uint32_t kSpvIdExtInst = 1U;
-inline constexpr std::uint32_t kSpvIdEntryFn = 2U;
-inline constexpr std::uint32_t kSpvIdTypeVoid = 3U;
-inline constexpr std::uint32_t kSpvIdTypeFnVoid = 4U;
-inline constexpr std::uint32_t kSpvIdLabel = 5U;
-inline constexpr std::uint32_t kSpvIdTechTag = 6U;
-inline constexpr std::uint32_t kSpvIdBound = 7U;
+inline constexpr std::uint32_t kLegacyPlaceholderSpirvMagic = 0x57534532U;  // "WSE2"
 
 struct GlslFeatureToken {
     std::string_view token;
@@ -1514,6 +1511,120 @@ inline constexpr GlslFeatureToken kGlslFeatureTokens[] = {
     {"shadowmap_texture", kSpirvFeatShadowMap},
     {"output_gamma_inv", kSpirvFeatGammaOutput},
 };
+
+struct NameSlotEntry {
+    std::string_view name;
+    std::uint32_t slot;
+};
+
+inline constexpr NameSlotEntry kWarbandAttrLocations[] = {
+    {"inPosition", 0U},
+    {"inNormal", 1U},
+    {"inTexCoord", 2U},
+    {"inColor0", 3U},
+    {"inColor1", 4U},
+    {"inTangent", 5U},
+    {"inBinormal", 6U},
+    {"inBlendWeight", 7U},
+    {"inBlendWeights", 7U},
+    {"inBlendIndices", 8U},
+};
+
+// Graph-colored 9-location mapping covering all 39 Warband retail varying names
+// with zero intra-technique conflicts even under single-stage compilation.
+inline constexpr NameSlotEntry kWarbandVaryingLocations[] = {
+    {"Fog", 0U},          {"TC", 0U},             {"Tex", 0U},         {"outTexCoord", 0U},
+    {"texCoord0", 0U},    {"Tex0", 1U},           {"outColor0", 1U},   {"outDepth", 1U},
+    {"texCoord1", 1U},    {"LightDir", 2U},       {"Map", 2U},         {"ViewDir", 2U},
+    {"normal", 2U},       {"outColor1", 2U},      {"texCoord2", 2U},   {"vSpecular", 2U},
+    {"Color", 3U},        {"LightDif", 3U},       {"VertexColor", 3U}, {"outFog", 3U},
+    {"texCoord3", 3U},    {"CameraDir", 4U},      {"ShadowTexCoord", 4U},
+    {"outNormal", 4U},    {"vec_to_light_0", 4U}, {"Depth", 5U},       {"VertexLighting", 5U},
+    {"WorldNormal", 5U},  {"vec_to_light_1", 5U}, {"PosWater", 6U},    {"SkyLightDir", 6U},
+    {"SunLight", 6U},     {"tangent", 6U},        {"vec_to_light_2", 6U},
+    {"SunLightDir", 7U},  {"projCoord", 7U},      {"viewVec", 7U},     {"LightDir_Alpha", 8U},
+    {"PointLightDir", 8U},
+};
+
+// Bindings 0 and 1 are reserved for the VS and FS `std140` uniform blocks.
+inline constexpr NameSlotEntry kWarbandSamplerBindings[] = {
+    {"depth_texture", 2U},
+    {"diffuse_texture", 3U},
+    {"diffuse_texture_2", 4U},
+    {"env_texture", 5U},
+    {"normal_texture", 6U},
+    {"postFX_sampler0", 7U},
+    {"postFX_sampler1", 8U},
+    {"postFX_sampler2", 9U},
+    {"postFX_sampler3", 10U},
+    {"postFX_sampler4", 11U},
+    {"shadowmap_texture", 12U},
+    {"specular_texture", 13U},
+};
+
+[[nodiscard]] inline std::optional<std::uint32_t> lookup_name_slot(
+    std::string_view name, std::span<const NameSlotEntry> table) noexcept {
+    for (const NameSlotEntry& e : table) {
+        if (e.name == name) {
+            return e.slot;
+        }
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] inline std::string strip_glsl_comments(std::string_view src) {
+    std::string out;
+    out.reserve(src.size());
+    std::size_t i = 0;
+    while (i < src.size()) {
+        const char c = src[i];
+        if (c == '/' && i + 1U < src.size() && src[i + 1U] == '/') {
+            i += 2U;
+            while (i < src.size() && src[i] != '\n') {
+                ++i;
+            }
+            if (i < src.size()) {
+                out.push_back('\n');
+                ++i;
+            }
+        } else if (c == '/' && i + 1U < src.size() && src[i + 1U] == '*') {
+            i += 2U;
+            while (i < src.size()) {
+                if (src[i] == '*' && i + 1U < src.size() && src[i + 1U] == '/') {
+                    i += 2U;
+                    break;
+                }
+                if (src[i] == '\n') {
+                    out.push_back('\n');
+                }
+                ++i;
+            }
+        } else {
+            out.push_back(c);
+            ++i;
+        }
+    }
+    return out;
+}
+
+[[nodiscard]] inline bool is_glsl_ident_start(char c) noexcept {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+[[nodiscard]] inline bool is_glsl_ident_char(char c) noexcept {
+    return is_glsl_ident_start(c) || (c >= '0' && c <= '9');
+}
+
+[[nodiscard]] inline std::uint32_t alloc_free_slot(std::uint64_t& used_mask,
+                                                   std::uint32_t min_slot) noexcept {
+    for (std::uint32_t s = min_slot; s < 64U; ++s) {
+        if ((used_mask & (1ULL << s)) == 0ULL) {
+            used_mask |= (1ULL << s);
+            return s;
+        }
+    }
+    return min_slot;
+}
 
 }  // namespace shader_detail
 
@@ -1539,92 +1650,516 @@ inline constexpr GlslFeatureToken kGlslFeatureTokens[] = {
     return flags;
 }
 
-// PLACEHOLDER, not a translator: emits a deterministic, structurally valid SPIR-V 1.0
-// module (capability, GLSL450 memory model, stage entry point, an `OpName` tag
-// `"<tech>:decl=<n>:feat=<hex>:src=<hash>:gen=<v>"`, and an empty `void main()`).
-// The GLSL only feeds the hash and feature flags; a pipeline built from these
-// modules draws nothing. Real GLSL -> SPIR-V translation is open P5 work.
-[[nodiscard]] inline std::vector<std::uint32_t> emit_placeholder_spirv_module(
-    std::string_view glsl_source,
-    SpirvStage stage,
-    std::string_view technique_name,
-    VertexDeclType decl_type,
-    std::uint32_t* out_feature_flags = nullptr) {
-    using namespace shader_detail;
-    const std::uint32_t feats = detect_glsl_feature_flags(glsl_source, decl_type);
-    if (out_feature_flags != nullptr) {
-        *out_feature_flags = feats;
-    }
-
-    std::vector<std::uint32_t> words;
-    words.reserve(96U);
-
-    // SPIR-V 1.0 header.
-    words.push_back(0x07230203U);  // Magic
-    words.push_back(0x00010000U);  // Version 1.0
-    words.push_back(kPlaceholderSpirvGeneratorMagic);
-    words.push_back(kSpvIdBound);  // Bound
-    words.push_back(0U);           // Reserved schema
-
-    const auto emit_with_string = [&](std::uint16_t opcode,
-                                      std::initializer_list<std::uint32_t> operands,
-                                      std::string_view text) {
-        const std::size_t idx = words.size();
-        words.push_back(0U);
-        for (const std::uint32_t op : operands) {
-            words.push_back(op);
-        }
-        append_spirv_string(words, text);
-        const std::uint32_t wc = static_cast<std::uint32_t>(words.size() - idx);
-        words[idx] = (wc << 16U) | opcode;
-    };
-
-    emit_spirv_inst(words, 17U, {1U});                                  // OpCapability Shader
-    emit_with_string(11U, {kSpvIdExtInst}, "GLSL.std.450");             // OpExtInstImport
-    emit_spirv_inst(words, 14U, {0U, 1U});                              // OpMemoryModel Logical GLSL450
-    emit_with_string(15U, {static_cast<std::uint32_t>(stage), kSpvIdEntryFn}, "main");  // OpEntryPoint
-    if (stage == SpirvStage::Fragment) {
-        emit_spirv_inst(words, 16U, {kSpvIdEntryFn, 7U});              // OpExecutionMode OriginUpperLeft
-    }
-    emit_spirv_inst(words, 3U, {2U, 330U});                             // OpSource GLSL 330
-
-    const std::string tag = std::string(technique_name) +
-                            ":decl=" + std::to_string(static_cast<int>(decl_type)) +
-                            ":feat=" + hex_u64(feats) +
-                            ":src=" + hex_u64(fnv1a64(glsl_source)) +
-                            ":gen=" + std::to_string(kPlaceholderSpirvGeneratorVersion);
-    emit_with_string(5U, {kSpvIdTechTag}, tag);                         // OpName %tag
-    emit_with_string(5U, {kSpvIdEntryFn}, "main");                      // OpName %main
-
-    emit_spirv_inst(words, 19U, {kSpvIdTypeVoid});                      // OpTypeVoid
-    emit_spirv_inst(words, 33U, {kSpvIdTypeFnVoid, kSpvIdTypeVoid});    // OpTypeFunction
-    emit_spirv_inst(words, 21U, {kSpvIdTechTag, 32U, 0U});              // OpTypeInt 32 0
-    emit_spirv_inst(words, 54U, {kSpvIdTypeVoid, kSpvIdEntryFn, 0U, kSpvIdTypeFnVoid});  // OpFunction
-    emit_spirv_inst(words, 248U, {kSpvIdLabel});                        // OpLabel
-    emit_spirv_inst(words, 253U, {});                                   // OpReturn
-    emit_spirv_inst(words, 56U, {});                                    // OpFunctionEnd
-    return words;
+[[nodiscard]] inline std::optional<std::uint32_t> warband_vertex_attribute_location(
+    std::string_view name) noexcept {
+    return shader_detail::lookup_name_slot(name, shader_detail::kWarbandAttrLocations);
 }
 
-struct PlaceholderSpirvInfo {
+[[nodiscard]] inline std::optional<std::uint32_t> warband_varying_location(
+    std::string_view name) noexcept {
+    return shader_detail::lookup_name_slot(name, shader_detail::kWarbandVaryingLocations);
+}
+
+[[nodiscard]] inline std::optional<std::uint32_t> warband_sampler_binding(
+    std::string_view name) noexcept {
+    return shader_detail::lookup_name_slot(name, shader_detail::kWarbandSamplerBindings);
+}
+
+struct ShaderUniformMemberInfo {
+    std::string name;
+    std::uint32_t offset_bytes = 0;
+    std::uint32_t size_bytes = 0;
+};
+
+struct ShaderUniformBlockInfo {
+    std::string name;
+    std::uint32_t set = 0;
+    std::uint32_t binding = 0;
+    std::uint32_t size_bytes = 0;
+    std::vector<ShaderUniformMemberInfo> members;
+};
+
+struct ShaderSamplerBindingInfo {
+    std::string name;
+    std::uint32_t set = 0;
+    std::uint32_t binding = 0;
+};
+
+struct ShaderInputAttributeInfo {
+    std::string name;
+    std::uint32_t location = 0;
+};
+
+struct ShaderStageReflection {
+    std::vector<ShaderUniformBlockInfo> uniform_blocks;
+    std::vector<ShaderSamplerBindingInfo> samplers;
+    std::vector<ShaderInputAttributeInfo> inputs;
+};
+
+struct SpirvCompileOutput {
+    std::vector<std::uint32_t> spirv_words;
+    ShaderStageReflection reflection;
+    std::string lowered_glsl;
+    std::uint32_t feature_flags = kSpirvFeatNone;
+    std::string info_log;
+};
+
+class SpirvCompilerBackend {
+public:
+    virtual ~SpirvCompilerBackend() = default;
+    [[nodiscard]] virtual const char* backend_name() const noexcept = 0;
+    [[nodiscard]] virtual bool compile_vulkan_glsl_to_spirv(
+        std::string_view vulkan_glsl_source,
+        SpirvStage stage,
+        std::string_view entry_point,
+        std::vector<std::uint32_t>& out_spirv_words,
+        ShaderStageReflection* out_reflection,
+        std::string* out_info_log) = 0;
+};
+
+struct LoweredVulkanGlsl {
+    bool ok = false;
+    std::string glsl;
+    std::string error;
+    std::uint32_t uniform_block_binding = 0;
+};
+
+// Translates a Warband OpenGL `#version 110/120` shader (`uniform`, `attribute`,
+// `varying`, `gl_FragColor`, `texture2D`) into Vulkan `#version 450` GLSL.
+[[nodiscard]] inline LoweredVulkanGlsl lower_warband_glsl_to_vulkan450(
+    std::string_view glsl_source, SpirvStage stage) {
+    using namespace shader_detail;
+    LoweredVulkanGlsl result{};
+    result.uniform_block_binding = (stage == SpirvStage::Vertex) ? 0U : 1U;
+
+    const std::string stripped = strip_glsl_comments(glsl_source);
+    if (trim_ascii(stripped).empty()) {
+        result.error = "empty GLSL source";
+        return result;
+    }
+
+    // Check if caller already supplied Vulkan `#version 4xx` GLSL with no legacy decls.
+    {
+        std::size_t pos = 0;
+        while (pos < stripped.size() && (stripped[pos] == ' ' || stripped[pos] == '\t' ||
+                                         stripped[pos] == '\r' || stripped[pos] == '\n')) {
+            ++pos;
+        }
+        if (stripped.compare(pos, 8U, "#version") == 0) {
+            const std::size_t eol = stripped.find('\n', pos);
+            const std::string_view vline =
+                (eol == std::string::npos) ? std::string_view(stripped).substr(pos)
+                                           : std::string_view(stripped).substr(pos, eol - pos);
+            if ((vline.find("450") != std::string::npos ||
+                 vline.find("460") != std::string::npos) &&
+                stripped.find("attribute ") == std::string::npos &&
+                stripped.find("varying ") == std::string::npos &&
+                stripped.find("gl_FragColor") == std::string::npos) {
+                result.glsl = stripped;
+                result.ok = true;
+                return result;
+            }
+        }
+    }
+
+    struct DeclItem {
+        std::string type;
+        std::string name;
+        std::string array_suffix;
+        std::uint32_t slot = 0;
+        bool is_bool = false;
+    };
+
+    std::vector<DeclItem> attributes;
+    std::vector<DeclItem> varyings;
+    std::vector<DeclItem> samplers;
+    std::vector<DeclItem> ubo_members;
+    std::unordered_map<std::string, bool> ubo_bool_map;
+    std::string preproc_preamble;
+    std::string body_raw;
+
+    std::uint64_t used_attr_mask = 0ULL;
+    for (const NameSlotEntry& e : kWarbandAttrLocations) {
+        if (e.slot < 64U) used_attr_mask |= (1ULL << e.slot);
+    }
+    std::uint64_t used_var_mask = 0ULL;
+    for (const NameSlotEntry& e : kWarbandVaryingLocations) {
+        if (e.slot < 64U) used_var_mask |= (1ULL << e.slot);
+    }
+    std::uint64_t seen_var_mask = 0ULL;
+    std::uint64_t used_sampler_mask = 3ULL;  // Reserve bindings 0 and 1 for VS/FS UBOs.
+    for (const NameSlotEntry& e : kWarbandSamplerBindings) {
+        if (e.slot < 64U) used_sampler_mask |= (1ULL << e.slot);
+    }
+
+    const auto try_parse_legacy_decl = [&](std::string_view stmt) -> bool {
+        const std::string_view trimmed = trim_ascii(stmt);
+        if (trimmed.empty() || trimmed.back() != ';') {
+            return false;
+        }
+        std::vector<std::string_view> toks;
+        std::size_t p = 0;
+        while (p < trimmed.size()) {
+            const char c = trimmed[p];
+            if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+                ++p;
+                continue;
+            }
+            if (is_glsl_ident_start(c)) {
+                const std::size_t s = p++;
+                while (p < trimmed.size() && is_glsl_ident_char(trimmed[p])) ++p;
+                toks.push_back(trimmed.substr(s, p - s));
+                continue;
+            }
+            if (std::isdigit(static_cast<unsigned char>(c)) != 0) {
+                const std::size_t s = p++;
+                while (p < trimmed.size() && is_glsl_ident_char(trimmed[p])) ++p;
+                toks.push_back(trimmed.substr(s, p - s));
+                continue;
+            }
+            toks.push_back(trimmed.substr(p, 1U));
+            ++p;
+        }
+        if (toks.size() < 4U) {
+            return false;
+        }
+        const std::string_view qual = toks[0];
+        if (qual != "uniform" && qual != "attribute" && qual != "varying") {
+            return false;
+        }
+        std::size_t idx = 1U;
+        if (toks[idx] == "highp" || toks[idx] == "mediump" || toks[idx] == "lowp") {
+            ++idx;
+        }
+        if (idx + 2U >= toks.size()) {
+            return false;
+        }
+        const std::string_view type = toks[idx++];
+        while (idx < toks.size()) {
+            if (toks[idx] == ";") {
+                break;
+            }
+            const std::string_view name = toks[idx++];
+            std::string arr;
+            if (idx < toks.size() && toks[idx] == "[") {
+                ++idx;
+                arr.push_back('[');
+                while (idx < toks.size() && toks[idx] != "]") {
+                    arr.append(toks[idx++]);
+                }
+                if (idx < toks.size() && toks[idx] == "]") {
+                    arr.push_back(']');
+                    ++idx;
+                }
+            }
+            if (qual == "attribute") {
+                if (stage != SpirvStage::Vertex) {
+                    result.error = "attribute declaration not valid in fragment shader";
+                    return true;
+                }
+                const auto fixed = warband_vertex_attribute_location(name);
+                const std::uint32_t loc = fixed ? *fixed : alloc_free_slot(used_attr_mask, 9U);
+                attributes.push_back({std::string(type), std::string(name), arr, loc, false});
+            } else if (qual == "varying") {
+                const auto fixed = warband_varying_location(name);
+                const std::uint32_t loc = fixed ? *fixed : alloc_free_slot(used_var_mask, 9U);
+                if (loc < 64U) {
+                    if ((seen_var_mask & (1ULL << loc)) != 0ULL) {
+                        result.error = "varying location conflict for " + std::string(name);
+                        return true;
+                    }
+                    seen_var_mask |= (1ULL << loc);
+                }
+                varyings.push_back({std::string(type), std::string(name), arr, loc, false});
+            } else if (type.starts_with("sampler")) {
+                const auto fixed = warband_sampler_binding(name);
+                const std::uint32_t bind =
+                    fixed ? *fixed : alloc_free_slot(used_sampler_mask, 14U);
+                samplers.push_back({std::string(type), std::string(name), arr, bind, false});
+            } else {
+                const bool is_bool = (type == "bool");
+                if (ubo_bool_map.emplace(std::string(name), is_bool).second) {
+                    ubo_members.push_back(
+                        {std::string(type), std::string(name), arr, 0U, is_bool});
+                }
+            }
+            if (idx < toks.size() && toks[idx] == ",") {
+                ++idx;
+            }
+        }
+        return true;
+    };
+
+    // Pass 1: separate top-level preprocessor lines, legacy decls, and executable body.
+    {
+        std::size_t i = 0;
+        int brace_depth = 0;
+        std::size_t stmt_start = 0;
+        bool at_line_start = true;
+        while (i < stripped.size()) {
+            const char c = stripped[i];
+            if (brace_depth == 0 && at_line_start && (c == ' ' || c == '\t')) {
+                ++i;
+                continue;
+            }
+            if (brace_depth == 0 && at_line_start && c == '#') {
+                if (i > stmt_start) {
+                    body_raw.append(stripped.substr(stmt_start, i - stmt_start));
+                }
+                const std::size_t eol = stripped.find('\n', i);
+                const std::size_t next_i = (eol == std::string::npos) ? stripped.size() : (eol + 1U);
+                const std::string_view line = std::string_view(stripped).substr(i, next_i - i);
+                if (!line.starts_with("#version")) {
+                    preproc_preamble.append(line);
+                    if (line.back() != '\n') preproc_preamble.push_back('\n');
+                }
+                i = next_i;
+                stmt_start = i;
+                at_line_start = true;
+                continue;
+            }
+            at_line_start = (c == '\n');
+            if (c == '{') {
+                ++brace_depth;
+            } else if (c == '}') {
+                if (brace_depth == 0) {
+                    result.error = "unmatched '}' in GLSL source";
+                    return result;
+                }
+                --brace_depth;
+                if (brace_depth == 0) {
+                    body_raw.append(stripped.substr(stmt_start, i + 1U - stmt_start));
+                    stmt_start = i + 1U;
+                }
+            } else if (c == ';' && brace_depth == 0) {
+                const std::string_view stmt =
+                    std::string_view(stripped).substr(stmt_start, i + 1U - stmt_start);
+                if (!try_parse_legacy_decl(stmt)) {
+                    body_raw.append(stmt);
+                }
+                if (!result.error.empty()) {
+                    return result;
+                }
+                stmt_start = i + 1U;
+            }
+            ++i;
+        }
+        if (brace_depth != 0) {
+            result.error = "unclosed '{' in GLSL source";
+            return result;
+        }
+        if (stmt_start < stripped.size()) {
+            body_raw.append(stripped.substr(stmt_start));
+        }
+    }
+
+    // Pass 2: rewrite identifier references in `body_raw`.
+    const std::string_view ubo_inst =
+        (stage == SpirvStage::Vertex) ? "_wse_vs_u" : "_wse_fs_u";
+    bool uses_frag_color = false;
+    bool saw_main = false;
+    std::string rewritten_body;
+    rewritten_body.reserve(body_raw.size() + 256U);
+    {
+        std::size_t i = 0;
+        char prev_non_ws = '\0';
+        bool at_line_start = true;
+        while (i < body_raw.size()) {
+            const char c = body_raw[i];
+            if (at_line_start && (c == ' ' || c == '\t')) {
+                rewritten_body.push_back(c);
+                ++i;
+                continue;
+            }
+            if (at_line_start && c == '#') {
+                const std::size_t eol = body_raw.find('\n', i);
+                const std::size_t next_i = (eol == std::string::npos) ? body_raw.size() : (eol + 1U);
+                rewritten_body.append(body_raw.substr(i, next_i - i));
+                i = next_i;
+                at_line_start = true;
+                prev_non_ws = '\n';
+                continue;
+            }
+            at_line_start = (c == '\n');
+            if (is_glsl_ident_start(c)) {
+                const std::size_t s = i++;
+                while (i < body_raw.size() && is_glsl_ident_char(body_raw[i])) ++i;
+                const std::string_view tok(body_raw.data() + s, i - s);
+                if (prev_non_ws == '.') {
+                    rewritten_body.append(tok);
+                } else {
+                    if (tok == "main") saw_main = true;
+                    if (tok == "texture2D") {
+                        rewritten_body.append("texture");
+                    } else if (tok == "texture2DProj") {
+                        rewritten_body.append("textureProj");
+                    } else if (tok == "texture2DLod") {
+                        rewritten_body.append("textureLod");
+                    } else if (tok == "shadow2D") {
+                        rewritten_body.append("texture");
+                    } else if (stage == SpirvStage::Fragment && tok == "gl_FragColor") {
+                        uses_frag_color = true;
+                        rewritten_body.append("_wse_frag_color");
+                    } else {
+                        const auto it = ubo_bool_map.find(std::string(tok));
+                        if (it != ubo_bool_map.end()) {
+                            if (it->second) {
+                                rewritten_body.push_back('(');
+                                rewritten_body.append(ubo_inst);
+                                rewritten_body.append("._wse_b_");
+                                rewritten_body.append(tok);
+                                rewritten_body.append(" != 0u)");
+                            } else {
+                                rewritten_body.append(ubo_inst);
+                                rewritten_body.append("._wse_u_");
+                                rewritten_body.append(tok);
+                            }
+                        } else {
+                            rewritten_body.append(tok);
+                        }
+                    }
+                }
+                prev_non_ws = 'A';
+            } else {
+                rewritten_body.push_back(c);
+                if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+                    prev_non_ws = c;
+                }
+                ++i;
+            }
+        }
+    }
+
+    if (!saw_main) {
+        result.error = "GLSL source missing main() entry point";
+        return result;
+    }
+
+    std::string out;
+    out.reserve(rewritten_body.size() + 1024U);
+    out.append("#version 450\n");
+    if (!preproc_preamble.empty()) {
+        out.append(preproc_preamble);
+    }
+    for (const DeclItem& d : attributes) {
+        out.append("layout(location = ");
+        out.append(std::to_string(d.slot));
+        out.append(") in ");
+        out.append(d.type);
+        out.push_back(' ');
+        out.append(d.name);
+        out.append(d.array_suffix);
+        out.append(";\n");
+    }
+    const char* var_qual = (stage == SpirvStage::Vertex) ? "out " : "in ";
+    for (const DeclItem& d : varyings) {
+        out.append("layout(location = ");
+        out.append(std::to_string(d.slot));
+        out.append(") ");
+        out.append(var_qual);
+        out.append(d.type);
+        out.push_back(' ');
+        out.append(d.name);
+        out.append(d.array_suffix);
+        out.append(";\n");
+    }
+    if (stage == SpirvStage::Fragment && uses_frag_color) {
+        out.append("layout(location = 0) out vec4 _wse_frag_color;\n");
+    }
+    for (const DeclItem& d : samplers) {
+        out.append("layout(set = 0, binding = ");
+        out.append(std::to_string(d.slot));
+        out.append(") uniform ");
+        out.append(d.type);
+        out.push_back(' ');
+        out.append(d.name);
+        out.append(d.array_suffix);
+        out.append(";\n");
+    }
+    if (!ubo_members.empty()) {
+        out.append("layout(set = 0, binding = ");
+        out.append(std::to_string(result.uniform_block_binding));
+        out.append(", std140) uniform ");
+        out.append(stage == SpirvStage::Vertex ? "WseVertexUniforms {\n"
+                                               : "WseFragmentUniforms {\n");
+        for (const DeclItem& d : ubo_members) {
+            out.append("    ");
+            if (d.is_bool) {
+                out.append("uint _wse_b_");
+            } else {
+                out.append(d.type);
+                out.append(" _wse_u_");
+            }
+            out.append(d.name);
+            out.append(d.array_suffix);
+            out.append(";\n");
+        }
+        out.append("} ");
+        out.append(ubo_inst);
+        out.append(";\n");
+    }
+    out.append(rewritten_body);
+    result.glsl = std::move(out);
+    result.ok = true;
+    return result;
+}
+
+// Injects a metadata `OpString` into a SPIR-V 1.0 module in Section 7(a) debug order
+// (immediately after Capabilities / Extensions / ExtInstImports / MemoryModel /
+// EntryPoints / ExecutionModes / earlier OpStrings) and advances the ID bound.
+[[nodiscard]] inline bool inject_spirv_tag_opstring(std::vector<std::uint32_t>& words,
+                                                    std::string_view tag) {
+    if (words.size() < 6U || words[0] != 0x07230203U || words[3] < 2U) {
+        return false;
+    }
+    std::size_t insert_idx = 5U;
+    std::size_t idx = 5U;
+    while (idx < words.size()) {
+        const std::uint32_t wc = words[idx] >> 16U;
+        const std::uint32_t op = words[idx] & 0xFFFFU;
+        if (wc == 0U || idx + wc > words.size()) {
+            return false;
+        }
+        if (op == 17U || op == 10U || op == 11U || op == 14U || op == 15U || op == 16U ||
+            op == 331U || op == 7U) {
+            insert_idx = idx + wc;
+            idx += wc;
+            continue;
+        }
+        break;
+    }
+    const std::uint32_t new_id = words[3]++;
+    std::vector<std::uint32_t> inst;
+    inst.push_back(0U);
+    inst.push_back(new_id);
+    shader_detail::append_spirv_string(inst, tag);
+    inst[0] = (static_cast<std::uint32_t>(inst.size()) << 16U) | 7U;
+    words.insert(words.begin() + static_cast<std::ptrdiff_t>(insert_idx), inst.begin(), inst.end());
+    return true;
+}
+
+struct SpirvModuleInfo {
     std::uint32_t execution_model = 0;
+    std::uint32_t decl_type = 0;
     std::uint32_t feature_flags = 0;
     std::uint64_t source_hash = 0;
     std::uint32_t generator_version = 0;
+    std::string entry_name;
 };
 
-// Validates a whole placeholder module (header, every instruction's word count,
-// trailing `OpFunctionEnd`) and decodes its tag. nullopt for anything truncated,
-// corrupt, or not produced by `emit_placeholder_spirv_module`.
-[[nodiscard]] inline std::optional<PlaceholderSpirvInfo> inspect_placeholder_spirv(
+// Validates a SPIR-V 1.0 module (header, non-placeholder generator, instruction bounds,
+// MemoryModel, EntryPoint, trailing `OpFunctionEnd`) and decodes the `wse2:` `OpString` tag.
+[[nodiscard]] inline std::optional<SpirvModuleInfo> inspect_spirv_module(
     std::span<const std::uint32_t> words) {
     using namespace shader_detail;
     if (words.size() < 6U || words[0] != 0x07230203U || words[1] != 0x00010000U ||
-        words[2] != kPlaceholderSpirvGeneratorMagic || words[3] != kSpvIdBound || words[4] != 0U) {
+        words[2] == kLegacyPlaceholderSpirvMagic || words[3] < 2U || words[4] != 0U) {
         return std::nullopt;
     }
-    PlaceholderSpirvInfo info{};
+    SpirvModuleInfo info{};
+    bool have_memory_model = false;
     bool have_entry = false;
+    bool have_function = false;
     std::optional<std::string> tag;
     std::uint32_t last_opcode = 0;
     std::size_t idx = 5U;
@@ -1634,54 +2169,129 @@ struct PlaceholderSpirvInfo {
         if (wc == 0U || idx + wc > words.size()) {
             return std::nullopt;
         }
-        if (opcode == 15U && wc >= 4U) {
+        if (opcode == 14U) {
+            have_memory_model = true;
+        } else if (opcode == 15U && wc >= 4U) {
             info.execution_model = words[idx + 1U];
-            have_entry = true;
-        } else if (opcode == 5U && wc >= 3U && words[idx + 1U] == kSpvIdTechTag) {
-            tag = read_spirv_string(words.subspan(idx + 2U, wc - 2U));
-            if (!tag) {
+            if (words[idx + 2U] == 0U || words[idx + 2U] >= words[3]) {
                 return std::nullopt;
             }
+            const auto ep = read_spirv_string(words.subspan(idx + 3U, wc - 3U));
+            if (!ep || ep->empty()) {
+                return std::nullopt;
+            }
+            info.entry_name = *ep;
+            have_entry = true;
+        } else if (opcode == 7U && wc >= 3U) {
+            if (words[idx + 1U] == 0U || words[idx + 1U] >= words[3]) {
+                return std::nullopt;
+            }
+            const auto s = read_spirv_string(words.subspan(idx + 2U, wc - 2U));
+            if (!s) {
+                return std::nullopt;
+            }
+            if (s->starts_with("wse2:")) {
+                tag = *s;
+            }
+        } else if (opcode == 54U) {
+            have_function = true;
         }
         last_opcode = opcode;
         idx += wc;
     }
-    if (!have_entry || !tag || last_opcode != 56U) {
+    if (!have_memory_model || !have_entry || !have_function || !tag || last_opcode != 56U) {
         return std::nullopt;
     }
     const std::string_view t(*tag);
+    const std::size_t decl_at = t.rfind(":decl=");
     const std::size_t feat_at = t.rfind(":feat=");
     const std::size_t src_at = t.rfind(":src=");
     const std::size_t gen_at = t.rfind(":gen=");
-    if (feat_at == std::string_view::npos || src_at == std::string_view::npos ||
-        gen_at == std::string_view::npos || !(feat_at < src_at && src_at < gen_at)) {
+    if (decl_at == std::string_view::npos || feat_at == std::string_view::npos ||
+        src_at == std::string_view::npos || gen_at == std::string_view::npos ||
+        !(decl_at < feat_at && feat_at < src_at && src_at < gen_at)) {
         return std::nullopt;
     }
+    const std::string_view decl_text = t.substr(decl_at + 6U, feat_at - (decl_at + 6U));
     const auto feat = parse_hex_u64(t.substr(feat_at + 6U, src_at - (feat_at + 6U)));
     const auto src = parse_hex_u64(t.substr(src_at + 5U, gen_at - (src_at + 5U)));
     const std::string_view gen_text = t.substr(gen_at + 5U);
-    if (!feat || !src || gen_text.empty() || gen_text.size() > 9U ||
+    if (decl_text.empty() || decl_text.size() > 4U ||
+        !std::all_of(decl_text.begin(), decl_text.end(),
+                     [](char c) { return c >= '0' && c <= '9'; }) ||
+        !feat || !src || gen_text.empty() || gen_text.size() > 9U ||
         !std::all_of(gen_text.begin(), gen_text.end(),
                      [](char c) { return c >= '0' && c <= '9'; })) {
         return std::nullopt;
     }
+    info.decl_type = static_cast<std::uint32_t>(std::stoul(std::string(decl_text)));
     info.feature_flags = static_cast<std::uint32_t>(*feat);
     info.source_hash = *src;
     info.generator_version = static_cast<std::uint32_t>(std::stoul(std::string(gen_text)));
     return info;
 }
 
+[[nodiscard]] inline bool compile_warband_glsl_to_spirv(
+    SpirvCompilerBackend& backend,
+    std::string_view glsl_source,
+    SpirvStage stage,
+    std::string_view technique_name,
+    VertexDeclType decl_type,
+    SpirvCompileOutput& out) {
+    using namespace shader_detail;
+    out = {};
+    out.feature_flags = detect_glsl_feature_flags(glsl_source, decl_type);
+
+    LoweredVulkanGlsl lowered = lower_warband_glsl_to_vulkan450(glsl_source, stage);
+    if (!lowered.ok) {
+        out.info_log = std::move(lowered.error);
+        return false;
+    }
+    out.lowered_glsl = std::move(lowered.glsl);
+
+    std::vector<std::uint32_t> spv;
+    if (!backend.compile_vulkan_glsl_to_spirv(out.lowered_glsl, stage, "main", spv,
+                                              &out.reflection, &out.info_log)) {
+        if (out.info_log.empty()) {
+            out.info_log = "SPIR-V compilation failed";
+        }
+        return false;
+    }
+
+    std::string clean_tech;
+    clean_tech.reserve(technique_name.size());
+    for (char c : technique_name) {
+        clean_tech.push_back((c == ':' || c == '\0') ? '_' : c);
+    }
+    const std::string tag = "wse2:tech=" + clean_tech +
+                            ":decl=" + std::to_string(static_cast<int>(decl_type)) +
+                            ":feat=" + hex_u64(out.feature_flags) +
+                            ":src=" + hex_u64(fnv1a64(glsl_source)) +
+                            ":gen=" + std::to_string(kWseSpirvGeneratorVersion);
+    if (!inject_spirv_tag_opstring(spv, tag) || !inspect_spirv_module(spv)) {
+        out.info_log = "emitted SPIR-V failed post-tag validation";
+        return false;
+    }
+    out.spirv_words = std::move(spv);
+    return true;
+}
+
 class SpirvShaderCache {
 public:
+    std::shared_ptr<SpirvCompilerBackend> compiler_backend;
     std::size_t cache_hits = 0;
     std::size_t compile_count = 0;
+    std::string last_error;
+
+    explicit SpirvShaderCache(std::shared_ptr<SpirvCompilerBackend> backend = nullptr)
+        : compiler_backend(std::move(backend)) {}
 
     [[nodiscard]] static std::string compute_cache_filename(std::string_view technique_name,
                                                             SpirvStage stage,
                                                             VertexDeclType decl_type,
                                                             std::string_view glsl_source) {
         std::uint64_t h = shader_detail::fnv1a64(
-            "wse2_spv_gen" + std::to_string(kPlaceholderSpirvGeneratorVersion) + ":");
+            "wse2_spv_gen" + std::to_string(kWseSpirvGeneratorVersion) + ":");
         h = shader_detail::fnv1a64(wse::platform::ascii_lower(technique_name), h);
         h = shader_detail::fnv1a64(stage == SpirvStage::Vertex ? ":vs:" : ":fs:", h);
         h = shader_detail::fnv1a64(std::to_string(static_cast<int>(decl_type)), h);
@@ -1690,9 +2300,9 @@ public:
         return shader_detail::hex_u64(h) + ".spv";
     }
 
-    // Returns the cached module when it validates completely and its tag matches this
-    // source, stage, and generator version; otherwise emits a new one and stores it
-    // through `<file>.partial` + `rename_file` (direct write where rename is unsupported).
+    // Returns the cached SPIR-V 1.0 module when it validates completely and its `OpString`
+    // tag matches this source, stage, vertex declaration, and generator version; otherwise
+    // lowers & compiles through `compiler_backend` and persists via `<file>.partial` + `rename_file`.
     [[nodiscard]] bool get_or_compile(wse::platform::Vfs& cache_vfs,
                                       std::string_view cache_dir,
                                       std::string_view technique_name,
@@ -1701,8 +2311,10 @@ public:
                                       std::string_view glsl_source,
                                       std::vector<std::uint32_t>& out_words,
                                       bool* out_cache_hit = nullptr,
-                                      std::uint32_t* out_feature_flags = nullptr) {
+                                      std::uint32_t* out_feature_flags = nullptr,
+                                      ShaderStageReflection* out_reflection = nullptr) {
         out_words.clear();
+        last_error.clear();
         if (out_cache_hit != nullptr) {
             *out_cache_hit = false;
         }
@@ -1713,9 +2325,10 @@ public:
         if (cache_vfs.read_file(path, raw) && raw.size() >= 24U && (raw.size() % 4U) == 0U) {
             std::vector<std::uint32_t> cached(raw.size() / 4U);
             std::memcpy(cached.data(), raw.data(), raw.size());
-            const std::optional<PlaceholderSpirvInfo> info = inspect_placeholder_spirv(cached);
-            if (info && info->generator_version == kPlaceholderSpirvGeneratorVersion &&
+            const std::optional<SpirvModuleInfo> info = inspect_spirv_module(cached);
+            if (info && info->generator_version == kWseSpirvGeneratorVersion &&
                 info->execution_model == static_cast<std::uint32_t>(stage) &&
+                info->decl_type == static_cast<std::uint32_t>(decl_type) &&
                 info->source_hash == shader_detail::fnv1a64(glsl_source)) {
                 out_words = std::move(cached);
                 if (out_feature_flags != nullptr) {
@@ -1729,8 +2342,24 @@ public:
             }
         }
 
-        out_words = emit_placeholder_spirv_module(glsl_source, stage, technique_name, decl_type,
-                                                  out_feature_flags);
+        if (compiler_backend == nullptr) {
+            last_error = "SpirvShaderCache has no SpirvCompilerBackend configured";
+            return false;
+        }
+
+        SpirvCompileOutput compiled{};
+        if (!compile_warband_glsl_to_spirv(*compiler_backend, glsl_source, stage, technique_name,
+                                           decl_type, compiled)) {
+            last_error = std::move(compiled.info_log);
+            return false;
+        }
+        if (out_feature_flags != nullptr) {
+            *out_feature_flags = compiled.feature_flags;
+        }
+        if (out_reflection != nullptr) {
+            *out_reflection = std::move(compiled.reflection);
+        }
+        out_words = std::move(compiled.spirv_words);
         ++compile_count;
 
         (void)shader_detail::ensure_vfs_dir_tree(cache_vfs, cache_dir);

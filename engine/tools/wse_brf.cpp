@@ -25,6 +25,7 @@
 #include "wse/asset/brf.h"
 #include "wse/asset/dds.h"
 #include "wse/asset/shader.h"
+#include "wse/asset/shader_compiler.h"
 #include "wse/game/module_loader_common.h"
 #include "wse/platform/vfs.h"
 
@@ -36,7 +37,7 @@ void print_usage(const char* argv0) {
                  "  %s --brf <file.brf> [--json]\n"
                  "  %s --dds <file.dds> [--json]\n"
                  "  %s --dir <dir> [--json]\n"
-                 "  %s --root <warband_root> [--module <name>] [--json]\n",
+                 "  %s --root <warband_root> [--module <name>] [--compile-shaders] [--json]\n",
                  argv0 != nullptr ? argv0 : "wse_brf",
                  argv0 != nullptr ? argv0 : "wse_brf",
                  argv0 != nullptr ? argv0 : "wse_brf",
@@ -267,7 +268,8 @@ int run_dir(const std::filesystem::path& dir, bool json) {
 
 int run_module_catalog(const std::filesystem::path& root,
                        std::string_view module_name,
-                       bool json) {
+                       bool json,
+                       bool compile_shaders) {
     wse::platform::HostVfs vfs(root);
     std::string mod_rel(module_name);
     if (mod_rel.find('/') == std::string::npos && mod_rel.find('\\') == std::string::npos) {
@@ -318,11 +320,11 @@ int run_module_catalog(const std::filesystem::path& root,
         }
     }
 
-    // Only technique names are needed here, so no GLSL is read.
+    // Only technique names are needed unless `--compile-shaders` is passed.
     wse::asset::ShaderTechniqueCatalog tech_cat{};
     std::unordered_set<std::string> tech_names_lower;
     wse::asset::TechniqueCatalogOptions tech_opts{};
-    tech_opts.load_glsl_sources = false;
+    tech_opts.load_glsl_sources = compile_shaders;
     if (wse::asset::load_warband_shader_technique_catalog(vfs, "", tech_cat, nullptr, tech_opts)) {
         tech_names_lower.reserve(tech_cat.techniques_by_lower.size());
         for (const auto& kv : tech_cat.techniques_by_lower) {
@@ -383,6 +385,33 @@ int run_module_catalog(const std::filesystem::path& root,
         }
     }
 
+    std::size_t spirv_ok = 0;
+    std::size_t spirv_fail = 0;
+    if (compile_shaders) {
+        const auto compiler = wse::asset::create_glslang_shader_compiler();
+        for (const auto& kv : tech_cat.techniques_by_lower) {
+            const wse::asset::GlTechniqueEntry& tech = kv.second;
+            const wse::asset::VertexDeclType decl =
+                tech.synthesized_wse2_variant ? wse::asset::VertexDeclType::BumpedSkinned
+                                              : wse::asset::VertexDeclType::Standard;
+            wse::asset::SpirvCompileOutput vs_out{};
+            wse::asset::SpirvCompileOutput fs_out{};
+            if (!tech.vs_glsl.empty() && !tech.fs_glsl.empty() &&
+                wse::asset::compile_warband_glsl_to_spirv(
+                    *compiler, tech.vs_glsl, wse::asset::SpirvStage::Vertex, tech.name, decl,
+                    vs_out) &&
+                wse::asset::compile_warband_glsl_to_spirv(
+                    *compiler, tech.fs_glsl, wse::asset::SpirvStage::Fragment, tech.name, decl,
+                    fs_out)) {
+                ++spirv_ok;
+            } else {
+                ++spirv_fail;
+                std::fprintf(stderr, "SHADER_FAIL %s: %s / %s\n", tech.name.c_str(),
+                             vs_out.info_log.c_str(), fs_out.info_log.c_str());
+            }
+        }
+    }
+
     if (json) {
         std::printf("{\"root\":");
         print_json_escaped(root.string());
@@ -398,30 +427,33 @@ int run_module_catalog(const std::filesystem::path& root,
                     "\"meshes\":%zu,\"meta_meshes\":%zu,\"textures\":%zu,\"shaders\":%zu,"
                     "\"materials\":%zu,\"bodies\":%zu,\"skeletons\":%zu,\"animations\":%zu,"
                     "\"physics_materials\":%zu,"
-                    "\"gl_techniques\":%zu,\"shaders_suitable\":%zu,\"shaders_fallback\":%zu,"
+                    "\"gl_techniques\":%zu,\"spirv_ok\":%zu,\"spirv_fail\":%zu,"
+                    "\"shaders_suitable\":%zu,\"shaders_fallback\":%zu,"
                     "\"materials_resolved\":%zu,\"materials_alpha_test\":%zu,"
                     "\"materials_blended\":%zu,\"wse2_ini_fallbacks\":%zu}\n",
                     cat.entries.size(), loaded_entries, cat.warnings.size(),
                     totals.meshes, totals.meta_meshes, totals.textures, totals.shaders,
                     totals.materials, totals.bodies, totals.skeletons, totals.animations,
                     totals.physics_materials,
-                    tech_cat.techniques_by_lower.size(), shaders_suitable, shaders_fallback,
+                    tech_cat.techniques_by_lower.size(), spirv_ok, spirv_fail,
+                    shaders_suitable, shaders_fallback,
                     materials_resolved, materials_alpha_test, materials_blended,
                     valid_pairs.entries.size());
     } else {
         std::printf("CATALOG %s (%s): entries=%zu loaded=%zu warnings=%zu "
                     "(meshes=%zu meta=%zu tex=%zu shader=%zu mat=%zu body=%zu skel=%zu anim=%zu phys=%zu) "
-                    "[gl_tech=%zu shaders_ok=%zu fallback=%zu mat_resolved=%zu "
-                    "mat_alpha_test=%zu mat_blended=%zu ini_pairs=%zu]\n",
+                    "[gl_tech=%zu spv_ok=%zu spv_fail=%zu shaders_ok=%zu fallback=%zu "
+                    "mat_resolved=%zu mat_alpha_test=%zu mat_blended=%zu ini_pairs=%zu]\n",
                     root.string().c_str(), mod_rel.c_str(), cat.entries.size(), loaded_entries,
                     cat.warnings.size(), totals.meshes, totals.meta_meshes, totals.textures,
                     totals.shaders, totals.materials, totals.bodies, totals.skeletons,
                     totals.animations, totals.physics_materials,
-                    tech_cat.techniques_by_lower.size(), shaders_suitable, shaders_fallback,
+                    tech_cat.techniques_by_lower.size(), spirv_ok, spirv_fail,
+                    shaders_suitable, shaders_fallback,
                     materials_resolved, materials_alpha_test, materials_blended,
                     valid_pairs.entries.size());
     }
-    return 0;
+    return spirv_fail == 0U ? 0 : 1;
 }
 
 int run_cli(int argc, char** argv) {
@@ -431,6 +463,7 @@ int run_cli(int argc, char** argv) {
     std::string root_path;
     std::string module_name = "Native";
     bool json = false;
+    bool compile_shaders = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
@@ -440,6 +473,10 @@ int run_cli(int argc, char** argv) {
         }
         if (arg == "--json") {
             json = true;
+            continue;
+        }
+        if (arg == "--compile-shaders") {
+            compile_shaders = true;
             continue;
         }
         const auto need_val = [&](std::string& dst) -> bool {
@@ -479,7 +516,7 @@ int run_cli(int argc, char** argv) {
     if (!brf_path.empty()) return run_brf_file(brf_path, json);
     if (!dds_path.empty()) return run_dds_file(dds_path, json);
     if (!dir_path.empty()) return run_dir(dir_path, json);
-    return run_module_catalog(root_path, module_name, json);
+    return run_module_catalog(root_path, module_name, json, compile_shaders);
 }
 
 }  // namespace

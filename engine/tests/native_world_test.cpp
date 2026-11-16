@@ -153,13 +153,19 @@ void test_world_ops_1() {
                ctx.stringRegisters[1].starts_with(u"0000000000001111"),
            "2749 copies upper key word and mixes lower");
 
-    // 70 key_is_down & 77 omit_key_once & 78 clear_omitted_keys
+    // 70 key_is_down & 71 key_clicked are not suppressed by 77 omit_key_once for scripts;
+    // 77/78 still track omitted_keys for default handlers and game-key opcodes 72/73.
     ctx.world.input.key_down[65] = true;
-    expect(run_stmt(ctx, 70U, {65}), "70 key_is_down true before omit");
+    ctx.world.input.key_clicked[65] = true;
+    expect(run_stmt(ctx, 70U, {65}) && run_stmt(ctx, 71U, {65}),
+           "70/71 true before omit");
     expect(run_stmt(ctx, 77U, {65}), "77 omit_key_once");
-    expect(!run_stmt(ctx, 70U, {65}), "70 key_is_down false after omit");
+    expect(ctx.world.input.omitted_keys[65] && run_stmt(ctx, 70U, {65}) &&
+               run_stmt(ctx, 71U, {65}),
+           "77 sets omitted_keys without suppressing raw script ops 70/71");
     expect(run_stmt(ctx, 78U, {}), "78 clear_omitted_keys");
-    expect(run_stmt(ctx, 70U, {65}), "70 key_is_down true again after 78");
+    expect(!ctx.world.input.omitted_keys[65] && run_stmt(ctx, 70U, {65}),
+           "78 clears omitted_keys");
 
     // 707 line of sight & 2050 & 2388
     ctx.positions[0].o = {0.0f, 0.0f, 0.0f, 1.0f};

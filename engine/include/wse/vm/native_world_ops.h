@@ -306,11 +306,11 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
     case 70: // key_is_down (0x1401c67e5)
         return native_world_check_key_state(
             narrow[0], statement.numOperands >= 2 && narrow[1] != 0, world.input.key_down,
-            &world.input.omitted_keys, world);
+            nullptr, world);
     case 71: // key_clicked (0x1401c683f)
         return native_world_check_key_state(
             narrow[0], statement.numOperands >= 2 && narrow[1] != 0, world.input.key_clicked,
-            &world.input.omitted_keys, world);
+            nullptr, world);
     case 72: // game_key_is_down (0x1401c6899)
         return native_world_check_key_state(
             narrow[0], statement.numOperands >= 2 && narrow[1] != 0, world.input.game_key_down,
@@ -343,16 +343,17 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
             native_world_ray_aabb_hit(world, a, diff, seg_len, 0xffffffffu);
         return hit.hit ? NativeDispatch::condition_false : NativeDispatch::handled;
     }
-    case 750: { // position_get_screen_projection (0x1401cbc3c)
+    case 750: { // position_get_screen_projection (0x1401cbc3c -> rglCamera 0x1402ff7b0)
         if (wse_register_ok(narrow[0]) && wse_register_ok(narrow[1])) {
             const auto& p = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
             const auto& cam = world.misc.camera_transform;
             const float vx = p.x - cam.o.x;
             const float vy = p.y - cam.o.y;
             const float vz = p.z - cam.o.z;
+            // Warband rglTransform camera frame: s = right, f = up, -u = forward.
             const float cx = vx * cam.s.x + vy * cam.s.y + vz * cam.s.z;
-            const float cy = vx * cam.u.x + vy * cam.u.y + vz * cam.u.z;
-            const float cz = vx * cam.f.x + vy * cam.f.y + vz * cam.f.z;
+            const float cy = vx * cam.f.x + vy * cam.f.y + vz * cam.f.z;
+            const float cz = -(vx * cam.u.x + vy * cam.u.y + vz * cam.u.z);
             auto& out = ctx.positions[static_cast<std::size_t>(narrow[0])].o;
             if (cz <= 1e-4f) {
                 out = wse::core::WseVec4{-1.0f, -1.0f, 0.0f, 0.0f};
@@ -366,8 +367,8 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
                 const float aspect = w / h;
                 const float ndc_x = cx / (cz * tan_half * aspect);
                 const float ndc_y = cy / (cz * tan_half);
-                out = wse::core::WseVec4{(ndc_x + 1.0f) * 0.5f * w,
-                                         (1.0f - (ndc_y + 1.0f) * 0.5f) * h, 0.0f, 0.0f};
+                out = wse::core::WseVec4{(ndc_x + 1.0f) * 0.5f,
+                                         (ndc_y + 1.0f) * 0.5f * 0.75f, 0.0f, 0.0f};
             }
         }
         return NativeDispatch::handled;

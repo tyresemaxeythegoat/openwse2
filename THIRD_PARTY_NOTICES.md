@@ -109,3 +109,11 @@ SOFTWARE.
 Based on minimp3 (https://github.com/lieff/minimp3), dedicated to the public
 domain under CC0 1.0 (<http://creativecommons.org/publicdomain/zero/1.0/>).
 ```
+
+## Khronos `glslang` 16.6.0 (`wse_glslang`)
+
+- Upstream: <https://github.com/KhronosGroup/glslang> (tag `16.6.0`)
+- Archive SHA-256: `9c09b901149c729df745057dafa815278aaa101b84d2b6e14f16a42de52f97f2`
+- Used in: `wse_glslang` / `wse_shader` (`CMakeLists.txt`, `engine/build_host.ps1`, `engine/src/shader/wse_shader_compiler.cpp`) to compile lowered Warband `#version 450` GLSL into Vulkan SPIR-V 1.0 (slice P5).
+- License: Multi-licensed (BSD 3-Clause, Apache License 2.0, MIT, and 3Dlabs/Khronos permissive notices — see `LICENSE.txt` inside the verified 16.6.0 archive).
+

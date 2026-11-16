@@ -1655,6 +1655,10 @@ public:
 
         // `omit_key_once`: a fresh press of an omitted key is swallowed (until release).
         for (std::size_t k = 0; k < static_cast<std::size_t>(kMaxRawInputKeys); ++k) {
+            // Same-frame release+repress ends the swallowed hold before consuming any new omit.
+            if (suppressed_keys_[k] && raw_released_[k] && raw_down_[k]) {
+                suppressed_keys_[k] = false;
+            }
             if (raw_clicked_[k] && omitted_keys_[k]) {
                 omitted_keys_[k] = false;
                 suppressed_keys_[k] = true;

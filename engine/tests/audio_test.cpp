@@ -1042,10 +1042,13 @@ void test_review_regressions() {
                                                    std::numeric_limits<std::int32_t>::min());
         const float typical = compute_agent_voice_pitch(5, 100, 12345);
         const float negative_branch = compute_agent_voice_pitch(0, 1, -1);
+        // Negative signed sum produces negative `%` remainder (acc = -31, delta ~= -0.1607);
+        // retail 0x140057010 has no +-0.15f clamp, giving ~0.8615659 rather than 1/1.15.
+        const float negative_unclamped = compute_agent_voice_pitch(-29, 0, -1);
         expect(close(hi, 1.0f, 1e-6f) && close(lo, 0.9795872f, 1e-5f) &&
                    close(typical, 1.1093571f, 1e-5f) &&
                    close(negative_branch, 0.8890023f, 1e-5f) &&
-                   lo >= 0.85f && lo <= 1.15f && typical >= 0.85f && typical <= 1.15f,
+                   close(negative_unclamped, 0.8615659f, 1e-5f),
                "compute_agent_voice_pitch matches retail 0.3f / 1/(1-delta) pitch curve");
     }
 

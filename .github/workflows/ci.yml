@@ -26,6 +26,24 @@ jobs:
         run: |
           ctest --test-dir build-host --output-on-failure --no-tests=error
 
+      - name: Validate emitted SPIR-V 1.0 modules with spirv-val
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y spirv-tools
+          spv_dir="$(mktemp -d)"
+          trap 'rm -rf "${spv_dir}"' EXIT
+          WSE_DUMP_SPIRV_DIR="${spv_dir}" ./build-host/asset_test
+          shopt -s nullglob
+          spvs=("${spv_dir}"/*.spv)
+          if [ "${#spvs[@]}" -eq 0 ]; then
+            echo "No SPIR-V files dumped" >&2
+            exit 1
+          fi
+          for f in "${spvs[@]}"; do
+            spirv-val --target-env vulkan1.0 "${f}"
+          done
+          echo "Validated ${#spvs[@]} SPIR-V 1.0 modules with spirv-val"
+
       - name: Check WSE opcode status
         run: python3 tools/extract_wse_opcodes.py --check
 

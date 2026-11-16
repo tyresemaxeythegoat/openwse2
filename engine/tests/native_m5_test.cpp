@@ -619,16 +619,37 @@ void test_ui_menus_m5() {
     init_m5_world(ctx);
     auto& w = ctx.world;
 
-    // 75, 751 cursor & ray projection
+    // 75, 750, 751 cursor & Warband rglTransform camera (s=right, f=up, -u=forward)
     w.m5.cursor_pos = {0.5f, 0.375f};
-    w.misc.camera_transform = wse::core::WseTransform::identity();
+    w.misc.camera_transform.s = {1.0f, 0.0f, 0.0f, 0.0f};
+    w.misc.camera_transform.f = {0.0f, 0.0f, 1.0f, 0.0f};
+    w.misc.camera_transform.u = {0.0f, -1.0f, 0.0f, 0.0f};
+    w.misc.camera_transform.o = {0.0f, 0.0f, 0.0f, 0.0f};
     w.misc.camera_fov_deg = 60.0f;
+    w.misc.viewport_width = 1600.0f;
+    w.misc.viewport_height = 900.0f;
     expect(run_stmt(ctx, 75U, {0}), "75 mouse_get_position");
     expect(close(ctx.positions[0].o.x, 0.5f) && close(ctx.positions[0].o.y, 0.375f),
            "75 cursor position");
     expect(run_stmt(ctx, 751U, {1, 2}), "751 mouse_get_world_projection");
     expect(close(ctx.positions[1].o.x, 0.0f) && close(ctx.positions[2].o.y, 1000.0f),
-           "751 center ray shoots along camera forward +Y");
+           "751 center ray shoots along camera forward -u = +Y");
+
+    // 750 <-> 751 exact round-trip in Warband UI coords ([0,1] x [0,0.75])
+    ctx.positions[3].o = {10.0f, 50.0f, 5.0f, 0.0f};
+    expect(run_stmt(ctx, 750U, {4, 3}), "750 position_get_screen_projection");
+    expect(ctx.positions[4].o.x > 0.5f && ctx.positions[4].o.x < 1.0f &&
+               ctx.positions[4].o.y > 0.375f && ctx.positions[4].o.y < 0.75f,
+           "750 outputs Warband UI [0,1]x[0,0.75] coords (top-right > center)");
+    w.m5.cursor_pos = {ctx.positions[4].o.x, ctx.positions[4].o.y};
+    expect(run_stmt(ctx, 751U, {5, 6}), "751 unprojects 750 output");
+    const float ray_dx = ctx.positions[6].o.x - ctx.positions[5].o.x;
+    const float ray_dy = ctx.positions[6].o.y - ctx.positions[5].o.y;
+    const float ray_dz = ctx.positions[6].o.z - ctx.positions[5].o.z;
+    const float t_y50 = 50.0f / ray_dy;
+    expect(close(ctx.positions[5].o.x + ray_dx * t_y50, 10.0f, 1e-3f) &&
+               close(ctx.positions[5].o.z + ray_dz * t_y50, 5.0f, 1e-3f),
+           "751 unprojected ray passes through original 750 world point");
 
     // 911..956 presentation overlays
     w.active_presentation_no = 1;

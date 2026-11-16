@@ -236,6 +236,144 @@ target_include_directories(wse_audio PRIVATE
 target_link_libraries(wse_audio PRIVATE wse_engine wse_audio_vendor)
 wse_apply_strict_warnings(wse_audio)
 
+# Third-party Khronos glslang 16.6.0 (GLSL -> Vulkan SPIR-V 1.0 compiler, slice P5).
+# Cached under engine/build/third_party/glslang-16.6.0/ when built via build_host.ps1,
+# or fetched per build directory with SHA-256 verification.
+set(WSE_GLSLANG_URL
+    "https://github.com/KhronosGroup/glslang/archive/refs/tags/16.6.0.tar.gz")
+set(WSE_GLSLANG_SHA256
+    "9c09b901149c729df745057dafa815278aaa101b84d2b6e14f16a42de52f97f2")
+
+if(NOT DEFINED WSE_GLSLANG_SOURCE_DIR AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/build/third_party/glslang-16.6.0/glslang/Public/ShaderLang.h")
+    set(WSE_GLSLANG_SOURCE_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/engine/build/third_party/glslang-16.6.0")
+endif()
+
+if(DEFINED WSE_GLSLANG_SOURCE_DIR)
+    set(wse_glslang_src_dir "${WSE_GLSLANG_SOURCE_DIR}")
+else()
+    set(wse_glslang_tp_dir "${CMAKE_CURRENT_BINARY_DIR}/_third_party/glslang")
+    set(wse_glslang_tar "${wse_glslang_tp_dir}/glslang-16.6.0.tar.gz")
+    set(wse_glslang_src_dir "${wse_glslang_tp_dir}/glslang-16.6.0")
+    file(MAKE_DIRECTORY "${wse_glslang_tp_dir}")
+    if(EXISTS "${wse_glslang_tar}")
+        file(SHA256 "${wse_glslang_tar}" _wse_glslang_actual_sha)
+        if(NOT _wse_glslang_actual_sha STREQUAL WSE_GLSLANG_SHA256)
+            file(REMOVE "${wse_glslang_tar}")
+            file(REMOVE_RECURSE "${wse_glslang_src_dir}")
+        endif()
+    endif()
+    if(NOT EXISTS "${wse_glslang_tar}")
+        message(STATUS "Downloading glslang-16.6.0.tar.gz (SHA-256 verified)...")
+        file(DOWNLOAD "${WSE_GLSLANG_URL}" "${wse_glslang_tar}"
+             EXPECTED_HASH "SHA256=${WSE_GLSLANG_SHA256}"
+             TLS_VERIFY ON
+             STATUS _wse_glslang_dl_status)
+        list(GET _wse_glslang_dl_status 0 _wse_glslang_dl_code)
+        if(NOT _wse_glslang_dl_code EQUAL 0)
+            file(REMOVE "${wse_glslang_tar}")
+            message(FATAL_ERROR "Failed to download glslang-16.6.0.tar.gz: ${_wse_glslang_dl_status}")
+        endif()
+    endif()
+    if(NOT EXISTS "${wse_glslang_src_dir}/glslang/Public/ShaderLang.h")
+        file(ARCHIVE_EXTRACT INPUT "${wse_glslang_tar}" DESTINATION "${wse_glslang_tp_dir}")
+    endif()
+endif()
+
+if(NOT EXISTS "${wse_glslang_src_dir}/glslang/Public/ShaderLang.h")
+    message(FATAL_ERROR "glslang source not found at ${wse_glslang_src_dir}")
+endif()
+
+set(wse_glslang_gen_dir "${CMAKE_CURRENT_BINARY_DIR}/_third_party/glslang_gen")
+set(major 16)
+set(minor 6)
+set(patch 0)
+set(flavor "")
+configure_file(
+    "${wse_glslang_src_dir}/build_info.h.tmpl"
+    "${wse_glslang_gen_dir}/glslang/build_info.h"
+    @ONLY
+)
+
+if(WIN32)
+    set(_wse_glslang_os_src "${wse_glslang_src_dir}/glslang/OSDependent/Windows/ossource.cpp")
+else()
+    set(_wse_glslang_os_src "${wse_glslang_src_dir}/glslang/OSDependent/Unix/ossource.cpp")
+endif()
+
+add_library(wse_glslang STATIC
+    "${wse_glslang_src_dir}/glslang/GenericCodeGen/CodeGen.cpp"
+    "${wse_glslang_src_dir}/glslang/GenericCodeGen/Link.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/glslang_tab.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/attribute.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/Constant.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/iomapper.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/InfoSink.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/Initialize.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/IntermTraverse.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/Intermediate.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/ParseContextBase.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/ParseHelper.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/PoolAlloc.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/RemoveTree.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/Scan.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/ShaderLang.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/SpirvIntrinsics.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/SymbolTable.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/Versions.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/intermOut.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/limits.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/linkValidate.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/parseConst.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/reflection.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/preprocessor/Pp.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/preprocessor/PpAtom.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/preprocessor/PpContext.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/preprocessor/PpScanner.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/preprocessor/PpTokens.cpp"
+    "${wse_glslang_src_dir}/glslang/MachineIndependent/propagateNoContraction.cpp"
+    "${wse_glslang_src_dir}/glslang/CInterface/glslang_c_interface.cpp"
+    "${wse_glslang_src_dir}/glslang/ResourceLimits/ResourceLimits.cpp"
+    "${wse_glslang_src_dir}/glslang/ResourceLimits/resource_limits_c.cpp"
+    "${_wse_glslang_os_src}"
+    "${wse_glslang_src_dir}/SPIRV/GlslangToSpv.cpp"
+    "${wse_glslang_src_dir}/SPIRV/InReadableOrder.cpp"
+    "${wse_glslang_src_dir}/SPIRV/Logger.cpp"
+    "${wse_glslang_src_dir}/SPIRV/SpvBuilder.cpp"
+    "${wse_glslang_src_dir}/SPIRV/SpvPostProcess.cpp"
+    "${wse_glslang_src_dir}/SPIRV/doc.cpp"
+    "${wse_glslang_src_dir}/SPIRV/SpvTools.cpp"
+    "${wse_glslang_src_dir}/SPIRV/disassemble.cpp"
+    "${wse_glslang_src_dir}/SPIRV/CInterface/spirv_c_interface.cpp"
+)
+set_target_properties(wse_glslang PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON
+)
+target_include_directories(wse_glslang PRIVATE
+    "${wse_glslang_src_dir}"
+    "${wse_glslang_gen_dir}"
+)
+target_compile_definitions(wse_glslang PRIVATE ENABLE_OPT=0)
+if(MSVC)
+    target_compile_options(wse_glslang PRIVATE /w)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(wse_glslang PRIVATE -w)
+endif()
+
+add_library(wse_shader STATIC
+    engine/src/shader/wse_shader_compiler.cpp
+)
+set_target_properties(wse_shader PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(wse_shader PRIVATE
+    "${wse_glslang_src_dir}"
+    "${wse_glslang_gen_dir}"
+)
+target_link_libraries(wse_shader PRIVATE wse_engine wse_glslang)
+wse_apply_strict_warnings(wse_shader)
+
 # Vulkan runtime driver loader + VulkanRhiDevice (slice P4). Its <vulkan/vulkan.h>
 # comes from the vendored headers and stays private: callers see only rhi.h.
 add_library(wse_vulkan STATIC platform/vulkan/driver_loader.cpp)
@@ -281,7 +419,7 @@ if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
     target_include_directories(wse_selftest PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests"
     )
-    target_link_libraries(wse_selftest PUBLIC wse_engine wse_lua wse_vulkan wse_audio)
+    target_link_libraries(wse_selftest PUBLIC wse_engine wse_lua wse_vulkan wse_audio wse_shader)
     wse_apply_strict_warnings(wse_selftest)
 endif()
 
@@ -340,7 +478,7 @@ if(WSE_BUILD_TOOLS)
     wse_apply_strict_warnings(wse_headless)
 
     add_executable(wse_brf engine/tools/wse_brf.cpp)
-    target_link_libraries(wse_brf PRIVATE wse_engine)
+    target_link_libraries(wse_brf PRIVATE wse_engine wse_shader)
     wse_apply_strict_warnings(wse_brf)
 endif()
 

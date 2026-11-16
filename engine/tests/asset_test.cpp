@@ -20,6 +20,7 @@
 #include "wse/asset/brf.h"
 #include "wse/asset/dds.h"
 #include "wse/asset/shader.h"
+#include "wse/asset/shader_compiler.h"
 #include "wse/game/module_loader_common.h"
 #include "wse/io/binary_stream.h"
 #include "wse/platform/vfs.h"
@@ -1303,46 +1304,72 @@ void test_p5_shader_review_regressions() {
                "resolved shader kShaderFlagHasSpecular (0x20) gates material specular");
     }
 
-    // SPIR-V cache: truncated, corrupt, or other-source files are recompiled; hits
-    // read feature flags from the module tag.
+    // SPIR-V cache: truncated, corrupt, placeholder, missing-backend, or mismatched-source/decl
+    // files are rejected and recompiled cleanly; hits read feature flags from `OpString`.
     {
+        const auto compiler = create_glslang_shader_compiler();
         wse::platform::MemoryVfs v;
-        const std::string src = "uniform sampler2D specular_texture; void main() {}";
+        const std::string src =
+            "uniform sampler2D specular_texture; void main() { gl_FragColor = vec4(1.0); }";
         const std::string fname = SpirvShaderCache::compute_cache_filename(
             "t", SpirvStage::Fragment, VertexDeclType::Standard, src);
         std::vector<std::uint8_t> trunc(24U, 0U);
-        const std::uint32_t hdr[6] = {0x07230203U, 0x00010000U, kPlaceholderSpirvGeneratorMagic,
+        const std::uint32_t hdr[6] = {0x07230203U, 0x00010000U,
+                                      shader_detail::kLegacyPlaceholderSpirvMagic,
                                       7U, 0U, (2U << 16U) | 17U};
         std::memcpy(trunc.data(), hdr, sizeof(hdr));
         v.write_file("c/" + fname, trunc);
-        SpirvShaderCache c{};
+
+        SpirvShaderCache no_backend{};
         std::vector<std::uint32_t> w;
+        expect(!no_backend.get_or_compile(v, "c", "t", SpirvStage::Fragment,
+                                          VertexDeclType::Standard, src, w) &&
+                   !no_backend.last_error.empty(),
+               "SpirvShaderCache without backend fails cleanly on cache miss/corrupt entry");
+
+        SpirvShaderCache c(compiler);
         bool hit = true;
         std::uint32_t feats = 0;
         expect(c.get_or_compile(v, "c", "t", SpirvStage::Fragment, VertexDeclType::Standard, src,
                                 w, &hit, &feats) &&
-                   !hit && c.compile_count == 1U && inspect_placeholder_spirv(w).has_value(),
-               "truncated cache file is rejected and recompiled");
+                   !hit && c.compile_count == 1U && inspect_spirv_module(w).has_value() &&
+                   w[2] != shader_detail::kLegacyPlaceholderSpirvMagic,
+               "truncated/placeholder cache file is rejected and recompiled to real SPIR-V 1.0");
         expect(!v.is_file("c/" + fname + ".partial"), "cache write leaves no .partial file");
 
-        SpirvShaderCache c2{};
+        SpirvShaderCache c2{};  // No compiler needed when cache hits.
         std::uint32_t feats2 = 0;
         expect(c2.get_or_compile(v, "c", "t", SpirvStage::Fragment, VertexDeclType::Standard,
                                  src, w, &hit, &feats2) &&
                    hit && feats2 == feats && (feats2 & kSpirvFeatSpecular) != 0U,
-               "cache hit returns feature flags decoded from the module tag");
+               "cache hit returns feature flags decoded from the OpString tag");
 
         // A valid module for another source stored under this name is not reused.
-        const auto other = emit_placeholder_spirv_module("void main() {}", SpirvStage::Fragment,
-                                                         "t", VertexDeclType::Standard);
+        SpirvCompileOutput other_out{};
+        expect(compile_warband_glsl_to_spirv(*compiler, "void main() {}", SpirvStage::Fragment,
+                                             "t", VertexDeclType::Standard, other_out),
+               "compile minimal other fragment shader");
         v.write_file("c/" + fname,
                      std::span<const std::uint8_t>(
-                         reinterpret_cast<const std::uint8_t*>(other.data()), other.size() * 4U));
-        SpirvShaderCache c3{};
+                         reinterpret_cast<const std::uint8_t*>(other_out.spirv_words.data()),
+                         other_out.spirv_words.size() * 4U));
+        SpirvShaderCache c3(compiler);
         expect(c3.get_or_compile(v, "c", "t", SpirvStage::Fragment, VertexDeclType::Standard,
                                  src, w, &hit) &&
                    !hit && c3.compile_count == 1U,
                "cached module whose source hash differs is recompiled");
+
+        // Changing VertexDeclType for identical source/cache slot must also invalidate.
+        SpirvShaderCache c4(compiler);
+        const std::string fname_bumped = SpirvShaderCache::compute_cache_filename(
+            "t", SpirvStage::Fragment, VertexDeclType::Bumped, src);
+        v.write_file("c/" + fname_bumped,
+                     std::span<const std::uint8_t>(
+                         reinterpret_cast<const std::uint8_t*>(w.data()), w.size() * 4U));
+        expect(c4.get_or_compile(v, "c", "t", SpirvStage::Fragment, VertexDeclType::Bumped,
+                                 src, w, &hit) &&
+                   !hit && c4.compile_count == 1U,
+               "cached module whose decl_type differs is recompiled");
     }
 
     // ensure_vfs_dir_tree tolerates an uncreatable intermediate component.
@@ -1581,10 +1608,39 @@ void test_p5_shaders_materials_and_spirv_cache() {
                        "</techniques>\n");
         vfs.write_text(
             "wb/GLShadersOptimized/vs_face_shader_high.glsl",
-            "attribute vec3 inPosition; attribute vec4 inTangent; uniform sampler2D normal_texture;");
+            "uniform mat4 matWorldViewProj;\n"
+            "uniform mat4 matWorldArray[32];\n"
+            "uniform bool use_depth_effects;\n"
+            "uniform int iLightIndices[4];\n"
+            "attribute vec3 inPosition;\n"
+            "attribute vec4 inTangent;\n"
+            "attribute vec4 inBlendWeight;\n"
+            "attribute vec4 inBlendIndices;\n"
+            "varying vec2 texCoord0;\n"
+            "void main() {\n"
+            "    vec4 p = vec4(inPosition, 1.0);\n"
+            "    #ifdef USE_SKINNING\n"
+            "    int b0 = int(inBlendIndices.x);\n"
+            "    p = (matWorldArray[b0] * p) * inBlendWeight.x;\n"
+            "    #endif\n"
+            "    float bias = use_depth_effects ? float(iLightIndices[0]) * 0.0 : 0.0;\n"
+            "    gl_Position = matWorldViewProj * p + vec4(inTangent.xyz, bias) * 0.0;\n"
+            "    texCoord0 = inPosition.xy;\n"
+            "}\n");
         vfs.write_text(
             "wb/GLShadersOptimized/fs_face_shader_high.glsl",
-            "uniform sampler2D specular_texture; void main() { if (a < 0.5) discard; }");
+            "uniform vec4 vMaterialColor;\n"
+            "uniform sampler2D diffuse_texture;\n"
+            "uniform sampler2D specular_texture;\n"
+            "uniform sampler2D shadowmap_texture;\n"
+            "varying vec2 texCoord0;\n"
+            "void main() {\n"
+            "    vec4 c = texture2D(diffuse_texture, texCoord0) * vMaterialColor\n"
+            "           + texture2D(specular_texture, texCoord0)\n"
+            "           + texture2DProj(shadowmap_texture, vec4(texCoord0, 0.5, 1.0)) * 0.0;\n"
+            "    if (c.a < 0.5) discard;\n"
+            "    gl_FragColor = c;\n"
+            "}\n");
 
         ShaderTechniqueCatalog tech_cat{};
         std::string err;
@@ -1596,34 +1652,73 @@ void test_p5_shaders_materials_and_spirv_cache() {
                    wse2_face->vs_glsl.find("USE_SKINNING") != std::string::npos,
                "GLShaders catalog parses XML/GLSL and synthesizes the 5 WSE2 skinning variants");
 
+        const auto compiler = create_glslang_shader_compiler();
+        const auto maybe_dump_spv = [](std::string_view tag_name,
+                                       std::span<const std::uint32_t> words) {
+            const char* dump_dir = std::getenv("WSE_DUMP_SPIRV_DIR");
+            if (dump_dir == nullptr || dump_dir[0] == '\0' || words.empty()) {
+                return;
+            }
+            std::error_code ec;
+            std::filesystem::create_directories(dump_dir, ec);
+            const std::filesystem::path p =
+                std::filesystem::path(dump_dir) / (std::string(tag_name) + ".spv");
+            std::FILE* fp = std::fopen(p.string().c_str(), "wb");
+            if (fp != nullptr) {
+                std::fwrite(words.data(), sizeof(std::uint32_t), words.size(), fp);
+                std::fclose(fp);
+            }
+        };
+
         if (wse2_face != nullptr) {
-            SpirvShaderCache cache1;
+            SpirvShaderCache cache1(compiler);
             std::vector<std::uint32_t> vs_words1;
             std::vector<std::uint32_t> fs_words1;
             bool hit_vs1 = true;
             bool hit_fs1 = true;
             std::uint32_t vs_flags = 0;
             std::uint32_t fs_flags = 0;
+            ShaderStageReflection vs_refl{};
+            ShaderStageReflection fs_refl{};
             expect(cache1.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name,
                                          SpirvStage::Vertex, VertexDeclType::BumpedSkinned,
-                                         wse2_face->vs_glsl, vs_words1, &hit_vs1, &vs_flags) &&
+                                         wse2_face->vs_glsl, vs_words1, &hit_vs1, &vs_flags,
+                                         &vs_refl) &&
                        cache1.get_or_compile(vfs, "wb/cache/spirv", wse2_face->name,
                                              SpirvStage::Fragment, VertexDeclType::BumpedSkinned,
-                                             wse2_face->fs_glsl, fs_words1, &hit_fs1, &fs_flags),
-                   "first SpirvShaderCache compile succeeds");
+                                             wse2_face->fs_glsl, fs_words1, &hit_fs1, &fs_flags,
+                                             &fs_refl),
+                   "first SpirvShaderCache compile produces real SPIR-V 1.0");
+            const auto vs_info = inspect_spirv_module(vs_words1);
+            const auto fs_info = inspect_spirv_module(fs_words1);
+            bool vs_has_ubo0 = !vs_refl.uniform_blocks.empty() &&
+                               vs_refl.uniform_blocks[0].binding == 0U &&
+                               vs_refl.uniform_blocks[0].size_bytes > 0U;
+            bool fs_has_ubo1 = !fs_refl.uniform_blocks.empty() &&
+                               fs_refl.uniform_blocks[0].binding == 1U;
+            bool fs_has_diff_and_spec = false;
+            for (const auto& s : fs_refl.samplers) {
+                if (s.name == "specular_texture" && s.binding == 13U) {
+                    fs_has_diff_and_spec = true;
+                }
+            }
             expect(!hit_vs1 && !hit_fs1 && cache1.compile_count == 2U &&
-                       cache1.cache_hits == 0U && vs_words1.size() >= 20U &&
-                       vs_words1[0] == 0x07230203U && vs_words1[1] == 0x00010000U &&
-                       vs_words1[3] == 7U &&
+                       cache1.cache_hits == 0U && vs_info.has_value() && fs_info.has_value() &&
+                       vs_info->generator_version == kWseSpirvGeneratorVersion &&
+                       vs_words1[2] != shader_detail::kLegacyPlaceholderSpirvMagic &&
+                       vs_has_ubo0 && fs_has_ubo1 && fs_has_diff_and_spec &&
                        (vs_flags & (kSpirvFeatNormalMap | kSpirvFeatSkinning)) ==
                            (kSpirvFeatNormalMap | kSpirvFeatSkinning) &&
-                       (fs_flags & (kSpirvFeatSpecular | kSpirvFeatAlphaTest)) ==
-                           (kSpirvFeatSpecular | kSpirvFeatAlphaTest),
-                   "compiled SPIR-V header/features match GLSL + VertexDeclType cleanly");
+                       (fs_flags & (kSpirvFeatSpecular | kSpirvFeatAlphaTest |
+                                    kSpirvFeatShadowMap)) ==
+                           (kSpirvFeatSpecular | kSpirvFeatAlphaTest | kSpirvFeatShadowMap),
+                   "compiled SPIR-V 1.0 + reflection + OpString features match GLSL cleanly");
+            maybe_dump_spv("wse2_face_skin_high_vs", vs_words1);
+            maybe_dump_spv("wse2_face_skin_high_fs", fs_words1);
 
             // Second session over the same persistent VFS hits disk/VFS cache with zero
-            // compiles.
-            SpirvShaderCache cache2;
+            // compiles, even with a null compiler backend.
+            SpirvShaderCache cache2{};
             std::vector<std::uint32_t> vs_words2;
             std::vector<std::uint32_t> fs_words2;
             bool hit_vs2 = false;
@@ -1725,6 +1820,85 @@ void test_p5_shaders_materials_and_spirv_cache() {
             if (std::filesystem::exists(retail_root / "Modules/Phantasy Calradia/module.ini", ec)) {
                 expect(check_module("Modules/Phantasy Calradia", 1963U, false),
                        "retail Phantasy Calradia resolves 144/144 shaders and 1963/1963 materials");
+            }
+
+            // Compile EVERY retail GLSL technique (271+ techniques = 542+ VS+FS stages)
+            // into real Vulkan SPIR-V 1.0 and verify persistent VFS cache reuse.
+            {
+                const auto compiler = create_glslang_shader_compiler();
+                wse::platform::MemoryVfs corpus_cache_vfs;
+                SpirvShaderCache corpus_cache(compiler);
+                std::size_t compiled_techs = 0;
+                std::size_t failed_techs = 0;
+                const char* dump_dir = std::getenv("WSE_DUMP_SPIRV_DIR");
+                for (const auto& [lower_name, tech] : tech_cat.techniques_by_lower) {
+                    if (tech.vs_glsl.empty() || tech.fs_glsl.empty()) {
+                        ++failed_techs;
+                        continue;
+                    }
+                    const VertexDeclType decl = tech.synthesized_wse2_variant
+                                                    ? VertexDeclType::BumpedSkinned
+                                                    : VertexDeclType::Standard;
+                    std::vector<std::uint32_t> vs_spv;
+                    std::vector<std::uint32_t> fs_spv;
+                    const bool vs_ok = corpus_cache.get_or_compile(
+                        corpus_cache_vfs, "spv", tech.name, SpirvStage::Vertex, decl, tech.vs_glsl,
+                        vs_spv);
+                    const bool fs_ok = corpus_cache.get_or_compile(
+                        corpus_cache_vfs, "spv", tech.name, SpirvStage::Fragment, decl, tech.fs_glsl,
+                        fs_spv);
+                    if (vs_ok && fs_ok && inspect_spirv_module(vs_spv).has_value() &&
+                        inspect_spirv_module(fs_spv).has_value()) {
+                        ++compiled_techs;
+                        if (dump_dir != nullptr && dump_dir[0] != '\0') {
+                            std::filesystem::create_directories(dump_dir, ec);
+                            const auto write_bin = [&](std::string_view suffix,
+                                                       std::span<const std::uint32_t> words) {
+                                const std::filesystem::path p =
+                                    std::filesystem::path(dump_dir) /
+                                    (lower_name + std::string(suffix));
+                                if (std::FILE* fp = std::fopen(p.string().c_str(), "wb")) {
+                                    std::fwrite(words.data(), sizeof(std::uint32_t), words.size(),
+                                                fp);
+                                    std::fclose(fp);
+                                }
+                            };
+                            write_bin("_vs.spv", vs_spv);
+                            write_bin("_fs.spv", fs_spv);
+                        }
+                    } else {
+                        ++failed_techs;
+                        std::printf("FAIL  corpus SPIR-V compile %s: %s\n", tech.name.c_str(),
+                                    corpus_cache.last_error.c_str());
+                    }
+                }
+                expect(failed_techs == 0U && compiled_techs >= 271U &&
+                           corpus_cache.compile_count == compiled_techs * 2U,
+                       "retail Warband shader corpus compiles 271+ techniques to valid SPIR-V 1.0");
+
+                SpirvShaderCache warm_cache{};
+                std::size_t warm_hits = 0;
+                for (const auto& [lower_name, tech] : tech_cat.techniques_by_lower) {
+                    (void)lower_name;
+                    const VertexDeclType decl = tech.synthesized_wse2_variant
+                                                    ? VertexDeclType::BumpedSkinned
+                                                    : VertexDeclType::Standard;
+                    std::vector<std::uint32_t> vs_spv;
+                    std::vector<std::uint32_t> fs_spv;
+                    bool hv = false;
+                    bool hf = false;
+                    if (warm_cache.get_or_compile(corpus_cache_vfs, "spv", tech.name,
+                                                  SpirvStage::Vertex, decl, tech.vs_glsl, vs_spv,
+                                                  &hv) &&
+                        warm_cache.get_or_compile(corpus_cache_vfs, "spv", tech.name,
+                                                  SpirvStage::Fragment, decl, tech.fs_glsl, fs_spv,
+                                                  &hf) &&
+                        hv && hf) {
+                        ++warm_hits;
+                    }
+                }
+                expect(warm_hits == compiled_techs && warm_cache.compile_count == 0U,
+                       "warm VFS cache hits every retail shader with compile_count==0");
             }
         }
     }

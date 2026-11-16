@@ -496,15 +496,20 @@ Platform P5 (`wse/asset/shader.h`, `wse/platform/rhi.h`, `platform/vulkan/driver
     sRGB decode/encode, Blinn-Phong diffuse+specular with tangent-space normal/specular maps,
     alpha-test discard before depth write, and the 5 D3D9 blend modes (`opaque`, `alpha`,
     `additive_alpha`, `multiply`, `additive`).
-  - `wse/asset/shader.h` models effect search order, `wse2_shaders.{brf,ini}`, cycle-guarded
-    `rglShader` suitability/alternative fallback, `rglMaterial` state/slots, `GLShaders/*.xml` +
-    `GLShadersOptimized` + the 5 synthesized WSE2 skinning variants, placeholder SPIR-V 1.0
-    emission, and persistent VFS `SpirvShaderCache`.
+  - `wse/asset/{shader,shader_compiler}.h` + `src/shader/wse_shader_compiler.cpp` (`wse_shader`) model
+    effect search order, `wse2_shaders.{brf,ini}`, cycle-guarded `rglShader` suitability/alternative
+    fallback, `rglMaterial` state/slots, `GLShaders/*.xml` + `GLShadersOptimized` + the 5 synthesized
+    WSE2 skinning variants, Warband GLSL → Vulkan `#version 450` lowering + Khronos `glslang 16.6.0`
+    SPIR-V 1.0 compilation, and persistent VFS `SpirvShaderCache` (`kWseSpirvGeneratorVersion = 3`).
 
 Platform P5 review fixes (behaviour notes and safety deviations):
-  - **SPIR-V is a placeholder.** `emit_placeholder_spirv_module` (formerly `compile_glsl_to_spirv`)
-    emits a valid empty `void main()` tagged `<tech>:decl=:feat=:src=:gen=`; it does not translate
-    GLSL. A real translator is still open P5 work (`ROADMAP.md`).
+  - **SPIR-V 1.0 compiler backend:** `lower_warband_glsl_to_vulkan450` translates legacy Warband GLSL
+    (`attribute` → fixed vertex locations `0..8`, `varying` → conflict-free 9-location table `0..8`,
+    per-stage `std140` uniform blocks at binding `0` VS / `1` FS with `bool` lowered to `uint`,
+    samplers at bindings `2..13`, `gl_FragColor` → location `0` output, `texture2D*` → `texture*`)
+    and `create_glslang_shader_compiler()` compiles via `glslang 16.6.0` into SPIR-V 1.0 tagged by
+    an `OpString` metadata instruction (`inspect_spirv_module` rejects placeholder `WSE2` modules,
+    truncation, and mismatched stage/decl/source hash).
   - **Technique XML:** `<technique` must be followed by a tag boundary (a `<techniques>` root no
     longer swallows the first technique); comments, CDATA, `<?…?>`, and `>` inside quoted values are
     skipped; `<vertex_shader name="…"/>` and `<vertex_shader>…</vertex_shader>` are both read.

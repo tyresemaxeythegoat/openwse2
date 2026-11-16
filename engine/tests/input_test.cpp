@@ -538,10 +538,12 @@ void test_vm_and_world_input_bridge() {
                run_stmt(ctx, 3100U, {reg(2), 54, 1, 0}) && ctx.registers[2] == -1,
            "3100 game_key_get_key returns bound key, modifier, and alt slots");
 
-    // 77 omit_key_once & 78 clear_omitted_keys
-    expect(run_stmt(ctx, 77U, {RawKey::kJ}) && !run_stmt(ctx, 70U, {RawKey::kJ}) &&
-               run_stmt(ctx, 78U, {}) && run_stmt(ctx, 70U, {RawKey::kJ}),
-           "77 omit_key_once suppresses key_is_down until 78 clear_omitted_keys");
+    // 77 omit_key_once & 78 clear_omitted_keys (omitted_keys state; raw 70 unaffected for scripts)
+    expect(run_stmt(ctx, 77U, {RawKey::kJ}) && ctx.world.input.omitted_keys[RawKey::kJ] &&
+               run_stmt(ctx, 70U, {RawKey::kJ}) &&
+               run_stmt(ctx, 78U, {}) && !ctx.world.input.omitted_keys[RawKey::kJ] &&
+               run_stmt(ctx, 70U, {RawKey::kJ}),
+           "77 omit_key_once toggles omitted_keys until 78 without suppressing script 70");
 
     // Frame 2: release J -> 3101 key_released and 3102 game_key_released fire
     backend.push(RawInputEvent{RawInputEvent::Type::KeyUp, RawKey::kJ});
@@ -728,6 +730,17 @@ void test_review_regressions() {
         mgr.process_frame(std::array<RawInputEvent, 1>{{key(T::KeyDown, RawKey::kF)}});
         expect(swallowed && no_release && mgr.game_key_clicked()[gk(GameKeyId::Use)],
                "omit_key_once suppresses the next press only, then is consumed");
+
+        // Same-frame Up+Down while suppressed must clear suppression on KeyUp and allow the new press.
+        mgr.omit_key_once(RawKey::kF);
+        mgr.process_frame(std::array<RawInputEvent, 1>{{key(T::KeyUp, RawKey::kF)}});
+        mgr.process_frame(std::array<RawInputEvent, 1>{{key(T::KeyDown, RawKey::kF)}});
+        const bool held_suppressed = !mgr.game_key_down()[gk(GameKeyId::Use)];
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {key(T::KeyUp, RawKey::kF), key(T::KeyDown, RawKey::kF)}});
+        expect(held_suppressed && mgr.game_key_clicked()[gk(GameKeyId::Use)] &&
+                   mgr.game_key_down()[gk(GameKeyId::Use)],
+               "same-frame KeyUp+KeyDown clears omit suppression before accepting new press");
     }
 
     // 9. Aspect ratio: circular stick and swipe classification in physical units.
@@ -845,7 +858,11 @@ void test_review_regressions() {
         expect(run_stmt(ctx, 77U, {RawKey::kF}), "77 omit_key_once from script");
         backend.push(key(T::KeyDown, RawKey::kF));
         WorldInputBridge::step_and_sync(mgr, backend, ctx.world);
-        const bool swallowed = !run_stmt(ctx, 73U, {static_cast<std::int64_t>(GameKeyId::Use)});
+        // Retail 70/71 (raw key) are not suppressed by omit_key_once when scripts run; 72/73 (game key) are.
+        const bool swallowed = !run_stmt(ctx, 72U, {static_cast<std::int64_t>(GameKeyId::Use)}) &&
+                               !run_stmt(ctx, 73U, {static_cast<std::int64_t>(GameKeyId::Use)}) &&
+                               run_stmt(ctx, 70U, {RawKey::kF}) &&
+                               run_stmt(ctx, 71U, {RawKey::kF});
         backend.push(key(T::KeyUp, RawKey::kF));
         WorldInputBridge::step_and_sync(mgr, backend, ctx.world);
         backend.push(key(T::KeyDown, RawKey::kF));
@@ -853,7 +870,7 @@ void test_review_regressions() {
         expect(swallowed && !ctx.world.input.omitted_keys[RawKey::kF] &&
                    run_stmt(ctx, 70U, {RawKey::kF}) &&
                    run_stmt(ctx, 73U, {static_cast<std::int64_t>(GameKeyId::Use)}),
-               "omit_key_once from a script is consumed by the next press, then expires");
+               "omit_key_once from a script suppresses game-key 72/73 only, leaving raw 70/71 intact");
 
         const std::uint64_t rev = ctx.world.input.bindings_revision;
         WorldInputBridge::step_and_sync(mgr, backend, ctx.world);

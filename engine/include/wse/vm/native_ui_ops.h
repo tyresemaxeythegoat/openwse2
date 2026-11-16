@@ -164,13 +164,14 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
                                      : (4.0f / 3.0f);
             const float ndc_x = (world.m5.cursor_pos.x - 0.5f) * 2.0f;
             const float ndc_y = (world.m5.cursor_pos.y - 0.375f) * (2.0f / 0.75f);
+            // Warband rglTransform camera frame: s = right, f = up, -u = forward.
             wse::core::WseVec4 dir{
-                cam.f.x + cam.s.x * (ndc_x * aspect * tan_half) +
-                    cam.u.x * (ndc_y * tan_half),
-                cam.f.y + cam.s.y * (ndc_x * aspect * tan_half) +
-                    cam.u.y * (ndc_y * tan_half),
-                cam.f.z + cam.s.z * (ndc_x * aspect * tan_half) +
-                    cam.u.z * (ndc_y * tan_half),
+                -cam.u.x + cam.s.x * (ndc_x * aspect * tan_half) +
+                    cam.f.x * (ndc_y * tan_half),
+                -cam.u.y + cam.s.y * (ndc_x * aspect * tan_half) +
+                    cam.f.y * (ndc_y * tan_half),
+                -cam.u.z + cam.s.z * (ndc_x * aspect * tan_half) +
+                    cam.f.z * (ndc_y * tan_half),
                 0.0f};
             dir.normalize();
             ctx.positions[static_cast<std::size_t>(narrow[0])].o = cam.o;

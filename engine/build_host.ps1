@@ -157,6 +157,110 @@ if ($LASTEXITCODE -ne 0) { throw "wse_audio_codecs compile failed" }
 & $zig ar rcs $wseAudioLib $audioVendorObj $audioCodecsObj
 if ($LASTEXITCODE -ne 0) { throw "wse_audio archive failed" }
 
+# Ensure stock Khronos glslang 16.6.0 is cached and verified under engine/build/third_party/.
+$glslangRoot = Join-Path $thirdParty "glslang-16.6.0"
+$glslangTar = Join-Path $thirdParty "glslang-16.6.0.tar.gz"
+$glslangExpectedHash = "9C09B901149C729DF745057DAFA815278AAA101B84D2B6E14F16A42DE52F97F2"
+if (-not (Test-Path (Join-Path $glslangRoot "glslang\Public\ShaderLang.h"))) {
+    New-Item -ItemType Directory -Force -Path $thirdParty | Out-Null
+    if (-not (Test-Path $glslangTar)) {
+        Write-Host "downloading  glslang-16.6.0.tar.gz"
+        Invoke-WebRequest -Uri "https://github.com/KhronosGroup/glslang/archive/refs/tags/16.6.0.tar.gz" -OutFile $glslangTar -UseBasicParsing
+    }
+    $actualHash = (Get-FileHash -Path $glslangTar -Algorithm SHA256).Hash
+    if ($actualHash -ne $glslangExpectedHash) {
+        Remove-Item -Force $glslangTar -ErrorAction SilentlyContinue
+        throw "glslang-16.6.0.tar.gz SHA-256 mismatch: expected $glslangExpectedHash, got $actualHash"
+    }
+    & tar -xf $glslangTar -C $thirdParty
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $glslangRoot "glslang\Public\ShaderLang.h"))) {
+        throw "failed to extract glslang-16.6.0.tar.gz"
+    }
+}
+
+$glslangGenInc = Join-Path $out "glslang_gen"
+New-Item -ItemType Directory -Force -Path (Join-Path $glslangGenInc "glslang") | Out-Null
+$buildInfoTmpl = Get-Content -Raw (Join-Path $glslangRoot "build_info.h.tmpl")
+$buildInfoText = $buildInfoTmpl.Replace("@major@", "16").Replace("@minor@", "6").Replace("@patch@", "0").Replace("@flavor@", "")
+[System.IO.File]::WriteAllText((Join-Path $glslangGenInc "glslang\build_info.h"), $buildInfoText)
+
+$glslangFiles = @(
+    "glslang\GenericCodeGen\CodeGen.cpp",
+    "glslang\GenericCodeGen\Link.cpp",
+    "glslang\MachineIndependent\glslang_tab.cpp",
+    "glslang\MachineIndependent\attribute.cpp",
+    "glslang\MachineIndependent\Constant.cpp",
+    "glslang\MachineIndependent\iomapper.cpp",
+    "glslang\MachineIndependent\InfoSink.cpp",
+    "glslang\MachineIndependent\Initialize.cpp",
+    "glslang\MachineIndependent\IntermTraverse.cpp",
+    "glslang\MachineIndependent\Intermediate.cpp",
+    "glslang\MachineIndependent\ParseContextBase.cpp",
+    "glslang\MachineIndependent\ParseHelper.cpp",
+    "glslang\MachineIndependent\PoolAlloc.cpp",
+    "glslang\MachineIndependent\RemoveTree.cpp",
+    "glslang\MachineIndependent\Scan.cpp",
+    "glslang\MachineIndependent\ShaderLang.cpp",
+    "glslang\MachineIndependent\SpirvIntrinsics.cpp",
+    "glslang\MachineIndependent\SymbolTable.cpp",
+    "glslang\MachineIndependent\Versions.cpp",
+    "glslang\MachineIndependent\intermOut.cpp",
+    "glslang\MachineIndependent\limits.cpp",
+    "glslang\MachineIndependent\linkValidate.cpp",
+    "glslang\MachineIndependent\parseConst.cpp",
+    "glslang\MachineIndependent\reflection.cpp",
+    "glslang\MachineIndependent\preprocessor\Pp.cpp",
+    "glslang\MachineIndependent\preprocessor\PpAtom.cpp",
+    "glslang\MachineIndependent\preprocessor\PpContext.cpp",
+    "glslang\MachineIndependent\preprocessor\PpScanner.cpp",
+    "glslang\MachineIndependent\preprocessor\PpTokens.cpp",
+    "glslang\MachineIndependent\propagateNoContraction.cpp",
+    "glslang\CInterface\glslang_c_interface.cpp",
+    "glslang\ResourceLimits\ResourceLimits.cpp",
+    "glslang\ResourceLimits\resource_limits_c.cpp",
+    "glslang\OSDependent\Windows\ossource.cpp",
+    "SPIRV\GlslangToSpv.cpp",
+    "SPIRV\InReadableOrder.cpp",
+    "SPIRV\Logger.cpp",
+    "SPIRV\SpvBuilder.cpp",
+    "SPIRV\SpvPostProcess.cpp",
+    "SPIRV\doc.cpp",
+    "SPIRV\SpvTools.cpp",
+    "SPIRV\disassemble.cpp",
+    "SPIRV\CInterface\spirv_c_interface.cpp"
+)
+$glslangObjDir = Join-Path $out "wse_glslang_obj"
+New-Item -ItemType Directory -Force -Path $glslangObjDir | Out-Null
+$glslangLib = Join-Path $out "libwse_glslang.a"
+if (-not (Test-Path $glslangLib)) {
+    Write-Host "building     wse_glslang"
+    $glslangObjs = @()
+    foreach ($gf in $glslangFiles) {
+        $objName = ($gf -replace '[\\/]', '_') -replace '\.cpp$', '.o'
+        $obj = Join-Path $glslangObjDir $objName
+        & $zig c++ -target x86_64-windows-gnu -std=c++17 -O2 -w -DENABLE_OPT=0 `
+            -I $glslangRoot -I $glslangGenInc -c (Join-Path $glslangRoot $gf) -o $obj
+        if ($LASTEXITCODE -ne 0) { throw "wse_glslang compile failed: $gf" }
+        $glslangObjs += $obj
+    }
+    & $zig ar rcs $glslangLib @glslangObjs
+    if ($LASTEXITCODE -ne 0) { throw "wse_glslang archive failed" }
+}
+
+$shaderSrcDir = Join-Path $here "src\shader"
+$wseShaderObjDir = Join-Path $out "wse_shader_obj"
+New-Item -ItemType Directory -Force -Path $wseShaderObjDir | Out-Null
+$wseShaderLib = Join-Path $out "libwse_shader.a"
+if (Test-Path $wseShaderLib) { Remove-Item -Force $wseShaderLib }
+Write-Host "building     wse_shader"
+$shaderCompilerObj = Join-Path $wseShaderObjDir "wse_shader_compiler.o"
+& $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
+    -I $include -I $glslangRoot -I $glslangGenInc `
+    -c (Join-Path $shaderSrcDir "wse_shader_compiler.cpp") -o $shaderCompilerObj
+if ($LASTEXITCODE -ne 0) { throw "wse_shader_compiler compile failed" }
+& $zig ar rcs $wseShaderLib $shaderCompilerObj
+if ($LASTEXITCODE -ne 0) { throw "wse_shader archive failed" }
+
 $tests = @(
     @{ Name = "operand"; Source = Join-Path $here "tests\operand_test.cpp" },
     @{ Name = "trigger"; Source = Join-Path $here "tests\trigger_test.cpp" },
@@ -173,11 +277,11 @@ $tests = @(
     @{ Name = "native_world"; Source = Join-Path $here "tests\native_world_test.cpp" },
     @{ Name = "native_m5"; Source = Join-Path $here "tests\native_m5_test.cpp" },
     @{ Name = "wse_m6"; Source = Join-Path $here "tests\wse_m6_test.cpp" },
-    @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp"; LinkDriverLoader = $true },
+    @{ Name = "platform"; Source = Join-Path $here "tests\platform_test.cpp"; LinkDriverLoader = $true; LinkShader = $true },
     @{ Name = "module_loaders"; Source = Join-Path $here "tests\module_loaders_test.cpp" },
     @{ Name = "headless"; Source = Join-Path $here "tests\headless_test.cpp" },
     @{ Name = "lua"; Source = Join-Path $here "tests\lua_test.cpp"; LinkLua = $true },
-    @{ Name = "asset"; Source = Join-Path $here "tests\asset_test.cpp" },
+    @{ Name = "asset"; Source = Join-Path $here "tests\asset_test.cpp"; LinkShader = $true },
     @{ Name = "audio"; Source = Join-Path $here "tests\audio_test.cpp"; LinkAudio = $true },
     @{ Name = "input"; Source = Join-Path $here "tests\input_test.cpp" }
 )
@@ -208,6 +312,9 @@ foreach ($test in $tests) {
     }
     if ($test.ContainsKey("LinkDriverLoader") -and $test.LinkDriverLoader) {
         $extraLibs += @($driverLoaderObj)
+    }
+    if ($test.ContainsKey("LinkShader") -and $test.LinkShader) {
+        $extraLibs += @($wseShaderLib, $glslangLib)
     }
     & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
         -I $include -I $vulkanInclude -o $binary $test.Source @extraLibs
@@ -243,7 +350,7 @@ foreach ($src in $selftestSources) {
 $selftestBinary = Join-Path $out "selftest_host_test.exe"
 & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
     -I $include -o $selftestBinary (Join-Path $here "tests\selftest_host_test.cpp") `
-    @selftestObjs $driverLoaderObj $wseLuaLib $luaLib $wseAudioLib
+    @selftestObjs $driverLoaderObj $wseLuaLib $luaLib $wseAudioLib $wseShaderLib $glslangLib
 if ($LASTEXITCODE -ne 0) {
     throw "selftest_host link failed"
 }
@@ -263,7 +370,7 @@ if ($LASTEXITCODE -ne 0) {
 $brfTool = Join-Path $out "wse_brf.exe"
 Write-Host "building     wse_brf"
 & $zig c++ -target x86_64-windows-gnu -std=c++20 -O2 -Wall -Wextra -Werror `
-    -I $include -o $brfTool (Join-Path $here "tools\wse_brf.cpp")
+    -I $include -o $brfTool (Join-Path $here "tools\wse_brf.cpp") $wseShaderLib $glslangLib
 if ($LASTEXITCODE -ne 0) {
     throw "wse_brf build failed"
 }

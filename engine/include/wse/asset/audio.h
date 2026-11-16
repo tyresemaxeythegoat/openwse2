@@ -703,7 +703,7 @@ private:
     acc %= 0x1b41;
     acc = (acc * 0x51f) % 0x367;  // |acc| < 0x1b41, so this product cannot overflow
     const float unit = static_cast<float>(acc) / 871.0f;
-    const float delta = std::clamp((unit - 0.5f) * 0.3f, -0.15f, 0.15f);
+    const float delta = (unit - 0.5f) * 0.3f;
     if (delta > 0.001f) {
         return 1.0f + delta;
     }

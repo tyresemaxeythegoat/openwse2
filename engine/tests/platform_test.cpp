@@ -25,6 +25,7 @@
 #endif
 
 #include "wse/asset/shader.h"
+#include "wse/asset/shader_compiler.h"
 #include "wse/io/text_stream.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/log.h"
@@ -1222,12 +1223,24 @@ void test_p5_shader_modules_d3d9_and_material_rhi() {
             return;
         }
 
-        const auto vs_words = emit_placeholder_spirv_module(
-            tech->vs_glsl, SpirvStage::Vertex, tech->name, VertexDeclType::BumpedSkinned);
-        const auto fs_words = emit_placeholder_spirv_module(
-            tech->fs_glsl, SpirvStage::Fragment, tech->name, VertexDeclType::BumpedSkinned);
-        expect(is_valid_spirv_module(vs_words) && is_valid_spirv_module(fs_words),
-               "compiled VS and FS SPIR-V modules pass header validation");
+        const auto shader_compiler = create_glslang_shader_compiler();
+        SpirvCompileOutput vs_out{};
+        SpirvCompileOutput fs_out{};
+        const bool compiled_ok =
+            compile_warband_glsl_to_spirv(*shader_compiler, tech->vs_glsl, SpirvStage::Vertex,
+                                          tech->name, VertexDeclType::BumpedSkinned, vs_out) &&
+            compile_warband_glsl_to_spirv(*shader_compiler, tech->fs_glsl, SpirvStage::Fragment,
+                                          tech->name, VertexDeclType::BumpedSkinned, fs_out);
+        bool refl_ok = !vs_out.reflection.uniform_blocks.empty() &&
+                       vs_out.reflection.uniform_blocks[0].binding == 0U &&
+                       vs_out.reflection.uniform_blocks[0].size_bytes >= 64U &&
+                       fs_out.reflection.samplers.size() == 2U;
+        const auto& vs_words = vs_out.spirv_words;
+        const auto& fs_words = fs_out.spirv_words;
+        expect(compiled_ok && refl_ok && is_valid_spirv_module(vs_words) &&
+                   is_valid_spirv_module(fs_words) && spirv_has_entry_point(vs_words, 0U, "main") &&
+                   spirv_has_entry_point(fs_words, 4U, "main"),
+               "compiled VS and FS SPIR-V 1.0 modules pass reflection, entry point, and header validation");
 
         auto vk_loader = std::make_shared<VulkanDriverLoader>();
         VulkanMockConfig cfg{};
@@ -1622,10 +1635,20 @@ void test_p5_rhi_review_fixes() {
                "composed 1.0 + WSI refusal instance fallbacks reach offscreen bridge");
     }
 
-    const auto vs_words = emit_placeholder_spirv_module("void main() {}", SpirvStage::Vertex, "t",
-                                                        VertexDeclType::Standard);
-    const auto fs_words = emit_placeholder_spirv_module("void main() {}", SpirvStage::Fragment, "t",
-                                                        VertexDeclType::Standard);
+    const auto shader_compiler = wse::asset::create_glslang_shader_compiler();
+    wse::asset::SpirvCompileOutput min_vs_out{};
+    wse::asset::SpirvCompileOutput min_fs_out{};
+    expect(wse::asset::compile_warband_glsl_to_spirv(*shader_compiler, "void main() {}",
+                                                     wse::asset::SpirvStage::Vertex, "t",
+                                                     wse::asset::VertexDeclType::Standard,
+                                                     min_vs_out) &&
+               wse::asset::compile_warband_glsl_to_spirv(*shader_compiler, "void main() {}",
+                                                         wse::asset::SpirvStage::Fragment, "t",
+                                                         wse::asset::VertexDeclType::Standard,
+                                                         min_fs_out),
+           "compile minimal VS and FS SPIR-V 1.0 modules");
+    const auto& vs_words = min_vs_out.spirv_words;
+    const auto& fs_words = min_fs_out.spirv_words;
 
     // Stage / entry-point validation.
     {
