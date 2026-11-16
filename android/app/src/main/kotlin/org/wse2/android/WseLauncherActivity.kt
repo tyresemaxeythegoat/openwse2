@@ -5,7 +5,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -13,6 +16,7 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
+import android.view.Display
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
@@ -69,8 +73,11 @@ class WseLauncherActivity : Activity() {
     private val driverOptions = listOf("System Vulkan", "Turnip (Adreno custom)", "PanVK (Mali direct ICD)")
     // Native `parse_driver_mode` keys, index-aligned with driverOptions.
     private val driverModeKeys = listOf("system", "turnip", "panvk")
-    private val frameRateValues = listOf(60, 90, 120, 0)
-    private val frameRateLabels = listOf("60 Hz", "90 Hz", "120 Hz", "Uncapped")
+    // Caps offered on this device: `allFrameRateValues` filtered to what the display can
+    // refresh at (a 120 Hz cap on a 60 Hz panel only wastes power), index-aligned labels.
+    private val allFrameRateValues = listOf(30, 60, 90, 120, 0)
+    private var frameRateValues = allFrameRateValues
+    private var frameRateLabels = allFrameRateValues.map { frameRateLabel(it) }
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var probeConnection: ServiceConnection? = null
@@ -193,6 +200,9 @@ class WseLauncherActivity : Activity() {
         container.addView(probeButton)
 
         addSectionTitle("Sensors & Performance (P8)")
+        val maxRefreshHz = maxDisplayRefreshHz()
+        frameRateValues = allFrameRateValues.filter { it == 0 || it <= maxRefreshHz + 1 }
+        frameRateLabels = frameRateValues.map { frameRateLabel(it) }
         frameRateSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@WseLauncherActivity,
@@ -202,8 +212,15 @@ class WseLauncherActivity : Activity() {
         }
         container.addView(frameRateSpinner)
 
+        val sensorManager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val hasPhoneGyro = sensorManager?.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null
         gyroAimCheck = CheckBox(this).apply {
-            text = "Opt-in gyro aiming (Mission)"
+            // Controller gyros (DualSense, Switch Pro) work without a phone gyroscope.
+            text = if (hasPhoneGyro) {
+                "Opt-in gyro aiming (Mission)"
+            } else {
+                "Opt-in gyro aiming (Mission) - no phone gyroscope, controller gyro only"
+            }
             isChecked = false
         }
         container.addView(gyroAimCheck)
@@ -262,7 +279,16 @@ class WseLauncherActivity : Activity() {
         }
 
         val savedCapHz = prefs.getInt(KEY_FRAME_RATE_CAP, 60)
-        val capIdx = frameRateValues.indexOf(savedCapHz).let { if (it >= 0) it else 0 }
+        // A cap saved on another display (or before a panel mode change) falls back to the
+        // highest offered rate below it.
+        val capIdx = frameRateValues.indexOf(savedCapHz).let { exact ->
+            if (exact >= 0) {
+                exact
+            } else {
+                val best = frameRateValues.filter { it in 1..savedCapHz }.maxOrNull() ?: 60
+                frameRateValues.indexOf(best).coerceAtLeast(0)
+            }
+        }
         frameRateSpinner.setSelection(capIdx)
         frameRateSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
@@ -489,6 +515,24 @@ class WseLauncherActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun frameRateLabel(hz: Int): String = when (hz) {
+        0 -> "Uncapped"
+        30 -> "30 Hz (battery saver)"
+        else -> "$hz Hz"
+    }
+
+    // Highest refresh rate among the display's modes (60 when unknown).
+    @Suppress("DEPRECATION")
+    private fun maxDisplayRefreshHz(): Int {
+        val d: Display? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display
+        } else {
+            windowManager.defaultDisplay
+        }
+        val max = d?.supportedModes?.maxOfOrNull { it.refreshRate } ?: return 60
+        return Math.round(max)
     }
 
     private fun selectedFrameRateCapHz(): Int =

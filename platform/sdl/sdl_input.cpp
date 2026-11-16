@@ -9,11 +9,29 @@
 #include <cstdint>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace wse::platform {
 
 namespace {
+
+// Degrees clockwise from portrait, or -1 when SDL does not know.
+[[nodiscard]] int sdl_orientation_degrees(SDL_DisplayOrientation o) noexcept {
+    switch (o) {
+    case SDL_ORIENTATION_PORTRAIT:
+        return 0;
+    case SDL_ORIENTATION_LANDSCAPE:
+        return 90;
+    case SDL_ORIENTATION_PORTRAIT_FLIPPED:
+        return 180;
+    case SDL_ORIENTATION_LANDSCAPE_FLIPPED:
+        return 270;
+    case SDL_ORIENTATION_UNKNOWN:
+    default:
+        return -1;
+    }
+}
 
 [[nodiscard]] std::int32_t sdl_scancode_to_raw_key(SDL_Scancode sc) noexcept {
     switch (sc) {
@@ -206,9 +224,13 @@ public:
         }
         gyro_enabled_ = enabled;
         if (gyro_enabled_) {
+            refresh_rotation_locked();
             open_gyro_locked();
         } else {
             close_gyro_locked();
+        }
+        for (auto& [jid, pad] : open_pads_) {
+            set_pad_gyro_locked(jid, pad, gyro_enabled_);
         }
     }
 
@@ -219,7 +241,7 @@ public:
 
     [[nodiscard]] bool has_gyro_sensor() const noexcept override {
         std::lock_guard<std::mutex> lock(mutex_);
-        return open_gyro_ != nullptr;
+        return open_gyro_ != nullptr || !gyro_pads_.empty();
     }
 
     // Fallback size; events carrying a window id are normalized by that window's
@@ -317,6 +339,9 @@ public:
                 return false;
             }
             open_pads_.emplace(jid, pad);
+            if (gyro_enabled_) {
+                set_pad_gyro_locked(jid, pad, true);
+            }
             RawInputEvent out{};
             out.type = RawInputEvent::Type::GamepadConnected;
             out.device_id = static_cast<std::uint64_t>(jid);
@@ -333,6 +358,7 @@ public:
                 open_pads_.erase(it);
             }
             pad_axes_.erase(jid);
+            gyro_pads_.erase(jid);
             RawInputEvent out{};
             out.type = RawInputEvent::Type::GamepadDisconnected;
             out.device_id = static_cast<std::uint64_t>(jid);
@@ -426,17 +452,42 @@ public:
             return true;
         }
         case SDL_EVENT_SENSOR_UPDATE: {
-            if (!gyro_enabled_ || open_gyro_ == nullptr || ev.sensor.which != gyro_id_) {
+            // A controller gyro, when present, is what the player aims with; mixing in
+            // the phone's own sensor would average two unrelated motions.
+            if (!gyro_enabled_ || open_gyro_ == nullptr || ev.sensor.which != gyro_id_ ||
+                !gyro_pads_.empty()) {
                 return false;
             }
+            // SDL3 reports rad/s CCW in the device's natural orientation and does not
+            // rotate the axes with the screen, so landscape needs the remap.
+            const GyroLookRates rates =
+                gyro_look_rates(rotation_, ev.sensor.data[0], ev.sensor.data[1]);
             RawInputEvent out{};
             out.type = RawInputEvent::Type::GyroSample;
-            // SDL3 gyro reports rad/s CCW around +X (pitch up) and +Y (yaw left).
-            out.dx = -ev.sensor.data[1];
-            out.dy = ev.sensor.data[0];
+            out.dx = rates.yaw_right;
+            out.dy = rates.pitch_up;
             queue_.push_back(out);
             return true;
         }
+        case SDL_EVENT_GAMEPAD_SENSOR_UPDATE: {
+            if (!gyro_enabled_ || ev.gsensor.sensor != SDL_SENSOR_GYRO ||
+                gyro_pads_.find(ev.gsensor.which) == gyro_pads_.end()) {
+                return false;
+            }
+            // Controllers report in their own "held in front of you" frame.
+            const GyroLookRates rates =
+                gyro_look_rates(ScreenRotation::Deg0, ev.gsensor.data[0], ev.gsensor.data[1]);
+            RawInputEvent out{};
+            out.type = RawInputEvent::Type::GyroSample;
+            out.device_id = static_cast<std::uint64_t>(ev.gsensor.which);
+            out.dx = rates.yaw_right;
+            out.dy = rates.pitch_up;
+            queue_.push_back(out);
+            return true;
+        }
+        case SDL_EVENT_DISPLAY_ORIENTATION:
+            refresh_rotation_locked();
+            return false;
         default:
             return false;
         }
@@ -451,6 +502,32 @@ public:
     [[nodiscard]] const char* backend_name() const noexcept override { return "sdl3"; }
 
 private:
+    // Screen rotation relative to the natural orientation, which is the frame the
+    // device gyro reports in (a natural-landscape tablet at rest is `Deg0`).
+    void refresh_rotation_locked() noexcept {
+        const SDL_DisplayID display = SDL_GetPrimaryDisplay();
+        if (display == 0) {
+            return;
+        }
+        const int current = sdl_orientation_degrees(SDL_GetCurrentDisplayOrientation(display));
+        const int natural = sdl_orientation_degrees(SDL_GetNaturalDisplayOrientation(display));
+        if (current < 0 || natural < 0) {
+            return;
+        }
+        rotation_ = screen_rotation_from_degrees(current - natural);
+    }
+
+    void set_pad_gyro_locked(SDL_JoystickID jid, SDL_Gamepad* pad, bool enabled) noexcept {
+        if (pad == nullptr || !SDL_GamepadHasSensor(pad, SDL_SENSOR_GYRO)) {
+            return;
+        }
+        if (SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_GYRO, enabled) && enabled) {
+            gyro_pads_.insert(jid);
+        } else {
+            gyro_pads_.erase(jid);
+        }
+    }
+
     void open_gyro_locked() noexcept {
         if (open_gyro_ != nullptr) {
             return;
@@ -507,6 +584,8 @@ private:
     std::unordered_map<SDL_JoystickID, AxisSnapshot> pad_axes_{};
     SDL_Sensor* open_gyro_ = nullptr;
     SDL_SensorID gyro_id_ = 0;
+    ScreenRotation rotation_ = ScreenRotation::Deg0;
+    std::unordered_set<SDL_JoystickID> gyro_pads_{};  // pads streaming gyro samples
 };
 
 }  // namespace

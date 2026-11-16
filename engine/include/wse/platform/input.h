@@ -1288,6 +1288,8 @@ inline std::string fmt_float(float v) {
     const std::string json = serialize_input_profile_json(profile, keys);
     const std::span<const std::uint8_t> bytes(
         reinterpret_cast<const std::uint8_t*>(json.data()), json.size());
+    // `input_profiles/` does not exist on a fresh install; a failure surfaces at the write.
+    (void)make_parent_dirs(vfs, path);
     const std::string tmp = path + ".partial";
     if (!vfs.write_file(tmp, bytes)) {
         if (error_out != nullptr) {
@@ -1332,6 +1334,54 @@ inline std::string fmt_float(float v) {
 
 // Unified device event stream produced by SDL3 (`platform/sdl/sdl_input.cpp`)
 // or by `SyntheticInputBackend` in headless host tests.
+// Rotation of the drawn image relative to the device's natural orientation (Android
+// `Surface.ROTATION_*`; SDL reports it as `SDL_GetCurrentDisplayOrientation` minus
+// `SDL_GetNaturalDisplayOrientation`).
+enum class ScreenRotation : std::uint8_t {
+    Deg0 = 0,
+    Deg90 = 1,
+    Deg180 = 2,
+    Deg270 = 3,
+};
+
+[[nodiscard]] constexpr ScreenRotation screen_rotation_from_degrees(int degrees) noexcept {
+    const int d = ((degrees % 360) + 360) % 360;
+    if (d >= 45 && d < 135) {
+        return ScreenRotation::Deg90;
+    }
+    if (d >= 135 && d < 225) {
+        return ScreenRotation::Deg180;
+    }
+    return (d >= 225 && d < 315) ? ScreenRotation::Deg270 : ScreenRotation::Deg0;
+}
+
+struct GyroLookRates {
+    float yaw_right = 0.0f;  // rad/s, + turns right
+    float pitch_up = 0.0f;   // rad/s, + looks up
+};
+
+// Converts a phone/tablet gyroscope sample (rad/s, counter-clockwise positive, axes in
+// the device's natural orientation: +X right, +Y top, +Z toward the viewer; sensor
+// APIs do not rotate them with the screen) into look rates for the current screen
+// rotation. With screen axes from `SensorManager.remapCoordinateSystem` (ROTATION_90:
+// screen X = +Y, screen Y = -X), yaw is the rotation about screen-up and pitch about
+// screen-right. Game controllers report in their own frame: use `Deg0`.
+[[nodiscard]] constexpr GyroLookRates gyro_look_rates(ScreenRotation rotation,
+                                                      float gx,
+                                                      float gy) noexcept {
+    switch (rotation) {
+    case ScreenRotation::Deg90:
+        return {gx, gy};
+    case ScreenRotation::Deg180:
+        return {gy, -gx};
+    case ScreenRotation::Deg270:
+        return {-gx, -gy};
+    case ScreenRotation::Deg0:
+    default:
+        return {-gy, gx};
+    }
+}
+
 struct RawInputEvent {
     enum class Type : std::uint8_t {
         KeyDown = 0,
@@ -1446,8 +1496,16 @@ class WseInputManager {
 public:
     static constexpr float kGamepadTriggerThreshold = 0.35f;
     static constexpr std::size_t kMaxTrackedFingers = 10U;
-    // Maps two-finger spread/pinch in screen-height units onto campaign map zoom delta.
-    static constexpr float kPinchZoomScale = 4.0f;
+    // `map_zoom_delta` is the natural log of the finger-spread ratio (times
+    // `pinch_zoom_sensitivity`), so the camera follows the fingers when it scales its
+    // distance by `exp(-map_zoom_delta)`, and the same gesture zooms equally whether it
+    // starts close together or wide apart, on a phone or a tablet.
+    static constexpr float kPinchZoomScale = 1.0f;
+    // Finger spreads below this (screen-height units) are clamped, so two touches
+    // landing on almost the same point cannot produce a huge ratio.
+    static constexpr float kMinPinchDistance = 0.02f;
+    // A frame with no gyro sample reuses the last rate for this long.
+    static constexpr float kGyroSampleHoldSeconds = 0.05f;
     // Gamepad raw keys occupy `0xf0..0xff` in `rglInputManager::getKeyName` (`0x1402ad360`).
     static constexpr std::int32_t kFirstGamepadRawKey = RawKey::kGamepadA;
     static constexpr std::size_t kNumGamepadRawKeys = 16U;
@@ -1507,8 +1565,7 @@ public:
         if (context_ != ctx) {
             context_ = ctx;
             if (ctx != InputContext::Mission) {
-                gyro_filt_yaw_ = 0.0f;
-                gyro_filt_pitch_ = 0.0f;
+                reset_gyro_filter();
             }
             if (ctx != InputContext::CampaignMap) {
                 pinch_active_ = false;
@@ -1816,17 +1873,34 @@ public:
         float gyro_yaw_delta = 0.0f;
         float gyro_pitch_delta = 0.0f;
         if (!profile_.gyro_aim_enabled || context_ != InputContext::Mission) {
-            gyro_filt_yaw_ = 0.0f;
-            gyro_filt_pitch_ = 0.0f;
+            reset_gyro_filter();
         } else {
-            const float target_yaw =
-                (gyro_samples > 0) ? (gyro_sum_yaw / static_cast<float>(gyro_samples)) : 0.0f;
-            const float target_pitch =
-                (gyro_samples > 0) ? (gyro_sum_pitch / static_cast<float>(gyro_samples)) : 0.0f;
-            const float alpha = std::clamp(profile_.gyro_smoothing, 0.0f, 0.95f);
+            // Sensors often report slower than the display refreshes (50 Hz gyro at a
+            // 90/120 Hz cap): a frame without a sample keeps the last rate for up to
+            // `kGyroSampleHoldSeconds` instead of reading as "not turning", which made the
+            // aim stutter every other frame.
+            if (gyro_samples > 0) {
+                gyro_hold_yaw_ = gyro_sum_yaw / static_cast<float>(gyro_samples);
+                gyro_hold_pitch_ = gyro_sum_pitch / static_cast<float>(gyro_samples);
+                gyro_hold_age_ = 0.0f;
+            } else {
+                gyro_hold_age_ += safe_dt;
+                if (gyro_hold_age_ > kGyroSampleHoldSeconds) {
+                    gyro_hold_yaw_ = 0.0f;
+                    gyro_hold_pitch_ = 0.0f;
+                }
+            }
+            const float target_yaw = gyro_hold_yaw_;
+            const float target_pitch = gyro_hold_pitch_;
+            // `gyro_smoothing` is the per-frame factor at 60 Hz; scaling the exponent by
+            // the frame time keeps the same time constant at 30/90/120 Hz (and when
+            // thermal throttling changes the cap mid-mission).
+            const float alpha60 = std::clamp(profile_.gyro_smoothing, 0.0f, 0.95f);
+            const float alpha =
+                (alpha60 > 0.0f) ? std::pow(alpha60, safe_dt * 60.0f) : 0.0f;
             gyro_filt_yaw_ = alpha * gyro_filt_yaw_ + (1.0f - alpha) * target_yaw;
             gyro_filt_pitch_ = alpha * gyro_filt_pitch_ + (1.0f - alpha) * target_pitch;
-            if (gyro_samples == 0) {
+            if (target_yaw == 0.0f && target_pitch == 0.0f) {
                 if (std::fabs(gyro_filt_yaw_) < 1e-6f) {
                     gyro_filt_yaw_ = 0.0f;
                 }
@@ -1850,9 +1924,12 @@ public:
         // Dragging right (+look_dx) turns right (+yaw); dragging up (-look_dy) pitches up (+pitch).
         frame_.look_yaw_delta = look_dx * profile_.look_sensitivity +
                                 grx * profile_.look_sensitivity * safe_dt + gyro_yaw_delta;
+        // `invert_gyro_y` alone flips the gyro (applying `invert_look_y` too made
+        // enabling both cancel out).
         frame_.look_pitch_delta = (-look_dy * profile_.look_sensitivity +
-                                   gry * profile_.look_sensitivity * safe_dt + gyro_pitch_delta) *
-                                  y_sign;
+                                   gry * profile_.look_sensitivity * safe_dt) *
+                                      y_sign +
+                                  gyro_pitch_delta;
 
         frame_.attack_dir = attack_dir_;
         frame_.attack_active =
@@ -2041,9 +2118,16 @@ private:
             p = GamepadState{};
             p.id = id;
         }
+        reset_gyro_filter();
+        clear_touch_state();
+    }
+
+    void reset_gyro_filter() noexcept {
         gyro_filt_yaw_ = 0.0f;
         gyro_filt_pitch_ = 0.0f;
-        clear_touch_state();
+        gyro_hold_yaw_ = 0.0f;
+        gyro_hold_pitch_ = 0.0f;
+        gyro_hold_age_ = 0.0f;
     }
 
     [[nodiscard]] bool has_finger_for(TouchWidgetId w) const noexcept {
@@ -2100,8 +2184,9 @@ private:
             pinch_active_ = true;
             pinch_id0_ = f0->finger_id;
             pinch_id1_ = f1->finger_id;
-            pinch_prev_dist_ = std::hypot((f1->last_x - f0->last_x) * viewport_aspect_,
-                                          f1->last_y - f0->last_y);
+            pinch_prev_dist_ =
+                std::max(kMinPinchDistance, std::hypot((f1->last_x - f0->last_x) * viewport_aspect_,
+                                                       f1->last_y - f0->last_y));
         }
     }
 
@@ -2238,9 +2323,11 @@ private:
                             }
                         }
                         if (f0 != nullptr && f1 != nullptr) {
-                            const float new_d = std::hypot((f1->last_x - f0->last_x) * a,
-                                                           f1->last_y - f0->last_y);
-                            map_zoom_delta += (new_d - pinch_prev_dist_) *
+                            const float new_d =
+                                std::max(kMinPinchDistance,
+                                         std::hypot((f1->last_x - f0->last_x) * a,
+                                                    f1->last_y - f0->last_y));
+                            map_zoom_delta += std::log(new_d / pinch_prev_dist_) *
                                               profile_.pinch_zoom_sensitivity * kPinchZoomScale;
                             pinch_prev_dist_ = new_d;
                         }
@@ -2399,6 +2486,9 @@ private:
     std::int64_t pinch_id1_ = -1;
     float gyro_filt_yaw_ = 0.0f;
     float gyro_filt_pitch_ = 0.0f;
+    float gyro_hold_yaw_ = 0.0f;  // last frame-average rate, held between sensor samples
+    float gyro_hold_pitch_ = 0.0f;
+    float gyro_hold_age_ = 0.0f;  // seconds since the last gyro sample
     float cursor_x_ = 0.5f;
     float cursor_y_ = 0.5f;
     std::uint64_t frame_counter_ = 0U;

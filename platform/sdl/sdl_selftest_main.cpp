@@ -160,7 +160,8 @@ void draw_filled_rect(SDL_Renderer* renderer, float x, float y, float w, float h
 void apply_display_frame_rate(SDL_Window* window,
                               SDL_Renderer* renderer,
                               std::int32_t target_fps,
-                              wse::platform::PresentModePreference present_mode) noexcept {
+                              wse::platform::PresentModePreference present_mode,
+                              bool user_selected) noexcept {
     if (renderer != nullptr) {
         const wse::platform::FrameRateCap cap =
             wse::platform::frame_rate_cap_from_hz(target_fps);
@@ -176,13 +177,19 @@ void apply_display_frame_rate(SDL_Window* window,
             SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
         auto* anw = static_cast<ANativeWindow*>(nw_ptr);
         if (anw != nullptr) {
-            constexpr int8_t kCompatDefault = 0;      // ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_DEFAULT
-            constexpr int8_t kOnlyIfSeamless = 0;   // ANATIVEWINDOW_CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
+            constexpr int8_t kCompatDefault = 0;   // ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_DEFAULT
+            constexpr int8_t kOnlyIfSeamless = 0;  // ANATIVEWINDOW_CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
+            constexpr int8_t kAlways = 1;          // ANATIVEWINDOW_CHANGE_FRAME_RATE_ALWAYS
             const float rate = (target_fps > 0) ? static_cast<float>(target_fps) : 0.0f;
+            // The rate the player picked may need a (non-seamless) display mode switch,
+            // which ONLY_IF_SEAMLESS silently refuses on many panels, so the first
+            // request uses ALWAYS. Thermal step-downs mid-session stay seamless-only so
+            // they never blank the screen.
+            const int8_t strategy = user_selected ? kAlways : kOnlyIfSeamless;
             if (auto fn31 = reinterpret_cast<SetFrameRateWithStrategyFn>(
                     dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRateWithChangeStrategy"));
                 fn31 != nullptr) {
-                (void)fn31(anw, rate, kCompatDefault, kOnlyIfSeamless);
+                (void)fn31(anw, rate, kCompatDefault, strategy);
             } else if (auto fn30 = reinterpret_cast<SetFrameRateFn>(
                            dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate"));
                        fn30 != nullptr) {
@@ -192,6 +199,7 @@ void apply_display_frame_rate(SDL_Window* window,
     }
 #else
     (void)window;
+    (void)user_selected;
 #endif
 }
 
@@ -223,6 +231,8 @@ int main(int argc, char* argv[]) {
     wse::platform::RuntimeLaunchPerfConfig launch_cfg{};
     std::uint64_t launch_cfg_rev = 0U;
     std::int32_t last_applied_fps_cap = -1;
+    std::int32_t last_requested_fps_cap = -1;
+    wse::platform::FrameTimeStats frame_stats;
     if (wse::platform::RuntimePerformanceHub::global().poll_launch_config(launch_cfg_rev,
                                                                            launch_cfg)) {
         auto prof = input_mgr.profile();
@@ -406,8 +416,12 @@ int main(int argc, char* argv[]) {
         if (loop_adapt.effective_fps_cap != last_applied_fps_cap) {
             last_applied_fps_cap = loop_adapt.effective_fps_cap;
             frame_pacer.set_target_fps(last_applied_fps_cap);
+            // A new launcher/settings choice, not a thermal step-down.
+            const bool user_selected = loop_adapt.requested_fps_cap != last_requested_fps_cap;
+            last_requested_fps_cap = loop_adapt.requested_fps_cap;
             apply_display_frame_rate(window, renderer, last_applied_fps_cap,
-                                     loop_adapt.active_present_mode);
+                                     loop_adapt.active_present_mode, user_selected);
+            frame_stats.reset();
         }
         frame_pacer.begin_frame();
         SDL_Event ev;
@@ -648,17 +662,23 @@ int main(int argc, char* argv[]) {
         const auto adaptation = perf_ctrl.evaluate();
         draw_filled_rect(renderer, ox, body_bot, lw, footer_h, 24, 29, 38);
         SDL_SetRenderDrawColor(renderer, 185, 195, 210, 255);
+        // Cap, measured rate and its 1% low (what the device actually delivers), and the
+        // thermal tier with its resolution scale; short enough for a 340-unit footer.
         char footer_buf[96];
+        char cap_buf[16];
         const auto tier_sv = wse::platform::thermal_tier_name(adaptation.tier);
         if (adaptation.effective_fps_cap > 0) {
-            std::snprintf(footer_buf, sizeof(footer_buf),
-                          "Back: exit | %dHz [%.*s %.2fx]",
-                          adaptation.effective_fps_cap,
+            std::snprintf(cap_buf, sizeof(cap_buf), "%dHz", adaptation.effective_fps_cap);
+        } else {
+            std::snprintf(cap_buf, sizeof(cap_buf), "uncap");
+        }
+        if (frame_stats.sample_count() >= 10U) {
+            std::snprintf(footer_buf, sizeof(footer_buf), "%s %.1ffps 1%%:%.0f %.*s %.2fx",
+                          cap_buf, frame_stats.average_fps(), frame_stats.low_1pct_fps(),
                           static_cast<int>(tier_sv.size()), tier_sv.data(),
                           static_cast<double>(adaptation.resolution_scale));
         } else {
-            std::snprintf(footer_buf, sizeof(footer_buf),
-                          "Back: exit | Uncapped [%.*s %.2fx]",
+            std::snprintf(footer_buf, sizeof(footer_buf), "Back: exit | %s %.*s %.2fx", cap_buf,
                           static_cast<int>(tier_sv.size()), tier_sv.data(),
                           static_cast<double>(adaptation.resolution_scale));
         }
@@ -679,6 +699,7 @@ int main(int argc, char* argv[]) {
         }
 
         SDL_RenderPresent(renderer);
+        frame_stats.record_frame(static_cast<std::int64_t>(SDL_GetTicksNS()));
         const std::uint64_t wait_ticks =
             static_cast<std::uint64_t>(frame_pacer.remaining_wait_ticks());
         if (wait_ticks > 0U && adaptation.effective_fps_cap > 0) {

@@ -4,12 +4,14 @@
 //   wse_brf --brf <file.brf> [--json]
 //   wse_brf --dds <file.dds> [--json]
 //   wse_brf --dir <dir> [--json]
-//   wse_brf --root <warband_root> [--module <name>] [--json]
+//   wse_brf --root <warband_root> [--module <name>] [--compile-shaders [--jobs N]] [--json]
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <new>
 #include <filesystem>
@@ -17,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -37,7 +40,7 @@ void print_usage(const char* argv0) {
                  "  %s --brf <file.brf> [--json]\n"
                  "  %s --dds <file.dds> [--json]\n"
                  "  %s --dir <dir> [--json]\n"
-                 "  %s --root <warband_root> [--module <name>] [--compile-shaders] [--json]\n",
+                 "  %s --root <warband_root> [--module <name>] [--compile-shaders [--jobs N]] [--json]\n",
                  argv0 != nullptr ? argv0 : "wse_brf",
                  argv0 != nullptr ? argv0 : "wse_brf",
                  argv0 != nullptr ? argv0 : "wse_brf",
@@ -269,7 +272,8 @@ int run_dir(const std::filesystem::path& dir, bool json) {
 int run_module_catalog(const std::filesystem::path& root,
                        std::string_view module_name,
                        bool json,
-                       bool compile_shaders) {
+                       bool compile_shaders,
+                       unsigned jobs) {
     wse::platform::HostVfs vfs(root);
     std::string mod_rel(module_name);
     if (mod_rel.find('/') == std::string::npos && mod_rel.find('\\') == std::string::npos) {
@@ -388,38 +392,75 @@ int run_module_catalog(const std::filesystem::path& root,
     std::size_t spirv_ok = 0;
     std::size_t spirv_fail = 0;
     if (compile_shaders) {
-        const auto compiler = wse::asset::create_glslang_shader_compiler();
+        // Sorted, so reports and diffs between runs are stable; compiled on `jobs`
+        // threads sharing one backend (glslang compiles are thread-safe).
+        std::vector<const wse::asset::GlTechniqueEntry*> techs;
+        techs.reserve(tech_cat.techniques_by_lower.size());
         for (const auto& kv : tech_cat.techniques_by_lower) {
-            const wse::asset::GlTechniqueEntry& tech = kv.second;
-            if (tech.vs_glsl.empty() || tech.fs_glsl.empty()) {
-                ++spirv_fail;
-                std::fprintf(stderr, "SHADER_FAIL %s: missing %s GLSL source\n",
-                             tech.name.c_str(), tech.vs_glsl.empty() ? "vertex" : "fragment");
-                continue;
+            techs.push_back(&kv.second);
+        }
+        std::sort(techs.begin(), techs.end(),
+                  [](const auto* a, const auto* b) { return a->name < b->name; });
+        struct TechResult {
+            bool ok = false;
+            std::string vs_error;
+            std::string fs_error;
+        };
+        std::vector<TechResult> results(techs.size());
+        const auto compiler = wse::asset::create_glslang_shader_compiler();
+        std::atomic<std::size_t> next{0};
+        const auto worker = [&]() {
+            for (std::size_t i = next.fetch_add(1); i < techs.size(); i = next.fetch_add(1)) {
+                const wse::asset::GlTechniqueEntry& tech = *techs[i];
+                TechResult& r = results[i];
+                if (tech.vs_glsl.empty() || tech.fs_glsl.empty()) {
+                    (tech.vs_glsl.empty() ? r.vs_error : r.fs_error) = "missing GLSL source";
+                    continue;
+                }
+                // No mesh here, so take the declaration the vertex shader's attributes ask for.
+                const wse::asset::VertexDeclType decl =
+                    wse::asset::infer_vertex_decl_from_glsl(tech.vs_glsl);
+                wse::asset::SpirvCompileOutput vs_out{};
+                wse::asset::SpirvCompileOutput fs_out{};
+                const bool vs_ok = wse::asset::compile_warband_glsl_to_spirv(
+                    *compiler, tech.vs_glsl, wse::asset::SpirvStage::Vertex, tech.name, decl,
+                    vs_out, tech.fs_glsl);
+                const bool fs_ok = wse::asset::compile_warband_glsl_to_spirv(
+                    *compiler, tech.fs_glsl, wse::asset::SpirvStage::Fragment, tech.name, decl,
+                    fs_out, tech.vs_glsl);
+                r.ok = vs_ok && fs_ok;
+                if (!vs_ok) {
+                    r.vs_error = std::move(vs_out.info_log);
+                }
+                if (!fs_ok) {
+                    r.fs_error = std::move(fs_out.info_log);
+                }
             }
-            // No mesh here, so take the declaration the vertex shader's attributes ask for.
-            const wse::asset::VertexDeclType decl =
-                wse::asset::infer_vertex_decl_from_glsl(tech.vs_glsl);
-            wse::asset::SpirvCompileOutput vs_out{};
-            wse::asset::SpirvCompileOutput fs_out{};
-            const bool vs_ok = wse::asset::compile_warband_glsl_to_spirv(
-                *compiler, tech.vs_glsl, wse::asset::SpirvStage::Vertex, tech.name, decl, vs_out,
-                tech.fs_glsl);
-            const bool fs_ok = wse::asset::compile_warband_glsl_to_spirv(
-                *compiler, tech.fs_glsl, wse::asset::SpirvStage::Fragment, tech.name, decl,
-                fs_out, tech.vs_glsl);
-            if (vs_ok && fs_ok) {
+        };
+        const unsigned threads = std::max(1U, std::min<unsigned>(
+                                                  jobs, static_cast<unsigned>(techs.size())));
+        std::vector<std::thread> pool;
+        for (unsigned t = 1; t < threads; ++t) {
+            pool.emplace_back(worker);
+        }
+        worker();
+        for (std::thread& th : pool) {
+            th.join();
+        }
+        for (std::size_t i = 0; i < techs.size(); ++i) {
+            const TechResult& r = results[i];
+            if (r.ok) {
                 ++spirv_ok;
                 continue;
             }
             ++spirv_fail;
-            if (!vs_ok) {
-                std::fprintf(stderr, "SHADER_FAIL %s (vertex): %s\n", tech.name.c_str(),
-                             vs_out.info_log.c_str());
+            if (!r.vs_error.empty()) {
+                std::fprintf(stderr, "SHADER_FAIL %s (vertex): %s\n", techs[i]->name.c_str(),
+                             r.vs_error.c_str());
             }
-            if (!fs_ok) {
-                std::fprintf(stderr, "SHADER_FAIL %s (fragment): %s\n", tech.name.c_str(),
-                             fs_out.info_log.c_str());
+            if (!r.fs_error.empty()) {
+                std::fprintf(stderr, "SHADER_FAIL %s (fragment): %s\n", techs[i]->name.c_str(),
+                             r.fs_error.c_str());
             }
         }
     }
@@ -476,6 +517,7 @@ int run_cli(int argc, char** argv) {
     std::string module_name = "Native";
     bool json = false;
     bool compile_shaders = false;
+    unsigned jobs = std::max(1U, std::thread::hardware_concurrency());
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
@@ -510,6 +552,16 @@ int run_cli(int argc, char** argv) {
             if (!need_val(root_path)) return 2;
         } else if (arg == "--module") {
             if (!need_val(module_name)) return 2;
+        } else if (arg == "--jobs") {
+            std::string v;
+            if (!need_val(v)) return 2;
+            char* end = nullptr;
+            const unsigned long n = std::strtoul(v.c_str(), &end, 10);
+            if (v.empty() || end == nullptr || *end != '\0' || n == 0UL || n > 256UL) {
+                std::fprintf(stderr, "--jobs expects an integer in 1..256\n");
+                return 2;
+            }
+            jobs = static_cast<unsigned>(n);
         } else {
             std::fprintf(stderr, "unknown option: %.*s\n",
                          static_cast<int>(arg.size()), arg.data());
@@ -532,7 +584,7 @@ int run_cli(int argc, char** argv) {
     if (!brf_path.empty()) return run_brf_file(brf_path, json);
     if (!dds_path.empty()) return run_dds_file(dds_path, json);
     if (!dir_path.empty()) return run_dir(dir_path, json);
-    return run_module_catalog(root_path, module_name, json, compile_shaders);
+    return run_module_catalog(root_path, module_name, json, compile_shaders, jobs);
 }
 
 }  // namespace

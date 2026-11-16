@@ -1045,6 +1045,92 @@ void test_p8_sensors_and_pinch_zoom() {
                    back == p,
                "P8 sensor & pinch toggles round-trip through module JSON profile");
     }
+
+    // 4. Review of 9411644: gyro axes follow the screen rotation.
+    {
+        const auto eq = [](GyroLookRates r, float yaw, float pitch) {
+            return close(r.yaw_right, yaw) && close(r.pitch_up, pitch);
+        };
+        // Device +X / +Y angular rates of 0.3 / 0.7 rad/s.
+        expect(eq(gyro_look_rates(ScreenRotation::Deg0, 0.3f, 0.7f), -0.7f, 0.3f) &&
+                   eq(gyro_look_rates(ScreenRotation::Deg90, 0.3f, 0.7f), 0.3f, 0.7f) &&
+                   eq(gyro_look_rates(ScreenRotation::Deg180, 0.3f, 0.7f), 0.7f, -0.3f) &&
+                   eq(gyro_look_rates(ScreenRotation::Deg270, 0.3f, 0.7f), -0.3f, -0.7f) &&
+                   screen_rotation_from_degrees(-90) == ScreenRotation::Deg270 &&
+                   screen_rotation_from_degrees(450) == ScreenRotation::Deg90 &&
+                   screen_rotation_from_degrees(180) == ScreenRotation::Deg180,
+               "gyro_look_rates remaps natural-orientation axes for each screen rotation");
+    }
+
+    // 5. Gyro smoothing is frame-rate independent and holds the rate between samples.
+    {
+        const auto run = [&](float hz, float seconds, int sample_every) {
+            WseInputManager mgr;
+            mgr.set_context(InputContext::Mission);
+            mgr.profile().gyro_aim_enabled = true;
+            mgr.profile().gyro_deadzone = 0.0f;
+            mgr.profile().gyro_smoothing = 0.6f;
+            const int frames = static_cast<int>(hz * seconds + 0.5f);
+            float total = 0.0f;
+            for (int f = 0; f < frames; ++f) {
+                if (f % sample_every == 0) {
+                    mgr.process_frame(std::array<RawInputEvent, 1>{{gyro(1.0f, 0.0f)}}, 1.0f / hz);
+                } else {
+                    mgr.process_frame({}, 1.0f / hz);
+                }
+                total += mgr.frame_state().look_yaw_delta;
+            }
+            return total;
+        };
+        const float at60 = run(60.0f, 0.5f, 1);
+        const float at120 = run(120.0f, 0.5f, 1);
+        // A 60 Hz sensor at a 120 Hz frame rate delivers a sample every other frame.
+        const float at120_sparse = run(120.0f, 0.5f, 2);
+        expect(std::fabs(at60 - at120) < 0.01f && std::fabs(at120 - at120_sparse) < 1e-4f,
+               "gyro turn over 0.5 s matches at 60/120 Hz and with a slower sensor");
+
+        WseInputManager mgr;
+        mgr.set_context(InputContext::Mission);
+        mgr.profile().gyro_aim_enabled = true;
+        mgr.profile().gyro_deadzone = 0.0f;
+        mgr.profile().gyro_smoothing = 0.0f;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{gyro(1.0f, 0.0f)}}, 1.0f / 120.0f);
+        for (int f = 0; f < 8; ++f) {  // ~67 ms without a sample: past the hold window
+            mgr.process_frame({}, 1.0f / 120.0f);
+        }
+        expect(close(mgr.frame_state().look_yaw_delta, 0.0f),
+               "a stopped gyro stream decays to zero after the hold window");
+
+        // invert_look_y flips touch/stick look, not the gyro (invert_gyro_y does that).
+        mgr.profile().invert_look_y = true;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{gyro(0.0f, 1.0f)}}, 1.0f / 60.0f);
+        expect(mgr.frame_state().look_pitch_delta > 0.0f,
+               "invert_look_y does not also invert gyro pitch");
+    }
+
+    // 6. Pinch zoom is the log of the spread ratio: the same relative gesture zooms the
+    // same amount whether the fingers start close or far apart.
+    {
+        const auto pinch = [&](float half_start, float half_end) {
+            WseInputManager mgr;
+            mgr.set_viewport_size(1080, 1080);
+            mgr.set_context(InputContext::CampaignMap);
+            mgr.profile().pinch_zoom_enabled = true;
+            mgr.profile().pinch_zoom_sensitivity = 1.0f;
+            mgr.process_frame(std::array<RawInputEvent, 2>{
+                {touch(T::TouchDown, 1, 0.5f - half_start, 0.5f),
+                 touch(T::TouchDown, 2, 0.5f + half_start, 0.5f)}});
+            mgr.process_frame(std::array<RawInputEvent, 2>{
+                {touch(T::TouchMove, 1, 0.5f - half_end, 0.5f),
+                 touch(T::TouchMove, 2, 0.5f + half_end, 0.5f)}});
+            return mgr.frame_state().map_zoom_delta;
+        };
+        const float small = pinch(0.05f, 0.10f);
+        const float wide = pinch(0.15f, 0.30f);
+        expect(close(small, std::log(2.0f), 1e-3f) && close(wide, std::log(2.0f), 1e-3f) &&
+                   close(pinch(0.2f, 0.1f), -std::log(2.0f), 1e-3f),
+               "pinch zoom delta is ln(spread ratio), independent of starting spread");
+    }
 }
 
 }  // namespace

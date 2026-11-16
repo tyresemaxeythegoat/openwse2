@@ -2290,6 +2290,131 @@ void test_p5_lowering_review_regressions() {
         expect(ok[0] && ok[1] && ok[2] && ok[3], "concurrent compiles on one backend succeed");
     }
 
+    // Review of 9411644: type names are exact, so a parameter shadowing a `mat*` uniform
+    // keeps its own name (it used to be rewritten into a block member: syntax error).
+    {
+        const char* fs0 = "#version 120\nvarying vec2 Tex;\nuniform sampler2D diffuse_texture;\n"
+                          "void main(){ gl_FragColor = texture2D(diffuse_texture, Tex); }\n";
+        const Pair p = compile_pair(
+            "mat_param_shadow",
+            "#version 120\nuniform mat4 matWorld;\nattribute vec3 inPosition;\nvarying vec2 Tex;\n"
+            "vec4 xf(mat4 matWorld, vec3 p) { return matWorld * vec4(p, 1.0); }\n"
+            "void main(){ Tex = vec2(0.0); gl_Position = xf(matWorld, inPosition); }\n",
+            fs0);
+        expect(p.ok && p.vs.lowered_glsl.find("vec4 xf(mat4 matWorld, vec3 p) { return matWorld *") !=
+                           std::string::npos &&
+                   p.vs.lowered_glsl.find("xf(_wse_vs_u._wse_u_matWorld, inPosition)") !=
+                       std::string::npos,
+               "parameter named like a mat* uniform shadows it instead of being renamed");
+        expect(shader_detail::is_glsl_matrix_type_name("mat3x4") &&
+                   shader_detail::is_glsl_matrix_type_name("dmat2") &&
+                   !shader_detail::is_glsl_matrix_type_name("matWorld") &&
+                   !shader_detail::is_glsl_matrix_type_name("mat5") &&
+                   shader_detail::is_glsl_opaque_type_name("usampler2D") &&
+                   shader_detail::is_glsl_opaque_type_name("sampler2DArrayShadow") &&
+                   shader_detail::is_glsl_opaque_type_name("iimage2D") &&
+                   !shader_detail::is_glsl_opaque_type_name("samplerSettings") &&
+                   !shader_detail::is_glsl_opaque_type_name("int"),
+               "matrix / opaque type-name checks are exact");
+    }
+    // `for (int k ...)` scopes `k` to the loop: the uniform `k` is renamed after it.
+    {
+        expect(compile_fs("for_scope",
+                          "#version 120\nvarying vec2 Tex;\nuniform float k;\n"
+                          "uniform sampler2D diffuse_texture;\nvoid main(){ float s = 0.0;\n"
+                          "for (int k = 0; k < 2; ++k) { s += float(k); }\n"
+                          "for (int k = 0; k < 2; ++k) s += float(k);\n"
+                          "gl_FragColor = texture2D(diffuse_texture, Tex) * k * s; }\n"),
+               "for-loop variable shadows a uniform only inside the loop");
+    }
+    // Integer samplers are opaque: declared with a binding, not as block members.
+    {
+        const Pair p = compile_pair(
+            "usampler",
+            "#version 130\nin vec3 inPosition;\nout vec2 Tex;\n"
+            "void main(){ Tex = vec2(0.0); gl_Position = vec4(inPosition, 1.0); }\n",
+            "#version 130\nin vec2 Tex;\nuniform usampler2D ids;\n"
+            "void main(){ gl_FragColor = vec4(texture(ids, Tex)); }\n");
+        expect(p.ok && p.fs.lowered_glsl.find(") uniform usampler2D ids;") != std::string::npos,
+               "usampler2D uniform gets a sampler binding");
+    }
+    // GLSL 1.30 file-scope `in` / `out` lower like attribute / varying / color outputs.
+    {
+        const Pair p = compile_pair(
+            "glsl130_io",
+            "#version 130\nin vec3 inPosition;\nin vec2 inTexCoord;\nout vec2 Tex;\n"
+            "flat out int layer;\n"
+            "void main(){ Tex = inTexCoord; layer = 1; gl_Position = vec4(inPosition, 1.0); }\n",
+            "#version 130\nin vec2 Tex;\nflat in int layer;\nuniform sampler2D diffuse_texture;\n"
+            "out vec4 color;\nout vec4 glow;\n"
+            "void main(){ color = texture(diffuse_texture, Tex); glow = vec4(float(layer)); }\n");
+        expect(p.ok && location_of(p.vs.lowered_glsl, "inTexCoord") == 2 &&
+                   location_of(p.vs.lowered_glsl, "Tex") == location_of(p.fs.lowered_glsl, "Tex") &&
+                   location_of(p.vs.lowered_glsl, "layer") ==
+                       location_of(p.fs.lowered_glsl, "layer") &&
+                   location_of(p.fs.lowered_glsl, "color") == 0 &&
+                   location_of(p.fs.lowered_glsl, "glow") == 1,
+               "GLSL 1.30 in/out declarations get attribute, varying, and output locations");
+        LoweredVulkanGlsl mixed = lower_warband_glsl_to_vulkan450(
+            "#version 130\nout vec4 color;\nvoid main(){ color = vec4(1.0); gl_FragColor = color; }\n",
+            SpirvStage::Fragment);
+        expect(!mixed.ok && mixed.error.find("mixes") != std::string::npos,
+               "fragment `out` variables together with gl_FragColor are rejected clearly");
+    }
+    // Parse warnings reach the info log of a successful compile.
+    {
+        SpirvCompileOutput out{};
+        const bool ok = compile_warband_glsl_to_spirv(
+            *compiler,
+            "#version 120\n#extension GL_WSE_not_a_real_extension : enable\n"
+            "void main(){ gl_FragColor = vec4(1.0); }\n",
+            SpirvStage::Fragment, "warn", VertexDeclType::Standard, out);
+        expect(ok && out.info_log.find("GL_WSE_not_a_real_extension") != std::string::npos,
+               "successful compile keeps glslang parse warnings in info_log");
+    }
+    // Compatibility-profile built-ins lower onto synthesized declarations that both
+    // stages agree on.
+    {
+        const char* vs =
+            "#version 120\nvoid main(){ gl_TexCoord[1] = gl_MultiTexCoord0;\n"
+            "gl_FrontColor = gl_Color; gl_FogFragCoord = (gl_ModelViewMatrix * gl_Vertex).z;\n"
+            "gl_Position = ftransform(); }\n";
+        const char* fs =
+            "#version 120\nuniform sampler2D diffuse_texture;\nvoid main(){\n"
+            "gl_FragColor = gl_Color * texture2D(diffuse_texture, gl_TexCoord[0].xy) *\n"
+            "gl_FogFragCoord; }\n";
+        const Pair p = compile_pair("compat_builtins", vs, fs);
+        const auto member_named = [](const ShaderStageReflection& r, std::string_view n) {
+            for (const auto& b : r.uniform_blocks) {
+                for (const auto& m : b.members) {
+                    if (m.name == n) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+        expect(p.ok && location_of(p.vs.lowered_glsl, "_wse_gl_Vertex") == 0 &&
+                   location_of(p.vs.lowered_glsl, "_wse_gl_Color") == 3 &&
+                   location_of(p.vs.lowered_glsl, "_wse_gl_FrontColor") ==
+                       location_of(p.fs.lowered_glsl, "_wse_gl_FrontColor") &&
+                   location_of(p.vs.lowered_glsl, "_wse_gl_FogFragCoord") ==
+                       location_of(p.fs.lowered_glsl, "_wse_gl_FogFragCoord") &&
+                   p.vs.lowered_glsl.find("out vec4 _wse_gl_TexCoord[2];") != std::string::npos &&
+                   p.fs.lowered_glsl.find("in vec4 _wse_gl_TexCoord[2];") != std::string::npos &&
+                   member_named(p.vs.reflection, "gl_ModelViewProjectionMatrix") &&
+                   member_named(p.vs.reflection, "gl_ModelViewMatrix"),
+               "gl_Vertex / gl_Color / gl_TexCoord[] / ftransform() lower to a shared interface");
+        const Pair p2 = compile_pair(
+            "compat_texmatrix",
+            "#version 120\nvoid main(){ gl_TexCoord[0] = gl_TextureMatrix[0] * gl_MultiTexCoord0;\n"
+            "gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex; }\n",
+            "#version 120\nvoid main(){ gl_FragColor = gl_TexCoord[0]; }\n");
+        expect(p2.ok && p2.vs.lowered_glsl.find("mat4 _wse_u_gl_TextureMatrix[1];") !=
+                            std::string::npos,
+               "gl_TextureMatrix[] becomes a sized uniform-block array");
+    }
+
     expect(infer_vertex_decl_from_glsl("attribute vec4 inTangent; attribute vec4 inBlendIndices;") ==
                    VertexDeclType::BumpedSkinned &&
                infer_vertex_decl_from_glsl("attribute vec4 inBlendWeight;") ==

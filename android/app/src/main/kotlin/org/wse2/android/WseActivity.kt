@@ -6,14 +6,19 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import org.libsdl.app.SDLActivity
 
 class WseActivity : SDLActivity() {
 
+    // SDLActivity's default list ends in "main" (libmain.so), which this APK does not
+    // ship: the engine and its SDL_main live in libwse2.so.
+    override fun getLibraries(): Array<String> = arrayOf("SDL3", "wse2")
+
     private var powerManager: PowerManager? = null
     private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
     private val thermalHandler = Handler(Looper.getMainLooper())
-    private var lastHeadroomPollMs = 0L
+    private var lastHeadroomPollMs = Long.MIN_VALUE / 2
 
     private val thermalPollRunnable = object : Runnable {
         override fun run() {
@@ -74,7 +79,8 @@ class WseActivity : SDLActivity() {
         val pm = powerManager
         var headroom = -1.0f
         if (pollHeadroom && pm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val nowMs = System.currentTimeMillis()
+            // Monotonic: a wall-clock change must not stall or burst the headroom polls.
+            val nowMs = SystemClock.elapsedRealtime()
             if (nowMs - lastHeadroomPollMs >= HEADROOM_MIN_GAP_MS) {
                 lastHeadroomPollMs = nowMs
                 val raw = try {
