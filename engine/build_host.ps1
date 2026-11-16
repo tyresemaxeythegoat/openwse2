@@ -178,7 +178,8 @@ $tests = @(
     @{ Name = "headless"; Source = Join-Path $here "tests\headless_test.cpp" },
     @{ Name = "lua"; Source = Join-Path $here "tests\lua_test.cpp"; LinkLua = $true },
     @{ Name = "asset"; Source = Join-Path $here "tests\asset_test.cpp" },
-    @{ Name = "audio"; Source = Join-Path $here "tests\audio_test.cpp"; LinkAudio = $true }
+    @{ Name = "audio"; Source = Join-Path $here "tests\audio_test.cpp"; LinkAudio = $true },
+    @{ Name = "input"; Source = Join-Path $here "tests\input_test.cpp" }
 )
 
 Write-Host "zig          $zig"

@@ -1,0 +1,95 @@
+// Game-world input bridge: synchronizes `wse::platform::WseInputManager` into
+// `wse::game::WseWorldState` (`world.input`, `world.m6.ui`, `world.m5.cursor_pos`)
+// so Warband native input opcodes (`65`, `70..73`, `75`, `77`, `78`) and WSE
+// extended input opcodes (`3100..3102`) observe live device & touch-overlay state
+// (Slice P7, docs/PLATFORM_PLAN.md).
+//
+// Opcode VAs verified in `docs/SYMBOL_MAP.json` (`mbStatement::execute` and
+// `mbStatement::executeWSE`):
+//   - 65   game_key_get_mapped_key_name 0x1401c6752
+//   - 70   key_is_down                  0x1401c67e5
+//   - 71   key_clicked                  0x1401c683f
+//   - 72   game_key_is_down             0x1401c6899
+//   - 73   game_key_clicked             0x1401c68f1
+//   - 75   mouse_get_position           0x1401c6949
+//   - 77   omit_key_once                0x1401c69b5
+//   - 78   clear_omitted_keys           0x1401c69e2
+//   - 3100 game_key_get_key             0x1401e6a42
+//   - 3101 key_released                 0x1401e6a94
+//   - 3102 game_key_released            0x1401e6ae5
+
+#pragma once
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+
+#include "wse/game/world_state.h"
+#include "wse/platform/input.h"
+
+namespace wse::game {
+
+class WorldInputBridge {
+public:
+    static void sync_bindings_to_world(const wse::platform::WseInputManager& mgr,
+                                       WseWorldState& world) {
+        const auto& km = mgr.game_keys();
+        const std::size_t n =
+            std::min(static_cast<std::size_t>(kMaxGameKeys),
+                     static_cast<std::size_t>(wse::platform::kNumGameInputKeys));
+        for (std::size_t i = 0; i < n; ++i) {
+            const std::int32_t gk = static_cast<std::int32_t>(i);
+            const auto* b = km.get(gk);
+            if (b == nullptr) {
+                continue;
+            }
+            world.input.game_key_names[i] = km.get_key_name(gk, 0);
+            world.input.game_key_alt_names[i] = km.get_key_name(gk, 1);
+
+            world.m6.ui.game_key_mappings[i][0] = {
+                b->primary.key,
+                b->primary.num_modifiers > 0 ? b->primary.modifiers[0] : -1,
+                b->primary.num_modifiers > 1 ? b->primary.modifiers[1] : -1,
+            };
+            world.m6.ui.game_key_mappings[i][1] = {
+                b->alt.key,
+                b->alt.num_modifiers > 0 ? b->alt.modifiers[0] : -1,
+                b->alt.num_modifiers > 1 ? b->alt.modifiers[1] : -1,
+            };
+        }
+    }
+
+    static void sync_to_world(const wse::platform::WseInputManager& mgr,
+                              WseWorldState& world) {
+        const std::size_t raw_n =
+            std::min(world.input.key_down.size(), mgr.raw_down().size());
+        for (std::size_t k = 0; k < raw_n; ++k) {
+            world.input.key_down[k] = mgr.raw_down()[k];
+            world.input.key_clicked[k] = mgr.raw_clicked()[k];
+            world.m6.ui.prev_key_down[k] = mgr.raw_prev_down()[k];
+        }
+
+        const std::size_t gk_n =
+            std::min(world.input.game_key_down.size(), mgr.game_key_down().size());
+        for (std::size_t g = 0; g < gk_n; ++g) {
+            world.input.game_key_down[g] = mgr.game_key_down()[g];
+            world.input.game_key_clicked[g] = mgr.game_key_clicked()[g];
+            world.m6.ui.prev_game_key_down[g] = mgr.game_key_prev_down()[g];
+        }
+
+        const auto& fs = mgr.frame_state();
+        world.m5.cursor_pos = wse::core::WseVec2{fs.cursor_x, fs.cursor_y};
+        sync_bindings_to_world(mgr, world);
+    }
+
+    // Processes one frame via `backend` and mirrors everything into `world`.
+    static void step_and_sync(wse::platform::WseInputManager& mgr,
+                              wse::platform::InputBackend& backend,
+                              WseWorldState& world,
+                              float dt_seconds = 1.0f / 60.0f) {
+        mgr.step(backend, dt_seconds);
+        sync_to_world(mgr, world);
+    }
+};
+
+}  // namespace wse::game

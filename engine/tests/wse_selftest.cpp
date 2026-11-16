@@ -13,7 +13,7 @@ struct SuiteEntry {
     int (*fn)(const char*);
 };
 
-constexpr std::array<SuiteEntry, 20> kSuites = {{
+constexpr std::array<SuiteEntry, 21> kSuites = {{
     {"operand", &run_operand_suite},
     {"trigger", &run_trigger_suite},
     {"savegame", &run_savegame_suite},
@@ -34,6 +34,7 @@ constexpr std::array<SuiteEntry, 20> kSuites = {{
     {"lua", &run_lua_suite},
     {"asset", &run_asset_suite},
     {"audio", &run_audio_suite},
+    {"input", &run_input_suite},
 }};
 
 }  // namespace

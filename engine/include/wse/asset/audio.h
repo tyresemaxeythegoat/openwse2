@@ -688,22 +688,29 @@ private:
 }
 
 // Reconstructs the `mbAgent::playSound` (`0x140057010`) human voice pitch hash.
-// Retail computes it with wrapping 32-bit `imul` and a signed `idiv`; the products
-// are formed in `uint32_t` here because the same arithmetic on `int32_t` overflows
-// (undefined behaviour) for large `skin_or_dna` values.
+// Reads `m_no` (`+0xc`), `m_troopNo` (`+0x2c8`), and `m_partyNo` (`+0x9f0`), scales
+// `(rem / 871.0f - 0.5f)` by `0.3f`, and returns `1.0f + delta` (`> 0.001f`),
+// `1.0f / (1.0f - delta)` (`< -0.001f`), or `1.0f`. Products form in `uint32_t`
+// so extreme negative inputs wrap identically without signed-overflow UB.
 [[nodiscard]] inline float compute_agent_voice_pitch(std::int32_t agent_no,
                                                      std::int32_t troop_no,
-                                                     std::int32_t skin_or_dna) noexcept {
+                                                     std::int32_t party_no) noexcept {
     const std::uint32_t sum =
         (static_cast<std::uint32_t>(agent_no) + 29U) * 0x14fdU +
         static_cast<std::uint32_t>(troop_no) * 0x76efU +
-        static_cast<std::uint32_t>(skin_or_dna) * 0x244adU;
+        static_cast<std::uint32_t>(party_no) * 0x244adU;
     std::int32_t acc = static_cast<std::int32_t>(sum);  // C++20: modular conversion
     acc %= 0x1b41;
     acc = (acc * 0x51f) % 0x367;  // |acc| < 0x1b41, so this product cannot overflow
     const float unit = static_cast<float>(acc) / 871.0f;
-    const float delta = (unit - 0.5f) * 0.14f;
-    return 1.0f + std::clamp(delta, -0.15f, 0.15f);
+    const float delta = std::clamp((unit - 0.5f) * 0.3f, -0.15f, 0.15f);
+    if (delta > 0.001f) {
+        return 1.0f + delta;
+    }
+    if (delta < -0.001f) {
+        return 1.0f / (1.0f - delta);
+    }
+    return 1.0f;
 }
 
 // Retail `mbSoundSample::readStream` (0x1403317c0) 4-step file search order:

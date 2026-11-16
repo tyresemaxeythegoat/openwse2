@@ -881,7 +881,7 @@ C++20 core (libwse2.so, arm64-v8a)
   ├─ module loader: reads user-selected Modules/ via SAF file descriptors
   ├─ script/trigger VM: mbScriptManager + mbTriggerManager + mbSimpleTriggerManager
   ├─ WSE Lua layer: WSELuaManager + gameOperation table on Lua 5.1
-  ├─ platform seam: wse/platform (Vfs, Clock, LogSink; later Rhi, AudioDevice, Input)
+  ├─ platform seam: wse/platform (Vfs, Clock, LogSink, Rhi, AudioDevice, Input; Sensor later)
   ├─ renderer: Vulkan RHI; driver chosen at runtime (system, PanVK on Mali, Turnip on Adreno)
   ├─ physics: Bullet (arm64 build) — imported type inventory already matches
   └─ audio: SDL3 audio stream + mixer
@@ -958,11 +958,27 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    `0x140332770`), `mbMusicTrack::readStream` (`0x140290710`: `continue_flags |= flags`,
    culture fallback `0x3f`), `mbMusicManager` (`0x140290ad0`, `frameMove` `0x140290c40`,
    `startPlaying`/`stopPlaying`/`update` `0x140290e60`/`0x140290f20`/`0x140290f60`: `0.5s` tick,
-   `5.0s` fade, `500.0f` recency weight), and callers (`mbAgent::playSound` `0x140057010`,
-   `mbGame::playSound` `0x1400e3900`, `mbMissionObject::playSound` `0x140154340`), implemented
+   `5.0s` fade, `500.0f` recency weight), and callers (`mbAgent::playSound` `0x140057010`
+   hashing `m_no`, `m_troopNo`, `m_partyNo` with `0.3f` scale and asymmetric `1/(1-delta)` negative
+   pitch branch, keeping player agent at `1.0f`; `setChannelPropertiesAndPlay` `0x140332d80` having
+   no random frequency jitter; `initializeFmod` `0x140332f80` mapping `bDistanceFilter` to
+   `FMOD_INIT_DISTANCE_FILTERING` `0x200` and `bHrtfFilter` to `FMOD_INIT_HRTF_LOWPASS` `0x10`;
+   `mbGame::playSound` `0x1400e3900`; `mbMissionObject::playSound` `0x140154340`), implemented
    without FMOD via [audio.h](../engine/include/wse/asset/audio.h),
    [platform/audio.h](../engine/include/wse/platform/audio.h),
    [world_audio.h](../engine/include/wse/game/world_audio.h), and `wse_audio` (`stb_vorbis` + `dr_mp3`).
+11. ~~Reconstruct v1.1.5.5 input key tables and `mbGameKeyManager` binding semantics for P7.~~
+    **Resolved (Slice P7):** Disassembly verified `rglInputManager::getKeyName` (`0x1402ad360`: `125`
+    named DirectInput/mouse/gamepad raw keys across `1..255`), `g_gameKeyManager` (`0x14069fbd0`: `95`
+    × 32-byte slots holding primary + alt `{key, num_modifiers, mod[2]}` chords),
+    `mbGameKeyManager::reset` (`0x1400e96a0`: `75` built-in keys `MoveForward`..`TakeScreenshot`,
+    `Left Ctrl` modifiers on `54..56`, `13` gamepad alt bindings `0xf0..0xff`, `Custom1..20`),
+    `keyDown`/`keyClicked`/`keyRaised` (`0x1400eedf0`/`0x1400eee90`/`0x1400eef50`), `getKeyName`/
+    `getKeyData` (`0x1400ef130`/`0x1400ef190`: `<mod0>+<mod1>+<key>`), `storeKeys`/`restoreKeys`/
+    `setKey` (`0x1400ef3a0`/`0x1400ef460`/`0x1400ef510`), and `3100 game_key_get_key`
+    (`0x1401e6a42`), implemented in [input.h](../engine/include/wse/platform/input.h),
+    [world_input.h](../engine/include/wse/game/world_input.h), and
+    [sdl_input.cpp](../platform/sdl/sdl_input.cpp).
 
 ## 9. Evidence index
 

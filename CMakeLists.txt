@@ -274,6 +274,7 @@ if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
         engine/tests/lua_test.cpp
         engine/tests/asset_test.cpp
         engine/tests/audio_test.cpp
+        engine/tests/input_test.cpp
     )
     set_target_properties(wse_selftest PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_compile_definitions(wse_selftest PRIVATE WSE_SELF_TEST_LIBRARY=1)
@@ -320,6 +321,7 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
     wse_add_host_test(lua)
     wse_add_host_test(asset)
     wse_add_host_test(audio)
+    wse_add_host_test(input)
 
     add_executable(selftest_host_test engine/tests/selftest_host_test.cpp)
     target_link_libraries(selftest_host_test PRIVATE wse_selftest)
@@ -355,6 +357,7 @@ if(WSE_BUILD_ANDROID_APP)
     add_library(wse2 SHARED
         platform/sdl/sdl_selftest_main.cpp
         platform/sdl/sdl_audio.cpp
+        platform/sdl/sdl_input.cpp
         platform/android/saf_vfs_jni.cpp
     )
     target_link_libraries(wse2 PRIVATE

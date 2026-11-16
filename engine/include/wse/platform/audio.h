@@ -178,9 +178,11 @@ private:
 // `fOcclusionMaxDistance=80.0f`, 3D min=2.0f / max=80.0f, `bUseSoundOcclusion=1`,
 // `bDistanceFilter=1`, `bHrtfFilter=1`, `bDisableFrequencyVariation=0`.
 //
-// `distance_filter` gates the distance rolloff below; whether retail
-// `bDistanceFilter` meant rolloff or an FMOD distance low-pass is not yet
-// verified. `hrtf_filter` is accepted for config parity and not implemented.
+// Mirrors `rglConfig` audio fields loaded in `0x140264580` / `0x140332f80`.
+// `mbSoundManager::initializeFmod` (`0x140332f80`) maps `bDistanceFilter` to
+// `FMOD_INIT_DISTANCE_FILTERING` (`0x200`) and `bHrtfFilter` to `FMOD_INIT_HRTF_LOWPASS`
+// (`0x10`) while 3D inverse rolloff (`min=2.0f, max=80.0f`) is always active; here
+// `distance_filter` gates distance rolloff and `hrtf_filter` is accepted for parity.
 struct AudioConfig {
     bool sound_enabled = true;
     bool music_enabled = true;
@@ -755,9 +757,20 @@ private:
         const std::int32_t prio =
             compute_sound_priority(eff_flags, dist_sq, config_.distance_priority_factor);
 
-        const std::int32_t slot = allocate_channel_slot(prio);
+        bool evicted = false;
+        const std::int32_t slot = allocate_channel_slot(prio, evicted);
         if (slot < 0) {
             return -1;
+        }
+        // If an earlier callback inside the active `flush_channel_ends()` loop
+        // triggered this play into an already-ended (non-evicted) slot, cancel
+        // that slot's stale queued end notification so it cannot wipe the new sound.
+        if (!evicted && dispatching_ends_) {
+            for (std::size_t j = dispatch_cursor_ + 1U; j < pending_channel_ends_.size(); ++j) {
+                if (pending_channel_ends_[j] == slot) {
+                    pending_channel_ends_[j] = -1;
+                }
+            }
         }
 
         SoundChannelState& ch = channels_[static_cast<std::size_t>(slot)];
@@ -818,16 +831,21 @@ private:
             return;
         }
         dispatching_ends_ = true;
+        dispatch_cursor_ = 0U;
         struct Reset {
             WseAudioMixer& m;
             ~Reset() {
                 m.dispatching_ends_ = false;
+                m.dispatch_cursor_ = 0U;
                 m.pending_channel_ends_.clear();
             }
         } reset{*this};
         for (std::size_t i = 0; i < pending_channel_ends_.size(); ++i) {
+            dispatch_cursor_ = i;
             const std::int32_t channel_no = pending_channel_ends_[i];
-            on_channel_end_(channel_no);
+            if (channel_no >= 0) {
+                on_channel_end_(channel_no);
+            }
         }
     }
 
@@ -863,7 +881,9 @@ private:
         return -1;
     }
 
-    [[nodiscard]] std::int32_t allocate_channel_slot(std::int32_t new_prio) {
+    [[nodiscard]] std::int32_t allocate_channel_slot(std::int32_t new_prio,
+                                                     bool& out_evicted) {
+        out_evicted = false;
         for (std::size_t i = 0; i < channels_.size(); ++i) {
             if (!channels_[i].active) {
                 return static_cast<std::int32_t>(i);
@@ -884,6 +904,7 @@ private:
         // The end notification is queued and delivered by the caller's flush, after
         // the new sound owns the slot, so a re-entrant callback cannot steal it.
         end_channel(worst);
+        out_evicted = true;
         return static_cast<std::int32_t>(worst);
     }
 
@@ -1333,6 +1354,7 @@ private:
     std::int32_t last_sound_channel_ = -1;
     std::vector<std::int32_t> pending_channel_ends_{};
     bool dispatching_ends_ = false;
+    std::size_t dispatch_cursor_ = 0U;
     std::vector<std::size_t> mix_order_{};
     std::vector<float> pump_buf_{};
 

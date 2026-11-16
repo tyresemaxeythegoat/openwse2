@@ -22,10 +22,10 @@ engine/
   include/wse/game/   script.h, trigger.h, world_state.h,    managers, module loaders, campaign helpers, headless runner, audio bridge, and state model
                       world_subsystem_types.h, world_campaign_helpers.h,
                       module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h,
-                      headless_runner.h, audio_runtime.h, world_audio.h
-  include/wse/platform/ vfs.h, saf_vfs.h, clock.h,         platform seam (port infrastructure, SAF Vfs, minimal RHI, stereo audio mixer)
+                      headless_runner.h, audio_runtime.h, world_audio.h, world_input.h
+  include/wse/platform/ vfs.h, saf_vfs.h, clock.h,         platform seam (port infrastructure, SAF Vfs, minimal RHI, stereo audio mixer, input & touch overlay)
                       sleep.h, log.h, rhi.h, driver_package.h,
-                      rhi_brf.h, audio.h
+                      rhi_brf.h, audio.h, input.h
   include/wse/asset/  brf.h, dds.h, shader.h,               .brf / .dds / WAV+OGG+MP3 asset decoders, module resource catalog, shader/material/SPIR-V pipeline
                       audio.h, audio_codecs.h
   src/audio/          wse_audio_internal.hpp,               `stb_vorbis` + `dr_mp3` codec backend (`wse_audio`, isolated from public headers)
@@ -72,7 +72,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `include/wse/game/headless_runner.h` | **port infrastructure:** `HeadlessRunOptions`, `HeadlessRunReport`, `HeadlessSession`, and `run_headless_module()` / `run_headless_session()` executing `load_module`, `game_start`, and simulated trigger frames via `Vfs` and `LogSink`; unimplemented opcodes stop and fail the run only when `fail_on_unimplemented` is set (otherwise they are counted and reported) | clean-room orchestration over `module_bundle.h`, `trigger.h`, `block_vm.h` |
 | `include/wse/asset/{brf,dds,shader}.h` | `.brf` container decoder (all 8 resource types, `MetaMesh` LOD grouper, `module.ini` resource catalog), `.dds` parser/RGBA8 decoder (`BC1`–`BC5`, uncompressed/`L8`/`L16`/`A8L8`/`A8`, `DX10`) + Warband `Vfs` texture resolver, and P5 effect search / `wse2_shaders.{brf,ini}` / `rglShader` suitability / `rglMaterial` state / `GLShaders` + WSE2 SPIR-V 1.0 cache pipeline | `rglResourceManager`, `rglMesh`, `rglMetaMesh`, `rglTexture`, `rglShader`, `rglMaterial`, `rglPhysicsMaterial`, `rglBody`, `rglSkeletonModel`, `rglSkeletonAnimation`, `rglGraphicsContext::initEffect`, `rglPostProcess::initEffect` |
 | `include/wse/asset/{audio,audio_codecs}.h`, `src/audio/` | RIFF/WAVE PCM (`8`/`16`/`24`/`32`-bit & IEEE float/`0xFFFE`) decoder, retail 4-step sound & 2-step music path resolvers, `mbSoundSample` / `mbMusicTrack` flag/priority/volume/culture helpers, and static `wse_audio` (`stb_vorbis` v1.24 + `dr_mp3` v0.7.5) memory + streaming decoder backend isolated from public headers | `mbSoundSample::readStream` `0x1403317c0`, `mbSoundSample::playSound` `0x140331cb0`, `mbSoundManager::readStream` `0x1403322e0`, `mbMusicTrack::readStream` `0x140290710`, `mbMusicManager::readStream` `0x140290ad0` |
-| `include/wse/game/{audio_runtime,world_audio}.h` | non-owning `WseAudioRuntime` VM hook + `WorldAudioBridge` wiring `LoadedSoundBank`/`LoadedMusicTrack`/`Vfs` + `WseWorldState` (`599..604`, `609`, `615..616`, `1750`, `1808`, `1881..1882`, `3618`) to `WseAudioMixer` | clean-room bridge over `0x140057010`, `0x1400e3900`, `0x140154340`, `0x140290c40`, `0x140332ac0` |
+| `include/wse/game/{audio_runtime,world_audio,world_input}.h` | non-owning `WseAudioRuntime` VM hook + `WorldAudioBridge` (`599..604`, `609`, `615..616`, `1750`, `1808`, `1881..1882`, `3618`), plus `WorldInputBridge` syncing `WseInputManager` into `WseWorldState` (`65`, `70..73`, `75`, `77..78`, `3100..3102`) | clean-room bridge over `0x140057010`, `0x1400e3900`, `0x140154340`, `0x140290c40`, `0x140332ac0`, `0x1401c6752`, `0x1401e6a42` |
 | `tools/wse_headless.cpp` | portable Phase 2H CLI runner (`<warband_root> [module_rel_dir] [--frames N] [--step-ticks T] [--allow-unimplemented]`) using `HostVfs` + `StderrLog` | Phase 2H headless `Native` exit runner |
 | `tools/wse_brf.cpp` | portable Slice P3/P5 / Phase 2G CLI inspector (`--brf <file>`, `--dds <file>`, `--dir <dir>`, `--root <warband_root> [--module <name>]`, `--json`) using `HostVfs` | Slice P3/P5 `.brf` / `.dds` / shader & material corpus validator |
 | `include/wse/vm/wse_opcodes.h` | generated enum of the 440 WSE-extended operation names in the retail dispatch range | `mbStatement::executeWSE` `0x1401e4dc0`; names from `header_operations_addon.py` |
@@ -81,7 +81,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `include/wse/vm/ops/{bitwise,system,world,string,fp_expr,fp,dict,array,position}.h` | per-family `executeWSE` dispatch handlers (2800–2809, 3000–3045/3619/3622/4300–4305/4606, 3340–3341, 3600–3911/4600–4609, 4200–4246, `feval` 4400–4438, dict 3200–3222, array 5000–5022, pos vec 4100–4104) | `executeWSE` `0x1401e4dc0`; `0x1400a6c10`–`0x1400ad5a0`; `0x1401e55c5`–`0x1401ec52b`; `0x1401ef0ef`–`0x1401efc8d`; `0x1401f198c`–`0x1401f1c2c`; `0x1401f58a0`–`0x1401fdd80`; `0x140246010`–`0x1402461d7`; `0x14024f4c0`; `0x1402a24f0`–`0x1402b64b0`; `0x14034e340`–`0x1403508a0` |
 | `include/wse/vm/lua_{runtime,manager}.h`, `src/lua/` | isolated stock MIT Lua 5.1.5 `WseLuaRuntime` implementing sandboxed `io`/`os`/`package`/`load*` over `Vfs`/`Clock`/`LogSink`, `bit` module, clean-room `LuaGlobals`, `msfiles/` + `variables.txt` parsers, 36 `game.*` + 7 `_G.*` callbacks, op/script/event hooks, and `lua_bridge.h` (`5100`–`5114`) integration | `WSELuaManager` (`0x14033cdd0`, `0x14033d090`; see `lua_runtime.h`, `lua_manager.h`) |
 | `include/wse/vm/execute_wse.h` | top-level `execute_wse()` umbrella dispatching across `wse/vm/ops/*.h` | `executeWSE` `0x1401e4dc0` |
-| `include/wse/platform/{vfs,saf_vfs,clock,sleep,log,rhi,driver_package,rhi_brf,audio}.h` + `../platform/vulkan/driver_loader.{h,cpp}` + `../platform/sdl/sdl_audio.{h,cpp}` | **port infrastructure + P6 mixer reconstruction:** `Vfs` (case-insensitive, `/` and `\\` separators, root-confined, optional atomic `rename_file`; `HostVfs` ASCII-folded dir-cache keys with a same-directory check) with `MemoryVfs`, `HostVfs`, and `SafVfs` (`SafTreeBackend`, `MemorySafBackend`, one-time tree index, `import_to`, `scan_warband_modules`, `verify_module_scripts`); `Clock` in the engine's 100,000-per-second ticks with `SteadyClock`/`ManualClock`; `WallClock` (Unix seconds + UTC offset) with `SystemWallClock`/`ManualWallClock`; blocking `sleep_ms`; `LogSink` with stderr, capture, and null sinks; `RhiDevice` + `SoftwareRhiDevice` (`rhi.h`, standard library only), AdrenoTools `meta.json` parser, ELF `.dynstr` `libpanvk_hw.so` patcher, and atomic package staging (`driver_package.h`), BRF/DDS textured mesh helpers + cached `BrfMeshRenderer` (`rhi_brf.h`), `VulkanDriverLoader` (`load_system`, direct-ICD v5 / custom driver preload, `MockVulkanIcd` v5, `VulkanRhiDevice`), and `AudioDevice`/`NullAudioDevice`/`CaptureAudioDevice` + `WseAudioMixer` (`audio.h`, stereo 2D/3D mixer + music scheduler) + `SDL_OpenAudioDeviceStream` backend (`sdl_audio.{h,cpp}`) | none for core seam interfaces (replaces Win32 imports in `docs/ARCHITECTURE.md` §6); `WseAudioMixer` reconstructs `0x140290c40`, `0x140290e60`, `0x140290f60`, `0x140331cb0`, `0x140332690`–`0x140333490` (design in `docs/PLATFORM_PLAN.md`) |
+| `include/wse/platform/{vfs,saf_vfs,clock,sleep,log,rhi,driver_package,rhi_brf,audio,input}.h` + `../platform/vulkan/driver_loader.{h,cpp}` + `../platform/sdl/{sdl_audio,sdl_input}.{h,cpp}` | **port infrastructure + P6/P7 reconstructions:** `Vfs` (case-insensitive, `/` and `\\` separators, root-confined, optional atomic `rename_file`; `HostVfs` ASCII-folded dir-cache keys with a same-directory check) with `MemoryVfs`, `HostVfs`, and `SafVfs` (`SafTreeBackend`, `MemorySafBackend`, one-time tree index, `import_to`, `scan_warband_modules`, `verify_module_scripts`); `Clock` in the engine's 100,000-per-second ticks with `SteadyClock`/`ManualClock`; `WallClock` (Unix seconds + UTC offset) with `SystemWallClock`/`ManualWallClock`; blocking `sleep_ms`; `LogSink` with stderr, capture, and null sinks; `RhiDevice` + `SoftwareRhiDevice` (`rhi.h`, standard library only), AdrenoTools `meta.json` parser, ELF `.dynstr` `libpanvk_hw.so` patcher, and atomic package staging (`driver_package.h`), BRF/DDS textured mesh helpers + cached `BrfMeshRenderer` (`rhi_brf.h`), `VulkanDriverLoader` (`load_system`, direct-ICD v5 / custom driver preload, `MockVulkanIcd` v5, `VulkanRhiDevice`), `AudioDevice`/`NullAudioDevice`/`CaptureAudioDevice` + `WseAudioMixer` (`audio.h`, stereo 2D/3D mixer + music scheduler) + `SDL_OpenAudioDeviceStream` backend (`sdl_audio.{h,cpp}`), and `InputBackend`/`NullInputBackend`/`SyntheticInputBackend`, `WseGameKeyManager`, `WseInputManager` (`InputContext`, virtual stick/look/4-dir attack & block swipes/command radial, `TouchLayoutEditor`, per-module `Vfs` JSON profiles), `FreeCameraController` (`input.h`), and SDL3 backend (`sdl_input.{h,cpp}`) | none for core seam interfaces (replaces Win32 imports in `docs/ARCHITECTURE.md` §6); `WseAudioMixer` reconstructs `0x140290c40`, `0x140290e60`, `0x140290f60`, `0x140331cb0`, `0x140332690`–`0x140333490`; `WseGameKeyManager` reconstructs `0x1402ad360`, `0x1400e9590`–`0x1400ef510`, `0x14069fbd0` (design in `docs/PLATFORM_PLAN.md`) |
 | `tests/platform_test.cpp` | host tests for path normalisation and escape rejection, one `Vfs` contract run across `MemoryVfs`, `HostVfs`, and `SafVfs`, `SafVfs` one-time index / `scan_warband_modules` / `verify_module_scripts` / `import_to`, `Vfs` → `TokenReader`, clocks, log sinks, `test_rhi_and_driver_loader` (Turnip/PanVK `meta.json`, `.dynstr` `libpanvk_hw.so` patcher, Mock ICD v5, BRF/DDS textured mesh screenshot & Z-buffer tests), `test_p5_shader_modules_d3d9_and_material_rhi` (`PresentationPath` WSI vs `AHardwareBuffer` bridge, `VkShaderModule` lifecycle, D3D9 projection/half-pixel/sRGB helpers, normal/specular/alpha-test/blend material RHI), and `test_p4_review_fixes` (mode ids, name allow-list, nested `meta.json`, atomic re-staging, front face, handle wrap, device generations, mock object accounting). The real host Vulkan loader is exercised only with `WSE_TEST_SYSTEM_VULKAN=1` | temp directory + in-memory trees |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
@@ -93,8 +93,9 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/headless_test.cpp` | host tests for `run_headless_module()` / `run_headless_session()` (`game_start` + multi-frame triggers over `MemoryVfs` and `HostVfs`, loud unimplemented-opcode failure, compatibility-mode continuation past unimplemented opcodes, and missing `game_start` / load error diagnostics) | in-memory + temp-directory fixtures |
 | `tests/lua_test.cpp` | host tests for Lua 5.1.5 stdlib/`bit`/`vector3`/`pos`, `msfiles/` + `variables.txt` parsers, `game.*` / `_G.*` callbacks, trigger/item/prop/prsnt/psys/iterator/hook paths, opcodes `5100`–`5114` + 9 `On*` events, and sandboxed `HostVfs` headless `main.lua` execution | `MemoryVfs` + temp-directory `HostVfs` fixtures |
 | `tests/asset_test.cpp` | host tests for all 8 `.brf` resource types (`rfver` 0 and `rfver` 1), `MetaMesh` LOD grouping, `module.ini` resource catalogs over `MemoryVfs`, `.dds` block/uncompressed/`L16`/`DX10` decoding, Warband texture resolution priority, and P5 effect/INI/shader/material resolution + `GLShaders`/WSE2 SPIR-V persistent caching | synthetic binary + `MemoryVfs` fixtures |
-| `tests/audio_test.cpp` | P6 review regressions (re-entrant end callbacks, `set_config` during playback, voice-pitch overflow, whole-sample random start, same-track `play_track`, stream/predecoded parity across chunk boundaries, loop-point interpolation, surround fold, oversized WAV `data`, config sanitising, clock regression, `615` after failure, prop/agent channel replacement, sounds following agents) plus host tests for RIFF/WAVE PCM (`8`/`16`/`24`/`32`-bit & float/`0xFFFE`), OGG Vorbis + MP3 decoding & chunked streaming (`wse_audio`), 4-step sound & music lookup order, `WseAudioMixer` 3D constant-power panning / attenuation / LOD / priority eviction / occlusion hysteresis / deterministic hash / `0.5s`+`5.0s` music scheduler, VM/world audio integration (`599..604`, `609`, `615..616`, `1750`, `1808`, `1881..1882`, `3618`), and opt-in retail `Native` + `Phantasy Calradia` audio gate | synthetic WAV/OGG/MP3 + `MemoryVfs` + `CaptureAudioDevice` (+ optional `HostVfs` retail install) |
-| `tests/wse_selftest.{h,cpp}`, `tests/selftest_host_test.cpp` | shared aggregate runner invoking all `20` core suites (`WSE_SELF_TEST_LIBRARY=1`) for both host verification (`selftest_host_test`) and the Android SDL3 `libwse2.so` app shell (`platform/sdl/sdl_selftest_main.cpp`); `run_all_suites` takes an optional stop callback polled between suites. In the CMake build each suite is compiled once into `wse_selftest` and every `<name>_test` executable is `tests/suite_main.cpp` linked against it | all 20 suites + `fixtures/scripts.txt` |
+| `tests/audio_test.cpp` | P6 review regressions (re-entrant end callbacks & sibling-slot reuse, `set_config` during playback, voice-pitch curve & overflow, whole-sample random start, same-track `play_track`, stream/predecoded parity across chunk boundaries, loop-point interpolation, surround fold, oversized WAV `data`, config sanitising, clock regression, `615` after failure, prop/agent channel replacement, sounds following agents) plus host tests for RIFF/WAVE PCM (`8`/`16`/`24`/`32`-bit & float/`0xFFFE`), OGG Vorbis + MP3 decoding & chunked streaming (`wse_audio`), 4-step sound & music lookup order, `WseAudioMixer` 3D constant-power panning / attenuation / LOD / priority eviction / occlusion hysteresis / deterministic hash / `0.5s`+`5.0s` music scheduler, VM/world audio integration (`599..604`, `609`, `615..616`, `1750`, `1808`, `1881..1882`, `3618`), and opt-in retail `Native` + `Phantasy Calradia` audio gate | synthetic WAV/OGG/MP3 + `MemoryVfs` + `CaptureAudioDevice` (+ optional `HostVfs` retail install) |
+| `tests/input_test.cpp` | Slice P7 tests for `get_raw_key_name` (`0x1402ad360` 125 keys), `WseGameKeyManager` (`0x1400e96a0` 75 built-ins + Custom1..20 + modifier chords + gamepad alts + `getKeyData` + `storeKeys`/`restoreKeys`), `InputContext` & gamepad attach overlay hiding, multi-touch stick/look/4-direction attack & block swipes/command radial, `TouchLayoutEditor`, per-module `Vfs` JSON profiles (`%.9g` round-trip & corrupt rejection), `FreeCameraController` driving the P4 `BrfMeshRenderer` viewer, and `WorldInputBridge` (`65`, `70..73`, `75`, `77..78`, `3100..3102`) | `SyntheticInputBackend` + `MemoryVfs` + `SoftwareRhiDevice` |
+| `tests/wse_selftest.{h,cpp}`, `tests/selftest_host_test.cpp` | shared aggregate runner invoking all `21` core suites (`WSE_SELF_TEST_LIBRARY=1`) for both host verification (`selftest_host_test`) and the Android SDL3 `libwse2.so` app shell (`platform/sdl/sdl_selftest_main.cpp`); `run_all_suites` takes an optional stop callback polled between suites. In the CMake build each suite is compiled once into `wse_selftest` and every `<name>_test` executable is `tests/suite_main.cpp` linked against it | all 21 suites + `fixtures/scripts.txt` |
 
 ## Module text format
 
@@ -555,7 +556,8 @@ P6 audio (`wse/asset/audio.h`, `wse/platform/audio.h`, `wse/game/world_audio.h`,
   (AAC ADTS).
 - **Mixer:** channel-end callbacks are queued and delivered once the mixer is consistent (after the
   mix block, after the stop, or after the new sound owns an evicted slot), so callbacks may play or
-  stop sounds. `set_config` sanitises values (`max_distance_3d >= min_distance_3d > 0`, finite
+  stop sounds; starting a new sound into a previously inactive sibling slot mid-flush cancels any
+  still-queued stale end notification for that slot. `set_config` sanitises values (`max_distance_3d >= min_distance_3d > 0`, finite
   non-negative volumes, channel counts in `[1, 256]`) and only ends channels when
   `max_virtual_channels` shrinks. Per-voice and per-music-slot gains ramp linearly across each
   block; the bus uses `soft_clip_sample` (identity to 0.8, tanh knee) instead of a hard clamp; the
@@ -563,8 +565,8 @@ P6 audio (`wse/asset/audio.h`, `wse/platform/audio.h`, `wse/game/world_audio.h`,
   when it engages. Looping samples interpolate across the loop point; streamed music carries the
   last frame of each 2048-frame chunk so interpolation is continuous across refills.
 - **Random start (`kSoundFlagRandomStartPos`):** `(rand15 * frames) >> 15`, covering the whole
-  sample. The exact retail formula at `0x140332d80` was not re-checked; a `rand() % frames` form
-  could only reach the first 32767 frames.
+  sample (intentional improvement over retail `0x140332d80` `rand() % m_length`, which only reached
+  the first 32767 frames).
 - **Music scheduler:** `play_track` for the track already playing (option 1 or 2) keeps it playing
   and cancels a pending fade instead of stopping it and then dropping the request. `update()`
   re-bases its stored timestamps when the caller's clock jumps backwards. Clocks are `double`.
@@ -572,13 +574,32 @@ P6 audio (`wse/asset/audio.h`, `wse/platform/audio.h`, `wse/game/world_audio.h`,
   `-1` included, matching what `599`/`600`/`1750`/`1881` store.
 - **Opcodes:** `1881` stops the prop's previous channel before playing (one sound per prop
   instance); `1750` stops the agent's previous channel only when it is looping (one-shots finish)
-  and passes `compute_agent_voice_pitch(agent_no, troop_no, dna)` for human agents; the mapping of
-  the hash's third input to `WseAgent::dna` is not yet verified against `0x140057010`.
-  `WorldAudioBridge::update` moves agent/prop channels to their owners' positions each tick. A
-  sample that fails to read or decode is remembered and not retried on every play.
-- **Not implemented:** Doppler (`velocity`), HRTF (`hrtf_filter`), and the retail random frequency
-  variation that `kSoundFlagDisableFreqVariation` disables. `distance_filter` gates distance
-  rolloff; whether retail `bDistanceFilter` meant rolloff or a distance low-pass is unverified.
+  and passes `compute_agent_voice_pitch(agent_no, troop_no, party_no)` (`0x140057010` `m_no`,
+  `m_troopNo`, `m_partyNo`; `0.3f` scale, `1.0f / (1.0f - delta)` for negative `delta`, player agent
+  kept at `1.0f`) for human agents. `WorldAudioBridge::update` moves agent/prop channels to their
+  owners' positions each tick. A sample that fails to read or decode is remembered and not retried
+  on every play.
+- **Not implemented / verified flags:** Doppler (`velocity`), HRTF (`FMOD_INIT_HRTF_LOWPASS` `0x10`
+  at `0x140332f80`). `0x140332d80` has no random frequency jitter (`kSoundFlagDisableFreqVariation`
+  `0x8` gates caller pitch multiplier and streaming); `distance_filter` gates 3D distance rolloff
+  instead of FMOD's `FMOD_INIT_DISTANCE_FILTERING` (`0x200`) distance low-pass.
+
+P7 input (`wse/platform/input.h`, `wse/game/world_input.h`, `platform/sdl/sdl_input.{h,cpp}`):
+
+- **`WseGameKeyManager` & raw keys:** exact 125-entry `rglInputManager::getKeyName` (`0x1402ad360`)
+  table and 95-slot `mbGameKeyManager` (`0x14069fbd0`, `0x1400e96a0`) defaults (`75` built-in
+  actions `MoveForward`..`TakeScreenshot` + `Custom1..20`, `Left Ctrl` modifiers, `13` gamepad
+  alt bindings `0xf0..0xff`), primary+alt `keyDown`/`keyClicked`/`keyRaised` (`0x1400eedf0`..
+  `0x1400eef50`), `getKeyData` (`0x1400ef190`), and `3100` `game_key_get_key` (`0x1401e6a42`:
+  `[key, mod0, mod1]` indices `0..2`).
+- **Context-sensitive touch overlay & layout profiles:** `InputContext` (`Mission`, `CampaignMap`,
+  `Menu`, `Inventory`, `Presentation`, `Dialog`) suppresses combat zones in `CampaignMap` and hides
+  the overlay (cancelling active touch latches) in non-gameplay contexts or when a gamepad connects;
+  multi-touch latches each finger by hit priority (`MoveStick`, `CommandRadial`, `AttackZone`,
+  `BlockZone`, fallback `LookArea`), classifies 4-direction attack/block swipes, maps radial release
+  to `Order1..8`, clamps `TouchLayoutEditor` edits to safe screen/scale bounds, and persists
+  sanitized per-module JSON profiles (`input_profiles/<module>.json`) via `Vfs` with `%.9g`
+  exact float round-tripping. `FreeCameraController` matches `make_orbit_mvp_matrix` orientation.
 
 ## Handler design decisions and limits
 
@@ -678,7 +699,8 @@ headless tests: PASS
 lua tests: PASS
 asset tests: PASS
 audio tests: PASS
-selftest_host tests: PASS (20/20, ...)
+input tests: PASS
+selftest_host tests: PASS (21/21, ...)
 engine host tests: PASS
 ```
 

@@ -337,12 +337,13 @@ namespace wse::vm {
                     world.audio_runtime->is_channel_looping(ag.m5.sound_channel)) {
                     world.audio_runtime->stop_channel(ag.m5.sound_channel);
                 }
-                // Human agents get the `mbAgent::playSound` (0x140057010) per-agent
-                // voice pitch; the mixer ignores it when frequency variation is off.
+                // Human NPC agents get the `mbAgent::playSound` (0x140057010) per-agent
+                // voice pitch (`m_no`, `m_troopNo`, `m_partyNo`); player stays 1.0f.
                 const float pitch =
-                    (ag.type == 0) ? wse::asset::compute_agent_voice_pitch(
-                                         narrow[0], ag.troop_no, ag.dna)
-                                   : 1.0f;
+                    (ag.type == 0 && narrow[0] != world.player_agent_no)
+                        ? wse::asset::compute_agent_voice_pitch(narrow[0], ag.troop_no,
+                                                                ag.party_no)
+                        : 1.0f;
                 const std::int32_t ch = world.audio_runtime->play_sound(
                     narrow[1], ag.position.o, 0U, pitch, 0);
                 ag.m5.sound_channel = ch;

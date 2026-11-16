@@ -1032,8 +1032,8 @@ void test_review_regressions() {
                "shrinking max_virtual_channels ends dropped channels via callback");
     }
 
-    // 4. Voice pitch hash: wrapping arithmetic on extreme inputs (UB before; the
-    //    sanitizer job catches a regression), result within the clamp.
+    // 4. Voice pitch hash (`0x140057010`): wrapping arithmetic on extreme inputs,
+    //    exact `0.3f` scale and asymmetric `1/(1-delta)` negative branch, and deadband.
     {
         const float hi = compute_agent_voice_pitch(std::numeric_limits<std::int32_t>::max(),
                                                    std::numeric_limits<std::int32_t>::max(),
@@ -1041,9 +1041,12 @@ void test_review_regressions() {
         const float lo = compute_agent_voice_pitch(std::numeric_limits<std::int32_t>::min(), -1,
                                                    std::numeric_limits<std::int32_t>::min());
         const float typical = compute_agent_voice_pitch(5, 100, 12345);
-        expect(hi >= 0.85f && hi <= 1.15f && lo >= 0.85f && lo <= 1.15f &&
-                   typical >= 0.85f && typical <= 1.15f,
-               "compute_agent_voice_pitch is defined and clamped for extreme inputs");
+        const float negative_branch = compute_agent_voice_pitch(0, 1, -1);
+        expect(close(hi, 1.0f, 1e-6f) && close(lo, 0.9795872f, 1e-5f) &&
+                   close(typical, 1.1093571f, 1e-5f) &&
+                   close(negative_branch, 0.8890023f, 1e-5f) &&
+                   lo >= 0.85f && lo <= 1.15f && typical >= 0.85f && typical <= 1.15f,
+               "compute_agent_voice_pitch matches retail 0.3f / 1/(1-delta) pitch curve");
     }
 
     // 5. Random start position reaches the whole sample, not just frame < 32767.
@@ -1235,6 +1238,43 @@ void test_review_regressions() {
         expect(detect_audio_codec(adts, "") == AudioCodecKind::unknown &&
                    detect_audio_codec(mpeg, "") == AudioCodecKind::mp3,
                "AAC ADTS sync word is not mistaken for MP3");
+    }
+
+    // 15. Re-entrant callback starting a sound into a sibling slot that ended in
+    //     the same flush must cancel the sibling slot's stale queued end notification.
+    {
+        AudioConfig cfg{};
+        cfg.max_virtual_channels = 2;
+        WseAudioMixer m(cfg);
+        m.load_sound_bank({MixerSoundSample{kSoundFlag2D, make_const_pcm(48000U, 16U, 0.1f)},
+                           MixerSoundSample{kSoundFlag2D, make_const_pcm(48000U, 48000U, 0.1f)}},
+                          {MixerSoundDef{0U, {MixerSoundVariant{0, 0U}}},
+                           MixerSoundDef{0U, {MixerSoundVariant{1, 0U}}}});
+        const std::int32_t c0 = m.play_sound_2d(0);
+        const std::int32_t c1 = m.play_sound_2d(0);
+        expect(c0 == 0 && c1 == 1, "two sibling channels start");
+        std::vector<std::int32_t> fired;
+        std::int32_t restarted_ch = -1;
+        bool stale_wipe_happened = false;
+        m.set_channel_end_callback([&](std::int32_t ch) {
+            fired.push_back(ch);
+            if (ch == c0 && restarted_ch < 0) {
+                // Slot 0 ends first; slot 1 is already inactive with a pending end,
+                // so play_sound picks slot 0 (first free) -> then wait, stop c0 first?
+                // Actually starting 2 sounds fills c0 and c1, so slot 0 AND slot 1 get active
+                // BEFORE c1's queued callback runs!
+                (void)m.play_sound_2d(1);  // claims c0
+                restarted_ch = m.play_sound_2d(1);  // claims inactive c1!
+            } else if (ch == restarted_ch) {
+                stale_wipe_happened = true;
+            }
+        });
+        std::vector<float> out;
+        m.mix_frames(256U, out);
+        expect(restarted_ch == c1 && fired.size() == 1U && fired[0] == c0 &&
+                   !stale_wipe_happened && m.is_channel_playing(c1) &&
+                   m.active_sound_channel_count() == 2U,
+               "re-entrant play into ended sibling slot suppresses stale queued end callback");
     }
 }
 

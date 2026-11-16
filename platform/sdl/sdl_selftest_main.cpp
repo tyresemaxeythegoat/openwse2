@@ -1,13 +1,13 @@
-// P1 on-device SDL3 self-test shell.
+// P1-P7 on-device SDL3 self-test shell.
 //
-// Runs all 18 portable engine test suites in-process behind an SDL3 window and
-// displays live PASS/FAIL results alongside Android logcat output
-// (docs/PLATFORM_PLAN.md, slice P1).
+// Runs all 21 portable engine test suites in-process behind an SDL3 window and
+// exercises the SDL3 audio stream & input backends (docs/PLATFORM_PLAN.md).
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
 #include "sdl_audio.h"
+#include "sdl_input.h"
 #include "wse_selftest.h"
 
 #include <algorithm>
@@ -43,7 +43,7 @@ struct UiState {
     bool all_passed = false;
     int completed_count = 0;
     int passed_count = 0;
-    int total_count = 20;
+    int total_count = 21;
     std::int64_t total_ms = 0;
     std::string active_name;
     std::string note;
@@ -158,7 +158,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Exercise the SDL3 audio stream backend non-fatally on device startup.
+    // Exercise the SDL3 audio stream & input backends non-fatally on startup.
     auto audio_dev = wse::platform::create_sdl_audio_device();
     if (audio_dev && audio_dev->open(wse::platform::AudioDeviceSpec{48000U, 2U})) {
         SDL_Log("SDL3 audio stream ready (%s, %u Hz)", audio_dev->backend_name(),
@@ -166,6 +166,11 @@ int main(int argc, char* argv[]) {
         audio_dev->close();
     } else {
         SDL_Log("SDL3 audio probe skipped or unavailable (non-fatal)");
+    }
+    auto sdl_input = wse::platform::create_sdl_input_backend();
+    wse::platform::WseInputManager input_mgr;
+    if (sdl_input) {
+        SDL_Log("SDL3 input backend ready (%s)", sdl_input->backend_name());
     }
 
     std::string cli_fixture;
@@ -316,6 +321,9 @@ int main(int argc, char* argv[]) {
         if (was_finished) {
             if (SDL_WaitEventTimeout(&ev, 100)) {
                 do {
+                    if (sdl_input) {
+                        sdl_input->push_sdl_event(&ev);
+                    }
                     if (ev.type == SDL_EVENT_QUIT ||
                         ev.type == SDL_EVENT_TERMINATING) {
                         quit = true;
@@ -362,6 +370,9 @@ int main(int argc, char* argv[]) {
             }
         } else {
             while (SDL_PollEvent(&ev)) {
+                if (sdl_input) {
+                    sdl_input->push_sdl_event(&ev);
+                }
                 if (ev.type == SDL_EVENT_QUIT || ev.type == SDL_EVENT_TERMINATING) {
                     quit = true;
                 } else if (ev.type == SDL_EVENT_KEY_DOWN &&
@@ -385,6 +396,10 @@ int main(int argc, char* argv[]) {
         }
         last_win_w = std::max(win_w, 1);
         last_win_h = std::max(win_h, 1);
+        if (sdl_input) {
+            sdl_input->set_viewport_size(last_win_w, last_win_h);
+            input_mgr.step(*sdl_input, 1.0f / 60.0f);
+        }
         const float px_scale_x =
             win_w > 0 ? static_cast<float>(out_w) / static_cast<float>(win_w) : 1.0f;
         const float px_scale_y =
@@ -411,7 +426,7 @@ int main(int argc, char* argv[]) {
         bool all_passed = false;
         int completed_count = 0;
         int passed_count = 0;
-        int total_count = 20;
+        int total_count = 21;
         std::int64_t total_ms = 0;
         std::string active_name;
         std::string note;
