@@ -157,6 +157,37 @@ set(WSE_DR_MP3_URL
 set(WSE_DR_MP3_SHA256
     "7a6cc38b0afdb55cfc9eec991d9169d67beb8fd910be2995121510cdaa99c356")
 
+# Every configure re-hashes the files actually compiled, wherever they came from:
+# a mismatch in a user-supplied or source-tree cache is fatal; a stale copy in the
+# build directory is deleted and fetched again.
+function(wse_fetch_audio_vendor_file dir name url sha256 may_download)
+    set(path "${dir}/${name}")
+    if(EXISTS "${path}")
+        file(SHA256 "${path}" actual)
+        if(actual STREQUAL sha256)
+            return()
+        endif()
+        if(NOT may_download)
+            message(FATAL_ERROR
+                "${path} SHA-256 mismatch: expected ${sha256}, got ${actual}")
+        endif()
+        message(STATUS "${name}: cached copy failed SHA-256 check, downloading again")
+        file(REMOVE "${path}")
+    elseif(NOT may_download)
+        message(FATAL_ERROR "${path} not found (WSE_AUDIO_THIRD_PARTY_DIR)")
+    endif()
+    message(STATUS "Downloading ${name} (SHA-256 verified)...")
+    file(DOWNLOAD "${url}" "${path}"
+         EXPECTED_HASH "SHA256=${sha256}"
+         TLS_VERIFY ON
+         STATUS dl_status)
+    list(GET dl_status 0 dl_code)
+    if(NOT dl_code EQUAL 0)
+        file(REMOVE "${path}")
+        message(FATAL_ERROR "Failed to download ${name}: ${dl_status}")
+    endif()
+endfunction()
+
 if(NOT DEFINED WSE_AUDIO_THIRD_PARTY_DIR AND
    EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/build/third_party/audio/stb_vorbis.c" AND
    EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/build/third_party/audio/dr_mp3.h")
@@ -166,34 +197,16 @@ endif()
 
 if(DEFINED WSE_AUDIO_THIRD_PARTY_DIR)
     set(wse_audio_third_party_dir "${WSE_AUDIO_THIRD_PARTY_DIR}")
+    set(wse_audio_may_download OFF)
 else()
     set(wse_audio_third_party_dir "${CMAKE_CURRENT_BINARY_DIR}/_third_party/audio")
     file(MAKE_DIRECTORY "${wse_audio_third_party_dir}")
-    if(NOT EXISTS "${wse_audio_third_party_dir}/stb_vorbis.c")
-        message(STATUS "Downloading stb_vorbis.c (SHA-256 verified)...")
-        file(DOWNLOAD "${WSE_STB_VORBIS_URL}"
-             "${wse_audio_third_party_dir}/stb_vorbis.c"
-             EXPECTED_HASH "SHA256=${WSE_STB_VORBIS_SHA256}"
-             TLS_VERIFY ON
-             STATUS _wse_vorbis_dl_status)
-        list(GET _wse_vorbis_dl_status 0 _wse_vorbis_dl_code)
-        if(NOT _wse_vorbis_dl_code EQUAL 0)
-            message(FATAL_ERROR "Failed to download stb_vorbis.c: ${_wse_vorbis_dl_status}")
-        endif()
-    endif()
-    if(NOT EXISTS "${wse_audio_third_party_dir}/dr_mp3.h")
-        message(STATUS "Downloading dr_mp3.h (SHA-256 verified)...")
-        file(DOWNLOAD "${WSE_DR_MP3_URL}"
-             "${wse_audio_third_party_dir}/dr_mp3.h"
-             EXPECTED_HASH "SHA256=${WSE_DR_MP3_SHA256}"
-             TLS_VERIFY ON
-             STATUS _wse_mp3_dl_status)
-        list(GET _wse_mp3_dl_status 0 _wse_mp3_dl_code)
-        if(NOT _wse_mp3_dl_code EQUAL 0)
-            message(FATAL_ERROR "Failed to download dr_mp3.h: ${_wse_mp3_dl_status}")
-        endif()
-    endif()
+    set(wse_audio_may_download ON)
 endif()
+wse_fetch_audio_vendor_file("${wse_audio_third_party_dir}" stb_vorbis.c
+    "${WSE_STB_VORBIS_URL}" "${WSE_STB_VORBIS_SHA256}" ${wse_audio_may_download})
+wse_fetch_audio_vendor_file("${wse_audio_third_party_dir}" dr_mp3.h
+    "${WSE_DR_MP3_URL}" "${WSE_DR_MP3_SHA256}" ${wse_audio_may_download})
 
 add_library(wse_audio_vendor STATIC
     engine/src/audio/wse_audio_vendor.cpp

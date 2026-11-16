@@ -7,15 +7,27 @@
 //   - mbSoundManager::readStream           0x1403322e0
 //   - mbSoundManager::playSoundAtPosition  0x140332ac0 (0x1000000 LOD fallback, culture variant filter)
 //   - mbSoundManager::setChannelPropertiesAndPlay 0x140332d80 (volume / 15.0f, bit 2 random start, bit 3 disable freq var)
-//   - mbMusicTrack::readStream             0x140290710 (%sMusic/%s -> Music/%s; continue_flags |= flags, culture fallback 0x3f at 0x140290a78)
+//   - mbMusicTrack::readStream             0x140290710 (%sMusic/%s -> Music/%s; continue_flags |= flags, culture fallback 0x3f)
+//   - mbAgent::playSound                   0x140057010 (human voice pitch hash)
 //
 // Note: third-party compressed codec headers (stb_vorbis / dr_mp3) never appear
 // here; RIFF/WAVE PCM is self-contained and OGG/MP3 decode delegates through
 // `AudioCodecBackend` (implemented in `wse/asset/audio_codecs.h` + `wse_audio`).
+//
+// Documented safety deviations (engine/README.md, "P6 audio"):
+//   - A `data` chunk whose declared size runs past the end of the file (streamed
+//     WAV writers, `0xFFFFFFFF`) is clamped to the bytes present instead of rejected.
+//   - Memory decodes are capped at `kMaxDecodedAudioSamples` (10 minutes of 48 kHz
+//     stereo); long music goes through `open_audio_stream` and is never fully decoded.
+//   - Sources with more than two channels are folded to stereo with per-speaker
+//     coefficients (centre/surround at -3 dB, LFE dropped), normalised so the fold
+//     cannot clip; FMOD performed its own downmix that is not reconstructed.
 
 #pragma once
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -33,16 +45,22 @@
 namespace wse::asset {
 
 inline constexpr std::uint32_t kMaxAudioSampleRate = 384000U;
-inline constexpr std::size_t kMaxDecodedAudioSamples = 48000ULL * 2ULL * 60ULL * 30ULL;
+// Interleaved float samples one memory decode may produce: 10 minutes of 48 kHz
+// stereo (57.6M floats, ~230 MB). Sound effects are seconds long; music streams.
+inline constexpr std::size_t kMaxDecodedAudioSamples = 48000ULL * 2ULL * 60ULL * 10ULL;
+inline constexpr std::uint16_t kMaxAudioSourceChannels = 8U;
 
-// mbSound / mbSoundSample flags (`0x140331cb0`, `0x140332be0`, `0x140332d80`):
+// mbSound / mbSoundSample flags (`mbSoundSample::playSound` `0x140331cb0`,
+// `mbSoundManager::playSoundAtPosition` `0x140332ac0`,
+// `mbSoundManager::setChannelPropertiesAndPlay` `0x140332d80`):
 inline constexpr std::uint32_t kSoundFlag2D = 0x00000001U;
 inline constexpr std::uint32_t kSoundFlagLooping = 0x00000002U;
 inline constexpr std::uint32_t kSoundFlagRandomStartPos = 0x00000004U;
 inline constexpr std::uint32_t kSoundFlagDisableFreqVariation = 0x00000008U;
 inline constexpr std::uint32_t kSoundFlagLodFallback = 0x01000000U;
 
-// mbMusicTrack flags (`0x140290e60`, `0x140291096`, `0x1402911b3`):
+// mbMusicTrack flags (`mbMusicManager::startPlaying` `0x140290e60`,
+// `mbMusicManager::update` `0x140290f60`):
 inline constexpr std::uint32_t kMusicFlagCultureMask = 0x0000003FU;
 inline constexpr std::uint32_t kMusicFlagLooping = 0x00000040U;
 inline constexpr std::uint32_t kMusicFlagImmediate = 0x00000080U;
@@ -80,13 +98,16 @@ public:
     virtual ~AudioStreamDecoder() = default;
 
     [[nodiscard]] virtual std::uint32_t sample_rate() const noexcept = 0;
+    // Output channel count after the stereo fold: always 1 or 2.
     [[nodiscard]] virtual std::uint16_t channels() const noexcept = 0;
+    // Total frames when known without a decode pass; 0 means "unknown".
     [[nodiscard]] virtual std::uint64_t total_frames() const noexcept = 0;
     [[nodiscard]] virtual std::uint64_t cursor_frame() const noexcept = 0;
     [[nodiscard]] virtual bool seek_start() = 0;
 
-    // Reads up to `max_frames` interleaved float frames into `out_interleaved`.
-    // Returns frames decoded; 0 indicates EOF or error.
+    // Replaces `out_interleaved` with up to `max_frames` interleaved float frames.
+    // Returns frames decoded; 0 indicates EOF or error. Implementations reuse the
+    // vector's capacity, so a caller that keeps one buffer allocates only once.
     [[nodiscard]] virtual std::size_t read_frames(std::size_t max_frames,
                                                   std::vector<float>& out_interleaved) = 0;
 };
@@ -112,7 +133,7 @@ namespace audio_detail {
 
 [[nodiscard]] inline std::uint16_t read_u16_le(const std::uint8_t* p) noexcept {
     return static_cast<std::uint16_t>(p[0]) |
-           (static_cast<std::uint16_t>(p[1]) << 8U);
+           static_cast<std::uint16_t>(static_cast<std::uint16_t>(p[1]) << 8U);
 }
 
 [[nodiscard]] inline std::uint32_t read_u32_le(const std::uint8_t* p) noexcept {
@@ -144,33 +165,136 @@ namespace audio_detail {
     return true;
 }
 
-inline void downmix_or_copy_to_mono_or_stereo(const std::vector<float>& src,
-                                              std::uint16_t src_channels,
-                                              std::uint16_t& dst_channels,
-                                              std::vector<float>& out) {
-    const std::size_t frames = src.size() / static_cast<std::size_t>(src_channels);
-    if (src_channels == 1U || src_channels == 2U) {
-        dst_channels = src_channels;
-        out = src;
+// Speaker positions, using the `WAVEFORMATEXTENSIBLE::dwChannelMask` bit values.
+inline constexpr std::uint32_t kSpkFrontLeft = 0x1U;
+inline constexpr std::uint32_t kSpkFrontRight = 0x2U;
+inline constexpr std::uint32_t kSpkFrontCenter = 0x4U;
+inline constexpr std::uint32_t kSpkLowFrequency = 0x8U;
+inline constexpr std::uint32_t kSpkBackLeft = 0x10U;
+inline constexpr std::uint32_t kSpkBackRight = 0x20U;
+inline constexpr std::uint32_t kSpkFrontLeftOfCenter = 0x40U;
+inline constexpr std::uint32_t kSpkFrontRightOfCenter = 0x80U;
+inline constexpr std::uint32_t kSpkBackCenter = 0x100U;
+inline constexpr std::uint32_t kSpkSideLeft = 0x200U;
+inline constexpr std::uint32_t kSpkSideRight = 0x400U;
+
+// Interleaving order of a multichannel source.
+enum class ChannelOrder : std::uint8_t {
+    wav,     // RIFF/WAVE: ascending `dwChannelMask` bits (default masks when absent)
+    vorbis,  // Vorbis I spec section 4.3.9
+};
+
+[[nodiscard]] inline std::uint32_t default_wav_channel_mask(std::uint16_t channels) noexcept {
+    switch (channels) {
+        case 1: return kSpkFrontCenter;
+        case 2: return kSpkFrontLeft | kSpkFrontRight;
+        case 3: return 0x007U;  // FL FR FC
+        case 4: return 0x033U;  // FL FR BL BR
+        case 5: return 0x037U;  // FL FR FC BL BR
+        case 6: return 0x03FU;  // FL FR FC LFE BL BR
+        case 7: return 0x70FU;  // FL FR FC LFE BC SL SR
+        case 8: return 0x63FU;  // FL FR FC LFE BL BR SL SR
+        default: return 0U;
+    }
+}
+
+// Speaker position of channel `ch` of a `channels`-wide source (0 when unknown).
+[[nodiscard]] inline std::uint32_t speaker_of_channel(ChannelOrder order, std::uint32_t wav_mask,
+                                                      std::uint16_t channels,
+                                                      std::uint16_t ch) noexcept {
+    if (order == ChannelOrder::vorbis) {
+        static constexpr std::uint32_t L = kSpkFrontLeft, R = kSpkFrontRight,
+                                       C = kSpkFrontCenter, E = kSpkLowFrequency,
+                                       BL = kSpkBackLeft, BR = kSpkBackRight,
+                                       BC = kSpkBackCenter, SL = kSpkSideLeft,
+                                       SR = kSpkSideRight;
+        static constexpr std::array<std::array<std::uint32_t, 8>, 9> kVorbis = {{
+            {},
+            {C},
+            {L, R},
+            {L, C, R},
+            {L, R, BL, BR},
+            {L, C, R, BL, BR},
+            {L, C, R, BL, BR, E},
+            {L, C, R, SL, SR, BC, E},
+            {L, C, R, SL, SR, BL, BR, E},
+        }};
+        if (channels < kVorbis.size() && ch < channels) {
+            return kVorbis[channels][ch];
+        }
+        return 0U;
+    }
+    std::uint32_t mask = wav_mask;
+    if (static_cast<std::uint16_t>(std::popcount(mask)) < channels) {
+        mask = default_wav_channel_mask(channels);
+    }
+    std::uint16_t seen = 0U;
+    for (std::uint32_t bit = 1U; bit != 0U; bit <<= 1U) {
+        if ((mask & bit) != 0U) {
+            if (seen == ch) {
+                return bit;
+            }
+            ++seen;
+        }
+    }
+    return 0U;
+}
+
+// Stereo fold coefficients for one speaker: front 1.0, centre / side / back -3 dB,
+// LFE dropped, unknown or overhead speakers split evenly at -6 dB.
+inline void speaker_stereo_gains(std::uint32_t speaker, float& gl, float& gr) noexcept {
+    constexpr float kMinus3Db = 0.70710678f;
+    gl = 0.0f;
+    gr = 0.0f;
+    switch (speaker) {
+        case kSpkFrontLeft:
+        case kSpkFrontLeftOfCenter: gl = 1.0f; break;
+        case kSpkFrontRight:
+        case kSpkFrontRightOfCenter: gr = 1.0f; break;
+        case kSpkFrontCenter: gl = gr = kMinus3Db; break;
+        case kSpkBackLeft:
+        case kSpkSideLeft: gl = kMinus3Db; break;
+        case kSpkBackRight:
+        case kSpkSideRight: gr = kMinus3Db; break;
+        case kSpkBackCenter: gl = gr = 0.5f; break;
+        case kSpkLowFrequency: break;
+        default: gl = gr = 0.5f; break;
+    }
+}
+
+// Folds an interleaved `channels`-wide buffer to stereo in place (no allocation:
+// output frame f is written only after input frame f is read, and 2f+1 < 3f for
+// f >= 1). Mono and stereo pass through untouched.
+inline void fold_to_stereo_in_place(std::vector<float>& samples, std::uint16_t& channels,
+                                    ChannelOrder order, std::uint32_t wav_mask) noexcept {
+    if (channels <= 2U || channels > kMaxAudioSourceChannels) {
         return;
     }
-    dst_channels = 2U;
-    out.resize(frames * 2U);
-    const float inv = 1.0f / static_cast<float>(src_channels);
+    std::array<float, kMaxAudioSourceChannels> cl{};
+    std::array<float, kMaxAudioSourceChannels> cr{};
+    float sum_l = 0.0f;
+    float sum_r = 0.0f;
+    for (std::uint16_t ch = 0; ch < channels; ++ch) {
+        speaker_stereo_gains(speaker_of_channel(order, wav_mask, channels, ch), cl[ch], cr[ch]);
+        sum_l += cl[ch];
+        sum_r += cr[ch];
+    }
+    const float norm = 1.0f / std::max(1.0f, std::max(sum_l, sum_r));
+    const std::size_t stride = channels;
+    const std::size_t frames = samples.size() / stride;
     for (std::size_t f = 0; f < frames; ++f) {
+        const float* in = samples.data() + f * stride;
         float l = 0.0f;
         float r = 0.0f;
-        for (std::uint16_t ch = 0; ch < src_channels; ++ch) {
-            const float s = src[f * src_channels + ch];
-            if ((ch & 1U) == 0U) {
-                l += s;
-            } else {
-                r += s;
-            }
+        for (std::size_t ch = 0; ch < stride; ++ch) {
+            l += in[ch] * cl[ch];
+            r += in[ch] * cr[ch];
         }
-        out[f * 2U + 0U] = l * (2.0f * inv);
-        out[f * 2U + 1U] = r * (2.0f * inv);
+        samples[f * 2U + 0U] = l * norm;
+        samples[f * 2U + 1U] = r * norm;
     }
+    samples.resize(frames * 2U);
+    channels = 2U;
 }
 
 inline void append_path_segment(std::string& dst, std::string_view seg) {
@@ -203,7 +327,10 @@ inline void append_path_segment(std::string& dst, std::string_view seg) {
     if (bytes.size() >= 3U && bytes[0] == 'I' && bytes[1] == 'D' && bytes[2] == '3') {
         return AudioCodecKind::mp3;
     }
-    if (bytes.size() >= 2U && bytes[0] == 0xFFU && (bytes[1] & 0xE0U) == 0xE0U) {
+    // MPEG audio frame sync: 11 set bits, then a version other than the reserved
+    // `01` and a layer other than the reserved `00` (which is what AAC ADTS uses).
+    if (bytes.size() >= 2U && bytes[0] == 0xFFU && (bytes[1] & 0xE0U) == 0xE0U &&
+        ((bytes[1] >> 3U) & 0x3U) != 0x1U && ((bytes[1] >> 1U) & 0x3U) != 0x0U) {
         return AudioCodecKind::mp3;
     }
     if (audio_detail::ends_with_ci(filename_hint, ".wav")) {
@@ -218,10 +345,29 @@ inline void append_path_segment(std::string& dst, std::string_view seg) {
     return AudioCodecKind::unknown;
 }
 
-// Clean-room RIFF/WAVE PCM decoder (8/16/24/32-bit integer and 32-bit float).
-[[nodiscard]] inline bool decode_wav_pcm(std::span<const std::uint8_t> bytes,
-                                         AudioPcmBuffer& out,
-                                         std::string* error_out = nullptr) {
+// Parsed RIFF/WAVE layout: sample format plus where the PCM payload lives.
+struct WavLayout {
+    std::uint16_t format_tag = 0;  // 1 = integer PCM, 3 = IEEE float
+    std::uint16_t channels = 0;
+    std::uint16_t bits_per_sample = 0;
+    std::uint32_t sample_rate = 0;
+    std::uint32_t channel_mask = 0;  // `WAVE_FORMAT_EXTENSIBLE` only, else 0
+    std::size_t data_offset = 0;
+    std::size_t data_size = 0;
+
+    [[nodiscard]] std::size_t frame_stride() const noexcept {
+        return static_cast<std::size_t>(bits_per_sample / 8U) * channels;
+    }
+    [[nodiscard]] std::size_t frame_count() const noexcept {
+        const std::size_t stride = frame_stride();
+        return stride == 0U ? 0U : data_size / stride;
+    }
+};
+
+// Parses and validates a RIFF/WAVE header (8/16/24/32-bit integer, 32-bit float,
+// `WAVE_FORMAT_EXTENSIBLE` with a PCM or float sub-format).
+[[nodiscard]] inline bool parse_wav_layout(std::span<const std::uint8_t> bytes, WavLayout& out,
+                                           std::string* error_out = nullptr) {
     out = {};
     const auto fail = [&](std::string_view msg) {
         if (error_out != nullptr) {
@@ -241,33 +387,36 @@ inline void append_path_segment(std::string& dst, std::string_view seg) {
 
     bool have_fmt = false;
     bool have_data = false;
-    std::uint16_t format_tag = 0U;
-    std::uint16_t raw_channels = 0U;
-    std::uint32_t sample_rate = 0U;
-    std::uint16_t bits_per_sample = 0U;
-    std::span<const std::uint8_t> data_span{};
-
     std::size_t pos = 12U;
     while (pos + 8U <= bytes.size()) {
         const std::uint8_t* hdr = bytes.data() + pos;
         const std::uint32_t chunk_size = audio_detail::read_u32_le(hdr + 4U);
         pos += 8U;
-        if (static_cast<std::size_t>(chunk_size) > bytes.size() - pos) {
-            return fail("Truncated WAV chunk");
+        const std::size_t remaining = bytes.size() - pos;
+        const bool is_data = audio_detail::matches_ascii4(hdr, "data");
+        std::size_t payload_size = static_cast<std::size_t>(chunk_size);
+        if (payload_size > remaining) {
+            if (!is_data) {
+                return fail("Truncated WAV chunk");
+            }
+            // Safety deviation: streamed writers leave the data size unpatched
+            // (`0xFFFFFFFF`) or the file is cut short; play what is present.
+            payload_size = remaining;
         }
-        const std::span<const std::uint8_t> payload = bytes.subspan(pos, chunk_size);
+        const std::span<const std::uint8_t> payload = bytes.subspan(pos, payload_size);
         if (audio_detail::matches_ascii4(hdr, "fmt ")) {
             if (payload.size() < 16U) {
                 return fail("Truncated WAV fmt chunk");
             }
-            format_tag = audio_detail::read_u16_le(payload.data());
-            raw_channels = audio_detail::read_u16_le(payload.data() + 2U);
-            sample_rate = audio_detail::read_u32_le(payload.data() + 4U);
-            bits_per_sample = audio_detail::read_u16_le(payload.data() + 14U);
-            if (format_tag == 0xFFFEU) {
+            out.format_tag = audio_detail::read_u16_le(payload.data());
+            out.channels = audio_detail::read_u16_le(payload.data() + 2U);
+            out.sample_rate = audio_detail::read_u32_le(payload.data() + 4U);
+            out.bits_per_sample = audio_detail::read_u16_le(payload.data() + 14U);
+            if (out.format_tag == 0xFFFEU) {
                 if (payload.size() < 40U) {
                     return fail("Truncated WAVE_FORMAT_EXTENSIBLE fmt chunk");
                 }
+                out.channel_mask = audio_detail::read_u32_le(payload.data() + 20U);
                 const std::uint16_t subfmt = audio_detail::read_u16_le(payload.data() + 24U);
                 static constexpr std::uint8_t kGuidTail[12] = {
                     0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
@@ -277,15 +426,16 @@ inline void append_path_segment(std::string& dst, std::string_view seg) {
                 if (!tail_ok || (subfmt != 1U && subfmt != 3U)) {
                     return fail("Unsupported WAVE_FORMAT_EXTENSIBLE subformat");
                 }
-                format_tag = subfmt;
+                out.format_tag = subfmt;
             }
             have_fmt = true;
-        } else if (audio_detail::matches_ascii4(hdr, "data")) {
-            data_span = payload;
+        } else if (is_data) {
+            out.data_offset = pos;
+            out.data_size = payload_size;
             have_data = true;
         }
-        pos += static_cast<std::size_t>(chunk_size);
-        if ((chunk_size & 1U) != 0U && pos < bytes.size()) {
+        pos += payload_size;
+        if ((payload_size & 1U) != 0U && pos < bytes.size()) {
             ++pos;
         }
         if (have_fmt && have_data) {
@@ -296,83 +446,103 @@ inline void append_path_segment(std::string& dst, std::string_view seg) {
     if (!have_fmt || !have_data) {
         return fail("Missing WAV fmt or data chunk");
     }
-    if (raw_channels == 0U || raw_channels > 8U) {
+    if (out.channels == 0U || out.channels > kMaxAudioSourceChannels) {
         return fail("Unsupported WAV channel count");
     }
-    if (sample_rate == 0U || sample_rate > kMaxAudioSampleRate) {
+    if (out.sample_rate == 0U || out.sample_rate > kMaxAudioSampleRate) {
         return fail("Unsupported WAV sample rate");
     }
-
-    const bool is_int = (format_tag == 1U) &&
-                        (bits_per_sample == 8U || bits_per_sample == 16U ||
-                         bits_per_sample == 24U || bits_per_sample == 32U);
-    const bool is_float = (format_tag == 3U) && (bits_per_sample == 32U);
+    const std::uint16_t bits = out.bits_per_sample;
+    const bool is_int = (out.format_tag == 1U) &&
+                        (bits == 8U || bits == 16U || bits == 24U || bits == 32U);
+    const bool is_float = (out.format_tag == 3U) && (bits == 32U);
     if (!is_int && !is_float) {
         return fail("Unsupported WAV format or bit depth");
     }
-
-    const std::size_t bytes_per_sample = static_cast<std::size_t>(bits_per_sample / 8U);
-    const std::size_t frame_stride = bytes_per_sample * static_cast<std::size_t>(raw_channels);
-    if (frame_stride == 0U) {
-        return fail("Invalid WAV frame stride");
-    }
-    const std::size_t frames = data_span.size() / frame_stride;
-    if (frames == 0U) {
+    if (out.frame_count() == 0U) {
         return fail("Empty WAV data chunk");
     }
-    if (frames > kMaxDecodedAudioSamples / static_cast<std::size_t>(raw_channels)) {
-        return fail("WAV payload exceeds maximum decoded sample bound");
-    }
+    return true;
+}
 
-    std::vector<float> raw_pcm(frames * static_cast<std::size_t>(raw_channels));
-    const std::uint8_t* ptr = data_span.data();
-    const std::size_t total_samples = raw_pcm.size();
-    if (format_tag == 3U) {
-        for (std::size_t i = 0; i < total_samples; ++i) {
+namespace audio_detail {
+
+// Converts `sample_count` interleaved WAV samples starting at `src` to float.
+inline void convert_wav_samples(const WavLayout& layout, const std::uint8_t* src,
+                                std::size_t sample_count, float* dst) noexcept {
+    if (layout.format_tag == 3U) {
+        for (std::size_t i = 0; i < sample_count; ++i) {
             float v = 0.0f;
-            std::memcpy(&v, ptr + i * 4U, sizeof(float));
-            raw_pcm[i] = std::isfinite(v) ? std::clamp(v, -1.0f, 1.0f) : 0.0f;
+            std::memcpy(&v, src + i * 4U, sizeof(float));
+            dst[i] = std::isfinite(v) ? std::clamp(v, -1.0f, 1.0f) : 0.0f;
         }
-    } else if (bits_per_sample == 8U) {
-        for (std::size_t i = 0; i < total_samples; ++i) {
-            raw_pcm[i] = (static_cast<float>(ptr[i]) - 128.0f) / 128.0f;
-        }
-    } else if (bits_per_sample == 16U) {
-        for (std::size_t i = 0; i < total_samples; ++i) {
-            const std::int16_t s =
-                static_cast<std::int16_t>(audio_detail::read_u16_le(ptr + i * 2U));
-            raw_pcm[i] = static_cast<float>(s) / 32768.0f;
-        }
-    } else if (bits_per_sample == 24U) {
-        for (std::size_t i = 0; i < total_samples; ++i) {
-            const std::uint8_t* p = ptr + i * 3U;
-            std::uint32_t u = static_cast<std::uint32_t>(p[0]) |
-                              (static_cast<std::uint32_t>(p[1]) << 8U) |
-                              (static_cast<std::uint32_t>(p[2]) << 16U);
-            if ((u & 0x800000U) != 0U) {
-                u |= 0xFF000000U;
-            }
-            const std::int32_t s = static_cast<std::int32_t>(u);
-            raw_pcm[i] = static_cast<float>(s) / 8388608.0f;
-        }
-    } else {
-        for (std::size_t i = 0; i < total_samples; ++i) {
-            const std::int32_t s =
-                static_cast<std::int32_t>(audio_detail::read_u32_le(ptr + i * 4U));
-            raw_pcm[i] = static_cast<float>(static_cast<double>(s) / 2147483648.0);
-        }
+        return;
     }
+    switch (layout.bits_per_sample) {
+        case 8U:
+            for (std::size_t i = 0; i < sample_count; ++i) {
+                dst[i] = (static_cast<float>(src[i]) - 128.0f) * (1.0f / 128.0f);
+            }
+            break;
+        case 16U:
+            for (std::size_t i = 0; i < sample_count; ++i) {
+                const auto s = static_cast<std::int16_t>(read_u16_le(src + i * 2U));
+                dst[i] = static_cast<float>(s) * (1.0f / 32768.0f);
+            }
+            break;
+        case 24U:
+            for (std::size_t i = 0; i < sample_count; ++i) {
+                const std::uint8_t* p = src + i * 3U;
+                // Place the 24 bits at the top of a 32-bit word; the arithmetic
+                // value is then the sign-extended sample scaled by 256.
+                const std::uint32_t u = (static_cast<std::uint32_t>(p[0]) << 8U) |
+                                        (static_cast<std::uint32_t>(p[1]) << 16U) |
+                                        (static_cast<std::uint32_t>(p[2]) << 24U);
+                dst[i] = static_cast<float>(static_cast<std::int32_t>(u)) *
+                         (1.0f / 2147483648.0f);
+            }
+            break;
+        default:
+            for (std::size_t i = 0; i < sample_count; ++i) {
+                const auto s = static_cast<std::int32_t>(read_u32_le(src + i * 4U));
+                dst[i] = static_cast<float>(s) * (1.0f / 2147483648.0f);
+            }
+            break;
+    }
+}
 
-    out.sample_rate = sample_rate;
-    audio_detail::downmix_or_copy_to_mono_or_stereo(raw_pcm, raw_channels, out.channels,
-                                                    out.samples);
+}  // namespace audio_detail
+
+// Clean-room RIFF/WAVE PCM decoder (8/16/24/32-bit integer and 32-bit float).
+[[nodiscard]] inline bool decode_wav_pcm(std::span<const std::uint8_t> bytes,
+                                         AudioPcmBuffer& out,
+                                         std::string* error_out = nullptr) {
+    out = {};
+    WavLayout layout{};
+    if (!parse_wav_layout(bytes, layout, error_out)) {
+        return false;
+    }
+    const std::size_t frames = layout.frame_count();
+    if (frames > kMaxDecodedAudioSamples / static_cast<std::size_t>(layout.channels)) {
+        if (error_out != nullptr) {
+            *error_out = "WAV payload exceeds maximum decoded sample bound";
+        }
+        return false;
+    }
+    out.samples.resize(frames * static_cast<std::size_t>(layout.channels));
+    audio_detail::convert_wav_samples(layout, bytes.data() + layout.data_offset,
+                                      out.samples.size(), out.samples.data());
+    out.sample_rate = layout.sample_rate;
+    out.channels = layout.channels;
+    audio_detail::fold_to_stereo_in_place(out.samples, out.channels,
+                                          audio_detail::ChannelOrder::wav, layout.channel_mask);
     return out.valid();
 }
 
-// Streams RIFF/WAVE PCM directly from an owned buffer.
-class WavStreamDecoder final : public AudioStreamDecoder {
+// Streams an already decoded `AudioPcmBuffer` (tests, predecoded tracks).
+class PcmBufferStreamDecoder final : public AudioStreamDecoder {
 public:
-    explicit WavStreamDecoder(AudioPcmBuffer buffer) : buf_(std::move(buffer)) {}
+    explicit PcmBufferStreamDecoder(AudioPcmBuffer buffer) : buf_(std::move(buffer)) {}
 
     [[nodiscard]] std::uint32_t sample_rate() const noexcept override { return buf_.sample_rate; }
     [[nodiscard]] std::uint16_t channels() const noexcept override { return buf_.channels; }
@@ -395,8 +565,7 @@ public:
         if (cursor_ >= total) {
             return 0U;
         }
-        const std::size_t avail = total - cursor_;
-        const std::size_t count = std::min(avail, max_frames);
+        const std::size_t count = std::min(total - cursor_, max_frames);
         const std::size_t ch = static_cast<std::size_t>(buf_.channels);
         out_interleaved.assign(buf_.samples.begin() + static_cast<std::ptrdiff_t>(cursor_ * ch),
                                buf_.samples.begin() +
@@ -407,6 +576,65 @@ public:
 
 private:
     AudioPcmBuffer buf_{};
+    std::size_t cursor_ = 0U;
+};
+
+// Streams RIFF/WAVE PCM straight from the owned file bytes, converting only the
+// frames each `read_frames` call asks for (no full-file float copy).
+class WavStreamDecoder final : public AudioStreamDecoder {
+public:
+    // Returns nullptr (and sets `error_out`) when the header does not validate.
+    [[nodiscard]] static std::unique_ptr<WavStreamDecoder> open(std::vector<std::uint8_t> bytes,
+                                                                std::string* error_out = nullptr) {
+        WavLayout layout{};
+        if (!parse_wav_layout(bytes, layout, error_out)) {
+            return nullptr;
+        }
+        return std::unique_ptr<WavStreamDecoder>(new WavStreamDecoder(std::move(bytes), layout));
+    }
+
+    [[nodiscard]] std::uint32_t sample_rate() const noexcept override {
+        return layout_.sample_rate;
+    }
+    [[nodiscard]] std::uint16_t channels() const noexcept override {
+        return layout_.channels <= 2U ? layout_.channels : 2U;
+    }
+    [[nodiscard]] std::uint64_t total_frames() const noexcept override {
+        return static_cast<std::uint64_t>(layout_.frame_count());
+    }
+    [[nodiscard]] std::uint64_t cursor_frame() const noexcept override { return cursor_; }
+    [[nodiscard]] bool seek_start() override {
+        cursor_ = 0U;
+        return true;
+    }
+
+    [[nodiscard]] std::size_t read_frames(std::size_t max_frames,
+                                          std::vector<float>& out_interleaved) override {
+        out_interleaved.clear();
+        const std::size_t total = layout_.frame_count();
+        if (max_frames == 0U || cursor_ >= total) {
+            return 0U;
+        }
+        const std::size_t count = std::min(total - cursor_, max_frames);
+        const std::size_t ch = layout_.channels;
+        out_interleaved.resize(count * ch);
+        audio_detail::convert_wav_samples(
+            layout_, bytes_.data() + layout_.data_offset + cursor_ * layout_.frame_stride(),
+            out_interleaved.size(), out_interleaved.data());
+        std::uint16_t out_ch = layout_.channels;
+        audio_detail::fold_to_stereo_in_place(out_interleaved, out_ch,
+                                              audio_detail::ChannelOrder::wav,
+                                              layout_.channel_mask);
+        cursor_ += count;
+        return count;
+    }
+
+private:
+    WavStreamDecoder(std::vector<std::uint8_t> bytes, const WavLayout& layout)
+        : bytes_(std::move(bytes)), layout_(layout) {}
+
+    std::vector<std::uint8_t> bytes_{};
+    WavLayout layout_{};
     std::size_t cursor_ = 0U;
 };
 
@@ -442,11 +670,7 @@ private:
     const AudioCodecBackend* backend, std::string* error_out = nullptr) {
     const AudioCodecKind kind = detect_audio_codec(owned_bytes, filename_hint);
     if (kind == AudioCodecKind::wav) {
-        AudioPcmBuffer wav;
-        if (!decode_wav_pcm(owned_bytes, wav, error_out)) {
-            return nullptr;
-        }
-        return std::make_unique<WavStreamDecoder>(std::move(wav));
+        return WavStreamDecoder::open(std::move(owned_bytes), error_out);
     }
     if (kind == AudioCodecKind::unknown) {
         if (error_out != nullptr) {
@@ -461,6 +685,25 @@ private:
         return nullptr;
     }
     return backend->open_stream(kind, std::move(owned_bytes), error_out);
+}
+
+// Reconstructs the `mbAgent::playSound` (`0x140057010`) human voice pitch hash.
+// Retail computes it with wrapping 32-bit `imul` and a signed `idiv`; the products
+// are formed in `uint32_t` here because the same arithmetic on `int32_t` overflows
+// (undefined behaviour) for large `skin_or_dna` values.
+[[nodiscard]] inline float compute_agent_voice_pitch(std::int32_t agent_no,
+                                                     std::int32_t troop_no,
+                                                     std::int32_t skin_or_dna) noexcept {
+    const std::uint32_t sum =
+        (static_cast<std::uint32_t>(agent_no) + 29U) * 0x14fdU +
+        static_cast<std::uint32_t>(troop_no) * 0x76efU +
+        static_cast<std::uint32_t>(skin_or_dna) * 0x244adU;
+    std::int32_t acc = static_cast<std::int32_t>(sum);  // C++20: modular conversion
+    acc %= 0x1b41;
+    acc = (acc * 0x51f) % 0x367;  // |acc| < 0x1b41, so this product cannot overflow
+    const float unit = static_cast<float>(acc) / 871.0f;
+    const float delta = (unit - 0.5f) * 0.14f;
+    return 1.0f + std::clamp(delta, -0.15f, 0.15f);
 }
 
 // Retail `mbSoundSample::readStream` (0x1403317c0) 4-step file search order:
@@ -542,8 +785,8 @@ private:
 }
 
 // Mirrors `mbSoundSample::playSound` (0x140331cb0) & `mbSoundManager::setChannelPropertiesAndPlay`
-// (0x140332e96): priority nibble `[4..7]` defaults to 5 when 0; volume nibble `[8..11]` defaults
-// to 10 when 0 and divides by `15.0f` (`0x140332eb1`).
+// (0x140332d80, +0x116): priority nibble `[4..7]` defaults to 5 when 0; volume nibble `[8..11]`
+// defaults to 10 when 0 and divides by `15.0f` (+0x131).
 [[nodiscard]] constexpr int decode_sound_priority_nibble(std::uint32_t flags) noexcept {
     const std::uint32_t nibble = (flags >> 4U) & 0xFU;
     return nibble == 0U ? 5 : static_cast<int>(nibble);
@@ -555,7 +798,7 @@ private:
     return static_cast<float>(eff) / 15.0f;
 }
 
-// Mirrors `mbMusicTrack::readStream` (`0x140290a78`): merges `flags` into `continue_flags`
+// Mirrors `mbMusicTrack::readStream` (`0x140290710`, +0x368): merges `flags` into `continue_flags`
 // and expands culture mask `0` to `0x3F` (all 6 native factions/cultures).
 struct NormalizedMusicFlags {
     std::uint32_t flags = 0;

@@ -93,7 +93,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/headless_test.cpp` | host tests for `run_headless_module()` / `run_headless_session()` (`game_start` + multi-frame triggers over `MemoryVfs` and `HostVfs`, loud unimplemented-opcode failure, compatibility-mode continuation past unimplemented opcodes, and missing `game_start` / load error diagnostics) | in-memory + temp-directory fixtures |
 | `tests/lua_test.cpp` | host tests for Lua 5.1.5 stdlib/`bit`/`vector3`/`pos`, `msfiles/` + `variables.txt` parsers, `game.*` / `_G.*` callbacks, trigger/item/prop/prsnt/psys/iterator/hook paths, opcodes `5100`–`5114` + 9 `On*` events, and sandboxed `HostVfs` headless `main.lua` execution | `MemoryVfs` + temp-directory `HostVfs` fixtures |
 | `tests/asset_test.cpp` | host tests for all 8 `.brf` resource types (`rfver` 0 and `rfver` 1), `MetaMesh` LOD grouping, `module.ini` resource catalogs over `MemoryVfs`, `.dds` block/uncompressed/`L16`/`DX10` decoding, Warband texture resolution priority, and P5 effect/INI/shader/material resolution + `GLShaders`/WSE2 SPIR-V persistent caching | synthetic binary + `MemoryVfs` fixtures |
-| `tests/audio_test.cpp` | host tests for RIFF/WAVE PCM (`8`/`16`/`24`/`32`-bit & float/`0xFFFE`), OGG Vorbis + MP3 decoding & chunked streaming (`wse_audio`), 4-step sound & music lookup order, `WseAudioMixer` 3D constant-power panning / attenuation / LOD / priority eviction / occlusion hysteresis / deterministic hash / `0.5s`+`5.0s` music scheduler, VM/world audio integration (`599..604`, `609`, `615..616`, `1750`, `1808`, `1881..1882`, `3618`), and opt-in retail `Native` + `Phantasy Calradia` audio gate | synthetic WAV/OGG/MP3 + `MemoryVfs` + `CaptureAudioDevice` (+ optional `HostVfs` retail install) |
+| `tests/audio_test.cpp` | P6 review regressions (re-entrant end callbacks, `set_config` during playback, voice-pitch overflow, whole-sample random start, same-track `play_track`, stream/predecoded parity across chunk boundaries, loop-point interpolation, surround fold, oversized WAV `data`, config sanitising, clock regression, `615` after failure, prop/agent channel replacement, sounds following agents) plus host tests for RIFF/WAVE PCM (`8`/`16`/`24`/`32`-bit & float/`0xFFFE`), OGG Vorbis + MP3 decoding & chunked streaming (`wse_audio`), 4-step sound & music lookup order, `WseAudioMixer` 3D constant-power panning / attenuation / LOD / priority eviction / occlusion hysteresis / deterministic hash / `0.5s`+`5.0s` music scheduler, VM/world audio integration (`599..604`, `609`, `615..616`, `1750`, `1808`, `1881..1882`, `3618`), and opt-in retail `Native` + `Phantasy Calradia` audio gate | synthetic WAV/OGG/MP3 + `MemoryVfs` + `CaptureAudioDevice` (+ optional `HostVfs` retail install) |
 | `tests/wse_selftest.{h,cpp}`, `tests/selftest_host_test.cpp` | shared aggregate runner invoking all `20` core suites (`WSE_SELF_TEST_LIBRARY=1`) for both host verification (`selftest_host_test`) and the Android SDL3 `libwse2.so` app shell (`platform/sdl/sdl_selftest_main.cpp`); `run_all_suites` takes an optional stop callback polled between suites. In the CMake build each suite is compiled once into `wse_selftest` and every `<name>_test` executable is `tests/suite_main.cpp` linked against it | all 20 suites + `fixtures/scripts.txt` |
 
 ## Module text format
@@ -540,6 +540,45 @@ Platform P5 review fixes (behaviour notes and safety deviations):
   - **WSI:** `android_surface_wsi` now enables `VK_KHR_surface` + `VK_KHR_android_surface` on the
     instance and `VK_KHR_swapchain` on the device; a device without it (or an instance refusing the
     extensions) falls back to the offscreen bridge with `presentation_note`.
+
+P6 audio (`wse/asset/audio.h`, `wse/platform/audio.h`, `wse/game/world_audio.h`, P6 review fixes):
+
+- **WAV:** a `data` chunk whose declared size runs past the end of the file (`0xFFFFFFFF` from
+  streamed writers, or a cut-short file) plays the frames present instead of failing; other
+  truncated chunks are still rejected. Memory decodes stop at `kMaxDecodedAudioSamples` (10 minutes
+  of 48 kHz stereo); music always streams (`WavStreamDecoder` converts from the file bytes per
+  read, never the whole file).
+- **Surround fold:** sources with 3–8 channels fold to stereo by speaker position (WAV
+  `dwChannelMask` or its default, Vorbis I channel order): front 1.0, centre/side/back -3 dB,
+  back-centre and unknown -6 dB to both sides, LFE dropped, normalised so the fold cannot clip.
+  FMOD's own downmix is not reconstructed. MPEG sync detection rejects the reserved layer `00`
+  (AAC ADTS).
+- **Mixer:** channel-end callbacks are queued and delivered once the mixer is consistent (after the
+  mix block, after the stop, or after the new sound owns an evicted slot), so callbacks may play or
+  stop sounds. `set_config` sanitises values (`max_distance_3d >= min_distance_3d > 0`, finite
+  non-negative volumes, channel counts in `[1, 256]`) and only ends channels when
+  `max_virtual_channels` shrinks. Per-voice and per-music-slot gains ramp linearly across each
+  block; the bus uses `soft_clip_sample` (identity to 0.8, tanh knee) instead of a hard clamp; the
+  occlusion low-pass coefficient scales with the output rate and is primed from the current sample
+  when it engages. Looping samples interpolate across the loop point; streamed music carries the
+  last frame of each 2048-frame chunk so interpolation is continuous across refills.
+- **Random start (`kSoundFlagRandomStartPos`):** `(rand15 * frames) >> 15`, covering the whole
+  sample. The exact retail formula at `0x140332d80` was not re-checked; a `rand() % frames` form
+  could only reach the first 32767 frames.
+- **Music scheduler:** `play_track` for the track already playing (option 1 or 2) keeps it playing
+  and cancels a pending fade instead of stopping it and then dropping the request. `update()`
+  re-bases its stored timestamps when the caller's clock jumps backwards. Clocks are `double`.
+- **`last_sound_channel` / `615`:** the mixer reports the result of the most recent play request,
+  `-1` included, matching what `599`/`600`/`1750`/`1881` store.
+- **Opcodes:** `1881` stops the prop's previous channel before playing (one sound per prop
+  instance); `1750` stops the agent's previous channel only when it is looping (one-shots finish)
+  and passes `compute_agent_voice_pitch(agent_no, troop_no, dna)` for human agents; the mapping of
+  the hash's third input to `WseAgent::dna` is not yet verified against `0x140057010`.
+  `WorldAudioBridge::update` moves agent/prop channels to their owners' positions each tick. A
+  sample that fails to read or decode is remembered and not retried on every play.
+- **Not implemented:** Doppler (`velocity`), HRTF (`hrtf_filter`), and the retail random frequency
+  variation that `kSoundFlagDisableFreqVariation` disables. `distance_filter` gates distance
+  rolloff; whether retail `bDistanceFilter` meant rolloff or a distance low-pass is unverified.
 
 ## Handler design decisions and limits
 

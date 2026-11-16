@@ -100,20 +100,23 @@ public:
         if (handle_ == nullptr || max_frames == 0U || raw_channels_ == 0U) {
             return 0U;
         }
+        // Decode straight into the caller's buffer (capacity is reused across calls),
+        // then fold surround layouts to stereo in place.
         const std::size_t capped = std::min<std::size_t>(max_frames, 65536U);
         const std::size_t ch = static_cast<std::size_t>(raw_channels_);
-        std::vector<float> tmp(capped * ch);
+        out_interleaved.resize(capped * ch);
         const int decoded = stb_vorbis_get_samples_float_interleaved(
-            handle_, static_cast<int>(raw_channels_), tmp.data(),
-            static_cast<int>(tmp.size()));
+            handle_, static_cast<int>(raw_channels_), out_interleaved.data(),
+            static_cast<int>(out_interleaved.size()));
         if (decoded <= 0) {
+            out_interleaved.clear();
             return 0U;
         }
         const std::size_t n = static_cast<std::size_t>(decoded);
-        tmp.resize(n * ch);
-        std::uint16_t actual_ch = out_channels_;
-        audio_detail::downmix_or_copy_to_mono_or_stereo(tmp, raw_channels_, actual_ch,
-                                                        out_interleaved);
+        out_interleaved.resize(n * ch);
+        std::uint16_t out_ch = raw_channels_;
+        audio_detail::fold_to_stereo_in_place(out_interleaved, out_ch,
+                                              audio_detail::ChannelOrder::vorbis, 0U);
         cursor_ += static_cast<std::uint64_t>(n);
         return n;
     }
@@ -162,14 +165,15 @@ public:
             opened_ = false;
             return false;
         }
-        out_channels_ = (raw_channels_ <= 2U) ? raw_channels_ : 2U;
-        total_frames_ = static_cast<std::uint64_t>(drmp3_get_pcm_frame_count(&mp3_));
+        out_channels_ = raw_channels_;  // MPEG audio is mono or stereo
+        // `drmp3_get_pcm_frame_count` would walk every frame header of the file and
+        // seek back; the mixer never needs the length, so report "unknown" (0).
         return true;
     }
 
     [[nodiscard]] std::uint32_t sample_rate() const noexcept override { return mp3_.sampleRate; }
     [[nodiscard]] std::uint16_t channels() const noexcept override { return out_channels_; }
-    [[nodiscard]] std::uint64_t total_frames() const noexcept override { return total_frames_; }
+    [[nodiscard]] std::uint64_t total_frames() const noexcept override { return 0U; }
     [[nodiscard]] std::uint64_t cursor_frame() const noexcept override { return cursor_; }
 
     [[nodiscard]] bool seek_start() override {
@@ -188,16 +192,10 @@ public:
         }
         const std::size_t capped = std::min<std::size_t>(max_frames, 65536U);
         const std::size_t ch = static_cast<std::size_t>(raw_channels_);
-        std::vector<float> tmp(capped * ch);
-        const drmp3_uint64 got = drmp3_read_pcm_frames_f32(&mp3_, capped, tmp.data());
-        if (got == 0U) {
-            return 0U;
-        }
+        out_interleaved.resize(capped * ch);
+        const drmp3_uint64 got = drmp3_read_pcm_frames_f32(&mp3_, capped, out_interleaved.data());
         const std::size_t n = static_cast<std::size_t>(got);
-        tmp.resize(n * ch);
-        std::uint16_t actual_ch = out_channels_;
-        audio_detail::downmix_or_copy_to_mono_or_stereo(tmp, raw_channels_, actual_ch,
-                                                        out_interleaved);
+        out_interleaved.resize(n * ch);
         cursor_ += static_cast<std::uint64_t>(n);
         return n;
     }
@@ -208,7 +206,6 @@ private:
     bool opened_ = false;
     std::uint16_t raw_channels_ = 0;
     std::uint16_t out_channels_ = 0;
-    std::uint64_t total_frames_ = 0;
     std::uint64_t cursor_ = 0;
 };
 
@@ -241,24 +238,33 @@ bool decode_vorbis_memory(std::span<const std::uint8_t> bytes,
         return false;
     }
 
+    // Reserve the exact size when the stream length is known (one last-page seek),
+    // then decode straight into `raw` instead of bouncing through a stack chunk.
     std::vector<float> raw;
-    float chunk[4096];
+    const std::size_t ch_sz = static_cast<std::size_t>(ch);
+    const unsigned int known_frames = stb_vorbis_stream_length_in_samples(v);
+    if (known_frames > 0U &&
+        static_cast<std::size_t>(known_frames) <= kMaxDecodedAudioSamples / ch_sz) {
+        raw.reserve(static_cast<std::size_t>(known_frames) * ch_sz);
+    }
+    constexpr std::size_t kChunkFrames = 4096U;
     while (true) {
+        const std::size_t old = raw.size();
+        raw.resize(old + kChunkFrames * ch_sz);
         const int n = stb_vorbis_get_samples_float_interleaved(
-            v, info.channels, chunk, static_cast<int>(sizeof(chunk) / sizeof(chunk[0])));
-        if (n <= 0) {
-            break;
-        }
-        const std::size_t add_samples =
-            static_cast<std::size_t>(n) * static_cast<std::size_t>(ch);
-        if (raw.size() + add_samples > kMaxDecodedAudioSamples) {
+            v, info.channels, raw.data() + old, static_cast<int>(kChunkFrames * ch_sz));
+        const std::size_t got = (n > 0) ? static_cast<std::size_t>(n) : 0U;
+        raw.resize(old + got * ch_sz);
+        if (raw.size() > kMaxDecodedAudioSamples) {
             stb_vorbis_close(v);
             if (error_out != nullptr) {
                 *error_out = "Ogg Vorbis stream exceeds maximum decoded sample bound";
             }
             return false;
         }
-        raw.insert(raw.end(), chunk, chunk + add_samples);
+        if (got == 0U) {
+            break;
+        }
     }
     stb_vorbis_close(v);
 
@@ -269,7 +275,10 @@ bool decode_vorbis_memory(std::span<const std::uint8_t> bytes,
         return false;
     }
     out.sample_rate = sr;
-    audio_detail::downmix_or_copy_to_mono_or_stereo(raw, ch, out.channels, out.interleaved);
+    out.channels = ch;
+    audio_detail::fold_to_stereo_in_place(raw, out.channels, audio_detail::ChannelOrder::vorbis,
+                                          0U);
+    out.interleaved = std::move(raw);
     return !out.interleaved.empty();
 }
 
@@ -298,24 +307,24 @@ bool decode_mp3_memory(std::span<const std::uint8_t> bytes,
     }
 
     std::vector<float> raw;
-    float chunk[4096];
-    const drmp3_uint64 max_frames =
-        static_cast<drmp3_uint64>((sizeof(chunk) / sizeof(chunk[0])) / ch);
+    const std::size_t ch_sz = static_cast<std::size_t>(ch);
+    constexpr std::size_t kChunkFrames = 4096U;
     while (true) {
-        const drmp3_uint64 got = drmp3_read_pcm_frames_f32(&mp3, max_frames, chunk);
-        if (got == 0U) {
-            break;
-        }
-        const std::size_t add_samples =
-            static_cast<std::size_t>(got) * static_cast<std::size_t>(ch);
-        if (raw.size() + add_samples > kMaxDecodedAudioSamples) {
+        const std::size_t old = raw.size();
+        raw.resize(old + kChunkFrames * ch_sz);
+        const drmp3_uint64 got =
+            drmp3_read_pcm_frames_f32(&mp3, kChunkFrames, raw.data() + old);
+        raw.resize(old + static_cast<std::size_t>(got) * ch_sz);
+        if (raw.size() > kMaxDecodedAudioSamples) {
             drmp3_uninit(&mp3);
             if (error_out != nullptr) {
                 *error_out = "MP3 stream exceeds maximum decoded sample bound";
             }
             return false;
         }
-        raw.insert(raw.end(), chunk, chunk + add_samples);
+        if (got == 0U) {
+            break;
+        }
     }
     drmp3_uninit(&mp3);
 
@@ -326,7 +335,8 @@ bool decode_mp3_memory(std::span<const std::uint8_t> bytes,
         return false;
     }
     out.sample_rate = sr;
-    audio_detail::downmix_or_copy_to_mono_or_stereo(raw, ch, out.channels, out.interleaved);
+    out.channels = ch;  // MPEG audio is mono or stereo
+    out.interleaved = std::move(raw);
     return !out.interleaved.empty();
 }
 

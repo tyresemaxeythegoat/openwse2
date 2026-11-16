@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <span>
 
+#include "wse/asset/audio.h"
 #include "wse/vm/block_vm.h"
 
 namespace wse::vm {
@@ -329,8 +330,21 @@ namespace wse::vm {
             world.played_sounds.push_back(game::WseBattleEvent{
                 1, narrow[1], narrow[0], 0, ag.position.o});
             if (world.audio_runtime != nullptr) {
+                // A looping sound the agent still owns would otherwise be orphaned
+                // (agent_stop_sound only reaches the newest channel); one-shot
+                // sounds are left to finish.
+                if (ag.m5.sound_channel >= 0 &&
+                    world.audio_runtime->is_channel_looping(ag.m5.sound_channel)) {
+                    world.audio_runtime->stop_channel(ag.m5.sound_channel);
+                }
+                // Human agents get the `mbAgent::playSound` (0x140057010) per-agent
+                // voice pitch; the mixer ignores it when frequency variation is off.
+                const float pitch =
+                    (ag.type == 0) ? wse::asset::compute_agent_voice_pitch(
+                                         narrow[0], ag.troop_no, ag.dna)
+                                   : 1.0f;
                 const std::int32_t ch = world.audio_runtime->play_sound(
-                    narrow[1], ag.position.o, 0U, 1.0f, 0);
+                    narrow[1], ag.position.o, 0U, pitch, 0);
                 ag.m5.sound_channel = ch;
                 world.music.last_sound_channel = ch;
             }
