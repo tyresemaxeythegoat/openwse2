@@ -802,6 +802,162 @@ public:
         return follow_presentation_state(world, vm_ctx, presentations);
     }
 
+    // Result of one `drive_frame` call.
+    struct FrameReport {
+        bool opened_presentation = false;  // window 0x16 opened this frame (`-60` fired)
+        bool opened_notes = false;         // window 0x15 opened this frame
+        bool closed_for_mission = false;   // a modal window was dropped because a scene is up
+        bool presentation_open = false;    // window 0x16 is open after this frame
+    };
+
+    // Per-frame runtime glue (port infrastructure, no single retail counterpart). Call once per
+    // frame after `WseWorldState::step_world_frame`, passing `world.m5.active_window` as it was
+    // before that call:
+    // - campaign frames: when `consume_campaign_queued_window` (`mbMapWindow::frameMove`
+    //   `0x140117f90`) opened window `0x16`, starts `world.active_presentation_no`
+    //   (`start_presentation`); when it opened `0x15`, opens the notes window for
+    //   `m5.screen_note_kind` / `m5.screen_note_object` (`change_screen_notes` `0x1401dc108`);
+    //   otherwise steps an open presentation (`-61`, duration countdown, auto-close). A
+    //   presentation does not also step on the frame it opens.
+    // - mission frames (`lighting.has_scene`): `step_world_frame` has already retired the
+    //   campaign windows, so an open notes / presentation window is dropped here without writing
+    //   a campaign window back. Mission-side presentations (`start_presentation` in a scene,
+    //   which queues nothing) are not driven yet (`STATUS.md` §5).
+    FrameReport drive_frame(WseWorldState& world,
+                            vm::VmContext& vm_ctx,
+                            float dt_s,
+                            std::span<const LoadedPresentation> presentations,
+                            std::int32_t window_before_frame) {
+        FrameReport rep{};
+        const bool modal_open =
+            current_window == kScreenWindowNotes || current_window == kScreenWindowPresentation;
+        if (world.lighting.has_scene) {
+            if (modal_open) {
+                const std::int32_t m5_win = world.m5.active_window;
+                const std::int32_t ui_win = world.m6.ui.active_window_id;
+                close_active_modal_window(world);
+                world.m5.active_window = m5_win;
+                world.m6.ui.active_window_id = ui_win;
+                current_window = -1;
+                rep.closed_for_mission = true;
+            }
+            return rep;
+        }
+
+        const std::int32_t win = world.m5.active_window;
+        // Return target for a window opened this frame: the window that was up before the
+        // queue was consumed, or (from another modal window) wherever that one returns to.
+        std::int32_t prev = kScreenWindowMap;
+        if (modal_open) {
+            prev = kUiReturnToCurrentWindow;
+        } else if (window_before_frame >= 0 && window_before_frame != kScreenWindowNotes &&
+                   window_before_frame != kScreenWindowPresentation) {
+            prev = window_before_frame;
+        }
+
+        if (win == kScreenWindowPresentation && current_window != kScreenWindowPresentation) {
+            const std::int32_t back = resolve_prev_window(prev);
+            if (start_presentation(world, vm_ctx, world.active_presentation_no, presentations,
+                                   100.0f, prev)) {
+                rep.opened_presentation = true;
+            } else if (current_window != kScreenWindowPresentation) {
+                // Unknown presentation number: nothing opens, so the queued transition must
+                // not leave window 0x16 as the active window.
+                world.active_presentation_no = -1;
+                world.m5.active_window = back;
+                world.m6.ui.active_window_id = back;
+            }
+        } else if (win == kScreenWindowNotes && current_window != kScreenWindowNotes) {
+            if (current_window == kScreenWindowPresentation) {
+                // The notes window replaces the presentation; return where it would have.
+                close_active_modal_window(world);
+                prev = kUiReturnToCurrentWindow;
+            }
+            std::string title;
+            std::string body;
+            describe_note_target(world, world.m5.screen_note_kind, world.m5.screen_note_object,
+                                 title, body);
+            open_notes_window(world, title, body, prev);
+            rep.opened_notes = true;
+        } else if (current_window == kScreenWindowPresentation) {
+            (void)step_presentation(world, vm_ctx, dt_s, presentations);
+        }
+        rep.presentation_open = current_window == kScreenWindowPresentation;
+        return rep;
+    }
+
+    // Title and body text for the notes window of `change_screen_notes` kind `kind` (1 troop,
+    // 2 faction, 3 party, 4 quest, 5 info page). Port approximation of `mbNotesWindow`'s
+    // content (`STATUS.md` §5): the object's name / title, then its description text (quest,
+    // info page) and its non-empty note slots, one per paragraph.
+    static void describe_note_target(const WseWorldState& world,
+                                     std::int32_t kind,
+                                     std::int32_t object,
+                                     std::string& title,
+                                     std::string& body) {
+        title.clear();
+        body.clear();
+        if (object < 0) {
+            return;
+        }
+        const auto idx = static_cast<std::size_t>(object);
+        const auto add_para = [&body](std::string_view text) {
+            if (text.empty()) {
+                return;
+            }
+            if (!body.empty()) {
+                body += "\n\n";
+            }
+            body += text;
+        };
+        const auto add_notes = [&](const auto& notes) {
+            for (const auto& note : notes) {
+                add_para(u16_to_utf8(note.text));
+            }
+        };
+        switch (kind) {
+        case 1:
+            if (idx < world.troops.size()) {
+                title = world.troops[idx].name;
+                add_notes(world.troops[idx].notes);
+            }
+            break;
+        case 2:
+            if (idx < world.factions.size()) {
+                title = world.factions[idx].name;
+                add_notes(world.factions[idx].notes);
+            }
+            break;
+        case 3:
+            if (idx < world.parties.size()) {
+                title = world.parties[idx].name;
+                add_notes(world.parties[idx].notes);
+            }
+            break;
+        case 4:
+            if (idx < world.quests.size()) {
+                title = world.quests[idx].title;
+                add_para(world.quests[idx].text);
+                add_notes(world.quests[idx].notes);
+            }
+            break;
+        case 5:
+            if (idx < world.info_pages.size()) {
+                const WseInfoPage& page = world.info_pages[idx];
+                title = page.title;
+                add_para(page.text);
+                for (const WseNoteEntry& note : page.notes) {
+                    if (note.available) {
+                        add_para(u16_to_utf8(note.text));
+                    }
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
     // Rebuilds overlay widgets inside `root` from `world.overlays` & `world.m6.ui.overlay_ext`
     // (`create_*_overlay` opcodes 910..953). `overlay_set_size` is a scale (1.0 = default
     // size): it scales overlay text and the mesh / button extents. Overlay colours are

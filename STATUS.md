@@ -109,15 +109,15 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `wse_m6_test.cpp` | 7 |
 | `platform_test.cpp` | 13 |
 | `module_loaders_test.cpp` | 6 |
-| `headless_test.cpp` | 5 |
+| `headless_test.cpp` | 6 |
 | `lua_test.cpp` | 7 |
 | `asset_test.cpp` | 10 |
 | `audio_test.cpp` | 8 |
 | `input_test.cpp` | 8 |
 | `scene_test.cpp` | 6 |
-| `ui_test.cpp` | 6 |
+| `ui_test.cpp` | 7 |
 | `selftest_host_test.cpp` *(aggregate runner over the 23 suites)* | 23 suites |
-| **Total (23 standalone suites + aggregate runner)** | **180** |
+| **Total (23 standalone suites + aggregate runner)** | **182** |
 
 ## 4. Blocked
 
@@ -134,7 +134,7 @@ Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
 
 1. ~~**P5 GLSL → SPIR-V translator:**~~ **Done:** `emit_placeholder_spirv_module` has been replaced by `lower_warband_glsl_to_vulkan450` (`wse/asset/shader.h`) + Khronos `glslang 16.6.0` (`wse/asset/shader_compiler.h`, `wse_shader`), with `SpirvShaderCache` (`kWseSpirvGeneratorVersion = 4`) persisting validated SPIR-V 1.0 binaries plus `.refl` reflection sidecars. Re-verified `271/271` retail Warband techniques (`Native` & `Phantasy Calradia`) at generator `4` (`spirv_fail = 0`) and clean Windows `build_host.ps1` (`aa754f6`).
 2. ~~**P8 Sensors + performance (SDL3 / Android):**~~ **Host-verified (device run pending hardware):** added `wse/platform/performance.h` (`FrameRateCap` 60/90/120 Hz + uncapped, `PresentModePreference`, hysteretic `ThermalPerformanceController`, drift-free `FramePacer`, `RuntimePerformanceHub`, persistent `Vfs` JSON settings), opt-in low-pass filtered `Mission` gyro aiming + `CampaignMap` two-finger pinch-to-zoom (`wse/platform/input.h`, `wse/game/world_input.h`), `SDL_INIT_SENSOR` `SDL_SENSOR_GYRO` (`platform/sdl/sdl_input.{h,cpp}`), Android `PowerManager` thermal listener/`getThermalHeadroom` + `ANativeWindow_setFrameRate*` + SDL3 pacing (`sdl_selftest_main.cpp`, `saf_vfs_jni.cpp`, `WseActivity.kt`, `WseSafBridge.kt`), and persisted launcher toggles (`WseLauncherActivity.kt`).
-3. **P9 Convergence with Phase 2 & device verification (`arm64-v8a` APK):** first, drive `UiSession` from the runtime frame loop (open item 1 of the P9 Part 2 review list below); then scene/terrain/skeletal rendering, widgets/presentations, Bullet physics, plus installing `wse2-android-selftest-debug-apk` on an `arm64-v8a` device to record live SAF timing, SDL3 audio playback, touch/gamepad/gyro/pinch controls, 60/90/120 Hz frame pacing + thermal throttling, and real Turnip/PanVK/System Vulkan probe results.
+3. **P9 Convergence with Phase 2 & device verification (`arm64-v8a` APK):** first, drive `UiSession` from the Android frame loop and render it with `UiRhiRenderer` (the headless runner already drives it; open item 1 of the P9 Part 2 review list below); then scene/terrain/skeletal rendering, widgets/presentations, Bullet physics, plus installing `wse2-android-selftest-debug-apk` on an `arm64-v8a` device to record live SAF timing, SDL3 audio playback, touch/gamepad/gyro/pinch controls, 60/90/120 Hz frame pacing + thermal throttling, and real Turnip/PanVK/System Vulkan probe results.
 
 ### P4 review: items not fixed yet
 
@@ -403,13 +403,19 @@ handler notes and safety deviations):
 Still open:
 
 1. **Notes / presentation windows never close (partly fixed).** `UiSession::close_active_modal_window`
-   (`wse/game/ui_runtime.h`) closes `0x15`/`0x16` correctly, but nothing outside `ui_test.cpp`
-   drives a `UiSession` yet (not `wse_headless`, not `step_world_frame`, not the Android shell), so
-   at runtime the windows still stay open. See the P9 Part 2 review list below, item 1.
+   (`wse/game/ui_runtime.h`) closes `0x15`/`0x16` correctly, and `run_headless_session` /
+   `wse_headless` now drive a `UiSession` every frame (`UiSession::drive_frame`), so headless runs
+   open, step, and close them. The Android shell still does not. See the P9 Part 2 review list
+   below, item 1.
 2. **Dense party storage.** `kMaxPartyKeys` bounds the tombstone cost (~160 MB worst case) but does
    not remove it; a sparse key-to-slot map would match `rglHashVector` exactly.
 3. ~~**Root motion.**~~ **Checked (analytical):** `scene_test.cpp` verifies the root translation key against the rest origin with an analytical world pose. Not compared against a retail pose.
 4. ~~**Skinned mesh updates.**~~ **Fixed:** `BrfSceneRenderer` caches rest vertices and skin weights per slot, skins into a scratch buffer, and keeps the index buffer; `scene_test.cpp` asserts IB reuse and pixel equivalence.
+5. **`Phantasy Calradia` no longer loads.** `wse_headless` (both before and after the UI driver)
+   stops at `item_kinds1.txt` record 910 `itm_drow_c_dagger`: "truncated item attributes". Native,
+   FiveDynastiesAndTenKingdoms, and Suvarnabhumi Mahayuth load and run 200 frames cleanly. Needs a
+   look at that record against `mbItemKind::load` before deciding whether the loader or the file
+   is at fault.
 
 ### P9 Part 2 review (`afe751c`): fixed, with open items
 
@@ -432,10 +438,18 @@ assertions now use sentinels.
 
 Still open:
 
-1. **No runtime drives `UiSession`.** Wire it into `wse_headless` / the frame loop (consume `0x0f` /
-   `0x10` from `consume_campaign_queued_window` into `start_presentation` / `open_notes_window`,
-   call `step_presentation` and `handle_pointer_and_keys` per frame, render with `UiRhiRenderer`).
-   Until then Phase 2A/P9 Part 1 item #1 above is only fixed in tests.
+1. **`UiSession` is driven headless only (partly fixed).** `UiSession::drive_frame` runs after
+   `step_world_frame` in `run_headless_module` (`HeadlessRunOptions::drive_ui`, `wse_headless
+   --no-ui` to turn it off): a queued `0x0f` starts the presentation (`-60`), a queued `0x10`
+   opens the notes window, open presentations step (`-61`, duration countdown, auto-close), and a
+   mission frame drops an open modal window. Still missing: the Android shell / SDL frame loop
+   (pointer and key input through `handle_pointer_and_keys`, rendering with `UiRhiRenderer`),
+   menus (`0x12` does not build `build_menu_window`), and mission-side presentations
+   (`start_presentation` in a scene queues nothing and is not started). The notes window text
+   (object name, then description and note slots) is a port approximation of `mbNotesWindow`.
+   The headless runner also clears `lighting.has_scene` after loading (option
+   `start_on_campaign_map`): the struct default `true` made every headless frame a mission frame,
+   so the campaign window queue was never consumed and `start_presentation` never queued.
 2. **Overlay size semantics are a port approximation.** `overlay_set_size` is treated as a scale
    (text `0.020 * size`, text-button hit box `0.25 x 0.038 * size`, mesh extent `* size`), and
    overlay text without an area is anchored with its first baseline on the overlay position.
@@ -454,9 +468,9 @@ Still open:
    buffer per skinned mesh per frame, and `UiRhiRenderer::render_tree` creates one index buffer per
    dynamic batch per frame. Both need `RhiDevice` support (`update_buffer`, and `first_index` in
    `MeshDrawCall`). Safe today only because `render_pass_and_readback` is synchronous.
-7. **Retail UI check not re-run.** The asset-loader filtering changed which meshes and textures
-   `load_native_ui_assets` keeps; `ui_test.cpp`'s retail section (needs `WSE_WARBAND_ROOT`) must be
-   re-run on a machine with Warband installed.
+7. ~~**Retail UI check not re-run.**~~ **Done:** `ui_test.cpp`'s retail section ran on Windows
+   against the GOG Warband install (`build_host.ps1`, `4c6bd95`) and passed with the filtered
+   asset loader (Native main menu meshes, textures, font, language, and render checks).
 
 ### `a34ccbb` review (follow-up to the P9 Part 2 fixes): fixed
 
@@ -490,6 +504,7 @@ Previously closed: the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vta
 | Superseded 2026-10-14 REA runs | PASS (superseded) | Historical 2026-10-14 entries kept for provenance only: `ev_7cd99ccc…157d7a` (`mbScript` 5), `ev_8d91b175…99b11` (`mbStatement` 14), `ev_25469ff4…84af8` (3), `ev_e3530f99…e8d05` (`Trigger` 52), `ev_cebc7ae0…e8c8d3` (`rglTextStream` 18), `ev_24eecfa4…f18c0b6` (`rglBinaryStream` 9), `ev_130d8023…2c62e6` (2) |
 | Slice P9 Part 2 UI runtime, bitmap fonts & `Native` main menu | PASS (Windows `build_host.ps1` `23/23` / `180` funcs, `selftest_host` `23/23` `18,328 ms` incl. `ui` `1,862 ms` with retail `Native` UI at `WSE_WARBAND_ROOT`; all `83` headers compile standalone with `-Wall -Wextra -Werror`; `check_citations.py --self-test --docs` `83` headers / `2260` VA refs; `extract_wse_opcodes.py --check` `440/440`) | `wse/io/xml.h`, `wse/asset/font.h`, `wse/game/ui_runtime.h`, `wse/platform/rhi_ui.h`, `ui_test.cpp`; closed P9 Part 1 review items #1/#3/#4. Linux/CMake/CTest, ASan/UBSan, and CI were not run for this change. |
 | `afe751c` review fixes (P9 Part 2 UI runtime) | PASS on Linux (Ubuntu `clang++` 18.1.3): header-only gate loop `engine host tests: PASS` (19 suites incl. `ui` + `script`); CMake/CTest `24/24` incl. `platform`, `lua`, `asset`, `audio`, `ui`, `selftest_host`; `wse_headless` + `wse_brf` built; `g++` ASan/UBSan `ui`, `scene`, `native_m5` PASS; changed headers compile standalone with `-Wall -Wextra -Werror`; `check_citations.py --self-test --docs` (`83` headers / `2260` VA refs, `1189` doc refs); `extract_wse_opcodes.py --check` `440/440` | `ui_runtime.h`, `rhi_ui.h`, `font.h`, `xml.h`, `skeleton.h`, `rhi_scene.h`, `world_m5_types.h`, `native_ui_ops.h`, `ui_test.cpp`. Retail `WSE_WARBAND_ROOT` checks, Windows `build_host.ps1`, and the Android NDK gate were not run here (CI runs NDK on push). |
+| `a34ccbb` review + headless `UiSession` driver | PASS (Windows `build_host.ps1` with `WSE_WARBAND_ROOT`: `engine host tests: PASS`, `selftest_host` `23/23` incl. retail `ui`; `check_citations.py --self-test --docs` 0 unresolved; `wse_headless --frames 200 --allow-unimplemented`: Native, FiveDynastiesAndTenKingdoms, Suvarnabhumi Mahayuth 1_19 each `presentations_opened=1`, `ok=true`, 0 errors, 0 unimplemented; Phantasy Calradia `LOAD FAILED` before and after). Linux/ASan via CI only | `ui_test.cpp` (self-restart, `drive_frame`), `headless_test.cpp` (`test_headless_drives_presentation_window`) |
 | Review fixes for `5ab81a4` (Phase 2A / P9 Part 1) | PASS (Linux clang++ 18.1.3: header-only gate loop `18/18` + `script`, CMake + CTest `23/23` incl. `selftest_host` (glslang from a local `16.6.0` checkout); g++ 13 ASan/UBSan on the touched suites `savegame`, `block_vm`, `native_m5`, `native_world`, `module_loaders`, `headless`, `scene`; `check_citations.py --self-test --docs`). Full `WSE_SANITIZE` CMake tree not run locally (disk allowance); CI `host-sanitizers` covers it | Fixed the 8 items in §5 "Phase 2A / P9 Part 1 review (`5ab81a4`)": stale `m6.ui.active_window_id`, undrained window types + `kMaxQueuedWindows`, `900` queueing in missions, `kMaxPartyKeys` bound on `m_nextKey`, sparse party keys past `m_numSlots`, `instantiate_scene_objects` references / kinds / entry points, `1819` pruning flag, top-4 renormalized skin weights; plus the `.sco` / `map.txt` bounds and leftover parser lines. Regression tests in `block_vm_test`, `native_m5_test`, `savegame_test`, and `scene_test` |
 | Phase 2E review resolutions (`afab774` PR #22) + **Phase 2A completion & Slice P9 Part 1** | PASS (Windows `build_host.ps1` `22/22` / `174` funcs, `selftest_host` `6,495 ms` + retail `Native`/`Phantasy Calradia` CLI + `check_citations` + `extract_wse_opcodes`) | Resolved ALL `10` open §5 items from `afab774`: `consume_campaign_queued_window` `0x12`/`0x0f`/`0x10` filter + `m6.ui.active_window_id` sync (`0x140118987`/`0x1400f0c50`), `900` `start_presentation` queue (`0x1401cbf02`), `2055` loading state, `mbGame::removeParty` / `addPartyToParty` (`0x1400dd990`/`0x1400de230`), `416` `m5.enable_pruning` filter & active-player reset (`0x140147a80`), `rglHashVector<mbParty>` `m_nextKey` (`+0x138f0`, `0x1400e7b80`/`0x1400e7de0`), `[802..1174]` version-invariance (`0x1400e7640`/`0x1400bae70`), dead `WseQuestNote::available` removal (`0x1401b9e90`) + `current_day` fix in `1113`/`1114`/`1116`/`1118`/`1119` (`0x1401de2ee`), and `fx.trigger_agent_no` reset. Completed **Phase 2A** (`wse/game/scene_loaders.h`: `map.txt` `0x1400d9a00`, `SceneObj/*.sco` `0x140210be0`, `Data/skeleton_bodies.xml` `0x1400cbb70`/`0x140211ba0`, `dialog_states.txt` confirmed absent from retail binary) & **Slice P9 Part 1** (`wse/asset/brf.h` `skeleton_anim` `(qx,qy,qz,qw)` fix `0x14030c320`, `wse/asset/skeleton.h` FK & CPU linear-blend skinning `0x14030a770`/`0x14030b8f0`/`0x140258800`, `wse/platform/rhi_scene.h` terrain chunking + `BrfSceneRenderer`, `scene_test.cpp`); regenerated `docs/SYMBOL_MAP.json`; validated retail `Native` `wse_headless` (`20` frames / `755` parties / `errorCount=0`), `wse_brf` (`Native` `221/221`, `Phantasy Calradia` `333/333`, `271/271` shaders at `spv_fail=0`), and all `1,382/1,382` `Native` + `Phantasy Calradia` `.sco` files |
 | Phase 2E review fixes (`e6c4d0e`) | PASS (Linux clang++ 18: header-only gate loop, CMake + CTest; g++ ASan/UBSan touched suites; `check_citations.py --self-test --docs`) | Fixed in review of `e6c4d0e`. **Mission objects:** `scene_prop_fade_out` (1822) no longer deletes the prop (`scene_prop_fade_in` 1823 could not restore it and the id was recycled); `multiplayer_clear_scene` (416) keeps scene-placed props (`spawned_at_runtime`) and no longer wipes player equipment; `remove_mission_object` also drops `attached_missiles` / edit-mode selections. **Agents:** `unlink_agent_references` clears team leader / order listener / division leaders, look / AI targets, offers, cached enemies, one-sided horse/rider links, `parent_agent_no`, camera target, and dialog speaker before a slot is recycled. **Players:** `disconnect_player` keeps `mp.saved_ban`, so `ban_player_using_saved_ban_info` (468) works after a kick. **Parties:** `remove_party` clears `encountered_party_2_no` and refuses the main party; `attach_party` refuses cycles; dead `num_parties_created` removed. **Frame step:** `step_world_frame` consumes the window queue only on the campaign map. **Savegame:** `<= 1136` bodies keep live combat options; the mismatched-header test pins `truncated`; dead `legacy_layout_unsupported` check removed. **Misc:** free-list release is O(1); `kQueuedWindowSaveExitBreakType` folded into `kQueuedWindowMenuType`; entry VAs `0x140117f90` / `0x140120240` / `0x14002a220` cited. Open items: §5. |

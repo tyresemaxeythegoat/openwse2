@@ -26,6 +26,7 @@ void print_usage(const char* argv0) {
                  "  --frames N             Number of trigger frames to simulate (default: 1)\n"
                  "  --step-ticks T         Engine ticks added per frame (default: 200000 = 2.0s)\n"
                  "  --allow-unimplemented  Count and report unimplemented opcodes without failing the run\n"
+                 "  --no-ui                Do not drive notes / presentation windows between frames\n"
                  "  -h, --help             Show this help\n",
                  argv0 != nullptr ? argv0 : "wse_headless");
 }
@@ -61,6 +62,10 @@ int main(int argc, char** argv) {
         }
         if (arg == "--allow-unimplemented") {
             opts.fail_on_unimplemented = false;
+            continue;
+        }
+        if (arg == "--no-ui") {
+            opts.drive_ui = false;
             continue;
         }
         if (arg == "--frames") {
@@ -161,6 +166,9 @@ int main(int argc, char** argv) {
                 r.triggers_ok ? "true" : "false",
                 r.simple_triggers_ok ? "true" : "false",
                 r.party_count);
+    std::printf("ui=%s presentations_opened=%zu notes_opened=%zu final_window=%d\n",
+                opts.drive_ui ? "on" : "off", r.presentations_opened, r.notes_opened,
+                r.final_window);
     std::printf("FINAL: ok=%s errorCount=%zu unimplementedCount=%zu uniqueUnimpl=%zu\n",
                 r.ok ? "true" : "false", r.error_count, r.unimplemented_count,
                 r.unimplemented_opcodes.size());

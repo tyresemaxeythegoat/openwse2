@@ -18,6 +18,7 @@
 
 #include "wse/game/module_bundle.h"
 #include "wse/game/trigger.h"
+#include "wse/game/ui_runtime.h"
 #include "wse/platform/log.h"
 #include "wse/platform/vfs.h"
 #include "wse/vm/block_vm.h"
@@ -37,6 +38,17 @@ struct HeadlessRunOptions {
     bool enable_lua = true;
     std::string lua_storage_dir = "lua_storage";
     std::string lua_savegames_dir = "savegames";
+    // Drive a `UiSession` after every frame: queued notes / presentation windows open,
+    // presentations step (`-61`) and close when their duration runs out. Uses the
+    // `UiSession*` passed to `run_headless_module` (`run_headless_session` passes its own),
+    // or else one owned by the run.
+    bool drive_ui = true;
+    // A headless run models the campaign map: no mission scene is loaded, so
+    // `world.lighting.has_scene` (which defaults to `true` for opcode tests) is cleared
+    // after loading. Without this every frame counted as a mission frame, so
+    // `start_presentation` never queued window 0x0f and `step_world_frame` never consumed the
+    // campaign window queue. The port has no mission lifecycle yet to set it back.
+    bool start_on_campaign_map = true;
     platform::LogSink* log = nullptr;
 };
 
@@ -57,11 +69,15 @@ struct HeadlessRunReport {
     std::vector<std::pair<std::uint32_t, std::size_t>> unimplemented_opcodes{};
     int max_observed_depth = -1;
     std::size_t party_count = 0;
+    std::size_t presentations_opened = 0;
+    std::size_t notes_opened = 0;
+    std::int32_t final_window = -1;  // `world.m5.active_window` after the last frame
 };
 
 struct HeadlessSession {
     std::unique_ptr<vm::VmContext> ctx = std::make_unique<vm::VmContext>();
     std::unique_ptr<ModuleBundle> bundle = std::make_unique<ModuleBundle>();
+    std::unique_ptr<UiSession> ui{};  // set when `HeadlessRunOptions::drive_ui`
     HeadlessRunReport report{};
 };
 
@@ -132,6 +148,7 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
     }
     report.max_observed_depth = ctx.maxObservedDepth;
     report.party_count = ctx.world.parties.size();
+    report.final_window = ctx.world.m5.active_window;
 
     const bool start_ok = !options.run_game_start ||
                           (report.game_start_script_index < 0
@@ -149,14 +166,22 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
 // Loads `options.module_dir` via `vfs`, runs mapped script slot 0 (`game_start`)
 // when requested, steps `options.trigger_frames` trigger ticks, and returns a
 // diagnostic report enforcing zero VM errors and, unless
-// `fail_on_unimplemented` is cleared, zero unimplemented opcodes.
+// `fail_on_unimplemented` is cleared, zero unimplemented opcodes. With `options.drive_ui`,
+// every frame ends with `UiSession::drive_frame` on `ui` (or a run-local session when null).
 [[nodiscard]] inline HeadlessRunReport run_headless_module(
     platform::Vfs& vfs,
     vm::VmContext& ctx,
     ModuleBundle& bundle,
-    const HeadlessRunOptions& options = {}) {
+    const HeadlessRunOptions& options = {},
+    UiSession* ui = nullptr) {
     HeadlessRunReport report{};
     detail::ScopedErrorForwarder err_scope(ctx, options.log);
+    // Without a caller-owned session, `drive_ui` uses one that lives for this run.
+    std::unique_ptr<UiSession> owned_ui{};
+    if (ui == nullptr && options.drive_ui) {
+        owned_ui = std::make_unique<UiSession>();
+        ui = owned_ui.get();
+    }
     ctx.failOnUnimplemented = options.fail_on_unimplemented;
     // Unimplemented opcodes only stop or fail the run in strict mode; with
     // `fail_on_unimplemented == false` they are counted and reported.
@@ -182,6 +207,10 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
         detail::finalize_headless_report(ctx, report, options);
         report.ok = false;
         return report;
+    }
+
+    if (options.start_on_campaign_map) {
+        ctx.world.lighting.has_scene = false;
     }
 
     if (options.enable_lua && ctx.luaRuntime != nullptr) {
@@ -235,7 +264,15 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
             ctx.luaRuntime->on_world_trigger(
                 static_cast<float>(ctx.appTimeSeconds / 3600.0));
         }
+        const std::int32_t window_before = ctx.world.m5.active_window;
         ctx.world.step_world_frame(ctx.timersTotal, static_cast<float>(frame_seconds));
+        if (ui != nullptr && options.drive_ui) {
+            const UiSession::FrameReport ui_rep =
+                ui->drive_frame(ctx.world, ctx, static_cast<float>(frame_seconds),
+                                bundle.presentations, window_before);
+            report.presentations_opened += ui_rep.opened_presentation ? 1U : 0U;
+            report.notes_opened += ui_rep.opened_notes ? 1U : 0U;
+        }
         report.triggers_ok = report.triggers_ok && trig_ok;
         report.simple_triggers_ok = report.simple_triggers_ok && strig_ok;
         ++report.frames_executed;
@@ -257,8 +294,11 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
     platform::Vfs& vfs,
     const HeadlessRunOptions& options = {}) {
     HeadlessSession session{};
+    if (options.drive_ui) {
+        session.ui = std::make_unique<UiSession>();
+    }
     session.report =
-        run_headless_module(vfs, *session.ctx, *session.bundle, options);
+        run_headless_module(vfs, *session.ctx, *session.bundle, options, session.ui.get());
     return session;
 }
 

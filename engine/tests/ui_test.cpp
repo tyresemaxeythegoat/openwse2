@@ -581,6 +581,104 @@ void test_ui_session_windows_and_regressions() {
     session.close_active_modal_window(ctx.world);
 }
 
+// `UiSession::drive_frame`: the per-frame glue that opens queued notes / presentation windows
+// after `step_world_frame`, steps presentations, and drops modal windows when a scene starts.
+void test_ui_session_drive_frame() {
+    constexpr std::uint32_t kStartPresentation = 900U;
+    constexpr std::uint32_t kPresentationSetDuration = 902U;
+    constexpr std::uint32_t kChangeScreenNotes = 2053U;
+    auto ctx_ptr = std::make_unique<wse::vm::VmContext>();
+    wse::vm::VmContext& ctx = *ctx_ptr;
+    wse::game::WseWorldState& world = ctx.world;
+    world.has_game = true;
+    world.lighting.has_scene = false;  // campaign map (the struct default is a mission scene)
+    world.troops.resize(1U);
+    world.troops[0].name = "Lord Test";
+    world.troops[0].notes[0].text = u"Rules the test march.";
+    world.m5.active_window = wse::game::kScreenWindowMap;
+    world.m6.ui.active_window_id = wse::game::kScreenWindowMap;
+
+    wse::game::LoadedPresentation prsnt{};
+    prsnt.id = "prsnt_driven";
+    wse::game::SimpleTrigger load{};
+    load.interval = -60.0f;
+    load.block.statements = {make_stmt(wse::vm::core_op::kValAdd, {reg(20), 1}),
+                             make_stmt(kPresentationSetDuration, {50})};
+    prsnt.triggers.triggers.push_back(load);
+    wse::game::SimpleTrigger run{};
+    run.interval = -61.0f;
+    run.block.statements = {make_stmt(wse::vm::core_op::kValAdd, {reg(21), 1})};
+    prsnt.triggers.triggers.push_back(run);
+    const std::array<wse::game::LoadedPresentation, 1> prsnts{prsnt};
+
+    wse::game::UiSession ui{};
+    ui.current_window = wse::game::kScreenWindowMap;
+    const std::array<std::int64_t, 3> timers{};
+    auto frame = [&](float dt) {
+        const std::int32_t before = world.m5.active_window;
+        world.step_world_frame(timers, dt);
+        return ui.drive_frame(world, ctx, dt, prsnts, before);
+    };
+    auto run_stmt = [&](const wse::vm::Statement& st) {
+        wse::vm::StatementBlock blk{};
+        blk.statements.push_back(st);
+        return wse::vm::execute_statement_block(blk, ctx);
+    };
+
+    // start_presentation (900) on the map queues 0x0f; the next frame opens it.
+    expect(run_stmt(make_stmt(kStartPresentation, {0})) && world.m5.enqueued_windows.size() == 1U,
+           "start_presentation on the map queues window 0x0f");
+    const auto opened = frame(0.25f);
+    expect(opened.opened_presentation && opened.presentation_open && ctx.registers[20] == 1 &&
+               ctx.registers[21] == 0 && world.m5.active_window == wse::game::kScreenWindowPresentation &&
+               world.m5.enqueued_windows.empty() && world.presentation_duration == 50,
+           "drive_frame opens the queued presentation and fires -60 (not -61) that frame");
+    const auto stepped = frame(0.25f);
+    expect(!stepped.opened_presentation && stepped.presentation_open && ctx.registers[21] == 1 &&
+               world.presentation_duration == 25,
+           "the next frame steps the presentation (-61, duration countdown)");
+    const auto expired = frame(0.30f);
+    expect(!expired.presentation_open && world.active_presentation_no == -1 &&
+               world.m5.active_window == wse::game::kScreenWindowMap &&
+               world.m6.ui.active_window_id == wse::game::kScreenWindowMap &&
+               ui.current_window == wse::game::kScreenWindowMap,
+           "an expired presentation closes window 0x16 back to the map");
+
+    // change_screen_notes (2053) opens the notes window for the troop.
+    expect(run_stmt(make_stmt(kChangeScreenNotes, {1, 0})), "change_screen_notes runs");
+    const auto notes = frame(0.1f);
+    const auto* title = find_widget(ui.root, "notes_title");
+    const auto* body = find_widget(ui.root, "notes_data");
+    expect(notes.opened_notes && world.m5.active_window == wse::game::kScreenWindowNotes &&
+               title != nullptr && title->text == "Lord Test" && body != nullptr &&
+               body->text == "Rules the test march.",
+           "drive_frame opens the queued notes window with the troop's name and notes");
+
+    // A presentation queued from the notes window returns to the map, not to the notes.
+    (void)run_stmt(make_stmt(kStartPresentation, {0}));
+    expect(frame(0.1f).opened_presentation && ui.source_window == wse::game::kScreenWindowMap,
+           "a presentation opened over the notes window returns to the map");
+
+    // A scene drops the open presentation without writing a campaign window back.
+    world.lighting.has_scene = true;
+    const auto mission = frame(0.1f);
+    expect(mission.closed_for_mission && !mission.presentation_open &&
+               world.m5.active_window == -1 && world.m6.ui.active_window_id == -1 &&
+               world.active_presentation_no == -1,
+           "a mission frame drops the presentation and leaves the window unknown");
+    world.lighting.has_scene = false;
+
+    // An unknown presentation number does not leave window 0x16 active.
+    world.m5.active_window = wse::game::kScreenWindowMap;
+    world.m6.ui.active_window_id = wse::game::kScreenWindowMap;
+    ui.current_window = wse::game::kScreenWindowMap;
+    (void)run_stmt(make_stmt(kStartPresentation, {7}));
+    const auto bad = frame(0.1f);
+    expect(!bad.opened_presentation && world.active_presentation_no == -1 &&
+               world.m5.active_window == wse::game::kScreenWindowMap,
+           "an unknown queued presentation falls back to the window it came from");
+}
+
 void test_synthetic_ui_rhi_render_and_uv_orientation() {
     // 16x16 font atlas: glyph 'A' covers x=[0..8), y=[0..16), top half red, bottom half blue
     // in top-down DDS/RGBA8 coordinates (row 0..7 red, row 8..15 blue).
@@ -866,6 +964,7 @@ int run_ui_suite(const char* fixture_path) {
     test_font_data_and_text_layout();
     test_language_and_game_variables();
     test_ui_session_windows_and_regressions();
+    test_ui_session_drive_frame();
     test_synthetic_ui_rhi_render_and_uv_orientation();
     test_retail_warband_native_main_menu();
 

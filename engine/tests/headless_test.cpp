@@ -113,6 +113,58 @@ void test_headless_memory_game_start_and_frames() {
     expect(log.lines.empty(), "no errors logged on clean run");
 }
 
+// `game_start` runs `start_presentation 0`; the presentation's -60 sets a 0.5 s duration. With
+// `drive_ui` the first frame opens it and the second closes it again (both entry points: the
+// session-owned `UiSession` and the run-local one `wse_headless` relies on).
+void test_headless_drives_presentation_window() {
+    constexpr std::uint32_t kStartPresentation = 900U;
+    constexpr std::uint32_t kPresentationSetDuration = 902U;
+    wse::platform::MemoryVfs vfs;
+    std::ostringstream scripts;
+    scripts << "scriptsfile version 1\n1\n"
+            << "game_start -1\n1\n"
+            << kStartPresentation << " 1 0\n";
+    seed_minimal_module(vfs, "Modules/PrsntMod", scripts.str());
+    std::ostringstream prsnt;
+    prsnt << "presentationsfile version 1\n 1\n"
+          << "prsnt_headless 0 0 1\n"
+          << "-60.000000  1 " << kPresentationSetDuration << " 1 50\n";
+    expect(vfs.write_text("Modules/PrsntMod/presentations.txt", prsnt.str()),
+           "write synthetic presentations.txt");
+
+    wse::game::HeadlessRunOptions opts{};
+    opts.module_dir = "Modules/PrsntMod";
+    opts.load_options.require_core_files = false;
+    opts.frame_ticks = 100000;  // 1.0 s per frame
+
+    opts.trigger_frames = 1;
+    const auto one = wse::game::run_headless_session(vfs, opts);
+    expect(one.report.ok && one.report.presentations_opened == 1U &&
+               one.report.final_window == wse::game::kScreenWindowPresentation &&
+               one.ctx->world.active_presentation_no == 0 &&
+               one.ctx->world.m5.enqueued_windows.empty(),
+           "headless frame 1 opens the presentation queued by game_start");
+
+    opts.trigger_frames = 2;
+    const auto two = wse::game::run_headless_session(vfs, opts);
+    expect(two.report.ok && two.report.presentations_opened == 1U &&
+               two.report.final_window == wse::game::kScreenWindowInitial &&
+               two.ctx->world.active_presentation_no == -1,
+           "headless frame 2 closes the presentation back to the window it opened over");
+
+    auto ctx = std::make_unique<wse::vm::VmContext>();
+    auto bundle = std::make_unique<wse::game::ModuleBundle>();
+    const auto direct = wse::game::run_headless_module(vfs, *ctx, *bundle, opts);
+    expect(direct.ok && direct.presentations_opened == 1U &&
+               direct.final_window == wse::game::kScreenWindowInitial,
+           "run_headless_module without a UiSession drives a run-local one");
+
+    opts.drive_ui = false;
+    const auto no_ui = wse::game::run_headless_session(vfs, opts);
+    expect(no_ui.report.ok && no_ui.report.presentations_opened == 0U && no_ui.ui == nullptr,
+           "drive_ui = false opens no window");
+}
+
 void test_headless_unimplemented_opcode_fails_loudly() {
     wse::platform::MemoryVfs vfs;
     seed_minimal_module(vfs, "Modules/BadOpMod", build_minimal_scripts(9999U));
@@ -240,6 +292,7 @@ int run_headless_suite(const char* fixture_path) {
     (void)fixture_path;
     failures = 0;
     test_headless_memory_game_start_and_frames();
+    test_headless_drives_presentation_window();
     test_headless_unimplemented_opcode_fails_loudly();
     test_headless_allow_unimplemented_continues_and_reports();
     test_headless_missing_game_start_and_load_failure();
