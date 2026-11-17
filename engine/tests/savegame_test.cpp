@@ -941,7 +941,8 @@ void test_savegame_transactional_and_hostile_input() {
     }
     expect(patched, "record-present flag 2 is reported as corrupt_record");
 
-    // Bodies older than the reconstructed 1174 layout are refused, not misparsed.
+    // Mismatched header version (`1136` header stamped onto a `1174` body) fails body parsing cleanly
+    // without mutating live world state; valid pre-1174 encoded saves across `[802..1174]` load cleanly.
     std::vector<std::byte> legacy = good;
     const std::int32_t v1136 = 1136;
     std::memcpy(legacy.data() + 4, &v1136, sizeof(v1136));
@@ -950,9 +951,66 @@ void test_savegame_transactional_and_hostile_input() {
     SavegameRuntimeContext lrc{};
     lrc.world = &lw;
     const SavegameLoadReport lrep = read_savegame_container(legacy, lrc);
-    expect(lrep.status == SavegameContainerResult::legacy_layout_unsupported &&
+    expect(!lrep.succeeded() &&
                lrep.header.savegame_version == 1136 && lw.campaign_time == 5,
-           "pre-1174 savegame body is refused with legacy_layout_unsupported");
+           "header-mismatched 1174 body stamped as 1136 fails cleanly without mutating live world");
+
+    const std::array<std::int32_t, 7> versions = {802, 950, 1000, 1020, 1136, 1160, 1174};
+    for (const std::int32_t ver : versions) {
+        WseWorldState vw = make_small_world();
+        vw.combat_damage_to_self = 2;
+        vw.combat_damage_to_friends = 1;
+        vw.reduce_battle_ai = 1;
+        vw.reduce_campaign_ai = 2;
+        vw.combat_speed = 4;
+        vw.parties[0].is_marshall = true;
+        vw.parties[0].extra_icon_no = 7;
+        vw.parties[0].extra_icon_up_down_distance = 1.5f;
+        vw.parties[0].extra_icon_up_down_frequency = 2.0f;
+        vw.parties[0].extra_icon_rotate_frequency = 0.5f;
+        vw.parties[0].extra_icon_fade_distance = 9.0f;
+        vw.parties[0].ignore_with_player_party = true;
+        vw.parties[0].notes[0].text = u"marshall note";
+        vw.troops[1].notes[0].text = u"troop sentinel";
+
+        SavegameConstContext vwc{};
+        vwc.world = &vw;
+        io::BinaryChecksumWriter vcw;
+        const SavegameWriteResult vwr = write_savegame_container(vcw, vwc, {}, ver);
+        expect(vwr.ok, "write_savegame_container accepts version in [802..1174]");
+
+        WseWorldState vdst = make_small_world();
+        vdst.combat_damage_to_self = 9;
+        vdst.parties[0].is_marshall = true;
+        vdst.parties[0].extra_icon_no = 99;
+        vdst.parties[0].ignore_with_player_party = true;
+        SavegameRuntimeContext vrc{};
+        vrc.world = &vdst;
+        const SavegameLoadReport vrep = read_savegame_container(vcw.bytes(), vrc);
+        const bool expect_combat = ver > 1136;
+        const bool expect_marshall = (ver >= 900 && ver <= 999) || ver >= 1020;
+        const bool expect_extra = ver > 1136;
+        const bool expect_ignore = ver > 1160;
+        expect(vrep.succeeded() && vrep.header.savegame_version == ver &&
+                   vdst.parties[0].notes[0].text == u"marshall note" &&
+                   vdst.troops[1].notes[0].text == u"troop sentinel" &&
+                   vdst.parties[0].is_marshall == expect_marshall &&
+                   vdst.parties[0].ignore_with_player_party == expect_ignore &&
+                   (expect_extra ? vdst.parties[0].extra_icon_no == 7
+                                 : vdst.parties[0].extra_icon_no == -1) &&
+                   (expect_combat ? vdst.combat_damage_to_self == 2
+                                  : vdst.combat_damage_to_self == 0),
+               "pre-1174 versioned savegame body round-trips with exact retail field gates");
+    }
+
+    WseWorldState vbad = make_small_world();
+    SavegameConstContext bwc{};
+    bwc.world = &vbad;
+    io::BinaryChecksumWriter bcw;
+    expect(!write_savegame_container(bcw, bwc, {}, 801).ok,
+           "write_savegame_container rejects version < 802");
+    expect(!write_savegame_container(bcw, bwc, {}, 1175).ok,
+           "write_savegame_container rejects version > 1174");
     expect(describe(SavegameContainerResult::corrupt_record) != "unknown savegame container result" &&
                describe(SavegameContainerResult::legacy_layout_unsupported) !=
                    "unknown savegame container result",

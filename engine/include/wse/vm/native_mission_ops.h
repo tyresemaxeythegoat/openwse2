@@ -642,6 +642,7 @@ namespace wse::vm {
     case 2060: // jump_to_menu (0x1401dc2b1)
         if (narrow[0] >= 0) {
             world.jump_menu_no = narrow[0];
+            world.m5.enqueued_windows.emplace_back(game::kQueuedWindowMenuType, -1);
         }
         return NativeDispatch::handled;
     case 2075: // set_trigger_result (0x1401dc55f)

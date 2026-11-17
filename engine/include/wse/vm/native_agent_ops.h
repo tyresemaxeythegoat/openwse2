@@ -347,6 +347,7 @@ namespace wse::vm {
             if (ag.m5.exit_status == 2) {
                 ag.m5.running_away_state = 1;
                 ag.m5.exit_status = 3;
+                ag.m5.exit_timer_start = ctx.timersTotal[2];
                 ag.running_away = true;
             }
         }
@@ -673,8 +674,7 @@ namespace wse::vm {
     case 1973: // spawn_horse (0x1401d9fa6)
         ctx.registers[0] = -1;
         // Safety deviation: capped at kMaxSpawnedAgents.
-        if (world.is_valid_item(narrow[0]) &&
-            world.agents.size() < game::kMaxSpawnedAgents) {
+        if (world.is_valid_item(narrow[0])) {
             game::WseAgent horse{};
             horse.active = true;
             horse.status = 1;
@@ -686,9 +686,7 @@ namespace wse::vm {
                 world.items[static_cast<std::size_t>(narrow[0])].hit_points;
             horse.max_hit_points = static_cast<float>(std::max<std::int32_t>(1, item_hp));
             horse.hit_points = horse.max_hit_points;
-            const auto new_id = static_cast<std::int32_t>(world.agents.size());
-            world.agents.push_back(std::move(horse));
-            ctx.registers[0] = static_cast<std::int64_t>(new_id);
+            ctx.registers[0] = static_cast<std::int64_t>(world.allocate_agent(std::move(horse)));
         }
         return NativeDispatch::handled;
     case 2076: // agent_get_bone_position (0x1401dc56b)

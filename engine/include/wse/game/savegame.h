@@ -49,11 +49,12 @@
 //   - `rglHashVector` / `rglStableVector` record-present flags other than 0 or 1 are
 //     rejected as `corrupt_record` instead of being read as empty (which desynchronizes
 //     every following field).
-//   - Only the version-1174 body layout is reconstructed. `mbParty::readStream`,
-//     `mbEvent::readStream`, and the `rglHashVector` / `rglStableVector` readers take the
-//     savegame version (`...@H@Z`), so older bodies branch in ways not yet recovered:
-//     headers in [802..1173] still validate (the load window lists them), but
-//     `read_savegame_container` refuses their bodies with `legacy_layout_unsupported`.
+//   - Version-gated savegame bodies `[802..1174]` match all four `g_compatibleSavegameVersion`
+//     branches in retail v1155 `.text`: `mbGame::readStream` (`0x1400c856d`, `> 1136` combat options),
+//     `mbParty::readStream` (`0x1401ba9d1`, `(900..999) || >= 1020` `is_marshall`; `0x1401baa20`,
+//     `> 1136` `extra_icon_*`; `0x1401baa7f`, `> 1160` `ignore_with_player_party`). `mbNotes::readStream`
+//     (`0x1401b9e90`), `loadQuests`..`loadItemKinds`, `mbEvent::readStream`, and trigger streams are
+//     version-invariant across `[802..1174]`.
 
 #pragma once
 
@@ -83,9 +84,33 @@ inline constexpr std::int32_t kSavegameMinVersion = 802;      // 0x322
 inline constexpr std::int32_t kSavegameFormatVersion = 1174;  // 0x496
 // Bodies written by versions strictly above 0x470 (1136) carry the five combat-option
 // int32 fields after the scalar preamble (`mbGame::readStream` 0x1400c8520).
-inline constexpr std::int32_t kSavegameCombatOptionsAfterVersion = 0x470;  // 1136
-// Oldest body layout `read_world_body_sections` reconstructs (see safety deviations).
-inline constexpr std::int32_t kSavegameOldestReconstructedBodyVersion = kSavegameFormatVersion;
+// Version gates matching retail savegame stream readers (v1155 .text):
+// - mbParty::readStream (`0x1401ba9d1`): `(900..999) || >= 1020` -> `is_marshall` (`+0x17c`).
+// - mbParty::readStream (`0x1401baa20`) & mbGame::readStream (`0x1400c856d`): `> 1136` (`0x470`)
+//   -> `extra_icon_no` + 4 `extra_icon_*` floats, and 5 combat options.
+// - mbParty::readStream (`0x1401baa7f`): `> 1160` (`0x488`) -> `ignore_with_player_party` (`+0x124`).
+// Across `[802..1174]`, all other world/container/event/trigger readers are version-invariant.
+inline constexpr std::int32_t kSavegamePartyMarshallRangeMin = 900;
+inline constexpr std::int32_t kSavegamePartyMarshallRangeMax = 999;
+inline constexpr std::int32_t kSavegamePartyMarshallAfterOrEq = 1020;
+inline constexpr std::int32_t kSavegameCombatOptionsAfterVersion = 0x470;       // 1136
+inline constexpr std::int32_t kSavegamePartyExtraIconAfterVersion = 0x470;      // 1136
+inline constexpr std::int32_t kSavegamePartyIgnorePlayerAfterVersion = 0x488;   // 1160
+inline constexpr std::int32_t kSavegameOldestReconstructedBodyVersion = kSavegameMinVersion;
+
+[[nodiscard]] constexpr bool savegame_has_combat_options(std::int32_t v) noexcept {
+    return v > kSavegameCombatOptionsAfterVersion;
+}
+[[nodiscard]] constexpr bool savegame_has_party_marshall(std::int32_t v) noexcept {
+    return (v >= kSavegamePartyMarshallRangeMin && v <= kSavegamePartyMarshallRangeMax) ||
+           v >= kSavegamePartyMarshallAfterOrEq;
+}
+[[nodiscard]] constexpr bool savegame_has_party_extra_icon(std::int32_t v) noexcept {
+    return v > kSavegamePartyExtraIconAfterVersion;
+}
+[[nodiscard]] constexpr bool savegame_has_party_ignore_player(std::int32_t v) noexcept {
+    return v > kSavegamePartyIgnorePlayerAfterVersion;
+}
 inline constexpr std::size_t kMaxSavegameArrayCount = (1U << 20U);
 
 enum class SavegameContainerResult : std::uint8_t {
@@ -314,6 +339,10 @@ inline void write_slots(io::BinaryWriter& w, const wse::vm::Slots& slots) {
     return SavegameContainerResult::ok;
 }
 
+// Retail `mbNotes::writeStream` (`0x1401b9f30`) / `mbNotes::readStream` (`0x1401b9e90`) loop
+// 16 times over `m_texts[i]` (`+0x40`, stride `0x48`) and `m_dates[i]` (`+0`, stride `4`),
+// reading/writing the single scalar `m_tableauMaterialNo` (`+0x4c0`) and `m_available`
+// (`+0x4c4`) on each iteration.
 template <typename NoteT>
 inline void write_notes(io::BinaryWriter& w,
                         const std::array<NoteT, kNumQuestNotes>& notes,
@@ -500,7 +529,9 @@ inline void write_save_game_section(io::BinaryWriter& w, const WseWorldState& wo
     return SavegameContainerResult::ok;
 }
 
-inline void write_party_record(io::BinaryWriter& w, const WseParty& p) {
+inline void write_party_record(io::BinaryWriter& w,
+                               const WseParty& p,
+                               std::int32_t savegame_version = kSavegameFormatVersion) {
     // mbParty::writeStream (0x1401bac00)
     w.write_string(p.id);
     w.write_string(p.name);
@@ -540,15 +571,21 @@ inline void write_party_record(io::BinaryWriter& w, const WseParty& p) {
     w.write_f32(p.helpfulness);
     w.write_i32(p.ai_state);
     w.write_f32(static_cast<float>(p.bandit_attraction) / 100.0f);
-    w.write_i32(p.is_marshall ? 1 : 0);
+    if (savegame_has_party_marshall(savegame_version)) {
+        w.write_i32(p.is_marshall ? 1 : 0);
+    }
     w.write_i64(saturating_float_to_i64(p.ignore_player_timer));
     w.write_i32(p.banner_icon_no);
-    w.write_i32(p.extra_icon_no);
-    w.write_f32(p.extra_icon_up_down_distance);
-    w.write_f32(p.extra_icon_up_down_frequency);
-    w.write_f32(p.extra_icon_rotate_frequency);
-    w.write_f32(p.extra_icon_fade_distance);
-    w.write_i32(p.ignore_with_player_party ? 1 : 0);
+    if (savegame_has_party_extra_icon(savegame_version)) {
+        w.write_i32(p.extra_icon_no);
+        w.write_f32(p.extra_icon_up_down_distance);
+        w.write_f32(p.extra_icon_up_down_frequency);
+        w.write_f32(p.extra_icon_rotate_frequency);
+        w.write_f32(p.extra_icon_fade_distance);
+    }
+    if (savegame_has_party_ignore_player(savegame_version)) {
+        w.write_i32(p.ignore_with_player_party ? 1 : 0);
+    }
     w.write_i32(p.attached_to_party_no);
     w.write_bool(p.attached_to_party_no >= 0);
 
@@ -565,6 +602,7 @@ inline void write_party_record(io::BinaryWriter& w, const WseParty& p) {
 }
 
 [[nodiscard]] inline SavegameContainerResult read_party_record(io::BinaryReader& r,
+                                                               std::int32_t savegame_version,
                                                                WseParty* out_party) {
     WseParty p{};
     std::int32_t pers = 0;
@@ -607,12 +645,37 @@ inline void write_party_record(io::BinaryWriter& w, const WseParty& p) {
         !r.read_f32(p.morale) || !r.read_f32(dummy_f0) || !r.read_f32(dummy_f1) ||
         !r.read_f32(p.patrol_radius) || !r.read_f32(p.ai_initiative) ||
         !r.read_f32(p.helpfulness) || !r.read_i32(p.ai_state) ||
-        !r.read_f32(bandit_attraction_f) || !r.read_i32(is_marshall_i) ||
-        !r.read_i64(ignore_timer_i) || !r.read_i32(p.banner_icon_no) ||
-        !r.read_i32(p.extra_icon_no) || !r.read_f32(p.extra_icon_up_down_distance) ||
-        !r.read_f32(p.extra_icon_up_down_frequency) ||
-        !r.read_f32(p.extra_icon_rotate_frequency) || !r.read_f32(p.extra_icon_fade_distance) ||
-        !r.read_i32(ignore_player_i) || !r.read_i32(p.attached_to_party_no) ||
+        !r.read_f32(bandit_attraction_f)) {
+        return SavegameContainerResult::truncated;
+    }
+    is_marshall_i = 0;
+    if (savegame_has_party_marshall(savegame_version)) {
+        if (!r.read_i32(is_marshall_i)) {
+            return SavegameContainerResult::truncated;
+        }
+    }
+    if (!r.read_i64(ignore_timer_i) || !r.read_i32(p.banner_icon_no)) {
+        return SavegameContainerResult::truncated;
+    }
+    p.extra_icon_no = -1;
+    p.extra_icon_up_down_distance = 0.0f;
+    p.extra_icon_up_down_frequency = 0.0f;
+    p.extra_icon_rotate_frequency = 0.0f;
+    p.extra_icon_fade_distance = 0.0f;
+    if (savegame_has_party_extra_icon(savegame_version)) {
+        if (!r.read_i32(p.extra_icon_no) || !r.read_f32(p.extra_icon_up_down_distance) ||
+            !r.read_f32(p.extra_icon_up_down_frequency) ||
+            !r.read_f32(p.extra_icon_rotate_frequency) || !r.read_f32(p.extra_icon_fade_distance)) {
+            return SavegameContainerResult::truncated;
+        }
+    }
+    ignore_player_i = 0;
+    if (savegame_has_party_ignore_player(savegame_version)) {
+        if (!r.read_i32(ignore_player_i)) {
+            return SavegameContainerResult::truncated;
+        }
+    }
+    if (!r.read_i32(p.attached_to_party_no) ||
         !r.read_bool(attached_b)) {
         return SavegameContainerResult::truncated;
     }
@@ -665,7 +728,10 @@ inline void write_party_record(io::BinaryWriter& w, const WseParty& p) {
     return SavegameContainerResult::ok;
 }
 
-inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstContext& ctx) {
+inline void write_world_body_sections(
+    io::BinaryWriter& w,
+    const SavegameConstContext& ctx,
+    std::int32_t savegame_version = kSavegameFormatVersion) {
     const WseWorldState& world = *ctx.world;
     const wse::vm::Slots empty_slots{};
     const TriggerManager empty_triggers{};
@@ -675,11 +741,13 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
     w.write_i64(world.campaign_time);
     w.write_i32(world.seed);
     w.write_u32(world.encounter_flags);
-    w.write_i32(world.combat_damage_to_self);
-    w.write_i32(world.combat_damage_to_friends);
-    w.write_i32(world.reduce_battle_ai);
-    w.write_i32(world.reduce_campaign_ai);
-    w.write_i32(world.combat_speed);
+    if (savegame_has_combat_options(savegame_version)) {
+        w.write_i32(world.combat_damage_to_self);
+        w.write_i32(world.combat_damage_to_friends);
+        w.write_i32(world.reduce_battle_ai);
+        w.write_i32(world.reduce_campaign_ai);
+        w.write_i32(world.combat_speed);
+    }
 
     write_save_game_section(w, world);
     write_slots(w, ctx.global_variables != nullptr ? *ctx.global_variables : empty_slots);
@@ -768,7 +836,7 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
             w.write_i32(1);
             w.write_i32(i);
             w.write_i32(i);
-            write_party_record(w, p);
+            write_party_record(w, p, savegame_version);
         } else {
             w.write_i32(0);
         }
@@ -929,12 +997,18 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
         !r.read_u32(world.encounter_flags)) {
         return SavegameContainerResult::truncated;
     }
-    if (savegame_version > kSavegameCombatOptionsAfterVersion) {
+    if (savegame_has_combat_options(savegame_version)) {
         if (!r.read_i32(world.combat_damage_to_self) ||
             !r.read_i32(world.combat_damage_to_friends) || !r.read_i32(world.reduce_battle_ai) ||
             !r.read_i32(world.reduce_campaign_ai) || !r.read_i32(world.combat_speed)) {
             return SavegameContainerResult::truncated;
         }
+    } else {
+        world.combat_damage_to_self = 0;
+        world.combat_damage_to_friends = 0;
+        world.reduce_battle_ai = 0;
+        world.reduce_campaign_ai = 0;
+        world.combat_speed = 2;
     }
     if (const auto rc = read_save_game_section(r, world); rc != SavegameContainerResult::ok) {
         return rc;
@@ -1121,12 +1195,13 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
                                     ? &world.parties[static_cast<std::size_t>(key)]
                                     : nullptr;
                 if (dst == nullptr) out_count_exceeded = true;  // record consumed, dropped
-                if (const auto p_rc = read_party_record(r, dst);
+                if (const auto p_rc = read_party_record(r, savegame_version, dst);
                     p_rc != SavegameContainerResult::ok) {
                     return p_rc;
                 }
             }
         }
+        world.sync_party_creation_count();
         if (world.is_valid_party(world.main_party_no)) {
             WseParty& mp = world.parties[static_cast<std::size_t>(world.main_party_no)];
             for (std::size_t s = 0; s < mp.stacks.size(); ++s) {
@@ -1340,17 +1415,23 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
 [[nodiscard]] inline SavegameWriteResult write_savegame_container(
     io::BinaryChecksumWriter& writer,
     const SavegameConstContext& ctx,
-    std::string_view override_name = {}) {
+    std::string_view override_name = {},
+    std::int32_t savegame_version = kSavegameFormatVersion) {
     SavegameWriteResult res{};
     if (ctx.world == nullptr) {
         return res;
     }
+    if (savegame_version < kSavegameMinVersion || savegame_version > kSavegameFormatVersion) {
+        res.status = SavegameContainerResult::unsupported_version;
+        return res;
+    }
     writer.clear();
-    const SavegameHeader header =
+    SavegameHeader header =
         fill_savegame_header(*ctx.world, ctx.timers_total, override_name);
+    header.savegame_version = savegame_version;
     writer.write_via([&](io::BinaryWriter& raw) {
         write_savegame_header(raw, header);
-        savegame_detail::write_world_body_sections(raw, ctx);
+        savegame_detail::write_world_body_sections(raw, ctx, savegame_version);
     });
     // The in-memory buffer cannot disagree with its own running sum; the meaningful
     // verification is the read-back in `save_world_to_vfs`, as in `mbGame::save`.
@@ -1363,8 +1444,11 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
 
 // Parses the container header + world sections from `bytes`. Optionally verifies
 // `expected_checksum` (if provided) and `compatible_module_version`. Note:
-// `ctx.world->troops` must already hold the module's troop hero flags before
-// loading so `loadParties` (`0x1400c92c0`) distinguishes hero vs regular stacks.
+// `ctx.world->troops` must already hold the module's troop definitions (via
+// `mbGame::readSettingsData` before `mbGame::readStream`, `0x140112890..0x140112978`) so
+// `loadParties` (`0x1400c92c0`) distinguishes hero vs regular stacks (`tf_hero` `0x10` is
+// never toggled at runtime by `troop_set_type` `0x1401d01f0`) and un-renamed troops retain
+// their `troops.txt` names in `loadTroops` (`0x1400c9650`).
 // The body is parsed into staged copies of every target and committed only on
 // success; on any failure the world, globals, and trigger managers are unchanged.
 [[nodiscard]] inline SavegameLoadReport read_savegame_container(

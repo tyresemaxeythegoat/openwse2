@@ -162,9 +162,11 @@ Safety deviations and portable choices in `savegame.h` (each keeps valid saves l
 - **Corrupt records.** A `rglHashVector` / `rglStableVector` present flag other than 0 or 1 returns
   `corrupt_record`; a party key outside the slot table is consumed, dropped, and sets
   `count_exceeded`.
-- **Legacy bodies.** Headers in `[802..1173]` validate (the load window lists them), but their bodies
-  return `legacy_layout_unsupported`: the party / event / hash-vector readers take the version and
-  only the `1174` layout is reconstructed.
+- **Versioned bodies (`[802..1174]`).** `read_world_body_sections` and `read_party_record` (and
+  optionally `write_savegame_container`) implement the four `g_compatibleSavegameVersion` branches
+  verified in v1.1.5.5 (`is_marshall` `(900..999) || >= 1020`, `extra_icon_*` & 5 combat options
+  `> 1136`, `ignore_with_player_party` `> 1160`), with omitted fields reset to retail defaults
+  (`SavegameContainerResult::legacy_layout_unsupported` remains in the API enum).
 - **Troop merge.** Loaded troop fields are merged into the module troop; when
   `bDontLoadRegularTroopInventories` skips a regular troop's gold / xp / HP / faction / inventory /
   face / name / class block, the live values stay.

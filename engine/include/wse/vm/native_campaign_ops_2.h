@@ -138,9 +138,7 @@ inline void native_campaign_equip_item(game::WseAgent& ag,
     const std::int32_t hp = tr.max_hit_points(world.skills[5].max_level);
     ag.max_hit_points = static_cast<float>(std::max(1, hp));
     ag.hit_points = ag.max_hit_points;
-    const auto new_id = static_cast<std::int32_t>(world.agents.size());
-    world.agents.push_back(std::move(ag));
-    return new_id;
+    return world.allocate_agent(std::move(ag));
 }
 
 [[nodiscard]] inline std::int32_t native_campaign_random_quest(

@@ -992,6 +992,8 @@ void test_p8_sensors_and_pinch_zoom() {
         // to map_camera_distance via exp(-map_zoom_delta).
         wse::game::WseWorldState world{};
         const float initial_dist = world.input.map_camera_distance;
+        const bool initial_ok =
+            close(initial_dist, wse::game::WseInputState::kDefaultMapCameraDistance);
         wse::platform::SyntheticInputBackend backend;
         backend.push_batch(std::array<RawInputEvent, 2>{
             {touch(T::TouchMove, 10, 0.35f, 0.50f), touch(T::TouchMove, 11, 0.55f, 0.50f)}});
@@ -1000,9 +1002,31 @@ void test_p8_sensors_and_pinch_zoom() {
         const float zoomed_dist = world.input.map_camera_distance;
         // Mirroring the same frame again must not apply the zoom impulse twice.
         wse::game::WorldInputBridge::sync_to_world(mgr, world);
-        const bool bridged = close(world.input.map_zoom_delta, zoom_out) &&
-                             zoomed_dist > initial_dist &&
-                             world.input.map_camera_distance == zoomed_dist;
+        bool bridged = initial_ok &&
+                       close(world.input.map_zoom_delta, zoom_out) &&
+                       zoomed_dist > initial_dist &&
+                       world.input.map_camera_distance == zoomed_dist;
+
+        // Verify retail `rglConfig::Campaign` zoom clamp `[3.5f, 175.0f]`.
+        wse::game::WseWorldState clamp_world{};
+        WseInputManager clamp_mgr;
+        clamp_mgr.set_viewport_size(2400, 1080);
+        clamp_mgr.set_context(InputContext::CampaignMap);
+        clamp_mgr.profile().pinch_zoom_enabled = true;
+        clamp_mgr.profile().pinch_zoom_sensitivity = 1.0f;
+        clamp_world.input.map_camera_distance = 3.6f;
+        clamp_mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchDown, 20, 0.45f, 0.50f), touch(T::TouchDown, 21, 0.55f, 0.50f)}});
+        clamp_mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchMove, 20, 0.10f, 0.50f), touch(T::TouchMove, 21, 0.90f, 0.50f)}});
+        wse::game::WorldInputBridge::sync_to_world(clamp_mgr, clamp_world);
+        bridged = bridged && close(clamp_world.input.map_camera_distance, 3.5f);
+
+        clamp_world.input.map_camera_distance = 174.0f;
+        clamp_mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchMove, 20, 0.49f, 0.50f), touch(T::TouchMove, 21, 0.51f, 0.50f)}});
+        wse::game::WorldInputBridge::sync_to_world(clamp_mgr, clamp_world);
+        bridged = bridged && close(clamp_world.input.map_camera_distance, 175.0f);
 
         // Lifting one finger exits pinch without jumping look; re-check context/toggle gating.
         mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchUp, 10, 0.35f, 0.50f)}});

@@ -196,10 +196,14 @@ struct WseInputState {
     std::uint64_t bindings_revision = 0U;
     // Slice P8: two-finger campaign map pinch zoom impulse (>0 zoom in, <0 zoom out).
     float map_zoom_delta = 0.0f;
-    // mbBasicGame +0x5050 m_cameraDistance; scaled by exp(-map_zoom_delta) on zoom gestures.
-    // The default (20) and the [1, 200] clamp in `WorldInputBridge` are placeholders, not
-    // retail values (STATUS.md §5); no campaign-map camera reads this field yet.
-    float map_camera_distance = 20.0f;
+    // mbMapWindow constructor (`0x140116d70`) initializes +0x2d0 (`m_cameraDistance`) to 5.0f;
+    // rglConfig::Campaign bounds `fMapCameraMinZoom` (`0x1406173c0`) = 3.5f and
+    // `fMapCameraMaxZoom` (`0x1406173c4`) = 175.0f; `WorldInputBridge` scales by
+    // `exp(-map_zoom_delta)` and clamps to `[kMinMapCameraZoom, kMaxMapCameraZoom]`.
+    static constexpr float kDefaultMapCameraDistance = 5.0f;
+    static constexpr float kMinMapCameraZoom = 3.5f;
+    static constexpr float kMaxMapCameraZoom = 175.0f;
+    float map_camera_distance = kDefaultMapCameraDistance;
     // `WseInputManager::frame_counter()` of the frame whose zoom was last applied, so
     // calling `WorldInputBridge::sync_to_world` twice for one frame zooms only once.
     std::uint64_t map_zoom_applied_frame = 0U;
@@ -486,9 +490,13 @@ struct WseMiscRuntimeState {
     std::unordered_map<std::int32_t, WseQuestStrings> quest_strings{};
 };
 
-// mbQueuedWindow (8 B) entry type 0x12 stops mbSimpleTriggerManager::execute early
-// after an odd event key (0x1402101d2..0x1402101f7).
-inline constexpr std::int32_t kQueuedWindowSaveExitBreakType = 0x12;
+// mbQueuedWindow (8 B) entry type 0x12 maps to `mbMenuWindow` (`g_gameScreen` slot 18,
+// `0x1400efd21`): `jump_to_menu` (`0x1401dc2b1`) calls `mbGame::enqueueWindow(0x12, -1)`,
+// `mbSimpleTriggerManager::execute` stops early after an odd event key when back().type == 0x12
+// (`0x1402101d2..0x1402101f7`), and `mbMapWindow::frameMove` (`0x140118987`) pops it before
+// switching to `mbMenuWindow` (whose `open` (`0x1401202e0`) clears any remaining queue entries).
+inline constexpr std::int32_t kQueuedWindowMenuType = 0x12;
+inline constexpr std::int32_t kQueuedWindowSaveExitBreakType = kQueuedWindowMenuType;
 
 // mbTrack (0x5c B) savegame fields serialized by saveTracks (0x1400ca420) / loadTracks (0x1400c90e0).
 struct WseSavegameTrack {

@@ -708,10 +708,10 @@ inline void party_join_to_party(WseWorldState& world,
         party_add_members(world, dst_party_no, st.troop_no, st.num_troops, pris,
                           st.num_wounded_troops);
     }
-    auto& src = world.parties[static_cast<std::size_t>(src_party_no)];
-    src.stacks.clear();
     if (src_party_no != world.main_party_no) {
-        src.active = false;
+        (void)world.remove_party(src_party_no);
+    } else {
+        world.parties[static_cast<std::size_t>(src_party_no)].stacks.clear();
     }
 }
 
@@ -791,31 +791,17 @@ inline void party_collect_attachments(WseWorldState& world,
 inline void party_attach_to_current_battle(WseWorldState& world,
                                            std::int32_t party_no,
                                            std::int32_t side) {
-    if (!world.is_valid_party(party_no)) {
+    if (!world.detach_party(party_no)) {
         return;
     }
-    auto& p = world.parties[static_cast<std::size_t>(party_no)];
-    if (world.is_valid_party(p.attached_to_party_no)) {
-        auto& old_parent =
-            world.parties[static_cast<std::size_t>(p.attached_to_party_no)];
-        std::erase(old_parent.attached_party_nos, party_no);
-        p.attached_to_party_no = -1;
-    }
-    p.in_battle = true;
+    world.parties[static_cast<std::size_t>(party_no)].in_battle = true;
     std::int32_t target_no = world.main_party_no;
     if (side == 1) {
         target_no = world.encountered_party_no;
     } else if (side == 2) {
         target_no = world.encountered_party_2_no;
     }
-    if (world.is_valid_party(target_no) && target_no != party_no) {
-        auto& target = world.parties[static_cast<std::size_t>(target_no)];
-        p.attached_to_party_no = target_no;
-        if (std::find(target.attached_party_nos.begin(), target.attached_party_nos.end(),
-                      party_no) == target.attached_party_nos.end()) {
-            target.attached_party_nos.push_back(party_no);
-        }
-    }
+    (void)world.attach_party(party_no, target_no);
 }
 
 inline void party_leave_cur_battle(WseWorldState& world, std::int32_t party_no) {
@@ -823,12 +809,10 @@ inline void party_leave_cur_battle(WseWorldState& world, std::int32_t party_no) 
         return;
     }
     auto& p = world.parties[static_cast<std::size_t>(party_no)];
+    const bool had_parent = world.is_valid_party(p.attached_to_party_no);
     p.in_battle = false;
-    if (world.is_valid_party(p.attached_to_party_no)) {
-        auto& parent = world.parties[static_cast<std::size_t>(p.attached_to_party_no)];
-        std::erase(parent.attached_party_nos, party_no);
-        p.attached_to_party_no = -1;
-    } else if (party_no == world.main_party_no) {
+    (void)world.detach_party(party_no);
+    if (!had_parent && party_no == world.main_party_no) {
         world.misc.meta_mission_event_ended = true;
     }
 }
@@ -1060,24 +1044,26 @@ inline void mission_burst_particle_system(WseWorldState& world,
 [[nodiscard]] inline std::int32_t mission_spawn_item(WseWorldState& world,
                                                      std::int32_t item_no,
                                                      std::int32_t modifier,
-                                                     bool refill_ammo) {
-    if (!world.is_valid_item(item_no) || !world.lighting.has_scene ||
-        world.mission_objects.size() >= kMaxSpawnedMissionObjects) {
+                                                     bool refill_ammo,
+                                                     std::int32_t prune_seconds = 0) {
+    if (!world.is_valid_item(item_no) || !world.lighting.has_scene) {
         return -1;
     }
     WseMissionObject obj{};
     obj.active = true;
     obj.is_item = true;
     obj.m5.is_spawned_item = true;
+    if (prune_seconds > 0) {
+        obj.m5.enable_pruning = true;
+        obj.m5.prune_time = static_cast<float>(prune_seconds);
+    }
     obj.scene_prop_no = item_no;
     obj.variation_id_no = (modifier >= 0 && modifier < 43) ? modifier : 0;
     obj.variation_id_2_no = refill_ammo ? 1 : 0;
     obj.position = world.spawn_position;
     obj.starting_position = world.spawn_position;
     obj.target_position = world.spawn_position;
-    const auto idx = static_cast<std::int32_t>(world.mission_objects.size());
-    world.mission_objects.push_back(std::move(obj));
-    return idx;
+    return world.allocate_mission_object(std::move(obj));
 }
 
 }  // namespace wse::game

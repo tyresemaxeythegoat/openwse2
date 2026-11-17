@@ -1091,6 +1091,81 @@ struct WseEditModeState {
     bool selection_changed = false;                       // mbGame +0x16f50
 };
 
+namespace container_detail {
+
+// Mirrors rglStableVector<T>::createItem (`0x14014b960` mbAgent / `0x14014c030` mbMissionObject):
+// reuses freed interior slots LIFO while keeping active indices < max_entries stable.
+template <typename T>
+[[nodiscard]] inline std::int32_t allocate_stable_entry(
+    std::vector<T>& vec,
+    std::vector<std::int32_t>& free_slots,
+    std::size_t max_entries,
+    T&& entry) {
+    while (!free_slots.empty()) {
+        const std::int32_t recycled = free_slots.back();
+        free_slots.pop_back();
+        if (recycled >= 0 && static_cast<std::size_t>(recycled) < vec.size() &&
+            !vec[static_cast<std::size_t>(recycled)].active) {
+            vec[static_cast<std::size_t>(recycled)] = std::move(entry);
+            vec[static_cast<std::size_t>(recycled)].active = true;
+            return recycled;
+        }
+    }
+    if (vec.size() >= max_entries) {
+        return -1;
+    }
+    const auto new_id = static_cast<std::int32_t>(vec.size());
+    vec.push_back(std::move(entry));
+    vec.back().active = true;
+    return new_id;
+}
+
+// Mirrors rglStableVector<T>::remove (`0x14014b810` mbAgent / `0x14014bdc0` mbMissionObject):
+// resets the deactivated slot, shrinks trailing inactive capacity to the new high-water
+// mark, and records interior holes on the LIFO free list.
+template <typename T>
+inline bool release_stable_entry(std::vector<T>& vec,
+                                 std::vector<std::int32_t>& free_slots,
+                                 std::int32_t id) {
+    if (id < 0 || static_cast<std::size_t>(id) >= vec.size()) {
+        return false;
+    }
+    auto& elem = vec[static_cast<std::size_t>(id)];
+    if (!elem.active) {
+        return false;
+    }
+    elem = T{};
+    elem.active = false;
+    if (static_cast<std::size_t>(id) + 1U == vec.size()) {
+        while (!vec.empty() && !vec.back().active) {
+            vec.pop_back();
+        }
+        const auto new_limit = static_cast<std::int32_t>(vec.size());
+        std::erase_if(free_slots, [new_limit](std::int32_t slot) noexcept {
+            return slot < 0 || slot >= new_limit;
+        });
+    } else if (std::find(free_slots.begin(), free_slots.end(), id) == free_slots.end()) {
+        free_slots.push_back(id);
+    }
+    return true;
+}
+
+template <typename T>
+inline void rebuild_stable_free_list(std::vector<T>& vec,
+                                     std::vector<std::int32_t>& free_slots) {
+    free_slots.clear();
+    while (!vec.empty() && !vec.back().active) {
+        vec.pop_back();
+    }
+    for (std::size_t i = 0; i < vec.size(); ++i) {
+        if (!vec[i].active) {
+            free_slots.push_back(static_cast<std::int32_t>(i));
+        }
+    }
+}
+
+}  // namespace container_detail
+
 struct WseWorldState {
     bool has_game = true;
     std::int32_t main_party_no = 0;                       // mbGame +0x0420
@@ -1143,6 +1218,9 @@ struct WseWorldState {
     std::array<WseTeam, kNumTeams> teams{};
     std::vector<WseAgent> agents{};
     std::vector<WseMissionObject> mission_objects{};
+    std::vector<std::int32_t> agent_free_slots{};           // rglStableVector<mbAgent> LIFO pool
+    std::vector<std::int32_t> mission_object_free_slots{};  // rglStableVector<mbMissionObject> LIFO pool
+    std::int32_t num_parties_created = 0;                   // rglHashVector<mbParty> monotonic ID count
     std::vector<WseMissionTemplate> mission_templates{};
     std::vector<WsePresentationOverlay> overlays{};
     std::vector<WseMultiplayerMessage> multiplayer_messages{};
@@ -1335,6 +1413,377 @@ struct WseWorldState {
     }
     [[nodiscard]] bool is_valid_profile(std::int32_t id) const noexcept {
         return id >= 0 && static_cast<std::size_t>(id) < mp.profiles.size();
+    }
+
+    // Consumes the top queued campaign window transition (`mbMapWindow::frameMove` `0x140118987`
+    // and `mbMenuWindow::open` `0x1401202e0`, which clears any remaining queue entries on 0x12).
+    std::int32_t consume_campaign_queued_window() noexcept {
+        if (m5.enqueued_windows.empty()) {
+            return -1;
+        }
+        const std::int32_t win_type = m5.enqueued_windows.back().first;
+        m5.enqueued_windows.pop_back();
+        m5.active_window = win_type;
+        if (win_type == kQueuedWindowMenuType) {
+            m5.enqueued_windows.clear();
+        }
+        return win_type;
+    }
+
+    void sync_party_creation_count() noexcept {
+        const auto count = static_cast<std::int32_t>(parties.size());
+        if (num_parties_created < count) {
+            num_parties_created = count;
+        }
+    }
+
+    // Allocates a fresh party with monotonic script ID (mirrors rglHashVector<mbParty>::getFreeItem
+    // `0x1400e8730` monotonic `+0x138f0` key allocation: removed party handles are never reused).
+    [[nodiscard]] std::int32_t allocate_party(WseParty party) {
+        party.active = true;
+        const auto new_id = static_cast<std::int32_t>(parties.size());
+        parties.push_back(std::move(party));
+        sync_party_creation_count();
+        return new_id;
+    }
+
+    // Detaches `party_no` from any current parent party cleanly (keeping bidirectional
+    // parent `attached_party_nos` and child `attached_to_party_no` in sync).
+    bool detach_party(std::int32_t party_no) {
+        if (!is_valid_party(party_no)) {
+            return false;
+        }
+        auto& p = parties[static_cast<std::size_t>(party_no)];
+        if (p.attached_to_party_no >= 0 &&
+            static_cast<std::size_t>(p.attached_to_party_no) < parties.size()) {
+            auto& parent = parties[static_cast<std::size_t>(p.attached_to_party_no)];
+            std::erase(parent.attached_party_nos, party_no);
+        }
+        p.attached_to_party_no = -1;
+        return true;
+    }
+
+    // Attaches `party_no` to `target_no`, detaching any prior parent first.
+    bool attach_party(std::int32_t party_no, std::int32_t target_no) {
+        if (!is_valid_party(party_no) || !is_valid_party(target_no) ||
+            party_no == target_no) {
+            return false;
+        }
+        (void)detach_party(party_no);
+        auto& p = parties[static_cast<std::size_t>(party_no)];
+        auto& target = parties[static_cast<std::size_t>(target_no)];
+        p.attached_to_party_no = target_no;
+        if (std::find(target.attached_party_nos.begin(), target.attached_party_nos.end(),
+                      party_no) == target.attached_party_nos.end()) {
+            target.attached_party_nos.push_back(party_no);
+        }
+        return true;
+    }
+
+    // Full retail party teardown matching `mbGame::removeParty` (`0x1400dd990`): detaches
+    // parent/child links, increments template `num_destroyed`, clears AI behavior targets,
+    // unlinks agent/player/world references, marks `pf_disabled` (`0x100`), frees buffers, and
+    // keeps removed IDs as tombstones so script handles are never reused.
+    bool remove_party(std::int32_t party_no) {
+        if (!detach_party(party_no)) {
+            return false;
+        }
+        auto& p = parties[static_cast<std::size_t>(party_no)];
+        for (const std::int32_t child_no : p.attached_party_nos) {
+            if (child_no >= 0 && static_cast<std::size_t>(child_no) < parties.size()) {
+                auto& child = parties[static_cast<std::size_t>(child_no)];
+                if (child.attached_to_party_no == party_no) {
+                    child.attached_to_party_no = -1;
+                }
+            }
+        }
+        p.attached_party_nos.clear();
+        if (is_valid_party_template(p.template_no)) {
+            ++party_templates[static_cast<std::size_t>(p.template_no)].num_destroyed;
+        }
+        for (std::size_t i = 0; i < parties.size(); ++i) {
+            if (i == static_cast<std::size_t>(party_no) || !parties[i].active) {
+                continue;
+            }
+            if (parties[i].behavior_object == party_no) {
+                parties[i].behavior_object = -1;
+            }
+            if (parties[i].default_behavior_object == party_no) {
+                parties[i].default_behavior_object = -1;
+            }
+        }
+        for (auto& ag : agents) {
+            if (ag.active && ag.party_no == party_no) {
+                ag.party_no = -1;
+            }
+        }
+        for (auto& [pid, pl_ext] : m6.players) {
+            (void)pid;
+            if (pl_ext.party_no == party_no) {
+                pl_ext.party_no = -1;
+            }
+        }
+        p.player_no = -1;
+        if (main_party_no == party_no) {
+            main_party_no = -1;
+        }
+        if (encountered_party_no == party_no) {
+            encountered_party_no = -1;
+        }
+        if (camera_follow_party_no == party_no) {
+            camera_follow_party_no = -1;
+        }
+        p.flags |= 0x100ULL;
+        p.stacks.clear();
+        p.slots.clear();
+        p.active = false;
+        return true;
+    }
+
+    // Allocates an agent through `rglStableVector<mbAgent>` LIFO recycling (`0x14014b960`).
+    [[nodiscard]] std::int32_t allocate_agent(WseAgent agent) {
+        const std::int32_t id = container_detail::allocate_stable_entry(
+            agents, agent_free_slots, kMaxSpawnedAgents, std::move(agent));
+        if (id >= 0) {
+            m6.agents.erase(id);
+        }
+        return id;
+    }
+
+    // Full container removal matching `mbMission::removeAgent` (`0x140138590`) +
+    // `rglStableVector<mbAgent>::remove` (`0x14014b810`): unlinks rider/horse, player/world refs,
+    // clears M6 ext state, and recycles/trims the backing slot.
+    bool remove_agent(std::int32_t agent_no) {
+        if (!is_valid_agent(agent_no)) {
+            return false;
+        }
+        auto& ag = agents[static_cast<std::size_t>(agent_no)];
+        if (is_valid_agent(ag.horse_agent_no) && ag.horse_agent_no != agent_no) {
+            auto& horse = agents[static_cast<std::size_t>(ag.horse_agent_no)];
+            if (horse.rider_agent_no == agent_no) {
+                horse.rider_agent_no = -1;
+            }
+        }
+        if (is_valid_agent(ag.rider_agent_no) && ag.rider_agent_no != agent_no) {
+            auto& rider = agents[static_cast<std::size_t>(ag.rider_agent_no)];
+            if (rider.horse_agent_no == agent_no) {
+                rider.horse_agent_no = -1;
+            }
+        }
+        if (ag.player_no >= 0 &&
+            static_cast<std::size_t>(ag.player_no) < players.size()) {
+            auto& pl = players[static_cast<std::size_t>(ag.player_no)];
+            if (pl.agent_no == agent_no) {
+                pl.agent_no = -1;
+            }
+        }
+        if (player_agent_no == agent_no) {
+            player_agent_no = -1;
+        }
+        if (m6.scene.spectated_agent_no == agent_no) {
+            m6.scene.spectated_agent_no = -1;
+        }
+        m6.agents.erase(agent_no);
+        return container_detail::release_stable_entry(agents, agent_free_slots, agent_no);
+    }
+
+    // Allocates a mission object via `rglStableVector<mbMissionObject>` recycling (`0x14014c030`).
+    [[nodiscard]] std::int32_t allocate_mission_object(WseMissionObject obj) {
+        const std::int32_t id = container_detail::allocate_stable_entry(
+            mission_objects, mission_object_free_slots, kMaxSpawnedMissionObjects,
+            std::move(obj));
+        if (id >= 0) {
+            m6.mission_objects.erase(id);
+        }
+        return id;
+    }
+
+    // Removes a mission object matching `mbMission::removeMissionObject` (`0x140132ba0`) +
+    // `rglStableVector<mbMissionObject>::remove` (`0x14014bdc0`).
+    bool remove_mission_object(std::int32_t obj_no) {
+        if (!is_valid_mission_object(obj_no)) {
+            return false;
+        }
+        for (auto& slot_obj : fx.spawn_effector_mission_object_nos) {
+            if (slot_obj == obj_no) {
+                slot_obj = -1;
+            }
+        }
+        for (auto& ag : agents) {
+            if (!ag.active) {
+                continue;
+            }
+            for (auto& att : ag.attached_mission_object_nos) {
+                if (att == obj_no) {
+                    att = -1;
+                }
+            }
+            if (ag.m5.standing_mission_object_no == obj_no) {
+                ag.m5.standing_mission_object_no = -1;
+            }
+        }
+        m6.mission_objects.erase(obj_no);
+        return container_detail::release_stable_entry(
+            mission_objects, mission_object_free_slots, obj_no);
+    }
+
+    void clear_mission_entities() {
+        for (auto& pl : players) {
+            pl.agent_no = -1;
+        }
+        agents.clear();
+        agent_free_slots.clear();
+        m6.agents.clear();
+        mission_objects.clear();
+        mission_object_free_slots.clear();
+        m6.mission_objects.clear();
+        fx.spawn_effector_mission_object_nos.fill(-1);
+        player_agent_no = -1;
+        m6.scene.spectated_agent_no = -1;
+    }
+
+    // Advances faded/pruned entity lifetimes: removes agents whose fade-out exceeded
+    // `30.0s` (`mbAgent::frameMove` `0x14002a3a1`), plus expired/faded mission objects.
+    void advance_mission_lifetimes(const std::array<std::int64_t, 3>& timers_total,
+                                   float dt_seconds) {
+        static constexpr std::int64_t kAgentFadeOutTicks = 3000000LL;  // 30.0s * 100k ticks/s
+        for (std::int32_t i = static_cast<std::int32_t>(agents.size()) - 1; i >= 0; --i) {
+            const auto idx = static_cast<std::size_t>(i);
+            if (idx >= agents.size() || !agents[idx].active) {
+                continue;
+            }
+            const auto& m5_ext = agents[idx].m5;
+            if (m5_ext.exit_status == 3 &&
+                timers_total[2] >= m5_ext.exit_timer_start &&
+                (timers_total[2] - m5_ext.exit_timer_start) >= kAgentFadeOutTicks) {
+                (void)remove_agent(i);
+            }
+        }
+        if (dt_seconds <= 0.0f) {
+            return;
+        }
+        for (std::int32_t i = static_cast<std::int32_t>(mission_objects.size()) - 1; i >= 0; --i) {
+            const auto idx = static_cast<std::size_t>(i);
+            if (idx >= mission_objects.size() || !mission_objects[idx].active) {
+                continue;
+            }
+            auto& m5_ext = mission_objects[idx].m5;
+            if (m5_ext.fade_out) {
+                m5_ext.fade_duration -= dt_seconds;
+                if (m5_ext.fade_duration <= 0.0f) {
+                    (void)remove_mission_object(i);
+                    continue;
+                }
+            }
+            if (m5_ext.enable_pruning && m5_ext.prune_time > 0.0f) {
+                m5_ext.prune_time -= dt_seconds;
+                if (m5_ext.prune_time <= 0.0f) {
+                    (void)remove_mission_object(i);
+                }
+            }
+        }
+    }
+
+    void rebuild_stable_free_lists() {
+        container_detail::rebuild_stable_free_list(agents, agent_free_slots);
+        container_detail::rebuild_stable_free_list(mission_objects, mission_object_free_slots);
+    }
+
+    // Resets one player slot matching `mbnetPlayer::initialize` (`0x1401b7220`) /
+    // `clear` (`0x1401b7580`): unlinks agent & party links and clears scores, items, and slots.
+    void clear_player_slot(std::int32_t player_no, bool preserve_temp_ban = false) {
+        if (player_no < 0 || static_cast<std::size_t>(player_no) >= players.size()) {
+            return;
+        }
+        auto& pl = players[static_cast<std::size_t>(player_no)];
+        if (pl.agent_no >= 0 && static_cast<std::size_t>(pl.agent_no) < agents.size()) {
+            auto& ag = agents[static_cast<std::size_t>(pl.agent_no)];
+            if (ag.player_no == player_no) {
+                ag.player_no = -1;
+                ag.is_non_player = true;
+            }
+        }
+        std::int32_t temp_ban_mins = 0;
+        if (const auto it = m6.players.find(player_no); it != m6.players.end()) {
+            if (preserve_temp_ban) {
+                temp_ban_mins = it->second.temp_banned_minutes;
+            }
+            const std::int32_t old_party = it->second.party_no;
+            if (old_party >= 0 && static_cast<std::size_t>(old_party) < parties.size() &&
+                parties[static_cast<std::size_t>(old_party)].player_no == player_no) {
+                parties[static_cast<std::size_t>(old_party)].player_no = -1;
+            }
+            m6.players.erase(it);
+        }
+        if (preserve_temp_ban && temp_ban_mins > 0) {
+            m6.players[player_no].temp_banned_minutes = temp_ban_mins;
+        }
+        pl = WsePlayer{};
+        pl.status = 0;
+        pl.name = "UNASSIGNED";
+        pl.team_no = 2;
+    }
+
+    // Initializes fixed-capacity `mbnetData` roster (`mbnetPlayer::initialize` `0x1401b7220`).
+    void init_players(std::int32_t capacity = kMaxPlayers) {
+        const std::int32_t capped =
+            std::clamp(capacity, std::int32_t{0}, kMaxPlayers);
+        max_players = capped;
+        players.assign(static_cast<std::size_t>(capped), WsePlayer{});
+        for (std::int32_t i = 0; i < capped; ++i) {
+            clear_player_slot(i);
+        }
+    }
+
+    // Activates player slot `player_no` (`mbnetPlayer::create` `0x1401b8980`).
+    bool connect_player(std::int32_t player_no,
+                        std::string name,
+                        std::int32_t unique_id = 0,
+                        std::int32_t team_no = 2) {
+        if (player_no < 0 || player_no >= max_players ||
+            static_cast<std::size_t>(player_no) >= players.size()) {
+            return false;
+        }
+        clear_player_slot(player_no);
+        auto& pl = players[static_cast<std::size_t>(player_no)];
+        pl.status = 2;
+        pl.name = name.empty() ? std::string("UNASSIGNED") : std::move(name);
+        pl.unique_id = unique_id;
+        pl.team_no = (team_no >= 0 && team_no < kNumTeams) ? team_no : 2;
+        return true;
+    }
+
+    // Disconnects player `player_no` (`mbnetNetworkServer::disconnectPlayer` `0x1401a8c20` ->
+    // `mbnetData::disconnectPlayer` `0x14017c650`).
+    bool disconnect_player(std::int32_t player_no, bool preserve_temp_ban = false) {
+        if (player_no < 0 || static_cast<std::size_t>(player_no) >= players.size()) {
+            return false;
+        }
+        if (mp.saved_ban.valid && mp.saved_ban.player_no == player_no) {
+            mp.saved_ban.valid = false;
+        }
+        clear_player_slot(player_no, preserve_temp_ban);
+        return true;
+    }
+
+    // Resets per-mission player equipment/agent links (`startMission` `0x14017c7c0`).
+    void reset_players_for_mission() noexcept {
+        for (std::size_t i = 0; i < players.size(); ++i) {
+            auto& pl = players[i];
+            if (pl.agent_no >= 0 && static_cast<std::size_t>(pl.agent_no) < agents.size()) {
+                auto& ag = agents[static_cast<std::size_t>(pl.agent_no)];
+                if (ag.player_no == static_cast<std::int32_t>(i)) {
+                    ag.player_no = -1;
+                    ag.is_non_player = true;
+                }
+            }
+            pl.agent_no = -1;
+            pl.item_ids.fill(-1);
+            pl.picked_up_slots.fill(false);
+            pl.m5.spawn_items_saved = false;
+            pl.m5.saved_spawn_items_value = 0;
+            pl.m5.ready_to_spawn = false;
+        }
     }
 };
 

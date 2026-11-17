@@ -473,6 +473,90 @@ void test_triggers_and_wse_integration() {
                    otherWinCtx.globalVariables.get(11) == 22,
                "simple trigger manager ignores non-0x12 queued windows");
     }
+
+    // End-to-end producer (`jump_to_menu` 2060) -> odd-key early-out -> consumer
+    // (`consume_campaign_queued_window` matching `mbMapWindow::frameMove` + `mbMenuWindow::open`).
+    {
+        SimpleTriggerManager menuMgr;
+        SimpleTrigger t0;
+        t0.interval = 0.0;
+        t0.timer.value = 0;
+        t0.block.statements = {
+            make_stmt(2060, {3}),
+            make_stmt(core_op::kAssign, {glob(10), 11}),
+        };
+        SimpleTrigger t1;
+        t1.interval = 0.0;
+        t1.timer.value = 0;
+        t1.block.statements = {make_stmt(core_op::kAssign, {glob(11), 22})};
+        menuMgr.triggers = {t0, t1};
+
+        VmContext menuCtx;
+        expect(execute_simple_trigger_manager(menuMgr, 1, timersTotal, menuCtx) &&
+                   menuCtx.world.jump_menu_no == 3 &&
+                   menuCtx.world.m5.enqueued_windows.size() == 1U &&
+                   menuCtx.world.m5.enqueued_windows.back().first == kQueuedWindowMenuType &&
+                   menuCtx.globalVariables.get(10) == 11 &&
+                   menuCtx.globalVariables.get(11) == 0,
+               "jump_to_menu 2060 produces queued type-0x12 window that halts odd pass");
+
+        const std::int32_t consumed = menuCtx.world.consume_campaign_queued_window();
+        expect(consumed == kQueuedWindowMenuType &&
+                   menuCtx.world.m5.active_window == kQueuedWindowMenuType &&
+                   menuCtx.world.m5.enqueued_windows.empty(),
+               "campaign consumer pops type-0x12 menu window and clears queue");
+
+        menuMgr.triggers[0].interval = 100.0;  // let next frame proceed to trigger 1 cleanly
+        expect(execute_simple_trigger_manager(menuMgr, 1, timersTotal, menuCtx) &&
+                   menuCtx.globalVariables.get(11) == 22,
+               "later odd-key pass runs remaining simple triggers after window consumption");
+    }
+
+    // Phase 2E party container lifetimes: monotonic IDs + full `mbGame::removeParty` teardown.
+    {
+        VmContext pctx;
+        pctx.world.has_game = true;
+        pctx.world.parties.resize(2);
+        pctx.world.parties[0].active = true;
+        pctx.world.parties[1].active = true;
+        pctx.world.party_templates.resize(1);
+        pctx.world.party_templates[0].name = "Raiders";
+        pctx.world.sync_party_creation_count();
+
+        StatementBlock pSpawnBlock;
+        pSpawnBlock.statements = {make_stmt(1100U, {0, 0}), make_stmt(1100U, {0, 0})};
+        expect(execute_statement_block(pSpawnBlock, pctx),
+               "1100 spawns two parties");
+        expect(pctx.world.parties.size() == 4U &&
+                   pctx.world.num_parties_created == 4 &&
+                   pctx.world.party_templates[0].num_created == 2,
+               "party creation tracks monotonic count and template num_created");
+
+        (void)pctx.world.attach_party(2, 0);
+        (void)pctx.world.attach_party(3, 2);
+        pctx.world.parties[1].behavior_object = 2;
+        pctx.world.parties[1].default_behavior_object = 2;
+        pctx.world.m6.player(1).party_no = 2;
+        pctx.world.parties[2].player_no = 1;
+        pctx.world.encountered_party_no = 2;
+
+        StatementBlock pRemoveBlock;
+        pRemoveBlock.statements = {make_stmt(1232U, {2}), make_stmt(1100U, {0, 0})};
+        expect(execute_statement_block(pRemoveBlock, pctx),
+               "1232 remove_party and subsequent spawn execute");
+        expect(!pctx.world.is_valid_party(2) &&
+                   (pctx.world.parties[2].flags & 0x100ULL) != 0ULL &&
+                   pctx.world.parties[0].attached_party_nos.empty() &&
+                   pctx.world.parties[3].attached_to_party_no == -1 &&
+                   pctx.world.parties[1].behavior_object == -1 &&
+                   pctx.world.parties[1].default_behavior_object == -1 &&
+                   pctx.world.m6.player(1).party_no == -1 &&
+                   pctx.world.encountered_party_no == -1 &&
+                   pctx.world.party_templates[0].num_destroyed == 1 &&
+                   pctx.registers[0] == 4 &&
+                   pctx.world.num_parties_created == 5,
+               "remove_party performs full retail teardown and never reuses removed party handles");
+    }
 }
 
 void test_return_values_positions_and_dict_loop() {

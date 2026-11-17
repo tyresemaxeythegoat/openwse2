@@ -366,7 +366,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             narrow[0] != 0) {
             auto& pl = world.players[static_cast<std::size_t>(narrow[0])];
             if (pl.privilege < 3) {
-                pl.status = 0;
+                (void)world.disconnect_player(narrow[0]);
             }
         }
         return NativeDispatch::handled;
@@ -378,7 +378,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             if (pl.privilege < 3) {
                 native_world_push_ban_record(world, narrow[0], pl.unique_id,
                                              pl.name, narrow[1] > 0, narrow[2]);
-                pl.status = 0;
+                (void)world.disconnect_player(narrow[0]);
             }
         }
         return NativeDispatch::handled;
@@ -402,7 +402,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             const std::int32_t bp = world.mp.saved_ban.player_no;
             if (bp >= 0 && bp < world.max_players &&
                 world.is_valid_player(bp)) {
-                world.players[static_cast<std::size_t>(bp)].status = 0;
+                (void)world.disconnect_player(bp);
             }
         }
         return NativeDispatch::handled;

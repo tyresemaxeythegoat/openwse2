@@ -915,16 +915,18 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    (header/version) are documented only at the trigger-record level.~~ **Resolved (Phase 2A):**
    `mbGame::save` (`0x1400e16c0`), `fillSavegameHeader` (`0x1400e1e30`), `mbSavegame::readStream`
    (`0x1400c73b0`), `mbLoadSaveWindow::updatePanels` (`0x140113c10`), `rglOutputBinaryFileStreamWithChecksum`
-   (`0x140565b40`), and all `mbGame::{writeStream,readStream}` (`0x1400c9a90`/`0x1400c8520`) section
-   codecs are verified and implemented in `wse/io/binary_stream.h` and `wse/game/savegame.h` for
-   version-`1174` bodies. The party / event / hash-vector readers take the savegame version
-   (`mbParty::readStream` `0x1401ba5e0`, `mbEvent::readStream` `0x1400bae70`), so pre-1174 body
-   layouts and the per-note `mbNotes` fields remain open (`STATUS.md` §5).
-2. ~~`mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state~~ **Resolved (Phase 2C):**
+   (`0x140565b40`), `mbNotes::{writeStream,readStream}` (`0x1401b9f30`/`0x1401b9e90`, scalar
+   `+0x4c0`/`+0x4c4` written per entry of the 16-item loop), and all `mbGame::{writeStream,readStream}`
+   (`0x1400c9a90`/`0x1400c8520`) section codecs plus the four `[802..1174]` version gates
+   (`mbGame::readStream` `0x1400c856d`, `mbParty::readStream` `0x1401ba9d1`/`0x1401baa20`/`0x1401baa7f`)
+   are verified and implemented in `wse/io/binary_stream.h` and `wse/game/savegame.h`.
+2. ~~`mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state~~ **Resolved (Phase 2C + 2A follow-up):**
    disassembly at `0x1402101a0` (`0x1402101d2..0x1402101f7`) shows the check tests positive odd
    event keys when the queued-window stack (`g_game` `0x14061f070` `+0x04b0`) back entry has type
-   `0x12`; wired into `execute_simple_trigger_manager` (`wse/vm/block_vm.h`) over
-   `world.m5.enqueued_windows`.
+   `0x12` (`mbMenuWindow`, enqueued by `jump_to_menu` `0x1401dc2b1`); wired into
+   `execute_simple_trigger_manager` (`wse/vm/block_vm.h`), `native_mission_ops.h`, and
+   `WseWorldState::consume_campaign_queued_window` (`mbMapWindow::frameMove` `0x140118987` +
+   `mbMenuWindow::open` `0x1401202e0`) in `headless_runner.h`.
 3. ~~Locate `gameOperation` table construction in `WSELuaManager`.~~ **Resolved (2F):** Disassembly of
    `WSELuaManager::initialize` (`0x14033ca80`), `loadOperations` (`0x14033dff0`), `loadGameConstants`
    (`0x14033f630`), `loadGlobalVars` (`0x14033f400`), `initLGameTable` (`0x140340920`), `doMainScript`

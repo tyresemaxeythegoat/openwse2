@@ -588,6 +588,7 @@ template <class Fn>
 
     world.parties.clear();
     world.parties.resize(total_slots);
+    world.num_parties_created = static_cast<std::int32_t>(total_slots);
     if (out_meta != nullptr) {
         out_meta->assign(total_slots, LoadedPartyMeta{});
     }

@@ -132,8 +132,8 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
     const float dist = native_entity_randf(ctx) * std::max(0.0f, world.spawn_radius);
     spawned.position.o.x += std::cos(angle) * dist;
     spawned.position.o.y += std::sin(angle) * dist;
-    const auto new_id = static_cast<std::int32_t>(world.parties.size());
-    world.parties.push_back(std::move(spawned));
+    const std::int32_t new_id = world.allocate_party(std::move(spawned));
+    ++world.party_templates[static_cast<std::size_t>(template_no)].num_created;
     game::party_add_template(world, new_id, template_no, false);
     return new_id;
 }
@@ -379,12 +379,8 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         return NativeDispatch::handled;
     case 416: // multiplayer_clear_scene (0x1401c840f)
         if (world.is_multiplayer) {
-            for (auto& obj : world.mission_objects) {
-                obj.active = false;
-            }
-            for (auto& ag : world.agents) {
-                ag.active = false;
-            }
+            world.clear_mission_entities();
+            world.reset_players_for_mission();
         }
         return NativeDispatch::handled;
     case 417: // multiplayer_is_server (0x1401c8469)
@@ -757,8 +753,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             np.faction_no = tr.faction_no;
             np.position = main_p.position;
             np.stacks.push_back(game::WsePartyStack{narrow[0], 1, 0, 0});
-            const auto new_id = static_cast<std::int32_t>(world.parties.size());
-            world.parties.push_back(std::move(np));
+            const std::int32_t new_id = world.allocate_party(std::move(np));
             ctx.registers[0] = new_id;
         }
         return NativeDispatch::handled;

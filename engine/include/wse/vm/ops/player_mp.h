@@ -154,11 +154,11 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         rec.permanent = false;
         rec.banner_player_no = narrow[0];
         world->mp.banned_players.push_back(std::move(rec));
+        (void)world->disconnect_player(narrow[0], true);
         world->m6.player(narrow[0]).temp_banned_minutes =
             static_cast<std::int32_t>(
                 std::min<std::int64_t>(wide[1],
                                        std::numeric_limits<std::int32_t>::max()));
-        pl.status = 0;
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::player_get_wse2_version: {

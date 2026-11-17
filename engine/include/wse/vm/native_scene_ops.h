@@ -475,17 +475,17 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
     case 1974: // spawn_scene_prop (0x1401d9fe5, callee 0x14013a450)
         // Spawns at the set_spawn_position (1970) transform, like spawn_item
         // and spawn_horse. Safety deviation: capped at kMaxSpawnedMissionObjects.
-        if (world.is_valid_scene_prop(narrow[0]) && world.lighting.has_scene &&
-            world.mission_objects.size() < game::kMaxSpawnedMissionObjects) {
+        if (world.is_valid_scene_prop(narrow[0]) && world.lighting.has_scene) {
             game::WseMissionObject obj{};
             obj.scene_prop_no = narrow[0];
             obj.variation_id_no = statement.numOperands > 1 ? narrow[1] : 0;
             obj.position = world.spawn_position;
             obj.starting_position = world.spawn_position;
             obj.target_position = world.spawn_position;
-            const auto new_id = static_cast<std::int64_t>(world.mission_objects.size());
-            world.mission_objects.push_back(std::move(obj));
-            ctx.registers[0] = new_id;
+            const std::int32_t new_id = world.allocate_mission_object(std::move(obj));
+            if (new_id >= 0) {
+                ctx.registers[0] = static_cast<std::int64_t>(new_id);
+            }
         }
         return NativeDispatch::handled;
     case 2001: { // mission_cam_set_mode (0x1401daca6)

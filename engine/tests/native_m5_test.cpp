@@ -840,6 +840,73 @@ void test_m5_review_regressions() {
                    std::numeric_limits<std::int32_t>::max(),
                "928 clamps val to a saturated lower bound");
     }
+
+    // Phase 2E mission containers (`rglStableVector<mbAgent>` & `rglStableVector<mbMissionObject>`
+    // LIFO recycling, tail shrink, referential unlinking, 30s fade-out, item pruning, and 416 clear).
+    {
+        VmContext ctx;
+        auto& w = ctx.world;
+        w.lighting.has_scene = true;
+        w.is_multiplayer = true;
+        w.misc.num_scene_props = 4;
+        w.items.resize(2);
+        w.items[0].hit_points = 100;
+        w.troops.resize(1);
+        w.init_players(4);
+        expect(w.connect_player(1, "Knight", 777, 1), "connect player 1");
+
+        expect(run_stmt(ctx, 1972U, {0}), "1972 spawn agent 0");
+        expect(run_stmt(ctx, 1973U, {0}), "1973 spawn horse 1");
+        expect(run_stmt(ctx, 1972U, {0}), "1972 spawn agent 2");
+        expect(w.agents.size() == 3U, "3 active agents spawned");
+
+        w.agents[1].rider_agent_no = 0;
+        w.agents[0].horse_agent_no = 1;
+        w.players[1].agent_no = 1;
+        w.agents[1].player_no = 1;
+        w.m6.agent(1).fade_out_duration = 5.0f;
+
+        expect(w.remove_agent(1) && !w.is_valid_agent(1) &&
+                   w.agents[0].horse_agent_no == -1 &&
+                   w.players[1].agent_no == -1 &&
+                   w.agents.size() == 3U && w.agent_free_slots.size() == 1U,
+               "remove_agent unlinks horse/rider/player and records interior hole");
+
+        expect(run_stmt(ctx, 1972U, {0}) && ctx.registers[0] == 1 &&
+                   w.agents.size() == 3U && w.m6.agents.find(1) == w.m6.agents.end(),
+               "spawn_agent recycles interior hole 1 LIFO and clears stale M6 state");
+
+        expect(w.remove_agent(2) && w.agents.size() == 2U,
+               "removing trailing agent shrinks stable vector back to high-water mark");
+
+        ctx.timersTotal[2] = 1000000LL;  // 10s
+        expect(run_stmt(ctx, 1749U, {1}), "1749 agent_fade_out records exit_timer_start");
+        ctx.timersTotal[2] = 4000000LL;  // +30s
+        w.advance_mission_lifetimes(ctx.timersTotal, 0.1f);
+        expect(!w.is_valid_agent(1) && w.agents.size() == 1U,
+               "advance_mission_lifetimes removes faded agent after 30.0s and trims tail");
+
+        expect(run_stmt(ctx, 1974U, {1, 0}) && ctx.registers[0] == 0, "1974 prop 0");
+        expect(run_stmt(ctx, 1971U, {0, 0, 5}) && ctx.registers[0] == 1, "1971 item 1 (prune=5s)");
+        expect(run_stmt(ctx, 1974U, {1, 0}) && ctx.registers[0] == 2, "1974 prop 2");
+        w.fx.spawn_effector_mission_object_nos[0] = 1;
+        w.m6.mission_object(1).sound_progress = 0.75f;
+        w.advance_mission_lifetimes(ctx.timersTotal, 6.0f);
+        expect(!w.is_valid_mission_object(1) &&
+                   w.fx.spawn_effector_mission_object_nos[0] == -1 &&
+                   w.mission_object_free_slots.size() == 1U,
+               "advance_mission_lifetimes expires pruned item 1 and unlinks effector");
+        expect(run_stmt(ctx, 1974U, {1, 0}) && ctx.registers[0] == 1 &&
+                   w.mission_objects.size() == 3U &&
+                   w.m6.mission_objects.find(1) == w.m6.mission_objects.end(),
+               "spawn_scene_prop recycles freed mission_object hole 1 LIFO");
+
+        expect(run_stmt(ctx, 416U, {}), "416 multiplayer_clear_scene");
+        expect(w.agents.empty() && w.mission_objects.empty() &&
+                   w.agent_free_slots.empty() && w.mission_object_free_slots.empty() &&
+                   w.players[1].agent_no == -1,
+               "416 clear_scene resets containers, free lists, and player agent links");
+    }
 }
 
 }  // namespace

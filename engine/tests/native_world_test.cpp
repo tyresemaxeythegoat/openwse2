@@ -717,6 +717,50 @@ void test_m4_review_regressions() {
         expect(run_stmt(ctx, 1833U, {reg(7), 1, 0}) && ctx.registers[7] == item_obj,
                "1833 finds the spawned item instance");
     }
+
+    // Phase 2E player container lifecycle (`mbnetPlayer::initialize`/`clear`/`disconnectPlayer`).
+    {
+        VmContext pctx;
+        auto& w = pctx.world;
+        w.is_server = true;
+        w.init_players(4);
+        w.agents.resize(1);
+        w.agents[0].active = true;
+        w.parties.resize(1);
+        w.parties[0].active = true;
+
+        expect(w.players.size() == 4U && w.players[1].status == 0 &&
+                   w.players[1].name == "UNASSIGNED" && w.players[1].team_no == 2,
+               "init_players initializes fixed-capacity UNASSIGNED team-2 slots");
+        expect(w.connect_player(1, "Sir_Robin", 4242, 0), "connect_player activates slot 1");
+        w.players[1].agent_no = 0;
+        w.agents[0].player_no = 1;
+        w.agents[0].is_non_player = false;
+        w.players[1].gold = 950;
+        w.players[1].score = 12;
+        w.players[1].kill_count = 3;
+        w.players[1].death_count = 1;
+        w.players[1].banner_no = 5;
+        w.players[1].troop_no = 2;
+        w.players[1].item_ids[0] = 9;
+        w.players[1].picked_up_slots[0] = true;
+        w.players[1].slots.set(0, 88);
+        w.m6.player(1).party_no = 0;
+        w.parties[0].player_no = 1;
+
+        expect(run_stmt(pctx, 465U, {1}), "465 kick_player runs retail disconnect");
+        expect(!w.is_valid_player(1) && w.players[1].status == 0 &&
+                   w.players[1].name == "UNASSIGNED" && w.players[1].team_no == 2 &&
+                   w.players[1].agent_no == -1 && w.players[1].gold == 0 &&
+                   w.players[1].score == 0 && w.players[1].kill_count == 0 &&
+                   w.players[1].death_count == 0 && w.players[1].banner_no == -1 &&
+                   w.players[1].troop_no == -1 && w.players[1].item_ids[0] == -1 &&
+                   !w.players[1].picked_up_slots[0] &&
+                   w.players[1].slots.get(0) == 0 &&
+                   w.agents[0].player_no == -1 && w.agents[0].is_non_player &&
+                   w.parties[0].player_no == -1,
+               "kick_player clears scores/items/slots/name/team and unlinks agent & party");
+    }
 }
 
 }  // namespace

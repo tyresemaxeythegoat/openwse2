@@ -15,11 +15,11 @@
  "inputs": {
   "layouts": 83,
   "globals_scanned": 48658,
-  "symbols_curated": 3494,
+  "symbols_curated": 3504,
   "game_vtables": 76,
-  "function_ranges": 4773,
-  "global_objects": 22,
-  "superseded_vas": 2914
+  "function_ranges": 4786,
+  "global_objects": 24,
+  "superseded_vas": 2922
  },
  "strings": [
   {
@@ -13698,6 +13698,18 @@
    "va": "0x14055ea50"
   },
   {
+   "name": "?fMapCameraMinZoom@Campaign@rglConfig@@2MA",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1406173c0"
+  },
+  {
+   "name": "?fMapCameraMaxZoom@Campaign@rglConfig@@2MA",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1406173c4"
+  },
+  {
    "name": "?bHorseFriendlyFire@Battle@rglConfig@@2_NA",
    "kind": "public",
    "source": "pdb-public",
@@ -19914,6 +19926,12 @@
    "va": "0x140084330"
   },
   {
+   "name": "?doStep@mbLoadingWindow@@QEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140112630"
+  },
+  {
    "name": "?selectPanel@mbLoadSaveWindow@@QEAAXH@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -20014,6 +20032,18 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140119700"
+  },
+  {
+   "name": "?frameMove@mbMapWindow@@UEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140117f90"
+  },
+  {
+   "name": "??0mbMapWindow@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140116d70"
   },
   {
    "name": "??0mbMenuItem@@QEAA@XZ",
@@ -21996,10 +22026,22 @@
    "va": "0x14017ce20"
   },
   {
+   "name": "?disconnectPlayer@mbnetData@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017c650"
+  },
+  {
    "name": "??1?$rglVector@VmbnetPlayer@@@@QEAA@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14017bcb0"
+  },
+  {
+   "name": "?startMission@mbnetData@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017c7c0"
   },
   {
    "name": "?getMyPlayer@mbnetData@@QEAAPEAVmbnetPlayer@@XZ",
@@ -22396,6 +22438,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401a8000"
+  },
+  {
+   "name": "?disconnectPlayer@mbnetNetworkServer@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a8c20"
   },
   {
    "name": "?putDirection@mbnetBuffer@@QEAAXAEBVrglVector4@@HMM@Z",
@@ -34236,6 +34284,20 @@
    "va": "0x14034f4a0"
   },
   {
+   "name": "rglConfig::Campaign::fMapCameraMinZoom",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x1406173c0",
+   "type_index": "0x40"
+  },
+  {
+   "name": "rglConfig::Campaign::fMapCameraMaxZoom",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x1406173c4",
+   "type_index": "0x40"
+  },
+  {
    "name": "rglTransform::Identity",
    "kind": "global",
    "source": "pdb-global",
@@ -44304,6 +44366,12 @@
    "symbol": "?isAvailableForFaction@mbItemKind@@QEBA_NH@Z"
   },
   {
+   "start": "0x140112630",
+   "end": "0x140112d58",
+   "va": "0x140112630",
+   "symbol": "?doStep@mbLoadingWindow@@QEAA_NXZ"
+  },
+  {
    "start": "0x140112d60",
    "end": "0x140113592",
    "va": "0x140112d60",
@@ -44356,6 +44424,18 @@
    "end": "0x140116d61",
    "va": "0x140116c20",
    "symbol": "?readStream@mbMapIcon@@QEAAXAEAVrglStream@@H@Z"
+  },
+  {
+   "start": "0x140116d70",
+   "end": "0x140116f14",
+   "va": "0x140116d70",
+   "symbol": "??0mbMapWindow@@QEAA@XZ"
+  },
+  {
+   "start": "0x140117f90",
+   "end": "0x140119700",
+   "va": "0x140117f90",
+   "symbol": "?frameMove@mbMapWindow@@UEAAXM@Z"
   },
   {
    "start": "0x140119700",
@@ -47430,6 +47510,18 @@
    "symbol": "?getServerPlayer@mbnetData@@QEAAPEAVmbnetPlayer@@XZ"
   },
   {
+   "start": "0x14017c650",
+   "end": "0x14017c70b",
+   "va": "0x14017c650",
+   "symbol": "?disconnectPlayer@mbnetData@@QEAAXH@Z"
+  },
+  {
+   "start": "0x14017c7c0",
+   "end": "0x14017cbed",
+   "va": "0x14017c7c0",
+   "symbol": "?startMission@mbnetData@@QEAAXXZ"
+  },
+  {
    "start": "0x14017ce20",
    "end": "0x14017cea1",
    "va": "0x14017ce20",
@@ -47878,6 +47970,54 @@
    "end": "0x1401a8996",
    "va": "0x1401a8000",
    "symbol": "?playerChat@mbnetNetworkServer@@QEAAXHAEBVrglString@@@Z"
+  },
+  {
+   "start": "0x1401a8c20",
+   "end": "0x1401a8c4e",
+   "va": "0x1401a8c20",
+   "symbol": "?disconnectPlayer@mbnetNetworkServer@@QEAAXH@Z"
+  },
+  {
+   "start": "0x1401a8c4e",
+   "end": "0x1401a8ca9",
+   "va": "0x1401a8c20",
+   "symbol": "?disconnectPlayer@mbnetNetworkServer@@QEAAXH@Z"
+  },
+  {
+   "start": "0x1401a8ca9",
+   "end": "0x1401a8cd5",
+   "va": "0x1401a8c20",
+   "symbol": "?disconnectPlayer@mbnetNetworkServer@@QEAAXH@Z"
+  },
+  {
+   "start": "0x1401a8cd5",
+   "end": "0x1401a8d98",
+   "va": "0x1401a8c20",
+   "symbol": "?disconnectPlayer@mbnetNetworkServer@@QEAAXH@Z"
+  },
+  {
+   "start": "0x1401a8d98",
+   "end": "0x1401a8e08",
+   "va": "0x1401a8c20",
+   "symbol": "?disconnectPlayer@mbnetNetworkServer@@QEAAXH@Z"
+  },
+  {
+   "start": "0x1401a8e08",
+   "end": "0x1401a8ef0",
+   "va": "0x1401a8c20",
+   "symbol": "?disconnectPlayer@mbnetNetworkServer@@QEAAXH@Z"
+  },
+  {
+   "start": "0x1401a8ef0",
+   "end": "0x1401a8f44",
+   "va": "0x1401a8c20",
+   "symbol": "?disconnectPlayer@mbnetNetworkServer@@QEAAXH@Z"
+  },
+  {
+   "start": "0x1401a8f44",
+   "end": "0x1401a8f74",
+   "va": "0x1401a8c20",
+   "symbol": "?disconnectPlayer@mbnetNetworkServer@@QEAAXH@Z"
   },
   {
    "start": "0x1401a9450",
@@ -63608,6 +63748,18 @@
  ],
  "global_objects": [
   {
+   "name": "rglConfig::Campaign::fMapCameraMinZoom",
+   "va": "0x1406173c0",
+   "size": 4,
+   "end": "0x1406173c4"
+  },
+  {
+   "name": "rglConfig::Campaign::fMapCameraMaxZoom",
+   "va": "0x1406173c4",
+   "size": 4,
+   "end": "0x1406173c8"
+  },
+  {
    "name": "s_randSeed",
    "va": "0x140617d54",
    "size": 4,
@@ -64551,6 +64703,7 @@
   "0x14010dcb0",
   "0x14010e840",
   "0x14010e8c0",
+  "0x14010fa10",
   "0x140110140",
   "0x140110980",
   "0x140110ff0",
@@ -64560,6 +64713,8 @@
   "0x140113bd0",
   "0x140113f50",
   "0x140114000",
+  "0x140114150",
+  "0x140115370",
   "0x140116ac0",
   "0x140116b80",
   "0x14011cde0",
@@ -64849,6 +65004,8 @@
   "0x140178550",
   "0x140178570",
   "0x140178590",
+  "0x140178740",
+  "0x1401788b0",
   "0x140178f10",
   "0x140179170",
   "0x140179260",
@@ -64907,6 +65064,7 @@
   "0x1401a3370",
   "0x1401a3730",
   "0x1401a40e0",
+  "0x1401a4d00",
   "0x1401a5530",
   "0x1401a5d10",
   "0x1401a8b40",
@@ -66578,6 +66736,8 @@
   "0x14052c7f8",
   "0x1405c7a30",
   "0x1405c936a",
+  "0x1405c9374",
+  "0x1405c9378",
   "0x1405c9704",
   "0x1405c9c5c",
   "0x1405c9c60",

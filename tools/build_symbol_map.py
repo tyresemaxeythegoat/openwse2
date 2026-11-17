@@ -188,6 +188,10 @@ GLOBAL_NAMES = {
     "g_resourceManager",
     "g_moduleVersion",
     "g_compatibleSavegameModuleVersion",
+    "rglConfig::Campaign::fMapCameraMinZoom",
+    "rglConfig::Campaign::fMapCameraMaxZoom",
+    "?fMapCameraMinZoom@Campaign@rglConfig@@2MA",
+    "?fMapCameraMaxZoom@Campaign@rglConfig@@2MA",
 }
 
 HELPER_SYMBOLS = {
@@ -197,6 +201,12 @@ HELPER_SYMBOLS = {
     "?bRagdollHeadshots@Physics@rglConfig@@2_NA",
     "?bCheatMode@General@rglConfig@@2_NA",
     "?bEditMode@General@rglConfig@@2_NA",
+    "?doStep@mbLoadingWindow@@QEAA_NXZ",
+    "??0mbMapWindow@@QEAA@XZ",
+    "?frameMove@mbMapWindow@@UEAAXM@Z",
+    "?disconnectPlayer@mbnetData@@QEAAXH@Z",
+    "?disconnectPlayer@mbnetNetworkServer@@QEAAXH@Z",
+    "?startMission@mbnetData@@QEAAXXZ",
     "?mbCheckRegister@@YA_NH@Z",
     "?mbCheckParty@@YA_NH@Z",
     "?mbCheckString@@YA_NHH@Z",

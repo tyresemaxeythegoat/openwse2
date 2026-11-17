@@ -172,9 +172,10 @@ public:
     }
 
     // Strict decimal parsers: the whole string must be one optionally signed integer.
-    // Retail `toInt64Stream` (0x14030f6d0) / `toUInt64Stream` (0x14030f7b0) return a bare
-    // integer with no error path; their whitespace / sign / trailing-text handling is not
-    // yet confirmed from disassembly (STATUS.md §5), so callers must not rely on leniency.
+    // Retail `toInt64Stream` (`0x14030f6d0`) / `toUInt64Stream` (`0x14030f7b0`) have no error path:
+    // they inspect only byte 0 for `'-'` and accumulate backward mod `2^64` without validating
+    // digits or whitespace. Strict validation here (`from_chars` / full-slice match) is an
+    // intentional safety deviation so malformed inputs fail cleanly instead of wrapping garbage.
     [[nodiscard]] bool parse_i64(std::int64_t& out) const noexcept {
         const std::string_view v = view();
         if (v.empty()) {

@@ -383,9 +383,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
 
     // Sites, Visitors, Factions
     case 1232: // remove_party (0x1401cf49f)
-        if (world.is_valid_party(narrow[0])) {
-            world.parties[static_cast<std::size_t>(narrow[0])].active = false;
-        }
+        (void)world.remove_party(narrow[0]);
         return NativeDispatch::handled;
     case 1261: // modify_visitors_at_site (0x1401cf657)
         if (world.is_valid_site(narrow[0])) {
@@ -868,14 +866,10 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         }
         return NativeDispatch::handled;
     case 1660: // party_attach_to_party (0x1401d2a10)
-        if (world.is_valid_party(narrow[0]) && world.is_valid_party(narrow[1])) {
-            world.parties[static_cast<std::size_t>(narrow[0])].attached_to_party_no = narrow[1];
-        }
+        (void)world.attach_party(narrow[0], narrow[1]);
         return NativeDispatch::handled;
     case 1661: // party_detach (0x1401d2a62)
-        if (world.is_valid_party(narrow[0])) {
-            world.parties[static_cast<std::size_t>(narrow[0])].attached_to_party_no = -1;
-        }
+        (void)world.detach_party(narrow[0]);
         return NativeDispatch::handled;
     case 1665: // party_get_cur_town (0x1401d2afa)
         if (world.is_valid_party(narrow[1])) {

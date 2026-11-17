@@ -109,9 +109,11 @@ public:
             const float dist = (std::isfinite(world.input.map_camera_distance) &&
                                 world.input.map_camera_distance > 0.0f)
                                    ? world.input.map_camera_distance
-                                   : 20.0f;
+                                   : WseInputState::kDefaultMapCameraDistance;
             world.input.map_camera_distance =
-                std::clamp(dist * std::exp(-fs.map_zoom_delta), 1.0f, 200.0f);
+                std::clamp(dist * std::exp(-fs.map_zoom_delta),
+                           WseInputState::kMinMapCameraZoom,
+                           WseInputState::kMaxMapCameraZoom);
         }
 
         if (world.input.bindings_revision != mgr.game_keys().revision()) {

@@ -370,7 +370,7 @@ inline void native_world_push_tableau_mesh(
         if (world.is_valid_item(narrow[0]) && narrow[2] >= 0 &&
             world.lighting.has_scene) {
             const std::int32_t obj_no = game::mission_spawn_item(
-                world, narrow[0], narrow[1], opcode == 1971U);
+                world, narrow[0], narrow[1], opcode == 1971U, narrow[2]);
             ctx.registers[0] = static_cast<std::int64_t>(obj_no);
         }
         return NativeDispatch::handled;
