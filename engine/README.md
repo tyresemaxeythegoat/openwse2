@@ -145,8 +145,11 @@ check interval (`-112` = agent exit status, `-105`/`-106` = ranged attack, `-26`
 
 `WseWorldState` (`wse/game/world_state.h`) owns the four live containers:
 
-- **Parties** (`rglHashVector<mbParty>`, `getFreeItem` `0x1400e8730`): `allocate_party` appends,
-  so `parties.size()` is the next key and handles are never reused; `remove_party`
+- **Parties** (`rglHashVector<mbParty>`, `getFreeItem` `0x1400e8730`): `parties` is indexed by
+  party key; `allocate_party` hands out `max(next_party_key, parties.size())` (`m_nextKey`
+  `+0x138f0`), filling any gap with tombstones, so handles are never reused. Saves restore
+  `m_nextKey` and place each slot's party at its stored key, which may exceed `m_numSlots` once
+  retail recycled hash-vector slots (a key at or above `m_nextKey` is `corrupt_record`); `remove_party`
   (`mbGame::removeParty` `0x1400dd990`) leaves a tombstone (`active = false`, `pf_disabled`) and
   clears parent/child links, AI behavior targets, agent/player links, and the encountered /
   camera-follow party ids.
@@ -162,15 +165,39 @@ check interval (`-112` = agent exit status, `-105`/`-106` = ranged attack, `-26`
   (468) still bans a player who was kicked while the ban poll ran.
 
 `step_world_frame` runs after the trigger managers: on the campaign map it consumes one queued
-window; in a mission it removes agents 30 s after `agent_fade_out` (1749) and spawned items whose
-prune timer expired. `multiplayer_clear_scene` (416) removes all agents and runtime-spawned
-objects (`m5.spawned_at_runtime`) and keeps scene-placed props.
+window (`consume_campaign_queued_window`: `0x12` menu, `0x0f` presentation, and `0x10` notes open
+windows `0x12` / `0x16` / `0x15` and sync `m6.ui.active_window_id`); in a mission it retires any
+campaign window id (map / menu / notes / presentation -> `-1`), removes agents 30 s after
+`agent_fade_out` (1749), and removes prunable objects whose timer expired. `start_presentation`
+(900) queues its `0x0f` window only on the campaign map. `multiplayer_clear_scene` (416) removes all
+agents and every prunable object (`m5.enable_pruning`, `+0x1d5`) and keeps scene-placed and
+unpruned props; `scene_prop_set_prune_time` (1819) arms `enable_pruning` for a positive time
+(`setPruneTime` `0x140153d88`).
 
 Safety deviations: `remove_party` refuses the main party; `attach_party` (and
 `party_attach_to_party` 1660) refuses an attachment that would close a cycle; spawning past
 `kMaxSpawnedAgents` / `kMaxSpawnedMissionObjects` (8192) returns -1. A faded-out scene prop is never
-removed (`scene_prop_fade_in` 1823 must be able to restore it). Open questions are in `STATUS.md` §5
-("Phase 2E review").
+removed (`scene_prop_fade_in` 1823 must be able to restore it). Party keys are capped at
+`kMaxPartyKeys` (`131072`): every key below `next_party_key` costs a `WseParty` in the dense
+vector, so saves and `parties.txt` above the cap are rejected (`count_limit_exceeded`) and
+`allocate_party` (`spawn_around_party` 1100, 1101) returns -1 there. The window queue is capped at
+`kMaxQueuedWindows` (`64`, oldest dropped), and the campaign consumer pops window types that only
+unmodelled windows (menu, inventory, party screens) would consume, leaving the active window
+unknown (`-1`) instead of leaving them queued forever. Open questions are in `STATUS.md` §5.
+
+### Scene objects and skinning (Phase 2A / P9)
+
+`instantiate_scene_objects` (`wse/game/scene_loaders.h`) replaces the mission entities through
+`clear_mission_entities`, so nothing keeps a reference to the previous scene's object ids. Each
+`.sco` record keeps its kind (`0` prop, `1` entry point, `2` item, `4` flora, `5` passage) in
+`meta_mesh_no`, the meta type `try_for_prop_instances` filters on; only props, passages, and items
+get a `scene_prop_no`, so an entry point or flora record never counts as a scene prop of the same
+number. Entry points also fill `world.entry_points`. It returns how many records did not fit in
+`kMaxSpawnedMissionObjects`.
+
+Safety deviations in `wse/asset/skeleton.h`: `build_mesh_skin_data` keeps a vertex's 4 largest
+bone weights (not the first 4 in group order), and `skin_brf_mesh` divides by the kept weight sum,
+so weights that do not add up to 1 do not pull vertices toward the bone-space origin.
 
 ## Savegames
 

@@ -2,6 +2,7 @@
 //
 // Build/run: powershell -File engine/build_host.ps1
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -11,6 +12,7 @@
 #include <limits>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "wse/core/rgl_string.h"
@@ -904,27 +906,107 @@ void test_savegame_transactional_and_hostile_input() {
                globals.get(3) == 33 && simple.triggers[0].timer.value == 99,
            "failed load leaves world, globals, and simple triggers untouched");
 
-    // Header + body up to a parties slot count of 2^20, then EOF: must fail before
-    // allocating ~1.2 GB of WseParty.
-    WseWorldState empty_parties = make_small_world();
-    empty_parties.parties.clear();
-    io::BinaryWriter bw;
-    write_savegame_header(bw, fill_savegame_header(empty_parties, {}));
-    bw.write_i64(0);
-    bw.write_i32(0);
-    bw.write_u32(0);
-    for (int i = 0; i < 5; ++i) bw.write_i32(0);
-    savegame_detail::write_save_game_section(bw, empty_parties);
-    for (int i = 0; i < 3; ++i) bw.write_i32(0);  // globals, triggers, simple triggers
-    for (int i = 0; i < 6; ++i) bw.write_i32(0);  // quests .. party templates
-    bw.write_i32(1 << 20);
-    bw.write_i32(0);
-    WseWorldState huge = make_small_world();
-    SavegameRuntimeContext hrc{};
-    hrc.world = &huge;
-    expect(read_savegame_container(bw.bytes(), hrc).status == SavegameContainerResult::truncated &&
-               huge.parties.size() == 1U,
-           "oversized party slot count is rejected before allocation");
+    // Header + body up to a parties slot count / m_nextKey pair, then EOF: must fail before
+    // allocating the key-indexed `WseParty` vector.
+    const auto party_counts_then_eof = [](std::int32_t num_slots, std::int32_t next_key) {
+        WseWorldState empty_parties = make_small_world();
+        empty_parties.parties.clear();
+        io::BinaryWriter bw;
+        write_savegame_header(bw, fill_savegame_header(empty_parties, {}));
+        bw.write_i64(0);
+        bw.write_i32(0);
+        bw.write_u32(0);
+        for (int i = 0; i < 5; ++i) bw.write_i32(0);
+        savegame_detail::write_save_game_section(bw, empty_parties);
+        for (int i = 0; i < 3; ++i) bw.write_i32(0);  // globals, triggers, simple triggers
+        for (int i = 0; i < 6; ++i) bw.write_i32(0);  // quests .. party templates
+        bw.write_i32(num_slots);
+        bw.write_i32(next_key);
+        WseWorldState huge = make_small_world();
+        SavegameRuntimeContext hrc{};
+        hrc.world = &huge;
+        const SavegameContainerResult rc = read_savegame_container(bw.bytes(), hrc).status;
+        return std::pair{rc, huge.parties.size()};
+    };
+    {
+        const auto [rc, size] = party_counts_then_eof(kMaxPartyKeys, 0);
+        expect(rc == SavegameContainerResult::truncated && size == 1U,
+               "party slot count past the stream is rejected before allocation");
+    }
+    {
+        const auto [rc, size] = party_counts_then_eof(1 << 20, 0);
+        expect(rc == SavegameContainerResult::count_limit_exceeded && size == 1U,
+               "party slot count above kMaxPartyKeys is rejected");
+    }
+    {
+        // Regression: m_nextKey of 2^20 passed validation and made the first allocate_party
+        // resize `parties` to ~1.25 GB of tombstones.
+        const auto [rc, size] = party_counts_then_eof(1, 1 << 20);
+        expect(rc == SavegameContainerResult::count_limit_exceeded && size == 1U,
+               "party m_nextKey above kMaxPartyKeys is rejected");
+    }
+
+    // Regression: once retail recycles hash-vector slots, a party's key can exceed
+    // m_numSlots. Such a party must load at its key instead of being dropped.
+    {
+        WseWorldState sparse = make_small_world();
+        sparse.parties.resize(5);
+        for (std::size_t k = 1; k < 4; ++k) sparse.parties[k].active = false;
+        sparse.parties[4].active = true;
+        sparse.parties[4].id = "p_far";
+        sparse.next_party_key = 5;
+        // Offset of the little-endian int32 sequence `seq` at or after `from` (size() if absent).
+        const auto find_i32s = [](const std::vector<std::byte>& hay, std::size_t from,
+                                  std::initializer_list<std::int32_t> seq) {
+            std::vector<std::byte> pat;
+            for (const std::int32_t v : seq) {
+                for (int b = 0; b < 4; ++b) {
+                    pat.push_back(static_cast<std::byte>(
+                        (static_cast<std::uint32_t>(v) >> (8 * b)) & 0xFFU));
+                }
+            }
+            const auto it = std::search(hay.begin() + static_cast<std::ptrdiff_t>(from),
+                                        hay.end(), pat.begin(), pat.end());
+            return static_cast<std::size_t>(it - hay.begin());
+        };
+        std::vector<std::byte> bytes = save_bytes(sparse);
+        // num_slots 5, m_nextKey 5, slot 0 {present, raw 0, key 0} ... 3 empty slots, slot 4
+        // {present, raw 4, key 4}: rewrite as 2 slots holding keys 0 and 4.
+        const std::size_t head = find_i32s(bytes, 0, {5, 5, 1, 0, 0});
+        const std::size_t gap = (head < bytes.size())
+                                    ? find_i32s(bytes, head + 20U, {0, 0, 0, 1, 4, 4})
+                                    : bytes.size();
+        expect(head < bytes.size() && gap < bytes.size(), "sparse party slots located");
+        if (head < bytes.size() && gap < bytes.size()) {
+            bytes.erase(bytes.begin() + static_cast<std::ptrdiff_t>(gap),
+                        bytes.begin() + static_cast<std::ptrdiff_t>(gap + 12U));
+            bytes[head] = std::byte{2};
+            WseWorldState loaded = make_small_world();
+            SavegameRuntimeContext lrc{};
+            lrc.world = &loaded;
+            const SavegameLoadReport rep = read_savegame_container(bytes, lrc);
+            expect(rep.succeeded() && !rep.count_exceeded && loaded.parties.size() == 5U &&
+                       loaded.next_party_key == 5 && loaded.parties[4].active &&
+                       loaded.parties[4].id == "p_far" && !loaded.parties[1].active,
+                   "party whose key exceeds m_numSlots loads at its key");
+            WseWorldState next = loaded;
+            expect(next.allocate_party(WseParty{}) == 5,
+                   "allocation after a sparse load continues past the highest key");
+        }
+        // A key at or above m_nextKey cannot have been handed out: corrupt record.
+        std::vector<std::byte> bad = save_bytes(sparse);
+        const std::size_t k4 = find_i32s(bad, 0, {1, 4, 4});
+        expect(k4 < bad.size(), "party key 4 located");
+        if (k4 < bad.size()) {
+            bad[k4 + 8U] = std::byte{9};  // key 4 -> 9 >= m_nextKey 5
+            WseWorldState t = make_small_world();
+            SavegameRuntimeContext trc{};
+            trc.world = &t;
+            expect(read_savegame_container(bad, trc).status ==
+                       SavegameContainerResult::corrupt_record,
+                   "party key at or above m_nextKey is a corrupt record");
+        }
+    }
 
     // A record-present flag other than 0/1 is corrupt, not an empty slot.
     WseWorldState flagged = make_small_world();

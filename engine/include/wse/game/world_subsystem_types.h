@@ -498,6 +498,9 @@ struct WseMiscRuntimeState {
 inline constexpr std::int32_t kQueuedWindowPresentationType = 0x0f;
 inline constexpr std::int32_t kQueuedWindowNotesType = 0x10;
 inline constexpr std::int32_t kQueuedWindowMenuType = 0x12;
+// Safety deviation (no retail limit): `WseWorldState::enqueue_window` drops the oldest entry
+// beyond this many pending transitions.
+inline constexpr std::size_t kMaxQueuedWindows = 64;
 
 // Window IDs allocated by `mbGameScreen::createWindows` (`0x1400ef710`) / checked by UI opcodes.
 inline constexpr std::int32_t kScreenWindowLoading = 3;

@@ -1025,6 +1025,49 @@ void test_m5_review_regressions() {
                    w.m5.active_window == wse::game::kScreenWindowMenu &&
                    w.m6.ui.active_window_id == wse::game::kScreenWindowMenu,
                "campaign frames consume the queued menu window and sync m6.ui.active_window_id");
+        // Regression: entering a mission retires the campaign menu window, so the
+        // mission-gated WSE opcodes (presentation_activate 4901, 4907, 3044) are not
+        // blocked by a stale menu id.
+        w.lighting.has_scene = true;
+        w.step_world_frame(t, 0.1f);
+        expect(w.m6.ui.active_window_id == -1 && w.m5.active_window == -1,
+               "mission frames retire a stale campaign menu window");
+    }
+    {
+        // Regression: start_presentation (900) queues its 0x0f window only on the campaign
+        // map; in a mission nothing drains the queue.
+        VmContext ctx;
+        auto& w = ctx.world;
+        w.lighting.has_scene = true;
+        for (int i = 0; i < 100; ++i) {
+            expect(run_stmt(ctx, 900U, {4, 0}), "900 start_presentation in mission");
+        }
+        expect(w.active_presentation_no == 4 && w.m5.enqueued_windows.empty(),
+               "900 in a mission activates the presentation without queueing a window");
+        w.lighting.has_scene = false;
+        expect(run_stmt(ctx, 900U, {5, 0}) && w.m5.enqueued_windows.size() == 1U &&
+                   w.m5.enqueued_windows.back().first ==
+                       wse::game::kQueuedWindowPresentationType &&
+                   w.m5.enqueued_windows.back().second == 5,
+               "900 on the campaign map queues presentation window 0x0f");
+    }
+    {
+        // Regression: scene_prop_set_prune_time (1819) arms pruning like `setPruneTime`
+        // (0x140153d88), so 416 removes a spawned prop that was given a prune time.
+        VmContext ctx;
+        auto& w = ctx.world;
+        w.lighting.has_scene = true;
+        w.is_multiplayer = true;
+        w.misc.num_scene_props = 4;
+        expect(run_stmt(ctx, 1974U, {3, 0}) && ctx.registers[0] == 0, "1819: spawn prop 0");
+        expect(run_stmt(ctx, 1974U, {3, 0}) && ctx.registers[0] == 1, "1819: spawn prop 1");
+        expect(run_stmt(ctx, 1819U, {0, 30}) && w.mission_objects[0].m5.enable_pruning &&
+                   w.mission_objects[0].m5.prune_time == 30.0f &&
+                   !w.mission_objects[1].m5.enable_pruning,
+               "1819 with a positive time enables pruning");
+        expect(run_stmt(ctx, 416U, {}) && !w.is_valid_mission_object(0) &&
+                   w.is_valid_mission_object(1),
+               "416 removes the prop given a prune time and keeps the other");
     }
 }
 

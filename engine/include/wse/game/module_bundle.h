@@ -313,6 +313,9 @@ inline void reset_module_world_state(WseWorldState& world) {
     world.m5.num_sounds = 0;
     world.m5.skybox_fog_colors.fill(0U);
     world.m6.sites.clear();
+    world.m5.enqueued_windows.clear();
+    world.m5.active_window = 0;
+    world.m6.ui.active_window_id = -1;
 }
 
 } // namespace detail

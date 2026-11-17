@@ -156,6 +156,13 @@ void test_map_manifold_and_height_query() {
     expect(!map.sample_surface_at(-0.5f, 1.0f, z, &mat),
            "sample_surface_at returns false outside manifold");
 
+    // A declared count far larger than the file is rejected before reserving storage.
+    wse::io::TokenReader huge_reader("1000000\n0 0 0\n");
+    wse::game::WorldMapManifold huge_map;
+    expect(!wse::game::read_manifold_map(huge_reader, huge_map, "huge_map.txt").ok &&
+               huge_map.vertices.capacity() == 0U,
+           "map.txt rejects a vertex count the file cannot hold");
+
     // Out-of-range face vertex index fails loudly.
     wse::io::TokenReader bad_reader("2\n0 0 0\n1 0 0\n1\n0 0 3 0 1 99\n");
     wse::game::WorldMapManifold bad_map;
@@ -254,6 +261,44 @@ void test_sco_scene_object_versions_and_ai_ground() {
     world.clear_multiplayer_scene();
     expect(world.mission_objects.size() == 3U && world.mission_objects[0].active,
            ".sco placed props survive retail 416 clear_multiplayer_scene");
+
+    // Regression: instantiating a new scene drops every reference to the previous scene's
+    // objects, keeps each record's kind, and only props/passages/items carry a kind number.
+    {
+        wse::game::WseWorldState w2;
+        wse::game::WseMissionObject old_obj{};
+        (void)w2.allocate_mission_object(old_obj);
+        w2.edit_mode.selected_prop_instances.push_back(0);
+        w2.m5.attached_missiles.push_back(wse::game::WseAttachedMissile{0, 0});
+        w2.fx.spawn_effector_mission_object_nos.fill(0);
+
+        wse::game::SceneObjectFile kinds;
+        kinds.objects.resize(4);
+        kinds.objects[0].kind_type = 0U;  // scene prop kind 3
+        kinds.objects[0].sub_kind = 3U;
+        kinds.objects[1].kind_type = 1U;  // entry point 3
+        kinds.objects[1].sub_kind = 3U;
+        kinds.objects[1].transform.o = {4.0f, 5.0f, 6.0f, 1.0f};
+        kinds.objects[2].kind_type = 4U;  // flora kind 3
+        kinds.objects[2].sub_kind = 3U;
+        kinds.objects[3].kind_type = 5U;  // passage prop kind 3
+        kinds.objects[3].sub_kind = 3U;
+        const std::size_t dropped = wse::game::instantiate_scene_objects(kinds, w2);
+        expect(dropped == 0U && w2.edit_mode.selected_prop_instances.empty() &&
+                   w2.m5.attached_missiles.empty() &&
+                   w2.fx.spawn_effector_mission_object_nos[0] == -1,
+               "instantiate_scene_objects clears references to the previous scene's objects");
+        expect(w2.mission_objects.size() == 4U && w2.mission_objects[0].scene_prop_no == 3 &&
+                   w2.mission_objects[1].scene_prop_no == -1 &&
+                   w2.mission_objects[2].scene_prop_no == -1 &&
+                   w2.mission_objects[3].scene_prop_no == 3 &&
+                   w2.mission_objects[1].meta_mesh_no == 1 &&
+                   w2.mission_objects[2].meta_mesh_no == 4,
+               "entry points and flora keep their meta type and never alias scene-prop kinds");
+        expect(w2.entry_points[3].valid && close(w2.entry_points[3].position.o.y, 5.0f) &&
+                   !w2.entry_points[0].valid,
+               ".sco entry points fill world.entry_points");
+    }
 
     // Corrupt trailing ground paint magic is rejected cleanly.
     raw[w.bytes().size() - 4U - 17U - 1U] ^= 0xFFU;
@@ -363,6 +408,32 @@ void test_skeleton_pose_and_skinning() {
     expect(close(skinned.face_corners[4].normal.x, 1.0f, 0.01f) &&
                close(skinned.face_corners[4].normal.y, 0.0f, 0.01f),
            "skin_brf_mesh rotates corner normals with skinning basis");
+
+    // Regression: a vertex with 5 influences keeps the 4 largest regardless of group order,
+    // and weights that do not sum to 1 are renormalized instead of shrinking the vertex.
+    {
+        wse::asset::BrfMesh m;
+        m.positions = {{1.0f, 2.0f, 3.0f}};
+        for (std::uint8_t b = 0; b < 5U; ++b) {
+            wse::asset::BrfVertexGroup g{};
+            g.bone_no = b;
+            g.pairs = {{0, (b == 0U) ? 0.05f : 0.2f}};  // smallest influence listed first
+            m.vertex_groups.push_back(std::move(g));
+        }
+        const auto sw = wse::asset::build_mesh_skin_data(m, 1U);
+        bool keeps_bone0 = false;
+        for (std::size_t k = 0; k < wse::asset::kMaxVertexSkinInfluences; ++k) {
+            keeps_bone0 = keeps_bone0 || (sw[0].bones[k] == 0U && sw[0].weights[k] > 0.0f);
+        }
+        expect(!keeps_bone0, "build_mesh_skin_data keeps the 4 largest influences");
+
+        const std::vector<wse::core::WseTransform> ident(5U, wse::core::WseTransform::identity());
+        wse::asset::BrfMesh out;
+        wse::asset::skin_brf_mesh(m, ident, out);
+        expect(close(out.positions[0].x, 1.0f) && close(out.positions[0].y, 2.0f) &&
+                   close(out.positions[0].z, 3.0f),
+               "skin_brf_mesh renormalizes kept weights (identity pose leaves vertex in place)");
+    }
 }
 
 void test_rhi_scene_terrain_props_and_skinned_render() {

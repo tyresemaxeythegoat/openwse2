@@ -72,6 +72,11 @@ inline constexpr std::int32_t kTotalTroopInventoryCapacity =
 inline constexpr std::int32_t kMaxAgentItems = 4;         // 0..3 (0x1401d6880)
 inline constexpr std::int32_t kNumQuestNotes = 16;        // 0..15 (0x1401cdde9)
 inline constexpr std::int32_t kNumDivisions = 9;          // 0..8 (0x1401d5ff8)
+// Safety deviation (no retail limit): party script IDs index the dense `parties` vector, so a
+// removed party's key stays allocated as a tombstone and every key below `next_party_key` costs
+// one `WseParty`. Loaders reject, and `allocate_party` refuses, keys at or above this cap so a
+// save or `parties.txt` cannot force a multi-gigabyte allocation through `m_nextKey`.
+inline constexpr std::int32_t kMaxPartyKeys = 1 << 17;
 
 struct WseSkill {
     std::string description{};
@@ -1416,11 +1421,29 @@ struct WseWorldState {
         return id >= 0 && static_cast<std::size_t>(id) < mp.profiles.size();
     }
 
+    // Queues a window transition (`mbGame::enqueueWindow`, callee of `change_screen_*`,
+    // `jump_to_menu` `0x1401dc2b1`, and `start_presentation` `0x1401cbf02`).
+    // Safety deviation: retail has no cap; the oldest entry is dropped once
+    // `kMaxQueuedWindows` are pending so a script that queues windows every frame while
+    // nothing consumes them cannot grow the queue without bound.
+    void enqueue_window(std::int32_t win_type, std::int32_t param = -1) {
+        if (m5.enqueued_windows.size() >= kMaxQueuedWindows) {
+            m5.enqueued_windows.erase(m5.enqueued_windows.begin());
+        }
+        m5.enqueued_windows.emplace_back(win_type, param);
+    }
+
     // Consumes the back queued campaign window transition (`mbMapWindow::frameMove` `0x140117f90`,
-    // `0x140118987..0x140118a80`): acts ONLY when back() is 0x12 (opens `mbMenuWindow` 0x12 and
-    // clears remaining entries per `mbMenuWindow::open` `0x140120240`), 0x0f (pops back and opens
-    // presentation window `0x16`), or 0x10 (pops back and opens notes window `0x15`). Other types
-    // remain queued on map frames. Syncs `m5.active_window` and `m6.ui.active_window_id`.
+    // `0x140118987..0x140118a80`): 0x12 opens `mbMenuWindow` 0x12 and clears remaining entries per
+    // `mbMenuWindow::open` `0x140120240`, 0x0f pops back and opens presentation window `0x16`, and
+    // 0x10 pops back and opens notes window `0x15`. Syncs `m5.active_window` and
+    // `m6.ui.active_window_id`.
+    // Safety deviation: in retail every other type stays queued until the window it targets (menu,
+    // inventory, party, ... screens) consumes it, but the engine models none of those windows, so
+    // nothing else would ever pop them. The back entry is popped here instead and the active
+    // window becomes unknown (-1, which every window-gated WSE opcode accepts), so for example
+    // `change_screen_map` / `change_screen_return` from an open menu stop the menu window from
+    // gating map-only opcodes (`get_mouse_map_coordinates` 3039) for the rest of the session.
     std::int32_t consume_campaign_queued_window() noexcept {
         if (m5.enqueued_windows.empty()) {
             return -1;
@@ -1444,7 +1467,8 @@ struct WseWorldState {
             screen_win = kScreenWindowNotes;
             break;
         default:
-            return -1;
+            m5.enqueued_windows.pop_back();
+            break;
         }
         m5.active_window = screen_win;
         m6.ui.active_window_id = screen_win;
@@ -1454,10 +1478,14 @@ struct WseWorldState {
     // Allocates a fresh party with monotonic script ID (mirrors rglHashVector<mbParty>::getFreeItem
     // `0x1400e8730` monotonic key `m_nextKey` `+0x138f0`). Removed parties stay as tombstones, and
     // loaded saves whose `m_nextKey` exceeds `m_numSlots` resume allocating from `next_party_key`.
+    // Returns -1 once `kMaxPartyKeys` keys have been handed out (safety deviation, see there).
     [[nodiscard]] std::int32_t allocate_party(WseParty party) {
-        party.active = true;
         const auto new_id =
             std::max(next_party_key, static_cast<std::int32_t>(parties.size()));
+        if (new_id < 0 || new_id >= kMaxPartyKeys) {
+            return -1;
+        }
+        party.active = true;
         if (static_cast<std::size_t>(new_id) > parties.size()) {
             const std::size_t old_size = parties.size();
             parties.resize(static_cast<std::size_t>(new_id));
@@ -1777,8 +1805,23 @@ struct WseWorldState {
 
     // Per-frame world housekeeping run after the trigger managers: the campaign map consumes
     // one queued window; a mission advances agent fade-out and item pruning.
+    // A mission frame also retires campaign-map windows (map, menu, notes, presentation): the
+    // tactical window replaced them, and the engine cannot tell whether the tactical (10) or
+    // conversation (12) window is up, so the active window becomes unknown (-1) rather than
+    // keeping a stale campaign window that would block mission-only opcodes (4901, 4907, 3044).
     void step_world_frame(const std::array<std::int64_t, 3>& timers_total, float dt_seconds) {
         if (lighting.has_scene) {
+            switch (m6.ui.active_window_id) {
+            case kScreenWindowMap:
+            case kScreenWindowMenu:
+            case kScreenWindowNotes:
+            case kScreenWindowPresentation:
+                m6.ui.active_window_id = -1;
+                m5.active_window = -1;
+                break;
+            default:
+                break;
+            }
             advance_mission_lifetimes(timers_total, dt_seconds);
         } else {
             (void)consume_campaign_queued_window();

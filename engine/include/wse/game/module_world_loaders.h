@@ -574,10 +574,12 @@ template <class Fn>
     }
     std::int32_t num_slots = 0;
     std::int32_t num_created = 0;
-    if (!read_count_token(reader, num_slots, kMaxModuleRecords, source,
+    // Party IDs index the dense `parties` vector up to `next_party_key`, so both counts are
+    // bounded by `kMaxPartyKeys` rather than the generic record limit.
+    if (!read_count_token(reader, num_slots, kMaxPartyKeys, source,
                           "party slots", err) ||
         !read_i32_token(reader, num_created) || num_created < 0 ||
-        static_cast<std::size_t>(num_created) > kMaxModuleRecords) {
+        num_created > kMaxPartyKeys) {
         return err.ok ? make_load_error(source, "invalid party created count") : err;
     }
 

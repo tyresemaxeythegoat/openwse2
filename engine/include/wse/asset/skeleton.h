@@ -303,7 +303,9 @@ struct VertexSkinWeights {
 };
 
 // Extracts up to 4 per-vertex bone weights from `BrfMesh::vertex_groups`
-// matching rglMesh::updateSkinData (0x1402b9930).
+// (rglMesh::updateSkinData 0x1402b9930). Safety deviation: a vertex with more than 4
+// influences keeps its 4 largest weights (replacing the smallest held one), independent
+// of vertex-group order; `skin_brf_mesh` renormalizes what is kept.
 [[nodiscard]] inline std::vector<VertexSkinWeights> build_mesh_skin_data(
     const BrfMesh& mesh,
     std::size_t num_positions) {
@@ -311,16 +313,20 @@ struct VertexSkinWeights {
     for (const BrfVertexGroup& group : mesh.vertex_groups) {
         for (const BrfVertexWeight& pw : group.pairs) {
             if (pw.vertex_index < 0 ||
-                static_cast<std::size_t>(pw.vertex_index) >= num_positions) {
+                static_cast<std::size_t>(pw.vertex_index) >= num_positions ||
+                !std::isfinite(pw.weight) || pw.weight <= kMinSkinWeightThreshold) {
                 continue;
             }
             VertexSkinWeights& dst = skin_data[static_cast<std::size_t>(pw.vertex_index)];
-            for (std::size_t slot = 0; slot < kMaxVertexSkinInfluences; ++slot) {
-                if (dst.weights[slot] <= kMinSkinWeightThreshold) {
-                    dst.bones[slot] = group.bone_no;
-                    dst.weights[slot] = pw.weight;
-                    break;
+            std::size_t smallest = 0;
+            for (std::size_t slot = 1; slot < kMaxVertexSkinInfluences; ++slot) {
+                if (dst.weights[slot] < dst.weights[smallest]) {
+                    smallest = slot;
                 }
+            }
+            if (pw.weight > dst.weights[smallest]) {
+                dst.bones[smallest] = group.bone_no;
+                dst.weights[smallest] = pw.weight;
             }
         }
     }
@@ -363,7 +369,14 @@ inline void skin_brf_mesh(const BrfMesh& src,
             acc.z += tp.z * w;
             wsum += w;
         }
-        out.positions[vi] = (wsum > kMinSkinWeightThreshold) ? acc : p;
+        // Divide by the kept weight sum so dropped influences or weights that do not add up
+        // to 1 do not pull the vertex toward the bone-space origin.
+        if (wsum > kMinSkinWeightThreshold) {
+            const float inv_wsum = 1.0f / wsum;
+            out.positions[vi] = {acc.x * inv_wsum, acc.y * inv_wsum, acc.z * inv_wsum};
+        } else {
+            out.positions[vi] = p;
+        }
     }
 
     for (std::size_t ci = 0; ci < src.face_corners.size(); ++ci) {

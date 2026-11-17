@@ -114,8 +114,9 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `asset_test.cpp` | 10 |
 | `audio_test.cpp` | 8 |
 | `input_test.cpp` | 8 |
-| `selftest_host_test.cpp` *(aggregate runner over the 21 suites)* | 21 suites |
-| **Total (21 standalone suites + aggregate runner)** | **168** |
+| `scene_test.cpp` | 6 |
+| `selftest_host_test.cpp` *(aggregate runner over the 22 suites)* | 22 suites |
+| **Total (22 standalone suites + aggregate runner)** | **174** |
 
 ## 4. Blocked
 
@@ -367,6 +368,49 @@ Found in the review of `e6c4d0e` (PR #22 / `afab774`); all 10 follow-up items ar
 8. ~~**Per-note `available` & date field.**~~ **Verified & Fixed (`0x1401b9e90`, `0x1401b9f30`, `0x1401cd7da..0x1401ce174`, `0x1401de2ee`):** `mbNotes` only stores the scalar object-level `m_available` (`+0x4c4`); removed dead per-note `WseQuestNote::available`, and fixed `1113 setup_quest_note` / `1114`/`1116`/`1118`/`1119` (`native_world_ops.h`, `native_campaign_ops.h`) to write `world.current_day` (matching `[mbGame + 0x13fd0]` proven by `2272 store_current_day`) instead of `world.game_year`.
 9. ~~**Windows host gate for `e6c4d0e` and fixes.**~~ **Resolved:** Re-executed full Windows `engine/build_host.ps1` + retail `Native`/`Phantasy Calradia` validation after all fixes (§1, §2, §7).
 10. ~~**References in `fx`.**~~ **Verified & Fixed (`world_state.h`):** `unlink_agent_references(-1)` clears `fx.trigger_agent_no = -1` on full mission clear; `fx.missiles` (append-only projectile launch log) and `fx.ray_obstacles` (static ray-cast geometry) carry no recycled agent slots and remain intact.
+
+### Phase 2A / P9 Part 1 review (`5ab81a4`): fixed, with open items
+
+Found in the review of `5ab81a4`; fixed on `claude/busy-sagan-3dohz1` (`engine/README.md` holds the
+handler notes and safety deviations):
+
+1. ~~**Stale `m6.ui.active_window_id`.**~~ **Fixed:** a consumed menu, notes, or presentation
+   window was never replaced, so `3039`, `3044`, `4901`, and `4907` stayed blocked for the rest of
+   the session. Window types the map does not open now leave the active window unknown (`-1`), and
+   mission frames retire campaign window ids.
+2. ~~**Window queue never drained.**~~ **Fixed:** every type other than `0x12`/`0x0f`/`0x10`
+   (`change_screen_return`, `change_screen_map`, inventory/party screens, ...) accumulated forever.
+   The campaign consumer pops them (documented deviation), and `enqueue_window` caps the queue at
+   `kMaxQueuedWindows`.
+3. ~~**`start_presentation` (900) in missions.**~~ **Fixed:** the `0x0f` entry is queued only on the
+   campaign map, so missions no longer leak entries that reopen stale presentations on the map.
+4. ~~**`m_nextKey` allocation.**~~ **Fixed:** a save or `parties.txt` with `m_nextKey` up to `2^20`
+   made the first `allocate_party` allocate ~1.25 GB of tombstones. Party keys are capped at
+   `kMaxPartyKeys` (`131072`) in both loaders and in `allocate_party` (callers handle `-1`).
+5. ~~**Parties with `key >= m_numSlots` dropped on load.**~~ **Fixed:** the reader grows the
+   key-indexed vector to the stored key; a key at or above `m_nextKey` is `corrupt_record`.
+6. ~~**`instantiate_scene_objects`.**~~ **Fixed:** it now goes through `clear_mission_entities`
+   (no stale selections / attached missiles / spawn effectors), keeps the `.sco` kind in
+   `meta_mesh_no`, gives entry points and flora no `scene_prop_no`, fills `world.entry_points`,
+   and returns the number of records dropped at `kMaxSpawnedMissionObjects`.
+7. ~~**`scene_prop_set_prune_time` (1819).**~~ **Fixed:** a positive time arms `enable_pruning`, as
+   the `+0x1d5` note (`setPruneTime` `0x140153d88`) states, so `416` and frame pruning remove it.
+8. ~~**Skinning weights.**~~ **Fixed (documented deviation):** the 4 largest influences are kept and
+   renormalized. Leftover debug lines in `parse_skeleton_bodies_xml`, the `.sco` 68-byte record
+   bound, the dead `ai_face_count`, and `map.txt` count plausibility checks were also fixed.
+
+Still open:
+
+1. **Notes / presentation windows never close.** Nothing models the player closing window `0x15` or
+   `0x16`, so on the campaign map they keep `active_window_id` until the next window transition or
+   mission. Needs the UI layer (P9).
+2. **Dense party storage.** `kMaxPartyKeys` bounds the tombstone cost (~160 MB worst case) but does
+   not remove it; a sparse key-to-slot map would match `rglHashVector` exactly.
+3. **Root motion.** `evaluate_skeleton_pose` adds the root translation key to the root bone's rest
+   origin (as OpenBRF composes them). Not yet checked against a retail pose; the retail scene test
+   only checks for shaded pixels.
+4. **Skinned mesh updates.** `update_skinned_mesh` copies the mesh, rebuilds the corner dedup map,
+   and recreates both GPU buffers every frame although the index buffer does not change.
 
 ## 6. Open documentation questions
 
