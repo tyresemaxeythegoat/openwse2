@@ -1326,6 +1326,9 @@ private:
         if (!execute_simple_trigger(trigger, eventKey, timersTotal, ctx)) return false;
         // Mirrors mbSimpleTriggerManager::execute (0x1402101d2..0x1402101f7):
         // positive odd event keys abort the remaining triggers once a type-0x12 window is queued.
+        // Nothing enqueues type 0x12 yet and the queue is only cleared on quit; once a
+        // producer exists, its consumer must pop the entry or every later odd-key pass
+        // stops after one trigger (queue lifecycle open, STATUS.md §5).
         if (eventKey > 0 && (eventKey & 1) != 0 && !ctx.world.m5.enqueued_windows.empty() &&
             ctx.world.m5.enqueued_windows.back().first == game::kQueuedWindowSaveExitBreakType) {
             break;

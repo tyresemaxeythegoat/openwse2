@@ -225,6 +225,78 @@
   {
    "text": "%sTextures\\languages\\%s\\%s.dds",
    "va": "0x14056b448"
+  },
+  {
+   "text": "mb_2b.fxo",
+   "va": "0x140562058"
+  },
+  {
+   "text": "mb_2a.fxo",
+   "va": "0x140562068"
+  },
+  {
+   "text": "mb_wse2_3_0.fxo",
+   "va": "0x140562078"
+  },
+  {
+   "text": "mb_wse2_2b.fxo",
+   "va": "0x140562088"
+  },
+  {
+   "text": "mb_wse2_2a.fxo",
+   "va": "0x140562098"
+  },
+  {
+   "text": "mb.fx",
+   "va": "0x1405620a8"
+  },
+  {
+   "text": "EFFECT file=%s",
+   "va": "0x1405620b0"
+  },
+  {
+   "text": "PostFx.fx",
+   "va": "0x140562c48"
+  },
+  {
+   "text": "#if WSE2",
+   "va": "0x140562c58"
+  },
+  {
+   "text": "#include \"postFX_WSE2.fx\"",
+   "va": "0x140562c70"
+  },
+  {
+   "text": "postFX_WSE2.fx",
+   "va": "0x140562c90"
+  },
+  {
+   "text": "earlyZ.fxo",
+   "va": "0x140566610"
+  },
+  {
+   "text": "earlyz_wse2.fxo",
+   "va": "0x140566620"
+  },
+  {
+   "text": "EARLYZ file=%s",
+   "va": "0x140566630"
+  },
+  {
+   "text": "wse2_shaders.ini",
+   "va": "0x140567d70"
+  },
+  {
+   "text": "Resource\\wse2_shaders.brf",
+   "va": "0x140568168"
+  },
+  {
+   "text": "CommonRes\\wse2_shaders.brf",
+   "va": "0x140568188"
+  },
+  {
+   "text": "Loading optional shader resource wse2_shaders",
+   "va": "0x1405681a8"
   }
  ],
  "tables": [

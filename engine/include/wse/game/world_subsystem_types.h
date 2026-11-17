@@ -197,7 +197,12 @@ struct WseInputState {
     // Slice P8: two-finger campaign map pinch zoom impulse (>0 zoom in, <0 zoom out).
     float map_zoom_delta = 0.0f;
     // mbBasicGame +0x5050 m_cameraDistance; scaled by exp(-map_zoom_delta) on zoom gestures.
+    // The default (20) and the [1, 200] clamp in `WorldInputBridge` are placeholders, not
+    // retail values (STATUS.md §5); no campaign-map camera reads this field yet.
     float map_camera_distance = 20.0f;
+    // `WseInputManager::frame_counter()` of the frame whose zoom was last applied, so
+    // calling `WorldInputBridge::sync_to_world` twice for one frame zooms only once.
+    std::uint64_t map_zoom_applied_frame = 0U;
 };
 
 struct WseMusicState {

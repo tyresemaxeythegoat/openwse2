@@ -88,7 +88,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/platform_test.cpp` | host tests for path normalisation and escape rejection, one `Vfs` contract run across `MemoryVfs`, `HostVfs`, and `SafVfs`, `SafVfs` one-time index / `scan_warband_modules` / `verify_module_scripts` / `import_to`, `Vfs` → `TokenReader`, clocks, log sinks, `test_rhi_and_driver_loader` (Turnip/PanVK `meta.json`, `.dynstr` `libpanvk_hw.so` patcher, Mock ICD v5, BRF/DDS textured mesh screenshot & Z-buffer tests), `test_p5_shader_modules_d3d9_and_material_rhi` (`PresentationPath` WSI vs `AHardwareBuffer` bridge, `VkShaderModule` lifecycle, D3D9 projection/half-pixel/sRGB helpers, normal/specular/alpha-test/blend material RHI), `test_p4_review_fixes` (mode ids, name allow-list, nested `meta.json`, atomic re-staging, front face, handle wrap, device generations, mock object accounting), `test_p5_rhi_review_fixes`, and `test_p8_performance_and_frame_pacing` (`FrameRateCap`, `PresentModePreference`, `PerformanceSettings` JSON round-trip & sanitization, `ThermalPerformanceController` headroom/status hysteresis & toggles, `FramePacer` 60/90/120 Hz drift-free cadence over `ManualClock`). The real host Vulkan loader is exercised only with `WSE_TEST_SYSTEM_VULKAN=1` | temp directory + in-memory trees |
 | `tests/operand_test.cpp` | host tests for tags, decode, store, slots, tokenizer, statements | local test doubles only |
 | `tests/trigger_test.cpp` | host tests for trigger loaders and event-key state machines | local test doubles only |
-| `tests/savegame_test.cpp` | host tests for binary streams, checksum writer, `RglString`, trigger savegames, whole `.sav` container round-trips, validation, and VFS backup rotation | `MemoryVfs` + local test doubles |
+| `tests/savegame_test.cpp` | host tests for binary streams, checksum writer, `RglString` (incl. moved-from reuse), trigger savegames, whole `.sav` container round-trips, validation, VFS backup rotation, transactional / hostile-input loads, a deterministic mutation fuzz, and torn-write read-back | `MemoryVfs`, `TruncatingVfs` + local test doubles |
 | `tests/script_test.cpp` + `fixtures/scripts.txt` | host tests for script records, header errors, duplicate mapping, and missing-name reporting | local fixture mirroring the retail grammar |
 | `tests/wse_test_common.h` + `tests/wse_{bitwise_fp,system,string,dict,array,world}_test.cpp` | host tests for opcode enum values, all implemented handlers (including `*_slot_gt`, scalar/config/skill/savegame MD5, troop HP cap/nibble/proficiency, item/cur_item, edit-mode selection/highlight, `agent_{set,get}_action_speed_modifier` `3340–3341`, party `3900–3911`, `feval`/`parseString`, `.wsedict`/INI/JSON/URL dict I/O, `.wsearray` binary I/O, path sandboxing, natural merge sort, and array relations), operand bounds, and opcode masking | local test doubles only |
 | `tests/block_vm_test.cpp` + `tests/native_world_test.cpp` | host tests for analyze/modifiers/loops (live entity iterators `11/12/16/17`, `try_for_dict_keys`), `currentCaller` preservation, default local-variable zeroing (`0x140617819`), core math/scripts/recursion/return values/positions/trigger VM integration/`feval`, `array_sort_custom` script callbacks, `WseWorldState` script integration, unimplemented histogram/`failOnUnimplemented`, Milestone 1 `entity_slots`/`arithmetic`/`positions_and_math`/`strings` suites, Milestone 2 `108` entity/player/quest/UI/site/troop/party + `66` agent/team/prop/mission/timer opcodes, Milestone 3 `284` campaign/mission/item/troop/party/face-key opcodes, and Milestone 4 `218` opcodes + `473/477/1004/1070/1104/1302/1491` non-switch/fallback + `1802/1930/1969` upgrades | local test doubles and module fixtures |
@@ -152,6 +152,30 @@ header (`fill_savegame_header` / `read_savegame_header`), and all `mbGame` secti
 `0x1400c92c0`). `read_trigger_savegame`/`write_trigger_savegame`/`read_simple_trigger_savegame` and
 `read_savegame_container` use explicit status enums (`SavegameResult` / `SavegameContainerResult`)
 to validate counts/bounds instead of reading past buffers like retail.
+
+Safety deviations and portable choices in `savegame.h` (each keeps valid saves loading unchanged):
+
+- **Transactional load.** The body is parsed into copies of the world, global variables, and both
+  trigger managers and committed only when everything parsed; retail mutates `mbGame` as it reads.
+- **Allocation bounds.** Every section count is checked against the bytes left (at least 4 bytes
+  per party / event slot, 28 per quest, 208 per info page) before anything is allocated.
+- **Corrupt records.** A `rglHashVector` / `rglStableVector` present flag other than 0 or 1 returns
+  `corrupt_record`; a party key outside the slot table is consumed, dropped, and sets
+  `count_exceeded`.
+- **Legacy bodies.** Headers in `[802..1173]` validate (the load window lists them), but their bodies
+  return `legacy_layout_unsupported`: the party / event / hash-vector readers take the version and
+  only the `1174` layout is reconstructed.
+- **Troop merge.** Loaded troop fields are merged into the module troop; when
+  `bDontLoadRegularTroopInventories` skips a regular troop's gold / xp / HP / faction / inventory /
+  face / name / class block, the live values stay.
+- **Inventory amount.** Each slot stores `ammo` (the retail item amount) and the modifier; the
+  portable `hit_points` field has no retail slot counterpart and reloads as 0 (`set_item`).
+- **Party icon.** `icon_no` is folded into `flags & 0xff` on save (so `party_set_icon` persists) and
+  re-derived from it on load, as the module loader does.
+- **Float casts.** `ignore_player_timer` saturates into the int64 timer (NaN / negative -> 0) and a
+  non-finite bandit attraction loads as 0, instead of undefined float-to-int conversions.
+- **Read-back.** `save_world_to_vfs` requires the read-back to match length and bytes as well as the
+  byte sum, which cannot see lost zero bytes.
 
 ## Scripts
 
