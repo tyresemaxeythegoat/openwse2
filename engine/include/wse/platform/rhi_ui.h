@@ -135,19 +135,26 @@ inline void append_quad(std::vector<MeshVertex>& verts,
            lower == "core_materials" || lower.rfind("user_interface", 0) == 0;
 }
 
+// Indexes one `.brf` into `out`. Materials are always kept (they are small and UI meshes
+// may name materials from any resource). Meshes are kept only when `mesh_filter` accepts
+// them, so 3D content is never copied into (or later uploaded by) the UI asset set.
+template <typename MeshFilter>
 inline void index_brf_file(const asset::BrfFile& file,
-                           bool decode_ui_textures_later,
                            LoadedUiAssets& out,
-                           std::vector<std::string>& ui_materials_to_decode) {
+                           std::vector<std::string>& ui_materials_to_decode,
+                           MeshFilter&& mesh_filter) {
     for (const asset::BrfMaterial& mat : file.materials) {
         out.materials[ascii_lower(mat.name)] = mat;
     }
     for (const asset::BrfMesh& mesh : file.meshes) {
-        const std::string key = ascii_lower(mesh.name);
-        out.meshes[key] = mesh;
-        if (decode_ui_textures_later && !mesh.material_name.empty()) {
+        std::string key = ascii_lower(mesh.name);
+        if (!mesh_filter(key)) {
+            continue;
+        }
+        if (!mesh.material_name.empty()) {
             ui_materials_to_decode.push_back(ascii_lower(mesh.material_name));
         }
+        out.meshes[std::move(key)] = mesh;
     }
 }
 
@@ -212,10 +219,17 @@ inline void try_load_named_texture(Vfs& vfs,
     if (w.text.empty() || w.text_scale.x <= 0.0f || w.text_scale.y <= 0.0f) {
         return false;
     }
-    const bool single_line = (w.text_flags & asset::kTextFlagSingleLine) != 0U ||
-                             (w.size.y > 0.0f && w.size.y <= w.text_scale.y * 2.1f);
     out_min_x = abs_x + w.text_pos.x;
-    out_max_x = out_min_x + std::max(0.01f, w.size.x);
+    if (w.size.x <= 0.0f || w.size.y <= 0.0f) {
+        // Box-less text (overlay text without `overlay_set_area_size`): anchored at the
+        // widget position, first baseline on it, aligned around it, broken only at '\n'.
+        out_max_x = out_min_x;
+        out_top_y = abs_y + w.text_pos.y;
+        return true;
+    }
+    const bool single_line = (w.text_flags & asset::kTextFlagSingleLine) != 0U ||
+                             (w.size.y <= w.text_scale.y * 2.1f);
+    out_max_x = out_min_x + w.size.x;
     if (single_line) {
         out_top_y = abs_y + w.text_pos.y + w.size.y * 0.5f - w.text_scale.y * 0.28f;
     } else {
@@ -228,12 +242,16 @@ inline void try_load_named_texture(Vfs& vfs,
 
 // Loads core & module UI assets (`font_data.xml`, `Textures/font.dds`, language CSVs,
 // `game_variables.txt`, UI `.brf` meshes/materials, and UI `.dds` textures) via `Vfs`.
+// Meshes come from the core UI resources (module resources may override them by name);
+// other module meshes are kept only when listed in `extra_mesh_names`, so a large mod's
+// 3D content is neither copied, decoded, nor uploaded as UI assets.
 [[nodiscard]] inline bool load_native_ui_assets(Vfs& vfs,
                                                 std::string_view warband_root,
                                                 std::string_view module_rel_dir,
                                                 std::string_view language,
                                                 LoadedUiAssets& out,
-                                                std::string* error_out = nullptr) {
+                                                std::string* error_out = nullptr,
+                                                std::span<const std::string> extra_mesh_names = {}) {
     out = LoadedUiAssets{};
 
     // 1. Font XML (`Data/font_data.xml`, module override first).
@@ -269,25 +287,65 @@ inline void try_load_named_texture(Vfs& vfs,
     if (!asset::load_module_brf_catalog(vfs, warband_root, module_rel_dir, ini, catalog, error_out)) {
         return false;
     }
+    // Pass 1: core UI resources (`core_ui_meshes`, `core_pictures`, `user_interface*`, ...),
+    // plus the CommonRes `user_interface_b/c` packs when `module.ini` does not load them.
+    // Other core resources contribute materials and only the wanted mesh names.
+    const auto keep_all = [](const std::string&) { return true; };
+    // Meshes `UiSession` names itself (initial / menu / notes windows) plus the caller's.
+    std::unordered_map<std::string, bool> wanted;
+    for (const std::string_view name : game::kUiSessionMeshNames) {
+        wanted.emplace(std::string(name), true);
+    }
+    for (const std::string& name : extra_mesh_names) {
+        wanted.emplace(ascii_lower(name), true);
+    }
+    const auto keep_wanted = [&wanted](const std::string& key) {
+        return wanted.find(key) != wanted.end();
+    };
+    bool have_ui_b = false;
+    bool have_ui_c = false;
     for (const asset::BrfCatalogEntry& entry : catalog.entries) {
-        if (!entry.loaded) {
+        if (!entry.loaded || entry.from_module) {
             continue;
         }
-        const bool is_ui = entry.from_module || rhi_ui_detail::is_ui_brf_resource(entry.resource_name);
-        rhi_ui_detail::index_brf_file(entry.file, is_ui, out, ui_materials);
+        const std::string lname = ascii_lower(entry.resource_name);
+        have_ui_b = have_ui_b || lname == "user_interface_b";
+        have_ui_c = have_ui_c || lname == "user_interface_c";
+        if (rhi_ui_detail::is_ui_brf_resource(entry.resource_name)) {
+            rhi_ui_detail::index_brf_file(entry.file, out, ui_materials, keep_all);
+        } else {
+            rhi_ui_detail::index_brf_file(entry.file, out, ui_materials, keep_wanted);
+        }
     }
-
-    // Also load standard Warband CommonRes UI packs if omitted by module.ini.
-    const std::array<std::string_view, 2> kFallbackUiPacks{"user_interface_b", "user_interface_c"};
-    for (std::string_view pack : kFallbackUiPacks) {
+    const std::array<std::pair<std::string_view, bool>, 2> kFallbackUiPacks{{
+        {"user_interface_b", have_ui_b},
+        {"user_interface_c", have_ui_c},
+    }};
+    for (const auto& [pack, already_loaded] : kFallbackUiPacks) {
+        if (already_loaded) {
+            continue;
+        }
         const std::string path =
             game::vfs_join_path(game::vfs_join_path(warband_root, "CommonRes"), std::string(pack) + ".brf");
         if (vfs.is_file(path)) {
             asset::BrfFile bf{};
             if (asset::load_brf(vfs, path, bf, nullptr)) {
-                rhi_ui_detail::index_brf_file(bf, true, out, ui_materials);
+                rhi_ui_detail::index_brf_file(bf, out, ui_materials, keep_all);
             }
         }
+    }
+    // Pass 2: module resources, applied last so they override core meshes of the same name.
+    // Only meshes the UI can name are kept: core UI mesh overrides, the session's own mesh
+    // names, and `extra_mesh_names` (e.g. the resource names in the module's `meshes.txt`,
+    // which presentation mesh overlays reference).
+    for (const auto& kv : out.meshes) {
+        wanted.emplace(kv.first, true);
+    }
+    for (const asset::BrfCatalogEntry& entry : catalog.entries) {
+        if (!entry.loaded || !entry.from_module) {
+            continue;
+        }
+        rhi_ui_detail::index_brf_file(entry.file, out, ui_materials, keep_wanted);
     }
 
     // 4. Decode font atlas + textures referenced by UI meshes (`main_menu_nord`,
@@ -305,6 +363,29 @@ inline void try_load_named_texture(Vfs& vfs,
         }
     }
     return true;
+}
+
+// UI-space extent of every loaded UI mesh (lower-case keys), for `game::UiSession::mesh_bounds`
+// so mesh overlays are placed at their native size times `overlay_set_size`.
+[[nodiscard]] inline std::unordered_map<std::string, game::UiMeshBounds> collect_ui_mesh_bounds(
+    const LoadedUiAssets& assets) {
+    std::unordered_map<std::string, game::UiMeshBounds> out;
+    out.reserve(assets.meshes.size());
+    for (const auto& [key, mesh] : assets.meshes) {
+        if (mesh.positions.empty()) {
+            continue;
+        }
+        game::UiMeshBounds b{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                             std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest()};
+        for (const asset::Vec3f& p : mesh.positions) {
+            b.min_x = std::min(b.min_x, p.x);
+            b.min_y = std::min(b.min_y, p.y);
+            b.max_x = std::max(b.max_x, p.x);
+            b.max_y = std::max(b.max_y, p.y);
+        }
+        out.emplace(key, b);
+    }
+    return out;
 }
 
 class UiRhiRenderer {
@@ -338,15 +419,11 @@ public:
         alpha_desc.enable_lighting = false;
         alpha_pip_ = rhi_.create_pipeline(alpha_desc);
 
-        PipelineDesc opaque_desc = alpha_desc;
-        opaque_desc.blend_mode = BlendMode::opaque;
-        opaque_pip_ = rhi_.create_pipeline(opaque_desc);
-
         PipelineDesc add_desc = alpha_desc;
         add_desc.blend_mode = BlendMode::additive_alpha;
         add_pip_ = rhi_.create_pipeline(add_desc);
 
-        if (alpha_pip_ == 0 || opaque_pip_ == 0 || add_pip_ == 0) {
+        if (alpha_pip_ == 0 || add_pip_ == 0) {
             shutdown();
             if (error_out) *error_out = "failed to create UI RHI pipelines";
             return false;
@@ -368,6 +445,7 @@ public:
             if (kv.second != 0) rhi_.destroy_texture(kv.second);
         }
         textures_.clear();
+        material_tex_.clear();
         if (white_tex_ != 0) {
             rhi_.destroy_texture(white_tex_);
             white_tex_ = 0;
@@ -375,10 +453,6 @@ public:
         if (alpha_pip_ != 0) {
             rhi_.destroy_pipeline(alpha_pip_);
             alpha_pip_ = 0;
-        }
-        if (opaque_pip_ != 0) {
-            rhi_.destroy_pipeline(opaque_pip_);
-            opaque_pip_ = 0;
         }
         if (add_pip_ != 0) {
             rhi_.destroy_pipeline(add_pip_);
@@ -396,14 +470,18 @@ public:
             return false;
         }
         const std::string lkey = ascii_lower(key);
-        const auto old = textures_.find(lkey);
-        if (old != textures_.end() && old->second != 0) {
-            rhi_.destroy_texture(old->second);
-            textures_.erase(old);
-        }
+        // Create the replacement first: if that fails the old texture (and `font_tex_`)
+        // stays valid instead of pointing at a destroyed handle.
         const TextureHandle h = rhi_.create_texture_rgba8(width, height, rgba8);
         if (h == 0) {
             return false;
+        }
+        const auto old = textures_.find(lkey);
+        if (old != textures_.end() && old->second != 0) {
+            if (font_tex_ == old->second) {
+                font_tex_ = 0;
+            }
+            rhi_.destroy_texture(old->second);
         }
         textures_[lkey] = h;
         if (lkey == "font") {
@@ -505,6 +583,11 @@ public:
             if (fit != textures_.end()) {
                 font_tex_ = fit->second;
             }
+        }
+        for (const auto& [mat_key, mat] : assets.materials) {
+            material_tex_[mat_key] = mat.texture_names[0].empty()
+                                         ? mat_key
+                                         : ascii_lower(mat.texture_names[0]);
         }
         for (const auto& kv : assets.meshes) {
             const asset::BrfMesh& mesh = kv.second;
@@ -650,10 +733,16 @@ public:
                     pb.static_draw.vertex_buffer = gm.vb;
                     pb.static_draw.index_buffer = gm.ib;
                     pb.static_draw.index_count = gm.index_count;
-                    pb.static_draw.texture =
-                        resolve_tex(!node.material_name.empty() ? std::string_view(node.material_name)
-                                                                : std::string_view(gm.default_tex_key),
-                                    white_tex_);
+                    pb.static_draw.texture = resolve_tex(gm.default_tex_key, white_tex_);
+                    if (!node.material_name.empty()) {
+                        // `material_name` names a material; draw with its diffuse texture.
+                        const std::string lmat = ascii_lower(node.material_name);
+                        const auto mt = material_tex_.find(lmat);
+                        pb.static_draw.texture = resolve_tex(
+                            mt != material_tex_.end() ? std::string_view(mt->second)
+                                                      : std::string_view(lmat),
+                            pb.static_draw.texture);
+                    }
                     std::memcpy(pb.static_draw.model, model, sizeof(model));
                     rhi_ui_detail::mat4_mul(proj, model, pb.static_draw.mvp);
                     batches.push_back(pb);
@@ -772,10 +861,11 @@ private:
     TextureHandle white_tex_ = 0;
     TextureHandle font_tex_ = 0;
     PipelineHandle alpha_pip_ = 0;
-    PipelineHandle opaque_pip_ = 0;
     PipelineHandle add_pip_ = 0;
     std::unordered_map<std::string, TextureHandle> textures_{};
     std::unordered_map<std::string, GpuUiMesh> meshes_{};
+    // Lower-case material name -> lower-case texture key, for `UiWidget::material_name`.
+    std::unordered_map<std::string, std::string> material_tex_{};
 };
 
 }  // namespace wse::platform

@@ -165,6 +165,10 @@ struct WseOverlayM5Ext {
     std::int32_t item_no = -1;
     std::int32_t container_overlay_no = -1;
     bool is_checkbox = false;
+    // Text button overlays (`create_button_overlay` 912, `create_game_button_overlay` 940,
+    // `create_in_game_button_overlay` 941) share `type == 1` with `create_text_overlay` 910;
+    // this tells them apart for the UI layer (port bookkeeping, not a retail field).
+    bool is_button = false;
     std::uint32_t widget_flags = 0;
     double min_value = 0.0;
     double max_value = 0.0;

@@ -23,6 +23,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "wse/io/xml.h"
@@ -211,8 +212,10 @@ public:
         (void)io::read_xml_attr_i32(*font_el, "line_spacing", line_spacing_int);
         (void)io::read_xml_attr_i32(*font_el, "font_size", base_size);
 
-        if (width <= 0 || height <= 0 || base_size <= 0) {
-            if (error_out) *error_out = "font_data.xml has non-positive atlas or font_size";
+        // Safety deviation: a non-positive `font_scale` would make every layout scale 0 and
+        // the tab-stop math divide by it, so it is rejected like a bad atlas size.
+        if (width <= 0 || height <= 0 || base_size <= 0 || base_scale <= 0) {
+            if (error_out) *error_out = "font_data.xml has non-positive atlas, font_size, or font_scale";
             return false;
         }
 
@@ -314,8 +317,8 @@ public:
                                                std::uint32_t flags = 0U,
                                                std::uint32_t default_color_argb = 0xFFFFFFFFU) const {
         TextLayoutResult out{};
-        if (font_width <= 0.0f || font_height <= 0.0f || size_x <= 0.0f || size_y <= 0.0f ||
-            utf8_text.empty()) {
+        if (font_width <= 0.0f || font_height <= 0.0f || !(font_scale > 0.0f) ||
+            size_x <= 0.0f || size_y <= 0.0f || utf8_text.empty()) {
             return out;
         }
 
@@ -335,7 +338,10 @@ public:
 
         std::uint32_t active_color = default_color_argb;
         float cursor_y = top_y;
-        float max_line_right = min_x;
+        // Widest laid-out line, measured from each line's own start pen. Measuring from
+        // `min_x` instead under-reports centred/right-aligned text (`measure_text` passes
+        // `max_x == min_x`, which places those lines left of `min_x`).
+        float max_line_w = 0.0f;
         std::size_t line_start = 0U;
 
         const bool single_line = (flags & kTextFlagSingleLine) != 0U;
@@ -349,7 +355,10 @@ public:
         while (line_start < cps.size()) {
             std::size_t line_end = line_start;
             float line_w = 0.0f;
-            if (single_line || avail_w <= 0.0f) {
+            // `avail_w <= 0` (no box, e.g. `measure_text` with `max_width == 0`) disables
+            // word wrapping but still breaks lines at '\n'.
+            const bool wrap = avail_w > 0.0f;
+            if (single_line) {
                 line_end = cps.size();
                 line_w = measure_span_raw(cps, line_start, line_end) * scale_x + pad_pad;
             } else {
@@ -371,7 +380,7 @@ public:
                     }
                     const float cand_w =
                         measure_span_raw(cps, line_start, word_end) * scale_x + pad_pad;
-                    if (!first_word && cand_w > avail_w) {
+                    if (wrap && !first_word && cand_w > avail_w) {
                         break;
                     }
                     line_end = word_end;
@@ -436,14 +445,12 @@ public:
                 }
                 pen_x += g.postshift * scale_x;
             }
-            if (pen_x > max_line_right) {
-                max_line_right = pen_x;
-            }
+            max_line_w = std::max(max_line_w, pen_x - start_pen_x);
             cursor_y -= line_adv;
             line_start = line_end;
         }
 
-        out.width = std::max(0.0f, max_line_right - min_x);
+        out.width = max_line_w;
         out.height = std::max(0.0f, top_y - cursor_y);
         return out;
     }

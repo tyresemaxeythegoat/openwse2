@@ -1063,6 +1063,11 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     [font.h](../engine/include/wse/asset/font.h),
     [ui_runtime.h](../engine/include/wse/game/ui_runtime.h), and
     [rhi_ui.h](../engine/include/wse/platform/rhi_ui.h).
+    The `afe751c` review fixes (presentation trigger parameters in `trigger_params`,
+    `presentation_set_duration` countdown, overlay type / colour / size handling) cite no new
+    retail VAs; their behaviour notes and port approximations are in
+    [engine/README.md](../engine/README.md#ui-runtime-bitmap-fonts--rhi-widgets-p9-part-2) and the
+    open items in [STATUS.md](../STATUS.md) §5.
 
 ## 9. Evidence index
 

@@ -377,8 +377,9 @@ public:
     }
 
     // Updates an already-uploaded skinned mesh slot using the cached deduplicated
-    // template vertices, cached per-vertex bone weights, and immutable GPU index
-    // buffer (`slot.ib` is never destroyed or recreated once cached).
+    // template vertices, cached per-vertex bone weights, and the cached GPU index buffer
+    // (`slot.ib` is kept while the source mesh stays the same). The vertex buffer is still
+    // recreated per call: `RhiDevice` has no buffer-update entry point yet (`STATUS.md` §5).
     [[nodiscard]] bool update_skinned_mesh(SceneMeshId mesh_id,
                                            const wse::asset::BrfMesh& source_mesh,
                                            std::span<const wse::core::WseTransform> skin_transforms,
@@ -387,7 +388,12 @@ public:
             return false;
         }
         GpuSlot& slot = meshes_[mesh_id - 1U];
-        if (slot.rest_vertices.empty() || slot.skin_weights.empty()) {
+        // The cached template belongs to the mesh it was built from; a different source mesh
+        // (detected by its corner / face / vertex counts) rebuilds it and the index buffer.
+        if (slot.rest_vertices.empty() || slot.skin_weights.empty() ||
+            slot.skin_src_corners != source_mesh.face_corners.size() ||
+            slot.skin_src_faces != source_mesh.faces.size() ||
+            slot.skin_src_positions != source_mesh.positions.size()) {
             RhiMeshChunk chunk{};
             std::vector<std::int32_t> vert_pos_indices;
             build_rhi_mesh_from_brf_mapped(source_mesh, chunk.vertices, chunk.indices,
@@ -395,17 +401,16 @@ public:
             if (chunk.vertices.empty() || chunk.indices.empty()) {
                 return false;
             }
-            if (chunk.indices.size() != slot.index_count || slot.ib == 0U) {
-                BufferHandle new_ib = scene_rhi_detail::upload_index_buffer(*rhi_, chunk.indices, error_out);
-                if (new_ib == 0U) {
-                    return false;
-                }
-                if (slot.ib != 0U) {
-                    rhi_->destroy_buffer(slot.ib);
-                }
-                slot.ib = new_ib;
-                slot.index_count = static_cast<std::uint32_t>(chunk.indices.size());
+            const BufferHandle new_ib =
+                scene_rhi_detail::upload_index_buffer(*rhi_, chunk.indices, error_out);
+            if (new_ib == 0U) {
+                return false;
             }
+            if (slot.ib != 0U) {
+                rhi_->destroy_buffer(slot.ib);
+            }
+            slot.ib = new_ib;
+            slot.index_count = static_cast<std::uint32_t>(chunk.indices.size());
             cache_slot_skin_template(slot, source_mesh, chunk.vertices, vert_pos_indices);
         }
 
@@ -422,7 +427,7 @@ public:
                 wse::asset::Vec3f dp{};
                 wse::asset::Vec3f dn{};
                 wse::asset::evaluate_skinned_vertex(rp, &rn, slot.skin_weights[i],
-                                                    skin_transforms, dp, &dn);
+                                                    skin_transforms, &dp, &dn);
                 dst.px = dp.x;
                 dst.py = dp.y;
                 dst.pz = dp.z;
@@ -515,6 +520,9 @@ private:
         std::uint32_t index_count = 0U;
         std::vector<MeshVertex> rest_vertices{};
         std::vector<wse::asset::VertexSkinWeights> skin_weights{};
+        std::size_t skin_src_corners = 0U;
+        std::size_t skin_src_faces = 0U;
+        std::size_t skin_src_positions = 0U;
     };
 
     static void cache_slot_skin_template(GpuSlot& slot,
@@ -528,6 +536,9 @@ private:
         const std::vector<wse::asset::VertexSkinWeights> pos_weights =
             wse::asset::build_mesh_skin_data(mesh, nv);
         slot.rest_vertices = rest_verts;
+        slot.skin_src_corners = mesh.face_corners.size();
+        slot.skin_src_faces = mesh.faces.size();
+        slot.skin_src_positions = mesh.positions.size();
         slot.skin_weights.assign(rest_verts.size(), wse::asset::VertexSkinWeights{});
         for (std::size_t i = 0; i < vert_pos_indices.size() && i < rest_verts.size(); ++i) {
             const std::int32_t pidx = vert_pos_indices[i];
@@ -541,7 +552,7 @@ private:
     TextureHandle default_tex_ = 0U;
     PipelineHandle pipeline_ = 0U;
     std::vector<GpuSlot> meshes_{};
-    mutable std::vector<MeshVertex> skinned_scratch_{};
+    std::vector<MeshVertex> skinned_scratch_{};
 };
 
 }  // namespace wse::platform

@@ -272,9 +272,12 @@ inline void read_xml_attr_str(const XmlElementNode& node,
     }
 }
 
+// The attribute readers below leave `dst` untouched when the attribute is absent or
+// malformed, so callers pre-load their defaults. They are not `noexcept`: looking up a
+// `const char*` key in the `std::string`-keyed map builds a temporary string.
 [[nodiscard]] inline bool read_xml_attr_i32(const XmlElementNode& node,
                                             const char* key,
-                                            std::int32_t& dst) noexcept {
+                                            std::int32_t& dst) {
     const auto it = node.attrs.find(key);
     std::int32_t val = 0;
     if (it != node.attrs.end() && xml_detail::parse_i32_sv(it->second, val)) {
@@ -287,7 +290,7 @@ inline void read_xml_attr_str(const XmlElementNode& node,
 inline void read_xml_attr_f32(const XmlElementNode& node,
                               const char* key,
                               float& dst,
-                              float scale = 1.0f) noexcept {
+                              float scale = 1.0f) {
     const auto it = node.attrs.find(key);
     float val = 0.0f;
     if (it != node.attrs.end() && xml_detail::parse_f32_sv(it->second, val)) {
@@ -297,14 +300,21 @@ inline void read_xml_attr_f32(const XmlElementNode& node,
 
 inline void read_xml_attr_flag_bit(const XmlElementNode& node,
                                    const char* key,
-                                   bool& dst) noexcept {
+                                   bool& dst) {
     std::int32_t val = 0;
     if (read_xml_attr_i32(node, key, val)) {
         dst = (val != 0);
         return;
     }
     const auto it = node.attrs.find(key);
-    dst = (it != node.attrs.end() && (it->second == "true" || it->second == "TRUE"));
+    if (it == node.attrs.end()) {
+        return;
+    }
+    if (it->second == "true" || it->second == "TRUE") {
+        dst = true;
+    } else if (it->second == "false" || it->second == "FALSE") {
+        dst = false;
+    }
 }
 
 }  // namespace wse::io
