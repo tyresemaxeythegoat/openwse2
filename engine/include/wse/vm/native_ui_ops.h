@@ -121,7 +121,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
                                            std::int32_t window_id) {
     if (world.is_valid_troop(troop_no)) {
         world.m5.screen_entry_point_no = troop_no;
-        world.m5.enqueued_windows.emplace_back(window_id, -1);
+        world.enqueue_window(window_id);
     }
 }
 
@@ -490,7 +490,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             (wide[0] == 0) ? std::string{} : std::string("white_plane");
         return NativeDispatch::handled;
     case 2040: // change_screen_return (0x1401dbefe, callee 0x1400dbd30)
-        world.m5.enqueued_windows.emplace_back(1, -1);
+        world.enqueue_window(1);
         return NativeDispatch::handled;
     case 2041: // change_screen_loot (0x1401dbf1c)
         native_ui_enqueue_troop_screen(world, narrow[0], 2);
@@ -505,25 +505,25 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             world.m5.screen_note_object =
                 (party_no > 0) ? party_no
                                : (world.encountered_party_is_attacker ? 1 : 0);
-            world.m5.enqueued_windows.emplace_back((wide[0] != 0) ? 6 : 5, -1);
+            world.enqueue_window((wide[0] != 0) ? 6 : 5);
         }
         return NativeDispatch::handled;
     }
     case 2044: // change_screen_trade_prisoners (0x1401dbfd2)
-        world.m5.enqueued_windows.emplace_back(9, -1);
+        world.enqueue_window(9);
         return NativeDispatch::handled;
     case 2045: // change_screen_buy_mercenaries (0x1401dbfeb)
-        world.m5.enqueued_windows.emplace_back(10, -1);
+        world.enqueue_window(10);
         return NativeDispatch::handled;
     case 2046: // change_screen_view_character (0x1401dc004)
         world.m5.screen_entry_point_no = narrow[0];
-        world.m5.enqueued_windows.emplace_back(0xb, -1);
+        world.enqueue_window(0xb);
         return NativeDispatch::handled;
     case 2047: // change_screen_training (0x1401dc024)
-        world.m5.enqueued_windows.emplace_back(0xc, -1);
+        world.enqueue_window(0xc);
         return NativeDispatch::handled;
     case 2048: // change_screen_mission (0x1401dc03d)
-        world.m5.enqueued_windows.emplace_back(0xd, -1);
+        world.enqueue_window(0xd);
         return NativeDispatch::handled;
     case 2049: // change_screen_map_conversation (0x1401dc056)
         native_ui_enqueue_troop_screen(world, narrow[0], 0xe);
@@ -532,7 +532,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         native_ui_enqueue_troop_screen(world, narrow[0], 3);
         return NativeDispatch::handled;
     case 2052: // change_screen_map (0x1401dc0ef)
-        world.m5.enqueued_windows.emplace_back(0x11, -1);
+        world.enqueue_window(0x11);
         return NativeDispatch::handled;
     case 2053: { // change_screen_notes (0x1401dc108)
         bool ok = false;
@@ -556,7 +556,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             break;
         }
         if (ok) {
-            world.m5.enqueued_windows.emplace_back(0x10, -1);
+            world.enqueue_window(0x10);
             world.m5.screen_note_kind = narrow[0];
             world.m5.screen_note_object = narrow[1];
         }
@@ -577,15 +577,15 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             world.m5.screen_note_object =
                 (party_no > 0) ? party_no
                                : (world.encountered_party_is_attacker ? 1 : 0);
-            world.m5.enqueued_windows.emplace_back(7, -1);
+            world.enqueue_window(7);
         }
         return NativeDispatch::handled;
     }
     case 2057: // change_screen_controls (0x1401dc27f)
-        world.m5.enqueued_windows.emplace_back(0x13, -1);
+        world.enqueue_window(0x13);
         return NativeDispatch::handled;
     case 2058: // change_screen_options (0x1401dc298)
-        world.m5.enqueued_windows.emplace_back(0x14, -1);
+        world.enqueue_window(0x14);
         return NativeDispatch::handled;
     default:
         break;

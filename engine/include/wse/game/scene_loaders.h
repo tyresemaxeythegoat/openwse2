@@ -132,6 +132,12 @@ struct WorldMapManifold {
     if (!read_count_token(reader, num_verts, kMaxModuleRecords, src, "map vertices", err)) {
         return err;
     }
+    // A vertex is at least 3 one-character tokens plus separators (6 bytes); checking this
+    // before `reserve` stops a short file from reserving storage for a huge declared count.
+    if (reader.plausible_count(static_cast<std::size_t>(num_verts), 6U) <
+        static_cast<std::size_t>(num_verts)) {
+        return make_load_error(src, "truncated map vertex table");
+    }
     out.vertices.reserve(static_cast<std::size_t>(num_verts));
     for (std::int32_t i = 0; i < num_verts; ++i) {
         WorldMapVertex v{};
@@ -144,6 +150,11 @@ struct WorldMapManifold {
     std::int32_t num_faces = 0;
     if (!read_count_token(reader, num_faces, kMaxModuleRecords, src, "map faces", err)) {
         return err;
+    }
+    // A face is at least 6 tokens (material, flags, count, 3 indices): 12 bytes.
+    if (reader.plausible_count(static_cast<std::size_t>(num_faces), 12U) <
+        static_cast<std::size_t>(num_faces)) {
+        return make_load_error(src, "truncated map face table");
     }
     out.faces.reserve(static_cast<std::size_t>(num_faces));
     for (std::int32_t f = 0; f < num_faces; ++f) {
@@ -221,7 +232,6 @@ struct SceneObjectFile {
     std::vector<std::uint8_t> ai_mesh_bytes{};
     std::int32_t ai_vertex_count = 0;
     std::int32_t ai_edge_count = 0;
-    std::int32_t ai_face_count = 0;
     bool has_ground_paint = false;
     std::string ground_paint{};
 };
@@ -245,8 +255,9 @@ namespace scene_detail {
 
 inline void extract_ai_mesh_header(std::span<const std::uint8_t> bytes,
                                    SceneObjectFile& out) noexcept {
-    // Mirrors rglAiMesh::readStream (0x140252600): int32 num_vertices,
-    // num_vertices * Vec3(12B), int32 num_edges, edges..., int32 num_faces.
+    // Mirrors the head of rglAiMesh::readStream (0x140252600): int32 num_vertices,
+    // num_vertices * Vec3 (12 B), int32 num_edges. The edge and face records that follow are
+    // kept only as raw bytes (`ai_mesh_bytes`).
     io::BinaryReader ai_r(std::as_bytes(bytes));
     std::int32_t nv = 0;
     if (!ai_r.read_i32(nv) || nv < 0) {
@@ -307,8 +318,9 @@ inline void extract_ai_mesh_header(std::span<const std::uint8_t> bytes,
         num_objects = first_word;
     }
 
-    // Minimum record size is 12 + 48 + 4 + 4 = 68 bytes.
-    if (num_objects > r.remaining() / 64U) {
+    // Minimum record size is 12 (kind words) + 48 (transform) + 4 (empty string length) +
+    // 4 (variation id) = 68 bytes.
+    if (num_objects > r.remaining() / 68U) {
         if (error_out) *error_out = ".sco object count exceeds stream size";
         return false;
     }
@@ -389,27 +401,46 @@ inline void extract_ai_mesh_header(std::span<const std::uint8_t> bytes,
     return {};
 }
 
-// Populates `world.mission_objects` with `.sco` static scene placements,
-// clearing prior mission objects and marking placed props non-prunable
-// (`mbSite::readSceneObjFile` 0x140210cf5).
-inline void instantiate_scene_objects(
+// `.sco` record kinds (`mbMissionObject` meta type). `try_for_prop_instances` filters on
+// `meta type + 1`, matching the module system's `somt_object` (1), `somt_entry` (2),
+// `somt_item` (3), `somt_baggage` (4), `somt_flora` (5), and `somt_passage` (6).
+inline constexpr std::uint32_t kSceneObjKindProp = 0U;
+inline constexpr std::uint32_t kSceneObjKindEntryPoint = 1U;
+inline constexpr std::uint32_t kSceneObjKindItem = 2U;
+inline constexpr std::uint32_t kSceneObjKindPassage = 5U;
+
+// Replaces the current scene's mission entities with the `.sco` placements and marks them
+// non-prunable (`mbSite::readSceneObjFile` 0x140210cf5). Every record keeps its kind in
+// `meta_mesh_no`; only scene props, passages, and items carry a `scene_prop_no` (prop or item
+// kind), so entry points and flora never alias the scene-prop kind of the same number. Entry
+// points also fill `world.entry_points`. Returns the number of records dropped because the
+// mission-object table was full (`kMaxSpawnedMissionObjects`).
+inline std::size_t instantiate_scene_objects(
     const SceneObjectFile& scene_obj,
     WseWorldState& world,
     const std::function<std::int32_t(std::uint32_t kind_type, std::string_view id)>& resolver = {}) {
-    world.mission_objects.clear();
-    world.mission_object_free_slots.clear();
+    // A new scene: clear agents and every reference to the previous scene's objects (attached
+    // missiles, edit-mode selection, spawn effectors) before the ids are reused.
+    world.clear_mission_entities();
+    world.entry_points.fill(WseEntryPoint{});
+    std::size_t dropped = 0;
     for (const LoadedSceneObject& src : scene_obj.objects) {
         WseMissionObject dst{};
         dst.active = true;
-        dst.is_item = (src.kind_type == 2U);
-        std::int32_t resolved_kind = static_cast<std::int32_t>(src.sub_kind);
-        if (resolver) {
-            const std::int32_t r_id = resolver(src.kind_type, src.normalized_id);
-            if (r_id >= 0) {
-                resolved_kind = r_id;
+        dst.meta_mesh_no = static_cast<std::int32_t>(src.kind_type);
+        dst.is_item = (src.kind_type == kSceneObjKindItem);
+        const bool has_kind = src.kind_type == kSceneObjKindProp ||
+                              src.kind_type == kSceneObjKindPassage || dst.is_item;
+        if (has_kind) {
+            std::int32_t resolved_kind = static_cast<std::int32_t>(src.sub_kind);
+            if (resolver) {
+                const std::int32_t r_id = resolver(src.kind_type, src.normalized_id);
+                if (r_id >= 0) {
+                    resolved_kind = r_id;
+                }
             }
+            dst.scene_prop_no = resolved_kind;
         }
-        dst.scene_prop_no = resolved_kind;
         dst.variation_id_no = static_cast<std::int32_t>(src.variation_id);
         dst.variation_id_2_no = static_cast<std::int32_t>(src.variation_id_2);
         dst.position = src.transform;
@@ -417,8 +448,17 @@ inline void instantiate_scene_objects(
         dst.starting_position = src.transform;
         dst.scale = src.scale;
         dst.m5.enable_pruning = false;
-        (void)world.allocate_mission_object(std::move(dst));
+        if (src.kind_type == kSceneObjKindEntryPoint &&
+            src.sub_kind < static_cast<std::uint32_t>(kMaxEntryPoints)) {
+            WseEntryPoint& ep = world.entry_points[src.sub_kind];
+            ep.valid = true;
+            ep.position = src.transform;
+        }
+        if (world.allocate_mission_object(std::move(dst)) < 0) {
+            ++dropped;
+        }
     }
+    return dropped;
 }
 
 // -----------------------------------------------------------------------------
@@ -760,8 +800,6 @@ inline void read_attr_flag_bit(const XmlElementNode& node,
                         xml_detail::read_attr_f32(body_el, "pos2_z", body.pos2.z);
                         xml_detail::read_attr_flag_bit(body_el, "for_ragdoll_only", body.for_ragdoll_only);
                         xml_detail::read_attr_flag_bit(body_el, "for_collision_only", body.for_collision_only);
-                        skel.bones.push_back({});  // unused placeholder? wait NO - append body directly!
-                        skel.bones.pop_back();
                         bone.bodies.push_back(std::move(body));
                     }
                 }

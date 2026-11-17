@@ -114,8 +114,9 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `asset_test.cpp` | 10 |
 | `audio_test.cpp` | 8 |
 | `input_test.cpp` | 8 |
-| `selftest_host_test.cpp` *(aggregate runner over the 21 suites)* | 21 suites |
-| **Total (21 standalone suites + aggregate runner)** | **168** |
+| `scene_test.cpp` | 6 |
+| `selftest_host_test.cpp` *(aggregate runner over the 22 suites)* | 22 suites |
+| **Total (22 standalone suites + aggregate runner)** | **174** |
 
 ## 4. Blocked
 
@@ -368,6 +369,49 @@ Found in the review of `e6c4d0e` (PR #22 / `afab774`); all 10 follow-up items ar
 9. ~~**Windows host gate for `e6c4d0e` and fixes.**~~ **Resolved:** Re-executed full Windows `engine/build_host.ps1` + retail `Native`/`Phantasy Calradia` validation after all fixes (§1, §2, §7).
 10. ~~**References in `fx`.**~~ **Verified & Fixed (`world_state.h`):** `unlink_agent_references(-1)` clears `fx.trigger_agent_no = -1` on full mission clear; `fx.missiles` (append-only projectile launch log) and `fx.ray_obstacles` (static ray-cast geometry) carry no recycled agent slots and remain intact.
 
+### Phase 2A / P9 Part 1 review (`5ab81a4`): fixed, with open items
+
+Found in the review of `5ab81a4`; fixed on `claude/busy-sagan-3dohz1` (`engine/README.md` holds the
+handler notes and safety deviations):
+
+1. ~~**Stale `m6.ui.active_window_id`.**~~ **Fixed:** a consumed menu, notes, or presentation
+   window was never replaced, so `3039`, `3044`, `4901`, and `4907` stayed blocked for the rest of
+   the session. Window types the map does not open now leave the active window unknown (`-1`), and
+   mission frames retire campaign window ids.
+2. ~~**Window queue never drained.**~~ **Fixed:** every type other than `0x12`/`0x0f`/`0x10`
+   (`change_screen_return`, `change_screen_map`, inventory/party screens, ...) accumulated forever.
+   The campaign consumer pops them (documented deviation), and `enqueue_window` caps the queue at
+   `kMaxQueuedWindows`.
+3. ~~**`start_presentation` (900) in missions.**~~ **Fixed:** the `0x0f` entry is queued only on the
+   campaign map, so missions no longer leak entries that reopen stale presentations on the map.
+4. ~~**`m_nextKey` allocation.**~~ **Fixed:** a save or `parties.txt` with `m_nextKey` up to `2^20`
+   made the first `allocate_party` allocate ~1.25 GB of tombstones. Party keys are capped at
+   `kMaxPartyKeys` (`131072`) in both loaders and in `allocate_party` (callers handle `-1`).
+5. ~~**Parties with `key >= m_numSlots` dropped on load.**~~ **Fixed:** the reader grows the
+   key-indexed vector to the stored key; a key at or above `m_nextKey` is `corrupt_record`.
+6. ~~**`instantiate_scene_objects`.**~~ **Fixed:** it now goes through `clear_mission_entities`
+   (no stale selections / attached missiles / spawn effectors), keeps the `.sco` kind in
+   `meta_mesh_no`, gives entry points and flora no `scene_prop_no`, fills `world.entry_points`,
+   and returns the number of records dropped at `kMaxSpawnedMissionObjects`.
+7. ~~**`scene_prop_set_prune_time` (1819).**~~ **Fixed:** a positive time arms `enable_pruning`, as
+   the `+0x1d5` note (`setPruneTime` `0x140153d88`) states, so `416` and frame pruning remove it.
+8. ~~**Skinning weights.**~~ **Fixed (documented deviation):** the 4 largest influences are kept and
+   renormalized. Leftover debug lines in `parse_skeleton_bodies_xml`, the `.sco` 68-byte record
+   bound, the dead `ai_face_count`, and `map.txt` count plausibility checks were also fixed.
+
+Still open:
+
+1. **Notes / presentation windows never close.** Nothing models the player closing window `0x15` or
+   `0x16`, so on the campaign map they keep `active_window_id` until the next window transition or
+   mission. Needs the UI layer (P9).
+2. **Dense party storage.** `kMaxPartyKeys` bounds the tombstone cost (~160 MB worst case) but does
+   not remove it; a sparse key-to-slot map would match `rglHashVector` exactly.
+3. **Root motion.** `evaluate_skeleton_pose` adds the root translation key to the root bone's rest
+   origin (as OpenBRF composes them). Not yet checked against a retail pose; the retail scene test
+   only checks for shaded pixels.
+4. **Skinned mesh updates.** `update_skinned_mesh` copies the mesh, rebuilds the corner dedup map,
+   and recreates both GPU buffers every frame although the index buffer does not change.
+
 ## 6. Open documentation questions
 
 ~~One open question (2026-11-14 review): `mbStatementBlock::execute` (`0x1401f69d0`) local-variable zeroing condition.~~ **Resolved:** At `0x1401f6c59` (inside `mbStatementBlock::execute` `0x1401f69d0`), the VM checks `rglConfig::General::bLocalVariablesZeroInitialization` (`0x140617819`, loaded from `[General] bLocalVariablesZeroInitialization` in `rglConfig::load` at `0x14026f716` via `rglIni::getBool` `0x1402a84d0`), whose `.data` default is `1` (`true`). `VmContext::clearLocalsBetweenCalls` now defaults to `true` (`docs/ARCHITECTURE.md` §5 Block execution).
@@ -388,6 +432,7 @@ Previously closed: the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vta
 | Tracking documents | PASS | `AGENTS.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SYMBOL_MAP.json` (83 classes, 3,687 symbols, 76 vtables, 5,046 function ranges, 25 global objects, 3,052 curated superseded VAs), v1.1.5.5 target |
 | v1.1.5.5 REA VM/stream batches | PASS | 75 procedures across 9 `decompile_all` exports (`stmt_core` `ev_3ebcea85…` 4/4, `stmt_block` `ev_ffc38aa5…` 10/10, `script` `ev_8d37a0c8…` 4/4, `simple_trigger` `ev_3157906d…` 12/12, `trigger` `ev_f62843ac…` 12/12, `game_scripts` `ev_fc9bd1a4…` 4/4, `game_triggers` `ev_052f2d86…` 2/2, `streams_bin` `ev_8cc48986…` 9/9, `streams_txt` `ev_1e3c2566…` 18/18), plus `read_bytes`/`0x140615ad0` (`ev_f09662c6…`/`ev_2ddf7a62…`) and 6 single-procedure exports |
 | Superseded 2026-10-14 REA runs | PASS (superseded) | Historical 2026-10-14 entries kept for provenance only: `ev_7cd99ccc…157d7a` (`mbScript` 5), `ev_8d91b175…99b11` (`mbStatement` 14), `ev_25469ff4…84af8` (3), `ev_e3530f99…e8d05` (`Trigger` 52), `ev_cebc7ae0…e8c8d3` (`rglTextStream` 18), `ev_24eecfa4…f18c0b6` (`rglBinaryStream` 9), `ev_130d8023…2c62e6` (2) |
+| Review fixes for `5ab81a4` (Phase 2A / P9 Part 1) | PASS (Linux clang++ 18.1.3: header-only gate loop `18/18` + `script`, CMake + CTest `23/23` incl. `selftest_host` (glslang from a local `16.6.0` checkout); g++ 13 ASan/UBSan on the touched suites `savegame`, `block_vm`, `native_m5`, `native_world`, `module_loaders`, `headless`, `scene`; `check_citations.py --self-test --docs`). Full `WSE_SANITIZE` CMake tree not run locally (disk allowance); CI `host-sanitizers` covers it | Fixed the 8 items in §5 "Phase 2A / P9 Part 1 review (`5ab81a4`)": stale `m6.ui.active_window_id`, undrained window types + `kMaxQueuedWindows`, `900` queueing in missions, `kMaxPartyKeys` bound on `m_nextKey`, sparse party keys past `m_numSlots`, `instantiate_scene_objects` references / kinds / entry points, `1819` pruning flag, top-4 renormalized skin weights; plus the `.sco` / `map.txt` bounds and leftover parser lines. Regression tests in `block_vm_test`, `native_m5_test`, `savegame_test`, and `scene_test` |
 | Phase 2E review resolutions (`afab774` PR #22) + **Phase 2A completion & Slice P9 Part 1** | PASS (Windows `build_host.ps1` `22/22` / `174` funcs, `selftest_host` `6,495 ms` + retail `Native`/`Phantasy Calradia` CLI + `check_citations` + `extract_wse_opcodes`) | Resolved ALL `10` open §5 items from `afab774`: `consume_campaign_queued_window` `0x12`/`0x0f`/`0x10` filter + `m6.ui.active_window_id` sync (`0x140118987`/`0x1400f0c50`), `900` `start_presentation` queue (`0x1401cbf02`), `2055` loading state, `mbGame::removeParty` / `addPartyToParty` (`0x1400dd990`/`0x1400de230`), `416` `m5.enable_pruning` filter & active-player reset (`0x140147a80`), `rglHashVector<mbParty>` `m_nextKey` (`+0x138f0`, `0x1400e7b80`/`0x1400e7de0`), `[802..1174]` version-invariance (`0x1400e7640`/`0x1400bae70`), dead `WseQuestNote::available` removal (`0x1401b9e90`) + `current_day` fix in `1113`/`1114`/`1116`/`1118`/`1119` (`0x1401de2ee`), and `fx.trigger_agent_no` reset. Completed **Phase 2A** (`wse/game/scene_loaders.h`: `map.txt` `0x1400d9a00`, `SceneObj/*.sco` `0x140210be0`, `Data/skeleton_bodies.xml` `0x1400cbb70`/`0x140211ba0`, `dialog_states.txt` confirmed absent from retail binary) & **Slice P9 Part 1** (`wse/asset/brf.h` `skeleton_anim` `(qx,qy,qz,qw)` fix `0x14030c320`, `wse/asset/skeleton.h` FK & CPU linear-blend skinning `0x14030a770`/`0x14030b8f0`/`0x140258800`, `wse/platform/rhi_scene.h` terrain chunking + `BrfSceneRenderer`, `scene_test.cpp`); regenerated `docs/SYMBOL_MAP.json`; validated retail `Native` `wse_headless` (`20` frames / `755` parties / `errorCount=0`), `wse_brf` (`Native` `221/221`, `Phantasy Calradia` `333/333`, `271/271` shaders at `spv_fail=0`), and all `1,382/1,382` `Native` + `Phantasy Calradia` `.sco` files |
 | Phase 2E review fixes (`e6c4d0e`) | PASS (Linux clang++ 18: header-only gate loop, CMake + CTest; g++ ASan/UBSan touched suites; `check_citations.py --self-test --docs`) | Fixed in review of `e6c4d0e`. **Mission objects:** `scene_prop_fade_out` (1822) no longer deletes the prop (`scene_prop_fade_in` 1823 could not restore it and the id was recycled); `multiplayer_clear_scene` (416) keeps scene-placed props (`spawned_at_runtime`) and no longer wipes player equipment; `remove_mission_object` also drops `attached_missiles` / edit-mode selections. **Agents:** `unlink_agent_references` clears team leader / order listener / division leaders, look / AI targets, offers, cached enemies, one-sided horse/rider links, `parent_agent_no`, camera target, and dialog speaker before a slot is recycled. **Players:** `disconnect_player` keeps `mp.saved_ban`, so `ban_player_using_saved_ban_info` (468) works after a kick. **Parties:** `remove_party` clears `encountered_party_2_no` and refuses the main party; `attach_party` refuses cycles; dead `num_parties_created` removed. **Frame step:** `step_world_frame` consumes the window queue only on the campaign map. **Savegame:** `<= 1136` bodies keep live combat options; the mismatched-header test pins `truncated`; dead `legacy_layout_unsupported` check removed. **Misc:** free-list release is O(1); `kQueuedWindowSaveExitBreakType` folded into `kQueuedWindowMenuType`; entry VAs `0x140117f90` / `0x140120240` / `0x14002a220` cited. Open items: §5. |
 | Phase 2E container lifetimes + Phase 2A/P8 follow-ups | PASS (Windows `build_host.ps1` `21/21` `6,402 ms` + retail `Native`/`Phantasy Calradia` + `check_citations` + `extract_wse_opcodes`) | Resolved all 7 open §5 Phase 2A items + P8 zoom bounds from `v1.1.5.5` and implemented **Phase 2E** live entity lifetimes: **`savegame.h` / `rgl_string.h`:** gated `[802..1174]` bodies across `mbGame::readStream` (`0x1400c856d`) and `mbParty::readStream` (`0x1401ba9d1`/`0x1401baa20`/`0x1401baa7f`), verified scalar `mbNotes` `+0x4c0`/`+0x4c4` (`0x1401b9e90`/`0x1401b9f30`), `loadParties` unchanged `tf_hero`, `mbLoadingWindow::doStep` (`0x140112630`) `readSettingsData` reset before `readStream`, and intentional strict `toInt64Stream` (`0x14030f6d0`); **`native_mission_ops.h` / `headless_runner.h` / `world_state.h`:** `jump_to_menu` (`2060`, `0x1401dc2b1`) pushes `{0x12, -1}` (`mbMenuWindow`) consumed by `consume_campaign_queued_window` (`0x140117f90`/`0x140120240`); **`world_subsystem_types.h` / `world_input.h`:** `5.0f` default (`0x140116d70`) & `[3.5f, 175.0f]` zoom bounds (`0x1406173c0`/`0x1406173c4`); **Phase 2E (`world_state.h`, `world_campaign_helpers.h`, `module_*.h`, ops):** monotonic `allocate_party` + `mbGame::removeParty` (`0x1400dd990`) teardown + bidirectional `attach_party`/`detach_party`; shared `rglStableVector` LIFO free lists & tail shrink (`0x14014b960`/`0x14014b810`/`0x14014c030`/`0x14014bdc0`, `0x140138590`/`0x140132ba0`) for `agents`/`mission_objects` + 30s fade-out (`0x14002a220`) & item/prop pruning via `advance_mission_lifetimes`; `mbnetPlayer::initialize`/`clear`/`disconnectPlayer`/`startMission` (`0x1401b7220`/`0x1401b7580`/`0x1401a8c20`/`0x14017c650`/`0x14017c7c0`) wired into `465`/`466`/`468`/`2904`/`416`; regenerated `docs/SYMBOL_MAP.json` via `build_symbol_map.py`; extended `savegame_test`, `input_test`, `block_vm_test`, `native_m5_test`, and `native_world_test`. |

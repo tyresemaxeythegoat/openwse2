@@ -133,6 +133,9 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
     spawned.position.o.x += std::cos(angle) * dist;
     spawned.position.o.y += std::sin(angle) * dist;
     const std::int32_t new_id = world.allocate_party(std::move(spawned));
+    if (new_id < 0) {
+        return -1;  // `kMaxPartyKeys` reached
+    }
     ++world.party_templates[static_cast<std::size_t>(template_no)].num_created;
     game::party_add_template(world, new_id, template_no, false);
     return new_id;

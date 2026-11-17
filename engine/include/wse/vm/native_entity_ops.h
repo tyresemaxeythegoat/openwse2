@@ -300,11 +300,17 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         }
         return NativeDispatch::handled;
     case 900: // start_presentation (0x1401cbf02)
+        // The queued 0x0f entry is consumed only by `mbMapWindow::frameMove` (0x140117f90), which
+        // `step_world_frame` runs on campaign frames alone. During a mission (safety deviation:
+        // retail's mission-side path is not reconstructed) only `active_presentation_no` is set,
+        // since a queued entry would never drain there and would reopen a stale presentation
+        // once the player is back on the map.
         if (narrow[0] >= 0) {
             world.active_presentation_no = narrow[0];
             world.presentation_background = false;
-            world.m5.enqueued_windows.emplace_back(
-                game::kQueuedWindowPresentationType, narrow[0]);
+            if (!world.lighting.has_scene) {
+                world.enqueue_window(game::kQueuedWindowPresentationType, narrow[0]);
+            }
         }
         return NativeDispatch::handled;
     case 901: // start_background_presentation (0x1401cbf2d)

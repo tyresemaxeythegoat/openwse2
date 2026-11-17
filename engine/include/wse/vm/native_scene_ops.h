@@ -207,10 +207,14 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
         }
         return NativeDispatch::handled;
     case 1819: // scene_prop_set_prune_time (0x1401d6da1, callee 0x140153d80)
+        // `mbMissionObject::setPruneTime` sets the prune flag (`+0x1d5`, 0x140153d88) when the
+        // time is positive, so a prop given a prune time also expires and is removed by
+        // `multiplayer_clear_scene` (416). A zero time leaves the flag as it was.
         if (world.is_valid_mission_object(narrow[0]) && wide[1] >= 0) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
-            if (obj.m5.enable_pruning) {
-                obj.m5.prune_time = static_cast<float>(wide[1]);
+            obj.m5.prune_time = static_cast<float>(wide[1]);
+            if (obj.m5.prune_time > 0.0f) {
+                obj.m5.enable_pruning = true;
             }
         }
         return NativeDispatch::handled;

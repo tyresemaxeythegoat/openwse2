@@ -507,13 +507,11 @@ void test_triggers_and_wse_integration() {
                    menuCtx.world.m5.enqueued_windows.empty(),
                "campaign consumer pops type-0x12 menu window and syncs m6.ui.active_window_id");
 
-        // `mbMapWindow::frameMove` (0x140118987) only pops 0x12 (-> 0x12), 0x0f (-> 0x16),
-        // and 0x10 (-> 0x15) from the back, leaving other queued window types untouched.
-        menuCtx.world.m5.enqueued_windows.emplace_back(2, -1);  // loot window (menu-only)
-        expect(menuCtx.world.consume_campaign_queued_window() == -1 &&
-                   menuCtx.world.m5.enqueued_windows.size() == 1U,
-               "campaign consumer leaves non-map window types queued");
-        menuCtx.world.m5.enqueued_windows.emplace_back(kQueuedWindowNotesType, -1);
+        // `mbMapWindow::frameMove` (0x140118987) opens 0x12 (-> 0x12), 0x0f (-> 0x16), and
+        // 0x10 (-> 0x15) from the back; every other type is popped into an unknown window (-1)
+        // because the engine models no window that would consume it.
+        menuCtx.world.enqueue_window(2);  // loot window (menu-only)
+        menuCtx.world.enqueue_window(kQueuedWindowNotesType);
         expect(menuCtx.world.consume_campaign_queued_window() == kScreenWindowNotes &&
                    menuCtx.world.m5.active_window == kScreenWindowNotes &&
                    menuCtx.world.m6.ui.active_window_id == kScreenWindowNotes &&
@@ -526,6 +524,39 @@ void test_triggers_and_wse_integration() {
                    menuCtx.world.m6.ui.active_window_id == kScreenWindowPresentation &&
                    menuCtx.world.m5.enqueued_windows.size() == 1U,
                "campaign consumer pops type-0x0f presentation window into 0x16");
+        expect(menuCtx.world.consume_campaign_queued_window() == -1 &&
+                   menuCtx.world.m5.enqueued_windows.empty() &&
+                   menuCtx.world.m5.active_window == -1 &&
+                   menuCtx.world.m6.ui.active_window_id == -1,
+               "campaign consumer drains a non-map window type into an unknown window");
+
+        // Regression: a consumed menu must not gate map-only opcodes for the rest of the
+        // session; `change_screen_map` (2052, type 0x11) from the menu clears it.
+        menuCtx.world.enqueue_window(kQueuedWindowMenuType);
+        (void)menuCtx.world.consume_campaign_queued_window();
+        expect(menuCtx.world.m6.ui.active_window_id == kScreenWindowMenu,
+               "menu window is active after jump_to_menu");
+        menuCtx.world.enqueue_window(0x11);
+        (void)menuCtx.world.consume_campaign_queued_window();
+        expect(menuCtx.world.m6.ui.active_window_id == -1,
+               "change_screen_map leaves the menu window so map-gated opcodes run again");
+
+        // Regression: window types the map does not open no longer accumulate, and nothing
+        // grows the queue past `kMaxQueuedWindows` even without a consumer.
+        for (int i = 0; i < 1000; ++i) {
+            menuCtx.world.enqueue_window(0x11);
+            (void)menuCtx.world.consume_campaign_queued_window();
+        }
+        expect(menuCtx.world.m5.enqueued_windows.empty(),
+               "campaign frames drain change_screen_map entries");
+        for (int i = 0; i < 1000; ++i) {
+            menuCtx.world.enqueue_window(kQueuedWindowPresentationType, i);
+        }
+        expect(menuCtx.world.m5.enqueued_windows.size() == kMaxQueuedWindows &&
+                   menuCtx.world.m5.enqueued_windows.back().second == 999 &&
+                   menuCtx.world.m5.enqueued_windows.front().second ==
+                       1000 - static_cast<int>(kMaxQueuedWindows),
+               "enqueue_window keeps the newest kMaxQueuedWindows entries");
         menuCtx.world.m5.enqueued_windows.clear();
 
         menuMgr.triggers[0].interval = 100.0;  // let next frame proceed to trigger 1 cleanly

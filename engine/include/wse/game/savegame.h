@@ -1167,12 +1167,13 @@ inline void write_world_body_sections(
             return SavegameContainerResult::truncated;
         }
         if (num_slots < 0 || next_key < 0) return SavegameContainerResult::negative_count;
-        if (static_cast<std::size_t>(num_slots) > kMaxSavegameArrayCount ||
-            static_cast<std::size_t>(next_key) > kMaxSavegameArrayCount) {
+        // `parties` is indexed by party key, so every key below `next_party_key` costs a
+        // `WseParty` (as a tombstone once removed); `kMaxPartyKeys` bounds that allocation.
+        if (num_slots > kMaxPartyKeys || next_key > kMaxPartyKeys) {
             return SavegameContainerResult::count_limit_exceeded;
         }
         // Every slot holds at least its int32 present flag; checking this before the
-        // allocation stops a few-byte file from allocating ~1.2 GB of `WseParty`.
+        // allocation stops a few-byte file from allocating ~160 MB of `WseParty`.
         if (static_cast<std::size_t>(num_slots) > r.remaining() / 4U) {
             return SavegameContainerResult::truncated;
         }
@@ -1190,9 +1191,20 @@ inline void write_world_body_sections(
                 if (!r.read_i32(raw_idx) || !r.read_i32(key)) {
                     return SavegameContainerResult::truncated;
                 }
-                WseParty* dst = (key >= 0 && static_cast<std::size_t>(key) < world.parties.size())
-                                    ? &world.parties[static_cast<std::size_t>(key)]
-                                    : nullptr;
+                // Slot index and key differ once retail has recycled hash-vector slots
+                // (`m_nextKey > m_numSlots`), so a key may lie past `num_slots`: grow the
+                // key-indexed vector to it instead of dropping the party. Every key handed out
+                // is below `m_nextKey`, so a larger one marks a corrupt record.
+                if (key >= world.next_party_key) return SavegameContainerResult::corrupt_record;
+                if (key >= 0 && static_cast<std::size_t>(key) >= world.parties.size()) {
+                    const std::size_t old_size = world.parties.size();
+                    world.parties.resize(static_cast<std::size_t>(key) + 1U);
+                    for (std::size_t k = old_size; k < world.parties.size(); ++k) {
+                        world.parties[k].active = false;
+                    }
+                }
+                WseParty* dst = (key >= 0) ? &world.parties[static_cast<std::size_t>(key)]
+                                           : nullptr;
                 if (dst == nullptr) out_count_exceeded = true;  // record consumed, dropped
                 if (const auto p_rc = read_party_record(r, savegame_version, dst);
                     p_rc != SavegameContainerResult::ok) {
