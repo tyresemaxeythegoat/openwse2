@@ -367,6 +367,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         if (world.is_valid_overlay(narrow[0]) && wse_register_ok(narrow[1])) {
             const auto& o = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
             world.overlays[static_cast<std::size_t>(narrow[0])].size = {o.x, o.y};
+            world.overlays[static_cast<std::size_t>(narrow[0])].m5.size_set = true;
         }
         return NativeDispatch::handled;
     case 926: // overlay_set_position (0x1401cc698)

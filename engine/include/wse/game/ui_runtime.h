@@ -371,16 +371,32 @@ inline constexpr std::uint32_t kPresentationFlagManualEndOnly = 0x00000002U;
 // window that was current when the modal window opened.
 inline constexpr std::int32_t kUiReturnToCurrentWindow = std::numeric_limits<std::int32_t>::min();
 
-// Text scale applied to overlay text at `overlay_set_size` scale 1.0.
+// Overlay text size per unit of `overlay_set_size`: `overlay_set_size` (925) calls
+// `rglWidget::setScale` (`0x14031e7e0`), which sets the text size to `scale * 0.02`
+// (`__real@3ca3d70a`) through `rglWidget::setTextSize` (`0x14031d1c0`).
 inline constexpr float kUiOverlayTextScale = 0.020f;
-// Hit box of a text button overlay at `overlay_set_size` scale 1.0 when no
-// `overlay_set_area_size` was given (port approximation, `engine/README.md`).
+// `create_button_overlay` (912, `createButtonOverlay` `0x14020abe0`) sets text flag `0x200`, so
+// `rglWidget::setText` (`0x14031e330`) makes the widget's box the laid-out text extent at the
+// text size current when the text was set (0.02 at creation); `setScale` later resizes the
+// text only. `UiSession` measures with `UiSession::font` at 0.02; without a font it falls back
+// to this fixed box (port approximation).
 inline constexpr float kUiOverlayButtonWidth = 0.25f;
 inline constexpr float kUiOverlayButtonHeight = 0.038f;
+// `create_game_button_overlay` (940, `createGameButtonOverlay` `0x14020c3e0`): an
+// `rglGameButtonWidget` with `medium_button` / `medium_button_down` meshes and a
+// `0.148 x 0.04` box; its scale field starts at that box, and `rglGameButtonWidget::setScale`
+// (`0x14029bfb0`) makes the `overlay_set_size` vector the new box (meshes rescale with it).
+inline constexpr float kUiGameButtonWidth = 0.148f;
+inline constexpr float kUiGameButtonHeight = 0.04f;
+// `create_in_game_button_overlay` (941, `createIngameButtonOverlay` `0x14020c7d0`): same widget
+// with `mp_inventory_button` for both states and a `0.2123 x 0.04` box.
+inline constexpr float kUiInGameButtonWidth = 0.2123f;
+inline constexpr float kUiInGameButtonHeight = 0.04f;
 
-// Meshes the built-in windows below draw by name (lower case).
-inline constexpr std::array<std::string_view, 5> kUiSessionMeshNames{
-    "main_menu_nord", "ui_quick_battle_a", "warrider_logo", "dlg_button", "dlg_button_down",
+// Meshes the built-in windows and button overlays below draw by name (lower case).
+inline constexpr std::array<std::string_view, 8> kUiSessionMeshNames{
+    "main_menu_nord", "ui_quick_battle_a",  "warrider_logo",      "dlg_button",
+    "dlg_button_down", "medium_button",     "medium_button_down", "mp_inventory_button",
 };
 
 // Extent of a UI mesh in its own (UI-space) coordinates, used to place mesh overlays.
@@ -400,6 +416,9 @@ public:
     // `platform::collect_ui_mesh_bounds`). Mesh overlays whose mesh is missing here are
     // assumed to span `[0, 1] x [0, 1]` at scale 1.
     std::unordered_map<std::string, UiMeshBounds> mesh_bounds{};
+    // Font used to size `create_button_overlay` boxes from their text (not owned; the host
+    // keeps it alive, e.g. `platform::LoadedUiAssets::font`). Null keeps the fixed fallback box.
+    const asset::FontData* font = nullptr;
     std::string module_name = "Native";
     std::string version_text = "1.174";
     std::int32_t current_window = kScreenWindowInitial;
@@ -1027,8 +1046,31 @@ public:
             }
             if (text_button) {
                 w.kind = UiWidgetKind::GameButton;
+                const std::int32_t op = ov.m5.button_opcode;
+                if (op == 940 || op == 941) {
+                    // `rglGameButtonWidget`: centred text at the default size (its `setScale`
+                    // leaves the text size alone), mesh-backed box.
+                    w.text_scale = {kUiOverlayTextScale, kUiOverlayTextScale};
+                    w.mesh_name = (op == 940) ? "medium_button" : "mp_inventory_button";
+                    w.highlight_mesh_name = (op == 940) ? "medium_button_down" : "mp_inventory_button";
+                }
                 if (!has_area) {
-                    w.size = {kUiOverlayButtonWidth * scale_x, kUiOverlayButtonHeight * scale_y};
+                    if (op == 940 || op == 941) {
+                        const bool game = (op == 940);
+                        w.size = ov.m5.size_set
+                                     ? wse::core::WseVec2{scale_x, scale_y}
+                                     : wse::core::WseVec2{game ? kUiGameButtonWidth : kUiInGameButtonWidth,
+                                                          game ? kUiGameButtonHeight
+                                                               : kUiInGameButtonHeight};
+                    } else if (font != nullptr && !w.text.empty()) {
+                        // Box = text extent at the creation text size (see
+                        // `kUiOverlayButtonWidth`).
+                        const auto [tw, th] = font->measure_text(
+                            w.text, 0.0f, kUiOverlayTextScale, kUiOverlayTextScale, w.text_flags);
+                        w.size = {tw, th};
+                    } else {
+                        w.size = {kUiOverlayButtonWidth * scale_x, kUiOverlayButtonHeight * scale_y};
+                    }
                 }
             } else if (mesh_button || (ov.type == 0 && !w.mesh_name.empty())) {
                 w.kind = mesh_button ? UiWidgetKind::GameButton : UiWidgetKind::Image;

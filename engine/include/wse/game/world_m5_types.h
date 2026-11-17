@@ -169,6 +169,12 @@ struct WseOverlayM5Ext {
     // `create_in_game_button_overlay` 941) share `type == 1` with `create_text_overlay` 910;
     // this tells them apart for the UI layer (port bookkeeping, not a retail field).
     bool is_button = false;
+    // Create opcode of a text button (912, 940, or 941): the three build different retail
+    // widgets with different hit boxes (`game::UiSession::sync_overlays_from_world`).
+    std::int32_t button_opcode = 0;
+    // `overlay_set_size` (925) was applied: game buttons (940/941) then take the size vector as
+    // their box instead of their creation default (port bookkeeping, not a retail field).
+    bool size_set = false;
     std::uint32_t widget_flags = 0;
     double min_value = 0.0;
     double max_value = 0.0;

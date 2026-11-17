@@ -1085,6 +1085,22 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     closes a presentation in retail.
     `rglString::toUInt64Stream` (`0x14030f7b0`, behind `rglTextStream::readUInt64` `0x1402afbe0`)
     is recorded in §2's text-stream table.
+15. ~~Check overlay size semantics against the retail overlay widgets.~~
+    **Resolved (mostly):** `mbPresentationContainer::setOverlaySize` (`0x14020e0c0`) calls the
+    widget's virtual `setScale` (slot `+0x1f8`). `rglWidget::setScale` (`0x14031e7e0`) stores the
+    vector at `+0x14c`, sets the text size to `scale * 0.02` (`rglWidget::setTextSize`
+    `0x14031d1c0`), and redraws the text (`rglWidget::redrawText` `0x14031dfa0`, which returns
+    the `rglFont::drawText` extent plus the text offset). `rglImageWidget::setScale`
+    (`0x1402a6bd0`) rescales the mesh by `new / old`. `createButtonOverlay` (`0x14020abe0`)
+    builds an `rglSimpleButtonWidget` with text flags `(flags & 0x181c) | 0x200`; with `0x200`
+    set and `0x100` clear, `rglWidget::setText` (`0x14031e330`) sets the upper-right corner to
+    the laid-out text extent. `createGameButtonOverlay` (`0x14020c3e0`) and
+    `createIngameButtonOverlay` (`0x14020c7d0`) build an `rglGameButtonWidget` with text flags
+    `0x10`, meshes `medium_button` / `medium_button_down` (scaled `0.5556`) or
+    `mp_inventory_button`, and a `0.148 x 0.04` / `0.2123 x 0.04` box stored as the initial scale;
+    `rglGameButtonWidget::setScale` (`0x14029bfb0`) rescales both meshes by `new / old` and makes
+    the new vector the box. Implemented in
+    [ui_runtime.h](../engine/include/wse/game/ui_runtime.h) (`sync_overlays_from_world`).
 
 ## 9. Evidence index
 

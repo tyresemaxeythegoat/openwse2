@@ -683,6 +683,92 @@ void test_ui_session_drive_frame() {
            "an unknown queued presentation falls back to the window it came from");
 }
 
+// Text button hit boxes per create opcode (`createButtonOverlay` 0x14020abe0,
+// `createGameButtonOverlay` 0x14020c3e0, `createIngameButtonOverlay` 0x14020c7d0).
+void test_overlay_button_boxes() {
+    auto ctx_ptr = std::make_unique<wse::vm::VmContext>();
+    wse::vm::VmContext& ctx = *ctx_ptr;
+    wse::game::WseWorldState& world = ctx.world;
+    world.active_presentation_no = 0;
+    ctx.stringRegisters[0] = u"AB";
+    ctx.stringRegisters[1] = u"Go";
+
+    auto run_stmt = [&](const wse::vm::Statement& st) {
+        wse::vm::StatementBlock blk{};
+        blk.statements.push_back(st);
+        return wse::vm::execute_statement_block(blk, ctx);
+    };
+    // A plain operand `N` names string register `sN`.
+    constexpr std::int64_t s0 = 0;
+    constexpr std::int64_t s1 = 1;
+    expect(run_stmt(make_stmt(912U, {reg(0), s0, 0x1fffU})) &&
+               run_stmt(make_stmt(940U, {reg(1), s1})) && run_stmt(make_stmt(941U, {reg(2), s1})) &&
+               world.overlays.size() == 3U,
+           "create_button / game_button / in_game_button overlays created");
+    if (world.overlays.size() != 3U) {
+        return;
+    }
+    expect(world.overlays[0].m5.button_opcode == 912 &&
+               world.overlays[0].m5.widget_flags == ((0x1fffU & 0x181cU) | 0x200U) &&
+               world.overlays[1].m5.button_opcode == 940 && world.overlays[1].m5.widget_flags == 0x10U &&
+               world.overlays[2].m5.button_opcode == 941 && world.overlays[2].m5.widget_flags == 0x10U,
+           "button overlays record their create opcode and retail text flags");
+
+    wse::asset::FontData font;
+    expect(font.parse_xml(
+               "<FontData width=\"256\" height=\"256\" padding=\"10\" font_size=\"64\" "
+               "font_scale=\"100\" line_spacing=\"100\"><FontDetails>"
+               "<character code=\"65\" u=\"60\" v=\"20\" w=\"104\" h=\"76\" preshift=\"2\" "
+               "yadjust=\"48\" postshift=\"40\"/>"
+               "<character code=\"66\" u=\"120\" v=\"20\" w=\"164\" h=\"76\" preshift=\"2\" "
+               "yadjust=\"48\" postshift=\"40\"/>"
+               "</FontDetails></FontData>"),
+           "synthetic button font parses");
+
+    wse::game::UiSession ui{};
+    ui.current_window = wse::game::kScreenWindowPresentation;
+    ui.sync_overlays_from_world(world);
+    const auto* plain = find_widget(ui.root, "overlay_0");
+    expect(plain != nullptr && close(plain->size.x, wse::game::kUiOverlayButtonWidth),
+           "without a font create_button_overlay keeps the fixed fallback box");
+
+    ui.font = &font;
+    ui.sync_overlays_from_world(world);
+    const auto [tw, th] = font.measure_text("AB", 0.0f, wse::game::kUiOverlayTextScale,
+                                            wse::game::kUiOverlayTextScale,
+                                            world.overlays[0].m5.widget_flags);
+    const auto* simple = find_widget(ui.root, "overlay_0");
+    expect(simple != nullptr && tw > 0.0f && close(simple->size.x, tw) && close(simple->size.y, th),
+           "create_button_overlay box is the text extent at the 0.02 creation size");
+    const auto* game = find_widget(ui.root, "overlay_1");
+    const auto* in_game = find_widget(ui.root, "overlay_2");
+    expect(game != nullptr && close(game->size.x, wse::game::kUiGameButtonWidth) &&
+               close(game->size.y, wse::game::kUiGameButtonHeight) &&
+               game->mesh_name == "medium_button" && game->highlight_mesh_name == "medium_button_down",
+           "create_game_button_overlay: 0.148 x 0.04 box with medium_button meshes");
+    expect(in_game != nullptr && close(in_game->size.x, wse::game::kUiInGameButtonWidth) &&
+               close(in_game->size.y, wse::game::kUiInGameButtonHeight) &&
+               in_game->mesh_name == "mp_inventory_button",
+           "create_in_game_button_overlay: 0.2123 x 0.04 box with mp_inventory_button");
+
+    // overlay_set_size (925): text buttons keep the box and scale the text; game buttons take
+    // the size vector as their box and keep the default text size.
+    ctx.positions[1].o = {0.5f, 2.0f, 0.0f, 0.0f};
+    expect(run_stmt(make_stmt(925U, {0, 1})) && run_stmt(make_stmt(925U, {1, 1})) &&
+               world.overlays[1].m5.size_set,
+           "overlay_set_size marks size_set");
+    ui.sync_overlays_from_world(world);
+    simple = find_widget(ui.root, "overlay_0");
+    game = find_widget(ui.root, "overlay_1");
+    expect(simple != nullptr && close(simple->size.x, tw) &&
+               close(simple->text_scale.x, wse::game::kUiOverlayTextScale * 0.5f) &&
+               close(simple->text_scale.y, wse::game::kUiOverlayTextScale * 2.0f),
+           "overlay_set_size scales create_button_overlay text but not its box");
+    expect(game != nullptr && close(game->size.x, 0.5f) && close(game->size.y, 2.0f) &&
+               close(game->text_scale.x, wse::game::kUiOverlayTextScale),
+           "overlay_set_size gives a game button its box and keeps its text size");
+}
+
 void test_synthetic_ui_rhi_render_and_uv_orientation() {
     // 16x16 font atlas: glyph 'A' covers x=[0..8), y=[0..16), top half red, bottom half blue
     // in top-down DDS/RGBA8 coordinates (row 0..7 red, row 8..15 blue).
@@ -969,6 +1055,7 @@ int run_ui_suite(const char* fixture_path) {
     test_language_and_game_variables();
     test_ui_session_windows_and_regressions();
     test_ui_session_drive_frame();
+    test_overlay_button_boxes();
     test_synthetic_ui_rhi_render_and_uv_orientation();
     test_retail_warband_native_main_menu();
 

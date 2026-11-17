@@ -143,6 +143,11 @@ SYMBOL_TOKENS = [
     # mbConversationWindow::updatePresentations (0x1400888c0) keeps prsntf_manual_end_only
     # presentations when closing the others; its methods own the mission-side presentations.
     "@mbConversationWindow@@",
+    # Overlay widget behaviour behind overlay_set_size / create_*_button_overlay
+    # (rglWidget::setScale 0x14031e7e0, rglImageWidget / rglGameButtonWidget::setScale).
+    "@rglWidget@@",
+    "@rglImageWidget@@",
+    "@rglGameButtonWidget@@",
     "mbSentence",
     "mbFloraKind",
     "mbGroundSpec",

@@ -15,11 +15,11 @@
  "inputs": {
   "layouts": 83,
   "globals_scanned": 48658,
-  "symbols_curated": 3697,
+  "symbols_curated": 3761,
   "game_vtables": 76,
-  "function_ranges": 5068,
+  "function_ranges": 5137,
   "global_objects": 25,
-  "superseded_vas": 3061
+  "superseded_vas": 3119
  },
  "strings": [
   {
@@ -27996,6 +27996,18 @@
    "va": "0x1402978c0"
   },
   {
+   "name": "?setScale@rglGameButtonWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14029bfb0"
+  },
+  {
+   "name": "?getType@rglGameButtonWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14029bfa0"
+  },
+  {
    "name": "?setText@rglGameButtonWidget@@UEAA?AVrglVector2@@AEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -28168,6 +28180,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402a5c30"
+  },
+  {
+   "name": "?getType@rglImageWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a6bc0"
+  },
+  {
+   "name": "?setScale@rglImageWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a6bd0"
+  },
+  {
+   "name": "?setColor@rglImageWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a6c50"
+  },
+  {
+   "name": "?setAlpha@rglImageWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a6c90"
   },
   {
    "name": "??0?$pair@$$CBVrglString@@V?$rglOrderedMap@VrglString@@VrglIniValue@@@@@std@@QEAA@AEBU01@@Z",
@@ -33540,10 +33576,76 @@
    "va": "0x140318fa0"
   },
   {
+   "name": "?render@rglWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031cd40"
+  },
+  {
+   "name": "?getType@rglWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140012f10"
+  },
+  {
+   "name": "?setScale@rglWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e7e0"
+  },
+  {
+   "name": "?setColor@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e890"
+  },
+  {
+   "name": "?setAlpha@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e8b0"
+  },
+  {
+   "name": "?isHighlightable@rglWidget@@UEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400ffe20"
+  },
+  {
+   "name": "?triggerState@rglWidget@@UEAA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031dd10"
+  },
+  {
+   "name": "?hide@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e680"
+  },
+  {
+   "name": "?disable@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e6a0"
+  },
+  {
    "name": "?setMeshAutoFit@rglWidget@@UEAAXHPEAVrglMesh@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14031d360"
+  },
+  {
+   "name": "?setUpperRight@rglWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d160"
+  },
+  {
+   "name": "?setPosition@rglWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e780"
   },
   {
    "name": "?setText@rglWidget@@UEAA?AVrglVector2@@AEBVrglString@@@Z",
@@ -33552,10 +33654,40 @@
    "va": "0x14031e330"
   },
   {
+   "name": "?setTextColor@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e2f0"
+  },
+  {
+   "name": "?setTextSize@rglWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d1c0"
+  },
+  {
    "name": "?setMesh@rglWidget@@UEAAXHPEAVrglMesh@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14031d3b0"
+  },
+  {
+   "name": "?show@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e690"
+  },
+  {
+   "name": "?checkState@rglWidget@@UEAA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d100"
+  },
+  {
+   "name": "?enable@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e6b0"
   },
   {
    "name": "?drawText@rglWidget@@UEAAXAEBVrglString@@AEBVrglVector2@@@Z",
@@ -33564,10 +33696,184 @@
    "va": "0x14031e5a0"
   },
   {
+   "name": "?updateTooltip@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031bed0"
+  },
+  {
+   "name": "?showTooltip@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031bf20"
+  },
+  {
    "name": "?setTooltipText@rglWidget@@UEAAXAEBVrglString@@_N@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14031c070"
+  },
+  {
+   "name": "?setPassworded@rglWidget@@UEAAX_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031c100"
+  },
+  {
+   "name": "?frameMove@rglWidget@@UEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031c110"
+  },
+  {
+   "name": "?autoSize@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031c7a0"
+  },
+  {
+   "name": "?animateToColor@rglWidget@@UEAAXMI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031cbc0"
+  },
+  {
+   "name": "?animateToAlpha@rglWidget@@UEAAXMI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031cc00"
+  },
+  {
+   "name": "?animateToHighlightColor@rglWidget@@UEAAXMI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031cc40"
+  },
+  {
+   "name": "?animateToHighlightAlpha@rglWidget@@UEAAXMI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031cc80"
+  },
+  {
+   "name": "?animateToScale@rglWidget@@UEAAXMAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031ccc0"
+  },
+  {
+   "name": "?animateToPosition@rglWidget@@UEAAXMAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031cd00"
+  },
+  {
+   "name": "?setIntValue@rglWidget@@UEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d060"
+  },
+  {
+   "name": "?getIntValue@rglWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d070"
+  },
+  {
+   "name": "?setBoolValue@rglWidget@@UEAAX_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d080"
+  },
+  {
+   "name": "?getBoolValue@rglWidget@@UEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d0a0"
+  },
+  {
+   "name": "?setFloatValue@rglWidget@@UEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d0c0"
+  },
+  {
+   "name": "?getFloatValue@rglWidget@@UEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d0d0"
+  },
+  {
+   "name": "?hasState@rglWidget@@UEBA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d0e0"
+  },
+  {
+   "name": "?clearStates@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d0f0"
+  },
+  {
+   "name": "?setState@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d120"
+  },
+  {
+   "name": "?setTriggerStateMask@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d130"
+  },
+  {
+   "name": "?setTriggerFlags@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d140"
+  },
+  {
+   "name": "?setTriggerFlag@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d150"
+  },
+  {
+   "name": "?updateChildPosition@rglWidget@@UEAAXPEAV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140004250"
+  },
+  {
+   "name": "?updatePosition@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140004250"
+  },
+  {
+   "name": "?setLowerLeft@rglWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d190"
+  },
+  {
+   "name": "?setTextPosition@rglWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d2b0"
+  },
+  {
+   "name": "?setTextFlags@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d2d0"
+  },
+  {
+   "name": "?setTextFlag@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031d2f0"
   },
   {
    "name": "?setMeshStretched@rglWidget@@UEAAXHPEAVrglMesh@@AEBVrglVector2@@1@Z",
@@ -33600,10 +33906,88 @@
    "va": "0x14031da70"
   },
   {
+   "name": "?updateStateTriggers@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031dee0"
+  },
+  {
+   "name": "?loseFocus@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031df50"
+  },
+  {
+   "name": "?obtainFocus@rglWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031df60"
+  },
+  {
+   "name": "?redrawText@rglWidget@@UEAA?AVrglVector2@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031dfa0"
+  },
+  {
+   "name": "?setTextHighlightColor@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e300"
+  },
+  {
+   "name": "?setTextFont@rglWidget@@UEAAXPEAVrglFont@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e310"
+  },
+  {
    "name": "?getText@rglWidget@@UEBA?AVrglString@@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14031e500"
+  },
+  {
+   "name": "?measureText@rglWidget@@UEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e570"
+  },
+  {
+   "name": "?getOffset@rglWidget@@UEBA?AVrglVector2@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e6c0"
+  },
+  {
+   "name": "?setOffsetPosition@rglWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e720"
+  },
+  {
+   "name": "?setColorAlpha@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e850"
+  },
+  {
+   "name": "?setHighlightColorAlpha@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e8d0"
+  },
+  {
+   "name": "?setHighlightColor@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e910"
+  },
+  {
+   "name": "?setHighlightAlpha@rglWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14031e930"
   },
   {
    "name": "?rglAdjustWidgetText@@YAXPEAVrglWidget@@AEBVrglString@@MMMM@Z",
@@ -45651,6 +46035,12 @@
    "symbol": "?readStream@mbGroundSpec@@QEAAXAEAVrglStream@@@Z"
   },
   {
+   "start": "0x1400ffe20",
+   "end": "0x1400ffe30",
+   "va": "0x1400ffe20",
+   "symbol": "?isHighlightable@rglWidget@@UEBA_NXZ"
+  },
+  {
    "start": "0x140100590",
    "end": "0x1401005e9",
    "va": "0x140100590",
@@ -56757,6 +57147,18 @@
    "symbol": "?setText@rglGameButtonWidget@@UEAA?AVrglVector2@@AEBVrglString@@@Z"
   },
   {
+   "start": "0x14029bfa0",
+   "end": "0x14029bfb0",
+   "va": "0x14029bfa0",
+   "symbol": "?getType@rglGameButtonWidget@@UEBAHXZ"
+  },
+  {
+   "start": "0x14029bfb0",
+   "end": "0x14029c098",
+   "va": "0x14029bfb0",
+   "symbol": "?setScale@rglGameButtonWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
    "start": "0x14029c930",
    "end": "0x14029d2a7",
    "va": "0x14029c930",
@@ -56976,7 +57378,25 @@
    "start": "0x1402a6bc0",
    "end": "0x1402a6bd0",
    "va": "0x1402a6bc0",
-   "symbol": "?getType@rglManifoldBody@@UEBAHXZ"
+   "symbol": "?getType@rglImageWidget@@UEBAHXZ"
+  },
+  {
+   "start": "0x1402a6bd0",
+   "end": "0x1402a6c4c",
+   "va": "0x1402a6bd0",
+   "symbol": "?setScale@rglImageWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x1402a6c50",
+   "end": "0x1402a6c90",
+   "va": "0x1402a6c50",
+   "symbol": "?setColor@rglImageWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x1402a6c90",
+   "end": "0x1402a6d10",
+   "va": "0x1402a6c90",
+   "symbol": "?setAlpha@rglImageWidget@@UEAAXI@Z"
   },
   {
    "start": "0x1402a6d10",
@@ -64401,10 +64821,238 @@
    "symbol": "?forget@rglVertexBuffer@@QEAAXPEAVrglMesh@@@Z"
   },
   {
+   "start": "0x14031bed0",
+   "end": "0x14031bf20",
+   "va": "0x14031bed0",
+   "symbol": "?updateTooltip@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031bf20",
+   "end": "0x14031c06f",
+   "va": "0x14031bf20",
+   "symbol": "?showTooltip@rglWidget@@UEAAXXZ"
+  },
+  {
    "start": "0x14031c070",
    "end": "0x14031c0f9",
    "va": "0x14031c070",
    "symbol": "?setTooltipText@rglWidget@@UEAAXAEBVrglString@@_N@Z"
+  },
+  {
+   "start": "0x14031c100",
+   "end": "0x14031c110",
+   "va": "0x14031c100",
+   "symbol": "?setPassworded@rglWidget@@UEAAX_N@Z"
+  },
+  {
+   "start": "0x14031c110",
+   "end": "0x14031c213",
+   "va": "0x14031c110",
+   "symbol": "?frameMove@rglWidget@@UEAAXM@Z"
+  },
+  {
+   "start": "0x14031c213",
+   "end": "0x14031c5b9",
+   "va": "0x14031c110",
+   "symbol": "?frameMove@rglWidget@@UEAAXM@Z"
+  },
+  {
+   "start": "0x14031c5b9",
+   "end": "0x14031c79c",
+   "va": "0x14031c110",
+   "symbol": "?frameMove@rglWidget@@UEAAXM@Z"
+  },
+  {
+   "start": "0x14031c7a0",
+   "end": "0x14031c7b2",
+   "va": "0x14031c7a0",
+   "symbol": "?autoSize@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031c7b2",
+   "end": "0x14031cb92",
+   "va": "0x14031c7a0",
+   "symbol": "?autoSize@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031cb92",
+   "end": "0x14031cbb9",
+   "va": "0x14031c7a0",
+   "symbol": "?autoSize@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031cbc0",
+   "end": "0x14031cc00",
+   "va": "0x14031cbc0",
+   "symbol": "?animateToColor@rglWidget@@UEAAXMI@Z"
+  },
+  {
+   "start": "0x14031cc00",
+   "end": "0x14031cc40",
+   "va": "0x14031cc00",
+   "symbol": "?animateToAlpha@rglWidget@@UEAAXMI@Z"
+  },
+  {
+   "start": "0x14031cc40",
+   "end": "0x14031cc80",
+   "va": "0x14031cc40",
+   "symbol": "?animateToHighlightColor@rglWidget@@UEAAXMI@Z"
+  },
+  {
+   "start": "0x14031cc80",
+   "end": "0x14031ccc0",
+   "va": "0x14031cc80",
+   "symbol": "?animateToHighlightAlpha@rglWidget@@UEAAXMI@Z"
+  },
+  {
+   "start": "0x14031ccc0",
+   "end": "0x14031cd00",
+   "va": "0x14031ccc0",
+   "symbol": "?animateToScale@rglWidget@@UEAAXMAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14031cd00",
+   "end": "0x14031cd40",
+   "va": "0x14031cd00",
+   "symbol": "?animateToPosition@rglWidget@@UEAAXMAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14031cd40",
+   "end": "0x14031cd71",
+   "va": "0x14031cd40",
+   "symbol": "?render@rglWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x14031cd71",
+   "end": "0x14031ce83",
+   "va": "0x14031cd40",
+   "symbol": "?render@rglWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x14031ce83",
+   "end": "0x14031d03d",
+   "va": "0x14031cd40",
+   "symbol": "?render@rglWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x14031d03d",
+   "end": "0x14031d052",
+   "va": "0x14031cd40",
+   "symbol": "?render@rglWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x14031d060",
+   "end": "0x14031d070",
+   "va": "0x14031d060",
+   "symbol": "?setIntValue@rglWidget@@UEAAXH@Z"
+  },
+  {
+   "start": "0x14031d070",
+   "end": "0x14031d080",
+   "va": "0x14031d070",
+   "symbol": "?getIntValue@rglWidget@@UEBAHXZ"
+  },
+  {
+   "start": "0x14031d080",
+   "end": "0x14031d0a0",
+   "va": "0x14031d080",
+   "symbol": "?setBoolValue@rglWidget@@UEAAX_N@Z"
+  },
+  {
+   "start": "0x14031d0a0",
+   "end": "0x14031d0b7",
+   "va": "0x14031d0a0",
+   "symbol": "?getBoolValue@rglWidget@@UEBA_NXZ"
+  },
+  {
+   "start": "0x14031d0c0",
+   "end": "0x14031d0d0",
+   "va": "0x14031d0c0",
+   "symbol": "?setFloatValue@rglWidget@@UEAAXM@Z"
+  },
+  {
+   "start": "0x14031d0d0",
+   "end": "0x14031d0e0",
+   "va": "0x14031d0d0",
+   "symbol": "?getFloatValue@rglWidget@@UEBAMXZ"
+  },
+  {
+   "start": "0x14031d0e0",
+   "end": "0x14031d0f0",
+   "va": "0x14031d0e0",
+   "symbol": "?hasState@rglWidget@@UEBA_NI@Z"
+  },
+  {
+   "start": "0x14031d0f0",
+   "end": "0x14031d100",
+   "va": "0x14031d0f0",
+   "symbol": "?clearStates@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031d100",
+   "end": "0x14031d120",
+   "va": "0x14031d100",
+   "symbol": "?checkState@rglWidget@@UEAA_NI@Z"
+  },
+  {
+   "start": "0x14031d120",
+   "end": "0x14031d130",
+   "va": "0x14031d120",
+   "symbol": "?setState@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031d130",
+   "end": "0x14031d140",
+   "va": "0x14031d130",
+   "symbol": "?setTriggerStateMask@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031d140",
+   "end": "0x14031d150",
+   "va": "0x14031d140",
+   "symbol": "?setTriggerFlags@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031d150",
+   "end": "0x14031d160",
+   "va": "0x14031d150",
+   "symbol": "?setTriggerFlag@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031d160",
+   "end": "0x14031d190",
+   "va": "0x14031d160",
+   "symbol": "?setUpperRight@rglWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14031d190",
+   "end": "0x14031d1c0",
+   "va": "0x14031d190",
+   "symbol": "?setLowerLeft@rglWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14031d1c0",
+   "end": "0x14031d2a3",
+   "va": "0x14031d1c0",
+   "symbol": "?setTextSize@rglWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14031d2b0",
+   "end": "0x14031d2d0",
+   "va": "0x14031d2b0",
+   "symbol": "?setTextPosition@rglWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14031d2d0",
+   "end": "0x14031d2ed",
+   "va": "0x14031d2d0",
+   "symbol": "?setTextFlags@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031d2f0",
+   "end": "0x14031d30d",
+   "va": "0x14031d2f0",
+   "symbol": "?setTextFlag@rglWidget@@UEAAXI@Z"
   },
   {
    "start": "0x14031d310",
@@ -64449,6 +65097,66 @@
    "symbol": "?setFrameMeshes@rglWidget@@UEAAXHAEBVrglString@@0AEBVrglVector2@@1M@Z"
   },
   {
+   "start": "0x14031dd10",
+   "end": "0x14031dda4",
+   "va": "0x14031dd10",
+   "symbol": "?triggerState@rglWidget@@UEAA_NI@Z"
+  },
+  {
+   "start": "0x14031dda4",
+   "end": "0x14031de59",
+   "va": "0x14031dd10",
+   "symbol": "?triggerState@rglWidget@@UEAA_NI@Z"
+  },
+  {
+   "start": "0x14031de59",
+   "end": "0x14031dedd",
+   "va": "0x14031dd10",
+   "symbol": "?triggerState@rglWidget@@UEAA_NI@Z"
+  },
+  {
+   "start": "0x14031dee0",
+   "end": "0x14031df50",
+   "va": "0x14031dee0",
+   "symbol": "?updateStateTriggers@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031df50",
+   "end": "0x14031df60",
+   "va": "0x14031df50",
+   "symbol": "?loseFocus@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031df60",
+   "end": "0x14031df9e",
+   "va": "0x14031df60",
+   "symbol": "?obtainFocus@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031dfa0",
+   "end": "0x14031e2e6",
+   "va": "0x14031dfa0",
+   "symbol": "?redrawText@rglWidget@@UEAA?AVrglVector2@@XZ"
+  },
+  {
+   "start": "0x14031e2f0",
+   "end": "0x14031e300",
+   "va": "0x14031e2f0",
+   "symbol": "?setTextColor@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031e300",
+   "end": "0x14031e310",
+   "va": "0x14031e300",
+   "symbol": "?setTextHighlightColor@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031e310",
+   "end": "0x14031e32e",
+   "va": "0x14031e310",
+   "symbol": "?setTextFont@rglWidget@@UEAAXPEAVrglFont@@@Z"
+  },
+  {
    "start": "0x14031e330",
    "end": "0x14031e4fd",
    "va": "0x14031e330",
@@ -64461,10 +65169,100 @@
    "symbol": "?getText@rglWidget@@UEBA?AVrglString@@XZ"
   },
   {
+   "start": "0x14031e570",
+   "end": "0x14031e5a0",
+   "va": "0x14031e570",
+   "symbol": "?measureText@rglWidget@@UEBAMXZ"
+  },
+  {
    "start": "0x14031e5a0",
    "end": "0x14031e671",
    "va": "0x14031e5a0",
    "symbol": "?drawText@rglWidget@@UEAAXAEBVrglString@@AEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14031e680",
+   "end": "0x14031e690",
+   "va": "0x14031e680",
+   "symbol": "?hide@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031e690",
+   "end": "0x14031e6a0",
+   "va": "0x14031e690",
+   "symbol": "?show@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031e6a0",
+   "end": "0x14031e6b0",
+   "va": "0x14031e6a0",
+   "symbol": "?disable@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031e6b0",
+   "end": "0x14031e6c0",
+   "va": "0x14031e6b0",
+   "symbol": "?enable@rglWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14031e6c0",
+   "end": "0x14031e720",
+   "va": "0x14031e6c0",
+   "symbol": "?getOffset@rglWidget@@UEBA?AVrglVector2@@XZ"
+  },
+  {
+   "start": "0x14031e720",
+   "end": "0x14031e778",
+   "va": "0x14031e720",
+   "symbol": "?setOffsetPosition@rglWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14031e780",
+   "end": "0x14031e7d9",
+   "va": "0x14031e780",
+   "symbol": "?setPosition@rglWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14031e7e0",
+   "end": "0x14031e849",
+   "va": "0x14031e7e0",
+   "symbol": "?setScale@rglWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14031e850",
+   "end": "0x14031e88a",
+   "va": "0x14031e850",
+   "symbol": "?setColorAlpha@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031e890",
+   "end": "0x14031e8b0",
+   "va": "0x14031e890",
+   "symbol": "?setColor@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031e8b0",
+   "end": "0x14031e8d0",
+   "va": "0x14031e8b0",
+   "symbol": "?setAlpha@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031e8d0",
+   "end": "0x14031e90a",
+   "va": "0x14031e8d0",
+   "symbol": "?setHighlightColorAlpha@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031e910",
+   "end": "0x14031e930",
+   "va": "0x14031e910",
+   "symbol": "?setHighlightColor@rglWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14031e930",
+   "end": "0x14031e950",
+   "va": "0x14031e930",
+   "symbol": "?setHighlightAlpha@rglWidget@@UEAAXI@Z"
   },
   {
    "start": "0x14031e950",
@@ -67551,6 +68349,7 @@
   "0x1400fc860",
   "0x1400fc8f0",
   "0x1400fc920",
+  "0x1400fd300",
   "0x1400fda70",
   "0x1400fdad0",
   "0x140100960",
@@ -68716,6 +69515,8 @@
   "0x1402907f0",
   "0x140290880",
   "0x140290930",
+  "0x140290ab0",
+  "0x140290ac0",
   "0x1402911f0",
   "0x140292040",
   "0x140293020",
@@ -68738,6 +69539,9 @@
   "0x140295e70",
   "0x140295f40",
   "0x140299ce0",
+  "0x140299cf0",
+  "0x140299d70",
+  "0x140299db0",
   "0x140299e30",
   "0x140299ea0",
   "0x14029a700",
@@ -69446,7 +70250,38 @@
   "0x1402ff100",
   "0x1402ff130",
   "0x1402ff140",
+  "0x140301800",
+  "0x140301850",
   "0x1403019a0",
+  "0x140301a30",
+  "0x140301a40",
+  "0x1403020d0",
+  "0x1403024f0",
+  "0x140302530",
+  "0x140302570",
+  "0x1403025b0",
+  "0x1403025f0",
+  "0x140302630",
+  "0x140302670",
+  "0x140302990",
+  "0x1403029a0",
+  "0x1403029b0",
+  "0x1403029d0",
+  "0x1403029f0",
+  "0x140302a00",
+  "0x140302a10",
+  "0x140302a20",
+  "0x140302a30",
+  "0x140302a50",
+  "0x140302a60",
+  "0x140302a70",
+  "0x140302a80",
+  "0x140302a90",
+  "0x140302ac0",
+  "0x140302af0",
+  "0x140302be0",
+  "0x140302c00",
+  "0x140302c20",
   "0x140302c40",
   "0x140302c90",
   "0x140302ce0",
@@ -69454,9 +70289,32 @@
   "0x140302d80",
   "0x140303090",
   "0x1403033a0",
+  "0x140303640",
+  "0x140303810",
+  "0x140303880",
+  "0x140303890",
+  "0x1403038d0",
+  "0x140303c10",
+  "0x140303c20",
+  "0x140303c30",
   "0x140303c50",
   "0x140303e20",
+  "0x140303e90",
   "0x140303ec0",
+  "0x140303fa0",
+  "0x140303fb0",
+  "0x140303fc0",
+  "0x140303fd0",
+  "0x140303fe0",
+  "0x140304040",
+  "0x1403040a0",
+  "0x140304100",
+  "0x140304170",
+  "0x1403041b0",
+  "0x1403041d0",
+  "0x1403041f0",
+  "0x140304230",
+  "0x140304250",
   "0x140304270",
   "0x140304450",
   "0x140304540",
@@ -69580,8 +70438,6 @@
   "0x14031d5a0",
   "0x14031e020",
   "0x14031e5f0",
-  "0x14031e680",
-  "0x14031e7e0",
   "0x14031f2c0",
   "0x1403211c0",
   "0x1403213d0",
