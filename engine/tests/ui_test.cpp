@@ -167,6 +167,9 @@ void test_xml_parser_errors_and_roundtrip() {
     bool flag_val = false;
     wse::io::read_xml_attr_flag_bit(root.children[0], "flag", flag_val);
     expect(flag_val, "XML flag bit sets on true");
+    bool keep_default = true;
+    wse::io::read_xml_attr_flag_bit(root.children[0], "no_such_flag", keep_default);
+    expect(keep_default, "XML flag bit keeps the caller default when the attribute is absent");
 
     wse::io::XmlElementNode bad{};
     expect(!wse::io::parse_xml_document("<A><B></A>", bad, &err), "XML rejects mismatched tags");
@@ -230,7 +233,21 @@ void test_font_data_and_text_layout() {
     expect(vcenter_override.quads.size() == 1U && vcenter_override.quads[0].x0 < 0.2f,
            "0x200 without 0x100 cancels horizontal centering per drawText");
 
+    // measure_text reports the line width whatever the alignment.
+    const auto left_m = font.measure_text("AB", 0.0f, 0.04f, 0.04f, 0U);
+    const auto center_m = font.measure_text("AB", 0.0f, 0.04f, 0.04f, wse::asset::kTextFlagCenterAlign);
+    const auto right_m = font.measure_text("AB", 0.0f, 0.04f, 0.04f, wse::asset::kTextFlagRightAlign);
+    expect(left_m.first > 0.0f && close(center_m.first, left_m.first) &&
+               close(right_m.first, left_m.first),
+           "measure_text width does not depend on alignment");
+    const auto two_lines = font.measure_text("AB\nAB", 0.0f, 0.04f, 0.04f, 0U);
+    expect(close(two_lines.second, 2.0f * 0.04f * 0.9f) && close(two_lines.first, left_m.first),
+           "measure_text without a box still breaks lines at newlines");
+
     wse::asset::FontData bad;
+    expect(!bad.parse_xml("<FontData width=\"64\" height=\"64\" font_scale=\"0\">"
+                          "<FontDetails/></FontData>", &err),
+           "FontData rejects font_scale <= 0");
     expect(!bad.parse_xml("<FontData width=\"0\" height=\"0\"><FontDetails/></FontData>", &err),
            "FontData rejects non-positive dimensions");
     expect(!bad.parse_xml("<FontData width=\"64\" height=\"64\"/>", &err),
@@ -303,7 +320,9 @@ void test_ui_session_windows_and_regressions() {
     // Menu filtering via condition block + option consequence execution
     wse::game::LoadedMenu menu{};
     menu.id = "mnu_test";
-    menu.text = "Choose an action.";
+    menu.text = "Choose an action ({reg3} gold).";
+    // Menu operations run on open, before the text is formatted.
+    menu.operations.statements.push_back(make_stmt(wse::vm::core_op::kAssign, {reg(3), 7}));
     wse::game::LoadedMenuOption hidden_opt{};
     hidden_opt.id = "opt_hidden";
     hidden_opt.text = "Hidden";
@@ -322,6 +341,9 @@ void test_ui_session_windows_and_regressions() {
                find_widget(session.root, "menu_item_0") == nullptr &&
                find_widget(session.root, "menu_item_1") != nullptr,
            "build_menu_window filters failing condition options and keeps option index");
+    const auto* menu_text = find_widget(session.root, "menu_text");
+    expect(menu_text != nullptr && menu_text->text == "Choose an action (7 gold).",
+           "build_menu_window runs menu operations and formats {reg3} in the menu text");
     expect(wse::game::UiSession::execute_menu_option(ctx, 0, 1, menus) && ctx.registers[5] == 77,
            "execute_menu_option executes selected option consequence");
 
@@ -343,50 +365,187 @@ void test_ui_session_windows_and_regressions() {
                ctx.world.m6.ui.active_window_id == wse::game::kScreenWindowMap &&
                ctx.world.m5.enqueued_windows.empty(),
            "Notes window Return closes 0x15 cleanly back to map window");
+    expect(find_widget(session.root, "notes_return_button") == nullptr,
+           "closing notes drops the notes widget tree");
+    ctx.world.enqueue_window(wse::game::kQueuedWindowPresentationType, 3);
+    const auto stale_evs = session.handle_pointer_and_keys(
+        ctx.world, 0.82f, 0.049f, false, true, false);
+    expect(stale_evs.empty() && ctx.world.m5.active_window == wse::game::kScreenWindowMap &&
+               ctx.world.m5.enqueued_windows.size() == 1U,
+           "clicking where the closed notes button was does nothing (no -1 window, queue kept)");
+    ctx.world.m5.enqueued_windows.clear();
 
-    // Presentation triggers -60/-61/-62/-63 + Escape / duration expiry close 0x16
+    // Default prev_window returns to the window that was current (here the menu window).
+    session.build_menu_window(ctx.world, 0, menus, &ctx);
+    session.open_notes_window(ctx.world, "Factions", "Kingdom of Nords");
+    (void)session.handle_pointer_and_keys(ctx.world, 0.0f, 0.0f, false, false, true);
+    expect(session.current_window == wse::game::kScreenWindowMenu &&
+               ctx.world.m5.active_window == wse::game::kScreenWindowMenu,
+           "Escape closes notes opened from the menu back to the menu by default");
+
+    // Presentation triggers -60/-61/-62/-63 receive their parameters through
+    // `store_trigger_param_N` (2071/2072), not reg0/reg1.
+    constexpr std::uint32_t kStoreTriggerParam1 = 2071U;
+    constexpr std::uint32_t kStoreTriggerParam2 = 2072U;
+    constexpr std::uint32_t kStartPresentation = 900U;
+    constexpr std::uint32_t kPresentationSetDuration = 902U;
+    constexpr std::int64_t kSentinel = 0x7777;
     wse::game::LoadedPresentation prsnt{};
     prsnt.id = "prsnt_test";
     prsnt.flags = 1U;  // read-only 10.0s default duration
-    auto add_trig = [&](float interval, std::initializer_list<wse::vm::Statement> stmts) {
+    auto add_trig = [](wse::game::LoadedPresentation& p, float interval,
+                       std::initializer_list<wse::vm::Statement> stmts) {
         wse::game::SimpleTrigger st{};
         st.interval = interval;
         st.block.statements.assign(stmts.begin(), stmts.end());
-        prsnt.triggers.triggers.push_back(std::move(st));
+        p.triggers.triggers.push_back(std::move(st));
     };
-    add_trig(-60.0f, {make_stmt(wse::vm::core_op::kAssign, {reg(10), 1})});
-    add_trig(-61.0f, {make_stmt(wse::vm::core_op::kAssign, {reg(11), reg(0)})});
-    add_trig(-62.0f, {make_stmt(wse::vm::core_op::kAssign, {reg(12), reg(0)})});
-    add_trig(-63.0f, {make_stmt(wse::vm::core_op::kAssign, {reg(13), reg(1)})});
+    add_trig(prsnt, -60.0f, {make_stmt(wse::vm::core_op::kAssign, {reg(10), 1})});
+    add_trig(prsnt, -61.0f, {make_stmt(kStoreTriggerParam1, {reg(11)})});
+    add_trig(prsnt, -62.0f, {make_stmt(kStoreTriggerParam1, {reg(12)}),
+                             make_stmt(kStoreTriggerParam2, {reg(14)})});
+    add_trig(prsnt, -63.0f, {make_stmt(kStoreTriggerParam1, {reg(15)}),
+                             make_stmt(kStoreTriggerParam2, {reg(13)})});
 
-    wse::game::WsePresentationOverlay ov{};
-    ov.type = 3;  // button overlay
-    ov.text = u"Press";
-    ov.position = {0.2f, 0.2f};
-    ov.size = {0.2f, 0.05f};
-    ov.visible = true;
-    ctx.world.overlays.clear();
-    ctx.world.overlays.push_back(ov);
+    wse::game::WsePresentationOverlay stale_ov{};
+    stale_ov.text = u"left over from an earlier presentation";
+    ctx.world.overlays.assign(3U, stale_ov);
 
     std::array<wse::game::LoadedPresentation, 1> prsnts{prsnt};
     expect(session.start_presentation(ctx.world, ctx, 0, prsnts) && ctx.registers[10] == 1,
            "start_presentation fires -60 trigger");
+    expect(ctx.world.overlays.empty(), "start_presentation clears the previous overlays");
+    expect(ctx.world.presentation_duration == 1000,
+           "read-only presentation arms a 10.0s (1000 cs) duration");
+
+    wse::game::WsePresentationOverlay ov{};
+    ov.type = 1;  // create_button_overlay / create_game_button_overlay
+    ov.m5.is_button = true;
+    ov.text = u"Press";
+    ov.position = {0.2f, 0.2f};
+    ov.val = 5;
+    ctx.world.overlays.push_back(ov);
+
+    ctx.registers[0] = 4242;
+    ctx.registers[1] = 4343;
+    for (const std::size_t r : {11U, 12U, 13U, 14U, 15U}) {
+        ctx.registers[r] = kSentinel;
+    }
     expect(session.step_presentation(ctx.world, ctx, 0.5f, prsnts) && ctx.registers[11] == 500,
-           "step_presentation passes elapsed ms and fires -61");
+           "step_presentation passes elapsed ms as trigger param 1 to -61");
+    expect(ctx.world.presentation_duration == 950, "step_presentation counts the duration down");
+    const auto* btn_w = find_widget(session.root, "overlay_0");
+    expect(btn_w != nullptr && btn_w->kind == wse::game::UiWidgetKind::GameButton &&
+               close(btn_w->size.x, wse::game::kUiOverlayButtonWidth) &&
+               close(btn_w->size.y, wse::game::kUiOverlayButtonHeight),
+           "text button overlay at scale 1 gets the default button hit box");
 
     const auto prsnt_evs = session.handle_pointer_and_keys(
         ctx.world, 0.30f, 0.22f, false, true, false, &ctx, prsnts);
-    expect(prsnt_evs.size() == 1U && prsnt_evs[0].kind == wse::game::UiActionKind::OverlayClicked &&
-               ctx.registers[12] == 0 && ctx.registers[13] == 0,
-           "overlay hover enters (-63 reg1=0) and click fires (-62 reg0=0)");
+    expect(prsnt_evs.size() == 1U && prsnt_evs[0].kind == wse::game::UiActionKind::OverlayClicked,
+           "clicking the button overlay emits OverlayClicked");
+    expect(ctx.registers[15] == 0 && ctx.registers[13] == 0,
+           "hover fires -63 with param 1 = overlay 0, param 2 = 0 (enter)");
+    expect(ctx.registers[12] == 0 && ctx.registers[14] == 5,
+           "click fires -62 with param 1 = overlay 0, param 2 = overlay value");
+    expect(ctx.registers[0] == 4242 && ctx.registers[1] == 4343,
+           "presentation triggers leave reg0/reg1 untouched");
 
     (void)session.handle_pointer_and_keys(ctx.world, 0.9f, 0.7f, false, false, false, &ctx, prsnts);
-    expect(ctx.registers[13] == 1, "moving pointer off overlay fires -63 leave (reg1=1)");
+    expect(ctx.registers[13] == 1, "moving pointer off overlay fires -63 leave (param 2 = 1)");
 
-    expect(!session.step_presentation(ctx.world, ctx, 10.0f, prsnts) &&
+    // Overlay colours are 0xRRGGBB with the alpha from overlay_set_alpha; flags 0 = left.
+    wse::game::WsePresentationOverlay txt{};
+    txt.type = 1;
+    txt.text = u"Label";
+    txt.color = 0xFF0000U;  // overlay_set_color stores RGB only
+    txt.alpha = 0.5f;
+    ctx.world.overlays.push_back(txt);
+    wse::game::WsePresentationOverlay empty_txt{};
+    empty_txt.type = 1;  // create_text_overlay with an empty placeholder string
+    ctx.world.overlays.push_back(empty_txt);
+    wse::game::WsePresentationOverlay mesh_ov{};
+    mesh_ov.type = 0;
+    mesh_ov.m5.mesh_no = 0;
+    mesh_ov.position = {0.1f, 0.1f};
+    mesh_ov.size = {0.5f, 0.5f};
+    ctx.world.overlays.push_back(mesh_ov);
+    ctx.world.mesh_names = {"test_mesh"};
+    session.mesh_bounds["test_mesh"] = wse::game::UiMeshBounds{0.0f, 0.0f, 1.0f, 0.75f};
+    session.sync_overlays_from_world(ctx.world);
+    const auto* txt_w = find_widget(session.root, "overlay_1");
+    expect(txt_w != nullptr && txt_w->text_color_argb == 0x80FF0000U && txt_w->text_flags == 0U &&
+               txt_w->kind == wse::game::UiWidgetKind::Label,
+           "text overlay composes RGB + overlay alpha and keeps flags 0 (left aligned)");
+    const auto* empty_w = find_widget(session.root, "overlay_2");
+    expect(empty_w != nullptr && empty_w->kind == wse::game::UiWidgetKind::Label &&
+               empty_w->size.x == 0.0f && empty_w->size.y == 0.0f,
+           "empty text overlay is an empty label, not a white panel");
+    const auto* mesh_w = find_widget(session.root, "overlay_3");
+    expect(mesh_w != nullptr && mesh_w->kind == wse::game::UiWidgetKind::Image &&
+               close(mesh_w->size.x, 0.5f) && close(mesh_w->size.y, 0.375f),
+           "mesh overlay spans its native mesh extent times overlay_set_size");
+
+    // Escape closes a normal presentation with PresentationClosed.
+    const auto esc_evs =
+        session.handle_pointer_and_keys(ctx.world, 0.9f, 0.7f, false, false, true, &ctx, prsnts);
+    expect(esc_evs.size() == 1U && esc_evs[0].kind == wse::game::UiActionKind::PresentationClosed &&
+               esc_evs[0].param == 0 && ctx.world.active_presentation_no == -1 &&
+               session.current_window == wse::game::kScreenWindowMenu,
+           "Escape closes the presentation back to the window it was opened from");
+
+    // prsntf_manual_end_only (0x2): Escape is ignored.
+    prsnts[0].flags = wse::game::kPresentationFlagManualEndOnly;
+    expect(session.start_presentation(ctx.world, ctx, 0, prsnts), "restart presentation 0");
+    (void)session.handle_pointer_and_keys(ctx.world, 0.9f, 0.7f, false, false, true, &ctx, prsnts);
+    expect(ctx.world.active_presentation_no == 0 &&
+               session.current_window == wse::game::kScreenWindowPresentation,
+           "Escape leaves a manual_end_only presentation open");
+    session.close_active_modal_window(ctx.world);
+
+    // presentation_set_duration (902): a long duration outlives the default, 0 closes it.
+    prsnts[0].flags = 0U;
+    prsnts[0].triggers.triggers[0].block.statements.push_back(
+        make_stmt(kPresentationSetDuration, {999999}));
+    expect(session.start_presentation(ctx.world, ctx, 0, prsnts) &&
+               session.step_presentation(ctx.world, ctx, 200.0f, prsnts),
+           "presentation_set_duration 999999 keeps the presentation open past the default");
+    prsnts[0].triggers.triggers[2].block.statements.push_back(
+        make_stmt(kPresentationSetDuration, {0}));
+    ctx.world.overlays.push_back(ov);
+    session.sync_overlays_from_world(ctx.world);
+    (void)session.handle_pointer_and_keys(ctx.world, 0.30f, 0.22f, false, true, false, &ctx, prsnts);
+    expect(ctx.world.active_presentation_no == 0 &&
+               session.current_window == wse::game::kScreenWindowPresentation,
+           "trigger copy is taken at start: later edits to the loaded presentation do not apply");
+    session.close_active_modal_window(ctx.world);
+    expect(session.start_presentation(ctx.world, ctx, 0, prsnts), "restart with set_duration 0 on click");
+    ctx.world.overlays.push_back(ov);
+    session.sync_overlays_from_world(ctx.world);
+    (void)session.handle_pointer_and_keys(ctx.world, 0.30f, 0.22f, false, true, false, &ctx, prsnts);
+    expect(ctx.world.active_presentation_no == -1 &&
+               session.current_window == wse::game::kScreenWindowMenu,
+           "presentation_set_duration 0 from -62 closes window 0x16");
+
+    // start_presentation (900) from a running presentation switches to the new one.
+    wse::game::LoadedPresentation second{};
+    second.id = "prsnt_second";
+    add_trig(second, -60.0f, {make_stmt(wse::vm::core_op::kAssign, {reg(16), 1})});
+    wse::game::LoadedPresentation first = prsnt;
+    first.flags = 0U;
+    first.triggers.triggers[2].block.statements.push_back(make_stmt(kStartPresentation, {1}));
+    std::array<wse::game::LoadedPresentation, 2> pair{first, second};
+    expect(session.start_presentation(ctx.world, ctx, 0, pair), "start presentation 0 of 2");
+    ctx.world.overlays.push_back(ov);
+    session.sync_overlays_from_world(ctx.world);
+    (void)session.handle_pointer_and_keys(ctx.world, 0.30f, 0.22f, false, true, false, &ctx, pair);
+    expect(ctx.world.active_presentation_no == 1 && ctx.registers[16] == 1 &&
+               ctx.world.overlays.empty() && ctx.world.m5.enqueued_windows.empty(),
+           "start_presentation from -62 switches presentations, firing the new -60");
+    expect(!session.step_presentation(ctx.world, ctx, 101.0f, pair) &&
                ctx.world.active_presentation_no == -1 &&
-               ctx.world.m5.active_window == wse::game::kScreenWindowMap,
-           "presentation auto-closes 0x16 when 10s read-only timer expires");
+               ctx.world.m5.active_window == wse::game::kScreenWindowMenu,
+           "presentation auto-closes 0x16 when its duration runs out");
 }
 
 void test_synthetic_ui_rhi_render_and_uv_orientation() {
@@ -511,6 +670,67 @@ void test_synthetic_ui_rhi_render_and_uv_orientation() {
     expect(renderer.render_tree(root, font, cfg, fb_hl), "highlighted render_tree succeeds");
     expect(diff_pixels_in_rect(fb_normal, fb_hl, 100, 75, 10, 20, 40, 60) > 10U,
            "highlighting button alters rendered glyph pixels");
+
+    // Box-less (overlay) text is anchored at the widget position; an empty label draws nothing.
+    wse::game::UiWidget root2{};
+    root2.size = {1.0f, 0.75f};
+    wse::game::UiWidget lbl{};
+    lbl.kind = wse::game::UiWidgetKind::Label;
+    lbl.pos = {0.5f, 0.3f};
+    lbl.size = {0.0f, 0.0f};
+    lbl.text = "A";
+    lbl.text_scale = {0.25f, 0.25f};
+    lbl.text_flags = 0U;
+    lbl.text_color_argb = 0xFFFFFFFFU;
+    root2.children.push_back(lbl);
+    wse::game::UiWidget empty_lbl{};
+    empty_lbl.kind = wse::game::UiWidgetKind::Label;
+    empty_lbl.size = {0.0f, 0.0f};
+    empty_lbl.color_argb = 0xFFFFFFFFU;
+    root2.children.push_back(empty_lbl);
+    std::vector<std::uint8_t> fb_lbl;
+    expect(renderer.render_tree(root2, font, cfg, fb_lbl), "box-less label render succeeds");
+    // Glyph spans x = [0.5, 0.625] -> px [50, 63), baseline 0.3 to top 0.55 -> rows [20, 45).
+    expect(count_non_clear_pixels(fb_lbl, 100, 75, 50, 20, 63, 45, 12, 12, 14) > 200U &&
+               count_non_clear_pixels(fb_lbl, 100, 75, 0, 0, 48, 75, 12, 12, 14) == 0U &&
+               count_non_clear_pixels(fb_lbl, 100, 75, 66, 0, 100, 75, 12, 12, 14) == 0U,
+           "box-less label text sits on its position and the empty label draws nothing");
+
+    // `UiWidget::material_name` resolves through the material's diffuse texture.
+    std::vector<std::uint8_t> red_tex(4U * 4U * 4U, 0);
+    for (std::size_t px = 0; px < 16U; ++px) {
+        red_tex[px * 4U + 0U] = 255;
+        red_tex[px * 4U + 3U] = 255;
+    }
+    expect(renderer.upload_texture("red_tex", 4, 4, red_tex), "upload synthetic red texture");
+    wse::platform::LoadedUiAssets mat_assets{};
+    wse::asset::BrfMaterial red_mat{};
+    red_mat.name = "mat_red";
+    red_mat.texture_names[0] = "red_tex";
+    mat_assets.materials["mat_red"] = red_mat;
+    mat_assets.meshes["ui_test_quad"] = brf_quad;
+    const auto bounds = wse::platform::collect_ui_mesh_bounds(mat_assets);
+    const auto bq = bounds.find("ui_test_quad");
+    expect(bq != bounds.end() && close(bq->second.min_x, 0.0f) && close(bq->second.max_x, 1.0f) &&
+               close(bq->second.min_y, 0.0f) && close(bq->second.max_y, 1.0f),
+           "collect_ui_mesh_bounds reports the UI-space extent of loaded meshes");
+    mat_assets.meshes.clear();
+    mat_assets.font_texture_key.clear();
+    renderer.upload_assets(mat_assets);
+    root.children[0].material_name = "MAT_RED";
+    std::vector<std::uint8_t> fb_mat;
+    expect(renderer.render_tree(root, font, cfg, fb_mat), "material override render succeeds");
+    expect(fb_mat[img_top + 0] > 200 && fb_mat[img_top + 1] < 40 && fb_mat[img_bot + 0] > 200 &&
+               fb_mat[img_bot + 1] < 40,
+           "material_name draws the mesh with the material's texture");
+
+    // Re-uploading the font atlas keeps rendering it (the new texture replaces the old one).
+    expect(renderer.upload_texture("font", 16, 16, font_tex), "re-upload font atlas");
+    std::vector<std::uint8_t> fb_refont;
+    root.children[0].material_name.clear();
+    root.children[1].highlighted = false;
+    expect(renderer.render_tree(root, font, cfg, fb_refont) && fb_refont == fb_normal,
+           "re-uploaded font atlas renders identically");
 }
 
 void test_retail_warband_native_main_menu() {
@@ -544,6 +764,7 @@ void test_retail_warband_native_main_menu() {
     wse::game::UiSession session{};
     session.lang = assets.lang;
     session.vars = assets.vars;
+    session.mesh_bounds = wse::platform::collect_ui_mesh_bounds(assets);
     wse::game::WseWorldState world{};
     session.build_initial_window(world, "Native", true, true, true, true);
 

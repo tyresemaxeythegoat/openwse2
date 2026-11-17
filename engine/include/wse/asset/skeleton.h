@@ -337,13 +337,16 @@ struct VertexSkinWeights {
 
 // Evaluates CPU linear-blend skinning for one rest position and optional rest normal
 // across up to 4 weighted bone influences, renormalizing kept weights (same math used
-// by `skin_brf_mesh` and `BrfSceneRenderer::update_skinned_mesh`).
+// by `skin_brf_mesh` and `BrfSceneRenderer::update_skinned_mesh`). Pass `out_pos ==
+// nullptr` to skin only the normal (no position transforms are evaluated then).
 inline void evaluate_skinned_vertex(const Vec3f& rest_pos,
                                     const Vec3f* rest_normal,
                                     const VertexSkinWeights& sw,
                                     std::span<const core::WseTransform> skin_transforms,
-                                    Vec3f& out_pos,
+                                    Vec3f* out_pos,
                                     Vec3f* out_normal) noexcept {
+    const bool want_pos = (out_pos != nullptr);
+    const bool want_nrm = (rest_normal != nullptr && out_normal != nullptr);
     Vec3f pos_acc{};
     float pos_wsum = 0.0f;
     Vec3f nrm_acc{};
@@ -354,12 +357,14 @@ inline void evaluate_skinned_vertex(const Vec3f& rest_pos,
             continue;
         }
         const core::WseTransform& xf = skin_transforms[sw.bones[k]];
-        const core::WseVec4 tp = transform_point(xf, rest_pos);
-        pos_acc.x += tp.x * w;
-        pos_acc.y += tp.y * w;
-        pos_acc.z += tp.z * w;
-        pos_wsum += w;
-        if (rest_normal != nullptr && out_normal != nullptr) {
+        if (want_pos) {
+            const core::WseVec4 tp = transform_point(xf, rest_pos);
+            pos_acc.x += tp.x * w;
+            pos_acc.y += tp.y * w;
+            pos_acc.z += tp.z * w;
+            pos_wsum += w;
+        }
+        if (want_nrm) {
             const core::WseVec4 tn = transform_dir(xf, *rest_normal);
             nrm_acc.x += tn.x * w;
             nrm_acc.y += tn.y * w;
@@ -369,13 +374,15 @@ inline void evaluate_skinned_vertex(const Vec3f& rest_pos,
     }
     // Divide by the kept weight sum so dropped influences or weights that do not add up
     // to 1 do not pull the vertex toward the bone-space origin.
-    if (pos_wsum > kMinSkinWeightThreshold) {
-        const float inv_wsum = 1.0f / pos_wsum;
-        out_pos = {pos_acc.x * inv_wsum, pos_acc.y * inv_wsum, pos_acc.z * inv_wsum};
-    } else {
-        out_pos = rest_pos;
+    if (want_pos) {
+        if (pos_wsum > kMinSkinWeightThreshold) {
+            const float inv_wsum = 1.0f / pos_wsum;
+            *out_pos = {pos_acc.x * inv_wsum, pos_acc.y * inv_wsum, pos_acc.z * inv_wsum};
+        } else {
+            *out_pos = rest_pos;
+        }
     }
-    if (rest_normal != nullptr && out_normal != nullptr) {
+    if (want_nrm) {
         if (nrm_wsum > kMinSkinWeightThreshold) {
             const float len2 = nrm_acc.x * nrm_acc.x + nrm_acc.y * nrm_acc.y + nrm_acc.z * nrm_acc.z;
             if (len2 > 1.0e-12f) {
@@ -412,7 +419,7 @@ inline void skin_brf_mesh(const BrfMesh& src,
     out.positions.resize(nv);
     for (std::size_t vi = 0; vi < nv; ++vi) {
         evaluate_skinned_vertex(base_pos[vi], nullptr, weights[vi], skin_transforms,
-                                out.positions[vi], nullptr);
+                                &out.positions[vi], nullptr);
     }
 
     for (std::size_t ci = 0; ci < src.face_corners.size(); ++ci) {
@@ -420,12 +427,11 @@ inline void skin_brf_mesh(const BrfMesh& src,
         if (vidx < 0 || static_cast<std::size_t>(vidx) >= nv) {
             continue;
         }
-        Vec3f unused_pos{};
         evaluate_skinned_vertex(base_pos[static_cast<std::size_t>(vidx)],
                                 &src.face_corners[ci].normal,
                                 weights[static_cast<std::size_t>(vidx)],
                                 skin_transforms,
-                                unused_pos,
+                                nullptr,
                                 &out.face_corners[ci].normal);
     }
 }

@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -342,6 +343,7 @@ enum class UiActionKind : std::uint8_t {
     DialogYes = 12,
     DialogNo = 13,
     DialogOk = 14,
+    PresentationClosed = 15,  // Escape closed window 0x16; `param` = presentation number
 };
 
 struct UiEvent {
@@ -355,42 +357,84 @@ struct UiEvent {
 // `mbPresentationContainer`, `mbPresentationWindow`, `mbNotesWindow`)
 // -----------------------------------------------------------------------------
 
+// Module System `header_presentations.py` `prsntf_manual_end_only`: the presentation ignores
+// Escape and closes only through `presentation_set_duration`. Retail handler VA not yet
+// traced (`STATUS.md` §5).
+inline constexpr std::uint32_t kPresentationFlagManualEndOnly = 0x00000002U;
+
+// `prev_window` default for `open_notes_window` / `start_presentation`: return to the
+// window that was current when the modal window opened.
+inline constexpr std::int32_t kUiReturnToCurrentWindow = std::numeric_limits<std::int32_t>::min();
+
+// Text scale applied to overlay text at `overlay_set_size` scale 1.0.
+inline constexpr float kUiOverlayTextScale = 0.020f;
+// Hit box of a text button overlay at `overlay_set_size` scale 1.0 when no
+// `overlay_set_area_size` was given (port approximation, `engine/README.md`).
+inline constexpr float kUiOverlayButtonWidth = 0.25f;
+inline constexpr float kUiOverlayButtonHeight = 0.038f;
+
+// Meshes the built-in windows below draw by name (lower case).
+inline constexpr std::array<std::string_view, 5> kUiSessionMeshNames{
+    "main_menu_nord", "ui_quick_battle_a", "warrider_logo", "dlg_button", "dlg_button_down",
+};
+
+// Extent of a UI mesh in its own (UI-space) coordinates, used to place mesh overlays.
+struct UiMeshBounds {
+    float min_x = 0.0f;
+    float min_y = 0.0f;
+    float max_x = 1.0f;
+    float max_y = 1.0f;
+};
+
 class UiSession {
 public:
     UiWidget root{};
     LanguageTable lang{};
     GameVariablesTable vars{};
+    // Lower-case mesh name -> UI-space extent (filled by the host, e.g. from
+    // `platform::collect_ui_mesh_bounds`). Mesh overlays whose mesh is missing here are
+    // assumed to span `[0, 1] x [0, 1]` at scale 1.
+    std::unordered_map<std::string, UiMeshBounds> mesh_bounds{};
     std::string module_name = "Native";
     std::string version_text = "1.174";
     std::int32_t current_window = kScreenWindowInitial;
     std::int32_t source_window = kScreenWindowMap;
     std::int32_t current_menu_index = -1;
     float presentation_elapsed_s = 0.0f;
-    float presentation_duration_s = 100.0f;
 
-    // Closes window `0x15` (Notes) or `0x16` (Presentation) back to `restore_window`
-    // (`mbGameScreen::setWindow` `0x1400f0c80`), consuming any pending campaign window
-    // transitions cleanly so `world.m5.active_window` / `world.m6.ui.active_window_id`
-    // never stay wedged (`STATUS.md` §5 item #1).
+    // Closes window `0x15` (Notes) or `0x16` (Presentation) back to `source_window`
+    // (`mbGameScreen::setWindow` `0x1400f0c80`) so `world.m5.active_window` /
+    // `world.m6.ui.active_window_id` never stay wedged (`STATUS.md` §5 item #1).
+    // Closing a presentation clears `active_presentation_no` and drops queued `0x0f`
+    // entries for that same presentation; closing notes drops queued `0x10` entries.
+    // The modal widget tree is replaced by an empty container so it is neither drawn nor
+    // clickable afterwards. A no-op when no modal window is open.
     void close_active_modal_window(WseWorldState& world) {
         const std::int32_t closing_win = current_window;
-        if (world.active_presentation_no >= 0) {
+        if (closing_win != kScreenWindowNotes && closing_win != kScreenWindowPresentation) {
+            return;
+        }
+        if (closing_win == kScreenWindowPresentation) {
+            const std::int32_t closing_no = presentation_no_;
             world.active_presentation_no = -1;
-        }
-        if (closing_win == kScreenWindowNotes || closing_win == kScreenWindowPresentation) {
-            world.m5.active_window = source_window;
-            world.m6.ui.active_window_id = source_window;
-            current_window = source_window;
+            std::erase_if(world.m5.enqueued_windows, [closing_no](const auto& entry) {
+                return entry.first == kQueuedWindowPresentationType &&
+                       (entry.second == closing_no || entry.second < 0);
+            });
+            presentation_no_ = -1;
+            presentation_flags_ = 0U;
+            active_triggers_ = SimpleTriggerManager{};
         } else {
-            world.m5.active_window = -1;
-            world.m6.ui.active_window_id = -1;
+            std::erase_if(world.m5.enqueued_windows, [](const auto& entry) {
+                return entry.first == kQueuedWindowNotesType;
+            });
         }
+        world.m5.active_window = source_window;
+        world.m6.ui.active_window_id = source_window;
+        current_window = source_window;
         presentation_elapsed_s = 0.0f;
-        const std::int32_t qtype = (closing_win == kScreenWindowNotes)
-                                       ? kQueuedWindowNotesType
-                                       : kQueuedWindowPresentationType;
-        std::erase_if(world.m5.enqueued_windows,
-                      [qtype](const auto& entry) { return entry.first == qtype; });
+        duration_cs_accum_ = 0.0f;
+        reset_root("closed");
     }
 
     // Reconstructs the Native/mod initial title screen (`mbInitialWindow`, laid out via
@@ -560,7 +604,16 @@ public:
             if (!lm.mesh_name.empty() && lm.mesh_name != "none") {
                 bg.mesh_name = lm.mesh_name;
             }
+            // The menu's operations block runs when the menu opens, before its text and
+            // option conditions are evaluated (it typically fills `{s1}` / `{reg0}`).
+            if (vm_ctx != nullptr && !lm.operations.statements.empty()) {
+                vm::StatementBlock ops_blk = lm.operations;
+                (void)vm::execute_statement_block(ops_blk, *vm_ctx);
+            }
             body_text = lm.text;
+        }
+        if (vm_ctx != nullptr) {
+            body_text = format_text(body_text, *vm_ctx);
         }
         root.children.push_back(std::move(bg));
 
@@ -586,7 +639,7 @@ public:
             btn.size = {0.42f, 0.032f};
             btn.mesh_name = "dlg_button";
             btn.highlight_mesh_name = "dlg_button_down";
-            btn.text = std::string(label);
+            btn.text = (vm_ctx != nullptr) ? format_text(label, *vm_ctx) : std::string(label);
             btn.text_scale = {0.020f, 0.020f};
             btn.text_flags = asset::kTextFlagCenterAlign;
             btn.text_color_argb = 0xFFFFFFFFU;
@@ -652,17 +705,13 @@ public:
     void open_notes_window(WseWorldState& world,
                            std::string_view title,
                            std::string_view body,
-                           std::int32_t prev_window = kScreenWindowMap) {
-        source_window = prev_window;
+                           std::int32_t prev_window = kUiReturnToCurrentWindow) {
+        source_window = resolve_prev_window(prev_window);
         current_window = kScreenWindowNotes;
         world.m5.active_window = kScreenWindowNotes;
         world.m6.ui.active_window_id = kScreenWindowNotes;
 
-        root = UiWidget{};
-        root.id = "notes";
-        root.kind = UiWidgetKind::Container;
-        root.pos = {0.0f, 0.0f};
-        root.size = {kUiScreenWidth, kUiScreenHeight};
+        reset_root("notes");
 
         UiWidget title_lbl{};
         title_lbl.id = "notes_title";
@@ -703,64 +752,60 @@ public:
         root.children.push_back(std::move(ret_btn));
     }
 
-    // Starts `presentation_no`, fires `-60` (presentation load), and syncs `world.overlays`
-    // into `root.children` (`mbPresentationContainer::startPresentation` `0x1402097b0`).
+    // Starts `presentation_no` (`mbPresentationContainer::startPresentation` `0x1402097b0`):
+    // clears the previous presentation's overlays, arms the duration countdown in
+    // `world.presentation_duration` (1/100 s, written by `presentation_set_duration` 902),
+    // fires `-60` (`ti_on_presentation_load`), and syncs `world.overlays` into `root`.
     bool start_presentation(WseWorldState& world,
                             vm::VmContext& vm_ctx,
                             std::int32_t presentation_no,
                             std::span<const LoadedPresentation> presentations,
                             float default_duration_s = 100.0f,
-                            std::int32_t prev_window = kScreenWindowMap) {
+                            std::int32_t prev_window = kUiReturnToCurrentWindow) {
         if (presentation_no < 0 ||
             static_cast<std::size_t>(presentation_no) >= presentations.size()) {
             return false;
         }
-        source_window = prev_window;
-        current_window = kScreenWindowPresentation;
-        world.active_presentation_no = presentation_no;
-        world.m5.active_window = kScreenWindowPresentation;
-        world.m6.ui.active_window_id = kScreenWindowPresentation;
-        presentation_elapsed_s = 0.0f;
-        const LoadedPresentation& prsnt =
-            presentations[static_cast<std::size_t>(presentation_no)];
-        // Singleplayer read-only (flag bit 0 = 0x1) defaults duration to 10.0s in 0x1402098c7.
-        presentation_duration_s =
-            ((prsnt.flags & 1U) != 0U) ? 10.0f : default_duration_s;
-
-        // Fire trigger -60 (`ti_on_presentation_load`, 0x1402099c0..0x140209a60).
-        dispatch_presentation_trigger(world, vm_ctx, prsnt, -60);
-        sync_overlays_from_world(world);
-        return true;
+        source_window = resolve_prev_window(prev_window);
+        default_duration_s_ = default_duration_s;
+        begin_presentation(world, vm_ctx, presentation_no, presentations);
+        return follow_presentation_state(world, vm_ctx, presentations);
     }
 
-    // Advances presentation state by `dt_s`, fires `-61` (`ti_on_presentation_run`), re-syncs
-    // `world.overlays`, and closes window `0x16` if `presentation_duration_s` expires
+    // Advances presentation state by `dt_s`: counts `world.presentation_duration` down,
+    // fires `-61` (`ti_on_presentation_run`, trigger param 1 = elapsed ms), re-syncs
+    // `world.overlays`, and closes window `0x16` once the duration runs out
     // (`mbPresentationWindow::frameMove` `0x140174ed0`, `mbPresentationContainer::frameMove`
-    // `0x140208ec0`).
+    // `0x140208ec0`). Returns whether the presentation is still open.
     bool step_presentation(WseWorldState& world,
                            vm::VmContext& vm_ctx,
                            float dt_s,
                            std::span<const LoadedPresentation> presentations) {
-        if (current_window != kScreenWindowPresentation || world.active_presentation_no < 0 ||
-            static_cast<std::size_t>(world.active_presentation_no) >= presentations.size()) {
+        if (current_window != kScreenWindowPresentation || presentation_no_ < 0) {
             return false;
         }
-        presentation_elapsed_s += std::max(0.0f, dt_s);
-        const LoadedPresentation& prsnt =
-            presentations[static_cast<std::size_t>(world.active_presentation_no)];
-        vm_ctx.registers[0] = static_cast<std::int64_t>(presentation_elapsed_s * 1000.0f);
-        dispatch_presentation_trigger(world, vm_ctx, prsnt, -61);
-        sync_overlays_from_world(world);
-
-        if (world.active_presentation_no < 0 || presentation_elapsed_s > presentation_duration_s) {
-            close_active_modal_window(world);
+        const float dt = (std::isfinite(dt_s) && dt_s > 0.0f) ? dt_s : 0.0f;
+        presentation_elapsed_s += dt;
+        duration_cs_accum_ += dt * 100.0f;
+        const float whole_cs = std::floor(duration_cs_accum_);
+        duration_cs_accum_ -= whole_cs;
+        if (whole_cs > 0.0f && world.presentation_duration > 0) {
+            const float left = static_cast<float>(world.presentation_duration) - whole_cs;
+            world.presentation_duration = (left > 0.0f) ? static_cast<std::int32_t>(left) : 0;
+        }
+        if (!follow_presentation_state(world, vm_ctx, presentations)) {
             return false;
         }
-        return true;
+        const std::array<std::int64_t, 1> params{
+            static_cast<std::int64_t>(presentation_elapsed_s * 1000.0f)};
+        dispatch_presentation_trigger(world, vm_ctx, -61, params);
+        return follow_presentation_state(world, vm_ctx, presentations);
     }
 
     // Rebuilds overlay widgets inside `root` from `world.overlays` & `world.m6.ui.overlay_ext`
-    // (`create_*_overlay` opcodes 910..953).
+    // (`create_*_overlay` opcodes 910..953). `overlay_set_size` is a scale (1.0 = default
+    // size): it scales overlay text and the mesh / button extents. Overlay colours are
+    // `0xRRGGBB` (`overlay_set_color` 921) with alpha from `overlay_set_alpha` 922.
     void sync_overlays_from_world(const WseWorldState& world) {
         if (current_window != kScreenWindowPresentation) {
             return;
@@ -771,11 +816,7 @@ public:
                 prev_state[old_w.overlay_id] = {old_w.highlighted, old_w.pressed};
             }
         }
-        root = UiWidget{};
-        root.id = "presentation";
-        root.kind = UiWidgetKind::Container;
-        root.pos = {0.0f, 0.0f};
-        root.size = {kUiScreenWidth, kUiScreenHeight};
+        reset_root("presentation");
 
         for (std::size_t i = 0; i < world.overlays.size(); ++i) {
             const WsePresentationOverlay& ov = world.overlays[i];
@@ -790,18 +831,19 @@ public:
                 w.pressed = st_it->second.second;
             }
             w.id = "overlay_" + std::to_string(i);
+            const float scale_x = std::isfinite(ov.size.x) ? std::max(0.0f, ov.size.x) : 1.0f;
+            const float scale_y = std::isfinite(ov.size.y) ? std::max(0.0f, ov.size.y) : 1.0f;
+            const bool has_area = ov.m5.area_size.x > 0.0f && ov.m5.area_size.y > 0.0f;
             w.pos = {ov.position.x, ov.position.y};
-            w.size = {ov.size.x > 0.0f ? ov.size.x : ov.m5.area_size.x,
-                      ov.size.y > 0.0f ? ov.size.y : ov.m5.area_size.y};
+            w.size = has_area ? wse::core::WseVec2{ov.m5.area_size.x, ov.m5.area_size.y}
+                              : wse::core::WseVec2{0.0f, 0.0f};
             w.text = u16_to_utf8(ov.text);
-            const std::uint32_t modulated = apply_alpha_argb(ov.color, ov.alpha);
-            w.text_color_argb = modulated;
-            w.color_argb = modulated;
-            w.highlight_color_argb = ov.m5.highlight_color;
+            w.text_scale = {kUiOverlayTextScale * scale_x, kUiOverlayTextScale * scale_y};
+            const std::uint32_t base = compose_argb(ov.color, ov.alpha);
+            w.text_color_argb = base;
+            w.color_argb = base;
+            w.highlight_color_argb = compose_argb(ov.m5.highlight_color, ov.m5.highlight_alpha);
             w.material_name = ov.m5.material_name;
-            if (ov.m5.widget_flags != 0U) {
-                w.text_flags = ov.m5.widget_flags;
-            }
             if (ov.m5.mesh_no >= 0 &&
                 static_cast<std::size_t>(ov.m5.mesh_no) < world.mesh_names.size()) {
                 w.mesh_name = world.mesh_names[static_cast<std::size_t>(ov.m5.mesh_no)];
@@ -811,25 +853,48 @@ public:
                 w.highlight_mesh_name =
                     world.mesh_names[static_cast<std::size_t>(ov.m5.pressed_mesh_no)];
             }
-            w.action_tag = static_cast<std::int32_t>(UiActionKind::OverlayClicked);
-            w.action_param = static_cast<std::int32_t>(i);
-            if (!w.text.empty()) {
-                w.text_scale = {0.020f, 0.020f};
-                w.kind = (ov.type == 3 || ov.type == 4 || ov.type == 13)
-                             ? UiWidgetKind::GameButton
-                             : UiWidgetKind::Label;
-            } else if (ov.m5.mesh_no >= 0 && !w.mesh_name.empty()) {
-                w.kind = UiWidgetKind::Image;
+
+            // Overlay types as stored by the create opcodes: 0 mesh (911/939), 1 text (910)
+            // or text button (912/940/941, `m5.is_button`), 2 slider/number box, 3 progress,
+            // 4 image button / check box (913/918/938), 5 combo, 6/7 text boxes.
+            const bool text_button = (ov.type == 1 && ov.m5.is_button);
+            const bool mesh_button = (ov.type == 4);
+            if (ov.type == 1) {
+                // `create_text_overlay` keeps its `tf_*` flags in `val`; buttons in `widget_flags`.
+                w.text_flags = text_button ? ov.m5.widget_flags : static_cast<std::uint32_t>(ov.val);
             } else {
-                w.kind = UiWidgetKind::SolidPanel;
+                w.text_flags = ov.m5.widget_flags;
+            }
+            if (text_button) {
+                w.kind = UiWidgetKind::GameButton;
+                if (!has_area) {
+                    w.size = {kUiOverlayButtonWidth * scale_x, kUiOverlayButtonHeight * scale_y};
+                }
+            } else if (mesh_button || (ov.type == 0 && !w.mesh_name.empty())) {
+                w.kind = mesh_button ? UiWidgetKind::GameButton : UiWidgetKind::Image;
+                if (!has_area && !w.mesh_name.empty()) {
+                    // Place the mesh at its native UI-space extent times the scale, which is
+                    // what `make_stretched_model_matrix` reproduces from this box.
+                    UiMeshBounds b{};
+                    const auto bit = mesh_bounds.find(platform::ascii_lower(w.mesh_name));
+                    if (bit != mesh_bounds.end()) {
+                        b = bit->second;
+                    }
+                    w.pos = {ov.position.x + b.min_x * scale_x, ov.position.y + b.min_y * scale_y};
+                    w.size = {(b.max_x - b.min_x) * scale_x, (b.max_y - b.min_y) * scale_y};
+                }
+            } else {
+                // Plain text and the not-yet-modelled sliders / progress bars / combo and text
+                // boxes: draw their text only (an empty one draws nothing).
+                w.kind = UiWidgetKind::Label;
+            }
+            if (text_button || mesh_button) {
+                w.action_tag = static_cast<std::int32_t>(UiActionKind::OverlayClicked);
+                w.action_param = static_cast<std::int32_t>(i);
             }
             const auto ext_it = world.m6.ui.overlay_ext.find(static_cast<std::int32_t>(i));
             if (ext_it != world.m6.ui.overlay_ext.end()) {
                 w.enabled = ext_it->second.enabled;
-            }
-            if (w.kind == UiWidgetKind::GameButton || w.kind == UiWidgetKind::SimpleButton) {
-                if (w.size.x <= 0.0f) w.size.x = 0.25f;
-                if (w.size.y <= 0.0f) w.size.y = 0.038f;
             }
             root.children.push_back(std::move(w));
         }
@@ -837,8 +902,10 @@ public:
 
     // Evaluates pointer hover/click and Escape handling against `root`
     // (`rglCreateSimpleButtonWidget` `0x14031f110`), firing presentation
-    // triggers `-63` (`mouse_enter_leave`) and `-62` (`state_change`) and closing
-    // `mbNotesWindow` on Return/Escape cleanly (`0x140161ad2..0x140161bd4`).
+    // triggers `-63` (`mouse_enter_leave`: param 1 = overlay, param 2 = 0 enter / 1 leave)
+    // and `-62` (`state_change`: param 1 = overlay, param 2 = value) and closing
+    // `mbNotesWindow` on Return/Escape cleanly (`0x140161ad2..0x140161bd4`). Escape leaves a
+    // `prsntf_manual_end_only` presentation open.
     std::vector<UiEvent> handle_pointer_and_keys(WseWorldState& world,
                                                  float ui_x,
                                                  float ui_y,
@@ -850,32 +917,59 @@ public:
         std::vector<UiEvent> events;
         world.m5.cursor_pos = {ui_x, ui_y};
 
-        if (escape_pressed &&
-            (current_window == kScreenWindowNotes || current_window == kScreenWindowPresentation)) {
-            const UiActionKind act = (current_window == kScreenWindowNotes)
-                                         ? UiActionKind::NotesReturn
-                                         : UiActionKind::OverlayClicked;
+        if (escape_pressed && current_window == kScreenWindowNotes) {
+            const std::string id = root.id;
             close_active_modal_window(world);
-            events.push_back(UiEvent{act, -1, root.id});
+            events.push_back(UiEvent{UiActionKind::NotesReturn, -1, id});
+            return events;
+        }
+        if (escape_pressed && current_window == kScreenWindowPresentation &&
+            (presentation_flags_ & kPresentationFlagManualEndOnly) == 0U) {
+            const std::int32_t closing_no = presentation_no_;
+            const std::string id = root.id;
+            close_active_modal_window(world);
+            events.push_back(UiEvent{UiActionKind::PresentationClosed, closing_no, id});
             return events;
         }
 
+        const bool can_fire = vm_ctx != nullptr && current_window == kScreenWindowPresentation &&
+                              presentation_no_ >= 0;
+
         // Top-most hit test (iterate children back-to-front in reverse order).
         UiWidget* hovered = find_hit_widget(root, ui_x, ui_y, 0.0f, 0.0f);
-        update_hover_state(root, hovered, left_down, world, vm_ctx, presentations);
+        std::vector<std::pair<std::int32_t, bool>> hover_changes;
+        update_hover_state(root, hovered, left_down, hover_changes);
+        // Copy what the click needs before any trigger can rebuild `root`.
+        const std::int32_t hovered_action = (hovered != nullptr) ? hovered->action_tag : -1;
+        const std::int32_t hovered_param = (hovered != nullptr) ? hovered->action_param : -1;
+        const std::int32_t hovered_overlay = (hovered != nullptr) ? hovered->overlay_id : -1;
+        const std::string hovered_id = (hovered != nullptr) ? hovered->id : std::string{};
+        const std::int32_t hovered_val =
+            (hovered_overlay >= 0 && static_cast<std::size_t>(hovered_overlay) < world.overlays.size())
+                ? world.overlays[static_cast<std::size_t>(hovered_overlay)].val
+                : 0;
 
-        if (left_clicked && hovered != nullptr && hovered->action_tag >= 0) {
-            const auto action = static_cast<UiActionKind>(hovered->action_tag);
-            events.push_back(UiEvent{action, hovered->action_param, hovered->id});
-            if (action == UiActionKind::OverlayClicked && hovered->overlay_id >= 0 &&
-                vm_ctx != nullptr && world.active_presentation_no >= 0 &&
-                static_cast<std::size_t>(world.active_presentation_no) < presentations.size()) {
-                vm_ctx->registers[0] = hovered->overlay_id;
-                vm_ctx->registers[1] = 1;
-                dispatch_presentation_trigger(
-                    world, *vm_ctx,
-                    presentations[static_cast<std::size_t>(world.active_presentation_no)], -62);
-                sync_overlays_from_world(world);
+        if (can_fire) {
+            for (const auto& [overlay_id, entered] : hover_changes) {
+                if (current_window != kScreenWindowPresentation) {
+                    break;
+                }
+                const std::array<std::int64_t, 2> params{overlay_id, entered ? 0 : 1};
+                dispatch_presentation_trigger(world, *vm_ctx, -63, params);
+                if (!follow_presentation_state(world, *vm_ctx, presentations)) {
+                    break;
+                }
+            }
+        }
+
+        if (left_clicked && hovered_action >= 0) {
+            const auto action = static_cast<UiActionKind>(hovered_action);
+            events.push_back(UiEvent{action, hovered_param, hovered_id});
+            if (action == UiActionKind::OverlayClicked && hovered_overlay >= 0 && vm_ctx != nullptr &&
+                current_window == kScreenWindowPresentation && presentation_no_ >= 0) {
+                const std::array<std::int64_t, 2> params{hovered_overlay, hovered_val};
+                dispatch_presentation_trigger(world, *vm_ctx, -62, params);
+                (void)follow_presentation_state(world, *vm_ctx, presentations);
             } else if (action == UiActionKind::NotesReturn) {
                 close_active_modal_window(world);
             }
@@ -884,16 +978,112 @@ public:
     }
 
 private:
-    [[nodiscard]] static std::uint32_t apply_alpha_argb(std::uint32_t argb,
-                                                        float alpha) noexcept {
-        if (alpha >= 1.0f) {
-            return argb;
+    std::int32_t presentation_no_ = -1;
+    std::uint32_t presentation_flags_ = 0U;
+    float default_duration_s_ = 100.0f;
+    float duration_cs_accum_ = 0.0f;
+    // Mutable copy of the open presentation's triggers, taken once per presentation
+    // instead of once per dispatch.
+    SimpleTriggerManager active_triggers_{};
+
+    void reset_root(std::string_view id) {
+        root = UiWidget{};
+        root.id = std::string(id);
+        root.kind = UiWidgetKind::Container;
+        root.pos = {0.0f, 0.0f};
+        root.size = {kUiScreenWidth, kUiScreenHeight};
+    }
+
+    [[nodiscard]] std::int32_t resolve_prev_window(std::int32_t prev_window) const noexcept {
+        if (prev_window != kUiReturnToCurrentWindow) {
+            return prev_window;
         }
-        const float clamped = std::clamp(alpha, 0.0f, 1.0f);
-        const std::uint32_t orig_a = (argb >> 24U) & 0xFFU;
-        const auto scaled_a =
-            static_cast<std::uint32_t>(std::lround(static_cast<float>(orig_a) * clamped));
-        return (scaled_a << 24U) | (argb & 0x00FFFFFFU);
+        // A modal window opened from another modal window returns where that one would.
+        if (current_window == kScreenWindowNotes || current_window == kScreenWindowPresentation) {
+            return source_window;
+        }
+        return current_window;
+    }
+
+    [[nodiscard]] static std::string format_text(std::string_view text, vm::VmContext& ctx) {
+        if (text.find('{') == std::string_view::npos && text.find('^') == std::string_view::npos) {
+            return std::string(text);
+        }
+        return core::wse_utf16_to_utf8(vm::wse_parse_string(
+            core::wse_utf8_to_utf16(text), ctx.registers, vm::native_string_banks(ctx)));
+    }
+
+    void begin_presentation(WseWorldState& world,
+                            vm::VmContext& vm_ctx,
+                            std::int32_t presentation_no,
+                            std::span<const LoadedPresentation> presentations) {
+        const LoadedPresentation& prsnt =
+            presentations[static_cast<std::size_t>(presentation_no)];
+        current_window = kScreenWindowPresentation;
+        world.active_presentation_no = presentation_no;
+        world.m5.active_window = kScreenWindowPresentation;
+        world.m6.ui.active_window_id = kScreenWindowPresentation;
+        presentation_no_ = presentation_no;
+        presentation_flags_ = static_cast<std::uint32_t>(prsnt.flags);
+        active_triggers_ = prsnt.triggers;
+        presentation_elapsed_s = 0.0f;
+        duration_cs_accum_ = 0.0f;
+        // Overlay ids restart at 0 for every presentation.
+        world.overlays.clear();
+        world.m6.ui.overlay_ext.clear();
+        world.m5.current_container_overlay_no = -1;
+        // Read-only (flag bit 0) presentations default to 10.0 s (0x1402098c7).
+        const float default_s = ((prsnt.flags & 1U) != 0U) ? 10.0f : default_duration_s_;
+        const float default_cs = std::clamp(default_s * 100.0f, 0.0f, 2.0e9f);
+        world.presentation_duration = static_cast<std::int32_t>(default_cs);
+        reset_root("presentation");
+
+        // Fire trigger -60 (`ti_on_presentation_load`, 0x1402099c0..0x140209a60).
+        dispatch_presentation_trigger(world, vm_ctx, -60, {});
+        sync_overlays_from_world(world);
+    }
+
+    // After any presentation trigger: follows a `start_presentation` (900) issued by the
+    // trigger to a different presentation (bounded, so two presentations starting each
+    // other from `-60` cannot loop forever), closes window `0x16` when the duration ran out,
+    // and otherwise re-syncs the overlays. Returns whether a presentation is still open.
+    bool follow_presentation_state(WseWorldState& world,
+                                   vm::VmContext& vm_ctx,
+                                   std::span<const LoadedPresentation> presentations) {
+        for (int hops = 0; hops < 8; ++hops) {
+            if (current_window != kScreenWindowPresentation) {
+                return false;
+            }
+            const std::int32_t want = world.active_presentation_no;
+            if (want == presentation_no_ || want < 0 ||
+                static_cast<std::size_t>(want) >= presentations.size()) {
+                break;
+            }
+            // Consume the window-queue entry `start_presentation` left for this switch.
+            for (std::size_t k = world.m5.enqueued_windows.size(); k > 0U; --k) {
+                const auto& entry = world.m5.enqueued_windows[k - 1U];
+                if (entry.first == kQueuedWindowPresentationType && entry.second == want) {
+                    world.m5.enqueued_windows.erase(world.m5.enqueued_windows.begin() +
+                                                    static_cast<std::ptrdiff_t>(k - 1U));
+                    break;
+                }
+            }
+            begin_presentation(world, vm_ctx, want, presentations);
+        }
+        if (world.active_presentation_no < 0 || world.presentation_duration <= 0) {
+            close_active_modal_window(world);
+            return false;
+        }
+        sync_overlays_from_world(world);
+        return true;
+    }
+
+    // `alpha` replaces the alpha byte of `0xRRGGBB` overlay colours (`overlay_set_alpha` 922
+    // stores `alpha / 255`); it does not multiply an alpha the colour may carry.
+    [[nodiscard]] static std::uint32_t compose_argb(std::uint32_t rgb, float alpha) noexcept {
+        const float a = std::isfinite(alpha) ? std::clamp(alpha, 0.0f, 1.0f) : 1.0f;
+        const auto a8 = static_cast<std::uint32_t>(std::lround(a * 255.0f));
+        return (a8 << 24U) | (rgb & 0x00FFFFFFU);
     }
 
     [[nodiscard]] static std::string u16_to_utf8(std::u16string_view s) {
@@ -907,6 +1097,9 @@ private:
                     cp = 0x10000U + (((cp - 0xD800U) << 10U) | (lo - 0xDC00U));
                     ++i;
                 }
+            }
+            if (cp >= 0xD800U && cp <= 0xDFFFU) {
+                cp = 0xFFFDU;  // unpaired surrogate
             }
             if (cp < 0x80U) {
                 out.push_back(static_cast<char>(cp));
@@ -927,23 +1120,38 @@ private:
         return out;
     }
 
-    static void dispatch_presentation_trigger(WseWorldState& world,
-                                              vm::VmContext& vm_ctx,
-                                              const LoadedPresentation& prsnt,
-                                              std::int32_t event_key) {
-        if (&world != &vm_ctx.world) {
-            vm_ctx.world.active_presentation_no = world.active_presentation_no;
-            vm_ctx.world.overlays = world.overlays;
-            vm_ctx.world.m6.ui = world.m6.ui;
+    // Runs `event_key` of the open presentation with `params` in the trigger-parameter slots
+    // read by `store_trigger_param_N` (2070..2073), restoring the previous values afterwards.
+    void dispatch_presentation_trigger(WseWorldState& world,
+                                       vm::VmContext& vm_ctx,
+                                       std::int32_t event_key,
+                                       std::span<const std::int64_t> params) {
+        WseWorldState& vm_world = vm_ctx.world;
+        if (&world != &vm_world) {
+            vm_world.active_presentation_no = world.active_presentation_no;
+            vm_world.presentation_duration = world.presentation_duration;
+            vm_world.overlays = world.overlays;
+            vm_world.m6.ui = world.m6.ui;
+            vm_world.m5.enqueued_windows = world.m5.enqueued_windows;
         }
-        SimpleTriggerManager stm = prsnt.triggers;
-        (void)vm::execute_simple_trigger_manager(stm, event_key, vm_ctx.timersTotal, vm_ctx);
-        if (&world != &vm_ctx.world) {
-            world.active_presentation_no = vm_ctx.world.active_presentation_no;
-            world.overlays = vm_ctx.world.overlays;
-            world.m6.ui = vm_ctx.world.m6.ui;
+        auto& slots = vm_world.misc.trigger_params;
+        const auto saved = slots;
+        slots.fill(0);
+        for (std::size_t k = 0; k < params.size() && k < slots.size(); ++k) {
+            slots[k] = params[k];
+        }
+        (void)vm::execute_simple_trigger_manager(active_triggers_, event_key, vm_ctx.timersTotal,
+                                                 vm_ctx);
+        slots = saved;
+        if (&world != &vm_world) {
+            world.active_presentation_no = vm_world.active_presentation_no;
+            world.presentation_duration = vm_world.presentation_duration;
+            world.overlays = vm_world.overlays;
+            world.m6.ui = vm_world.m6.ui;
+            world.m5.enqueued_windows = vm_world.m5.enqueued_windows;
         }
     }
+
     static UiWidget* find_hit_widget(UiWidget& node,
                                      float ui_x,
                                      float ui_y,
@@ -967,28 +1175,21 @@ private:
         return nullptr;
     }
 
+    // Updates highlight / pressed flags and records overlay enter (true) / leave (false)
+    // transitions; the triggers run afterwards so they cannot rebuild `root` mid-walk.
     static void update_hover_state(UiWidget& node,
                                    const UiWidget* target,
                                    bool left_down,
-                                   WseWorldState& world,
-                                   vm::VmContext* vm_ctx,
-                                   std::span<const LoadedPresentation> presentations) {
+                                   std::vector<std::pair<std::int32_t, bool>>& changes) {
         const bool was_hl = node.highlighted;
         const bool now_hl = (&node == target);
         node.highlighted = now_hl;
         node.pressed = now_hl && left_down;
-
-        if (was_hl != now_hl && node.overlay_id >= 0 && vm_ctx != nullptr &&
-            world.active_presentation_no >= 0 &&
-            static_cast<std::size_t>(world.active_presentation_no) < presentations.size()) {
-            vm_ctx->registers[0] = node.overlay_id;
-            vm_ctx->registers[1] = now_hl ? 0 : 1;  // -63: 0 = enter, 1 = leave
-            dispatch_presentation_trigger(
-                world, *vm_ctx,
-                presentations[static_cast<std::size_t>(world.active_presentation_no)], -63);
+        if (was_hl != now_hl && node.overlay_id >= 0) {
+            changes.emplace_back(node.overlay_id, now_hl);
         }
         for (UiWidget& c : node.children) {
-            update_hover_state(c, target, left_down, world, vm_ctx, presentations);
+            update_hover_state(c, target, left_down, changes);
         }
     }
 };

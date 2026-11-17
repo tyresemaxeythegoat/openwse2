@@ -61,6 +61,7 @@ inline void native_ui_create_text_button_overlay(
     ov.type = 1;
     ov.text = native_resolve_and_parse(string_index, tag, ctx);
     ov.m5.widget_flags = widget_flags;
+    ov.m5.is_button = true;
     (void)native_ui_push_overlay(std::move(ov), ctx, dst, locals);
 }
 
