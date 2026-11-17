@@ -567,7 +567,8 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         world.m5.quit_requested = true;
         world.m5.loading_mode = 5;
         world.m5.loading_savegame_no = 0;
-        world.m5.active_window = 3;
+        world.m5.active_window = game::kScreenWindowLoading;
+        world.m6.ui.active_window_id = game::kScreenWindowLoading;
         return NativeDispatch::handled;
     case 2056: { // change_screen_give_members (0x1401dc23c)
         const std::int32_t party_no =

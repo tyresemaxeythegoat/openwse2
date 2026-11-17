@@ -50,7 +50,7 @@ struct UiState {
     bool all_passed = false;
     int completed_count = 0;
     int passed_count = 0;
-    int total_count = 21;
+    int total_count = 22;
     std::int64_t total_ms = 0;
     std::string active_name;
     std::string note;

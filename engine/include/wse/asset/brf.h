@@ -650,12 +650,13 @@ inline bool read_skeleton_anim(wse::io::BinaryReader& r, BrfSkeletonAnimation& o
         if (!read_count_i32(r, keys, 20, num_keys, error_out, "rotation keys", out.name)) {
             return false;
         }
-        // rglIpo<rglQuaternion>::readStream (0x14030c320) writes stream order: qy, qz, qw, qx.
+        // rglIpo<rglQuaternion>::readStream (0x14030c320) reads stream order:
+        // qx (+0x4), qy (+0x8), qz (+0xc), qw (+0x0 in rglQuaternion{w,x,y,z}; 0x1402b65d0).
         for (std::int32_t k = 0; k < num_keys; ++k) {
             BrfQuatKey key{};
             if (!r.read_i32(key.time_frame) ||
-                !r.read_f32(key.rotation.y) || !r.read_f32(key.rotation.z) ||
-                !r.read_f32(key.rotation.w) || !r.read_f32(key.rotation.x)) {
+                !r.read_f32(key.rotation.x) || !r.read_f32(key.rotation.y) ||
+                !r.read_f32(key.rotation.z) || !r.read_f32(key.rotation.w)) {
                 return set_error(error_out, "truncated quaternion key in " + out.name);
             }
             keys.push_back(key);

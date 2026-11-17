@@ -485,8 +485,9 @@ wse::game::WseWorldState make_test_savegame_world_fixture() {
     w.party_templates[0].num_destroyed_by_player = 1;
     w.party_templates[0].slots.set(2, 88);
 
-    // 2 hash-vector slots: [0] main_party active, [1] empty slot
+    // 2 hash-vector slots: [0] main_party active, [1] empty slot, m_nextKey = 5
     w.parties.resize(2);
+    w.next_party_key = 5;
     w.parties[0].active = true;
     w.parties[0].id = "main_party";
     w.parties[0].name = "Player Company";
@@ -631,7 +632,8 @@ void test_savegame_container_roundtrip() {
                dst.party_templates[0].slots.get(2) == 88,
            "tracks and party templates round-trip");
 
-    expect(dst.parties.size() == 2U && dst.parties[0].active && !dst.parties[1].active &&
+    expect(dst.parties.size() == 2U && dst.next_party_key == 5 &&
+               dst.parties[0].active && !dst.parties[1].active &&
                dst.parties[0].id == "main_party" && dst.parties[0].renamed &&
                dst.parties[0].menu_no == 2 && dst.parties[0].bandit_attraction == 65 &&
                std::fabs(dst.parties[0].bearing - 1.75f) < 1e-5f &&
@@ -641,7 +643,15 @@ void test_savegame_container_roundtrip() {
                std::fabs(dst.parties[0].stacks[1].xp - 45.5f) < 1e-5f &&
                dst.parties[0].stacks[1].num_upgradeable == 3 &&
                dst.main_party_dnas[1U * 32U + 5U] == 999,
-           "hash vector parties, sparse slots, main party stack XP, and DNAs round-trip");
+           "hash vector parties, next_party_key, sparse slots, main party stack XP, and DNAs round-trip");
+    {
+        WseWorldState alloc_world = dst;
+        const std::int32_t allocated = alloc_world.allocate_party(WseParty{});
+        expect(allocated == 5 && alloc_world.next_party_key == 6 &&
+                   alloc_world.parties.size() == 6U && !alloc_world.parties[2].active &&
+                   !alloc_world.parties[4].active && alloc_world.parties[5].active,
+               "allocate_party resumes from restored rglHashVector m_nextKey without reusing keys");
+    }
 
     expect(dst.events.size() == 2U && dst.events[0].active == 1 &&
                dst.events[0].extra == "siege" && dst.events[1].active == 0 &&

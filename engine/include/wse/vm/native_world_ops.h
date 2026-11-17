@@ -192,8 +192,7 @@ inline void native_world_assign_dialog_note(
     }
     auto& note = notes[static_cast<std::size_t>(slot)];
     note.text = native_world_dialog_note_text(world);
-    note.date = show_date ? world.game_year : -1;
-    note.available = true;
+    note.date = show_date ? world.current_day : -1;
 }
 
 template <typename NoteT>
@@ -210,8 +209,7 @@ inline void native_world_assign_sreg_note(
     }
     auto& note = notes[static_cast<std::size_t>(slot)];
     note.text = native_resolve_and_parse(str_idx, tag, ctx);
-    note.date = show_date ? ctx.world.game_year : -1;
-    note.available = true;
+    note.date = show_date ? ctx.world.current_day : -1;
 }
 
 inline void native_world_spaces_to_underscores(std::string& text) noexcept {

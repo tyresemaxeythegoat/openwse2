@@ -294,6 +294,7 @@ inline void reset_module_world_state(WseWorldState& world) {
     world.quests.clear();
     world.sites.clear();
     world.parties.clear();
+    world.next_party_key = 0;
     world.clear_mission_entities();
     world.mission_templates.clear();
     world.info_pages.clear();

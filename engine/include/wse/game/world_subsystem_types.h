@@ -490,13 +490,23 @@ struct WseMiscRuntimeState {
     std::unordered_map<std::int32_t, WseQuestStrings> quest_strings{};
 };
 
-// mbQueuedWindow (8 B) entry type 0x12 maps to `mbMenuWindow` (`g_gameScreen` slot 18,
-// `0x1400efd21`): `jump_to_menu` (`0x1401dc2b1`) calls `mbGame::enqueueWindow(0x12, -1)`,
-// `mbSimpleTriggerManager::execute` stops early after an odd event key when back().type == 0x12
-// (`0x1402101d2..0x1402101f7`), and `mbMapWindow::frameMove` (`0x140117f90`, pop at `0x140118987`)
-// pops it before switching to `mbMenuWindow` (whose `open` (`0x140120240`) clears any remaining
-// queue entries).
+// mbQueuedWindow (8 B) entry types popped by `mbMapWindow::frameMove` (`0x140117f90`, pop at
+// `0x140118987`): 0x12 opens `mbMenuWindow` (`0x12`, whose `open` `0x140120240` clears the rest of
+// the queue, and which halts odd simple-trigger passes at `0x1402101d2..0x1402101f7`); 0x0f opens
+// presentation window `0x16` (`start_presentation` `0x1401cbf02`); 0x10 opens notes window `0x15`
+// (`change_screen_notes` `0x1401dc108`). Other queued types stay unpopped on map frames.
+inline constexpr std::int32_t kQueuedWindowPresentationType = 0x0f;
+inline constexpr std::int32_t kQueuedWindowNotesType = 0x10;
 inline constexpr std::int32_t kQueuedWindowMenuType = 0x12;
+
+// Window IDs allocated by `mbGameScreen::createWindows` (`0x1400ef710`) / checked by UI opcodes.
+inline constexpr std::int32_t kScreenWindowLoading = 3;
+inline constexpr std::int32_t kScreenWindowMap = 6;
+inline constexpr std::int32_t kScreenWindowTactical = 10;
+inline constexpr std::int32_t kScreenWindowConversation = 12;
+inline constexpr std::int32_t kScreenWindowMenu = 0x12;
+inline constexpr std::int32_t kScreenWindowNotes = 0x15;
+inline constexpr std::int32_t kScreenWindowPresentation = 0x16;
 
 // mbTrack (0x5c B) savegame fields serialized by saveTracks (0x1400ca420) / loadTracks (0x1400c90e0).
 struct WseSavegameTrack {

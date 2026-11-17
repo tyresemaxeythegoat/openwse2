@@ -632,7 +632,6 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             note.text = native_resolve_and_parse(narrow[2], tag2, ctx);
             const bool show = (statement.numOperands < 4 || narrow[3] != 0);
             note.date = show ? world.current_day : -1;
-            note.available = show;
         }
         return NativeDispatch::handled;
     case 1170: // reset_price_rates (0x1401ce995)

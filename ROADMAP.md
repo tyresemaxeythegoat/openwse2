@@ -56,16 +56,20 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [x] `rglTextStream` token reader (`wse/io/text_stream.h`)
 - [x] `rglBinaryStream` little-endian reader/writer (`wse/io/binary_stream.h`)
 - [x] Whole-savegame framing (`WRDR` container, `mbSavegame` header, 64-bit byte-sum checksum + `new_game.sav`/`last_savegame_backup.sav` VFS staging, scalar `mbNotes` `+0x4c0`/`+0x4c4` confirmed at `0x1401b9f30`/`0x1401b9e90`, and all `[802..1174]` `mbGame`/`mbParty` version gates across `wse/game/savegame.h` / `wse/io/binary_stream.h`)
-- [ ] Remaining module files: `troops.txt`, `item_kinds1.txt`, `factions.txt`, `parties.txt`,
+- [x] All module & world/scene/data file formats: `troops.txt`, `item_kinds1.txt`, `factions.txt`, `parties.txt`,
       `party_templates.txt`, `strings.txt`, `quick_strings.txt`, `skills.txt`, `quests.txt`,
-      `scenes.txt`, `mission_templates.txt`, `menus.txt`, `presentations.txt`, `module.ini`, …
+      `scenes.txt`, `mission_templates.txt`, `menus.txt`, `presentations.txt`, `module.ini`, `skins.txt`,
+      `map.txt` (`rglManifold`), `SceneObj/*.sco` (`mbSite::readSceneObjFile`), `Data/skeleton_bodies.xml`
+      (`mbSkeletonManager`), `Data/{item_modifiers,flora_kinds,ground_specs,skyboxes}.txt`, … across
+      `wse/game/module_*_loaders.h` and `wse/game/scene_loaders.h` (`dialog_states.txt` has zero runtime
+      references in `v1.1.5.5`)
 
 **2B. Statement VM**
 - [x] Operand tags, decode, and lvalue write-back (`wse/vm/operand.h`, `slots.h`)
 - [x] Statement record and reader (`wse/vm/statement.h`)
 - [x] `analyze` / `execute` / loop frames / `call_script` recursion (`wse/vm/block_vm.h`)
-- [~] Native opcodes: `837/1,053` implemented across `wse/vm/block_vm.h` and
-      `wse/vm/native_{ops,entity_ops,mission_ops,campaign_ops,campaign_ops_2,world_ops,world_ops_2,world_ops_3}.h` (plus `dispatch_native_non_switch` for `473/477/1004/1070/1104/1302/1491`, reaching 100% on 16/20 native categories leaving only `ui_presentations_and_menus`, `scenes_props_and_mission`, `agents`, and `multiplayer_and_players`)
+- [x] Native opcodes: `1,053/1,053` implemented (20/20 categories) across `wse/vm/block_vm.h` and
+      `wse/vm/native_{ops,entity_ops,mission_ops,campaign_ops,campaign_ops_2,world_ops,world_ops_2,world_ops_3,agent_ops,mp_ops,scene_ops,ui_ops}.h` (plus `dispatch_native_non_switch` for `473/477/1004/1070/1104/1302/1491`)
 - [x] Native opcode map generated from the `0x1401e22f0` jump table (**B2**, `docs/native_opcodes.json`)
 - [x] Entity iterators (`try_for_parties`, `try_for_agents`, `try_for_prop_instances`,
       `try_for_players`) — live against `WseWorldState` containers and preserving `currentCaller`
@@ -80,14 +84,12 @@ Legend: `[x]` done and host-tested · `[~]` partly done · `[ ]` not started.
 - [x] Pure-computation families: shifts, registers, dictionaries, strings, options, floating point
       (incl. `feval`), position vectors, dynamic arrays
 - [x] State-backed families against the in-memory model: slots, troops, items, parties (`3900–3911`, 12/12), edit mode
-- [~] Partial engine-backed families: agent (`3340–3341` `action_speed_modifier`), mission/props (`3600` etc.)
-- [ ] Remaining engine-backed families: agent (rest), player, mission/props (rest), scene, multiplayer/server,
-      menus, overlays/presentations, input keys, reload, skins, Lua bridge
+- [x] All 440/440 WSE extended engine-backed and pure-computation opcode families (`wse/vm/ops/*.h` +
+      `wse/vm/native_{agent,mp,scene,ui}_ops.h` + `wse/vm/lua_bridge.h`)
 
 **2E. Game-world state**
-- [~] `WseWorldState` containers and validators (`wse/game/world_state.h` + `wse/game/world_campaign_helpers.h`: players, troops, items,
-      skills, factions, quests, sites/visitors, parties/stacks, agents, mission props/timers, teams,
-      presentations/overlays, audio events) — in-memory model only
+- [x] `WseWorldState` containers and subsystem state (`wse/game/{world_state,world_subsystem_types,world_m5_types,world_m6_types,world_campaign_helpers}.h`) —
+      all runtime entity containers, savegame persistence, and lifetime rules wired into VM/WSE opcodes
 - [x] Loaders that populate it from a user-supplied module (depends on 2A) — clean-room module loaders across `wse/game/module_{loader_common,world_loaders,asset_loaders,mission_loaders,bundle}.h` reading via `Vfs` / `TokenReader`, verified with `MemoryVfs`, `HostVfs`, and VM execution in `module_loaders_test.cpp`
 - [x] Agent, party, mission-object, and player containers with real lifetimes (`wse/game/world_state.h`, `wse/game/world_campaign_helpers.h`, `wse/game/headless_runner.h`, `savegame.h`, and VM/WSE opcodes: monotonic `rglHashVector` party IDs + `mbGame::removeParty` `0x1400dd990` full detach/template/AI/player teardown; `rglStableVector` LIFO free lists & tail shrink for `agents`/`mission_objects` + 30s agent fade-out `0x14002a220` & spawned-item pruning; bidirectional `attach_party`/`detach_party`; `mbnetPlayer::initialize`/`clear`/`disconnectPlayer`/`startMission` lifecycle)
 
@@ -129,8 +131,12 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
       drivers are user-supplied, never bundled (host + APK build wired; on-device run pending hardware).
 - [x] **P5** Module shaders → SPIR-V at import time (`wse/asset/{shader,shader_compiler}.h`, `wse_shader` / Khronos `glslang 16.6.0`, `SpirvShaderCache`), material render state, `PresentationPath`, `VkShaderModule` lifecycle, and D3D9 conventions in the RHI (`rhi.h`, `rhi_material.h`, `driver_loader.{h,cpp}`) *(host-verified on synthetic fixtures, CI `spirv-val --target-env vulkan1.0`, and retail `Native` + `Phantasy Calradia` `271/271` techniques; on-device GPU pipeline execution pending hardware)*.
 - [x] **P6** Audio: clean-room RIFF/WAVE PCM + `wse_audio` (`stb_vorbis` v1.24 + `dr_mp3` v0.7.5) decoders (`wse/asset/{audio,audio_codecs}.h`), `AudioDevice` + 2D/3D stereo mixer & music scheduler (`wse/platform/audio.h`), `WorldAudioBridge` + VM opcode integration (`wse/game/{audio_runtime,world_audio}.h`), and `SDL_OpenAudioDeviceStream` backend (`platform/sdl/sdl_audio.{h,cpp}`) replacing FMOD Ex *(host-verified on synthetic fixtures + retail `Native` & `Phantasy Calradia`; on-device audio playback pending hardware)*.
-- [ ] **P9** Convergence with Phase 2: scene/terrain/skeletal rendering, widgets, Bullet, Lua link,
-      and the 2H headless run on device.
+- [~] **P9** Convergence with Phase 2: Part 1 scene/terrain/skeletal foundation landed
+      (`wse/asset/skeleton.h` FK evaluation & CPU skinning + `(qx,qy,qz,qw)` anim keyframe fix,
+      `wse/game/scene_loaders.h` `map.txt`/`.sco`/`skeleton_bodies.xml`, `wse/platform/rhi_scene.h`
+      chunked terrain + multi-draw `BrfSceneRenderer`, `scene_test.cpp` host + retail checks);
+      remaining: UI widgets/presentations, Bullet physics hookup, and on-device execution
+      *(Lua 5.1 2F & 2H headless runner already integrated)*.
 
 ### Phase 4 — Native Android Features
 
@@ -162,7 +168,8 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
-| 2026-11-17 | — | Phase 2E review fixes (`e6c4d0e`): faded-out props are no longer deleted; agent/mission-object slots are recycled only after every world reference is cleared; `416` keeps scene-placed props; kicks keep saved ban info; `remove_party` clears `encountered_party_2_no` and refuses the main party; `attach_party` refuses cycles; window queue consumed only on the campaign map; `<= 1136` saves keep live combat options. Open items in `STATUS.md` §5. |
+| 2026-11-17 | — | Phase 2E review resolutions (`afab774` PR #22 §5 #1–#10), **Phase 2A completion**, & **Slice P9 Part 1**: verified `mbMapWindow::frameMove` (`0x140118987`) `0x12`/`0x0f`/`0x10` queue filter + `g_gameScreen` (`0x1400ef710`/`0x1400f0c50`), `mbGame::removeParty` (`0x1400dd990`), `mbMission::clearScene` (`0x140147a80` `enable_pruning`), `rglHashVector<mbParty>` `m_nextKey` (`+0x138f0`), `[802..1174]` version-invariance (`0x1400e7b80`/`0x1400e7640`/`0x1400bae70`), and scalar `mbNotes` + `current_day` dates (`0x1401b9e90`/`0x1401de2ee`); closed Phase 2A (`map.txt` `0x1400d9a00`, `.sco` `0x140210be0`, `Data/skeleton_bodies.xml` `0x140211ba0`) and implemented Slice P9 Part 1 (`wse/asset/brf.h` `(qx,qy,qz,qw)` fix `0x14030c320`, `wse/asset/skeleton.h` FK & skinning, `wse/platform/rhi_scene.h` terrain + `BrfSceneRenderer`, `scene_test.cpp`); Windows `build_host.ps1` `22/22` (`selftest_host` `6,495 ms`) + retail CLI checks PASS. |
+| 2026-11-17 | `7db216e` | Phase 2E review fixes (`afab774` PR #22): faded-out props are no longer deleted; agent/mission-object slots are recycled only after every world reference is cleared; `416` keeps scene-placed props; kicks keep saved ban info; `remove_party` clears `encountered_party_2_no` and refuses the main party; `attach_party` refuses cycles; window queue consumed only on the campaign map; `<= 1136` saves keep live combat options. Remaining items closed above (`STATUS.md` §5). |
 | 2026-11-17 | `e6c4d0e` | Phase 2A `[802..1174]` savegame bodies / P8 retail zoom / `0x12` queue & **Phase 2E** container lifetimes: verify all 7 Phase 2A open items (`STATUS.md` §5) + `mbMapWindow` `5.0f`/`[3.5f, 175.0f]` zoom limits against `v1155`; reconstruct `[802..1174]` `mbGame`/`mbParty` savegame branches (`wse/game/savegame.h`), `jump_to_menu` `0x1401dc2b1` type-`0x12` producer + `consume_campaign_queued_window` (`0x140118987`/`0x1401202e0`) consumer; implement **Phase 2E** real lifetimes across `parties` (`mbGame::removeParty` `0x1400dd990`), `agents`/`mission_objects` (`rglStableVector` LIFO recycling, tail trim, 30s fade-out & item pruning), and `players` (`mbnetPlayer::initialize`/`clear`/`disconnectPlayer`/`startMission`); Windows `build_host.ps1` (`21/21`, `selftest_host` `6,402 ms`) + retail `Native`/`Phantasy Calradia` CLI checks PASS. |
 | 2026-11-17 | `ca0163a` | Phase 2A savegame review fixes (`d997c18` PR #21): `RglString` moves reset the source (moved-from reuse overflowed the inline buffer); transactional `read_savegame_container`; regular troops keep live fields when `bDontLoadRegularTroopInventories` skips their block; inventory `hit_points` no longer saved as the item amount; party icons folded into / restored from `flags & 0xff`; party / event counts bounded before allocation; corrupt record flags, out-of-range party keys, and pre-1174 bodies reported; read-back compares bytes; saturating `ignore_player_timer` cast; per-frame `map_zoom_delta`; 18 P5 shader strings restored to `SYMBOL_MAP.json`; remaining open items resolved in next entry (`STATUS.md` §5). |
 | 2026-11-17 | `9cc4431` | Phase 2A/2C/2G savegame container, early-out & `rglString` + P8 `map_zoom_delta` camera consumer (`e8b3594` PR #20 Windows/retail confirmation): add `RglString` (`wse/core/rgl_string.h`, 48-byte SSO + `getNextToken`/`swap*`/`-1` sentinel), `BinaryChecksumWriter` (`wse/io/binary_stream.h`, `0x140565b40`), whole `.sav` container framing/header/checksum/staging & all `mbGame` section codecs (`wse/game/savegame.h`), `mbSimpleTriggerManager::execute` `0x1402101d2..0x1402101f7` type-`0x12` early-out over `world.m5.enqueued_windows` (`wse/vm/block_vm.h`), and `WorldInputBridge` campaign-map `map_camera_distance` `exp(-map_zoom_delta)` consumer (`wse/game/world_input.h`); `SYMBOL_MAP.json` updated (`tools/build_symbol_map.py`) and host tests extended (`STATUS.md` §2, §5, §7). |

@@ -237,17 +237,17 @@ void test_brf_unversioned_all_eight_types() {
     write_vec3(w, 0.0f, 0.0f, 1.0f);
     write_vec3(w, 0.0f, 0.0f, 0.25f);
 
-    // 7. skeleton_anim (stream quaternion order: qy, qz, qw, qx)
+    // 7. skeleton_anim (stream quaternion order: qx, qy, qz, qw; 0x14030c320 + 0x1402b65d0)
     w.write_string("skeleton_anim");
     w.write_i32(1);
     w.write_string("anim_swing");
     w.write_u32(1U);
     w.write_i32(1);
     w.write_i32(15);
+    w.write_f32(0.1f);  // qx
     w.write_f32(0.2f);  // qy
     w.write_f32(0.3f);  // qz
     w.write_f32(0.9f);  // qw
-    w.write_f32(0.1f);  // qx
     w.write_i32(1);
     w.write_i32(15);
     write_vec3(w, 0.1f, 0.2f, 0.3f);
@@ -287,7 +287,7 @@ void test_brf_unversioned_all_eight_types() {
                file.animations[0].bone_rotations[0][0].rotation.y == 0.2f &&
                file.animations[0].bone_rotations[0][0].rotation.z == 0.3f &&
                file.animations[0].bone_rotations[0][0].rotation.w == 0.9f,
-           "skeleton_anim permutes qy/qz/qw/qx into Quatf{x,y,z,w}");
+           "skeleton_anim reads qx/qy/qz/qw into Quatf{x,y,z,w}");
     expect(file.physics_materials.size() == 1 && file.physics_materials[0].sound_occlusion == 0.625f,
            "physics_material reads m_soundOcclusion");
 }

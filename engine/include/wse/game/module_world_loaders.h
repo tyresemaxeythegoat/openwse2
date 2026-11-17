@@ -576,10 +576,10 @@ template <class Fn>
     std::int32_t num_created = 0;
     if (!read_count_token(reader, num_slots, kMaxModuleRecords, source,
                           "party slots", err) ||
-        !read_i32_token(reader, num_created)) {
-        return err.ok ? make_load_error(source, "missing party created count") : err;
+        !read_i32_token(reader, num_created) || num_created < 0 ||
+        static_cast<std::size_t>(num_created) > kMaxModuleRecords) {
+        return err.ok ? make_load_error(source, "invalid party created count") : err;
     }
-    (void)num_created;
 
     const auto total_slots = static_cast<std::size_t>(num_slots);
     if (reader.plausible_count(total_slots, 1) < total_slots) {
@@ -588,6 +588,7 @@ template <class Fn>
 
     world.parties.clear();
     world.parties.resize(total_slots);
+    world.next_party_key = std::max(num_slots, num_created);
     if (out_meta != nullptr) {
         out_meta->assign(total_slots, LoadedPartyMeta{});
     }

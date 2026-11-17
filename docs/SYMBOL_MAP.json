@@ -15,11 +15,11 @@
  "inputs": {
   "layouts": 83,
   "globals_scanned": 48658,
-  "symbols_curated": 3504,
+  "symbols_curated": 3687,
   "game_vtables": 76,
-  "function_ranges": 4786,
-  "global_objects": 24,
-  "superseded_vas": 2922
+  "function_ranges": 5046,
+  "global_objects": 25,
+  "superseded_vas": 3052
  },
  "strings": [
   {
@@ -13494,6 +13494,18 @@
    "va": "0x140550890"
   },
   {
+   "name": "??_7mbFadingOutEntity@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140552750"
+  },
+  {
+   "name": "??_7mbEvent@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1405533a0"
+  },
+  {
    "name": "??_7mbSoundOptionsWindow@@6B@",
    "kind": "public",
    "source": "pdb-public",
@@ -13504,6 +13516,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1405542b0"
+  },
+  {
+   "name": "??_7mbNotesWindow@@6B@",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140554310"
   },
   {
    "name": "??_7mbGameLogWindow@@6B@",
@@ -15630,6 +15648,24 @@
    "va": "0x140073de0"
   },
   {
+   "name": "?_Buynode0@?$_List_alloc@$0A@U?$_List_base_types@PEAVrglAiMeshFace@@V?$allocator@PEAVrglAiMeshFace@@@std@@@std@@@std@@QEAAPEAU?$_List_node@PEAVrglAiMeshFace@@PEAX@2@PEAU32@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b5d60"
+  },
+  {
+   "name": "?_Buynode0@?$_List_alloc@$0A@U?$_List_base_types@PEAVrglAiMeshEdge@@V?$allocator@PEAVrglAiMeshEdge@@@std@@@std@@@std@@QEAAPEAU?$_List_node@PEAVrglAiMeshEdge@@PEAX@2@PEAU32@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b5d60"
+  },
+  {
+   "name": "?_Buynode0@?$_List_alloc@$0A@U?$_List_base_types@PEAVrglAiMeshVertex@@V?$allocator@PEAVrglAiMeshVertex@@@std@@@std@@@std@@QEAAPEAU?$_List_node@PEAVrglAiMeshVertex@@PEAX@2@PEAU32@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b5d60"
+  },
+  {
    "name": "?_Reallocate@?$vector@VrglString@@V?$allocator@VrglString@@@std@@@std@@IEAAX_K@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -15670,6 +15706,42 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140073990"
+  },
+  {
+   "name": "?clear@?$rglPool@VrglAiMeshFace@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140073910"
+  },
+  {
+   "name": "??1?$rglPool@VrglAiMeshFace@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400738b0"
+  },
+  {
+   "name": "?clear@?$rglPool@VrglAiMeshEdge@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140073910"
+  },
+  {
+   "name": "??1?$rglPool@VrglAiMeshEdge@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400738b0"
+  },
+  {
+   "name": "?clear@?$rglPool@VrglAiMeshVertex@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140073910"
+  },
+  {
+   "name": "??1?$rglPool@VrglAiMeshVertex@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400738b0"
   },
   {
    "name": "??1?$vector@VrglString@@V?$allocator@VrglString@@@std@@@std@@QEAA@XZ",
@@ -17550,6 +17622,42 @@
    "va": "0x1400bae20"
   },
   {
+   "name": "?remove@?$rglStableVector@VmbEvent@@@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400bc380"
+  },
+  {
+   "name": "?observerEscape@mbEvent@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400bc260"
+  },
+  {
+   "name": "?end@mbEvent@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400bb9b0"
+  },
+  {
+   "name": "?simulate@mbEvent@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400bb450"
+  },
+  {
+   "name": "?updatePosition@mbEvent@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400bb320"
+  },
+  {
+   "name": "?frameMove@mbEvent@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400bb0a0"
+  },
+  {
    "name": "?writeStream@mbEvent@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -17560,6 +17668,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400bae70"
+  },
+  {
+   "name": "?onCreation@mbEvent@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400bae30"
   },
   {
    "name": "??0mbSkin@@QEAA@AEBV0@@Z",
@@ -17754,6 +17868,12 @@
    "va": "0x1400c5f10"
   },
   {
+   "name": "?remove@?$rglStableVector@VmbFadingOutEntity@@@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c65a0"
+  },
+  {
    "name": "??A?$rglVector@PEAVrglMetaMesh@@@@QEAAAEAPEAVrglMetaMesh@@H@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -17764,6 +17884,36 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400c6590"
+  },
+  {
+   "name": "?frameMove@mbFadingOutEntity@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6440"
+  },
+  {
+   "name": "?setEntity@mbFadingOutEntity@@QEAAXPEAVrglEntity@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6420"
+  },
+  {
+   "name": "?onCreation@mbFadingOutEntity@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6400"
+  },
+  {
+   "name": "??1mbFadingOutEntity@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c63c0"
+  },
+  {
+   "name": "??0mbFadingOutEntity@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6390"
   },
   {
    "name": "?readStream@mbFloraKindInstance@@QEAAXAEAVrglStream@@AEB_K@Z",
@@ -17826,7 +17976,19 @@
    "va": "0x14008a0c0"
   },
   {
+   "name": "?_Reallocate@?$vector@PEAVmbEvent@@V?$allocator@PEAVmbEvent@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a0c0"
+  },
+  {
    "name": "?_Reserve@?$vector@PEAVmbParty@@V?$allocator@PEAVmbParty@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a030"
+  },
+  {
+   "name": "?_Reserve@?$vector@PEAVmbEvent@@V?$allocator@PEAVmbEvent@@@std@@@std@@IEAAX_K@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14008a030"
@@ -17866,6 +18028,24 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400e8de0"
+  },
+  {
+   "name": "??1mbEvent@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8d90"
+  },
+  {
+   "name": "??0mbEvent@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8d40"
+  },
+  {
+   "name": "??_EmbEvent@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8ca0"
   },
   {
    "name": "?_Tidy@?$vector@VmbMissionObject@@V?$allocator@VmbMissionObject@@@std@@@std@@IEAAXXZ",
@@ -17910,6 +18090,24 @@
    "va": "0x1400e82e0"
   },
   {
+   "name": "?createChunk@?$rglStableVector@VmbEvent@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e8130"
+  },
+  {
+   "name": "?getFreeItem@?$rglStableVector@VmbEvent@@@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e80c0"
+  },
+  {
+   "name": "?clear@?$rglStableVector@VmbEvent@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e7fc0"
+  },
+  {
    "name": "?push_back@?$vector@PEAVrglMesh@@V?$allocator@PEAVrglMesh@@@std@@@std@@QEAAXAEBQEAVrglMesh@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -17917,6 +18115,12 @@
   },
   {
    "name": "??1?$rglVector@PEAVmbParty@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$rglVector@PEAVmbEvent@@@@QEAA@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140016f10"
@@ -17946,6 +18150,12 @@
    "va": "0x1400e7b00"
   },
   {
+   "name": "?createItem@?$rglStableVector@VmbEvent@@@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e7a50"
+  },
+  {
    "name": "?writeStream@?$rglStableVector@VmbEvent@@@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -17956,6 +18166,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400e7640"
+  },
+  {
+   "name": "??1?$rglStableVector@VmbEvent@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e7570"
   },
   {
    "name": "?playerSetParty@mbGame@@QEAAXHH@Z",
@@ -19236,6 +19452,18 @@
    "va": "0x1400f06c0"
   },
   {
+   "name": "??_GmbNotesWindow@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400f08d0"
+  },
+  {
+   "name": "??_EmbNotesWindow@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400f08d0"
+  },
+  {
    "name": "??_GmbPartyWindow@@UEAAPEAXI@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -19282,6 +19510,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1400f0c10"
+  },
+  {
+   "name": "??1mbNotesWindow@@UEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400f0b00"
   },
   {
    "name": "??1mbLoadSaveWindow@@UEAA@XZ",
@@ -19636,6 +19870,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1401005f0"
+  },
+  {
+   "name": "?getKeyForTime@?$rglIpo@VrglQuaternion@@@@QEBAXAEAHAEAMM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140103480"
   },
   {
    "name": "?updateCharacterImage@mbInventoryWindow@@QEAAXAEAPEAVrglImageButtonWidget@@0AEBVrglString@@1HH@Z",
@@ -20262,6 +20502,18 @@
    "va": "0x14014ed50"
   },
   {
+   "name": "?_Reallocate@?$vector@PEAVmbFadingOutEntity@@V?$allocator@PEAVmbFadingOutEntity@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a0c0"
+  },
+  {
+   "name": "?_Reserve@?$vector@PEAVmbFadingOutEntity@@V?$allocator@PEAVmbFadingOutEntity@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a030"
+  },
+  {
    "name": "?_Reallocate@?$vector@PEAVmbMissionObject@@V?$allocator@PEAVmbMissionObject@@@std@@@std@@IEAAX_K@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -20296,6 +20548,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14014e070"
+  },
+  {
+   "name": "?createChunk@?$rglStableVector@VmbFadingOutEntity@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14014de40"
   },
   {
    "name": "?_Reserve@?$vector@VmbMissionObject@@V?$allocator@VmbMissionObject@@@std@@@std@@IEAAX_K@Z",
@@ -20358,6 +20616,12 @@
    "va": "0x14014c710"
   },
   {
+   "name": "??1?$rglVector@PEAVmbFadingOutEntity@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
    "name": "??4mbMissionObject@@QEAAAEAV0@AEBV0@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -20374,6 +20638,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140016f10"
+  },
+  {
+   "name": "?createItem@?$rglStableVector@VmbFadingOutEntity@@@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14014c1e0"
+  },
+  {
+   "name": "??A?$rglStableVector@VmbFadingOutEntity@@@@QEAAAEAVmbFadingOutEntity@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14014c1c0"
+  },
+  {
+   "name": "?clear@?$rglStableVector@VmbFadingOutEntity@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14014c0c0"
+  },
+  {
+   "name": "??1?$rglStableVector@VmbFadingOutEntity@@@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e7570"
   },
   {
    "name": "?createItem@?$rglStableVector@VmbMissionObject@@@@QEAAHXZ",
@@ -21120,6 +21408,24 @@
    "va": "0x140127df0"
   },
   {
+   "name": "??1?$priority_queue@VrglAiMeshPathCheckingPoint@@V?$vector@VrglAiMeshPathCheckingPoint@@V?$allocator@VrglAiMeshPathCheckingPoint@@@std@@@std@@U?$less@VrglAiMeshPathCheckingPoint@@@3@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1?$priority_queue@VrglAiMeshPathFindingPoint@@V?$vector@VrglAiMeshPathFindingPoint@@V?$allocator@VrglAiMeshPathFindingPoint@@@std@@@std@@U?$less@VrglAiMeshPathFindingPoint@@@3@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
+   "name": "??1rglAiMesh@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140127ba0"
+  },
+  {
    "name": "??0mbMission@@QEAA@XZ",
    "kind": "public",
    "source": "pdb-public",
@@ -21154,6 +21460,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14014a8b0"
+  },
+  {
+   "name": "??_EmbFadingOutEntity@@UEAAPEAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14014dff0"
   },
   {
    "name": "?clear@mbMission@@QEAAXXZ",
@@ -21654,6 +21966,42 @@
    "va": "0x1401607e0"
   },
   {
+   "name": "?sortKeys@mbNotesWindow@@QEAAXAEAV?$rglVector@H@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140166a70"
+  },
+  {
+   "name": "?update@mbNotesWindow@@QEAAXHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140161bf0"
+  },
+  {
+   "name": "?close@mbNotesWindow@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f660"
+  },
+  {
+   "name": "?open@mbNotesWindow@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401614d0"
+  },
+  {
+   "name": "?frameMove@mbNotesWindow@@UEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140161520"
+  },
+  {
+   "name": "?isFullscreen@mbNotesWindow@@UEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f980"
+  },
+  {
    "name": "?indexOf@?$rglVector@VrglString@@@@QEAAHAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -22060,6 +22408,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14017c4a0"
+  },
+  {
+   "name": "?isValid@?$rglStableVector@VmbEvent@@@@QEBA?B_NH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401892d0"
   },
   {
    "name": "?makeAsyncDownloadToFileRequest@mbnetNetworkClient@@QEAAXAEBVrglString@@0@Z",
@@ -24990,10 +25344,46 @@
    "va": "0x140210a20"
   },
   {
+   "name": "??$_Uninit_copy@PEAVmbSkeletonBone@@PEAV1@V?$allocator@VmbSkeletonBone@@@std@@@std@@YAPEAVmbSkeletonBone@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbSkeletonBone@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402131b0"
+  },
+  {
+   "name": "??$_Copy_impl@PEAVmbSkeletonBone@@PEAV1@@std@@YAPEAVmbSkeletonBone@@PEAV1@00U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402132d0"
+  },
+  {
+   "name": "??$destroy@VmbSkeleton@@@?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@std@@QEAAXPEAVmbSkeleton@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140213280"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVmbSkeleton@@PEAV1@V?$allocator@VmbSkeleton@@@std@@V1@@std@@YAPEAVmbSkeleton@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140213220"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVmbSkeletonBone@@PEAV1@V?$allocator@VmbSkeletonBone@@@std@@V1@@std@@YAPEAVmbSkeletonBone@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbSkeletonBone@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402131b0"
+  },
+  {
    "name": "??$_Uninit_move@PEAVrglSkeletonModelBody@@PEAV1@V?$allocator@VrglSkeletonModelBody@@@std@@V1@@std@@YAPEAVrglSkeletonModelBody@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglSkeletonModelBody@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140213100"
+  },
+  {
+   "name": "??$destroy@VmbSkeletonBone@@@?$_Wrap_alloc@V?$allocator@VmbSkeletonBone@@@std@@@std@@QEAAXPEAVmbSkeletonBone@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140213160"
   },
   {
    "name": "??$_Uninit_copy@PEAVrglSkeletonModelBody@@PEAV1@V?$allocator@VrglSkeletonModelBody@@@std@@@std@@YAPEAVrglSkeletonModelBody@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglSkeletonModelBody@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
@@ -25002,10 +25392,52 @@
    "va": "0x140213100"
   },
   {
+   "name": "??4?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@QEAAAEAV01@AEBV01@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140212f00"
+  },
+  {
+   "name": "??0mbSkeleton@@QEAA@AEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140212e60"
+  },
+  {
+   "name": "??0mbSkeletonBone@@QEAA@AEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140212d30"
+  },
+  {
+   "name": "??$_Destroy_range@U?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@std@@@std@@YAXPEAVmbSkeleton@@0AEAU?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140212c50"
+  },
+  {
    "name": "??$_Copy_impl@PEAVrglSkeletonModelBody@@PEAV1@@std@@YAPEAVrglSkeletonModelBody@@PEAV1@00@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140212be0"
+  },
+  {
+   "name": "??0?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14000f820"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VmbSkeleton@@V?$allocator@VmbSkeleton@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140212af0"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140212a00"
   },
   {
    "name": "?_Reallocate@?$vector@VrglSkeletonModelBody@@V?$allocator@VrglSkeletonModelBody@@@std@@@std@@IEAAX_K@Z",
@@ -25014,10 +25446,52 @@
    "va": "0x140212940"
   },
   {
+   "name": "?_Getal@?$_Vector_alloc@$0A@U?$_Vec_base_types@VmbSkeleton@@V?$allocator@VmbSkeleton@@@std@@@std@@@std@@QEBA?AU?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@2@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140014a80"
+  },
+  {
+   "name": "?_Reserve@?$vector@VmbSkeleton@@V?$allocator@VmbSkeleton@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140212870"
+  },
+  {
+   "name": "?_Reserve@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402127a0"
+  },
+  {
+   "name": "?_Destroy@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@IEAAXPEAVmbSkeletonBone@@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140212720"
+  },
+  {
    "name": "?_Reserve@?$vector@VrglSkeletonModelBody@@V?$allocator@VrglSkeletonModelBody@@@std@@@std@@IEAAX_K@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140212650"
+  },
+  {
+   "name": "?push_back@?$vector@VmbSkeleton@@V?$allocator@VmbSkeleton@@@std@@@std@@QEAAXAEBVmbSkeleton@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140212590"
+  },
+  {
+   "name": "?_Tidy@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@IEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402121a0"
+  },
+  {
+   "name": "?push_back@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@QEAAXAEBVmbSkeletonBone@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402124d0"
   },
   {
    "name": "?push_back@?$vector@VrglSkeletonModelBody@@V?$allocator@VrglSkeletonModelBody@@@std@@@std@@QEAAXAEBVrglSkeletonModelBody@@@Z",
@@ -25032,16 +25506,52 @@
    "va": "0x1402121e0"
   },
   {
+   "name": "??1?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402121a0"
+  },
+  {
    "name": "??1?$vector@VrglSkeletonModelBody@@V?$allocator@VrglSkeletonModelBody@@@std@@@std@@QEAA@XZ",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140016f10"
   },
   {
+   "name": "??1mbSkeleton@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140211dd0"
+  },
+  {
+   "name": "??1mbSkeletonBone@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140211b50"
+  },
+  {
+   "name": "?readXMLElement@mbSkeleton@@QEAAXPEAVTiXmlElement@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402119c0"
+  },
+  {
+   "name": "?readXMLElement@mbSkeletonBone@@QEAAXPEAVTiXmlElement@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140211480"
+  },
+  {
    "name": "?readFile@mbSkeletonManager@@QEAAXAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140211ba0"
+  },
+  {
+   "name": "?fixSkeletonModels@mbSkeletonManager@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140211e20"
   },
   {
    "name": "?readStream@mbSkill@@QEAAXAEAVrglStream@@@Z",
@@ -25410,6 +25920,18 @@
    "va": "0x1400fe230"
   },
   {
+   "name": "??$_Uninit_move@PEAVrglManifoldFace@@PEAV1@V?$allocator@VrglManifoldFace@@@std@@V1@@std@@YAPEAVrglManifoldFace@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglManifoldFace@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140240810"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglManifoldVertex@@PEAV1@V?$allocator@VrglManifoldVertex@@@std@@V1@@std@@YAPEAVrglManifoldVertex@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglManifoldVertex@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017ea70"
+  },
+  {
    "name": "?_Reallocate@?$vector@PEAVrglQuad@@V?$allocator@PEAVrglQuad@@@std@@@std@@IEAAX_K@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -25428,10 +25950,40 @@
    "va": "0x14008a030"
   },
   {
+   "name": "?_Reserve@?$vector@VrglManifoldFace@@V?$allocator@VrglManifoldFace@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140240710"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglManifoldFace@@V?$allocator@VrglManifoldFace@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140240640"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglManifoldVertex@@V?$allocator@VrglManifoldVertex@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401c3930"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglManifoldVertex@@V?$allocator@VrglManifoldVertex@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a6ac0"
+  },
+  {
    "name": "?_Reserve@?$vector@VrglVector4@@V?$allocator@VrglVector4@@@std@@@std@@IEAAX_K@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402405b0"
+  },
+  {
+   "name": "?push_back@?$vector@VrglManifoldFace@@V?$allocator@VrglManifoldFace@@@std@@@std@@QEAAXAEBVrglManifoldFace@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140240410"
   },
   {
    "name": "??1?$vector@VrglVector4@@V?$allocator@VrglVector4@@@std@@@std@@QEAA@XZ",
@@ -26046,10 +26598,142 @@
    "va": "0x1402519b0"
   },
   {
+   "name": "??$_Uninit_move@PEAVrglAiMeshPathCheckingPoint@@PEAV1@V?$allocator@VrglAiMeshPathCheckingPoint@@@std@@V1@@std@@YAPEAVrglAiMeshPathCheckingPoint@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglAiMeshPathCheckingPoint@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14001bff0"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglAiMeshPathFindingPoint@@PEAV1@V?$allocator@VrglAiMeshPathFindingPoint@@@std@@V1@@std@@YAPEAVrglAiMeshPathFindingPoint@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglAiMeshPathFindingPoint@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14001bff0"
+  },
+  {
+   "name": "??$_Pop_heap_0@PEAVrglAiMeshPathCheckingPoint@@V1@U?$less@VrglAiMeshPathCheckingPoint@@@std@@@std@@YAXPEAVrglAiMeshPathCheckingPoint@@0U?$less@VrglAiMeshPathCheckingPoint@@@0@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140257a00"
+  },
+  {
+   "name": "??$_Pop_heap_0@PEAVrglAiMeshPathFindingPoint@@V1@U?$less@VrglAiMeshPathFindingPoint@@@std@@@std@@YAXPEAVrglAiMeshPathFindingPoint@@0U?$less@VrglAiMeshPathFindingPoint@@@0@0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402578f0"
+  },
+  {
+   "name": "??$_Buynode@AEBQEAVrglAiMeshFace@@@?$_List_buy@PEAVrglAiMeshFace@@V?$allocator@PEAVrglAiMeshFace@@@std@@@std@@QEAAPEAU?$_List_node@PEAVrglAiMeshFace@@PEAX@1@PEAU21@0AEBQEAVrglAiMeshFace@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b5ef0"
+  },
+  {
+   "name": "??$_Buynode@AEBQEAVrglAiMeshEdge@@@?$_List_buy@PEAVrglAiMeshEdge@@V?$allocator@PEAVrglAiMeshEdge@@@std@@@std@@QEAAPEAU?$_List_node@PEAVrglAiMeshEdge@@PEAX@1@PEAU21@0AEBQEAVrglAiMeshEdge@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b5ef0"
+  },
+  {
+   "name": "??$_Buynode@AEBQEAVrglAiMeshVertex@@@?$_List_buy@PEAVrglAiMeshVertex@@V?$allocator@PEAVrglAiMeshVertex@@@std@@@std@@QEAAPEAU?$_List_node@PEAVrglAiMeshVertex@@PEAX@1@PEAU21@0AEBQEAVrglAiMeshVertex@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400b5ef0"
+  },
+  {
+   "name": "??$push_heap@V?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathCheckingPoint@@@std@@@std@@@std@@U?$less@VrglAiMeshPathCheckingPoint@@@2@@std@@YAXV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathCheckingPoint@@@std@@@std@@@0@0U?$less@VrglAiMeshPathCheckingPoint@@@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140257850"
+  },
+  {
+   "name": "??$push_heap@V?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathFindingPoint@@@std@@@std@@@std@@U?$less@VrglAiMeshPathFindingPoint@@@2@@std@@YAXV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathFindingPoint@@@std@@@std@@@0@0U?$less@VrglAiMeshPathFindingPoint@@@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402577b0"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglAiMeshPathCheckingPoint@@V?$allocator@VrglAiMeshPathCheckingPoint@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400172a0"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglAiMeshPathFindingPoint@@V?$allocator@VrglAiMeshPathFindingPoint@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400172a0"
+  },
+  {
+   "name": "?fill@?$rglPool@VrglAiMeshFace@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140257610"
+  },
+  {
+   "name": "?fill@?$rglPool@VrglAiMeshEdge@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402574c0"
+  },
+  {
+   "name": "?fill@?$rglPool@VrglAiMeshVertex@@@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402573a0"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglAiMeshPathCheckingPoint@@V?$allocator@VrglAiMeshPathCheckingPoint@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e9200"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglAiMeshPathFindingPoint@@V?$allocator@VrglAiMeshPathFindingPoint@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400e9200"
+  },
+  {
+   "name": "?getItem@?$rglAiMeshContainer@VrglAiMeshFace@@@@QEAAPEAVrglAiMeshFace@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402572b0"
+  },
+  {
+   "name": "?getItem@?$rglAiMeshContainer@VrglAiMeshEdge@@@@QEAAPEAVrglAiMeshEdge@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140257210"
+  },
+  {
+   "name": "?connectVertices@rglAiMesh@@QEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140256be0"
+  },
+  {
+   "name": "?subdivideEdge@rglAiMesh@@QEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140256580"
+  },
+  {
+   "name": "?addFace@rglAiMesh@@QEAAXHHHHHHHHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140256350"
+  },
+  {
    "name": "?getDistanceFromFace@rglAiMesh@@QEAAMPEAVrglAiMeshFace@@AEBVrglVector4@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140253180"
+  },
+  {
+   "name": "?computeFaceNormals@rglAiMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140252ee0"
   },
   {
    "name": "?readStream@rglAiMeshEdge@@QEAAXAEAVrglStream@@PEAPEAVrglAiMeshVertex@@@Z",
@@ -26070,10 +26754,40 @@
    "va": "0x1402521d0"
   },
   {
+   "name": "??0rglAiMesh@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140252480"
+  },
+  {
    "name": "?readStream@rglAiMesh@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140252600"
+  },
+  {
+   "name": "?build@rglAiMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140252930"
+  },
+  {
+   "name": "?clear@rglAiMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140252530"
+  },
+  {
+   "name": "?autoGenerate@rglAiMesh@@QEAAXPEAVrglTerrain@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140255860"
+  },
+  {
+   "name": "?computeEdgeTraversalCosts@rglAiMesh@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140252a80"
   },
   {
    "name": "?fillFaceMesh@rglAiMesh@@QEAAXPEAVrglMesh@@@Z",
@@ -26112,10 +26826,22 @@
    "va": "0x1402530f0"
   },
   {
+   "name": "?checkPath@rglAiMesh@@QEAA_NPEAVrglAiMeshFace@@0H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140254be0"
+  },
+  {
    "name": "?checkPathFast@rglAiMesh@@QEAA_NPEAVrglAiMeshFace@@AEBVrglVector4@@01H@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140255580"
+  },
+  {
+   "name": "?computePath@rglAiMesh@@QEAAXPEAVrglAiMeshFace@@0PEAPEAV2@PEAVrglAiMeshPathPoint@@AEAH3_NM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140254fb0"
   },
   {
    "name": "??0rglBoardWidget@@QEAA@AEBVrglString@@@Z",
@@ -26244,6 +26970,24 @@
    "va": "0x14003fbe0"
   },
   {
+   "name": "?loadOnDemandTextures@rglBone@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140259090"
+  },
+  {
+   "name": "?setAlpha@rglBone@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140258f60"
+  },
+  {
+   "name": "?setColorAlpha@rglBone@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140258e50"
+  },
+  {
    "name": "?frameMove@rglBone@@QEAAXMAEBVrglTransform@@AEBVrglVector4@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -26260,6 +27004,24 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140258800"
+  },
+  {
+   "name": "??1rglBone@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402587b0"
+  },
+  {
+   "name": "??0rglBone@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140258670"
+  },
+  {
+   "name": "?removeParticleSystem@rglBone@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140258960"
   },
   {
    "name": "?addBoundingBox@rglBoundingBox@@QEAAXAEBV1@AEBVrglTransform@@@Z",
@@ -27070,6 +27832,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140294510"
+  },
+  {
+   "name": "?setAlpha@rglEntity@@QEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140294720"
   },
   {
    "name": "?setMeshTransform@rglEntity@@QEAAXAEBVrglTransform@@@Z",
@@ -28302,6 +29070,108 @@
    "va": "0x1402b0180"
   },
   {
+   "name": "??$_Adjust_heap@PEAVrglManifoldPathFindingPoint@@_JV1@U?$less@VrglManifoldPathFindingPoint@@@std@@@std@@YAXPEAVrglManifoldPathFindingPoint@@_J1$$QEAV1@U?$less@VrglManifoldPathFindingPoint@@@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b4560"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglManifoldPathFindingPoint@@PEAV1@V?$allocator@VrglManifoldPathFindingPoint@@@std@@V1@@std@@YAPEAVrglManifoldPathFindingPoint@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglManifoldPathFindingPoint@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14017e640"
+  },
+  {
+   "name": "??$_Uninit_move@PEAVrglManifoldEdge@@PEAV1@V?$allocator@VrglManifoldEdge@@@std@@V1@@std@@YAPEAVrglManifoldEdge@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglManifoldEdge@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6d60"
+  },
+  {
+   "name": "??$_Move@PEAVrglManifoldFace@@PEAV1@@std@@YAPEAVrglManifoldFace@@PEAV1@00U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b4480"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVrglManifoldFace@@_KV?$allocator@VrglManifoldFace@@@std@@V1@@std@@YAXPEAVrglManifoldFace@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglManifoldFace@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b4430"
+  },
+  {
+   "name": "??$_Uninit_def_fill_n@PEAVrglManifoldVertex@@_KV?$allocator@VrglManifoldVertex@@@std@@V1@@std@@YAXPEAVrglManifoldVertex@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglManifoldVertex@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6b70"
+  },
+  {
+   "name": "??$_Push_heap_0@PEAVrglManifoldPathFindingPoint@@_JV1@U?$less@VrglManifoldPathFindingPoint@@@std@@@std@@YAXPEAVrglManifoldPathFindingPoint@@0U?$less@VrglManifoldPathFindingPoint@@@0@PEA_J0@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b4360"
+  },
+  {
+   "name": "??$pop_heap@V?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglManifoldPathFindingPoint@@@std@@@std@@@std@@U?$less@VrglManifoldPathFindingPoint@@@2@@std@@YAXV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglManifoldPathFindingPoint@@@std@@@std@@@0@0U?$less@VrglManifoldPathFindingPoint@@@0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b42c0"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglManifoldPathFindingPoint@@V?$allocator@VrglManifoldPathFindingPoint@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a6940"
+  },
+  {
+   "name": "?_Grow_to@?$vector@VrglManifoldPathFindingPoint@@V?$allocator@VrglManifoldPathFindingPoint@@@std@@@std@@IEBA_K_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1401a68e0"
+  },
+  {
+   "name": "?_Reallocate@?$vector@VrglManifoldEdge@@V?$allocator@VrglManifoldEdge@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400c6ad0"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglManifoldPathFindingPoint@@V?$allocator@VrglManifoldPathFindingPoint@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b4230"
+  },
+  {
+   "name": "?_Reserve@?$vector@VrglManifoldEdge@@V?$allocator@VrglManifoldEdge@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b41a0"
+  },
+  {
+   "name": "?push_back@?$vector@VrglManifoldPathFindingPoint@@V?$allocator@VrglManifoldPathFindingPoint@@@std@@@std@@QEAAXAEBVrglManifoldPathFindingPoint@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b40e0"
+  },
+  {
+   "name": "?resize@?$vector@VrglManifoldFace@@V?$allocator@VrglManifoldFace@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b3fd0"
+  },
+  {
+   "name": "?resize@?$vector@VrglManifoldVertex@@V?$allocator@VrglManifoldVertex@@@std@@@std@@QEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b3eb0"
+  },
+  {
+   "name": "?changeWhitePoint@rglManifold@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b3e20"
+  },
+  {
    "name": "?addFace@rglManifold@@QEAAHHPEAVrglVector4@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -28314,10 +29184,40 @@
    "va": "0x1402b29c0"
   },
   {
+   "name": "?computeAdjoiningGroups@rglManifold@@QEAAXHHPEAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b2700"
+  },
+  {
+   "name": "?computeGroup@rglManifold@@QEAAHHHPEAHHIHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b2560"
+  },
+  {
+   "name": "?computeNeighborDistance@rglManifold@@QEAAMHHIHHHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b1f90"
+  },
+  {
+   "name": "??1?$priority_queue@VrglManifoldPathFindingPoint@@V?$vector@VrglManifoldPathFindingPoint@@V?$allocator@VrglManifoldPathFindingPoint@@@std@@@std@@U?$less@VrglManifoldPathFindingPoint@@@3@@std@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140016f10"
+  },
+  {
    "name": "?readStream@rglManifoldFace@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402b1190"
+  },
+  {
+   "name": "?checkPath@rglManifold@@QEAA_NHAEBVrglVector2@@H0IH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b2e90"
   },
   {
    "name": "?computePath@rglManifold@@QEAA_NHHPEAHPEAVrglVector4@@AEAH2HHHHH_N@Z",
@@ -28326,10 +29226,40 @@
    "va": "0x1402b36c0"
   },
   {
+   "name": "?build@rglManifold@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b1310"
+  },
+  {
+   "name": "?collectVertices@rglManifold@@QEAAXHHPEAHAEAH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b2860"
+  },
+  {
    "name": "?readStream@rglManifold@@QEAAXAEAVrglStream@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402b1220"
+  },
+  {
+   "name": "?computeBounds@rglManifold@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b1d00"
+  },
+  {
+   "name": "?computeNeighborDistances@rglManifold@@QEAAXIHHHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b1ea0"
+  },
+  {
+   "name": "?computeGroups@rglManifold@@QEAAXIHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402b2070"
   },
   {
    "name": "??$_Uninit_move@PEAVrglManifoldBodyFace@@PEAV1@V?$allocator@VrglManifoldBodyFace@@@std@@V1@@std@@YAPEAVrglManifoldBodyFace@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglManifoldBodyFace@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
@@ -29904,6 +30834,24 @@
    "va": "0x1402d6080"
   },
   {
+   "name": "?transformToParent@rglQuaternion@@QEBA?AV1@AEBV1@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d6cd0"
+  },
+  {
+   "name": "?normalize@rglQuaternion@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d6af0"
+  },
+  {
+   "name": "?interpolate@rglQuaternion@@QEBA?AV1@AEBV1@M@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d6bb0"
+  },
+  {
    "name": "??$_Buynode@U?$pair@PEAVrglMaterial@@PEAVrglMesh@@@std@@@?$_List_buy@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@V?$allocator@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@@2@@std@@QEAAPEAU?$_List_node@U?$pair@QEAVrglMaterial@@PEAVrglMesh@@@std@@PEAX@1@PEAU21@0$$QEAU?$pair@PEAVrglMaterial@@PEAVrglMesh@@@1@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -31098,6 +32046,12 @@
    "va": "0x1402fa5a0"
   },
   {
+   "name": "??1rglManifold@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402f6b30"
+  },
+  {
    "name": "?updateBodyPart@rglScene@@QEAAXPEAVrglBodyPart@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -31108,6 +32062,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402f9b50"
+  },
+  {
+   "name": "?setAiMesh@rglScene@@QEAAXPEAVrglAiMesh@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fa370"
   },
   {
    "name": "?lightMeshes@rglScene@@QEAAXAEAV?$rglVector@PEAVrglMesh@@@@@Z",
@@ -31138,6 +32098,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402fbfe0"
+  },
+  {
+   "name": "?setManifold@rglScene@@QEAAXPEAVrglManifold@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402f9e90"
   },
   {
    "name": "?getFirstSuitableGroundQuad@rglScene@@QEAAPEAVrglQuad@@XZ",
@@ -31176,6 +32142,18 @@
    "va": "0x1402fb900"
   },
   {
+   "name": "?_Reallocate@?$vector@PEAVrglAiMeshFace@@V?$allocator@PEAVrglAiMeshFace@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a0c0"
+  },
+  {
+   "name": "?_Reserve@?$vector@PEAVrglAiMeshFace@@V?$allocator@PEAVrglAiMeshFace@@@std@@@std@@IEAAX_K@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14008a030"
+  },
+  {
    "name": "?_Insert_n@?$vector@PEAVrglBodyPart@@V?$allocator@PEAVrglBodyPart@@@std@@@std@@IEAA?AV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@PEAVrglBodyPart@@@std@@@std@@@2@V?$_Vector_const_iterator@V?$_Vector_val@U?$_Simple_types@PEAVrglBodyPart@@@std@@@std@@@2@_KAEBQEAVrglBodyPart@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -31192,6 +32170,12 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402fcf70"
+  },
+  {
+   "name": "?addAiMeshFace@rglSceneGridCell@@QEAAXPEAVrglAiMeshFace@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402fced0"
   },
   {
    "name": "?updateBodyPart@rglSceneGrid@@QEAAXPEAVrglBodyPart@@@Z",
@@ -31356,10 +32340,58 @@
    "va": "0x14030b7a0"
   },
   {
+   "name": "?clearMeshes@rglSkeleton@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b180"
+  },
+  {
+   "name": "?computeChildBoneRotation@rglSkeleton@@QEAA?AVrglQuaternion@@HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030a670"
+  },
+  {
+   "name": "?computeBoneRotation@rglSkeleton@@QEAA?AVrglQuaternion@@HHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030a4a0"
+  },
+  {
    "name": "?computePosition@rglSkeleton@@QEAA?AVrglVector4@@H@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14030a3b0"
+  },
+  {
+   "name": "?updateBonePositions@rglSkeleton@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140308b00"
+  },
+  {
+   "name": "?updateRagdollBonePositions@rglSkeleton@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140308560"
+  },
+  {
+   "name": "?updateBlending@rglSkeleton@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140308360"
+  },
+  {
+   "name": "?FrameMoveSkeletonAsync@@YAXPEAVrglSkeleton@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140308130"
+  },
+  {
+   "name": "??1rglSkeleton@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140308090"
   },
   {
    "name": "?render@rglSkeleton@@QEAAXPEAVrglRenderContext@@AEBVrglTransform@@M@Z",
@@ -31368,10 +32400,40 @@
    "va": "0x14030ae00"
   },
   {
+   "name": "?loadOnDemandTextures@rglSkeleton@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030bfa0"
+  },
+  {
    "name": "?frameMove@rglSkeleton@@QEAAXMAEBVrglTransform@@AEBVrglVector4@@_N@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140308160"
+  },
+  {
+   "name": "?setBoneLight@rglSkeleton@@QEAAXHPEAVrglLight@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b070"
+  },
+  {
+   "name": "?addParticleSystemToBone@rglSkeleton@@QEAAXHPEAVrglParticleSystem@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b020"
+  },
+  {
+   "name": "?getParticleSystem@rglSkeleton@@QEAAPEAVrglParticleSystem@@HH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030b0f0"
+  },
+  {
+   "name": "?createChannels@rglSkeleton@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030a290"
   },
   {
    "name": "?setModel@rglSkeleton@@QEAAXPEAVrglSkeletonModel@@@Z",
@@ -31410,6 +32472,12 @@
    "va": "0x14030b490"
   },
   {
+   "name": "?getBone@rglSkeleton@@QEAAPEAVrglBone@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030adf0"
+  },
+  {
    "name": "?isMetaMeshAttachedToBone@rglSkeleton@@QEAA_NHPEAVrglMetaMesh@@@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -31428,10 +32496,28 @@
    "va": "0x14030b3d0"
   },
   {
+   "name": "?freezeSkinning@rglSkeleton@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030aa70"
+  },
+  {
+   "name": "?updateVelocities@rglSkeleton@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030aaf0"
+  },
+  {
    "name": "??$_Uninit_move@PEAVrglSkeletonAnimationBone@@PEAV1@V?$allocator@VrglSkeletonAnimationBone@@@std@@V1@@std@@YAPEAVrglSkeletonAnimationBone@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglSkeletonAnimationBone@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14030c9b0"
+  },
+  {
+   "name": "??4?$rglIpo@VrglQuaternion@@@@QEAAAEAV0@AEBV0@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030c8a0"
   },
   {
    "name": "??$_Uninit_def_fill_n@PEAVrglSkeletonAnimationBone@@_KV?$allocator@VrglSkeletonAnimationBone@@@std@@V1@@std@@YAXPEAVrglSkeletonAnimationBone@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglSkeletonAnimationBone@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z",
@@ -33372,6 +34458,12 @@
    "va": "0x14061c430"
   },
   {
+   "name": "?g_skeletonManager@@3VmbSkeletonManager@@A",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140621718"
+  },
+  {
    "name": "?g_coreGame@@3VmbCoreGame@@A",
    "kind": "public",
    "source": "pdb-public",
@@ -34492,6 +35584,13 @@
    "source": "pdb-global",
    "va": "0x14061f0f0",
    "type_index": "0x583f"
+  },
+  {
+   "name": "g_skeletonManager",
+   "kind": "global",
+   "source": "pdb-global",
+   "va": "0x140621718",
+   "type_index": "0xaf40"
   }
  ],
  "vtables": [
@@ -35094,6 +36193,12 @@
    "end": "0x140012f20",
    "va": "0x140012f10",
    "symbol": "?getType@rglResource@@UEBAHXZ"
+  },
+  {
+   "start": "0x140014a80",
+   "end": "0x140014a90",
+   "va": "0x140014a80",
+   "symbol": "?_Getal@?$_Vector_alloc@$0A@U?$_Vec_base_types@VmbSkeleton@@V?$allocator@VmbSkeleton@@@std@@@std@@@std@@QEBA?AU?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@2@XZ"
   },
   {
    "start": "0x140014b30",
@@ -39344,6 +40449,30 @@
    "symbol": "?getArray@mbBasicGame@@QEAAPEAXH@Z"
   },
   {
+   "start": "0x1400738b0",
+   "end": "0x1400738db",
+   "va": "0x1400738b0",
+   "symbol": "??1?$rglPool@VrglAiMeshFace@@@@QEAA@XZ"
+  },
+  {
+   "start": "0x1400738db",
+   "end": "0x1400738f5",
+   "va": "0x1400738b0",
+   "symbol": "??1?$rglPool@VrglAiMeshFace@@@@QEAA@XZ"
+  },
+  {
+   "start": "0x1400738f5",
+   "end": "0x140073902",
+   "va": "0x1400738b0",
+   "symbol": "??1?$rglPool@VrglAiMeshFace@@@@QEAA@XZ"
+  },
+  {
+   "start": "0x140073910",
+   "end": "0x140073983",
+   "va": "0x140073910",
+   "symbol": "?clear@?$rglPool@VrglAiMeshFace@@@@QEAAXXZ"
+  },
+  {
    "start": "0x140073990",
    "end": "0x140073a54",
    "va": "0x140073990",
@@ -40913,7 +42042,7 @@
    "start": "0x1400b5d60",
    "end": "0x1400b5daa",
    "va": "0x1400b5d60",
-   "symbol": "?_Buynode0@?$_List_alloc@$0A@U?$_List_base_types@PEAVmbMissionGridAgentNode@@V?$allocator@PEAVmbMissionGridAgentNode@@@std@@@std@@@std@@QEAAPEAU?$_List_node@PEAVmbMissionGridAgentNode@@PEAX@2@PEAU32@0@Z"
+   "symbol": "?_Buynode0@?$_List_alloc@$0A@U?$_List_base_types@PEAVrglAiMeshFace@@V?$allocator@PEAVrglAiMeshFace@@@std@@@std@@@std@@QEAAPEAU?$_List_node@PEAVrglAiMeshFace@@PEAX@2@PEAU32@0@Z"
   },
   {
    "start": "0x1400b5ef0",
@@ -41060,6 +42189,12 @@
    "symbol": "??$getWindow@VmbLoadingWindow@@@mbGameScreen@@QEBAPEAVmbLoadingWindow@@H@Z"
   },
   {
+   "start": "0x1400bae30",
+   "end": "0x1400bae70",
+   "va": "0x1400bae30",
+   "symbol": "?onCreation@mbEvent@@UEAAXXZ"
+  },
+  {
    "start": "0x1400bae70",
    "end": "0x1400baf85",
    "va": "0x1400bae70",
@@ -41070,6 +42205,114 @@
    "end": "0x1400bb09f",
    "va": "0x1400baf90",
    "symbol": "?writeStream@mbEvent@@QEAAXAEAVrglStream@@@Z"
+  },
+  {
+   "start": "0x1400bb0a0",
+   "end": "0x1400bb0d6",
+   "va": "0x1400bb0a0",
+   "symbol": "?frameMove@mbEvent@@QEAAXM@Z"
+  },
+  {
+   "start": "0x1400bb0d6",
+   "end": "0x1400bb2b3",
+   "va": "0x1400bb0a0",
+   "symbol": "?frameMove@mbEvent@@QEAAXM@Z"
+  },
+  {
+   "start": "0x1400bb2b3",
+   "end": "0x1400bb319",
+   "va": "0x1400bb0a0",
+   "symbol": "?frameMove@mbEvent@@QEAAXM@Z"
+  },
+  {
+   "start": "0x1400bb320",
+   "end": "0x1400bb444",
+   "va": "0x1400bb320",
+   "symbol": "?updatePosition@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bb450",
+   "end": "0x1400bb460",
+   "va": "0x1400bb450",
+   "symbol": "?simulate@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bb460",
+   "end": "0x1400bb464",
+   "va": "0x1400bb450",
+   "symbol": "?simulate@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bb464",
+   "end": "0x1400bb4b0",
+   "va": "0x1400bb450",
+   "symbol": "?simulate@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bb4b0",
+   "end": "0x1400bb567",
+   "va": "0x1400bb450",
+   "symbol": "?simulate@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bb567",
+   "end": "0x1400bb87b",
+   "va": "0x1400bb450",
+   "symbol": "?simulate@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bb87b",
+   "end": "0x1400bb965",
+   "va": "0x1400bb450",
+   "symbol": "?simulate@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bb965",
+   "end": "0x1400bb9a3",
+   "va": "0x1400bb450",
+   "symbol": "?simulate@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bb9b0",
+   "end": "0x1400bb9e0",
+   "va": "0x1400bb9b0",
+   "symbol": "?end@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bb9e0",
+   "end": "0x1400bba26",
+   "va": "0x1400bb9b0",
+   "symbol": "?end@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bba26",
+   "end": "0x1400bc0aa",
+   "va": "0x1400bb9b0",
+   "symbol": "?end@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bc0aa",
+   "end": "0x1400bc110",
+   "va": "0x1400bb9b0",
+   "symbol": "?end@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bc110",
+   "end": "0x1400bc25f",
+   "va": "0x1400bb9b0",
+   "symbol": "?end@mbEvent@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400bc260",
+   "end": "0x1400bc380",
+   "va": "0x1400bc260",
+   "symbol": "?observerEscape@mbEvent@@QEAAXH@Z"
+  },
+  {
+   "start": "0x1400bc380",
+   "end": "0x1400bc413",
+   "va": "0x1400bc380",
+   "symbol": "?remove@?$rglStableVector@VmbEvent@@@@QEAAXH@Z"
   },
   {
    "start": "0x1400bc420",
@@ -41300,16 +42543,76 @@
    "symbol": "??$_Uninit_def_fill_n@PEAVrglString@@_KV?$allocator@VrglString@@@std@@V1@@std@@YAXPEAVrglString@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglString@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z"
   },
   {
+   "start": "0x1400c6390",
+   "end": "0x1400c63c0",
+   "va": "0x1400c6390",
+   "symbol": "??0mbFadingOutEntity@@QEAA@XZ"
+  },
+  {
+   "start": "0x1400c63c0",
+   "end": "0x1400c63d0",
+   "va": "0x1400c63c0",
+   "symbol": "??1mbFadingOutEntity@@UEAA@XZ"
+  },
+  {
+   "start": "0x1400c6400",
+   "end": "0x1400c6420",
+   "va": "0x1400c6400",
+   "symbol": "?onCreation@mbFadingOutEntity@@UEAAXXZ"
+  },
+  {
+   "start": "0x1400c6420",
+   "end": "0x1400c6440",
+   "va": "0x1400c6420",
+   "symbol": "?setEntity@mbFadingOutEntity@@QEAAXPEAVrglEntity@@_N@Z"
+  },
+  {
+   "start": "0x1400c6440",
+   "end": "0x1400c658c",
+   "va": "0x1400c6440",
+   "symbol": "?frameMove@mbFadingOutEntity@@QEAAXXZ"
+  },
+  {
    "start": "0x1400c6590",
    "end": "0x1400c65a0",
    "va": "0x1400c6590",
    "symbol": "?empty@?$rglVector@PEAVrglMetaMesh@@@@QEBA_NXZ"
   },
   {
+   "start": "0x1400c65a0",
+   "end": "0x1400c6633",
+   "va": "0x1400c65a0",
+   "symbol": "?remove@?$rglStableVector@VmbFadingOutEntity@@@@QEAAXH@Z"
+  },
+  {
+   "start": "0x1400c6ad0",
+   "end": "0x1400c6b19",
+   "va": "0x1400c6ad0",
+   "symbol": "?_Reallocate@?$vector@VrglManifoldEdge@@V?$allocator@VrglManifoldEdge@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x1400c6b19",
+   "end": "0x1400c6b65",
+   "va": "0x1400c6ad0",
+   "symbol": "?_Reallocate@?$vector@VrglManifoldEdge@@V?$allocator@VrglManifoldEdge@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x1400c6b65",
+   "end": "0x1400c6b6b",
+   "va": "0x1400c6ad0",
+   "symbol": "?_Reallocate@?$vector@VrglManifoldEdge@@V?$allocator@VrglManifoldEdge@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
    "start": "0x1400c6b70",
    "end": "0x1400c6b80",
    "va": "0x1400c6b70",
    "symbol": "??$_Uninit_def_fill_n@PEAVrglTransform@@_KV?$allocator@VrglTransform@@@std@@V1@@std@@YAXPEAVrglTransform@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglTransform@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x1400c6d60",
+   "end": "0x1400c6dc0",
+   "va": "0x1400c6d60",
+   "symbol": "??$_Uninit_move@PEAVrglManifoldEdge@@PEAV1@V?$allocator@VrglManifoldEdge@@@std@@V1@@std@@YAPEAVrglManifoldEdge@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglManifoldEdge@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z"
   },
   {
    "start": "0x1400c6dc0",
@@ -43361,7 +44664,7 @@
    "start": "0x1400e7570",
    "end": "0x1400e7632",
    "va": "0x1400e7570",
-   "symbol": "??1?$rglStableVector@VmbMissionObject@@@@QEAA@XZ"
+   "symbol": "??1?$rglStableVector@VmbEvent@@@@QEAA@XZ"
   },
   {
    "start": "0x1400e7640",
@@ -43406,6 +44709,12 @@
    "symbol": "?writeStream@?$rglStableVector@VmbEvent@@@@QEAAXAEAVrglStream@@@Z"
   },
   {
+   "start": "0x1400e7a50",
+   "end": "0x1400e7afe",
+   "va": "0x1400e7a50",
+   "symbol": "?createItem@?$rglStableVector@VmbEvent@@@@QEAAXH@Z"
+  },
+  {
    "start": "0x1400e7b00",
    "end": "0x1400e7b7a",
    "va": "0x1400e7b00",
@@ -43446,6 +44755,36 @@
    "end": "0x1400e7fc0",
    "va": "0x1400e7f30",
    "symbol": "?push_back@?$vector@PEAVrglMesh@@V?$allocator@PEAVrglMesh@@@std@@@std@@QEAAXAEBQEAVrglMesh@@@Z"
+  },
+  {
+   "start": "0x1400e7fc0",
+   "end": "0x1400e7fe9",
+   "va": "0x1400e7fc0",
+   "symbol": "?clear@?$rglStableVector@VmbEvent@@@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400e7fe9",
+   "end": "0x1400e80aa",
+   "va": "0x1400e7fc0",
+   "symbol": "?clear@?$rglStableVector@VmbEvent@@@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400e80aa",
+   "end": "0x1400e80ba",
+   "va": "0x1400e7fc0",
+   "symbol": "?clear@?$rglStableVector@VmbEvent@@@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400e80c0",
+   "end": "0x1400e8128",
+   "va": "0x1400e80c0",
+   "symbol": "?getFreeItem@?$rglStableVector@VmbEvent@@@@QEAAHXZ"
+  },
+  {
+   "start": "0x1400e8130",
+   "end": "0x1400e82dc",
+   "va": "0x1400e8130",
+   "symbol": "?createChunk@?$rglStableVector@VmbEvent@@@@QEAAXXZ"
   },
   {
    "start": "0x1400e82e0",
@@ -43520,6 +44859,36 @@
    "symbol": "?_Tidy@?$vector@VmbMissionObject@@V?$allocator@VmbMissionObject@@@std@@@std@@IEAAXXZ"
   },
   {
+   "start": "0x1400e8ca0",
+   "end": "0x1400e8cc4",
+   "va": "0x1400e8ca0",
+   "symbol": "??_EmbEvent@@UEAAPEAXI@Z"
+  },
+  {
+   "start": "0x1400e8cc4",
+   "end": "0x1400e8cf1",
+   "va": "0x1400e8ca0",
+   "symbol": "??_EmbEvent@@UEAAPEAXI@Z"
+  },
+  {
+   "start": "0x1400e8cf1",
+   "end": "0x1400e8d3f",
+   "va": "0x1400e8ca0",
+   "symbol": "??_EmbEvent@@UEAAPEAXI@Z"
+  },
+  {
+   "start": "0x1400e8d40",
+   "end": "0x1400e8d90",
+   "va": "0x1400e8d40",
+   "symbol": "??0mbEvent@@QEAA@XZ"
+  },
+  {
+   "start": "0x1400e8d90",
+   "end": "0x1400e8dd1",
+   "va": "0x1400e8d90",
+   "symbol": "??1mbEvent@@UEAA@XZ"
+  },
+  {
    "start": "0x1400e8de0",
    "end": "0x1400e8e04",
    "va": "0x1400e8de0",
@@ -43566,6 +44935,12 @@
    "end": "0x1400e91f5",
    "va": "0x1400e9190",
    "symbol": "?clear@?$list@U?$pair@$$CBVrglString@@_N@std@@V?$allocator@U?$pair@$$CBVrglString@@_N@std@@@2@@std@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400e9200",
+   "end": "0x1400e928b",
+   "va": "0x1400e9200",
+   "symbol": "?_Reserve@?$vector@VrglAiMeshPathCheckingPoint@@V?$allocator@VrglAiMeshPathCheckingPoint@@@std@@@std@@IEAAX_K@Z"
   },
   {
    "start": "0x1400e9290",
@@ -43724,10 +45099,22 @@
    "symbol": "??0mbSavegamePanel@@QEAA@XZ"
   },
   {
+   "start": "0x1400f08d0",
+   "end": "0x1400f08ff",
+   "va": "0x1400f08d0",
+   "symbol": "??_GmbNotesWindow@@UEAAPEAXI@Z"
+  },
+  {
    "start": "0x1400f0a80",
    "end": "0x1400f0af1",
    "va": "0x1400f0a80",
    "symbol": "??1mbLoadSaveWindow@@UEAA@XZ"
+  },
+  {
+   "start": "0x1400f0b00",
+   "end": "0x1400f0b82",
+   "va": "0x1400f0b00",
+   "symbol": "??1mbNotesWindow@@UEAA@XZ"
   },
   {
    "start": "0x1400f0c10",
@@ -44082,6 +45469,12 @@
    "end": "0x140100691",
    "va": "0x1401005f0",
    "symbol": "?getText@mbInfoPage@@QEBAAEBVrglString@@XZ"
+  },
+  {
+   "start": "0x140103480",
+   "end": "0x1401035a8",
+   "va": "0x140103480",
+   "symbol": "?getKeyForTime@?$rglIpo@VrglQuaternion@@@@QEBAXAEAHAEAMM@Z"
   },
   {
    "start": "0x1401094d0",
@@ -44748,6 +46141,12 @@
    "end": "0x140127b30",
    "va": "0x140127b20",
    "symbol": "??1?$rglVector@VrglMeshVertexGroup@@@@QEAA@XZ"
+  },
+  {
+   "start": "0x140127ba0",
+   "end": "0x140127bee",
+   "va": "0x140127ba0",
+   "symbol": "??1rglAiMesh@@QEAA@XZ"
   },
   {
    "start": "0x140127c20",
@@ -46658,6 +48057,36 @@
    "symbol": "?createItem@?$rglStableVector@VmbMissionObject@@@@QEAAHXZ"
   },
   {
+   "start": "0x14014c0c0",
+   "end": "0x14014c0e9",
+   "va": "0x14014c0c0",
+   "symbol": "?clear@?$rglStableVector@VmbFadingOutEntity@@@@QEAAXXZ"
+  },
+  {
+   "start": "0x14014c0e9",
+   "end": "0x14014c1aa",
+   "va": "0x14014c0c0",
+   "symbol": "?clear@?$rglStableVector@VmbFadingOutEntity@@@@QEAAXXZ"
+  },
+  {
+   "start": "0x14014c1aa",
+   "end": "0x14014c1ba",
+   "va": "0x14014c0c0",
+   "symbol": "?clear@?$rglStableVector@VmbFadingOutEntity@@@@QEAAXXZ"
+  },
+  {
+   "start": "0x14014c1c0",
+   "end": "0x14014c1e0",
+   "va": "0x14014c1c0",
+   "symbol": "??A?$rglStableVector@VmbFadingOutEntity@@@@QEAAAEAVmbFadingOutEntity@@H@Z"
+  },
+  {
+   "start": "0x14014c1e0",
+   "end": "0x14014c265",
+   "va": "0x14014c1e0",
+   "symbol": "?createItem@?$rglStableVector@VmbFadingOutEntity@@@@QEAAHXZ"
+  },
+  {
    "start": "0x14014c270",
    "end": "0x14014c705",
    "va": "0x14014c270",
@@ -46782,6 +48211,30 @@
    "end": "0x14014dcd9",
    "va": "0x14014dc10",
    "symbol": "?_Reserve@?$vector@VmbMissionObject@@V?$allocator@VmbMissionObject@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x14014de40",
+   "end": "0x14014dfe9",
+   "va": "0x14014de40",
+   "symbol": "?createChunk@?$rglStableVector@VmbFadingOutEntity@@@@QEAAXXZ"
+  },
+  {
+   "start": "0x14014dff0",
+   "end": "0x14014e014",
+   "va": "0x14014dff0",
+   "symbol": "??_EmbFadingOutEntity@@UEAAPEAXI@Z"
+  },
+  {
+   "start": "0x14014e014",
+   "end": "0x14014e041",
+   "va": "0x14014dff0",
+   "symbol": "??_EmbFadingOutEntity@@UEAAPEAXI@Z"
+  },
+  {
+   "start": "0x14014e041",
+   "end": "0x14014e063",
+   "va": "0x14014dff0",
+   "symbol": "??_EmbFadingOutEntity@@UEAAPEAXI@Z"
   },
   {
    "start": "0x14014e070",
@@ -47166,6 +48619,60 @@
    "end": "0x140160870",
    "va": "0x1401607e0",
    "symbol": "?getPacketPriority@mbnetPlayerReplicationRow@@QEAAMI@Z"
+  },
+  {
+   "start": "0x1401614d0",
+   "end": "0x140161520",
+   "va": "0x1401614d0",
+   "symbol": "?open@mbNotesWindow@@UEAAXXZ"
+  },
+  {
+   "start": "0x140161520",
+   "end": "0x140161597",
+   "va": "0x140161520",
+   "symbol": "?frameMove@mbNotesWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x140161597",
+   "end": "0x140161777",
+   "va": "0x140161520",
+   "symbol": "?frameMove@mbNotesWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x140161777",
+   "end": "0x14016187c",
+   "va": "0x140161520",
+   "symbol": "?frameMove@mbNotesWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x14016187c",
+   "end": "0x1401618f3",
+   "va": "0x140161520",
+   "symbol": "?frameMove@mbNotesWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x1401618f3",
+   "end": "0x140161971",
+   "va": "0x140161520",
+   "symbol": "?frameMove@mbNotesWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x140161971",
+   "end": "0x140161be7",
+   "va": "0x140161520",
+   "symbol": "?frameMove@mbNotesWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x140161bf0",
+   "end": "0x140166a6c",
+   "va": "0x140161bf0",
+   "symbol": "?update@mbNotesWindow@@QEAAXHH@Z"
+  },
+  {
+   "start": "0x140166a70",
+   "end": "0x14016703d",
+   "va": "0x140166a70",
+   "symbol": "?sortKeys@mbNotesWindow@@QEAAXAEAV?$rglVector@H@@H@Z"
   },
   {
    "start": "0x14016a4a0",
@@ -47658,6 +49165,12 @@
    "end": "0x1401892ce",
    "va": "0x1401891c0",
    "symbol": "?makeAsyncDownloadToFileRequest@mbnetNetworkClient@@QEAAXAEBVrglString@@0@Z"
+  },
+  {
+   "start": "0x1401892d0",
+   "end": "0x140189310",
+   "va": "0x1401892d0",
+   "symbol": "?isValid@?$rglStableVector@VmbEvent@@@@QEBA?B_NH@Z"
   },
   {
    "start": "0x14018f4f0",
@@ -51542,10 +53055,88 @@
    "symbol": "??$_Uninit_def_fill_n@PEAVmbMissionObject@@_KV?$allocator@VmbMissionObject@@@std@@V1@@std@@YAXPEAVmbMissionObject@@_KAEAU?$_Wrap_alloc@V?$allocator@VmbMissionObject@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z"
   },
   {
+   "start": "0x140211480",
+   "end": "0x1402114a0",
+   "va": "0x140211480",
+   "symbol": "?readXMLElement@mbSkeletonBone@@QEAAXPEAVTiXmlElement@@@Z"
+  },
+  {
+   "start": "0x1402114a0",
+   "end": "0x140211850",
+   "va": "0x140211480",
+   "symbol": "?readXMLElement@mbSkeletonBone@@QEAAXPEAVTiXmlElement@@@Z"
+  },
+  {
+   "start": "0x140211850",
+   "end": "0x140211946",
+   "va": "0x140211480",
+   "symbol": "?readXMLElement@mbSkeletonBone@@QEAAXPEAVTiXmlElement@@@Z"
+  },
+  {
+   "start": "0x140211946",
+   "end": "0x1402119a2",
+   "va": "0x140211480",
+   "symbol": "?readXMLElement@mbSkeletonBone@@QEAAXPEAVTiXmlElement@@@Z"
+  },
+  {
+   "start": "0x1402119a2",
+   "end": "0x1402119b3",
+   "va": "0x140211480",
+   "symbol": "?readXMLElement@mbSkeletonBone@@QEAAXPEAVTiXmlElement@@@Z"
+  },
+  {
+   "start": "0x1402119c0",
+   "end": "0x140211b44",
+   "va": "0x1402119c0",
+   "symbol": "?readXMLElement@mbSkeleton@@QEAAXPEAVTiXmlElement@@@Z"
+  },
+  {
+   "start": "0x140211b50",
+   "end": "0x140211b9e",
+   "va": "0x140211b50",
+   "symbol": "??1mbSkeletonBone@@QEAA@XZ"
+  },
+  {
    "start": "0x140211ba0",
    "end": "0x140211dd0",
    "va": "0x140211ba0",
    "symbol": "?readFile@mbSkeletonManager@@QEAAXAEBVrglString@@@Z"
+  },
+  {
+   "start": "0x140211dd0",
+   "end": "0x140211e1f",
+   "va": "0x140211dd0",
+   "symbol": "??1mbSkeleton@@QEAA@XZ"
+  },
+  {
+   "start": "0x140211e20",
+   "end": "0x140211e68",
+   "va": "0x140211e20",
+   "symbol": "?fixSkeletonModels@mbSkeletonManager@@QEAAXXZ"
+  },
+  {
+   "start": "0x140211e68",
+   "end": "0x140211f70",
+   "va": "0x140211e20",
+   "symbol": "?fixSkeletonModels@mbSkeletonManager@@QEAAXXZ"
+  },
+  {
+   "start": "0x140211f70",
+   "end": "0x140211f79",
+   "va": "0x140211e20",
+   "symbol": "?fixSkeletonModels@mbSkeletonManager@@QEAAXXZ"
+  },
+  {
+   "start": "0x140211f79",
+   "end": "0x140212197",
+   "va": "0x140211e20",
+   "symbol": "?fixSkeletonModels@mbSkeletonManager@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402121a0",
+   "end": "0x1402121d5",
+   "va": "0x1402121a0",
+   "symbol": "?_Tidy@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@IEAAXXZ"
   },
   {
    "start": "0x1402121e0",
@@ -51560,10 +53151,52 @@
    "symbol": "?push_back@?$vector@VrglSkeletonModelBody@@V?$allocator@VrglSkeletonModelBody@@@std@@@std@@QEAAXAEBVrglSkeletonModelBody@@@Z"
   },
   {
+   "start": "0x1402124d0",
+   "end": "0x14021258f",
+   "va": "0x1402124d0",
+   "symbol": "?push_back@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@QEAAXAEBVmbSkeletonBone@@@Z"
+  },
+  {
+   "start": "0x140212590",
+   "end": "0x14021264a",
+   "va": "0x140212590",
+   "symbol": "?push_back@?$vector@VmbSkeleton@@V?$allocator@VmbSkeleton@@@std@@@std@@QEAAXAEBVmbSkeleton@@@Z"
+  },
+  {
    "start": "0x140212650",
    "end": "0x14021271f",
    "va": "0x140212650",
    "symbol": "?_Reserve@?$vector@VrglSkeletonModelBody@@V?$allocator@VrglSkeletonModelBody@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x140212720",
+   "end": "0x14021272a",
+   "va": "0x140212720",
+   "symbol": "?_Destroy@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@IEAAXPEAVmbSkeletonBone@@0@Z"
+  },
+  {
+   "start": "0x14021272a",
+   "end": "0x14021278f",
+   "va": "0x140212720",
+   "symbol": "?_Destroy@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@IEAAXPEAVmbSkeletonBone@@0@Z"
+  },
+  {
+   "start": "0x14021278f",
+   "end": "0x140212791",
+   "va": "0x140212720",
+   "symbol": "?_Destroy@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@IEAAXPEAVmbSkeletonBone@@0@Z"
+  },
+  {
+   "start": "0x1402127a0",
+   "end": "0x14021286f",
+   "va": "0x1402127a0",
+   "symbol": "?_Reserve@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x140212870",
+   "end": "0x14021293f",
+   "va": "0x140212870",
+   "symbol": "?_Reserve@?$vector@VmbSkeleton@@V?$allocator@VmbSkeleton@@@std@@@std@@IEAAX_K@Z"
   },
   {
    "start": "0x140212940",
@@ -51584,16 +53217,106 @@
    "symbol": "?_Reallocate@?$vector@VrglSkeletonModelBody@@V?$allocator@VrglSkeletonModelBody@@@std@@@std@@IEAAX_K@Z"
   },
   {
+   "start": "0x140212a00",
+   "end": "0x140212ae6",
+   "va": "0x140212a00",
+   "symbol": "?_Reallocate@?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x140212af0",
+   "end": "0x140212bd6",
+   "va": "0x140212af0",
+   "symbol": "?_Reallocate@?$vector@VmbSkeleton@@V?$allocator@VmbSkeleton@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
    "start": "0x140212be0",
    "end": "0x140212c50",
    "va": "0x140212be0",
    "symbol": "??$_Copy_impl@PEAVrglSkeletonModelBody@@PEAV1@@std@@YAPEAVrglSkeletonModelBody@@PEAV1@00@Z"
   },
   {
+   "start": "0x140212c50",
+   "end": "0x140212c5e",
+   "va": "0x140212c50",
+   "symbol": "??$_Destroy_range@U?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@std@@@std@@YAXPEAVmbSkeleton@@0AEAU?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x140212c5e",
+   "end": "0x140212d24",
+   "va": "0x140212c50",
+   "symbol": "??$_Destroy_range@U?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@std@@@std@@YAXPEAVmbSkeleton@@0AEAU?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x140212d24",
+   "end": "0x140212d26",
+   "va": "0x140212c50",
+   "symbol": "??$_Destroy_range@U?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@std@@@std@@YAXPEAVmbSkeleton@@0AEAU?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x140212d30",
+   "end": "0x140212e58",
+   "va": "0x140212d30",
+   "symbol": "??0mbSkeletonBone@@QEAA@AEBV0@@Z"
+  },
+  {
+   "start": "0x140212e60",
+   "end": "0x140212ef2",
+   "va": "0x140212e60",
+   "symbol": "??0mbSkeleton@@QEAA@AEBV0@@Z"
+  },
+  {
+   "start": "0x140212f00",
+   "end": "0x1402130f4",
+   "va": "0x140212f00",
+   "symbol": "??4?$vector@VmbSkeletonBone@@V?$allocator@VmbSkeletonBone@@@std@@@std@@QEAAAEAV01@AEBV01@@Z"
+  },
+  {
    "start": "0x140213100",
    "end": "0x140213160",
    "va": "0x140213100",
    "symbol": "??$_Uninit_move@PEAVrglSkeletonModelBody@@PEAV1@V?$allocator@VrglSkeletonModelBody@@@std@@V1@@std@@YAPEAVrglSkeletonModelBody@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglSkeletonModelBody@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x140213160",
+   "end": "0x1402131ae",
+   "va": "0x140213160",
+   "symbol": "??$destroy@VmbSkeletonBone@@@?$_Wrap_alloc@V?$allocator@VmbSkeletonBone@@@std@@@std@@QEAAXPEAVmbSkeletonBone@@@Z"
+  },
+  {
+   "start": "0x1402131b0",
+   "end": "0x140213213",
+   "va": "0x1402131b0",
+   "symbol": "??$_Uninit_copy@PEAVmbSkeletonBone@@PEAV1@V?$allocator@VmbSkeletonBone@@@std@@@std@@YAPEAVmbSkeletonBone@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbSkeletonBone@@@std@@@0@U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x140213220",
+   "end": "0x14021327d",
+   "va": "0x140213220",
+   "symbol": "??$_Uninit_move@PEAVmbSkeleton@@PEAV1@V?$allocator@VmbSkeleton@@@std@@V1@@std@@YAPEAVmbSkeleton@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x140213280",
+   "end": "0x1402132cf",
+   "va": "0x140213280",
+   "symbol": "??$destroy@VmbSkeleton@@@?$_Wrap_alloc@V?$allocator@VmbSkeleton@@@std@@@std@@QEAAXPEAVmbSkeleton@@@Z"
+  },
+  {
+   "start": "0x1402132d0",
+   "end": "0x1402132e6",
+   "va": "0x1402132d0",
+   "symbol": "??$_Copy_impl@PEAVmbSkeletonBone@@PEAV1@@std@@YAPEAVmbSkeletonBone@@PEAV1@00U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x1402132e6",
+   "end": "0x140213442",
+   "va": "0x1402132d0",
+   "symbol": "??$_Copy_impl@PEAVmbSkeletonBone@@PEAV1@@std@@YAPEAVmbSkeletonBone@@PEAV1@00U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x140213442",
+   "end": "0x14021344c",
+   "va": "0x1402132d0",
+   "symbol": "??$_Copy_impl@PEAVmbSkeletonBone@@PEAV1@@std@@YAPEAVmbSkeletonBone@@PEAV1@00U_Nonscalar_ptr_iterator_tag@0@@Z"
   },
   {
    "start": "0x140213450",
@@ -52190,10 +53913,46 @@
    "symbol": "?addHandPlacedFloraToSet@mbTerrainGenerator@@QEAAXAEAVmbFloraSet@@HHAEBVrglTransform@@AEBVrglVector4@@_N@Z"
   },
   {
+   "start": "0x140240410",
+   "end": "0x1402405a6",
+   "va": "0x140240410",
+   "symbol": "?push_back@?$vector@VrglManifoldFace@@V?$allocator@VrglManifoldFace@@@std@@@std@@QEAAXAEBVrglManifoldFace@@@Z"
+  },
+  {
    "start": "0x1402405b0",
    "end": "0x14024063a",
    "va": "0x1402405b0",
    "symbol": "?_Reserve@?$vector@VrglVector4@@V?$allocator@VrglVector4@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x140240640",
+   "end": "0x140240691",
+   "va": "0x140240640",
+   "symbol": "?_Reallocate@?$vector@VrglManifoldFace@@V?$allocator@VrglManifoldFace@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x140240691",
+   "end": "0x140240702",
+   "va": "0x140240640",
+   "symbol": "?_Reallocate@?$vector@VrglManifoldFace@@V?$allocator@VrglManifoldFace@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x140240702",
+   "end": "0x140240708",
+   "va": "0x140240640",
+   "symbol": "?_Reallocate@?$vector@VrglManifoldFace@@V?$allocator@VrglManifoldFace@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x140240710",
+   "end": "0x1402407d9",
+   "va": "0x140240710",
+   "symbol": "?_Reserve@?$vector@VrglManifoldFace@@V?$allocator@VrglManifoldFace@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x140240810",
+   "end": "0x1402408e5",
+   "va": "0x140240810",
+   "symbol": "??$_Uninit_move@PEAVrglManifoldFace@@PEAV1@V?$allocator@VrglManifoldFace@@@std@@V1@@std@@YAPEAVrglManifoldFace@@PEAV1@00AEAU?$_Wrap_alloc@V?$allocator@VrglManifoldFace@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z"
   },
   {
    "start": "0x140244480",
@@ -52904,6 +54663,18 @@
    "symbol": "?readStream@rglAiMeshEdge@@QEAAXAEAVrglStream@@PEAPEAVrglAiMeshVertex@@@Z"
   },
   {
+   "start": "0x140252480",
+   "end": "0x14025252a",
+   "va": "0x140252480",
+   "symbol": "??0rglAiMesh@@QEAA@XZ"
+  },
+  {
+   "start": "0x140252530",
+   "end": "0x140252600",
+   "va": "0x140252530",
+   "symbol": "?clear@rglAiMesh@@QEAAXXZ"
+  },
+  {
    "start": "0x140252600",
    "end": "0x14025260c",
    "va": "0x140252600",
@@ -52926,6 +54697,48 @@
    "end": "0x14025292d",
    "va": "0x1402527e0",
    "symbol": "?writeStream@rglAiMesh@@QEAAXAEAVrglStream@@@Z"
+  },
+  {
+   "start": "0x140252930",
+   "end": "0x140252a7a",
+   "va": "0x140252930",
+   "symbol": "?build@rglAiMesh@@QEAAXXZ"
+  },
+  {
+   "start": "0x140252a80",
+   "end": "0x140252a97",
+   "va": "0x140252a80",
+   "symbol": "?computeEdgeTraversalCosts@rglAiMesh@@QEAAXXZ"
+  },
+  {
+   "start": "0x140252a97",
+   "end": "0x140252ed6",
+   "va": "0x140252a80",
+   "symbol": "?computeEdgeTraversalCosts@rglAiMesh@@QEAAXXZ"
+  },
+  {
+   "start": "0x140252ed6",
+   "end": "0x140252ede",
+   "va": "0x140252a80",
+   "symbol": "?computeEdgeTraversalCosts@rglAiMesh@@QEAAXXZ"
+  },
+  {
+   "start": "0x140252ee0",
+   "end": "0x140252ef4",
+   "va": "0x140252ee0",
+   "symbol": "?computeFaceNormals@rglAiMesh@@QEAAXXZ"
+  },
+  {
+   "start": "0x140252ef4",
+   "end": "0x140253040",
+   "va": "0x140252ee0",
+   "symbol": "?computeFaceNormals@rglAiMesh@@QEAAXXZ"
+  },
+  {
+   "start": "0x140253040",
+   "end": "0x140253045",
+   "va": "0x140252ee0",
+   "symbol": "?computeFaceNormals@rglAiMesh@@QEAAXXZ"
   },
   {
    "start": "0x140253050",
@@ -53012,6 +54825,18 @@
    "symbol": "?fillVertexMesh@rglAiMesh@@QEAAXPEAVrglMesh@@@Z"
   },
   {
+   "start": "0x140254be0",
+   "end": "0x140254fa7",
+   "va": "0x140254be0",
+   "symbol": "?checkPath@rglAiMesh@@QEAA_NPEAVrglAiMeshFace@@0H@Z"
+  },
+  {
+   "start": "0x140254fb0",
+   "end": "0x14025557a",
+   "va": "0x140254fb0",
+   "symbol": "?computePath@rglAiMesh@@QEAAXPEAVrglAiMeshFace@@0PEAPEAV2@PEAVrglAiMeshPathPoint@@AEAH3_NM@Z"
+  },
+  {
    "start": "0x140255580",
    "end": "0x140255600",
    "va": "0x140255580",
@@ -53040,6 +54865,168 @@
    "end": "0x140255851",
    "va": "0x140255580",
    "symbol": "?checkPathFast@rglAiMesh@@QEAA_NPEAVrglAiMeshFace@@AEBVrglVector4@@01H@Z"
+  },
+  {
+   "start": "0x140255860",
+   "end": "0x1402558b8",
+   "va": "0x140255860",
+   "symbol": "?autoGenerate@rglAiMesh@@QEAAXPEAVrglTerrain@@H@Z"
+  },
+  {
+   "start": "0x1402558b8",
+   "end": "0x140255c77",
+   "va": "0x140255860",
+   "symbol": "?autoGenerate@rglAiMesh@@QEAAXPEAVrglTerrain@@H@Z"
+  },
+  {
+   "start": "0x140255c77",
+   "end": "0x140256202",
+   "va": "0x140255860",
+   "symbol": "?autoGenerate@rglAiMesh@@QEAAXPEAVrglTerrain@@H@Z"
+  },
+  {
+   "start": "0x140256202",
+   "end": "0x14025622b",
+   "va": "0x140255860",
+   "symbol": "?autoGenerate@rglAiMesh@@QEAAXPEAVrglTerrain@@H@Z"
+  },
+  {
+   "start": "0x14025622b",
+   "end": "0x140256349",
+   "va": "0x140255860",
+   "symbol": "?autoGenerate@rglAiMesh@@QEAAXPEAVrglTerrain@@H@Z"
+  },
+  {
+   "start": "0x140256350",
+   "end": "0x140256579",
+   "va": "0x140256350",
+   "symbol": "?addFace@rglAiMesh@@QEAAXHHHHHHHHH@Z"
+  },
+  {
+   "start": "0x140256580",
+   "end": "0x1402565cd",
+   "va": "0x140256580",
+   "symbol": "?subdivideEdge@rglAiMesh@@QEAA_NXZ"
+  },
+  {
+   "start": "0x1402565cd",
+   "end": "0x1402566e2",
+   "va": "0x140256580",
+   "symbol": "?subdivideEdge@rglAiMesh@@QEAA_NXZ"
+  },
+  {
+   "start": "0x1402566e2",
+   "end": "0x140256ba8",
+   "va": "0x140256580",
+   "symbol": "?subdivideEdge@rglAiMesh@@QEAA_NXZ"
+  },
+  {
+   "start": "0x140256ba8",
+   "end": "0x140256bd1",
+   "va": "0x140256580",
+   "symbol": "?subdivideEdge@rglAiMesh@@QEAA_NXZ"
+  },
+  {
+   "start": "0x140256bd1",
+   "end": "0x140256bde",
+   "va": "0x140256580",
+   "symbol": "?subdivideEdge@rglAiMesh@@QEAA_NXZ"
+  },
+  {
+   "start": "0x140256be0",
+   "end": "0x140256c1a",
+   "va": "0x140256be0",
+   "symbol": "?connectVertices@rglAiMesh@@QEAA_NXZ"
+  },
+  {
+   "start": "0x140256c1a",
+   "end": "0x140256c3d",
+   "va": "0x140256be0",
+   "symbol": "?connectVertices@rglAiMesh@@QEAA_NXZ"
+  },
+  {
+   "start": "0x140256c3d",
+   "end": "0x1402571da",
+   "va": "0x140256be0",
+   "symbol": "?connectVertices@rglAiMesh@@QEAA_NXZ"
+  },
+  {
+   "start": "0x1402571da",
+   "end": "0x1402571f9",
+   "va": "0x140256be0",
+   "symbol": "?connectVertices@rglAiMesh@@QEAA_NXZ"
+  },
+  {
+   "start": "0x1402571f9",
+   "end": "0x140257206",
+   "va": "0x140256be0",
+   "symbol": "?connectVertices@rglAiMesh@@QEAA_NXZ"
+  },
+  {
+   "start": "0x140257210",
+   "end": "0x1402572a8",
+   "va": "0x140257210",
+   "symbol": "?getItem@?$rglAiMeshContainer@VrglAiMeshEdge@@@@QEAAPEAVrglAiMeshEdge@@XZ"
+  },
+  {
+   "start": "0x1402572b0",
+   "end": "0x140257392",
+   "va": "0x1402572b0",
+   "symbol": "?getItem@?$rglAiMeshContainer@VrglAiMeshFace@@@@QEAAPEAVrglAiMeshFace@@XZ"
+  },
+  {
+   "start": "0x1402573a0",
+   "end": "0x1402574c0",
+   "va": "0x1402573a0",
+   "symbol": "?fill@?$rglPool@VrglAiMeshVertex@@@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402574c0",
+   "end": "0x14025760b",
+   "va": "0x1402574c0",
+   "symbol": "?fill@?$rglPool@VrglAiMeshEdge@@@@QEAAXXZ"
+  },
+  {
+   "start": "0x140257610",
+   "end": "0x1402577a2",
+   "va": "0x140257610",
+   "symbol": "?fill@?$rglPool@VrglAiMeshFace@@@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402577b0",
+   "end": "0x14025784f",
+   "va": "0x1402577b0",
+   "symbol": "??$push_heap@V?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathFindingPoint@@@std@@@std@@@std@@U?$less@VrglAiMeshPathFindingPoint@@@2@@std@@YAXV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathFindingPoint@@@std@@@std@@@0@0U?$less@VrglAiMeshPathFindingPoint@@@0@@Z"
+  },
+  {
+   "start": "0x140257850",
+   "end": "0x140257880",
+   "va": "0x140257850",
+   "symbol": "??$push_heap@V?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathCheckingPoint@@@std@@@std@@@std@@U?$less@VrglAiMeshPathCheckingPoint@@@2@@std@@YAXV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathCheckingPoint@@@std@@@std@@@0@0U?$less@VrglAiMeshPathCheckingPoint@@@0@@Z"
+  },
+  {
+   "start": "0x140257880",
+   "end": "0x1402578ea",
+   "va": "0x140257850",
+   "symbol": "??$push_heap@V?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathCheckingPoint@@@std@@@std@@@std@@U?$less@VrglAiMeshPathCheckingPoint@@@2@@std@@YAXV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathCheckingPoint@@@std@@@std@@@0@0U?$less@VrglAiMeshPathCheckingPoint@@@0@@Z"
+  },
+  {
+   "start": "0x1402578ea",
+   "end": "0x1402578ef",
+   "va": "0x140257850",
+   "symbol": "??$push_heap@V?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathCheckingPoint@@@std@@@std@@@std@@U?$less@VrglAiMeshPathCheckingPoint@@@2@@std@@YAXV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglAiMeshPathCheckingPoint@@@std@@@std@@@0@0U?$less@VrglAiMeshPathCheckingPoint@@@0@@Z"
+  },
+  {
+   "start": "0x1402578f0",
+   "end": "0x140257a00",
+   "va": "0x1402578f0",
+   "symbol": "??$_Pop_heap_0@PEAVrglAiMeshPathFindingPoint@@V1@U?$less@VrglAiMeshPathFindingPoint@@@std@@@std@@YAXPEAVrglAiMeshPathFindingPoint@@0U?$less@VrglAiMeshPathFindingPoint@@@0@0@Z"
+  },
+  {
+   "start": "0x140257a00",
+   "end": "0x140257b0b",
+   "va": "0x140257a00",
+   "symbol": "??$_Pop_heap_0@PEAVrglAiMeshPathCheckingPoint@@V1@U?$less@VrglAiMeshPathCheckingPoint@@@std@@@std@@YAXPEAVrglAiMeshPathCheckingPoint@@0U?$less@VrglAiMeshPathCheckingPoint@@@0@0@Z"
   },
   {
    "start": "0x1402580a0",
@@ -53132,10 +55119,40 @@
    "symbol": "?removeFlags@rglBodyPart@@UEAAXI_N@Z"
   },
   {
+   "start": "0x140258670",
+   "end": "0x1402587af",
+   "va": "0x140258670",
+   "symbol": "??0rglBone@@QEAA@XZ"
+  },
+  {
+   "start": "0x1402587b0",
+   "end": "0x1402587fc",
+   "va": "0x1402587b0",
+   "symbol": "??1rglBone@@QEAA@XZ"
+  },
+  {
    "start": "0x140258800",
    "end": "0x14025895f",
    "va": "0x140258800",
    "symbol": "?getSkinningTransform@rglBone@@QEAAAEBVrglTransform@@XZ"
+  },
+  {
+   "start": "0x140258960",
+   "end": "0x14025898d",
+   "va": "0x140258960",
+   "symbol": "?removeParticleSystem@rglBone@@QEAAXH@Z"
+  },
+  {
+   "start": "0x14025898d",
+   "end": "0x140258a55",
+   "va": "0x140258960",
+   "symbol": "?removeParticleSystem@rglBone@@QEAAXH@Z"
+  },
+  {
+   "start": "0x140258a55",
+   "end": "0x140258a5f",
+   "va": "0x140258960",
+   "symbol": "?removeParticleSystem@rglBone@@QEAAXH@Z"
   },
   {
    "start": "0x140258a60",
@@ -53184,6 +55201,60 @@
    "end": "0x140258e4d",
    "va": "0x140258c30",
    "symbol": "?frameMove@rglBone@@QEAAXMAEBVrglTransform@@AEBVrglVector4@@@Z"
+  },
+  {
+   "start": "0x140258e50",
+   "end": "0x140258e79",
+   "va": "0x140258e50",
+   "symbol": "?setColorAlpha@rglBone@@QEAAXI@Z"
+  },
+  {
+   "start": "0x140258e79",
+   "end": "0x140258f4c",
+   "va": "0x140258e50",
+   "symbol": "?setColorAlpha@rglBone@@QEAAXI@Z"
+  },
+  {
+   "start": "0x140258f4c",
+   "end": "0x140258f53",
+   "va": "0x140258e50",
+   "symbol": "?setColorAlpha@rglBone@@QEAAXI@Z"
+  },
+  {
+   "start": "0x140258f60",
+   "end": "0x140258f8d",
+   "va": "0x140258f60",
+   "symbol": "?setAlpha@rglBone@@QEAAXI@Z"
+  },
+  {
+   "start": "0x140258f8d",
+   "end": "0x140259076",
+   "va": "0x140258f60",
+   "symbol": "?setAlpha@rglBone@@QEAAXI@Z"
+  },
+  {
+   "start": "0x140259076",
+   "end": "0x140259082",
+   "va": "0x140258f60",
+   "symbol": "?setAlpha@rglBone@@QEAAXI@Z"
+  },
+  {
+   "start": "0x140259090",
+   "end": "0x1402590b1",
+   "va": "0x140259090",
+   "symbol": "?loadOnDemandTextures@rglBone@@QEAAHXZ"
+  },
+  {
+   "start": "0x1402590b1",
+   "end": "0x14025912a",
+   "va": "0x140259090",
+   "symbol": "?loadOnDemandTextures@rglBone@@QEAAHXZ"
+  },
+  {
+   "start": "0x14025912a",
+   "end": "0x140259132",
+   "va": "0x140259090",
+   "symbol": "?loadOnDemandTextures@rglBone@@QEAAHXZ"
   },
   {
    "start": "0x1402591f0",
@@ -54354,6 +56425,12 @@
    "end": "0x140294590",
    "va": "0x140294510",
    "symbol": "?removeMetaMesh@rglEntity@@QEAAXPEAVrglMetaMesh@@@Z"
+  },
+  {
+   "start": "0x140294720",
+   "end": "0x1402948a0",
+   "va": "0x140294720",
+   "symbol": "?setAlpha@rglEntity@@QEAAXI@Z"
   },
   {
    "start": "0x140295ca0",
@@ -55532,6 +57609,150 @@
    "symbol": "?readStream@rglManifold@@QEAAXAEAVrglStream@@@Z"
   },
   {
+   "start": "0x1402b1310",
+   "end": "0x1402b132d",
+   "va": "0x1402b1310",
+   "symbol": "?build@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b132d",
+   "end": "0x1402b1338",
+   "va": "0x1402b1310",
+   "symbol": "?build@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b1338",
+   "end": "0x1402b1750",
+   "va": "0x1402b1310",
+   "symbol": "?build@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b1750",
+   "end": "0x1402b197a",
+   "va": "0x1402b1310",
+   "symbol": "?build@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b197a",
+   "end": "0x1402b1bf8",
+   "va": "0x1402b1310",
+   "symbol": "?build@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b1bf8",
+   "end": "0x1402b1c30",
+   "va": "0x1402b1310",
+   "symbol": "?build@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b1c30",
+   "end": "0x1402b1cb7",
+   "va": "0x1402b1310",
+   "symbol": "?build@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b1cb7",
+   "end": "0x1402b1cf9",
+   "va": "0x1402b1310",
+   "symbol": "?build@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b1d00",
+   "end": "0x1402b1da7",
+   "va": "0x1402b1d00",
+   "symbol": "?computeBounds@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b1da7",
+   "end": "0x1402b1e9a",
+   "va": "0x1402b1d00",
+   "symbol": "?computeBounds@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b1e9a",
+   "end": "0x1402b1e9f",
+   "va": "0x1402b1d00",
+   "symbol": "?computeBounds@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b1ea0",
+   "end": "0x1402b1eda",
+   "va": "0x1402b1ea0",
+   "symbol": "?computeNeighborDistances@rglManifold@@QEAAXIHHHH@Z"
+  },
+  {
+   "start": "0x1402b1eda",
+   "end": "0x1402b1f7d",
+   "va": "0x1402b1ea0",
+   "symbol": "?computeNeighborDistances@rglManifold@@QEAAXIHHHH@Z"
+  },
+  {
+   "start": "0x1402b1f7d",
+   "end": "0x1402b1f86",
+   "va": "0x1402b1ea0",
+   "symbol": "?computeNeighborDistances@rglManifold@@QEAAXIHHHH@Z"
+  },
+  {
+   "start": "0x1402b1f90",
+   "end": "0x1402b2070",
+   "va": "0x1402b1f90",
+   "symbol": "?computeNeighborDistance@rglManifold@@QEAAMHHIHHHH@Z"
+  },
+  {
+   "start": "0x1402b2070",
+   "end": "0x1402b2552",
+   "va": "0x1402b2070",
+   "symbol": "?computeGroups@rglManifold@@QEAAXIHH@Z"
+  },
+  {
+   "start": "0x1402b2560",
+   "end": "0x1402b25aa",
+   "va": "0x1402b2560",
+   "symbol": "?computeGroup@rglManifold@@QEAAHHHPEAHHIHH@Z"
+  },
+  {
+   "start": "0x1402b25aa",
+   "end": "0x1402b26ec",
+   "va": "0x1402b2560",
+   "symbol": "?computeGroup@rglManifold@@QEAAHHHPEAHHIHH@Z"
+  },
+  {
+   "start": "0x1402b26ec",
+   "end": "0x1402b26f7",
+   "va": "0x1402b2560",
+   "symbol": "?computeGroup@rglManifold@@QEAAHHHPEAHHIHH@Z"
+  },
+  {
+   "start": "0x1402b2700",
+   "end": "0x1402b2749",
+   "va": "0x1402b2700",
+   "symbol": "?computeAdjoiningGroups@rglManifold@@QEAAXHHPEAHH@Z"
+  },
+  {
+   "start": "0x1402b2749",
+   "end": "0x1402b2841",
+   "va": "0x1402b2700",
+   "symbol": "?computeAdjoiningGroups@rglManifold@@QEAAXHHPEAHH@Z"
+  },
+  {
+   "start": "0x1402b2841",
+   "end": "0x1402b2853",
+   "va": "0x1402b2700",
+   "symbol": "?computeAdjoiningGroups@rglManifold@@QEAAXHHPEAHH@Z"
+  },
+  {
+   "start": "0x1402b2853",
+   "end": "0x1402b285a",
+   "va": "0x1402b2700",
+   "symbol": "?computeAdjoiningGroups@rglManifold@@QEAAXHHPEAHH@Z"
+  },
+  {
+   "start": "0x1402b2860",
+   "end": "0x1402b29b7",
+   "va": "0x1402b2860",
+   "symbol": "?collectVertices@rglManifold@@QEAAXHHPEAHAEAH@Z"
+  },
+  {
    "start": "0x1402b29c0",
    "end": "0x1402b2a22",
    "va": "0x1402b29c0",
@@ -55568,10 +57789,106 @@
    "symbol": "?addFace@rglManifold@@QEAAHHPEAVrglVector4@@@Z"
   },
   {
+   "start": "0x1402b2e90",
+   "end": "0x1402b2fca",
+   "va": "0x1402b2e90",
+   "symbol": "?checkPath@rglManifold@@QEAA_NHAEBVrglVector2@@H0IH@Z"
+  },
+  {
+   "start": "0x1402b2fca",
+   "end": "0x1402b3009",
+   "va": "0x1402b2e90",
+   "symbol": "?checkPath@rglManifold@@QEAA_NHAEBVrglVector2@@H0IH@Z"
+  },
+  {
+   "start": "0x1402b3009",
+   "end": "0x1402b3683",
+   "va": "0x1402b2e90",
+   "symbol": "?checkPath@rglManifold@@QEAA_NHAEBVrglVector2@@H0IH@Z"
+  },
+  {
+   "start": "0x1402b3683",
+   "end": "0x1402b368b",
+   "va": "0x1402b2e90",
+   "symbol": "?checkPath@rglManifold@@QEAA_NHAEBVrglVector2@@H0IH@Z"
+  },
+  {
+   "start": "0x1402b368b",
+   "end": "0x1402b36bd",
+   "va": "0x1402b2e90",
+   "symbol": "?checkPath@rglManifold@@QEAA_NHAEBVrglVector2@@H0IH@Z"
+  },
+  {
    "start": "0x1402b36c0",
    "end": "0x1402b3e14",
    "va": "0x1402b36c0",
    "symbol": "?computePath@rglManifold@@QEAA_NHHPEAHPEAVrglVector4@@AEAH2HHHHH_N@Z"
+  },
+  {
+   "start": "0x1402b3e20",
+   "end": "0x1402b3eb0",
+   "va": "0x1402b3e20",
+   "symbol": "?changeWhitePoint@rglManifold@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402b3eb0",
+   "end": "0x1402b3fc5",
+   "va": "0x1402b3eb0",
+   "symbol": "?resize@?$vector@VrglManifoldVertex@@V?$allocator@VrglManifoldVertex@@@std@@@std@@QEAAX_K@Z"
+  },
+  {
+   "start": "0x1402b3fd0",
+   "end": "0x1402b40db",
+   "va": "0x1402b3fd0",
+   "symbol": "?resize@?$vector@VrglManifoldFace@@V?$allocator@VrglManifoldFace@@@std@@@std@@QEAAX_K@Z"
+  },
+  {
+   "start": "0x1402b40e0",
+   "end": "0x1402b419a",
+   "va": "0x1402b40e0",
+   "symbol": "?push_back@?$vector@VrglManifoldPathFindingPoint@@V?$allocator@VrglManifoldPathFindingPoint@@@std@@@std@@QEAAXAEBVrglManifoldPathFindingPoint@@@Z"
+  },
+  {
+   "start": "0x1402b41a0",
+   "end": "0x1402b422b",
+   "va": "0x1402b41a0",
+   "symbol": "?_Reserve@?$vector@VrglManifoldEdge@@V?$allocator@VrglManifoldEdge@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x1402b4230",
+   "end": "0x1402b42be",
+   "va": "0x1402b4230",
+   "symbol": "?_Reserve@?$vector@VrglManifoldPathFindingPoint@@V?$allocator@VrglManifoldPathFindingPoint@@@std@@@std@@IEAAX_K@Z"
+  },
+  {
+   "start": "0x1402b42c0",
+   "end": "0x1402b435c",
+   "va": "0x1402b42c0",
+   "symbol": "??$pop_heap@V?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglManifoldPathFindingPoint@@@std@@@std@@@std@@U?$less@VrglManifoldPathFindingPoint@@@2@@std@@YAXV?$_Vector_iterator@V?$_Vector_val@U?$_Simple_types@VrglManifoldPathFindingPoint@@@std@@@std@@@0@0U?$less@VrglManifoldPathFindingPoint@@@0@@Z"
+  },
+  {
+   "start": "0x1402b4360",
+   "end": "0x1402b4430",
+   "va": "0x1402b4360",
+   "symbol": "??$_Push_heap_0@PEAVrglManifoldPathFindingPoint@@_JV1@U?$less@VrglManifoldPathFindingPoint@@@std@@@std@@YAXPEAVrglManifoldPathFindingPoint@@0U?$less@VrglManifoldPathFindingPoint@@@0@PEA_J0@Z"
+  },
+  {
+   "start": "0x1402b4430",
+   "end": "0x1402b4480",
+   "va": "0x1402b4430",
+   "symbol": "??$_Uninit_def_fill_n@PEAVrglManifoldFace@@_KV?$allocator@VrglManifoldFace@@@std@@V1@@std@@YAXPEAVrglManifoldFace@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglManifoldFace@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x1402b4480",
+   "end": "0x1402b455d",
+   "va": "0x1402b4480",
+   "symbol": "??$_Move@PEAVrglManifoldFace@@PEAV1@@std@@YAPEAVrglManifoldFace@@PEAV1@00U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x1402b4560",
+   "end": "0x1402b4670",
+   "va": "0x1402b4560",
+   "symbol": "??$_Adjust_heap@PEAVrglManifoldPathFindingPoint@@_JV1@U?$less@VrglManifoldPathFindingPoint@@@std@@@std@@YAXPEAVrglManifoldPathFindingPoint@@_J1$$QEAV1@U?$less@VrglManifoldPathFindingPoint@@@0@@Z"
   },
   {
    "start": "0x1402b4670",
@@ -57854,6 +60171,24 @@
    "symbol": "?getNormal@rglQuad@@QEBAAEBVrglVector4@@XZ"
   },
   {
+   "start": "0x1402d6af0",
+   "end": "0x1402d6ba8",
+   "va": "0x1402d6af0",
+   "symbol": "?normalize@rglQuaternion@@QEAAXXZ"
+  },
+  {
+   "start": "0x1402d6bb0",
+   "end": "0x1402d6cca",
+   "va": "0x1402d6bb0",
+   "symbol": "?interpolate@rglQuaternion@@QEBA?AV1@AEBV1@M@Z"
+  },
+  {
+   "start": "0x1402d6cd0",
+   "end": "0x1402d6e03",
+   "va": "0x1402d6cd0",
+   "symbol": "?transformToParent@rglQuaternion@@QEBA?AV1@AEBV1@@Z"
+  },
+  {
    "start": "0x1402d73d0",
    "end": "0x1402d77c0",
    "va": "0x1402d73d0",
@@ -59630,6 +61965,12 @@
    "symbol": "??$_Buynode@U?$pair@HV?$rglVector@VrglString@@@@@std@@@?$_List_buy@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@V?$allocator@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@@2@@std@@QEAAPEAU?$_List_node@U?$pair@$$CBHV?$rglVector@VrglString@@@@@std@@PEAX@1@PEAU21@0$$QEAU?$pair@HV?$rglVector@VrglString@@@@@1@@Z"
   },
   {
+   "start": "0x1402f6b30",
+   "end": "0x1402f6bb0",
+   "va": "0x1402f6b30",
+   "symbol": "??1rglManifold@@QEAA@XZ"
+  },
+  {
    "start": "0x1402f84d0",
    "end": "0x1402f84fb",
    "va": "0x1402f84d0",
@@ -59718,6 +62059,90 @@
    "end": "0x1402f9e8a",
    "va": "0x1402f9b50",
    "symbol": "?getLightDataForPosition@rglScene@@QEAAXAEBVrglVector4@@AEAV2@AEAVrglColor@@@Z"
+  },
+  {
+   "start": "0x1402f9e90",
+   "end": "0x1402f9ea0",
+   "va": "0x1402f9e90",
+   "symbol": "?setManifold@rglScene@@QEAAXPEAVrglManifold@@@Z"
+  },
+  {
+   "start": "0x1402f9ea0",
+   "end": "0x1402f9ea5",
+   "va": "0x1402f9e90",
+   "symbol": "?setManifold@rglScene@@QEAAXPEAVrglManifold@@@Z"
+  },
+  {
+   "start": "0x1402f9ea5",
+   "end": "0x1402f9f03",
+   "va": "0x1402f9e90",
+   "symbol": "?setManifold@rglScene@@QEAAXPEAVrglManifold@@@Z"
+  },
+  {
+   "start": "0x1402f9f03",
+   "end": "0x1402fa137",
+   "va": "0x1402f9e90",
+   "symbol": "?setManifold@rglScene@@QEAAXPEAVrglManifold@@@Z"
+  },
+  {
+   "start": "0x1402fa137",
+   "end": "0x1402fa16b",
+   "va": "0x1402f9e90",
+   "symbol": "?setManifold@rglScene@@QEAAXPEAVrglManifold@@@Z"
+  },
+  {
+   "start": "0x1402fa16b",
+   "end": "0x1402fa2a1",
+   "va": "0x1402f9e90",
+   "symbol": "?setManifold@rglScene@@QEAAXPEAVrglManifold@@@Z"
+  },
+  {
+   "start": "0x1402fa2a1",
+   "end": "0x1402fa2a4",
+   "va": "0x1402f9e90",
+   "symbol": "?setManifold@rglScene@@QEAAXPEAVrglManifold@@@Z"
+  },
+  {
+   "start": "0x1402fa2a4",
+   "end": "0x1402fa364",
+   "va": "0x1402f9e90",
+   "symbol": "?setManifold@rglScene@@QEAAXPEAVrglManifold@@@Z"
+  },
+  {
+   "start": "0x1402fa364",
+   "end": "0x1402fa36d",
+   "va": "0x1402f9e90",
+   "symbol": "?setManifold@rglScene@@QEAAXPEAVrglManifold@@@Z"
+  },
+  {
+   "start": "0x1402fa370",
+   "end": "0x1402fa389",
+   "va": "0x1402fa370",
+   "symbol": "?setAiMesh@rglScene@@QEAAXPEAVrglAiMesh@@@Z"
+  },
+  {
+   "start": "0x1402fa389",
+   "end": "0x1402fa39e",
+   "va": "0x1402fa370",
+   "symbol": "?setAiMesh@rglScene@@QEAAXPEAVrglAiMesh@@@Z"
+  },
+  {
+   "start": "0x1402fa39e",
+   "end": "0x1402fa586",
+   "va": "0x1402fa370",
+   "symbol": "?setAiMesh@rglScene@@QEAAXPEAVrglAiMesh@@@Z"
+  },
+  {
+   "start": "0x1402fa586",
+   "end": "0x1402fa58b",
+   "va": "0x1402fa370",
+   "symbol": "?setAiMesh@rglScene@@QEAAXPEAVrglAiMesh@@@Z"
+  },
+  {
+   "start": "0x1402fa58b",
+   "end": "0x1402fa591",
+   "va": "0x1402fa370",
+   "symbol": "?setAiMesh@rglScene@@QEAAXPEAVrglAiMesh@@@Z"
   },
   {
    "start": "0x1402fa5a0",
@@ -60012,6 +62437,12 @@
    "end": "0x1402fc999",
    "va": "0x1402fc7f0",
    "symbol": "?findCloseAiMeshFaceRecursive@rglScene@@QEAAXAEBVrglVector4@@PEAVrglAiMeshFace@@HHPEAPEAV3@AEAM@Z"
+  },
+  {
+   "start": "0x1402fced0",
+   "end": "0x1402fcf68",
+   "va": "0x1402fced0",
+   "symbol": "?addAiMeshFace@rglSceneGridCell@@QEAAXPEAVrglAiMeshFace@@@Z"
   },
   {
    "start": "0x1402fcf70",
@@ -60314,6 +62745,18 @@
    "symbol": "?getType@rglSkeletonModel@@UEBAHXZ"
   },
   {
+   "start": "0x140308090",
+   "end": "0x14030812a",
+   "va": "0x140308090",
+   "symbol": "??1rglSkeleton@@QEAA@XZ"
+  },
+  {
+   "start": "0x140308130",
+   "end": "0x140308159",
+   "va": "0x140308130",
+   "symbol": "?FrameMoveSkeletonAsync@@YAXPEAVrglSkeleton@@@Z"
+  },
+  {
    "start": "0x140308160",
    "end": "0x1403082b0",
    "va": "0x140308160",
@@ -60338,16 +62781,112 @@
    "symbol": "?frameMove@rglSkeleton@@QEAAXMAEBVrglTransform@@AEBVrglVector4@@_N@Z"
   },
   {
+   "start": "0x140308360",
+   "end": "0x14030837d",
+   "va": "0x140308360",
+   "symbol": "?updateBlending@rglSkeleton@@QEAAXM@Z"
+  },
+  {
+   "start": "0x14030837d",
+   "end": "0x1403083ab",
+   "va": "0x140308360",
+   "symbol": "?updateBlending@rglSkeleton@@QEAAXM@Z"
+  },
+  {
+   "start": "0x1403083ab",
+   "end": "0x1403084a0",
+   "va": "0x140308360",
+   "symbol": "?updateBlending@rglSkeleton@@QEAAXM@Z"
+  },
+  {
+   "start": "0x1403084a0",
+   "end": "0x1403084c4",
+   "va": "0x140308360",
+   "symbol": "?updateBlending@rglSkeleton@@QEAAXM@Z"
+  },
+  {
+   "start": "0x1403084c4",
+   "end": "0x140308552",
+   "va": "0x140308360",
+   "symbol": "?updateBlending@rglSkeleton@@QEAAXM@Z"
+  },
+  {
+   "start": "0x140308560",
+   "end": "0x140308581",
+   "va": "0x140308560",
+   "symbol": "?updateRagdollBonePositions@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x140308581",
+   "end": "0x140308aed",
+   "va": "0x140308560",
+   "symbol": "?updateRagdollBonePositions@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x140308aed",
+   "end": "0x140308afe",
+   "va": "0x140308560",
+   "symbol": "?updateRagdollBonePositions@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x140308b00",
+   "end": "0x140308b9d",
+   "va": "0x140308b00",
+   "symbol": "?updateBonePositions@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x140308b9d",
+   "end": "0x140309d84",
+   "va": "0x140308b00",
+   "symbol": "?updateBonePositions@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x140309d84",
+   "end": "0x140309da9",
+   "va": "0x140308b00",
+   "symbol": "?updateBonePositions@rglSkeleton@@QEAAXXZ"
+  },
+  {
    "start": "0x140309db0",
    "end": "0x14030a28a",
    "va": "0x140309db0",
    "symbol": "?setModel@rglSkeleton@@QEAAXPEAVrglSkeletonModel@@@Z"
   },
   {
+   "start": "0x14030a290",
+   "end": "0x14030a3a6",
+   "va": "0x14030a290",
+   "symbol": "?createChannels@rglSkeleton@@QEAAXH@Z"
+  },
+  {
    "start": "0x14030a3b0",
    "end": "0x14030a496",
    "va": "0x14030a3b0",
    "symbol": "?computePosition@rglSkeleton@@QEAA?AVrglVector4@@H@Z"
+  },
+  {
+   "start": "0x14030a4a0",
+   "end": "0x14030a4e9",
+   "va": "0x14030a4a0",
+   "symbol": "?computeBoneRotation@rglSkeleton@@QEAA?AVrglQuaternion@@HHH@Z"
+  },
+  {
+   "start": "0x14030a4e9",
+   "end": "0x14030a583",
+   "va": "0x14030a4a0",
+   "symbol": "?computeBoneRotation@rglSkeleton@@QEAA?AVrglQuaternion@@HHH@Z"
+  },
+  {
+   "start": "0x14030a583",
+   "end": "0x14030a662",
+   "va": "0x14030a4a0",
+   "symbol": "?computeBoneRotation@rglSkeleton@@QEAA?AVrglQuaternion@@HHH@Z"
+  },
+  {
+   "start": "0x14030a670",
+   "end": "0x14030a715",
+   "va": "0x14030a670",
+   "symbol": "?computeChildBoneRotation@rglSkeleton@@QEAA?AVrglQuaternion@@HH@Z"
   },
   {
    "start": "0x14030a720",
@@ -60360,6 +62899,48 @@
    "end": "0x14030aa70",
    "va": "0x14030a770",
    "symbol": "?getBoneTransformForAnimation@rglSkeleton@@QEAA?AVrglTransform@@PEAVrglSkeletonAnimationSpec@@HM@Z"
+  },
+  {
+   "start": "0x14030aa70",
+   "end": "0x14030aa83",
+   "va": "0x14030aa70",
+   "symbol": "?freezeSkinning@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x14030aa83",
+   "end": "0x14030aae0",
+   "va": "0x14030aa70",
+   "symbol": "?freezeSkinning@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x14030aae0",
+   "end": "0x14030aae6",
+   "va": "0x14030aa70",
+   "symbol": "?freezeSkinning@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x14030aaf0",
+   "end": "0x14030ab24",
+   "va": "0x14030aaf0",
+   "symbol": "?updateVelocities@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x14030ab24",
+   "end": "0x14030ad7f",
+   "va": "0x14030aaf0",
+   "symbol": "?updateVelocities@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x14030ad7f",
+   "end": "0x14030adea",
+   "va": "0x14030aaf0",
+   "symbol": "?updateVelocities@rglSkeleton@@QEAAXXZ"
+  },
+  {
+   "start": "0x14030adf0",
+   "end": "0x14030ae00",
+   "va": "0x14030adf0",
+   "symbol": "?getBone@rglSkeleton@@QEAAPEAVrglBone@@H@Z"
   },
   {
    "start": "0x14030ae00",
@@ -60378,6 +62959,42 @@
    "end": "0x14030b015",
    "va": "0x14030ae00",
    "symbol": "?render@rglSkeleton@@QEAAXPEAVrglRenderContext@@AEBVrglTransform@@M@Z"
+  },
+  {
+   "start": "0x14030b020",
+   "end": "0x14030b070",
+   "va": "0x14030b020",
+   "symbol": "?addParticleSystemToBone@rglSkeleton@@QEAAXHPEAVrglParticleSystem@@@Z"
+  },
+  {
+   "start": "0x14030b070",
+   "end": "0x14030b09a",
+   "va": "0x14030b070",
+   "symbol": "?setBoneLight@rglSkeleton@@QEAAXHPEAVrglLight@@@Z"
+  },
+  {
+   "start": "0x14030b09a",
+   "end": "0x14030b0d4",
+   "va": "0x14030b070",
+   "symbol": "?setBoneLight@rglSkeleton@@QEAAXHPEAVrglLight@@@Z"
+  },
+  {
+   "start": "0x14030b0d4",
+   "end": "0x14030b0e1",
+   "va": "0x14030b070",
+   "symbol": "?setBoneLight@rglSkeleton@@QEAAXHPEAVrglLight@@@Z"
+  },
+  {
+   "start": "0x14030b0f0",
+   "end": "0x14030b180",
+   "va": "0x14030b0f0",
+   "symbol": "?getParticleSystem@rglSkeleton@@QEAAPEAVrglParticleSystem@@HH@Z"
+  },
+  {
+   "start": "0x14030b180",
+   "end": "0x14030b316",
+   "va": "0x14030b180",
+   "symbol": "?clearMeshes@rglSkeleton@@QEAAXXZ"
   },
   {
    "start": "0x14030b320",
@@ -60488,6 +63105,30 @@
    "symbol": "?skinMesh@rglSkeleton@@QEAAXPEAVrglMesh@@@Z"
   },
   {
+   "start": "0x14030bfa0",
+   "end": "0x14030bfc0",
+   "va": "0x14030bfa0",
+   "symbol": "?loadOnDemandTextures@rglSkeleton@@QEAAHXZ"
+  },
+  {
+   "start": "0x14030bfc0",
+   "end": "0x14030c030",
+   "va": "0x14030bfa0",
+   "symbol": "?loadOnDemandTextures@rglSkeleton@@QEAAHXZ"
+  },
+  {
+   "start": "0x14030c030",
+   "end": "0x14030c056",
+   "va": "0x14030bfa0",
+   "symbol": "?loadOnDemandTextures@rglSkeleton@@QEAAHXZ"
+  },
+  {
+   "start": "0x14030c056",
+   "end": "0x14030c05e",
+   "va": "0x14030bfa0",
+   "symbol": "?loadOnDemandTextures@rglSkeleton@@QEAAHXZ"
+  },
+  {
    "start": "0x14030c060",
    "end": "0x14030c122",
    "va": "0x14030c060",
@@ -60558,6 +63199,24 @@
    "end": "0x14030c8a0",
    "va": "0x14030c870",
    "symbol": "??$_Uninit_def_fill_n@PEAVrglSkeletonAnimationBone@@_KV?$allocator@VrglSkeletonAnimationBone@@@std@@V1@@std@@YAXPEAVrglSkeletonAnimationBone@@_KAEAU?$_Wrap_alloc@V?$allocator@VrglSkeletonAnimationBone@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z"
+  },
+  {
+   "start": "0x14030c8a0",
+   "end": "0x14030c904",
+   "va": "0x14030c8a0",
+   "symbol": "??4?$rglIpo@VrglQuaternion@@@@QEAAAEAV0@AEBV0@@Z"
+  },
+  {
+   "start": "0x14030c904",
+   "end": "0x14030c948",
+   "va": "0x14030c8a0",
+   "symbol": "??4?$rglIpo@VrglQuaternion@@@@QEAAAEAV0@AEBV0@@Z"
+  },
+  {
+   "start": "0x14030c948",
+   "end": "0x14030c9aa",
+   "va": "0x14030c8a0",
+   "symbol": "??4?$rglIpo@VrglQuaternion@@@@QEAAAEAV0@AEBV0@@Z"
   },
   {
    "start": "0x14030c9b0",
@@ -63826,6 +66485,12 @@
    "end": "0x14061f0f8"
   },
   {
+   "name": "g_skeletonManager",
+   "va": "0x140621718",
+   "size": 24,
+   "end": "0x140621730"
+  },
+  {
    "name": "g_stringManager",
    "va": "0x140621770",
    "size": 240,
@@ -64148,6 +66813,8 @@
   "0x1400736d0",
   "0x1400736e0",
   "0x140073750",
+  "0x1400737f0",
+  "0x140073850",
   "0x1400738d0",
   "0x1400739a0",
   "0x140073a10",
@@ -64362,8 +67029,14 @@
   "0x1400b9190",
   "0x1400b9a10",
   "0x1400ba920",
+  "0x1400ba930",
   "0x1400ba970",
   "0x1400baa90",
+  "0x1400baba0",
+  "0x1400baf50",
+  "0x1400bb4b0",
+  "0x1400bbd60",
+  "0x1400bbe80",
   "0x1400bbf20",
   "0x1400bce50",
   "0x1400bd650",
@@ -64391,8 +67064,15 @@
   "0x1400c5ce0",
   "0x1400c5d40",
   "0x1400c5e60",
+  "0x1400c5ea0",
+  "0x1400c5ed0",
+  "0x1400c5f30",
+  "0x1400c5f50",
   "0x1400c60a0",
+  "0x1400c60b0",
+  "0x1400c65e0",
   "0x1400c6680",
+  "0x1400c6870",
   "0x1400c68d0",
   "0x1400c6900",
   "0x1400c6970",
@@ -64581,17 +67261,24 @@
   "0x1400e5f70",
   "0x1400e6040",
   "0x1400e6320",
+  "0x1400e6450",
   "0x1400e6500",
   "0x1400e6580",
   "0x1400e67e0",
   "0x1400e68d0",
   "0x1400e6930",
+  "0x1400e69c0",
+  "0x1400e6ac0",
+  "0x1400e6b30",
   "0x1400e6ce0",
   "0x1400e6d70",
   "0x1400e6f70",
   "0x1400e70c0",
   "0x1400e7130",
   "0x1400e71d0",
+  "0x1400e76a0",
+  "0x1400e7740",
+  "0x1400e7790",
   "0x1400e77e0",
   "0x1400e7860",
   "0x1400e7990",
@@ -64620,7 +67307,9 @@
   "0x1400ef0f0",
   "0x1400ef180",
   "0x1400ef1b0",
+  "0x1400ef240",
   "0x1400ef3f0",
+  "0x1400ef470",
   "0x1400ef580",
   "0x1400ef5c0",
   "0x1400ef5e0",
@@ -64663,6 +67352,7 @@
   "0x1400fc920",
   "0x1400fda70",
   "0x1400fdad0",
+  "0x140100960",
   "0x140106980",
   "0x140108870",
   "0x14010a860",
@@ -64744,6 +67434,7 @@
   "0x1401248a0",
   "0x140124950",
   "0x140124e20",
+  "0x140124ea0",
   "0x140124f20",
   "0x1401250f0",
   "0x1401252c0",
@@ -64901,6 +67592,9 @@
   "0x140148350",
   "0x140148430",
   "0x1401484e0",
+  "0x140148570",
+  "0x140148670",
+  "0x140148690",
   "0x140148720",
   "0x140148bc0",
   "0x140148c90",
@@ -64914,6 +67608,8 @@
   "0x140149fb0",
   "0x14014a030",
   "0x14014a0c0",
+  "0x14014a2f0",
+  "0x14014a4a0",
   "0x14014a520",
   "0x14014b200",
   "0x14014ba40",
@@ -64962,6 +67658,10 @@
   "0x14015bff0",
   "0x14015c2c0",
   "0x14015cb60",
+  "0x14015d850",
+  "0x14015d8a0",
+  "0x14015df70",
+  "0x140162df0",
   "0x1401665f0",
   "0x140166700",
   "0x1401667a0",
@@ -65025,6 +67725,7 @@
   "0x14017b450",
   "0x140184b30",
   "0x1401852a0",
+  "0x1401853b0",
   "0x14018b5d0",
   "0x14018c6e0",
   "0x14018ed80",
@@ -65462,13 +68163,32 @@
   "0x14020cdf0",
   "0x14020cee0",
   "0x14020cfb0",
+  "0x14020cff0",
+  "0x14020d530",
+  "0x14020d6c0",
   "0x14020d710",
+  "0x14020d940",
+  "0x14020d990",
+  "0x14020dd10",
   "0x14020dd50",
   "0x14020df20",
+  "0x14020e100",
   "0x14020e1c0",
+  "0x14020e290",
+  "0x14020e310",
+  "0x14020e3e0",
   "0x14020e4b0",
+  "0x14020e570",
+  "0x14020e660",
   "0x14020e750",
+  "0x14020e7c0",
+  "0x14020ea70",
   "0x14020ec70",
+  "0x14020ecd0",
+  "0x14020ed20",
+  "0x14020ed90",
+  "0x14020edf0",
+  "0x14020ee40",
   "0x14020efc0",
   "0x14020f090",
   "0x14020f200",
@@ -65483,7 +68203,6 @@
   "0x140210bc0",
   "0x140210d50",
   "0x140211770",
-  "0x1402119c0",
   "0x140211ae0",
   "0x140211e00",
   "0x1402120e0",
@@ -65524,7 +68243,11 @@
   "0x1402389b0",
   "0x140239330",
   "0x14023a7a0",
+  "0x14023ab00",
   "0x14023aca0",
+  "0x14023ad30",
+  "0x14023ae00",
+  "0x14023af00",
   "0x14023e690",
   "0x14023e750",
   "0x14023e8d0",
@@ -65619,15 +68342,34 @@
   "0x14024c320",
   "0x14024c460",
   "0x14024c530",
+  "0x14024c680",
   "0x14024c750",
   "0x14024c930",
+  "0x14024ca80",
+  "0x14024cbd0",
+  "0x14024d030",
   "0x14024d1a0",
   "0x14024d240",
   "0x14024d2d0",
   "0x14024d490",
   "0x14024df10",
   "0x14024e820",
+  "0x14024ed00",
+  "0x14024f0d0",
   "0x14024f6a0",
+  "0x14024f980",
+  "0x140250470",
+  "0x1402506a0",
+  "0x140250d00",
+  "0x140251330",
+  "0x1402513d0",
+  "0x1402514c0",
+  "0x140251550",
+  "0x140251670",
+  "0x1402517c0",
+  "0x140251960",
+  "0x140251a00",
+  "0x140251bb0",
   "0x140252250",
   "0x1402522b0",
   "0x1402522e0",
@@ -65643,9 +68385,15 @@
   "0x140252730",
   "0x140252780",
   "0x1402527d0",
+  "0x140252820",
+  "0x140252960",
   "0x1402529b0",
+  "0x140252b10",
   "0x140252c10",
   "0x140252de0",
+  "0x140253000",
+  "0x140253110",
+  "0x140253240",
   "0x1402533a0",
   "0x140253450",
   "0x1402539a0",
@@ -65751,6 +68499,7 @@
   "0x140288f00",
   "0x140288fb0",
   "0x140289060",
+  "0x140289270",
   "0x14028a7e0",
   "0x14028b750",
   "0x14028b910",
@@ -65902,9 +68651,29 @@
   "0x1402a3b90",
   "0x1402a42b0",
   "0x1402a4340",
+  "0x1402a4430",
+  "0x1402a4e20",
+  "0x1402a4fc0",
+  "0x1402a50b0",
+  "0x1402a5190",
+  "0x1402a5680",
+  "0x1402a5820",
+  "0x1402a5980",
   "0x1402a5ae0",
   "0x1402a5b90",
+  "0x1402a5fb0",
   "0x1402a67e0",
+  "0x1402a6f40",
+  "0x1402a6fd0",
+  "0x1402a70f0",
+  "0x1402a7200",
+  "0x1402a72c0",
+  "0x1402a7350",
+  "0x1402a73e0",
+  "0x1402a7480",
+  "0x1402a7550",
+  "0x1402a75b0",
+  "0x1402a7690",
   "0x1402a77a0",
   "0x1402a7830",
   "0x1402a7840",
@@ -66128,6 +68897,9 @@
   "0x1402c7be0",
   "0x1402c7cf0",
   "0x1402c7fd0",
+  "0x1402c8a40",
+  "0x1402c8b00",
+  "0x1402c8c20",
   "0x1402c9340",
   "0x1402c9a80",
   "0x1402c9b30",
@@ -66180,7 +68952,6 @@
   "0x1402d5d40",
   "0x1402d6700",
   "0x1402d6b00",
-  "0x1402d6bb0",
   "0x1402d6be0",
   "0x1402d6df0",
   "0x1402d6e30",
@@ -66267,10 +69038,13 @@
   "0x1402e0c70",
   "0x1402e11e0",
   "0x1402e1220",
+  "0x1402e1a80",
   "0x1402e3350",
   "0x1402e3900",
   "0x1402e3cc0",
   "0x1402e4930",
+  "0x1402e4c70",
+  "0x1402e5150",
   "0x1402e5380",
   "0x1402e5620",
   "0x1402e57c0",
@@ -66285,6 +69059,7 @@
   "0x1402e71a0",
   "0x1402e7530",
   "0x1402e75d0",
+  "0x1402e7c80",
   "0x1402e7d20",
   "0x1402e7e20",
   "0x1402e8050",
@@ -66308,12 +69083,26 @@
   "0x1402ecc80",
   "0x1402eda20",
   "0x1402eddc0",
+  "0x1402ee520",
+  "0x1402ee5c0",
   "0x1402ee5f0",
+  "0x1402ee7f0",
+  "0x1402ee9f0",
+  "0x1402eef90",
   "0x1402f0240",
+  "0x1402f0720",
   "0x1402f0840",
+  "0x1402f0930",
+  "0x1402f0b00",
   "0x1402f0bb0",
   "0x1402f0c00",
+  "0x1402f0f00",
+  "0x1402f0f80",
+  "0x1402f1280",
   "0x1402f1290",
+  "0x1402f14b0",
+  "0x1402f1500",
+  "0x1402f1610",
   "0x1402f17b0",
   "0x1402f1860",
   "0x1402f1920",
@@ -66323,6 +69112,7 @@
   "0x1402f1c30",
   "0x1402f1cd0",
   "0x1402f1d80",
+  "0x1402f2430",
   "0x1402f24f0",
   "0x1402f25c0",
   "0x1402f2660",
@@ -66332,6 +69122,7 @@
   "0x1402f2ba0",
   "0x1402f2c20",
   "0x1402f2d00",
+  "0x1402f2d30",
   "0x1402f2e40",
   "0x1402f2ec0",
   "0x1402f3060",
@@ -66694,8 +69485,11 @@
   "0x140507910",
   "0x140507960",
   "0x140508830",
+  "0x14050a6e0",
+  "0x14050b2e0",
   "0x14050be90",
   "0x14050c1f0",
+  "0x14050c250",
   "0x14050c2b0",
   "0x14050c310",
   "0x14050c3d0",
@@ -66792,6 +69586,7 @@
   "0x1405d1140",
   "0x1405d3540",
   "0x1405d3590",
+  "0x1405d35d8",
   "0x1405d35f0",
   "0x1405d3630",
   "0x1405d3aa0",

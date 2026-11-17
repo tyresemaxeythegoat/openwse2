@@ -931,17 +931,24 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    `mbGame::save` (`0x1400e16c0`), `fillSavegameHeader` (`0x1400e1e30`), `mbSavegame::readStream`
    (`0x1400c73b0`), `mbLoadSaveWindow::updatePanels` (`0x140113c10`), `rglOutputBinaryFileStreamWithChecksum`
    (`0x140565b40`), `mbNotes::{writeStream,readStream}` (`0x1401b9f30`/`0x1401b9e90`, scalar
-   `+0x4c0`/`+0x4c4` written per entry of the 16-item loop), and all `mbGame::{writeStream,readStream}`
+   `+0x4c0`/`+0x4c4` written per entry of the 16-item loop), `rglHashVector<mbParty>::{readStream,writeStream}`
+   (`0x1400e7b80`/`0x1400e7de0`, monotonic `m_nextKey` `+0x138f0`), and all `mbGame::{writeStream,readStream}`
    (`0x1400c9a90`/`0x1400c8520`) section codecs plus the four `[802..1174]` version gates
-   (`mbGame::readStream` `0x1400c856d`, `mbParty::readStream` `0x1401ba9d1`/`0x1401baa20`/`0x1401baa7f`)
+   (`mbGame::readStream` `0x1400c856d`, `mbParty::readStream` `0x1401ba9d1`/`0x1401baa20`/`0x1401baa7f`) —
+   while `rglHashVector<mbParty>::readStream` (`0x1400e7b80`), `rglStableVector<mbEvent>::readStream`
+   (`0x1400e7640`), and `mbEvent::readStream` (`0x1400bae70`) are verified version-invariant across
+   `[802..1174]` (passing `version` only into `mbParty::readStream`) —
    are verified and implemented in `wse/io/binary_stream.h` and `wse/game/savegame.h`.
-2. ~~`mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state~~ **Resolved (Phase 2C + 2A follow-up):**
+2. ~~`mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state~~ **Resolved (Phase 2C + 2A follow-up + 2E audit):**
    disassembly at `0x1402101a0` (`0x1402101d2..0x1402101f7`) shows the check tests positive odd
    event keys when the queued-window stack (`g_game` `0x14061f070` `+0x04b0`) back entry has type
-   `0x12` (`mbMenuWindow`, enqueued by `jump_to_menu` `0x1401dc2b1`); wired into
-   `execute_simple_trigger_manager` (`wse/vm/block_vm.h`), `native_mission_ops.h`, and
-   `WseWorldState::consume_campaign_queued_window` (`mbMapWindow::frameMove` `0x140117f90`, pop at
-   `0x140118987`; `mbMenuWindow::open` `0x140120240`), run from `step_world_frame` on campaign frames.
+   `0x12` (`mbMenuWindow`, enqueued by `jump_to_menu` `0x1401dc2b1`); `mbMapWindow::frameMove`
+   (`0x140117f90`, `0x140118987..0x140118a80`) pops back entries only for `0x12` (`mbMenuWindow`,
+   `mbMenuWindow::open` `0x140120240` clears remaining entries), `0x0f` (`0x16` presentation, `0x1401cbf02`),
+   or `0x10` (`0x15` notes, `0x1401dc108`), leaving other queued types intact while syncing
+   `g_gameScreen->m_windowStack` (`0x14069a560`, `mbGameScreen::isWindowOpen` `0x1400f0c50`), wired into
+   `execute_simple_trigger_manager` (`wse/vm/block_vm.h`), `native_mission_ops.h`, `native_campaign_ops_2.h`,
+   `native_ui_ops.h`, and `WseWorldState::consume_campaign_queued_window`.
 3. ~~Locate `gameOperation` table construction in `WSELuaManager`.~~ **Resolved (2F):** Disassembly of
    `WSELuaManager::initialize` (`0x14033ca80`), `loadOperations` (`0x14033dff0`), `loadGameConstants`
    (`0x14033f630`), `loadGlobalVars` (`0x14033f400`), `initLGameTable` (`0x140340920`), `doMainScript`
@@ -1023,6 +1030,23 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     (`0x1401e6a42`), implemented in [input.h](../engine/include/wse/platform/input.h),
     [world_input.h](../engine/include/wse/game/world_input.h), and
     [sdl_input.cpp](../platform/sdl/sdl_input.cpp).
+12. ~~Reconstruct Phase 2A world/scene/skeleton loaders and Slice P9 Part 1 skeletal evaluation/skinning.~~
+    **Resolved (Phase 2A completion + Slice P9 Part 1):** Verified `mbGame::readMap` (`0x1400d9a00`),
+    `rglManifold::readStream` (`0x1402b1220`), `rglManifoldFace::readStream` (`0x1402b1190`),
+    `rglManifold::computeBounds` (`0x1402b1d00`), `mbSite::readSceneObjFile` (`0x140210be0`, magic
+    `0xfffffd33`, `mbMissionObject::readStream` `0x140152be0` `"spr_"` normalization & `rglTransform::readStream`
+    `0x1402b5b20`, `rglAiMesh::readStream` `0x140252600`, `0xff4ad1a6` ground paint), and
+    `mbGame::readSkeletons` (`0x1400cbb70` / `mbSkeletonManager::readFile` `0x140211ba0` /
+    `mbSkeleton::readXMLElement` `0x1402119c0` / `mbSkeletonBone::readXMLElement` `0x140211480` /
+    `rglSkeletonModelBody::readXMLElement` `0x14030ca30`, noting `dialog_states.txt` has zero runtime
+    references in retail); verified `rglIpo<rglQuaternion>::readStream` (`0x14030c320`) wire order
+    `(qx, qy, qz, qw)` into `rglQuaternion{w,x,y,z}` (`0x1402b65d0` `rglTransform::setRotation`),
+    `rglQuaternion::interpolate` (`0x1402d6bb0`), `rglSkeletonModel::readStream` (`0x14030d230`),
+    `rglSkeleton::getBoneTransformForAnimation` (`0x14030a770`), `rglBone::getSkinningTransform`
+    (`0x140258800`), `rglMesh::updateSkinData` (`0x1402b9930`), and `rglSkeleton::skinMesh` (`0x14030b8f0`);
+    implemented in [scene_loaders.h](../engine/include/wse/game/scene_loaders.h),
+    [skeleton.h](../engine/include/wse/asset/skeleton.h), and
+    [rhi_scene.h](../engine/include/wse/platform/rhi_scene.h).
 
 ## 9. Evidence index
 

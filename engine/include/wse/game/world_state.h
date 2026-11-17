@@ -140,7 +140,6 @@ struct WseSiteVisitor {
 struct WseQuestNote {
     std::u16string text{};
     std::int32_t date = -1;
-    bool available = false;
 };
 
 struct WsePresentationOverlay {
@@ -1216,6 +1215,7 @@ struct WseWorldState {
     std::vector<WseQuest> quests{};
     std::vector<WseSite> sites{};
     std::vector<WseParty> parties{};
+    std::int32_t next_party_key = 0;  // rglHashVector<mbParty>::m_nextKey (+0x138f0)
     std::vector<WsePlayer> players{};
     std::array<WseTeam, kNumTeams> teams{};
     std::vector<WseAgent> agents{};
@@ -1416,31 +1416,57 @@ struct WseWorldState {
         return id >= 0 && static_cast<std::size_t>(id) < mp.profiles.size();
     }
 
-    // Consumes the top queued campaign window transition (`mbMapWindow::frameMove`
-    // `0x140117f90`, pop at `0x140118987`; `mbMenuWindow::open` `0x140120240`, which clears any
-    // remaining queue entries once type 0x12 opens). Only the campaign map runs this consumer,
-    // so `step_world_frame` skips it while a mission scene is up. The pop order (back entry)
-    // and the link to `m6.ui.active_window_id` are not yet confirmed (STATUS.md §5).
+    // Consumes the back queued campaign window transition (`mbMapWindow::frameMove` `0x140117f90`,
+    // `0x140118987..0x140118a80`): acts ONLY when back() is 0x12 (opens `mbMenuWindow` 0x12 and
+    // clears remaining entries per `mbMenuWindow::open` `0x140120240`), 0x0f (pops back and opens
+    // presentation window `0x16`), or 0x10 (pops back and opens notes window `0x15`). Other types
+    // remain queued on map frames. Syncs `m5.active_window` and `m6.ui.active_window_id`.
     std::int32_t consume_campaign_queued_window() noexcept {
         if (m5.enqueued_windows.empty()) {
             return -1;
         }
-        const std::int32_t win_type = m5.enqueued_windows.back().first;
-        m5.enqueued_windows.pop_back();
-        m5.active_window = win_type;
-        if (win_type == kQueuedWindowMenuType) {
+        const auto [win_type, param] = m5.enqueued_windows.back();
+        std::int32_t screen_win = -1;
+        switch (win_type) {
+        case kQueuedWindowMenuType:
             m5.enqueued_windows.clear();
+            screen_win = kScreenWindowMenu;
+            break;
+        case kQueuedWindowPresentationType:
+            m5.enqueued_windows.pop_back();
+            if (param >= 0) {
+                active_presentation_no = param;
+            }
+            screen_win = kScreenWindowPresentation;
+            break;
+        case kQueuedWindowNotesType:
+            m5.enqueued_windows.pop_back();
+            screen_win = kScreenWindowNotes;
+            break;
+        default:
+            return -1;
         }
-        return win_type;
+        m5.active_window = screen_win;
+        m6.ui.active_window_id = screen_win;
+        return screen_win;
     }
 
     // Allocates a fresh party with monotonic script ID (mirrors rglHashVector<mbParty>::getFreeItem
-    // `0x1400e8730` monotonic key allocation). `parties` never shrinks while a game runs (removed
-    // parties stay as tombstones), so `parties.size()` is the next key and handles are never reused.
+    // `0x1400e8730` monotonic key `m_nextKey` `+0x138f0`). Removed parties stay as tombstones, and
+    // loaded saves whose `m_nextKey` exceeds `m_numSlots` resume allocating from `next_party_key`.
     [[nodiscard]] std::int32_t allocate_party(WseParty party) {
         party.active = true;
-        const auto new_id = static_cast<std::int32_t>(parties.size());
+        const auto new_id =
+            std::max(next_party_key, static_cast<std::int32_t>(parties.size()));
+        if (static_cast<std::size_t>(new_id) > parties.size()) {
+            const std::size_t old_size = parties.size();
+            parties.resize(static_cast<std::size_t>(new_id));
+            for (std::size_t i = old_size; i < parties.size(); ++i) {
+                parties[i].active = false;
+            }
+        }
         parties.push_back(std::move(party));
+        next_party_key = new_id + 1;
         return new_id;
     }
 
@@ -1496,13 +1522,13 @@ struct WseWorldState {
         return true;
     }
 
-    // Party teardown after `mbGame::removeParty` (`0x1400dd990`): detaches parent/child links,
-    // increments template `num_destroyed`, clears AI behavior targets, unlinks agent/player/world
-    // references, marks `pf_disabled` (`0x100`), frees buffers, and keeps removed IDs as
-    // tombstones so script handles are never reused.
-    // Safety deviation: the main party is never removed (returns false). Removing it left
-    // `main_party_no` at -1 and silently disabled every main-party path; whether retail allows
-    // it is open (STATUS.md §5).
+    // Party teardown matching `mbGame::removeParty` (`0x1400dd990`, also tail-called by
+    // `mbGame::addPartyToParty` `0x1400de230` at `0x1400de480` for `party_join*`): detaches
+    // parent/child links, increments template `num_destroyed`, clears AI behavior targets, unlinks
+    // agent/player/world references, marks `pf_disabled` (`0x100`), frees buffers, and keeps
+    // removed IDs as tombstones so script handles are never reused.
+    // Safety deviation: retail `0x1400dd990` does not reject `p_main_party` (the Warband SDK warns
+    // removing non-spawned/main parties corrupts the game), whereas `remove_party` returns false.
     bool remove_party(std::int32_t party_no) {
         if (party_no == main_party_no || !detach_party(party_no)) {
             return false;
@@ -1572,8 +1598,8 @@ struct WseWorldState {
     // Clears every world-held reference to agent `agent_no` (all of them when `agent_no` is -1).
     // Agent slots are recycled, so a stale id would otherwise alias the next agent spawned in
     // that slot (team leader, look/AI target, horse, camera target, conversation speaker, ...).
-    // `fx.missiles` (a spawn-event log) and `fx.trigger_agent_no` (current trigger parameter)
-    // are left alone.
+    // `fx.missiles` (append-only launch log) and `fx.ray_obstacles` (static ray-cast geometry)
+    // hold no recycled agent slots and stay untouched; `fx.trigger_agent_no` clears on full wipe.
     void unlink_agent_references(std::int32_t agent_no) {
         const auto matches = [agent_no](std::int32_t ref) noexcept {
             return ref >= 0 && (agent_no < 0 || ref == agent_no);
@@ -1583,6 +1609,9 @@ struct WseWorldState {
                 ref = -1;
             }
         };
+        if (agent_no < 0) {
+            fx.trigger_agent_no = -1;
+        }
         for (auto& other : agents) {
             reset(other.horse_agent_no);
             reset(other.rider_agent_no);
@@ -1628,7 +1657,6 @@ struct WseWorldState {
 
     // Allocates a mission object via `rglStableVector<mbMissionObject>` recycling (`0x14014c030`).
     [[nodiscard]] std::int32_t allocate_mission_object(WseMissionObject obj) {
-        obj.m5.spawned_at_runtime = true;
         const std::int32_t id = container_detail::allocate_stable_entry(
             mission_objects, mission_object_free_slots, kMaxSpawnedMissionObjects,
             std::move(obj));
@@ -1688,16 +1716,23 @@ struct WseWorldState {
         fx.spawn_effector_mission_object_nos.fill(-1);
     }
 
-    // `multiplayer_clear_scene` (416): removes every agent and every runtime-spawned mission
-    // object (items and props from spawn_item / spawn_scene_prop) but keeps the props the scene
-    // placed, so their prop-instance ids stay valid. Whether retail also resets those props to
-    // their starting state is open (STATUS.md §5).
+    // `multiplayer_clear_scene` (416, `mbMission::clearScene` `0x140147a80`): removes every agent,
+    // removes mission objects marked prunable (`+0x1d5` / `m5.enable_pruning`, loop at
+    // `0x140147e9f`) while leaving scene-placed and unpruned props (`spawn_scene_prop` `0x14013a450`,
+    // `spawn_item(..., 0)`) untouched in state, and resets active players' `agent_no = -1` /
+    // `ready_to_spawn = false` (`+0x1f4`/`+0x1f8` at `0x140148098`) without wiping `item_ids`.
     void clear_multiplayer_scene() {
         clear_agents();
+        for (auto& pl : players) {
+            if (pl.status == 2) {
+                pl.agent_no = -1;
+                pl.m5.ready_to_spawn = false;
+            }
+        }
         for (std::int32_t i = static_cast<std::int32_t>(mission_objects.size()) - 1; i >= 0; --i) {
             const auto idx = static_cast<std::size_t>(i);
             if (idx < mission_objects.size() && mission_objects[idx].active &&
-                mission_objects[idx].m5.spawned_at_runtime) {
+                mission_objects[idx].m5.enable_pruning) {
                 (void)remove_mission_object(i);
             }
         }

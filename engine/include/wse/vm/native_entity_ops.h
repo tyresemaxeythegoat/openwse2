@@ -224,8 +224,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                 world.quests[static_cast<std::size_t>(narrow[0])]
                     .notes[static_cast<std::size_t>(narrow[1])];
             note.text = native_resolve_and_parse(narrow[2], tag2, ctx);
-            note.date = (narrow[3] == 0) ? -1 : world.game_year;
-            note.available = true;
+            note.date = (narrow[3] == 0) ? -1 : world.current_day;
         }
         return NativeDispatch::handled;
     }
@@ -304,6 +303,8 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         if (narrow[0] >= 0) {
             world.active_presentation_no = narrow[0];
             world.presentation_background = false;
+            world.m5.enqueued_windows.emplace_back(
+                game::kQueuedWindowPresentationType, narrow[0]);
         }
         return NativeDispatch::handled;
     case 901: // start_background_presentation (0x1401cbf2d)

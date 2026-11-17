@@ -477,23 +477,25 @@ void test_ops3_dialog_quests_encounters() {
                ctx.world.quests[2].note_tableau_material_no == 5,
            "note tableau materials assigned");
 
+    ctx.world.current_day = 17;
     expect(run_stmt(ctx, 1091U, {0, 1, 1}, 0), "1091 caller != 4 ignored");
-    expect(!ctx.world.info_pages[0].notes[1].available, "1091 not written when caller != 4");
+    expect(ctx.world.info_pages[0].notes[1].text.empty(), "1091 not written when caller != 4");
     expect(run_stmt(ctx, 1091U, {0, 1, 1}, 4), "1091 caller == 4");
     expect(run_stmt(ctx, 1112U, {1, 2, 0}, 4), "1112 quest note from dialog");
     expect(run_stmt(ctx, 1115U, {2, 3, 1}, 4), "1115 faction note from dialog");
-    expect(ctx.world.info_pages[0].notes[1].available &&
-               ctx.world.info_pages[0].notes[1].date == ctx.world.game_year &&
+    expect(!ctx.world.info_pages[0].notes[1].text.empty() &&
+               ctx.world.info_pages[0].notes[1].date == ctx.world.current_day &&
                ctx.world.quests[1].notes[2].date == -1 &&
-               ctx.world.factions[2].notes[3].available,
-           "dialog notes populated with expected dates");
+               !ctx.world.factions[2].notes[3].text.empty(),
+           "dialog notes populated with expected current_day dates");
 
     ctx.stringRegisters[2] = u"Note sreg";
     expect(run_stmt(ctx, 1092U, {0, 4, 2, 0}), "1092 info page note from sreg");
     expect(run_stmt(ctx, 1118U, {1, 5, 2, 1}), "1118 faction note from sreg");
     expect(ctx.world.info_pages[0].notes[4].text == u"Note sreg" &&
-               ctx.world.factions[1].notes[5].date == ctx.world.game_year,
-           "sreg notes stored");
+               ctx.world.info_pages[0].notes[4].date == -1 &&
+               ctx.world.factions[1].notes[5].date == ctx.world.current_day,
+           "sreg notes stored with expected current_day dates");
 
     ctx.stringRegisters[0] = u"TipText";
     expect(run_stmt(ctx, 1130U, {0}), "1130 set_tooltip_text");

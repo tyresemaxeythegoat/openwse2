@@ -501,10 +501,32 @@ void test_triggers_and_wse_integration() {
                "jump_to_menu 2060 produces queued type-0x12 window that halts odd pass");
 
         const std::int32_t consumed = menuCtx.world.consume_campaign_queued_window();
-        expect(consumed == kQueuedWindowMenuType &&
-                   menuCtx.world.m5.active_window == kQueuedWindowMenuType &&
+        expect(consumed == kScreenWindowMenu &&
+                   menuCtx.world.m5.active_window == kScreenWindowMenu &&
+                   menuCtx.world.m6.ui.active_window_id == kScreenWindowMenu &&
                    menuCtx.world.m5.enqueued_windows.empty(),
-               "campaign consumer pops type-0x12 menu window and clears queue");
+               "campaign consumer pops type-0x12 menu window and syncs m6.ui.active_window_id");
+
+        // `mbMapWindow::frameMove` (0x140118987) only pops 0x12 (-> 0x12), 0x0f (-> 0x16),
+        // and 0x10 (-> 0x15) from the back, leaving other queued window types untouched.
+        menuCtx.world.m5.enqueued_windows.emplace_back(2, -1);  // loot window (menu-only)
+        expect(menuCtx.world.consume_campaign_queued_window() == -1 &&
+                   menuCtx.world.m5.enqueued_windows.size() == 1U,
+               "campaign consumer leaves non-map window types queued");
+        menuCtx.world.m5.enqueued_windows.emplace_back(kQueuedWindowNotesType, -1);
+        expect(menuCtx.world.consume_campaign_queued_window() == kScreenWindowNotes &&
+                   menuCtx.world.m5.active_window == kScreenWindowNotes &&
+                   menuCtx.world.m6.ui.active_window_id == kScreenWindowNotes &&
+                   menuCtx.world.m5.enqueued_windows.size() == 1U,
+               "campaign consumer pops type-0x10 notes window into 0x15");
+        menuCtx.world.m5.enqueued_windows.emplace_back(kQueuedWindowPresentationType, 7);
+        expect(menuCtx.world.consume_campaign_queued_window() == kScreenWindowPresentation &&
+                   menuCtx.world.active_presentation_no == 7 &&
+                   menuCtx.world.m5.active_window == kScreenWindowPresentation &&
+                   menuCtx.world.m6.ui.active_window_id == kScreenWindowPresentation &&
+                   menuCtx.world.m5.enqueued_windows.size() == 1U,
+               "campaign consumer pops type-0x0f presentation window into 0x16");
+        menuCtx.world.m5.enqueued_windows.clear();
 
         menuMgr.triggers[0].interval = 100.0;  // let next frame proceed to trigger 1 cleanly
         expect(execute_simple_trigger_manager(menuMgr, 1, timersTotal, menuCtx) &&
@@ -1527,6 +1549,7 @@ void test_native_entity_ops() {
     auto& w = ctx.world;
     w.has_game = true;
     w.game_year = 1257;
+    w.current_day = 42;
     w.ground_level_z = 3.25f;
     w.num_skins = 3;
     w.attribute_limit = 63;
@@ -1757,7 +1780,7 @@ void test_native_entity_ops() {
                ctx.registers[38] == 4 && ctx.registers[0] == 2 &&
                ctx.registers[1] == 2 && ctx.registers[2] == 2 &&
                ctx.registers[3] == -1 && ctx.registers[4] == 0 && ctx.registers[5] == 500 &&
-               w.quests[0].giver_troop_no == 2 && w.quests[0].notes[0].date == 1257 &&
+               w.quests[0].giver_troop_no == 2 && w.quests[0].notes[0].date == 42 &&
                w.played_sounds.size() == 2U && ctx.positions[0].o.z == 3.25f &&
                w.presentation_duration == 120 && !w.show_messages && w.overlays.size() == 1U &&
                w.overlays[0].text == u"RenamedWarband" && w.overlays[0].val == 99 &&

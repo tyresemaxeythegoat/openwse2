@@ -375,7 +375,6 @@ template <typename NoteT>
         if (notes != nullptr) {
             (*notes)[i].text = wse::core::wse_utf8_to_utf16(txt);
             (*notes)[i].date = date;
-            (*notes)[i].available = avail;
         }
         if (out_tableau != nullptr) {
             *out_tableau = tableau;
@@ -827,10 +826,11 @@ inline void write_world_body_sections(
         write_slots(w, pt.slots);
     }
 
-    // saveParties (0x1400ca5f0 + rglHashVector 0x1400e7de0)
+    // saveParties (0x1400ca5f0 + rglHashVector 0x1400e7de0: m_numSlots +0x138bc, m_nextKey +0x138f0)
     const std::int32_t num_parties = static_cast<std::int32_t>(world.parties.size());
+    const std::int32_t next_party_key = std::max(num_parties, world.next_party_key);
     w.write_i32(num_parties);
-    w.write_i32(num_parties);
+    w.write_i32(next_party_key);
     for (std::int32_t i = 0; i < num_parties; ++i) {
         const WseParty& p = world.parties[static_cast<std::size_t>(i)];
         if (p.active) {
@@ -1159,16 +1159,16 @@ inline void write_world_body_sections(
         }
     }
 
-    // parties (rglHashVector<mbParty> + main party extra XP/DNAs)
+    // parties (rglHashVector<mbParty>::readStream 0x1400e7b80 + main party extra XP/DNAs)
     {
         std::int32_t num_slots = 0;
-        std::int32_t capacity = 0;
-        if (!r.read_i32(num_slots) || !r.read_i32(capacity)) {
+        std::int32_t next_key = 0;
+        if (!r.read_i32(num_slots) || !r.read_i32(next_key)) {
             return SavegameContainerResult::truncated;
         }
-        (void)capacity;
-        if (num_slots < 0) return SavegameContainerResult::negative_count;
-        if (static_cast<std::size_t>(num_slots) > kMaxSavegameArrayCount) {
+        if (num_slots < 0 || next_key < 0) return SavegameContainerResult::negative_count;
+        if (static_cast<std::size_t>(num_slots) > kMaxSavegameArrayCount ||
+            static_cast<std::size_t>(next_key) > kMaxSavegameArrayCount) {
             return SavegameContainerResult::count_limit_exceeded;
         }
         // Every slot holds at least its int32 present flag; checking this before the
@@ -1178,6 +1178,7 @@ inline void write_world_body_sections(
         }
         world.parties.assign(static_cast<std::size_t>(num_slots), WseParty{});
         for (auto& slot : world.parties) slot.active = false;
+        world.next_party_key = std::max(num_slots, next_key);
 
         for (std::int32_t i = 0; i < num_slots; ++i) {
             std::int32_t valid = 0;

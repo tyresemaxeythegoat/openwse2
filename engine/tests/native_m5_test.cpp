@@ -902,10 +902,10 @@ void test_m5_review_regressions() {
                "spawn_scene_prop recycles freed mission_object hole 1 LIFO");
 
         expect(run_stmt(ctx, 416U, {}), "416 multiplayer_clear_scene");
-        expect(w.agents.empty() && w.mission_objects.empty() &&
+        expect(w.agents.empty() && w.mission_objects.size() == 3U &&
                    w.agent_free_slots.empty() && w.mission_object_free_slots.empty() &&
-                   w.players[1].agent_no == -1,
-               "416 clear_scene resets containers, free lists, and player agent links");
+                   w.players[1].agent_no == -1 && !w.players[1].m5.ready_to_spawn,
+               "416 clear_scene resets agents/players while keeping non-pruned 1974 props");
     }
 
     // Review regressions for e6c4d0e (mission containers).
@@ -985,8 +985,12 @@ void test_m5_review_regressions() {
         w.mission_objects.resize(2);  // placed by the scene, not through allocate_mission_object
         w.mission_objects[0].scene_prop_no = 1;
         w.mission_objects[1].scene_prop_no = 2;
+        // `multiplayer_clear_scene` (416, `0x140147a80`) deletes agents and prunable objects
+        // (`+0x1d5` / `m5.enable_pruning`), resets active players' `agent_no = -1` /
+        // `ready_to_spawn = false` (keeping `item_ids`), and leaves unpruned/scene props alone.
         expect(run_stmt(ctx, 1974U, {3, 0}) && ctx.registers[0] == 2, "416: spawn prop 2");
-        expect(run_stmt(ctx, 1971U, {0, 0, 0}) && ctx.registers[0] == 3, "416: spawn item 3");
+        expect(run_stmt(ctx, 1971U, {0, 0, 5}) && ctx.registers[0] == 3,
+               "416: spawn prunable item 3");
         expect(run_stmt(ctx, 1974U, {3, 0}) && ctx.registers[0] == 4, "416: spawn prop 4");
         w.m5.attached_missiles.push_back(wse::game::WseAttachedMissile{2, 0});
         w.m5.attached_missiles.push_back(wse::game::WseAttachedMissile{0, 0});
@@ -996,10 +1000,16 @@ void test_m5_review_regressions() {
                    w.edit_mode.selected_prop_instances == std::vector<std::int32_t>{0},
                "remove_mission_object drops attached missiles and edit-mode selection");
         expect(run_stmt(ctx, 1972U, {0}), "416: spawn agent");
+        w.init_players(2);
+        w.connect_player(1, "Tester", 77, 0);
+        w.players[1].item_ids[0] = 42;
+        w.players[1].m5.ready_to_spawn = true;
         expect(run_stmt(ctx, 416U, {}) && w.agents.empty() &&
-                   w.mission_objects.size() == 2U && w.is_valid_mission_object(0) &&
-                   w.is_valid_mission_object(1) && w.mission_object_free_slots.empty(),
-               "416 removes agents and spawned objects but keeps scene-placed props 0 and 1");
+                   w.mission_objects.size() == 5U && w.is_valid_mission_object(0) &&
+                   w.is_valid_mission_object(1) && !w.is_valid_mission_object(2) &&
+                   !w.is_valid_mission_object(3) && w.is_valid_mission_object(4) &&
+                   !w.players[1].m5.ready_to_spawn && w.players[1].item_ids[0] == 42,
+               "416 removes agents & prunable object 3, resets ready_to_spawn, keeps unpruned props and equipment");
     }
     {
         // step_world_frame consumes queued windows only on the campaign map.
@@ -1012,8 +1022,9 @@ void test_m5_review_regressions() {
         w.lighting.has_scene = false;
         w.step_world_frame(t, 0.1f);
         expect(w.m5.enqueued_windows.empty() &&
-                   w.m5.active_window == wse::game::kQueuedWindowMenuType,
-               "campaign frames consume the queued menu window");
+                   w.m5.active_window == wse::game::kScreenWindowMenu &&
+                   w.m6.ui.active_window_id == wse::game::kScreenWindowMenu,
+               "campaign frames consume the queued menu window and sync m6.ui.active_window_id");
     }
 }
 
