@@ -483,7 +483,7 @@ void test_ui_session_windows_and_regressions() {
            "empty text overlay is an empty label, not a white panel");
     const auto* mesh_w = find_widget(session.root, "overlay_3");
     expect(mesh_w != nullptr && mesh_w->kind == wse::game::UiWidgetKind::Image &&
-               close(mesh_w->size.x, 0.5f) && close(mesh_w->size.y, 0.375f),
+               close(mesh_w->size.x, 0.5f) && close(mesh_w->size.y, 0.375f) && mesh_w->tint_mesh,
            "mesh overlay spans its native mesh extent times overlay_set_size");
 
     // Escape never closes a presentation (retail `mbPresentationWindow::frameMove` has no key
@@ -744,7 +744,8 @@ void test_overlay_button_boxes() {
     const auto* in_game = find_widget(ui.root, "overlay_2");
     expect(game != nullptr && close(game->size.x, wse::game::kUiGameButtonWidth) &&
                close(game->size.y, wse::game::kUiGameButtonHeight) &&
-               game->mesh_name == "medium_button" && game->highlight_mesh_name == "medium_button_down",
+               game->mesh_name == "medium_button" && game->highlight_mesh_name == "medium_button_down" &&
+               !game->tint_mesh,
            "create_game_button_overlay: 0.148 x 0.04 box with medium_button meshes");
     expect(in_game != nullptr && close(in_game->size.x, wse::game::kUiInGameButtonWidth) &&
                close(in_game->size.y, wse::game::kUiInGameButtonHeight) &&
@@ -952,6 +953,27 @@ void test_synthetic_ui_rhi_render_and_uv_orientation() {
     root.children[1].highlighted = false;
     expect(renderer.render_tree(root, font, cfg, fb_refont) && fb_refont == fb_normal,
            "re-uploaded font atlas renders identically");
+
+    // Mesh tint (`overlay_set_color` / `overlay_set_alpha` on mesh overlays): `color_argb`
+    // multiplies the mesh only when `tint_mesh` is set.
+    root.children[0].color_argb = 0xFF00FF00U;
+    std::vector<std::uint8_t> fb_untinted;
+    expect(renderer.render_tree(root, font, cfg, fb_untinted) && fb_untinted == fb_normal,
+           "color_argb without tint_mesh leaves the mesh unchanged");
+    root.children[0].tint_mesh = true;
+    std::vector<std::uint8_t> fb_tint;
+    expect(renderer.render_tree(root, font, cfg, fb_tint), "tinted render_tree succeeds");
+    expect(fb_tint[img_bot + 0] < 40 && fb_tint[img_bot + 1] > 200 &&
+               fb_normal[img_bot + 0] > 200,
+           "a green tint removes the red channel from the mesh");
+    root.children[0].color_argb = 0x00FFFFFFU;
+    std::vector<std::uint8_t> fb_clear;
+    expect(renderer.render_tree(root, font, cfg, fb_clear) &&
+               fb_clear[img_bot + 0] == 12 && fb_clear[img_bot + 1] == 12 &&
+               fb_clear[img_bot + 2] == 14,
+           "a zero-alpha tint makes the mesh invisible (clear colour shows through)");
+    root.children[0].tint_mesh = false;
+    root.children[0].color_argb = 0xFFFFFFFFU;
 }
 
 void test_retail_warband_native_main_menu() {

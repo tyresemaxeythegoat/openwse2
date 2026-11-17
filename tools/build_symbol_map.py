@@ -148,6 +148,7 @@ SYMBOL_TOKENS = [
     "@rglWidget@@",
     "@rglImageWidget@@",
     "@rglGameButtonWidget@@",
+    "@rglImageButtonWidget@@",
     "mbSentence",
     "mbFloraKind",
     "mbGroundSpec",

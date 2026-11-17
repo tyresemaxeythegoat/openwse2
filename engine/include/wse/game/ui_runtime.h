@@ -279,6 +279,11 @@ struct UiWidget {
     wse::core::WseVec2 text_scale{0.022f, 0.030f};
     std::uint32_t text_flags = asset::kTextFlagCenterAlign;
     std::uint32_t color_argb = 0xFFFFFFFFU;
+    // Multiply the widget's mesh by `color_argb` (mesh overlays and image buttons: retail
+    // `rglImageWidget::setColor` / `setAlpha` `0x1402a6c50` / `0x1402a6c90` and
+    // `rglImageButtonWidget::setColor` `0x1402a6a80` write it into the widget mesh's colour;
+    // game buttons keep `rglWidget::setColor` `0x14031e890`, which leaves their meshes alone).
+    bool tint_mesh = false;
     std::uint32_t text_color_argb = 0xFF110000U;
     std::uint32_t highlight_color_argb = 0xFFFFDD00U;
     std::string mesh_name{};
@@ -1074,6 +1079,7 @@ public:
                 }
             } else if (mesh_button || (ov.type == 0 && !w.mesh_name.empty())) {
                 w.kind = mesh_button ? UiWidgetKind::GameButton : UiWidgetKind::Image;
+                w.tint_mesh = true;
                 if (!has_area && !w.mesh_name.empty()) {
                     // Place the mesh at its native UI-space extent times the scale, which is
                     // what `make_stretched_model_matrix` reproduces from this box.

@@ -1101,6 +1101,15 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     `rglGameButtonWidget::setScale` (`0x14029bfb0`) rescales both meshes by `new / old` and makes
     the new vector the box. Implemented in
     [ui_runtime.h](../engine/include/wse/game/ui_runtime.h) (`sync_overlays_from_world`).
+16. ~~Find what `overlay_set_color` / `overlay_set_alpha` do to mesh overlays.~~
+    **Resolved:** `setOverlayColor` / `setOverlayAlpha` (`0x14020e040` / `0x14020e060`) jump to the
+    widget's `setColor` / `setAlpha` (slots `+0x208` / `+0x210`). `rglImageWidget::setColor`
+    (`0x1402a6c50`) replaces the RGB bytes of its mesh's colour (`rglMesh+0xc0`, mesh at widget
+    `+0x178`) and of the widget colour (`+0x240`); `rglImageWidget::setAlpha` (`0x1402a6c90`)
+    replaces the mesh colour's alpha byte. `rglImageButtonWidget::setColor` (`0x1402a6a80`) does
+    the same for both state meshes (`+0x198`, `+0x190`). `rglGameButtonWidget` and
+    `rglSimpleButtonWidget` use `rglWidget::setColor` (`0x14031e890`), which does not touch a mesh.
+    Implemented as `MeshDrawCall::tint_rgba` in [rhi.h](../engine/include/wse/platform/rhi.h).
 
 ## 9. Evidence index
 

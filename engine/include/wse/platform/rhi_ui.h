@@ -743,6 +743,9 @@ public:
                                                       : std::string_view(lmat),
                             pb.static_draw.texture);
                     }
+                    if (node.tint_mesh) {
+                        pb.static_draw.tint_rgba = argb_to_rgba8(node.color_argb);
+                    }
                     std::memcpy(pb.static_draw.model, model, sizeof(model));
                     rhi_ui_detail::mat4_mul(proj, model, pb.static_draw.mvp);
                     batches.push_back(pb);

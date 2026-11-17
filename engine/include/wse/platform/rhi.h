@@ -413,6 +413,11 @@ struct MeshDrawCall {
     };
     TextureHandle normal_texture = 0;
     TextureHandle specular_texture = 0;
+    // Per-draw colour multiplied into every vertex colour, packed like
+    // `MeshVertex::color_rgba` (R in the low byte). Mirrors the per-mesh colour that
+    // `rglImageWidget::setColor` / `setAlpha` (`0x1402a6c50` / `0x1402a6c90`) write into the
+    // widget mesh for `overlay_set_color` / `overlay_set_alpha`. White leaves draws unchanged.
+    std::uint32_t tint_rgba = 0xFFFFFFFFU;
     // Column-major object -> world matrix used only to bring normals and tangents
     // into the (world-space) lighting frame; positions use `mvp`. Normals use its
     // inverse transpose, tangents its upper 3x3.
@@ -687,10 +692,24 @@ public:
                 normal_m = normal_matrix_from_model(draw.model);
             }
             clip_scratch_.resize(num_verts);
+            // `tint_rgba` is constant per draw, so scaling each vertex colour by it equals
+            // scaling the interpolated colour per pixel.
+            const bool tinted = draw.tint_rgba != 0xFFFFFFFFU;
+            const float tint_r = static_cast<float>(draw.tint_rgba & 0xFFU) / 255.0f;
+            const float tint_g = static_cast<float>((draw.tint_rgba >> 8U) & 0xFFU) / 255.0f;
+            const float tint_b = static_cast<float>((draw.tint_rgba >> 16U) & 0xFFU) / 255.0f;
+            const float tint_a = static_cast<float>((draw.tint_rgba >> 24U) & 0xFFU) / 255.0f;
             for (std::size_t i = 0; i < num_verts; ++i) {
                 MeshVertex mv{};
                 std::memcpy(&mv, vb.data() + i * sizeof(MeshVertex), sizeof(MeshVertex));
-                clip_scratch_[i] = to_clip(mv, draw.mvp, lit ? normal_m.data() : nullptr);
+                ClipVert cv = to_clip(mv, draw.mvp, lit ? normal_m.data() : nullptr);
+                if (tinted) {
+                    cv.r *= tint_r;
+                    cv.g *= tint_g;
+                    cv.b *= tint_b;
+                    cv.a *= tint_a;
+                }
+                clip_scratch_[i] = cv;
             }
 
             for (std::uint32_t idx = 0; idx + 2U < draw.index_count; idx += 3U) {

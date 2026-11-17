@@ -15,11 +15,11 @@
  "inputs": {
   "layouts": 83,
   "globals_scanned": 48658,
-  "symbols_curated": 3761,
+  "symbols_curated": 3765,
   "game_vtables": 76,
-  "function_ranges": 5137,
+  "function_ranges": 5141,
   "global_objects": 25,
-  "superseded_vas": 3119
+  "superseded_vas": 3123
  },
  "strings": [
   {
@@ -28180,6 +28180,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402a5c30"
+  },
+  {
+   "name": "?getType@rglImageButtonWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a69a0"
+  },
+  {
+   "name": "?setScale@rglImageButtonWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a69b0"
+  },
+  {
+   "name": "?setColor@rglImageButtonWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a6a80"
+  },
+  {
+   "name": "?setAlpha@rglImageButtonWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a6af0"
   },
   {
    "name": "?getType@rglImageWidget@@UEBAHXZ",
@@ -57375,6 +57399,30 @@
    "symbol": "?initEarlyZHandle@rglTechnique@@QEAAXXZ"
   },
   {
+   "start": "0x1402a69a0",
+   "end": "0x1402a69b0",
+   "va": "0x1402a69a0",
+   "symbol": "?getType@rglImageButtonWidget@@UEBAHXZ"
+  },
+  {
+   "start": "0x1402a69b0",
+   "end": "0x1402a6a7a",
+   "va": "0x1402a69b0",
+   "symbol": "?setScale@rglImageButtonWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x1402a6a80",
+   "end": "0x1402a6af0",
+   "va": "0x1402a6a80",
+   "symbol": "?setColor@rglImageButtonWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x1402a6af0",
+   "end": "0x1402a6bc0",
+   "va": "0x1402a6af0",
+   "symbol": "?setAlpha@rglImageButtonWidget@@UEAAXI@Z"
+  },
+  {
    "start": "0x1402a6bc0",
    "end": "0x1402a6bd0",
    "va": "0x1402a6bc0",
@@ -69538,6 +69586,10 @@
   "0x140295da0",
   "0x140295e70",
   "0x140295f40",
+  "0x140299ac0",
+  "0x140299ad0",
+  "0x140299ba0",
+  "0x140299c10",
   "0x140299ce0",
   "0x140299cf0",
   "0x140299d70",
