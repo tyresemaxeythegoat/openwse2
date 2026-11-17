@@ -96,7 +96,6 @@ inline constexpr std::int32_t kSavegamePartyMarshallAfterOrEq = 1020;
 inline constexpr std::int32_t kSavegameCombatOptionsAfterVersion = 0x470;       // 1136
 inline constexpr std::int32_t kSavegamePartyExtraIconAfterVersion = 0x470;      // 1136
 inline constexpr std::int32_t kSavegamePartyIgnorePlayerAfterVersion = 0x488;   // 1160
-inline constexpr std::int32_t kSavegameOldestReconstructedBodyVersion = kSavegameMinVersion;
 
 [[nodiscard]] constexpr bool savegame_has_combat_options(std::int32_t v) noexcept {
     return v > kSavegameCombatOptionsAfterVersion;
@@ -124,6 +123,8 @@ enum class SavegameContainerResult : std::uint8_t {
     io_error,
     checksum_mismatch,
     corrupt_record,
+    // No longer produced: every header version in [802..1174] has a reconstructed body
+    // layout. Kept so the enum values and `describe` stay stable for callers.
     legacy_layout_unsupported,
 };
 
@@ -1003,13 +1004,10 @@ inline void write_world_body_sections(
             !r.read_i32(world.reduce_campaign_ai) || !r.read_i32(world.combat_speed)) {
             return SavegameContainerResult::truncated;
         }
-    } else {
-        world.combat_damage_to_self = 0;
-        world.combat_damage_to_friends = 0;
-        world.reduce_battle_ai = 0;
-        world.reduce_campaign_ai = 0;
-        world.combat_speed = 2;
     }
+    // Bodies <= 1136 carry no combat options: like the retail branch, nothing is read and the
+    // live (staged) values are kept. Whether retail then re-applies config defaults is open
+    // (STATUS.md §5).
     if (const auto rc = read_save_game_section(r, world); rc != SavegameContainerResult::ok) {
         return rc;
     }
@@ -1201,7 +1199,6 @@ inline void write_world_body_sections(
                 }
             }
         }
-        world.sync_party_creation_count();
         if (world.is_valid_party(world.main_party_no)) {
             WseParty& mp = world.parties[static_cast<std::size_t>(world.main_party_no)];
             for (std::size_t s = 0; s < mp.stacks.size(); ++s) {
@@ -1471,12 +1468,6 @@ inline void write_world_body_sections(
         r, report.header, ctx.world->compatible_savegame_module_version);
     if (h_rc != SavegameContainerResult::ok) {
         report.status = h_rc;
-        return report;
-    }
-
-    if (report.header.savegame_version < kSavegameOldestReconstructedBodyVersion) {
-        report.status = SavegameContainerResult::legacy_layout_unsupported;
-        report.bytes_consumed = r.cursor();
         return report;
     }
 

@@ -907,6 +907,114 @@ void test_m5_review_regressions() {
                    w.players[1].agent_no == -1,
                "416 clear_scene resets containers, free lists, and player agent links");
     }
+
+    // Review regressions for e6c4d0e (mission containers).
+    {
+        // A faded-out prop stays alive: fade_in can bring it back and its id is not recycled.
+        VmContext ctx;
+        auto& w = ctx.world;
+        ctx.fixedPointMultiplier = 1;
+        w.lighting.has_scene = true;
+        w.misc.num_scene_props = 4;
+        expect(run_stmt(ctx, 1974U, {1, 0}) && ctx.registers[0] == 0, "fade: spawn prop 0");
+        expect(run_stmt(ctx, 1974U, {2, 0}) && ctx.registers[0] == 1, "fade: spawn prop 1");
+        expect(run_stmt(ctx, 1822U, {0, 1}), "fade: 1822 scene_prop_fade_out over 1 s");
+        w.step_world_frame(ctx.timersTotal, 2.0f);
+        expect(w.is_valid_mission_object(0) && w.mission_object_free_slots.empty(),
+               "faded-out prop is not removed by the lifetime pass");
+        expect(run_stmt(ctx, 1823U, {0, 1}) && !w.mission_objects[0].m5.fade_out,
+               "1823 scene_prop_fade_in restores the faded-out prop");
+        expect(run_stmt(ctx, 1974U, {3, 0}) && ctx.registers[0] == 2,
+               "next spawn gets a fresh id instead of the faded prop's id");
+    }
+    {
+        // Every agent reference is cleared before a slot is recycled.
+        VmContext ctx;
+        auto& w = ctx.world;
+        w.lighting.has_scene = true;
+        w.troops.resize(1);
+        w.items.resize(1);
+        w.init_players(2);
+        for (int i = 0; i < 3; ++i) {
+            expect(run_stmt(ctx, 1972U, {0}) && ctx.registers[0] == i, "refs: spawn agent");
+        }
+        w.teams[0].leader_agent_no = 0;
+        w.teams[0].order_listener = 0;
+        w.teams[0].division_leaders[3] = 0;
+        w.agents[1].m5.look_target_agent_no = 0;
+        w.agents[1].m5.ai_move_target_agent_no = 0;
+        w.agents[1].m5.ai_behavior_target_agent_no = 0;
+        w.agents[1].m5.cached_enemies = {2, 0, 2};
+        w.agents[1].m5.add_offer(0, 5.0f, ctx.timersTotal);
+        w.agents[2].horse_agent_no = 0;  // one-sided link: agent 0 has no rider_agent_no
+        w.m5.mission_camera.target_agent_no = 0;
+        w.dialog.speaker_agent_no = 0;
+        w.dialog.pending_mission_agent_no = 0;
+        w.player_agent_no = 0;
+        w.players[1].agent_no = 0;
+        w.misc.num_scene_props = 2;
+        expect(run_stmt(ctx, 1974U, {1, 0}), "refs: spawn prop");
+        w.mission_objects[0].parent_agent_no = 0;
+
+        expect(w.remove_agent(0), "refs: remove agent 0");
+        const auto& tm = w.teams[0];
+        const auto& a1 = w.agents[1].m5;
+        expect(tm.leader_agent_no == -1 && tm.order_listener == -1 &&
+                   tm.division_leaders[3] == -1 && a1.look_target_agent_no == -1 &&
+                   a1.ai_move_target_agent_no == -1 && a1.ai_behavior_target_agent_no == -1 &&
+                   a1.cached_enemies == std::vector<std::int32_t>{2, 2} && a1.offers.empty() &&
+                   w.agents[2].horse_agent_no == -1 &&
+                   w.m5.mission_camera.target_agent_no == -1 &&
+                   w.dialog.speaker_agent_no == -1 && w.dialog.pending_mission_agent_no == -1 &&
+                   w.player_agent_no == -1 && w.players[1].agent_no == -1 &&
+                   w.mission_objects[0].parent_agent_no == -1,
+               "remove_agent clears team, AI, offer, horse, camera, dialog, player, and prop refs");
+        expect(run_stmt(ctx, 1972U, {0}) && ctx.registers[0] == 0 &&
+                   w.teams[0].leader_agent_no == -1 && w.agents[2].horse_agent_no == -1,
+               "recycled agent slot 0 inherits no stale references");
+    }
+    {
+        // Mission-object references and 416 keeping scene-placed props.
+        VmContext ctx;
+        auto& w = ctx.world;
+        w.lighting.has_scene = true;
+        w.is_multiplayer = true;
+        w.misc.num_scene_props = 4;
+        w.items.resize(1);
+        w.troops.resize(1);
+        w.mission_objects.resize(2);  // placed by the scene, not through allocate_mission_object
+        w.mission_objects[0].scene_prop_no = 1;
+        w.mission_objects[1].scene_prop_no = 2;
+        expect(run_stmt(ctx, 1974U, {3, 0}) && ctx.registers[0] == 2, "416: spawn prop 2");
+        expect(run_stmt(ctx, 1971U, {0, 0, 0}) && ctx.registers[0] == 3, "416: spawn item 3");
+        expect(run_stmt(ctx, 1974U, {3, 0}) && ctx.registers[0] == 4, "416: spawn prop 4");
+        w.m5.attached_missiles.push_back(wse::game::WseAttachedMissile{2, 0});
+        w.m5.attached_missiles.push_back(wse::game::WseAttachedMissile{0, 0});
+        w.edit_mode.selected_prop_instances = {2, 0};
+        expect(w.remove_mission_object(2) && w.m5.attached_missiles.size() == 1U &&
+                   w.m5.attached_missiles[0].mission_object_no == 0 &&
+                   w.edit_mode.selected_prop_instances == std::vector<std::int32_t>{0},
+               "remove_mission_object drops attached missiles and edit-mode selection");
+        expect(run_stmt(ctx, 1972U, {0}), "416: spawn agent");
+        expect(run_stmt(ctx, 416U, {}) && w.agents.empty() &&
+                   w.mission_objects.size() == 2U && w.is_valid_mission_object(0) &&
+                   w.is_valid_mission_object(1) && w.mission_object_free_slots.empty(),
+               "416 removes agents and spawned objects but keeps scene-placed props 0 and 1");
+    }
+    {
+        // step_world_frame consumes queued windows only on the campaign map.
+        wse::game::WseWorldState w{};
+        const std::array<std::int64_t, 3> t{};
+        w.lighting.has_scene = true;
+        w.m5.enqueued_windows.emplace_back(wse::game::kQueuedWindowMenuType, -1);
+        w.step_world_frame(t, 0.1f);
+        expect(w.m5.enqueued_windows.size() == 1U, "mission frames leave the window queue alone");
+        w.lighting.has_scene = false;
+        w.step_world_frame(t, 0.1f);
+        expect(w.m5.enqueued_windows.empty() &&
+                   w.m5.active_window == wse::game::kQueuedWindowMenuType,
+               "campaign frames consume the queued menu window");
+    }
 }
 
 }  // namespace

@@ -379,8 +379,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         return NativeDispatch::handled;
     case 416: // multiplayer_clear_scene (0x1401c840f)
         if (world.is_multiplayer) {
-            world.clear_mission_entities();
-            world.reset_players_for_mission();
+            world.clear_multiplayer_scene();
         }
         return NativeDispatch::handled;
     case 417: // multiplayer_is_server (0x1401c8469)

@@ -138,6 +138,37 @@ check interval (`-112` = agent exit status, `-105`/`-106` = ranged attack, `-26`
 `mbStatementBlock::execute` interpreter (`execute_trigger`, `execute_trigger_manager`,
 `execute_simple_trigger`, `execute_simple_trigger_manager`, `execute_script`, `execute_mapped_script`).
 
+### Entity container lifetimes (Phase 2E)
+
+`WseWorldState` (`wse/game/world_state.h`) owns the four live containers:
+
+- **Parties** (`rglHashVector<mbParty>`, `getFreeItem` `0x1400e8730`): `allocate_party` appends,
+  so `parties.size()` is the next key and handles are never reused; `remove_party`
+  (`mbGame::removeParty` `0x1400dd990`) leaves a tombstone (`active = false`, `pf_disabled`) and
+  clears parent/child links, AI behavior targets, agent/player links, and the encountered /
+  camera-follow party ids.
+- **Agents / mission objects** (`rglStableVector`, `createItem` `0x14014b960` / `0x14014c030`,
+  `remove` `0x14014b810` / `0x14014bdc0`): freed interior slots are reused LIFO and trailing free
+  slots are trimmed. Because ids are reused, `remove_agent` / `remove_mission_object` first clear
+  every world reference to the id (`unlink_agent_references`: team leader, order listener,
+  division leaders, look / AI targets, offers, cached enemies, horse/rider in both directions,
+  `parent_agent_no`, mission camera, dialog speaker, players; for objects: spawn effectors, agent
+  attachments, standing object, attached missiles, edit-mode selection).
+- **Players** (`mbnetPlayer::initialize` / `clear` / `create`): `disconnect_player` resets the
+  slot to `UNASSIGNED` / team 2 but keeps `mp.saved_ban`, so `ban_player_using_saved_ban_info`
+  (468) still bans a player who was kicked while the ban poll ran.
+
+`step_world_frame` runs after the trigger managers: on the campaign map it consumes one queued
+window; in a mission it removes agents 30 s after `agent_fade_out` (1749) and spawned items whose
+prune timer expired. `multiplayer_clear_scene` (416) removes all agents and runtime-spawned
+objects (`m5.spawned_at_runtime`) and keeps scene-placed props.
+
+Safety deviations: `remove_party` refuses the main party; `attach_party` (and
+`party_attach_to_party` 1660) refuses an attachment that would close a cycle; spawning past
+`kMaxSpawnedAgents` / `kMaxSpawnedMissionObjects` (8192) returns -1. A faded-out scene prop is never
+removed (`scene_prop_fade_in` 1823 must be able to restore it). Open questions are in `STATUS.md` §5
+("Phase 2E review").
+
 ## Savegames
 
 `rglBinaryStream` stores raw little-endian values with no header or per-value metadata;

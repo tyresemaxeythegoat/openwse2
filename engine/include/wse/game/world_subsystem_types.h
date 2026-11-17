@@ -493,10 +493,10 @@ struct WseMiscRuntimeState {
 // mbQueuedWindow (8 B) entry type 0x12 maps to `mbMenuWindow` (`g_gameScreen` slot 18,
 // `0x1400efd21`): `jump_to_menu` (`0x1401dc2b1`) calls `mbGame::enqueueWindow(0x12, -1)`,
 // `mbSimpleTriggerManager::execute` stops early after an odd event key when back().type == 0x12
-// (`0x1402101d2..0x1402101f7`), and `mbMapWindow::frameMove` (`0x140118987`) pops it before
-// switching to `mbMenuWindow` (whose `open` (`0x1401202e0`) clears any remaining queue entries).
+// (`0x1402101d2..0x1402101f7`), and `mbMapWindow::frameMove` (`0x140117f90`, pop at `0x140118987`)
+// pops it before switching to `mbMenuWindow` (whose `open` (`0x140120240`) clears any remaining
+// queue entries).
 inline constexpr std::int32_t kQueuedWindowMenuType = 0x12;
-inline constexpr std::int32_t kQueuedWindowSaveExitBreakType = kQueuedWindowMenuType;
 
 // mbTrack (0x5c B) savegame fields serialized by saveTracks (0x1400ca420) / loadTracks (0x1400c90e0).
 struct WseSavegameTrack {
