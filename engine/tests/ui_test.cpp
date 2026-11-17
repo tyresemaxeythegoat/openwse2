@@ -546,6 +546,39 @@ void test_ui_session_windows_and_regressions() {
                ctx.world.active_presentation_no == -1 &&
                ctx.world.m5.active_window == wse::game::kScreenWindowMenu,
            "presentation auto-closes 0x16 when its duration runs out");
+
+    // Native refresh idiom (`prsnt_game_custom_battle_designer`, `prsnt_multiplayer_item_select`,
+    // ...): -62 runs `presentation_set_duration 0` + `start_presentation <self>`, which restarts
+    // the open presentation instead of closing it.
+    wse::game::LoadedPresentation refresh{};
+    refresh.id = "prsnt_refresh";
+    add_trig(refresh, -60.0f, {make_stmt(wse::vm::core_op::kValAdd, {reg(17), 1})});
+    add_trig(refresh, -62.0f, {make_stmt(kPresentationSetDuration, {0}),
+                               make_stmt(kStartPresentation, {0})});
+    std::array<wse::game::LoadedPresentation, 1> refresh_set{refresh};
+    ctx.registers[17] = 0;
+    expect(session.start_presentation(ctx.world, ctx, 0, refresh_set) && ctx.registers[17] == 1,
+           "refresh presentation starts and fires -60 once");
+    for (const bool in_scene : {false, true}) {
+        ctx.world.lighting.has_scene = in_scene;
+        const std::int64_t loads_before = ctx.registers[17];
+        ctx.world.overlays.push_back(ov);
+        session.sync_overlays_from_world(ctx.world);
+        (void)session.handle_pointer_and_keys(ctx.world, 0.30f, 0.22f, false, true, false, &ctx,
+                                              refresh_set);
+        expect(ctx.registers[17] == loads_before + 1 &&
+                   ctx.world.active_presentation_no == 0 &&
+                   session.current_window == wse::game::kScreenWindowPresentation &&
+                   ctx.world.overlays.empty() && ctx.world.presentation_duration == 10000 &&
+                   ctx.world.m5.enqueued_windows.empty(),
+               in_scene ? "self-restart inside a scene (no queued window) also restarts"
+                        : "set_duration 0 + start_presentation <self> restarts instead of closing");
+        expect(session.step_presentation(ctx.world, ctx, 0.5f, refresh_set) &&
+                   ctx.registers[17] == loads_before + 1,
+               "a handled self-restart is not replayed on the next frame");
+    }
+    ctx.world.lighting.has_scene = false;
+    session.close_active_modal_window(ctx.world);
 }
 
 void test_synthetic_ui_rhi_render_and_uv_orientation() {

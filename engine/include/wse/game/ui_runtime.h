@@ -982,6 +982,8 @@ private:
     std::uint32_t presentation_flags_ = 0U;
     float default_duration_s_ = 100.0f;
     float duration_cs_accum_ = 0.0f;
+    // `world.m6.ui.presentation_start_serial` as of the last handled start request.
+    std::uint32_t seen_start_serial_ = 0U;
     // Mutable copy of the open presentation's triggers, taken once per presentation
     // instead of once per dispatch.
     SimpleTriggerManager active_triggers_{};
@@ -1036,6 +1038,9 @@ private:
         const float default_s = ((prsnt.flags & 1U) != 0U) ? 10.0f : default_duration_s_;
         const float default_cs = std::clamp(default_s * 100.0f, 0.0f, 2.0e9f);
         world.presentation_duration = static_cast<std::int32_t>(default_cs);
+        // Any `start_presentation` issued from here on (including by `-60` itself) is a new
+        // request for `follow_presentation_state`.
+        seen_start_serial_ = world.m6.ui.presentation_start_serial;
         reset_root("presentation");
 
         // Fire trigger -60 (`ti_on_presentation_load`, 0x1402099c0..0x140209a60).
@@ -1044,9 +1049,13 @@ private:
     }
 
     // After any presentation trigger: follows a `start_presentation` (900) issued by the
-    // trigger to a different presentation (bounded, so two presentations starting each
-    // other from `-60` cannot loop forever), closes window `0x16` when the duration ran out,
-    // and otherwise re-syncs the overlays. Returns whether a presentation is still open.
+    // trigger, either to a different presentation or to the open one (the Native refresh
+    // idiom `presentation_set_duration 0` + `start_presentation <self>`, used by e.g.
+    // `prsnt_game_custom_battle_designer` and `prsnt_multiplayer_item_select`, which restarts
+    // it: overlays cleared, duration re-armed, `-60` fired again). Bounded, so presentations
+    // starting each other (or themselves) from `-60` cannot loop forever. Then closes window
+    // `0x16` when the duration ran out, and otherwise re-syncs the overlays. Returns whether a
+    // presentation is still open.
     bool follow_presentation_state(WseWorldState& world,
                                    vm::VmContext& vm_ctx,
                                    std::span<const LoadedPresentation> presentations) {
@@ -1055,7 +1064,8 @@ private:
                 return false;
             }
             const std::int32_t want = world.active_presentation_no;
-            if (want == presentation_no_ || want < 0 ||
+            const bool requested = world.m6.ui.presentation_start_serial != seen_start_serial_;
+            if ((want == presentation_no_ && !requested) || want < 0 ||
                 static_cast<std::size_t>(want) >= presentations.size()) {
                 break;
             }
@@ -1070,6 +1080,8 @@ private:
             }
             begin_presentation(world, vm_ctx, want, presentations);
         }
+        // A request still pending after the hop bound is dropped, not replayed next frame.
+        seen_start_serial_ = world.m6.ui.presentation_start_serial;
         if (world.active_presentation_no < 0 || world.presentation_duration <= 0) {
             close_active_modal_window(world);
             return false;

@@ -308,6 +308,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         if (narrow[0] >= 0) {
             world.active_presentation_no = narrow[0];
             world.presentation_background = false;
+            ++world.m6.ui.presentation_start_serial;
             if (!world.lighting.has_scene) {
                 world.enqueue_window(game::kQueuedWindowPresentationType, narrow[0]);
             }

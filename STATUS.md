@@ -458,6 +458,16 @@ Still open:
    `load_native_ui_assets` keeps; `ui_test.cpp`'s retail section (needs `WSE_WARBAND_ROOT`) must be
    re-run on a machine with Warband installed.
 
+### `a34ccbb` review (follow-up to the P9 Part 2 fixes): fixed
+
+1. ~~**Self-restarting presentations closed.**~~ **Fixed:** `follow_presentation_state` only
+   switched when `active_presentation_no` changed, so `presentation_set_duration 0` +
+   `start_presentation <self>` (12 of Native's 49 presentations, e.g.
+   `prsnt_game_custom_battle_designer`, `prsnt_multiplayer_item_select`, `prsnt_custom_banner`)
+   closed window `0x16` and dropped the queued restart. `start_presentation` (900) now bumps the
+   port counter `m6.ui.presentation_start_serial`, and `UiSession` restarts the open presentation
+   when it changes (in or out of a scene); `ui_test.cpp` covers both.
+
 ## 6. Open documentation questions
 
 ~~One open question (2026-11-14 review): `mbStatementBlock::execute` (`0x1401f69d0`) local-variable zeroing condition.~~ **Resolved:** At `0x1401f6c59` (inside `mbStatementBlock::execute` `0x1401f69d0`), the VM checks `rglConfig::General::bLocalVariablesZeroInitialization` (`0x140617819`, loaded from `[General] bLocalVariablesZeroInitialization` in `rglConfig::load` at `0x14026f716` via `rglIni::getBool` `0x1402a84d0`), whose `.data` default is `1` (`true`). `VmContext::clearLocalsBetweenCalls` now defaults to `true` (`docs/ARCHITECTURE.md` §5 Block execution).

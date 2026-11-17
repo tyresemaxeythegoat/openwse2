@@ -827,6 +827,11 @@ struct WseM6UiExt {
     std::string troops_file{};
     std::string parties_file{};
     bool conversation_presentation_started = false;
+    // Bumped by every `start_presentation` (900), including one that names the presentation
+    // already open, so `game::UiSession` can tell a self-restart (the Native refresh idiom
+    // `presentation_set_duration 0` + `start_presentation <self>`) from no request at all
+    // (port bookkeeping, not a retail field).
+    std::uint32_t presentation_start_serial = 0U;
     std::vector<std::int32_t> active_presentations{};
     std::unordered_map<std::int32_t, WseM6OverlayExt> overlay_ext{};
     std::unordered_map<std::int32_t, WseM6DynamicMenu> menus{};
