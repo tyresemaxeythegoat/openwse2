@@ -115,9 +115,9 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `audio_test.cpp` | 8 |
 | `input_test.cpp` | 8 |
 | `scene_test.cpp` | 6 |
-| `ui_test.cpp` | 8 |
+| `ui_test.cpp` | 11 |
 | `selftest_host_test.cpp` *(aggregate runner over the 23 suites)* | 23 suites |
-| **Total (23 standalone suites + aggregate runner)** | **183** |
+| **Total (23 standalone suites + aggregate runner)** | **186** |
 
 ## 4. Blocked
 
@@ -483,10 +483,32 @@ Still open:
    The Vulkan device still draws through the software rasterizer (P4 item 1), so the tint must be
    added to the real GPU pipeline when that lands; `overlay_animate_*` colour / alpha targets are
    stored but not animated.
-5. **Interactive overlays are incomplete.** `-63` fires only for clickable overlays (text and image
-   buttons), `-64` (`ti_on_presentation_mouse_press`) is not raised, sliders / number boxes /
-   combo buttons / text boxes / check boxes do not change their value or fire `-62` with it, and
-   `set_container_overlay` children are not offset, clipped, or scrolled by their container.
+5. ~~**Interactive overlays are incomplete.**~~ **Mostly fixed (P9 #5):** `UiSession::handle_input`
+   (new `UiPointerInput`; `handle_pointer_and_keys` stays as a one-frame tap wrapper) follows
+   retail `rglWindowManager::frameMove` (`0x14032a0d0`): left / right press -> widget states
+   `0x10` / `0x40`, release -> `0x8` / `0x20`, sent to the focused widget, else the window tree.
+   `rglContainerWidget::triggerState` (`0x14028af30`) gives hover enter `0x2` / leave `0x4` to
+   every visible, enabled child the cursor enters or leaves (any type) and presses to children
+   under the cursor top-down until one consumes it. `mbPresentationContainer::frameMove`
+   (`0x140208ec0`) then raises, per overlay in index order, `-63` (enter 0 / leave 1), `-62`
+   (state `0x10000` with the per-type value), and `-64` (`0x10` / `0x40` / `0x100` = param 2
+   0 / 1 / 2). Value widgets: plain and toggle buttons (`rglSimpleButtonWidget::triggerState`
+   `0x140307770`; check box = `createCheckBoxOverlay` `0x14020bc50`), sliders (`createSliderOverlay`
+   `0x14020af30`, `rglSliderWidget::triggerState` `0x14030d610`), number boxes
+   (`rglNumberBoxWidget::triggerState` `0x1402c8310`, auto-repeat 1/3/10/50), combo labels
+   (`rglComboLabelWidget::triggerState` `0x140262cd0`) and combo buttons
+   (`rglComboButtonWidget::triggerState` `0x140261340`); the wheel scrolls the nearest
+   `rglScrollableWidget` (`createTextOverlay` `0x140209a90`); container children are now offset,
+   culled and scrolled (`rhi_ui.h`). Evidence: `docs/ARCHITECTURE.md` §8 item 17. The same
+   change fixes `create_text_overlay` (910) ignoring `set_container_overlay`. **Still open:**
+   number-box / combo-label arrows are the outer quarters of a fixed box, the combo popup lists
+   items downwards (`rglComboButtonWidget::openPopup` `0x140261d10` not traced), list boxes act
+   like combo buttons, the slider grab offset is the cursor-to-knob distance, scroll step 0.05
+   per notch with content-top start, no scissor (clipping culls children wholly outside), plain
+   button `-62` param 2 passes the overlay value (retail's is a stale trigger parameter), triggers
+   run at input time rather than after `-61`, text box entry is not modelled, slider / number box
+   / combo meshes are not drawn (text only), the middle-press (`0x100`) sender is untraced, and
+   area-less text overlays have no hover box (needs the item 2 anchoring check).
 6. **Per-frame GPU buffer churn.** `update_skinned_mesh` still creates and destroys a vertex
    buffer per skinned mesh per frame, and `UiRhiRenderer::render_tree` creates one index buffer per
    dynamic batch per frame. Both need `RhiDevice` support (`update_buffer`, and `first_index` in
@@ -532,6 +554,7 @@ Previously closed: the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vta
 | `prsntf_manual_end_only` trace + Escape change | PASS (Windows `build_host.ps1` with `WSE_WARBAND_ROOT`; `check_citations.py --self-test --docs`; `SYMBOL_MAP.json` regeneration reproduces the committed map byte-for-byte before the `mbConversationWindow` token) | capstone `.text` sweeps (direct + register-loaded bit tests at `+0x48` / `+0x1c`, validated on `startPresentation`'s bit-0 read); `0x1400888c0`, `0x1400888a0`, `0x140174ed0`, `0x1402097b0` |
 | Overlay button boxes / size semantics | PASS (Windows `build_host.ps1` with `WSE_WARBAND_ROOT`; `check_citations.py --self-test --docs`; `ui_test.cpp` `test_overlay_button_boxes`) | capstone disassembly of `0x14020e0c0`, `0x14031e7e0`, `0x1402a6bd0`, `0x14020abe0`, `0x14031e330`, `0x14031dfa0`, `0x14020c3e0`, `0x14020c7d0`, `0x14029bfb0` |
 | Mesh overlay tint | PASS (Windows `build_host.ps1` with `WSE_WARBAND_ROOT`; `check_citations.py --self-test --docs`; `ui_test.cpp` tint render checks) | capstone disassembly of `0x14020e040`, `0x1402a6c50`, `0x1402a6c90`, `0x1402a6a80`, `0x14031e890` |
+| Interactive overlays (P9 #5) | PASS (Windows `build_host.ps1` with `WSE_WARBAND_ROOT`: `engine host tests: PASS`, `selftest_host` `23/23` `29,907 ms` incl. retail `ui`; changed headers compile standalone with `-Wall -Wextra -Werror`; `check_citations.py --self-test --docs` `83` headers / `2312` VA refs, `1308` doc refs) | `ui_runtime.h` `handle_input` / `UiPointerInput`, `rhi_ui.h` container offset + culling, `native_ui_ops.h` / `native_entity_ops.h` `create_opcode` + 910 container fix, `ui_test.cpp` (3 new functions); `SYMBOL_MAP.json` +8 class tokens (3,835 symbols). Evidence: `docs/ARCHITECTURE.md` §8 item 17. Linux/ASan/NDK left to CI. |
 | Review fixes for `5ab81a4` (Phase 2A / P9 Part 1) | PASS (Linux clang++ 18.1.3: header-only gate loop `18/18` + `script`, CMake + CTest `23/23` incl. `selftest_host` (glslang from a local `16.6.0` checkout); g++ 13 ASan/UBSan on the touched suites `savegame`, `block_vm`, `native_m5`, `native_world`, `module_loaders`, `headless`, `scene`; `check_citations.py --self-test --docs`). Full `WSE_SANITIZE` CMake tree not run locally (disk allowance); CI `host-sanitizers` covers it | Fixed the 8 items in §5 "Phase 2A / P9 Part 1 review (`5ab81a4`)": stale `m6.ui.active_window_id`, undrained window types + `kMaxQueuedWindows`, `900` queueing in missions, `kMaxPartyKeys` bound on `m_nextKey`, sparse party keys past `m_numSlots`, `instantiate_scene_objects` references / kinds / entry points, `1819` pruning flag, top-4 renormalized skin weights; plus the `.sco` / `map.txt` bounds and leftover parser lines. Regression tests in `block_vm_test`, `native_m5_test`, `savegame_test`, and `scene_test` |
 | Phase 2E review resolutions (`afab774` PR #22) + **Phase 2A completion & Slice P9 Part 1** | PASS (Windows `build_host.ps1` `22/22` / `174` funcs, `selftest_host` `6,495 ms` + retail `Native`/`Phantasy Calradia` CLI + `check_citations` + `extract_wse_opcodes`) | Resolved ALL `10` open §5 items from `afab774`: `consume_campaign_queued_window` `0x12`/`0x0f`/`0x10` filter + `m6.ui.active_window_id` sync (`0x140118987`/`0x1400f0c50`), `900` `start_presentation` queue (`0x1401cbf02`), `2055` loading state, `mbGame::removeParty` / `addPartyToParty` (`0x1400dd990`/`0x1400de230`), `416` `m5.enable_pruning` filter & active-player reset (`0x140147a80`), `rglHashVector<mbParty>` `m_nextKey` (`+0x138f0`, `0x1400e7b80`/`0x1400e7de0`), `[802..1174]` version-invariance (`0x1400e7640`/`0x1400bae70`), dead `WseQuestNote::available` removal (`0x1401b9e90`) + `current_day` fix in `1113`/`1114`/`1116`/`1118`/`1119` (`0x1401de2ee`), and `fx.trigger_agent_no` reset. Completed **Phase 2A** (`wse/game/scene_loaders.h`: `map.txt` `0x1400d9a00`, `SceneObj/*.sco` `0x140210be0`, `Data/skeleton_bodies.xml` `0x1400cbb70`/`0x140211ba0`, `dialog_states.txt` confirmed absent from retail binary) & **Slice P9 Part 1** (`wse/asset/brf.h` `skeleton_anim` `(qx,qy,qz,qw)` fix `0x14030c320`, `wse/asset/skeleton.h` FK & CPU linear-blend skinning `0x14030a770`/`0x14030b8f0`/`0x140258800`, `wse/platform/rhi_scene.h` terrain chunking + `BrfSceneRenderer`, `scene_test.cpp`); regenerated `docs/SYMBOL_MAP.json`; validated retail `Native` `wse_headless` (`20` frames / `755` parties / `errorCount=0`), `wse_brf` (`Native` `221/221`, `Phantasy Calradia` `333/333`, `271/271` shaders at `spv_fail=0`), and all `1,382/1,382` `Native` + `Phantasy Calradia` `.sco` files |
 | Phase 2E review fixes (`e6c4d0e`) | PASS (Linux clang++ 18: header-only gate loop, CMake + CTest; g++ ASan/UBSan touched suites; `check_citations.py --self-test --docs`) | Fixed in review of `e6c4d0e`. **Mission objects:** `scene_prop_fade_out` (1822) no longer deletes the prop (`scene_prop_fade_in` 1823 could not restore it and the id was recycled); `multiplayer_clear_scene` (416) keeps scene-placed props (`spawned_at_runtime`) and no longer wipes player equipment; `remove_mission_object` also drops `attached_missiles` / edit-mode selections. **Agents:** `unlink_agent_references` clears team leader / order listener / division leaders, look / AI targets, offers, cached enemies, one-sided horse/rider links, `parent_agent_no`, camera target, and dialog speaker before a slot is recycled. **Players:** `disconnect_player` keeps `mp.saved_ban`, so `ban_player_using_saved_ban_info` (468) works after a kick. **Parties:** `remove_party` clears `encountered_party_2_no` and refuses the main party; `attach_party` refuses cycles; dead `num_parties_created` removed. **Frame step:** `step_world_frame` consumes the window queue only on the campaign map. **Savegame:** `<= 1136` bodies keep live combat options; the mismatched-header test pins `truncated`; dead `legacy_layout_unsupported` check removed. **Misc:** free-list release is O(1); `kQueuedWindowSaveExitBreakType` folded into `kQueuedWindowMenuType`; entry VAs `0x140117f90` / `0x140120240` / `0x14002a220` cited. Open items: §5. |

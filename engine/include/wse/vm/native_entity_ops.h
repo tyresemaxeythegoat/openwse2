@@ -337,6 +337,10 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             ov.type = 1;
             ov.text = native_resolve_and_parse(narrow[1], tag1, ctx);
             ov.val = narrow[2];
+            // Like every create opcode, the overlay joins the `set_container_overlay` (945)
+            // container (`createTextOverlay` `0x140209a90` adds it to that overlay's widget).
+            ov.m5.container_overlay_no = world.m5.current_container_overlay_no;
+            ov.m5.create_opcode = 910;
             const auto id = static_cast<std::int64_t>(world.overlays.size());
             world.overlays.push_back(std::move(ov));
             store_lvalue(dst, id, ctx, locals);

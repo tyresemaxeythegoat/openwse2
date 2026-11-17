@@ -172,6 +172,11 @@ struct WseOverlayM5Ext {
     // Create opcode of a text button (912, 940, or 941): the three build different retail
     // widgets with different hit boxes (`game::UiSession::sync_overlays_from_world`).
     std::int32_t button_opcode = 0;
+    // Create opcode of any overlay (910..948): the port collapses several retail widget classes
+    // into one `type` (sliders and number boxes are 2, combo buttons and combo labels 5), so the
+    // UI layer reads this to pick the retail widget's input behaviour (`rglWidget::getType`
+    // values; port bookkeeping, not a retail field). 0 for overlays built outside the opcodes.
+    std::int32_t create_opcode = 0;
     // `overlay_set_size` (925) was applied: game buttons (940/941) then take the size vector as
     // their box instead of their creation default (port bookkeeping, not a retail field).
     bool size_set = false;

@@ -17,10 +17,12 @@ namespace wse::vm {
 
 [[nodiscard]] inline std::int64_t native_ui_push_overlay(
     game::WsePresentationOverlay ov,
+    std::uint32_t opcode,
     VmContext& ctx,
     std::uint64_t dst,
     std::span<std::int64_t> locals) {
     ov.m5.container_overlay_no = ctx.world.m5.current_container_overlay_no;
+    ov.m5.create_opcode = static_cast<std::int32_t>(opcode);
     const auto id = static_cast<std::int64_t>(ctx.world.overlays.size());
     ctx.world.overlays.push_back(std::move(ov));
     store_lvalue(dst, id, ctx, locals);
@@ -28,6 +30,7 @@ namespace wse::vm {
 }
 
 inline void native_ui_create_range_overlay(
+    std::uint32_t opcode,
     std::int32_t ov_type,
     std::int64_t min_v,
     std::int64_t max_v,
@@ -43,7 +46,7 @@ inline void native_ui_create_range_overlay(
     ov.m5.max_value = static_cast<double>(max_v);
     ov.m5.boundaries_min = {static_cast<float>(min_v), static_cast<float>(max_v)};
     ov.val = static_cast<std::int32_t>(min_v);
-    (void)native_ui_push_overlay(std::move(ov), ctx, dst, locals);
+    (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
 }
 
 inline void native_ui_create_text_button_overlay(
@@ -64,10 +67,12 @@ inline void native_ui_create_text_button_overlay(
     ov.m5.widget_flags = widget_flags;
     ov.m5.is_button = true;
     ov.m5.button_opcode = button_opcode;
-    (void)native_ui_push_overlay(std::move(ov), ctx, dst, locals);
+    (void)native_ui_push_overlay(std::move(ov), static_cast<std::uint32_t>(button_opcode), ctx,
+                                 dst, locals);
 }
 
 inline void native_ui_create_simple_overlay(
+    std::uint32_t opcode,
     std::int32_t ov_type,
     VmContext& ctx,
     std::uint64_t dst,
@@ -77,10 +82,11 @@ inline void native_ui_create_simple_overlay(
     }
     game::WsePresentationOverlay ov{};
     ov.type = ov_type;
-    (void)native_ui_push_overlay(std::move(ov), ctx, dst, locals);
+    (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
 }
 
 inline void native_ui_create_tableau_overlay(
+    std::uint32_t opcode,
     std::int32_t ov_type,
     std::int32_t mesh_no,
     std::int32_t tableau_no,
@@ -99,7 +105,7 @@ inline void native_ui_create_tableau_overlay(
     ov.m5.mesh_no = mesh_no;
     ov.m5.tableau_material_no = tableau_no;
     ov.val = val;
-    (void)native_ui_push_overlay(std::move(ov), ctx, dst, locals);
+    (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
 }
 
 [[nodiscard]] inline std::u16string native_ui_resolve_label_or_default(
@@ -186,7 +192,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             game::WsePresentationOverlay ov{};
             ov.type = 0;
             ov.m5.mesh_no = narrow[1];
-            (void)native_ui_push_overlay(std::move(ov), ctx, dst, locals);
+            (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
         }
         return NativeDispatch::handled;
     case 912: { // create_button_overlay (0x1401cc282, callee 0x14020abe0)
@@ -205,20 +211,20 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             ov.type = 4;
             ov.m5.mesh_no = narrow[1];
             ov.m5.pressed_mesh_no = narrow[2];
-            (void)native_ui_push_overlay(std::move(ov), ctx, dst, locals);
+            (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
         }
         return NativeDispatch::handled;
     case 914: // create_slider_overlay (0x1401cc386)
-        native_ui_create_range_overlay(2, wide[1], wide[2], ctx, dst, locals);
+        native_ui_create_range_overlay(opcode, 2, wide[1], wide[2], ctx, dst, locals);
         return NativeDispatch::handled;
     case 915: // create_progress_overlay (0x1401cc3c4)
-        native_ui_create_range_overlay(3, wide[1], wide[2], ctx, dst, locals);
+        native_ui_create_range_overlay(opcode, 3, wide[1], wide[2], ctx, dst, locals);
         return NativeDispatch::handled;
     case 916: // create_combo_button_overlay (0x1401cc402)
-        native_ui_create_simple_overlay(5, ctx, dst, locals);
+        native_ui_create_simple_overlay(opcode, 5, ctx, dst, locals);
         return NativeDispatch::handled;
     case 917: // create_text_box_overlay (0x1401cc43a)
-        native_ui_create_simple_overlay(6, ctx, dst, locals);
+        native_ui_create_simple_overlay(opcode, 6, ctx, dst, locals);
         return NativeDispatch::handled;
     case 918: // create_check_box_overlay (0x1401cc472)
         if (world.active_presentation_no >= 0 &&
@@ -231,11 +237,11 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
                 ov.m5.mesh_no = narrow[1];
                 ov.m5.pressed_mesh_no = narrow[2];
             }
-            (void)native_ui_push_overlay(std::move(ov), ctx, dst, locals);
+            (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
         }
         return NativeDispatch::handled;
     case 919: // create_simple_text_box_overlay (0x1401cc4d9)
-        native_ui_create_simple_overlay(7, ctx, dst, locals);
+        native_ui_create_simple_overlay(opcode, 7, ctx, dst, locals);
         return NativeDispatch::handled;
     case 923: // overlay_set_hilight_color (0x1401cc5e6)
         if (world.is_valid_overlay(narrow[0])) {
@@ -346,11 +352,11 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         }
         return NativeDispatch::handled;
     case 938: // create_image_button_overlay_with_tableau_material (0x1401cca69)
-        native_ui_create_tableau_overlay(4, narrow[1], narrow[2], narrow[3], ctx,
+        native_ui_create_tableau_overlay(opcode, 4, narrow[1], narrow[2], narrow[3], ctx,
                                          dst, locals);
         return NativeDispatch::handled;
     case 939: // create_mesh_overlay_with_tableau_material (0x1401ccadf)
-        native_ui_create_tableau_overlay(0, narrow[1], narrow[2], narrow[3], ctx,
+        native_ui_create_tableau_overlay(opcode, 0, narrow[1], narrow[2], narrow[3], ctx,
                                          dst, locals);
         return NativeDispatch::handled;
     // Both build an `rglGameButtonWidget` whose text flags are fixed to 0x10 (centre) by
@@ -362,17 +368,17 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         native_ui_create_text_button_overlay(narrow[1], tag1, 0x10U, 941, ctx, dst, locals);
         return NativeDispatch::handled;
     case 942: // create_number_box_overlay (0x1401ccc85)
-        native_ui_create_range_overlay(2, wide[1], wide[2], ctx, dst, locals);
+        native_ui_create_range_overlay(opcode, 2, wide[1], wide[2], ctx, dst, locals);
         return NativeDispatch::handled;
     case 943: // create_listbox_overlay (0x1401cccc3)
-        native_ui_create_simple_overlay(8, ctx, dst, locals);
+        native_ui_create_simple_overlay(opcode, 8, ctx, dst, locals);
         return NativeDispatch::handled;
     case 944: // create_mesh_overlay_with_item_id (0x1401cccfb)
         if (world.active_presentation_no >= 0 && world.is_valid_item(narrow[1])) {
             game::WsePresentationOverlay ov{};
             ov.type = 0;
             ov.m5.item_no = narrow[1];
-            (void)native_ui_push_overlay(std::move(ov), ctx, dst, locals);
+            (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
         }
         return NativeDispatch::handled;
     case 945: // set_container_overlay (0x1401ccd4c)
@@ -391,7 +397,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         }
         return NativeDispatch::handled;
     case 948: // create_combo_label_overlay (0x1401ccde4)
-        native_ui_create_simple_overlay(5, ctx, dst, locals);
+        native_ui_create_simple_overlay(opcode, 5, ctx, dst, locals);
         return NativeDispatch::handled;
     case 949: // overlay_obtain_focus (0x1401cce1c)
         if (world.is_valid_overlay(narrow[0])) {

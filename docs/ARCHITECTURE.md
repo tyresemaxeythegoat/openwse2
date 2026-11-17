@@ -1110,6 +1110,33 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     the same for both state meshes (`+0x198`, `+0x190`). `rglGameButtonWidget` and
     `rglSimpleButtonWidget` use `rglWidget::setColor` (`0x14031e890`), which does not touch a mesh.
     Implemented as `MeshDrawCall::tint_rgba` in [rhi.h](../engine/include/wse/platform/rhi.h).
+17. ~~Trace how presentation overlays receive and react to pointer input.~~
+    **Resolved (mostly):** v1.1.5.5 entry VAs below. Implemented in
+    [ui_runtime.h](../engine/include/wse/game/ui_runtime.h) (`UiSession::handle_input`).
+
+    | Function | VA | Finding |
+    | --- | --- | --- |
+    | `rglWindowManager::frameMove` | `0x14032a0d0` | left / right press -> widget states `0x10` / `0x40`, release -> `0x8` / `0x20`; sent to the focused widget, else the window tree |
+    | `rglContainerWidget::triggerState` | `0x14028af30` | hover enter `0x2` / leave `0x4` to every visible, enabled child the cursor enters or leaves (any type); presses to children under the cursor top-down until one returns true; disabled or hidden children skipped |
+    | `rglWidget::triggerState` | `0x14031dd10` | latches states through `rglWidget::setState` `0x14031d120` |
+    | `rglWidget::checkState` | `0x14031d100` | tests and clears a latched state |
+    | `mbPresentationContainer::frameMove` | `0x140208ec0` | per overlay, in index order: `0x2` -> `-63` (0), `0x4` -> `-63` (1), `0x10000` -> `-62` (value by `getType`: types 2 / 3 float value truncated, 5 / 11 / 12 / 14 int value, 6 / 7 text copied to `s0`, 9 / 10 toggle state when the toggle flag is set), then `0x10` -> `-64` (0), `0x40` -> `-64` (1), `0x100` -> `-64` (2); the wheel scrolls the type 8 scrollable nearest the cursor. `getType`: slider 2, combo button 5, text box 6, simple text box 7, scrollable 8, image button 9, game button 10, number box 11, list box 12, table 13, combo label 14 |
+    | `rglSimpleButtonWidget::triggerState` | `0x140307770` | plain button arms on press, disarms on leave, raises `0x10000` on release while armed; toggle (flag `+0x284` bit 0) flips on press and raises `0x10000`; consumes left presses |
+    | `createCheckBoxOverlay` | `0x14020bc50` | image button + toggle flag |
+    | `createSliderOverlay` | `0x14020af30` | width 0.25, knob margin 0.008, horizontal, starts at min |
+    | `rglSliderWidget::triggerState` | `0x14030d610` | knob tolerance margin + 0.01; while focused (dragging) every move sets the value and raises `0x10000` |
+    | `rglSliderWidget::setAbsolutePosition` | `0x14030da60` | cursor position -> value |
+    | `rglNumberBoxWidget::triggerState` | `0x1402c8310` | arrow press steps 1; hold repeats after 0.5 s every 0.1 s with step 1 / 3 / 10 / 50 (up to 2.5 s / 5 s / 7.5 s / beyond); clamped |
+    | `rglComboLabelWidget::triggerState` | `0x140262cd0` | arrows step +-1 with wrap over the item count, always raise `0x10000` |
+    | `rglComboLabelWidget::setIntValue` | `0x140262c70` | value setter used by the arrows |
+    | `rglComboButtonWidget::triggerState` | `0x140261340` | press opens the popup when there are items |
+    | `createTextOverlay` | `0x140209a90` | text flag bits 17-19 (`0xE0000`) create an `rglScrollableWidget` (`getType` `0x140300270`) |
+    | `mbPresentationContainer::setOverlayValue` | `0x14020e180` | per-type value setter (reference) |
+
+    Port approximations (not traced): number-box / combo-label arrows are the outer quarters of a
+    fixed box; the combo popup lists items downwards (`rglComboButtonWidget::openPopup`
+    `0x140261d10` not traced); list boxes act like combo buttons; the middle-press (`0x100`)
+    sender is untraced. Details in [engine/README.md](../engine/README.md).
 
 ## 9. Evidence index
 

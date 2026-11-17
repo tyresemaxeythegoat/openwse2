@@ -781,8 +781,19 @@ public:
                 }
             }
 
+            const float cx = ax + node.child_offset.x;
+            const float cy = ay + node.child_offset.y;
             for (const game::UiWidget& child : node.children) {
-                self(self, child, ax, ay);
+                if (node.clip_children) {
+                    // No scissor in the RHI yet: drop children entirely outside the container.
+                    const float c0x = cx + child.pos.x;
+                    const float c0y = cy + child.pos.y;
+                    if (c0x > ax + node.size.x || c0x + child.size.x < ax ||
+                        c0y > ay + node.size.y || c0y + child.size.y < ay) {
+                        continue;
+                    }
+                }
+                self(self, child, cx, cy);
             }
         };
 

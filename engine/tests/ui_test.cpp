@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -585,6 +586,478 @@ void test_ui_session_windows_and_regressions() {
     session.close_active_modal_window(ctx.world);
 }
 
+// --- Interactive presentation overlays (`UiSession::handle_input`) ---------------------------
+// Presentation with one counting trigger per interactive event. Registers: -60 count 18;
+// -62 params 12 / 14, count 20; -63 params 15 / 13, count 21; -64 params 16 / 17, count 22.
+struct OverlayRig {
+    std::unique_ptr<wse::vm::VmContext> ctx_ptr = std::make_unique<wse::vm::VmContext>();
+    wse::vm::VmContext& ctx = *ctx_ptr;
+    wse::game::UiSession session{};
+    std::vector<wse::game::LoadedPresentation> prs{};
+    static constexpr std::int64_t kSentinel = 0x7777;
+
+    explicit OverlayRig(std::initializer_list<wse::vm::Statement> extra_62 = {}) {
+        wse::game::LoadedPresentation p{};
+        p.id = "prsnt_input";
+        const auto add_trigger = [&p](float key, std::vector<wse::vm::Statement> stmts) {
+            wse::game::SimpleTrigger st{};
+            st.interval = key;
+            st.block.statements = std::move(stmts);
+            p.triggers.triggers.push_back(std::move(st));
+        };
+        add_trigger(-60.0f, {make_stmt(wse::vm::core_op::kValAdd, {reg(18), 1})});
+        std::vector<wse::vm::Statement> t62{make_stmt(2071U, {reg(12)}), make_stmt(2072U, {reg(14)}),
+                                            make_stmt(wse::vm::core_op::kValAdd, {reg(20), 1})};
+        t62.insert(t62.end(), extra_62.begin(), extra_62.end());
+        add_trigger(-62.0f, std::move(t62));
+        add_trigger(-63.0f, {make_stmt(2071U, {reg(15)}), make_stmt(2072U, {reg(13)}),
+                             make_stmt(wse::vm::core_op::kValAdd, {reg(21), 1})});
+        add_trigger(-64.0f, {make_stmt(2071U, {reg(16)}), make_stmt(2072U, {reg(17)}),
+                             make_stmt(wse::vm::core_op::kValAdd, {reg(22), 1})});
+        prs.push_back(std::move(p));
+        reset_regs();
+        ctx.registers[18] = 0;
+        (void)session.start_presentation(ctx.world, ctx, 0, prs);
+    }
+
+    void reset_regs() {
+        for (const std::size_t r : {12U, 13U, 14U, 15U, 16U, 17U}) {
+            ctx.registers[r] = kSentinel;
+        }
+        for (const std::size_t r : {20U, 21U, 22U}) {
+            ctx.registers[r] = 0;
+        }
+    }
+    std::int64_t n62() const { return ctx.registers[20]; }
+    std::int64_t n63() const { return ctx.registers[21]; }
+    std::int64_t n64() const { return ctx.registers[22]; }
+
+    std::int32_t add(const wse::game::WsePresentationOverlay& o) {
+        ctx.world.overlays.push_back(o);
+        session.sync_overlays_from_world(ctx.world);
+        return static_cast<std::int32_t>(ctx.world.overlays.size() - 1U);
+    }
+    wse::game::WsePresentationOverlay& ov(std::int32_t id) {
+        return ctx.world.overlays[static_cast<std::size_t>(id)];
+    }
+    std::vector<wse::game::UiEvent> send(const wse::game::UiPointerInput& in) {
+        return session.handle_input(ctx.world, in, &ctx, prs);
+    }
+    std::vector<wse::game::UiEvent> move(float x, float y, bool down = false, float t = 0.0f) {
+        wse::game::UiPointerInput in{};
+        in.x = x;
+        in.y = y;
+        in.left_down = down;
+        in.time_s = t;
+        return send(in);
+    }
+    std::vector<wse::game::UiEvent> press(float x, float y, float t = 0.0f) {
+        wse::game::UiPointerInput in{};
+        in.x = x;
+        in.y = y;
+        in.left_down = true;
+        in.left_pressed = true;
+        in.time_s = t;
+        return send(in);
+    }
+    std::vector<wse::game::UiEvent> release(float x, float y, float t = 0.0f) {
+        wse::game::UiPointerInput in{};
+        in.x = x;
+        in.y = y;
+        in.left_released = true;
+        in.time_s = t;
+        return send(in);
+    }
+};
+
+wse::game::WsePresentationOverlay boxed_text(float x, float y, float w, float h) {
+    wse::game::WsePresentationOverlay o{};
+    o.type = 1;
+    o.position = {x, y};
+    o.m5.area_size = {w, h};
+    return o;
+}
+
+wse::game::WsePresentationOverlay box_button(float x, float y, float w, float h) {
+    wse::game::WsePresentationOverlay o = boxed_text(x, y, w, h);
+    o.text = u"Btn";
+    o.m5.is_button = true;
+    o.val = 5;
+    return o;
+}
+
+void test_overlay_hover_and_press_states() {
+    // 1. -63 enter / leave reaches overlays that are not buttons.
+    {
+        OverlayRig rig;
+        const std::int32_t t = rig.add(boxed_text(0.4f, 0.4f, 0.2f, 0.1f));
+        rig.move(0.9f, 0.9f);
+        expect(rig.n63() == 0, "no -63 while the cursor is outside every overlay");
+        rig.move(0.45f, 0.45f);
+        expect(rig.n63() == 1 && rig.ctx.registers[15] == t && rig.ctx.registers[13] == 0,
+               "text overlay with a box gets -63 enter (param 2 = 0)");
+        rig.move(0.46f, 0.46f);
+        expect(rig.n63() == 1, "moving inside the box fires no second -63");
+        rig.move(0.9f, 0.9f);
+        expect(rig.n63() == 2 && rig.ctx.registers[15] == t && rig.ctx.registers[13] == 1,
+               "text overlay gets -63 leave (param 2 = 1)");
+        expect(rig.n64() == 0 && rig.n62() == 0, "hover alone fires neither -64 nor -62");
+    }
+    {
+        OverlayRig rig;
+        rig.ctx.world.mesh_names = {"hover_mesh"};
+        rig.session.mesh_bounds["hover_mesh"] = wse::game::UiMeshBounds{0.0f, 0.0f, 0.2f, 0.1f};
+        wse::game::WsePresentationOverlay m{};
+        m.type = 0;
+        m.m5.mesh_no = 0;
+        m.position = {0.1f, 0.1f};
+        m.size = {1.0f, 1.0f};
+        const std::int32_t id = rig.add(m);
+        rig.move(0.15f, 0.15f);
+        expect(rig.n63() == 1 && rig.ctx.registers[15] == id && rig.ctx.registers[13] == 0,
+               "mesh overlay with mesh bounds gets -63 enter");
+        rig.move(0.5f, 0.5f);
+        expect(rig.n63() == 2 && rig.ctx.registers[13] == 1, "mesh overlay gets -63 leave");
+    }
+
+    // 2. -64 mouse press: param 2 = 0 / 1 / 2 for left / right / middle; buttons consume left.
+    {
+        OverlayRig rig;
+        const std::int32_t under = rig.add(boxed_text(0.2f, 0.2f, 0.3f, 0.1f));
+        const std::int32_t top = rig.add(box_button(0.25f, 0.22f, 0.1f, 0.05f));
+        rig.move(0.27f, 0.23f);
+        rig.reset_regs();
+        rig.press(0.27f, 0.23f);
+        expect(rig.n64() == 1 && rig.ctx.registers[16] == top && rig.ctx.registers[17] == 0,
+               "left press: the button on top gets -64 (param 2 = 0) and consumes it");
+        rig.release(0.27f, 0.23f);
+        rig.reset_regs();
+        wse::game::UiPointerInput in{};
+        in.x = 0.27f;
+        in.y = 0.23f;
+        in.right_pressed = true;
+        rig.send(in);
+        expect(rig.n64() == 2 && rig.ctx.registers[16] == top && rig.ctx.registers[17] == 1,
+               "right press is not consumed: both overlays get -64 (param 2 = 1)");
+        rig.reset_regs();
+        in.right_pressed = false;
+        in.middle_pressed = true;
+        rig.send(in);
+        expect(rig.n64() == 2 && rig.ctx.registers[17] == 2,
+               "middle press gives -64 with param 2 = 2 to both overlays");
+        rig.reset_regs();
+        rig.press(0.45f, 0.25f);
+        expect(rig.n64() == 1 && rig.ctx.registers[16] == under && rig.ctx.registers[17] == 0,
+               "a left press beside the button reaches the text overlay below");
+    }
+
+    // 3. Button: press + release fires -62 once and emits OverlayClicked; leaving disarms.
+    {
+        OverlayRig rig;
+        const std::int32_t b = rig.add(box_button(0.5f, 0.5f, 0.2f, 0.05f));
+        const auto pe = rig.press(0.55f, 0.52f);
+        expect(pe.empty() && rig.n62() == 0, "button press alone fires no -62 and no event");
+        const auto re = rig.release(0.55f, 0.52f);
+        expect(rig.n62() == 1 && rig.ctx.registers[12] == b && rig.ctx.registers[14] == 5,
+               "button release over it fires -62 once with the overlay value");
+        expect(re.size() == 1U && re[0].kind == wse::game::UiActionKind::OverlayClicked &&
+                   re[0].param == b,
+               "button release emits one OverlayClicked event");
+        rig.release(0.55f, 0.52f);
+        expect(rig.n62() == 1, "a second release without a press fires nothing");
+        rig.press(0.55f, 0.52f);
+        rig.move(0.9f, 0.9f, true);
+        rig.move(0.55f, 0.52f, true);
+        const auto le = rig.release(0.55f, 0.52f);
+        expect(rig.n62() == 1 && le.empty(),
+               "press, leave, return and release does not fire (leave disarms)");
+    }
+
+    // 4. Check box toggles on every left press.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay c = boxed_text(0.3f, 0.3f, 0.05f, 0.05f);
+        c.type = 4;
+        c.m5.is_checkbox = true;
+        c.m5.create_opcode = 918;
+        const std::int32_t id = rig.add(c);
+        rig.press(0.32f, 0.32f);
+        expect(rig.ov(id).val == 1 && rig.n62() == 1 && rig.ctx.registers[14] == 1,
+               "check box press sets 1 and -62 reports 1");
+        rig.release(0.32f, 0.32f);
+        expect(rig.n62() == 1, "check box release fires no extra -62");
+        rig.press(0.32f, 0.32f);
+        expect(rig.ov(id).val == 0 && rig.n62() == 2 && rig.ctx.registers[14] == 0,
+               "second press clears it and -62 reports 0");
+        rig.release(0.32f, 0.32f);
+        rig.press(0.32f, 0.32f);
+        expect(rig.ov(id).val == 1 && rig.ctx.registers[14] == 1 && rig.ctx.registers[12] == id,
+               "third press sets 1 again");
+    }
+}
+
+void test_overlay_value_widgets() {
+    // 5. Slider.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay s{};
+        s.type = 2;
+        s.m5.create_opcode = 914;
+        s.m5.min_value = 0.0;
+        s.m5.max_value = 100.0;
+        s.val = 0;
+        s.position = {0.1f, 0.3f};
+        const std::int32_t id = rig.add(s);
+        const float span = wse::game::kUiSliderWidth - 2.0f * wse::game::kUiSliderMargin;
+        const auto x_at = [&](float frac) {
+            return 0.1f + wse::game::kUiSliderMargin + frac * span;
+        };
+        rig.press(x_at(0.5f), 0.315f);
+        expect(std::abs(rig.ov(id).val - 50) <= 1 && rig.n62() == 1 &&
+                   rig.ctx.registers[14] == rig.ov(id).val,
+               "slider press away from the knob jumps to the cursor and fires -62");
+        rig.move(x_at(0.75f), 0.315f, true);
+        expect(std::abs(rig.ov(id).val - 75) <= 1 && rig.n62() == 2 &&
+                   rig.ctx.registers[14] == rig.ov(id).val,
+               "dragging fires -62 with the new truncated value");
+        rig.move(x_at(0.75f), 0.315f, true);
+        expect(rig.n62() == 2, "a drag frame without cursor movement fires nothing");
+        rig.release(x_at(0.75f), 0.315f);
+        const std::int32_t kept = rig.ov(id).val;
+        const std::int64_t fired = rig.n62();
+        rig.move(x_at(0.2f), 0.315f, true);
+        rig.move(x_at(0.3f), 0.315f, true);
+        expect(rig.ov(id).val == kept && rig.n62() == fired,
+               "after release, moving the cursor no longer changes the slider");
+        rig.move(0.9f, 0.9f);
+        rig.press(0.349f, 0.315f);
+        expect(rig.ov(id).val == 100, "slider value clamps at the maximum");
+        rig.release(0.349f, 0.315f);
+        rig.press(0.1005f, 0.315f);
+        expect(rig.ov(id).val == 0 && rig.ctx.registers[14] == 0,
+               "slider value clamps at the minimum");
+    }
+
+    // 6. Number box.
+    {
+        OverlayRig rig;
+        (void)rig.add(boxed_text(0.2f, 0.4f, 0.4f, 0.3f));
+        wse::game::WsePresentationOverlay n{};
+        n.type = 2;
+        n.m5.create_opcode = 942;
+        n.m5.min_value = 0.0;
+        n.m5.max_value = 10.0;
+        n.val = 5;
+        n.position = {0.3f, 0.5f};
+        const std::int32_t id = rig.add(n);
+        rig.move(0.36f, 0.52f);
+        rig.reset_regs();
+        rig.press(0.40f, 0.52f);
+        expect(rig.ov(id).val == 6 && rig.n62() == 1 && rig.ctx.registers[14] == 6 &&
+                   rig.n64() == 1,
+               "number box right arrow adds 1 and consumes the press");
+        rig.release(0.40f, 0.52f);
+        rig.reset_regs();
+        rig.press(0.31f, 0.52f);
+        expect(rig.ov(id).val == 5 && rig.ctx.registers[14] == 5, "left arrow subtracts 1");
+        rig.release(0.31f, 0.52f);
+        rig.reset_regs();
+        rig.press(0.36f, 0.52f);
+        expect(rig.ov(id).val == 5 && rig.n62() == 0 && rig.n64() == 2,
+               "a press in the middle changes nothing and is not consumed");
+        rig.release(0.36f, 0.52f);
+        rig.ov(id).val = 10;
+        rig.press(0.40f, 0.52f);
+        expect(rig.ov(id).val == 10, "number box clamps at the maximum");
+        rig.release(0.40f, 0.52f);
+        rig.ov(id).val = 0;
+        rig.press(0.31f, 0.52f);
+        expect(rig.ov(id).val == 0, "number box clamps at the minimum");
+        rig.release(0.31f, 0.52f);
+
+        // Auto-repeat while the arrow is held.
+        rig.ov(id).val = 2;
+        rig.press(0.40f, 0.52f, 0.0f);
+        expect(rig.ov(id).val == 3, "held arrow: the press steps once");
+        rig.move(0.40f, 0.52f, true, 0.3f);
+        expect(rig.ov(id).val == 3, "no repeat before 0.5 s");
+        rig.move(0.40f, 0.52f, true, 0.55f);
+        expect(rig.ov(id).val == 4, "first repeat after 0.5 s");
+        rig.move(0.40f, 0.52f, true, 0.62f);
+        expect(rig.ov(id).val == 4, "no repeat before the 0.1 s interval has passed");
+        rig.move(0.40f, 0.52f, true, 0.70f);
+        expect(rig.ov(id).val == 5, "next repeat 0.1 s later");
+        rig.release(0.40f, 0.52f, 0.71f);
+        rig.move(0.40f, 0.52f, true, 2.0f);
+        rig.move(0.40f, 0.52f, true, 2.5f);
+        expect(rig.ov(id).val == 5, "releasing stops the auto-repeat");
+    }
+
+    // 7. Combo label.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay c{};
+        c.type = 5;
+        c.m5.create_opcode = 948;
+        c.m5.items = {u"a", u"b", u"c"};
+        c.val = 0;
+        c.position = {0.3f, 0.6f};
+        const std::int32_t id = rig.add(c);
+        const std::array<std::int32_t, 3> expect_right{1, 2, 0};
+        bool right_ok = true;
+        for (std::size_t k = 0; k < expect_right.size(); ++k) {
+            rig.press(0.50f, 0.62f);
+            rig.release(0.50f, 0.62f);
+            right_ok = right_ok && rig.ov(id).val == expect_right[k] &&
+                       rig.n62() == static_cast<std::int64_t>(k + 1U) &&
+                       rig.ctx.registers[14] == expect_right[k];
+        }
+        expect(right_ok, "combo label right arrow steps 0->1->2->0 and fires -62 each time");
+        rig.press(0.31f, 0.62f);
+        expect(rig.ov(id).val == 2 && rig.n62() == 4 && rig.ctx.registers[14] == 2,
+               "combo label left arrow wraps 0->2 and fires -62");
+    }
+
+    // 8. Combo button popup.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay c{};
+        c.type = 5;
+        c.m5.create_opcode = 916;
+        c.m5.items = {u"a", u"b", u"c"};
+        c.val = 0;
+        c.position = {0.3f, 0.6f};
+        const std::int32_t id = rig.add(c);
+        expect(rig.session.combo_popup_overlay() == -1, "no combo popup before a press");
+        rig.press(0.4f, 0.62f);
+        expect(rig.session.combo_popup_overlay() == id &&
+                   find_widget(rig.session.root, "combo_popup") != nullptr,
+               "combo button press opens the popup and draws it");
+        rig.release(0.4f, 0.62f);
+        const float item2_y = 0.6f - 2.5f * wse::game::kUiComboItemHeight;
+        rig.press(0.4f, item2_y);
+        expect(rig.ov(id).val == 2 && rig.n62() == 1 && rig.ctx.registers[14] == 2 &&
+                   rig.session.combo_popup_overlay() == -1 &&
+                   find_widget(rig.session.root, "combo_popup") == nullptr,
+               "pressing item 2 selects it, fires -62 and closes the popup");
+        rig.release(0.4f, item2_y);
+        rig.press(0.4f, 0.62f);
+        rig.release(0.4f, 0.62f);
+        expect(rig.session.combo_popup_overlay() == id, "combo popup reopens");
+        rig.press(0.9f, 0.9f);
+        expect(rig.ov(id).val == 2 && rig.n62() == 1 && rig.session.combo_popup_overlay() == -1 &&
+                   find_widget(rig.session.root, "combo_popup") == nullptr,
+               "pressing elsewhere closes the popup without changing the value");
+    }
+}
+
+void test_overlay_containers_and_dispatch_stop() {
+    // 9. Scrollable container nesting, clipping and wheel.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay c = boxed_text(0.1f, 0.1f, 0.3f, 0.2f);
+        c.val = 0x20000;
+        const std::int32_t cid = rig.add(c);
+        std::array<std::int32_t, 3> kids{};
+        for (std::size_t k = 0; k < kids.size(); ++k) {
+            wse::game::WsePresentationOverlay child =
+                boxed_text(0.0f, 0.1f * static_cast<float>(k), 0.5f, 0.1f);
+            child.m5.container_overlay_no = cid;
+            kids[k] = rig.add(child);
+        }
+        const auto* cw = find_widget(rig.session.root, "overlay_0");
+        expect(rig.session.root.children.size() == 1U && cw != nullptr &&
+                   cw->children.size() == 3U && cw->clip_children &&
+                   find_widget(*cw, "overlay_2") != nullptr,
+               "container children are nested under the container widget, not at the top");
+        expect(cw != nullptr && close(cw->child_offset.y, -0.1f),
+               "content top starts at the container area top");
+
+        rig.move(0.45f, 0.15f);
+        expect(rig.n63() == 0, "a child outside the clip area gets no hover -63");
+        rig.move(0.15f, 0.15f);
+        expect(rig.n63() == 2 && rig.ctx.registers[15] == kids[1],
+               "a child inside the clip area gets -63 (with its container)");
+        rig.move(0.15f, 0.05f);
+        expect(rig.n63() == 4 && rig.ctx.registers[13] == 1,
+               "moving onto a clipped-away child fires leave only, no enter");
+
+        const auto offset_y = [&]() {
+            const auto* w = find_widget(rig.session.root, "overlay_0");
+            return w != nullptr ? w->child_offset.y : 99.0f;
+        };
+        wse::game::UiPointerInput in{};
+        in.x = 0.15f;
+        in.y = 0.2f;
+        in.wheel = -1.0f;
+        rig.send(in);
+        expect(close(offset_y(), -0.05f), "wheel down scrolls the content by one step");
+        in.wheel = -10.0f;
+        rig.send(in);
+        expect(close(offset_y(), 0.0f), "wheel scrolling clamps at the end of the content");
+        in.wheel = 1.0f;
+        rig.send(in);
+        expect(close(offset_y(), -0.05f), "wheel up scrolls back from the clamped end");
+        in.wheel = 10.0f;
+        rig.send(in);
+        expect(close(offset_y(), -0.1f), "wheel scrolling clamps at the start of the content");
+    }
+    // Container cycle: nobody hangs and both overlays stay at the top.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay a = boxed_text(0.1f, 0.1f, 0.2f, 0.2f);
+        a.m5.container_overlay_no = 1;
+        wse::game::WsePresentationOverlay b = boxed_text(0.5f, 0.1f, 0.2f, 0.2f);
+        b.m5.container_overlay_no = 0;
+        rig.add(a);
+        rig.add(b);
+        expect(rig.session.root.children.size() == 2U &&
+                   rig.session.root.children[0].children.empty() &&
+                   rig.session.root.children[1].children.empty(),
+               "a container cycle leaves both overlays at the top");
+    }
+    // A child of a hidden container is not built.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay c = boxed_text(0.1f, 0.1f, 0.3f, 0.2f);
+        c.visible = false;
+        rig.add(c);
+        wse::game::WsePresentationOverlay child = boxed_text(0.0f, 0.0f, 0.1f, 0.1f);
+        child.m5.container_overlay_no = 0;
+        rig.add(child);
+        expect(rig.session.root.children.empty() &&
+                   find_widget(rig.session.root, "overlay_1") == nullptr,
+               "a child of a hidden container is hidden too");
+    }
+
+    // 10. A -62 trigger that closes or restarts the presentation stops later dispatches.
+    for (const bool restart : {false, true}) {
+        OverlayRig rig = restart ? OverlayRig{make_stmt(902U, {0}), make_stmt(900U, {0})}
+                                 : OverlayRig{make_stmt(902U, {0})};
+        wse::game::WsePresentationOverlay c = boxed_text(0.3f, 0.3f, 0.1f, 0.1f);
+        c.type = 4;
+        c.m5.is_checkbox = true;
+        c.m5.create_opcode = 918;
+        rig.add(c);
+        rig.add(boxed_text(0.3f, 0.3f, 0.1f, 0.1f));
+        rig.move(0.32f, 0.32f);
+        rig.reset_regs();
+        rig.press(0.32f, 0.32f);
+        expect(rig.n62() == 1 && rig.n64() == 0 && rig.n63() == 0,
+               restart ? "a -62 that restarts the presentation stops the later dispatches"
+                       : "a -62 that closes the presentation stops the later dispatches");
+        if (restart) {
+            expect(rig.ctx.registers[18] == 2 && rig.ctx.world.overlays.empty() &&
+                       rig.session.current_window == wse::game::kScreenWindowPresentation,
+                   "the restart re-ran -60 and cleared the overlays");
+        } else {
+            expect(rig.session.current_window != wse::game::kScreenWindowPresentation &&
+                       rig.ctx.world.active_presentation_no == -1,
+                   "the presentation is closed");
+        }
+    }
+}
+
 // `UiSession::drive_frame`: the per-frame glue that opens queued notes / presentation windows
 // after `step_world_frame`, steps presentations, and drops modal windows when a scene starts.
 void test_ui_session_drive_frame() {
@@ -1076,6 +1549,9 @@ int run_ui_suite(const char* fixture_path) {
     test_font_data_and_text_layout();
     test_language_and_game_variables();
     test_ui_session_windows_and_regressions();
+    test_overlay_hover_and_press_states();
+    test_overlay_value_widgets();
+    test_overlay_containers_and_dispatch_stop();
     test_ui_session_drive_frame();
     test_overlay_button_boxes();
     test_synthetic_ui_rhi_render_and_uv_orientation();

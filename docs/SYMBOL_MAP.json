@@ -15,11 +15,11 @@
  "inputs": {
   "layouts": 83,
   "globals_scanned": 48658,
-  "symbols_curated": 3765,
+  "symbols_curated": 3835,
   "game_vtables": 76,
-  "function_ranges": 5141,
+  "function_ranges": 5224,
   "global_objects": 25,
-  "superseded_vas": 3123
+  "superseded_vas": 3189
  },
  "strings": [
   {
@@ -27306,10 +27306,28 @@
    "va": "0x140262500"
   },
   {
+   "name": "?openPopup@rglComboButtonWidget@@QEAAPEAVrglPopupWidget@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140261d10"
+  },
+  {
    "name": "?setOverlayItemText@rglComboButtonWidget@@UEAAXHAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140261be0"
+  },
+  {
+   "name": "?setAlpha@rglComboButtonWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140261ac0"
+  },
+  {
+   "name": "?setScale@rglComboButtonWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402616c0"
   },
   {
    "name": "?addItem@rglComboButtonWidget@@UEAAXAEBVrglString@@@Z",
@@ -27324,16 +27342,94 @@
    "va": "0x1402614d0"
   },
   {
+   "name": "?removeItem@rglComboButtonWidget@@UEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140261490"
+  },
+  {
+   "name": "?clearItems@rglComboButtonWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140261460"
+  },
+  {
    "name": "?setButtonMesh@rglComboButtonWidget@@UEAAXHPEAVrglMesh@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140261450"
   },
   {
+   "name": "?closePopup@rglComboButtonWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140261410"
+  },
+  {
+   "name": "?getType@rglComboButtonWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140261400"
+  },
+  {
+   "name": "?triggerState@rglComboButtonWidget@@UEAA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140261340"
+  },
+  {
+   "name": "?setIntValue@rglComboButtonWidget@@UEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140261220"
+  },
+  {
+   "name": "?render@rglComboButtonWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402611e0"
+  },
+  {
+   "name": "?frameMove@rglComboButtonWidget@@UEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140261190"
+  },
+  {
+   "name": "?createWidgets@rglComboLabelWidget@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140263720"
+  },
+  {
+   "name": "?createArrowButtonWidget@rglComboLabelWidget@@QEAAPEAVrglSimpleButtonWidget@@_NMMAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140263250"
+  },
+  {
    "name": "?setOverlayItemText@rglComboLabelWidget@@UEAAXHAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140263120"
+  },
+  {
+   "name": "?enable@rglComboLabelWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402630c0"
+  },
+  {
+   "name": "?disable@rglComboLabelWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140263060"
+  },
+  {
+   "name": "?clearItems@rglComboLabelWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140263030"
   },
   {
    "name": "?insertItem@rglComboLabelWidget@@UEAAXHAEBVrglString@@@Z",
@@ -27346,6 +27442,30 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140262e50"
+  },
+  {
+   "name": "?setScale@rglComboLabelWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140262dc0"
+  },
+  {
+   "name": "?getType@rglComboLabelWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140262db0"
+  },
+  {
+   "name": "?triggerState@rglComboLabelWidget@@UEAA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140262cd0"
+  },
+  {
+   "name": "?setIntValue@rglComboLabelWidget@@UEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140262c70"
   },
   {
    "name": "??_GrglCompositeBody@@UEAAPEAXI@Z",
@@ -27574,6 +27694,102 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14061c3e8"
+  },
+  {
+   "name": "?frameMove@rglContainerWidget@@UEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028aaf0"
+  },
+  {
+   "name": "?render@rglContainerWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028ab70"
+  },
+  {
+   "name": "?clearStates@rglContainerWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028ad50"
+  },
+  {
+   "name": "?updateChildPosition@rglContainerWidget@@UEAAXPEAVrglWidget@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028adc0"
+  },
+  {
+   "name": "?updatePosition@rglContainerWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028aec0"
+  },
+  {
+   "name": "?triggerState@rglContainerWidget@@UEAA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028af30"
+  },
+  {
+   "name": "?updateStateTriggers@rglContainerWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028b120"
+  },
+  {
+   "name": "?redrawText@rglContainerWidget@@UEAA?AVrglVector2@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028b200"
+  },
+  {
+   "name": "?setColor@rglContainerWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028b290"
+  },
+  {
+   "name": "?setAlpha@rglContainerWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028b320"
+  },
+  {
+   "name": "?clearChildren@rglContainerWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028b3b0"
+  },
+  {
+   "name": "?addChild@rglContainerWidget@@UEAAXPEAVrglWidget@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028b450"
+  },
+  {
+   "name": "?insertChild@rglContainerWidget@@UEAAXPEAVrglWidget@@H@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028b510"
+  },
+  {
+   "name": "?removeChild@rglContainerWidget@@UEAAXPEAVrglWidget@@_N@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028b570"
+  },
+  {
+   "name": "?isPositionInsideChild@rglContainerWidget@@UEAA_NPEAVrglWidget@@AEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028b630"
+  },
+  {
+   "name": "?loadOnDemandTextures@rglContainerWidget@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14028b7c0"
   },
   {
    "name": "??0rglContainerWidget@@QEAA@AEBVrglString@@@Z",
@@ -30708,6 +30924,66 @@
    "va": "0x1402c64e0"
   },
   {
+   "name": "?updateWidgets@rglNumberBoxWidget@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c8670"
+  },
+  {
+   "name": "?getType@rglNumberBoxWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c8660"
+  },
+  {
+   "name": "?enable@rglNumberBoxWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c8600"
+  },
+  {
+   "name": "?disable@rglNumberBoxWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c85a0"
+  },
+  {
+   "name": "?show@rglNumberBoxWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c8540"
+  },
+  {
+   "name": "?hide@rglNumberBoxWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c84e0"
+  },
+  {
+   "name": "?triggerState@rglNumberBoxWidget@@UEAA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c8310"
+  },
+  {
+   "name": "?checkState@rglNumberBoxWidget@@UEAA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c82f0"
+  },
+  {
+   "name": "?getIntValue@rglNumberBoxWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c82d0"
+  },
+  {
+   "name": "?setIntValue@rglNumberBoxWidget@@UEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402c82c0"
+  },
+  {
    "name": "?flush@rglOutputBinaryFileStreamWithChecksum@@UEAA_NXZ",
    "kind": "public",
    "source": "pdb-public",
@@ -32358,16 +32634,88 @@
    "va": "0x1402ff7b0"
   },
   {
+   "name": "?setAlpha@rglScrollableWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403003b0"
+  },
+  {
+   "name": "?setColor@rglScrollableWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140300370"
+  },
+  {
+   "name": "?setScale@rglScrollableWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403002e0"
+  },
+  {
+   "name": "?setOffsetPosition@rglScrollableWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140300290"
+  },
+  {
+   "name": "?getOffset@rglScrollableWidget@@UEBA?AVrglVector2@@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140300280"
+  },
+  {
+   "name": "?getType@rglScrollableWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140300270"
+  },
+  {
+   "name": "?updateChildPosition@rglScrollableWidget@@UEAAXPEAVrglWidget@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403001f0"
+  },
+  {
+   "name": "?render@rglScrollableWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ffdd0"
+  },
+  {
+   "name": "?frameMove@rglScrollableWidget@@UEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402ffc90"
+  },
+  {
    "name": "??0rglScrollableWidget@@QEAA@AEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1402ffbb0"
   },
   {
+   "name": "?updateAreaSize@rglScrollableWidget@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140300530"
+  },
+  {
+   "name": "?setAreaSize@rglScrollableWidget@@QEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140300780"
+  },
+  {
    "name": "?setPlateText@rglScrollableWidget@@QEAAXAEBVrglString@@@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1403008f0"
+  },
+  {
+   "name": "?updateSize@rglScrollableWidget@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140300430"
   },
   {
    "name": "?setParams@rglScrollbarWidget@@QEAAXMAEBVrglString@@00000@Z",
@@ -32440,6 +32788,24 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x1403042e0"
+  },
+  {
+   "name": "?getType@rglSimpleButtonWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402061e0"
+  },
+  {
+   "name": "?render@rglSimpleButtonWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140307710"
+  },
+  {
+   "name": "?triggerState@rglSimpleButtonWidget@@UEAA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140307770"
   },
   {
    "name": "?skinMesh@rglSkeleton@@QEAAXPEAVrglMesh@@@Z",
@@ -32788,6 +33154,60 @@
    "kind": "public",
    "source": "pdb-public",
    "va": "0x14030cd00"
+  },
+  {
+   "name": "?setAbsolutePosition@rglSliderWidget@@QEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030da60"
+  },
+  {
+   "name": "?getType@rglSliderWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402d5050"
+  },
+  {
+   "name": "?render@rglSliderWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030d590"
+  },
+  {
+   "name": "?setScale@rglSliderWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030d960"
+  },
+  {
+   "name": "?setAlpha@rglSliderWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403010d0"
+  },
+  {
+   "name": "?triggerState@rglSliderWidget@@UEAA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030d610"
+  },
+  {
+   "name": "?loseFocus@rglSliderWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030d810"
+  },
+  {
+   "name": "?obtainFocus@rglSliderWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030d830"
+  },
+  {
+   "name": "?getPercentage@rglSliderWidget@@QEBAMXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14030dae0"
   },
   {
    "name": "??_GrglSphere@@UEAAPEAXI@Z",
@@ -56175,16 +56595,58 @@
    "symbol": "?rglGetCapsuleSphereDistance@@YAMPEBVrglCapsule@@PEBVrglSphere@@@Z"
   },
   {
+   "start": "0x140261190",
+   "end": "0x1402611dc",
+   "va": "0x140261190",
+   "symbol": "?frameMove@rglComboButtonWidget@@UEAAXM@Z"
+  },
+  {
+   "start": "0x1402611e0",
+   "end": "0x140261220",
+   "va": "0x1402611e0",
+   "symbol": "?render@rglComboButtonWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x140261220",
+   "end": "0x140261331",
+   "va": "0x140261220",
+   "symbol": "?setIntValue@rglComboButtonWidget@@UEAAXH@Z"
+  },
+  {
+   "start": "0x140261340",
+   "end": "0x1402613f2",
+   "va": "0x140261340",
+   "symbol": "?triggerState@rglComboButtonWidget@@UEAA_NI@Z"
+  },
+  {
    "start": "0x140261400",
    "end": "0x140261410",
    "va": "0x140261400",
-   "symbol": "?getType@rglPhysicsMaterial@@UEBAHXZ"
+   "symbol": "?getType@rglComboButtonWidget@@UEBAHXZ"
+  },
+  {
+   "start": "0x140261410",
+   "end": "0x140261447",
+   "va": "0x140261410",
+   "symbol": "?closePopup@rglComboButtonWidget@@UEAAXXZ"
   },
   {
    "start": "0x140261450",
    "end": "0x140261460",
    "va": "0x140261450",
    "symbol": "?setButtonMesh@rglComboButtonWidget@@UEAAXHPEAVrglMesh@@@Z"
+  },
+  {
+   "start": "0x140261460",
+   "end": "0x140261489",
+   "va": "0x140261460",
+   "symbol": "?clearItems@rglComboButtonWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x140261490",
+   "end": "0x1402614cd",
+   "va": "0x140261490",
+   "symbol": "?removeItem@rglComboButtonWidget@@UEAAXH@Z"
   },
   {
    "start": "0x1402614d0",
@@ -56199,10 +56661,28 @@
    "symbol": "?addItem@rglComboButtonWidget@@UEAAXAEBVrglString@@@Z"
   },
   {
+   "start": "0x1402616c0",
+   "end": "0x140261aba",
+   "va": "0x1402616c0",
+   "symbol": "?setScale@rglComboButtonWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x140261ac0",
+   "end": "0x140261be0",
+   "va": "0x140261ac0",
+   "symbol": "?setAlpha@rglComboButtonWidget@@UEAAXI@Z"
+  },
+  {
    "start": "0x140261be0",
    "end": "0x140261d10",
    "va": "0x140261be0",
    "symbol": "?setOverlayItemText@rglComboButtonWidget@@UEAAXHAEBVrglString@@@Z"
+  },
+  {
+   "start": "0x140261d10",
+   "end": "0x1402624fc",
+   "va": "0x140261d10",
+   "symbol": "?openPopup@rglComboButtonWidget@@QEAAPEAVrglPopupWidget@@XZ"
   },
   {
    "start": "0x140262500",
@@ -56259,6 +56739,30 @@
    "symbol": "??$_Uninit_fill_n@PEAVrglString@@_KV1@V?$allocator@VrglString@@@std@@V1@@std@@YAXPEAVrglString@@_KPEBV1@AEAU?$_Wrap_alloc@V?$allocator@VrglString@@@std@@@0@0U_Nonscalar_ptr_iterator_tag@0@@Z"
   },
   {
+   "start": "0x140262c70",
+   "end": "0x140262ccf",
+   "va": "0x140262c70",
+   "symbol": "?setIntValue@rglComboLabelWidget@@UEAAXH@Z"
+  },
+  {
+   "start": "0x140262cd0",
+   "end": "0x140262daa",
+   "va": "0x140262cd0",
+   "symbol": "?triggerState@rglComboLabelWidget@@UEAA_NI@Z"
+  },
+  {
+   "start": "0x140262db0",
+   "end": "0x140262dc0",
+   "va": "0x140262db0",
+   "symbol": "?getType@rglComboLabelWidget@@UEBAHXZ"
+  },
+  {
+   "start": "0x140262dc0",
+   "end": "0x140262e46",
+   "va": "0x140262dc0",
+   "symbol": "?setScale@rglComboLabelWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
    "start": "0x140262e50",
    "end": "0x140262f26",
    "va": "0x140262e50",
@@ -56271,10 +56775,40 @@
    "symbol": "?insertItem@rglComboLabelWidget@@UEAAXHAEBVrglString@@@Z"
   },
   {
+   "start": "0x140263030",
+   "end": "0x140263059",
+   "va": "0x140263030",
+   "symbol": "?clearItems@rglComboLabelWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x140263060",
+   "end": "0x1402630b5",
+   "va": "0x140263060",
+   "symbol": "?disable@rglComboLabelWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x1402630c0",
+   "end": "0x140263115",
+   "va": "0x1402630c0",
+   "symbol": "?enable@rglComboLabelWidget@@UEAAXXZ"
+  },
+  {
    "start": "0x140263120",
    "end": "0x14026324d",
    "va": "0x140263120",
    "symbol": "?setOverlayItemText@rglComboLabelWidget@@UEAAXHAEBVrglString@@@Z"
+  },
+  {
+   "start": "0x140263250",
+   "end": "0x14026371a",
+   "va": "0x140263250",
+   "symbol": "?createArrowButtonWidget@rglComboLabelWidget@@QEAAPEAVrglSimpleButtonWidget@@_NMMAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x140263720",
+   "end": "0x140263a41",
+   "va": "0x140263720",
+   "symbol": "?createWidgets@rglComboLabelWidget@@QEAAXXZ"
   },
   {
    "start": "0x140263a50",
@@ -56563,6 +57097,180 @@
    "end": "0x14028aa67",
    "va": "0x14028a9a0",
    "symbol": "??0rglContainerWidget@@QEAA@AEBVrglString@@@Z"
+  },
+  {
+   "start": "0x14028aaf0",
+   "end": "0x14028ab6d",
+   "va": "0x14028aaf0",
+   "symbol": "?frameMove@rglContainerWidget@@UEAAXM@Z"
+  },
+  {
+   "start": "0x14028ab70",
+   "end": "0x14028aba0",
+   "va": "0x14028ab70",
+   "symbol": "?render@rglContainerWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x14028aba0",
+   "end": "0x14028ad3b",
+   "va": "0x14028ab70",
+   "symbol": "?render@rglContainerWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x14028ad3b",
+   "end": "0x14028ad4c",
+   "va": "0x14028ab70",
+   "symbol": "?render@rglContainerWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x14028ad50",
+   "end": "0x14028adbc",
+   "va": "0x14028ad50",
+   "symbol": "?clearStates@rglContainerWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14028adc0",
+   "end": "0x14028aebb",
+   "va": "0x14028adc0",
+   "symbol": "?updateChildPosition@rglContainerWidget@@UEAAXPEAVrglWidget@@@Z"
+  },
+  {
+   "start": "0x14028aec0",
+   "end": "0x14028af30",
+   "va": "0x14028aec0",
+   "symbol": "?updatePosition@rglContainerWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14028af30",
+   "end": "0x14028b11e",
+   "va": "0x14028af30",
+   "symbol": "?triggerState@rglContainerWidget@@UEAA_NI@Z"
+  },
+  {
+   "start": "0x14028b120",
+   "end": "0x14028b164",
+   "va": "0x14028b120",
+   "symbol": "?updateStateTriggers@rglContainerWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14028b164",
+   "end": "0x14028b1e9",
+   "va": "0x14028b120",
+   "symbol": "?updateStateTriggers@rglContainerWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14028b1e9",
+   "end": "0x14028b1f6",
+   "va": "0x14028b120",
+   "symbol": "?updateStateTriggers@rglContainerWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14028b200",
+   "end": "0x14028b284",
+   "va": "0x14028b200",
+   "symbol": "?redrawText@rglContainerWidget@@UEAA?AVrglVector2@@XZ"
+  },
+  {
+   "start": "0x14028b290",
+   "end": "0x14028b319",
+   "va": "0x14028b290",
+   "symbol": "?setColor@rglContainerWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14028b320",
+   "end": "0x14028b3a6",
+   "va": "0x14028b320",
+   "symbol": "?setAlpha@rglContainerWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x14028b3b0",
+   "end": "0x14028b449",
+   "va": "0x14028b3b0",
+   "symbol": "?clearChildren@rglContainerWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14028b450",
+   "end": "0x14028b48a",
+   "va": "0x14028b450",
+   "symbol": "?addChild@rglContainerWidget@@UEAAXPEAVrglWidget@@@Z"
+  },
+  {
+   "start": "0x14028b48a",
+   "end": "0x14028b4c1",
+   "va": "0x14028b450",
+   "symbol": "?addChild@rglContainerWidget@@UEAAXPEAVrglWidget@@@Z"
+  },
+  {
+   "start": "0x14028b4c1",
+   "end": "0x14028b506",
+   "va": "0x14028b450",
+   "symbol": "?addChild@rglContainerWidget@@UEAAXPEAVrglWidget@@@Z"
+  },
+  {
+   "start": "0x14028b510",
+   "end": "0x14028b56b",
+   "va": "0x14028b510",
+   "symbol": "?insertChild@rglContainerWidget@@UEAAXPEAVrglWidget@@H@Z"
+  },
+  {
+   "start": "0x14028b570",
+   "end": "0x14028b5c4",
+   "va": "0x14028b570",
+   "symbol": "?removeChild@rglContainerWidget@@UEAAXPEAVrglWidget@@_N@Z"
+  },
+  {
+   "start": "0x14028b5c4",
+   "end": "0x14028b5f8",
+   "va": "0x14028b570",
+   "symbol": "?removeChild@rglContainerWidget@@UEAAXPEAVrglWidget@@_N@Z"
+  },
+  {
+   "start": "0x14028b5f8",
+   "end": "0x14028b630",
+   "va": "0x14028b570",
+   "symbol": "?removeChild@rglContainerWidget@@UEAAXPEAVrglWidget@@_N@Z"
+  },
+  {
+   "start": "0x14028b630",
+   "end": "0x14028b676",
+   "va": "0x14028b630",
+   "symbol": "?isPositionInsideChild@rglContainerWidget@@UEAA_NPEAVrglWidget@@AEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14028b676",
+   "end": "0x14028b71e",
+   "va": "0x14028b630",
+   "symbol": "?isPositionInsideChild@rglContainerWidget@@UEAA_NPEAVrglWidget@@AEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14028b71e",
+   "end": "0x14028b7ba",
+   "va": "0x14028b630",
+   "symbol": "?isPositionInsideChild@rglContainerWidget@@UEAA_NPEAVrglWidget@@AEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14028b7c0",
+   "end": "0x14028b7e4",
+   "va": "0x14028b7c0",
+   "symbol": "?loadOnDemandTextures@rglContainerWidget@@QEAAHXZ"
+  },
+  {
+   "start": "0x14028b7e4",
+   "end": "0x14028b88c",
+   "va": "0x14028b7c0",
+   "symbol": "?loadOnDemandTextures@rglContainerWidget@@QEAAHXZ"
+  },
+  {
+   "start": "0x14028b88c",
+   "end": "0x14028b89d",
+   "va": "0x14028b7c0",
+   "symbol": "?loadOnDemandTextures@rglContainerWidget@@QEAAHXZ"
+  },
+  {
+   "start": "0x14028b89d",
+   "end": "0x14028b8a9",
+   "va": "0x14028b7c0",
+   "symbol": "?loadOnDemandTextures@rglContainerWidget@@QEAAHXZ"
   },
   {
    "start": "0x14028b8b0",
@@ -60435,6 +61143,66 @@
    "symbol": "?addMetaMeshOriginal@rglMetaMesh@@QEAAXPEAV1@HAEBVrglTransform@@@Z"
   },
   {
+   "start": "0x1402c82c0",
+   "end": "0x1402c82d0",
+   "va": "0x1402c82c0",
+   "symbol": "?setIntValue@rglNumberBoxWidget@@UEAAXH@Z"
+  },
+  {
+   "start": "0x1402c82d0",
+   "end": "0x1402c82f0",
+   "va": "0x1402c82d0",
+   "symbol": "?getIntValue@rglNumberBoxWidget@@UEBAHXZ"
+  },
+  {
+   "start": "0x1402c82f0",
+   "end": "0x1402c8310",
+   "va": "0x1402c82f0",
+   "symbol": "?checkState@rglNumberBoxWidget@@UEAA_NI@Z"
+  },
+  {
+   "start": "0x1402c8310",
+   "end": "0x1402c84d1",
+   "va": "0x1402c8310",
+   "symbol": "?triggerState@rglNumberBoxWidget@@UEAA_NI@Z"
+  },
+  {
+   "start": "0x1402c84e0",
+   "end": "0x1402c8535",
+   "va": "0x1402c84e0",
+   "symbol": "?hide@rglNumberBoxWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x1402c8540",
+   "end": "0x1402c8595",
+   "va": "0x1402c8540",
+   "symbol": "?show@rglNumberBoxWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x1402c85a0",
+   "end": "0x1402c85f5",
+   "va": "0x1402c85a0",
+   "symbol": "?disable@rglNumberBoxWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x1402c8600",
+   "end": "0x1402c8655",
+   "va": "0x1402c8600",
+   "symbol": "?enable@rglNumberBoxWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x1402c8660",
+   "end": "0x1402c8670",
+   "va": "0x1402c8660",
+   "symbol": "?getType@rglNumberBoxWidget@@UEBAHXZ"
+  },
+  {
+   "start": "0x1402c8670",
+   "end": "0x1402c87e8",
+   "va": "0x1402c8670",
+   "symbol": "?updateWidgets@rglNumberBoxWidget@@QEAAXXZ"
+  },
+  {
    "start": "0x1402c8a00",
    "end": "0x1402c8a60",
    "va": "0x1402c8a00",
@@ -63303,16 +64071,112 @@
    "symbol": "??0rglScrollableWidget@@QEAA@AEBVrglString@@@Z"
   },
   {
+   "start": "0x1402ffc90",
+   "end": "0x1402ffca3",
+   "va": "0x1402ffc90",
+   "symbol": "?frameMove@rglScrollableWidget@@UEAAXM@Z"
+  },
+  {
+   "start": "0x1402ffca3",
+   "end": "0x1402ffd90",
+   "va": "0x1402ffc90",
+   "symbol": "?frameMove@rglScrollableWidget@@UEAAXM@Z"
+  },
+  {
+   "start": "0x1402ffd90",
+   "end": "0x1402ffdcd",
+   "va": "0x1402ffc90",
+   "symbol": "?frameMove@rglScrollableWidget@@UEAAXM@Z"
+  },
+  {
+   "start": "0x1402ffdd0",
+   "end": "0x1402ffde7",
+   "va": "0x1402ffdd0",
+   "symbol": "?render@rglScrollableWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x1402ffde7",
+   "end": "0x140300136",
+   "va": "0x1402ffdd0",
+   "symbol": "?render@rglScrollableWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x140300136",
+   "end": "0x1403001f0",
+   "va": "0x1402ffdd0",
+   "symbol": "?render@rglScrollableWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x1403001f0",
+   "end": "0x140300270",
+   "va": "0x1403001f0",
+   "symbol": "?updateChildPosition@rglScrollableWidget@@UEAAXPEAVrglWidget@@@Z"
+  },
+  {
    "start": "0x140300270",
    "end": "0x140300280",
    "va": "0x140300270",
-   "symbol": "?getType@rglSkeletonAnimation@@UEBAHXZ"
+   "symbol": "?getType@rglScrollableWidget@@UEBAHXZ"
+  },
+  {
+   "start": "0x140300280",
+   "end": "0x140300290",
+   "va": "0x140300280",
+   "symbol": "?getOffset@rglScrollableWidget@@UEBA?AVrglVector2@@XZ"
+  },
+  {
+   "start": "0x140300290",
+   "end": "0x1403002e0",
+   "va": "0x140300290",
+   "symbol": "?setOffsetPosition@rglScrollableWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x1403002e0",
+   "end": "0x140300365",
+   "va": "0x1403002e0",
+   "symbol": "?setScale@rglScrollableWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x140300370",
+   "end": "0x1403003b0",
+   "va": "0x140300370",
+   "symbol": "?setColor@rglScrollableWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x1403003b0",
+   "end": "0x140300427",
+   "va": "0x1403003b0",
+   "symbol": "?setAlpha@rglScrollableWidget@@UEAAXI@Z"
+  },
+  {
+   "start": "0x140300430",
+   "end": "0x140300530",
+   "va": "0x140300430",
+   "symbol": "?updateSize@rglScrollableWidget@@QEAAXXZ"
+  },
+  {
+   "start": "0x140300530",
+   "end": "0x140300772",
+   "va": "0x140300530",
+   "symbol": "?updateAreaSize@rglScrollableWidget@@QEAAXXZ"
+  },
+  {
+   "start": "0x140300780",
+   "end": "0x1403008e5",
+   "va": "0x140300780",
+   "symbol": "?setAreaSize@rglScrollableWidget@@QEAAXAEBVrglVector2@@@Z"
   },
   {
    "start": "0x1403008f0",
    "end": "0x1403009d9",
    "va": "0x1403008f0",
    "symbol": "?setPlateText@rglScrollableWidget@@QEAAXAEBVrglString@@@Z"
+  },
+  {
+   "start": "0x1403010d0",
+   "end": "0x1403011a0",
+   "va": "0x1403010d0",
+   "symbol": "?setAlpha@rglSliderWidget@@UEAAXI@Z"
   },
   {
    "start": "0x140301460",
@@ -63397,6 +64261,18 @@
    "end": "0x1403056fc",
    "va": "0x140305500",
    "symbol": "?getFaceTransform@rglSkyCube@@SA?AVrglTransform@@H@Z"
+  },
+  {
+   "start": "0x140307710",
+   "end": "0x140307770",
+   "va": "0x140307710",
+   "symbol": "?render@rglSimpleButtonWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x140307770",
+   "end": "0x14030786a",
+   "va": "0x140307770",
+   "symbol": "?triggerState@rglSimpleButtonWidget@@UEAA_NI@Z"
   },
   {
    "start": "0x140307930",
@@ -63955,6 +64831,48 @@
    "end": "0x14030d584",
    "va": "0x14030d230",
    "symbol": "?readStream@rglSkeletonModel@@QEAAXAEAVrglStream@@@Z"
+  },
+  {
+   "start": "0x14030d590",
+   "end": "0x14030d610",
+   "va": "0x14030d590",
+   "symbol": "?render@rglSliderWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x14030d610",
+   "end": "0x14030d808",
+   "va": "0x14030d610",
+   "symbol": "?triggerState@rglSliderWidget@@UEAA_NI@Z"
+  },
+  {
+   "start": "0x14030d810",
+   "end": "0x14030d830",
+   "va": "0x14030d810",
+   "symbol": "?loseFocus@rglSliderWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14030d830",
+   "end": "0x14030d958",
+   "va": "0x14030d830",
+   "symbol": "?obtainFocus@rglSliderWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x14030d960",
+   "end": "0x14030da5b",
+   "va": "0x14030d960",
+   "symbol": "?setScale@rglSliderWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x14030da60",
+   "end": "0x14030dae0",
+   "va": "0x14030da60",
+   "symbol": "?setAbsolutePosition@rglSliderWidget@@QEAAXM@Z"
+  },
+  {
+   "start": "0x14030dae0",
+   "end": "0x14030db10",
+   "va": "0x14030dae0",
+   "symbol": "?getPercentage@rglSliderWidget@@QEBAMXZ"
   },
   {
    "start": "0x14030db10",
@@ -69472,19 +70390,38 @@
   "0x14025a700",
   "0x14025aa50",
   "0x14025adb0",
+  "0x14025b200",
+  "0x14025b250",
+  "0x14025b290",
+  "0x14025b3b0",
   "0x14025b470",
+  "0x14025b480",
   "0x14025b4c0",
+  "0x14025b4d0",
+  "0x14025b500",
   "0x14025b540",
   "0x14025b650",
+  "0x14025b730",
+  "0x14025bb30",
   "0x14025bc50",
+  "0x14025bd80",
   "0x14025c570",
   "0x14025c5e0",
   "0x14025ca20",
   "0x14025cb00",
   "0x14025cc00",
+  "0x14025cce0",
+  "0x14025cd40",
+  "0x14025ce20",
+  "0x14025ce30",
   "0x14025cec0",
   "0x14025cfa0",
+  "0x14025d0a0",
+  "0x14025d0d0",
+  "0x14025d130",
   "0x14025d190",
+  "0x14025d2c0",
+  "0x14025d790",
   "0x14025dac0",
   "0x14025daf0",
   "0x14025dc00",
@@ -69505,6 +70442,22 @@
   "0x14025e5f0",
   "0x14026f270",
   "0x1402801d0",
+  "0x140280320",
+  "0x1402803a0",
+  "0x140280580",
+  "0x1402805f0",
+  "0x1402806f0",
+  "0x140280760",
+  "0x140280950",
+  "0x140280a30",
+  "0x140280ac0",
+  "0x140280b50",
+  "0x140280be0",
+  "0x140280c80",
+  "0x140280d40",
+  "0x140280da0",
+  "0x140280e60",
+  "0x140280ff0",
   "0x1402810e0",
   "0x140281470",
   "0x140281490",
@@ -69912,6 +70865,16 @@
   "0x1402b9ee0",
   "0x1402b9f70",
   "0x1402ba0b0",
+  "0x1402ba230",
+  "0x1402ba240",
+  "0x1402ba260",
+  "0x1402ba280",
+  "0x1402ba450",
+  "0x1402ba4b0",
+  "0x1402ba510",
+  "0x1402ba570",
+  "0x1402ba5d0",
+  "0x1402ba5e0",
   "0x1402ba970",
   "0x1402ba9d0",
   "0x1402baa00",
@@ -70129,8 +71092,20 @@
   "0x1402e9760",
   "0x1402ea560",
   "0x1402ea960",
+  "0x1402eaa40",
+  "0x1402eab80",
+  "0x1402eafa0",
   "0x1402eb020",
+  "0x1402eb030",
+  "0x1402eb040",
+  "0x1402eb090",
+  "0x1402eb120",
+  "0x1402eb160",
+  "0x1402eb1e0",
+  "0x1402eb2e0",
+  "0x1402eb530",
   "0x1402eb6a0",
+  "0x1402ebe80",
   "0x1402ec210",
   "0x1402ec4f0",
   "0x1402ec5e0",
@@ -70139,6 +71114,8 @@
   "0x1402ec860",
   "0x1402ecc80",
   "0x1402eda20",
+  "0x1402edba0",
+  "0x1402edc00",
   "0x1402eddc0",
   "0x1402ee520",
   "0x1402ee5c0",
@@ -70191,6 +71168,13 @@
   "0x1402f3580",
   "0x1402f3610",
   "0x1402f36c0",
+  "0x1402f3a20",
+  "0x1402f3aa0",
+  "0x1402f3ca0",
+  "0x1402f3cc0",
+  "0x1402f3df0",
+  "0x1402f3ef0",
+  "0x1402f3f70",
   "0x1402f3fa0",
   "0x1402f3fb0",
   "0x1402f4040",

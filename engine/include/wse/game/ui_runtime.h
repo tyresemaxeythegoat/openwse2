@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <map>
 #include <span>
 #include <string>
 #include <string_view>
@@ -297,6 +298,12 @@ struct UiWidget {
     bool enabled = true;
     bool highlighted = false;
     bool pressed = false;
+    // Container overlays (`set_container_overlay` 945): children are placed at
+    // `pos + child_offset` (the scroll position of a scrollable container) and, when
+    // `clip_children` is set, are neither hit outside this widget's box nor drawn when they lie
+    // entirely outside it (the RHI has no scissor yet, so partly visible children draw whole).
+    wse::core::WseVec2 child_offset{};
+    bool clip_children = false;
     std::vector<UiWidget> children{};
 
     // Populates widget geometry and typography from `GameVariablesTable` following
@@ -398,6 +405,74 @@ inline constexpr float kUiGameButtonHeight = 0.04f;
 inline constexpr float kUiInGameButtonWidth = 0.2123f;
 inline constexpr float kUiInGameButtonHeight = 0.04f;
 
+// --- Interactive overlays ---------------------------------------------------------------
+// Retail input path. `rglWindowManager::frameMove` (`0x14032a0d0`) sends mouse presses as
+// widget states `0x10` (left) / `0x40` (right) and releases as `0x8` / `0x20`, to the focused
+// widget if there is one, otherwise to the window's widget tree. `rglContainerWidget::triggerState`
+// (`0x14028af30`) sends hover enter `0x2` / leave `0x4` to every visible, enabled child the
+// cursor enters or leaves, whatever its type, and hands a press to the children under the
+// cursor from the top down until one consumes it. `rglWidget::triggerState` (`0x14031dd10`)
+// latches each state with `rglWidget::setState` (`0x14031d120`), and
+// `mbPresentationContainer::frameMove` (`0x140208ec0`) reads the latched states back per
+// overlay, in overlay order, with `rglWidget::checkState` (`0x14031d100`):
+// `0x2` -> `-63` (param 2 = 0), `0x4` -> `-63` (1), `0x10000` (value changed) -> `-62`,
+// `0x10` / `0x40` / `0x100` -> `-64` (param 2 = 0 / 1 / 2).
+inline constexpr std::uint32_t kUiStateEnter = 0x2U;
+inline constexpr std::uint32_t kUiStateLeave = 0x4U;
+inline constexpr std::uint32_t kUiStateLeftPress = 0x10U;
+inline constexpr std::uint32_t kUiStateRightPress = 0x40U;
+inline constexpr std::uint32_t kUiStateMiddlePress = 0x100U;
+inline constexpr std::uint32_t kUiStateChanged = 0x10000U;
+// `create_slider_overlay` (914, `createSliderOverlay` `0x14020af30`): a horizontal
+// `rglSliderWidget` 0.25 wide (`slider_hor` / `handle_hor` meshes) with a 0.008 knob margin
+// (`0x3c03126f`). `rglSliderWidget::triggerState` (`0x14030d610`) keeps the value when a press
+// lands within `margin + 0.01` of the knob and otherwise jumps to the cursor
+// (`rglSliderWidget::setAbsolutePosition` `0x14030da60`); while dragging, every cursor move
+// sets the value again and raises `0x10000`. `-62` reports the value truncated toward zero.
+// The height comes from the `slider_hor` mesh; without its bounds the port uses the fallback.
+inline constexpr float kUiSliderWidth = 0.25f;
+inline constexpr float kUiSliderMargin = 0.008f;
+inline constexpr float kUiSliderKnobTolerance = 0.01f;
+inline constexpr float kUiSliderFallbackHeight = 0.03f;
+// `rglNumberBoxWidget::triggerState` (`0x1402c8310`): a press on an arrow steps the value by
+// 1 at once; while the arrow is held the value repeats after 0.5 s every 0.1 s, by 1 up to
+// 2.5 s held, then 3 up to 5 s, then 10 up to 7.5 s, then 50, clamped to the bounds.
+// Releasing or leaving the box stops it.
+inline constexpr float kUiNumberBoxRepeatDelay = 0.5f;
+inline constexpr float kUiNumberBoxRepeatInterval = 0.1f;
+// Port approximations (layouts not traced): number boxes, combo buttons / labels and list
+// boxes get these boxes, the outer quarter on each side of a number box or combo label is its
+// decrement (left) / increment (right) arrow, and combo popups list their items downwards
+// from the box (`rglComboButtonWidget::openPopup` `0x140261d10` not traced).
+inline constexpr float kUiNumberBoxWidth = 0.12f;
+inline constexpr float kUiComboWidth = 0.25f;
+inline constexpr float kUiInputBoxHeight = 0.04f;
+inline constexpr float kUiArrowFraction = 0.25f;
+inline constexpr float kUiComboItemHeight = 0.035f;
+// `create_text_overlay` (910, `createTextOverlay` `0x140209a90`) builds an
+// `rglScrollableWidget` (`rglScrollableWidget::getType` `0x140300270` = 8) when text flag bit
+// 17, 18 or 19 is set; `set_container_overlay` children then live inside it. The wheel scrolls
+// the scrollable container nearest the cursor (`mbPresentationContainer::frameMove`). The step
+// per wheel notch and the initial position (content top at the area top) are port choices.
+inline constexpr std::uint32_t kUiTextFlagsScrollable = 0x000E0000U;
+inline constexpr float kUiScrollStep = 0.05f;
+
+// One frame of pointer input for `UiSession::handle_input`. `*_pressed` / `left_released`
+// are edges seen this frame; `wheel` is in notches (positive = away from the user);
+// `time_s` is a monotonic clock used for number-box auto-repeat.
+struct UiPointerInput {
+    float x = 0.0f;
+    float y = 0.0f;
+    bool left_down = false;
+    bool left_pressed = false;
+    bool left_released = false;
+    bool right_pressed = false;
+    bool middle_pressed = false;
+    bool escape_pressed = false;
+    float wheel = 0.0f;
+    float time_s = 0.0f;
+};
+
 // Meshes the built-in windows and button overlays below draw by name (lower case).
 inline constexpr std::array<std::string_view, 8> kUiSessionMeshNames{
     "main_menu_nord", "ui_quick_battle_a",  "warrider_logo",      "dlg_button",
@@ -410,6 +485,95 @@ struct UiMeshBounds {
     float min_y = 0.0f;
     float max_x = 1.0f;
     float max_y = 1.0f;
+};
+
+// Input behaviour of a presentation overlay, after its retail widget class
+// (`rglWidget::getType`, read by `mbPresentationContainer::frameMove` `0x140208ec0` to pick
+// the `-62` value: sliders / progress bars report the float value, number boxes / combo
+// buttons / combo labels / list boxes the int value, check boxes their toggle state).
+enum class UiOverlayInput : std::uint8_t {
+    None = 0,         // text, mesh, progress bar: hover and press only
+    Button = 1,       // 912 / 940 / 941 text buttons, 913 / 938 image buttons
+    CheckBox = 2,     // 918 (`createCheckBoxOverlay` `0x14020bc50`: image button, toggle flag)
+    Slider = 3,       // 914
+    NumberBox = 4,    // 942
+    ComboButton = 5,  // 916
+    ComboLabel = 6,   // 948
+    ListBox = 7,      // 943 (port: behaves as a combo button)
+    TextBox = 8,      // 917 / 919 (text entry not modelled yet)
+};
+
+[[nodiscard]] inline UiOverlayInput overlay_input_kind(const WsePresentationOverlay& ov) noexcept {
+    switch (ov.m5.create_opcode) {
+    case 914:
+        return UiOverlayInput::Slider;
+    case 942:
+        return UiOverlayInput::NumberBox;
+    case 916:
+        return UiOverlayInput::ComboButton;
+    case 948:
+        return UiOverlayInput::ComboLabel;
+    case 943:
+        return UiOverlayInput::ListBox;
+    case 917:
+    case 919:
+        return UiOverlayInput::TextBox;
+    default:
+        break;
+    }
+    if (ov.type == 1 && ov.m5.is_button) {
+        return UiOverlayInput::Button;
+    }
+    if (ov.type == 4) {
+        return ov.m5.is_checkbox ? UiOverlayInput::CheckBox : UiOverlayInput::Button;
+    }
+    // Overlays built without a create opcode (hosts, tests): fall back on the port type.
+    if (ov.m5.create_opcode == 0) {
+        switch (ov.type) {
+        case 2:
+            return UiOverlayInput::Slider;
+        case 5:
+            return UiOverlayInput::ComboButton;
+        case 8:
+            return UiOverlayInput::ListBox;
+        default:
+            break;
+        }
+    }
+    return UiOverlayInput::None;
+}
+
+// Axis-aligned UI-space box (`x0 <= x1`, `y0 <= y1`).
+struct UiRect {
+    float x0 = 0.0f;
+    float y0 = 0.0f;
+    float x1 = 0.0f;
+    float y1 = 0.0f;
+
+    [[nodiscard]] bool contains(float x, float y) const noexcept {
+        return x >= x0 && x <= x1 && y >= y0 && y <= y1;
+    }
+    [[nodiscard]] UiRect intersect(const UiRect& o) const noexcept {
+        return UiRect{std::max(x0, o.x0), std::max(y0, o.y0), std::min(x1, o.x1), std::min(y1, o.y1)};
+    }
+};
+
+// An overlay's absolute box and the clip rectangle of its containers.
+struct UiHitEntry {
+    std::int32_t overlay_id = -1;
+    UiRect box{};
+    UiRect clip{};
+    bool scrollable = false;
+
+    [[nodiscard]] bool contains(float x, float y) const noexcept {
+        return box.contains(x, y) && clip.contains(x, y);
+    }
+    [[nodiscard]] bool on_left_arrow(float x) const noexcept {
+        return x <= box.x0 + (box.x1 - box.x0) * kUiArrowFraction;
+    }
+    [[nodiscard]] bool on_right_arrow(float x) const noexcept {
+        return x >= box.x1 - (box.x1 - box.x0) * kUiArrowFraction;
+    }
 };
 
 class UiSession {
@@ -462,6 +626,7 @@ public:
         current_window = source_window;
         presentation_elapsed_s = 0.0f;
         duration_cs_accum_ = 0.0f;
+        reset_input_state();
         reset_root("closed");
     }
 
@@ -995,14 +1160,21 @@ public:
             return;
         }
         std::unordered_map<std::int32_t, std::pair<bool, bool>> prev_state;
-        for (const UiWidget& old_w : root.children) {
-            if (old_w.overlay_id >= 0) {
-                prev_state[old_w.overlay_id] = {old_w.highlighted, old_w.pressed};
+        const auto remember = [&prev_state](const auto& self, const UiWidget& node) -> void {
+            for (const UiWidget& old_w : node.children) {
+                if (old_w.overlay_id >= 0) {
+                    prev_state[old_w.overlay_id] = {old_w.highlighted, old_w.pressed};
+                }
+                self(self, old_w);
             }
-        }
+        };
+        remember(remember, root);
         reset_root("presentation");
 
-        for (std::size_t i = 0; i < world.overlays.size(); ++i) {
+        const std::size_t n_ov = world.overlays.size();
+        std::vector<UiWidget> built(n_ov);
+        std::vector<bool> present(n_ov, false);
+        for (std::size_t i = 0; i < n_ov; ++i) {
             const WsePresentationOverlay& ov = world.overlays[i];
             if (!ov.visible) {
                 continue;
@@ -1092,9 +1264,49 @@ public:
                     w.size = {(b.max_x - b.min_x) * scale_x, (b.max_y - b.min_y) * scale_y};
                 }
             } else {
-                // Plain text and the not-yet-modelled sliders / progress bars / combo and text
-                // boxes: draw their text only (an empty one draws nothing).
+                // Text, progress bars, text boxes, and the input widgets below draw their text
+                // only (an empty one draws nothing); the input widgets also get a hit box.
                 w.kind = UiWidgetKind::Label;
+                const UiOverlayInput input_kind = overlay_input_kind(ov);
+                const auto value_text = [&ov]() {
+                    if (ov.val >= 0 && static_cast<std::size_t>(ov.val) < ov.m5.items.size()) {
+                        return u16_to_utf8(ov.m5.items[static_cast<std::size_t>(ov.val)]);
+                    }
+                    return std::string{};
+                };
+                switch (input_kind) {
+                case UiOverlayInput::Slider: {
+                    w.kind = UiWidgetKind::Slider;
+                    float h = kUiSliderFallbackHeight;
+                    if (const auto bit = mesh_bounds.find("slider_hor"); bit != mesh_bounds.end()) {
+                        h = bit->second.max_y - bit->second.min_y;
+                    }
+                    if (!has_area) {
+                        w.size = {kUiSliderWidth, h};
+                    }
+                    break;
+                }
+                case UiOverlayInput::NumberBox:
+                    w.text = std::to_string(ov.val);
+                    if (!has_area) {
+                        w.size = {kUiNumberBoxWidth, kUiInputBoxHeight};
+                    }
+                    break;
+                case UiOverlayInput::ComboButton:
+                case UiOverlayInput::ComboLabel:
+                case UiOverlayInput::ListBox:
+                    w.text = value_text();
+                    if (!has_area) {
+                        w.size = {kUiComboWidth, kUiInputBoxHeight};
+                    }
+                    break;
+                default:
+                    break;
+                }
+                if (ov.type == 1 && !ov.m5.is_button && has_area &&
+                    (static_cast<std::uint32_t>(ov.val) & kUiTextFlagsScrollable) != 0U) {
+                    w.clip_children = true;
+                }
             }
             if (text_button || mesh_button) {
                 w.action_tag = static_cast<std::int32_t>(UiActionKind::OverlayClicked);
@@ -1104,17 +1316,254 @@ public:
             if (ext_it != world.m6.ui.overlay_ext.end()) {
                 w.enabled = ext_it->second.enabled;
             }
-            root.children.push_back(std::move(w));
+            built[i] = std::move(w);
+            present[i] = true;
         }
+
+        // Nest `set_container_overlay` children inside their container. A child whose
+        // container is hidden is hidden too; a missing container or a container cycle
+        // (`overlay_set_container_overlay` 951 can make one) leaves the overlay at the top.
+        const auto container_of = [&world, n_ov](std::size_t i) -> std::int64_t {
+            const std::int32_t c = world.overlays[i].m5.container_overlay_no;
+            return (c >= 0 && static_cast<std::size_t>(c) < n_ov && static_cast<std::size_t>(c) != i)
+                       ? c
+                       : -1;
+        };
+        std::vector<std::vector<std::size_t>> kids(n_ov);
+        std::vector<std::size_t> top;
+        for (std::size_t i = 0; i < n_ov; ++i) {
+            if (!present[i]) {
+                continue;
+            }
+            const std::int64_t c = container_of(i);
+            bool cycle = false;
+            for (std::int64_t at = c, hops = 0; at >= 0; at = container_of(static_cast<std::size_t>(at)), ++hops) {
+                if (static_cast<std::size_t>(at) == i || static_cast<std::size_t>(hops) > n_ov) {
+                    cycle = true;
+                    break;
+                }
+            }
+            if (c < 0 || cycle) {
+                top.push_back(i);
+            } else if (present[static_cast<std::size_t>(c)]) {
+                kids[static_cast<std::size_t>(c)].push_back(i);
+            }
+        }
+        const auto attach = [&](const auto& self, std::size_t i) -> UiWidget {
+            UiWidget w = std::move(built[i]);
+            for (const std::size_t k : kids[i]) {
+                w.children.push_back(self(self, k));
+            }
+            if (w.clip_children) {
+                // Scrollable container: content top starts at the area top; the scroll
+                // position moves it up by up to (content height - area height).
+                float content_top = 0.0f;
+                for (const UiWidget& c : w.children) {
+                    content_top = std::max(content_top, c.pos.y + c.size.y);
+                }
+                const float max_scroll = std::max(0.0f, content_top - w.size.y);
+                float& scroll = scroll_pos_[static_cast<std::int32_t>(i)];
+                scroll = std::clamp(scroll, 0.0f, max_scroll);
+                w.child_offset = {0.0f, (w.size.y - content_top) + scroll};
+            }
+            return w;
+        };
+        for (const std::size_t t : top) {
+            root.children.push_back(attach(attach, t));
+        }
+        append_combo_popup(world);
     }
 
-    // Evaluates pointer hover/click and Escape handling against `root`
-    // (`rglCreateSimpleButtonWidget` `0x14031f110`), firing presentation
-    // triggers `-63` (`mouse_enter_leave`: param 1 = overlay, param 2 = 0 enter / 1 leave)
-    // and `-62` (`state_change`: param 1 = overlay, param 2 = value) and closing
-    // `mbNotesWindow` on Return/Escape cleanly (`0x140161ad2..0x140161bd4`). Escape does not
+    // Pointer and key input for the open window (`UiPointerInput`, one call per frame).
+    //
+    // Built-in windows: buttons highlight under the cursor and act on a left release over the
+    // button the left press landed on (`rglSimpleButtonWidget::triggerState` `0x140307770`);
+    // Return/Escape closes `mbNotesWindow` cleanly (`0x140161ad2..0x140161bd4`).
+    //
+    // Presentations follow the retail state path described at `kUiStateEnter`:
+    // - every visible, enabled overlay whose box holds the cursor gets enter / leave (`-63`),
+    //   whatever its type (text and mesh overlays included);
+    // - a press goes to the overlays under the cursor from the top down until one consumes it,
+    //   each of them getting `-64`; buttons, check boxes, sliders, combo buttons and list
+    //   boxes consume a left press, number boxes and combo labels only on their arrows;
+    // - text / image / game buttons arm on the left press, disarm when the cursor leaves, and
+    //   fire `-62` on a left release over them (param 2 = the overlay value; retail leaves a
+    //   stale trigger parameter there, see `engine/README.md`); a check box toggles on the
+    //   press and reports the new state; sliders, number boxes, combo labels and combo popups
+    //   change their value and report it;
+    // - the wheel scrolls the scrollable container nearest the cursor.
+    // The triggers then run per overlay in overlay order (enter, leave, change, left / right /
+    // middle press), stopping when one closes or restarts the presentation. Escape does not
     // close a presentation (`mbPresentationWindow::frameMove` `0x140174ed0` has no key check;
     // see `kPresentationFlagManualEndOnly`): the module's own `-61` trigger handles it.
+    // Port: the triggers run here, at input time, rather than after `-61` in the frame.
+    std::vector<UiEvent> handle_input(WseWorldState& world,
+                                      const UiPointerInput& in,
+                                      vm::VmContext* vm_ctx = nullptr,
+                                      std::span<const LoadedPresentation> presentations = {}) {
+        std::vector<UiEvent> events;
+        world.m5.cursor_pos = {in.x, in.y};
+
+        if (in.escape_pressed && current_window == kScreenWindowNotes) {
+            const std::string id = root.id;
+            close_active_modal_window(world);
+            events.push_back(UiEvent{UiActionKind::NotesReturn, -1, id});
+            return events;
+        }
+
+        // Button highlight / pressed visuals (top-most button under the cursor).
+        UiWidget* hovered = find_hit_widget(root, in.x, in.y, 0.0f, 0.0f);
+        update_hover_state(root, hovered, in.left_down);
+
+        if (current_window != kScreenWindowPresentation || presentation_no_ < 0) {
+            const std::string hovered_id = (hovered != nullptr) ? hovered->id : std::string{};
+            if (in.left_pressed) {
+                armed_widget_id_ = hovered_id;
+            }
+            if (in.left_released) {
+                const bool fire = hovered != nullptr && hovered->action_tag >= 0 &&
+                                  !armed_widget_id_.empty() && armed_widget_id_ == hovered_id;
+                armed_widget_id_.clear();
+                if (fire) {
+                    const auto action = static_cast<UiActionKind>(hovered->action_tag);
+                    events.push_back(UiEvent{action, hovered->action_param, hovered_id});
+                    if (action == UiActionKind::NotesReturn) {
+                        close_active_modal_window(world);
+                    }
+                }
+            }
+            return events;
+        }
+
+        std::vector<UiHitEntry> hits;
+        collect_overlay_hits(root, 0.0f, 0.0f, UiRect{-1.0e9f, -1.0e9f, 1.0e9f, 1.0e9f}, hits);
+        std::map<std::int32_t, std::uint32_t> states;
+        const auto raise = [&states](std::int32_t id, std::uint32_t bits) { states[id] |= bits; };
+        const auto valid = [&world](std::int32_t id) {
+            return id >= 0 && static_cast<std::size_t>(id) < world.overlays.size();
+        };
+
+        // Hover enter / leave.
+        std::vector<std::int32_t> inside;
+        for (const UiHitEntry& e : hits) {
+            if (e.contains(in.x, in.y)) {
+                inside.push_back(e.overlay_id);
+            }
+        }
+        std::sort(inside.begin(), inside.end());
+        inside.erase(std::unique(inside.begin(), inside.end()), inside.end());
+        for (const std::int32_t id : inside) {
+            if (!std::binary_search(hovered_overlays_.begin(), hovered_overlays_.end(), id)) {
+                raise(id, kUiStateEnter);
+            }
+        }
+        for (const std::int32_t id : hovered_overlays_) {
+            if (!std::binary_search(inside.begin(), inside.end(), id)) {
+                raise(id, kUiStateLeave);
+                if (id == armed_overlay_) {
+                    armed_overlay_ = -1;
+                }
+                if (id == hold_overlay_) {
+                    hold_overlay_ = -1;
+                }
+            }
+        }
+        hovered_overlays_ = std::move(inside);
+
+        if (drag_overlay_ >= 0) {
+            // A dragged slider has the focus: it gets the input instead of the tree.
+            const UiHitEntry* e = find_hit_entry(hits, drag_overlay_);
+            if (!valid(drag_overlay_) || e == nullptr || in.left_released || !in.left_down) {
+                drag_overlay_ = -1;
+            } else if (in.x != drag_last_x_) {
+                drag_last_x_ = in.x;
+                set_slider_from_cursor(world.overlays[static_cast<std::size_t>(drag_overlay_)], *e,
+                                       in.x - drag_grab_offset_);
+                raise(drag_overlay_, kUiStateChanged);
+            }
+        } else if (popup_overlay_ >= 0 && (in.left_pressed || in.right_pressed)) {
+            // An open combo popup takes the next press: an item selects it, anything closes.
+            const std::int32_t combo = popup_overlay_;
+            popup_overlay_ = -1;
+            if (in.left_pressed && valid(combo)) {
+                for (std::size_t k = 0; k < popup_items_.size(); ++k) {
+                    if (popup_items_[k].contains(in.x, in.y)) {
+                        world.overlays[static_cast<std::size_t>(combo)].val =
+                            static_cast<std::int32_t>(k);
+                        raise(combo, kUiStateChanged);
+                        break;
+                    }
+                }
+            }
+            popup_items_.clear();
+        } else {
+            const std::array<std::pair<bool, std::uint32_t>, 3> presses{
+                std::pair{in.left_pressed, kUiStateLeftPress},
+                std::pair{in.right_pressed, kUiStateRightPress},
+                std::pair{in.middle_pressed, kUiStateMiddlePress}};
+            for (const auto& [pressed, bit] : presses) {
+                if (!pressed) {
+                    continue;
+                }
+                for (std::size_t k = hits.size(); k > 0U; --k) {
+                    const UiHitEntry& e = hits[k - 1U];
+                    if (!e.contains(in.x, in.y) || !valid(e.overlay_id)) {
+                        continue;
+                    }
+                    raise(e.overlay_id, bit);
+                    if (bit == kUiStateLeftPress && left_press(world, e, in, raise)) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (in.left_released) {
+            if (armed_overlay_ >= 0 && valid(armed_overlay_) &&
+                std::binary_search(hovered_overlays_.begin(), hovered_overlays_.end(),
+                                   armed_overlay_)) {
+                raise(armed_overlay_, kUiStateChanged);
+                events.push_back(UiEvent{UiActionKind::OverlayClicked, armed_overlay_,
+                                         "overlay_" + std::to_string(armed_overlay_)});
+            }
+            armed_overlay_ = -1;
+            hold_overlay_ = -1;
+        }
+
+        // Number-box auto-repeat while an arrow stays held.
+        if (hold_overlay_ >= 0 && in.left_down && valid(hold_overlay_)) {
+            const float held = in.time_s - hold_start_s_;
+            if (held > kUiNumberBoxRepeatDelay &&
+                held - hold_last_s_ >= kUiNumberBoxRepeatInterval) {
+                hold_last_s_ = held;
+                const std::int32_t step =
+                    held <= 2.5f ? 1 : (held <= 5.0f ? 3 : (held <= 7.5f ? 10 : 50));
+                if (const UiHitEntry* e = find_hit_entry(hits, hold_overlay_)) {
+                    // Retail re-tests the increment arrow only: anywhere else steps down.
+                    step_number_box(world.overlays[static_cast<std::size_t>(hold_overlay_)],
+                                    e->on_right_arrow(in.x) ? step : -step);
+                    raise(hold_overlay_, kUiStateChanged);
+                }
+            }
+        } else if (!in.left_down) {
+            hold_overlay_ = -1;
+        }
+
+        if (in.wheel != 0.0f) {
+            scroll_nearest_container(hits, in.x, in.y, in.wheel);
+        }
+
+        if (vm_ctx != nullptr && !states.empty()) {
+            dispatch_overlay_states(world, *vm_ctx, states, presentations);
+        }
+        if (current_window == kScreenWindowPresentation) {
+            sync_overlays_from_world(world);
+        }
+        return events;
+    }
+
+    // Single-button form of `handle_input`: `left_clicked` is a left press and release in the
+    // same frame (a tap).
     std::vector<UiEvent> handle_pointer_and_keys(WseWorldState& world,
                                                  float ui_x,
                                                  float ui_y,
@@ -1123,62 +1572,309 @@ public:
                                                  bool escape_pressed,
                                                  vm::VmContext* vm_ctx = nullptr,
                                                  std::span<const LoadedPresentation> presentations = {}) {
-        std::vector<UiEvent> events;
-        world.m5.cursor_pos = {ui_x, ui_y};
-
-        if (escape_pressed && current_window == kScreenWindowNotes) {
-            const std::string id = root.id;
-            close_active_modal_window(world);
-            events.push_back(UiEvent{UiActionKind::NotesReturn, -1, id});
-            return events;
-        }
-
-        const bool can_fire = vm_ctx != nullptr && current_window == kScreenWindowPresentation &&
-                              presentation_no_ >= 0;
-
-        // Top-most hit test (iterate children back-to-front in reverse order).
-        UiWidget* hovered = find_hit_widget(root, ui_x, ui_y, 0.0f, 0.0f);
-        std::vector<std::pair<std::int32_t, bool>> hover_changes;
-        update_hover_state(root, hovered, left_down, hover_changes);
-        // Copy what the click needs before any trigger can rebuild `root`.
-        const std::int32_t hovered_action = (hovered != nullptr) ? hovered->action_tag : -1;
-        const std::int32_t hovered_param = (hovered != nullptr) ? hovered->action_param : -1;
-        const std::int32_t hovered_overlay = (hovered != nullptr) ? hovered->overlay_id : -1;
-        const std::string hovered_id = (hovered != nullptr) ? hovered->id : std::string{};
-        const std::int32_t hovered_val =
-            (hovered_overlay >= 0 && static_cast<std::size_t>(hovered_overlay) < world.overlays.size())
-                ? world.overlays[static_cast<std::size_t>(hovered_overlay)].val
-                : 0;
-
-        if (can_fire) {
-            for (const auto& [overlay_id, entered] : hover_changes) {
-                if (current_window != kScreenWindowPresentation) {
-                    break;
-                }
-                const std::array<std::int64_t, 2> params{overlay_id, entered ? 0 : 1};
-                dispatch_presentation_trigger(world, *vm_ctx, -63, params);
-                if (!follow_presentation_state(world, *vm_ctx, presentations)) {
-                    break;
-                }
-            }
-        }
-
-        if (left_clicked && hovered_action >= 0) {
-            const auto action = static_cast<UiActionKind>(hovered_action);
-            events.push_back(UiEvent{action, hovered_param, hovered_id});
-            if (action == UiActionKind::OverlayClicked && hovered_overlay >= 0 && vm_ctx != nullptr &&
-                current_window == kScreenWindowPresentation && presentation_no_ >= 0) {
-                const std::array<std::int64_t, 2> params{hovered_overlay, hovered_val};
-                dispatch_presentation_trigger(world, *vm_ctx, -62, params);
-                (void)follow_presentation_state(world, *vm_ctx, presentations);
-            } else if (action == UiActionKind::NotesReturn) {
-                close_active_modal_window(world);
-            }
-        }
-        return events;
+        UiPointerInput in{};
+        in.x = ui_x;
+        in.y = ui_y;
+        in.left_down = left_down;
+        in.left_pressed = left_clicked;
+        in.left_released = left_clicked;
+        in.escape_pressed = escape_pressed;
+        return handle_input(world, in, vm_ctx, presentations);
     }
 
+    // Overlay id of the open combo popup (-1 when none) and its item boxes.
+    [[nodiscard]] std::int32_t combo_popup_overlay() const noexcept { return popup_overlay_; }
+
 private:
+    // Interactive-overlay state (see `handle_input`).
+    std::vector<std::int32_t> hovered_overlays_{};  // sorted
+    std::int32_t armed_overlay_ = -1;
+    std::string armed_widget_id_{};
+    std::int32_t drag_overlay_ = -1;
+    float drag_grab_offset_ = 0.0f;
+    float drag_last_x_ = 0.0f;
+    std::int32_t hold_overlay_ = -1;
+    float hold_start_s_ = 0.0f;
+    float hold_last_s_ = 0.0f;
+    std::int32_t popup_overlay_ = -1;
+    std::vector<UiRect> popup_items_{};
+    std::unordered_map<std::int32_t, float> scroll_pos_{};
+    // Bumped by every presentation (re)start so a trigger that restarts it stops the dispatch.
+    std::uint32_t presentation_epoch_ = 0;
+
+    void reset_input_state() noexcept {
+        hovered_overlays_.clear();
+        armed_overlay_ = -1;
+        armed_widget_id_.clear();
+        drag_overlay_ = -1;
+        hold_overlay_ = -1;
+        popup_overlay_ = -1;
+        popup_items_.clear();
+        scroll_pos_.clear();
+    }
+
+    // Absolute boxes of the visible, enabled overlays in draw order (later = on top), clipped by
+    // their scrollable containers. A disabled overlay hides its whole subtree from input, as
+    // `rglContainerWidget::triggerState` (`0x14028af30`) skips disabled / hidden children.
+    static void collect_overlay_hits(const UiWidget& node,
+                                     float px,
+                                     float py,
+                                     const UiRect& clip,
+                                     std::vector<UiHitEntry>& out) {
+        for (const UiWidget& c : node.children) {
+            if (!c.visible || !c.enabled) {
+                continue;
+            }
+            const float ax = px + c.pos.x;
+            const float ay = py + c.pos.y;
+            const UiRect box{ax, ay, ax + c.size.x, ay + c.size.y};
+            if (c.overlay_id >= 0 && c.size.x > 0.0f && c.size.y > 0.0f) {
+                out.push_back(UiHitEntry{c.overlay_id, box, clip, c.clip_children});
+            }
+            const UiRect child_clip = c.clip_children ? clip.intersect(box) : clip;
+            collect_overlay_hits(c, ax + c.child_offset.x, ay + c.child_offset.y, child_clip, out);
+        }
+    }
+
+    [[nodiscard]] static const UiHitEntry* find_hit_entry(const std::vector<UiHitEntry>& hits,
+                                                          std::int32_t id) noexcept {
+        for (const UiHitEntry& e : hits) {
+            if (e.overlay_id == id) {
+                return &e;
+            }
+        }
+        return nullptr;
+    }
+
+    // `rglSliderWidget::setAbsolutePosition` (`0x14030da60`): the value under `x`, clamped to
+    // the bounds (minimum first, as retail compares), stored truncated toward zero (`-62` reads
+    // the float value with `cvttss2si`).
+    static void set_slider_from_cursor(WsePresentationOverlay& ov, const UiHitEntry& e, float x) {
+        const float span = (e.box.x1 - e.box.x0) - 2.0f * kUiSliderMargin;
+        if (!(span > 0.0f)) {
+            return;
+        }
+        const auto lo = static_cast<float>(ov.m5.min_value);
+        const auto hi = static_cast<float>(ov.m5.max_value);
+        float v = lo + (x - e.box.x0 - kUiSliderMargin) / span * (hi - lo);
+        if (lo > v) {
+            v = lo;
+        } else if (v > hi) {
+            v = hi;
+        }
+        if (!std::isfinite(v)) {
+            return;
+        }
+        // Safety deviation: saturate instead of the undefined out-of-range conversion.
+        v = std::clamp(v, -2147483520.0f, 2147483520.0f);
+        ov.val = static_cast<std::int32_t>(std::trunc(v));
+    }
+
+    static void step_number_box(WsePresentationOverlay& ov, std::int32_t step) {
+        const std::int64_t lo = static_cast<std::int64_t>(ov.m5.min_value);
+        const std::int64_t hi = static_cast<std::int64_t>(ov.m5.max_value);
+        std::int64_t v = static_cast<std::int64_t>(ov.val) + step;
+        if (step > 0) {
+            v = std::min(v, hi);
+        } else {
+            v = std::max(v, lo);
+        }
+        ov.val = static_cast<std::int32_t>(std::clamp<std::int64_t>(
+            v, std::numeric_limits<std::int32_t>::min(), std::numeric_limits<std::int32_t>::max()));
+    }
+
+    // A left press on overlay `e`; returns whether the widget consumes it (the press then
+    // reaches no overlay below).
+    template <typename Raise>
+    bool left_press(WseWorldState& world, const UiHitEntry& e, const UiPointerInput& in, Raise& raise) {
+        WsePresentationOverlay& ov = world.overlays[static_cast<std::size_t>(e.overlay_id)];
+        switch (overlay_input_kind(ov)) {
+        case UiOverlayInput::Button:
+            // `rglSimpleButtonWidget::triggerState` (`0x140307770`): arm on press, fire on release.
+            armed_overlay_ = e.overlay_id;
+            return true;
+        case UiOverlayInput::CheckBox:
+            // Same function, toggle path (flag `0x284` bit 0): flip and report at once.
+            ov.val = (ov.val != 0) ? 0 : 1;
+            raise(e.overlay_id, kUiStateChanged);
+            return true;
+        case UiOverlayInput::Slider: {
+            // `rglSliderWidget::triggerState` (`0x14030d610`). Port: a press on the knob keeps
+            // the knob under the cursor while dragging (the grab offset is not traced).
+            const float span = (e.box.x1 - e.box.x0) - 2.0f * kUiSliderMargin;
+            const double range = ov.m5.max_value - ov.m5.min_value;
+            const float pct = (range != 0.0)
+                                  ? static_cast<float>((ov.val - ov.m5.min_value) / range)
+                                  : 0.0f;
+            const float knob = e.box.x0 + kUiSliderMargin + pct * span;
+            if (std::fabs(in.x - knob) < kUiSliderMargin + kUiSliderKnobTolerance) {
+                drag_grab_offset_ = in.x - knob;
+            } else {
+                drag_grab_offset_ = 0.0f;
+                set_slider_from_cursor(ov, e, in.x);
+                raise(e.overlay_id, kUiStateChanged);
+            }
+            drag_overlay_ = e.overlay_id;
+            drag_last_x_ = in.x;
+            return true;
+        }
+        case UiOverlayInput::NumberBox:
+            // `rglNumberBoxWidget::triggerState` (`0x1402c8310`): step 1 at once, then repeat.
+            if (!e.on_left_arrow(in.x) && !e.on_right_arrow(in.x)) {
+                return false;
+            }
+            step_number_box(ov, e.on_right_arrow(in.x) ? 1 : -1);
+            raise(e.overlay_id, kUiStateChanged);
+            hold_overlay_ = e.overlay_id;
+            hold_start_s_ = in.time_s;
+            hold_last_s_ = 0.0f;
+            return true;
+        case UiOverlayInput::ComboLabel: {
+            // `rglComboLabelWidget::triggerState` (`0x140262cd0`) steps by one and always raises
+            // `0x10000`; `rglComboLabelWidget::setIntValue` (`0x140262c70`) wraps around the
+            // item count and ignores the value when there are no items.
+            if (!e.on_left_arrow(in.x) && !e.on_right_arrow(in.x)) {
+                return false;
+            }
+            const auto count = static_cast<std::int32_t>(
+                std::min<std::size_t>(ov.m5.items.size(), std::numeric_limits<std::int32_t>::max()));
+            std::int32_t v = ov.val + (e.on_right_arrow(in.x) ? 1 : -1);
+            if (v >= count) {
+                v = 0;
+            } else if (v < 0) {
+                v = count - 1;
+            }
+            if (v >= 0 && v < count) {
+                ov.val = v;
+            }
+            raise(e.overlay_id, kUiStateChanged);
+            return true;
+        }
+        case UiOverlayInput::ComboButton:
+        case UiOverlayInput::ListBox:
+            // `rglComboButtonWidget::triggerState` (`0x140261340`): consumes the press and
+            // opens the item popup when there are items; picking one raises `0x10000`.
+            if (!ov.m5.items.empty()) {
+                popup_overlay_ = e.overlay_id;
+                popup_items_.clear();
+                for (std::size_t k = 0; k < ov.m5.items.size(); ++k) {
+                    const float top = e.box.y0 - static_cast<float>(k) * kUiComboItemHeight;
+                    popup_items_.push_back(
+                        UiRect{e.box.x0, top - kUiComboItemHeight, e.box.x1, top});
+                }
+            }
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    // Wheel: scrolls the scrollable container closest to the cursor (distance 0 inside it),
+    // as `mbPresentationContainer::frameMove` (`0x140208ec0`) picks it.
+    void scroll_nearest_container(const std::vector<UiHitEntry>& hits, float x, float y, float wheel) {
+        const auto axis_dist = [](float v, float lo, float hi) {
+            if (v >= lo && v <= hi) {
+                return 0.0f;
+            }
+            return std::min(std::fabs(v - lo), std::fabs(v - hi));
+        };
+        std::int32_t best = -1;
+        float best_d = 1.0e10f;
+        for (const UiHitEntry& e : hits) {
+            if (!e.scrollable) {
+                continue;
+            }
+            const float dx = axis_dist(x, e.box.x0, e.box.x1);
+            const float dy = axis_dist(y, e.box.y0, e.box.y1);
+            const float d = dx * dx + dy * dy;
+            if (d < best_d) {
+                best_d = d;
+                best = e.overlay_id;
+            }
+        }
+        if (best >= 0 && std::isfinite(wheel)) {
+            // Clamped to the content on the next sync.
+            scroll_pos_[best] = std::max(0.0f, scroll_pos_[best] - wheel * kUiScrollStep);
+        }
+    }
+
+    [[nodiscard]] static std::int64_t changed_value(const WsePresentationOverlay& ov) noexcept {
+        if (overlay_input_kind(ov) == UiOverlayInput::CheckBox) {
+            return ov.val != 0 ? 1 : 0;
+        }
+        return ov.val;
+    }
+
+    // Runs the presentation triggers for the latched overlay states in retail order
+    // (`mbPresentationContainer::frameMove` `0x140208ec0`), stopping when a trigger closes or
+    // restarts the presentation.
+    void dispatch_overlay_states(WseWorldState& world,
+                                 vm::VmContext& vm_ctx,
+                                 const std::map<std::int32_t, std::uint32_t>& states,
+                                 std::span<const LoadedPresentation> presentations) {
+        const std::uint32_t epoch = presentation_epoch_;
+        struct Step {
+            std::uint32_t bit;
+            std::int32_t key;
+            std::int64_t param2;  // -1: the overlay value
+        };
+        constexpr std::array<Step, 6> kOrder{{{kUiStateEnter, -63, 0},
+                                              {kUiStateLeave, -63, 1},
+                                              {kUiStateChanged, -62, -1},
+                                              {kUiStateLeftPress, -64, 0},
+                                              {kUiStateRightPress, -64, 1},
+                                              {kUiStateMiddlePress, -64, 2}}};
+        for (const auto& [id, bits] : states) {
+            for (const Step& st : kOrder) {
+                if ((bits & st.bit) == 0U) {
+                    continue;
+                }
+                if (current_window != kScreenWindowPresentation || presentation_epoch_ != epoch ||
+                    static_cast<std::size_t>(id) >= world.overlays.size()) {
+                    return;
+                }
+                const std::int64_t p2 =
+                    st.param2 >= 0 ? st.param2
+                                   : changed_value(world.overlays[static_cast<std::size_t>(id)]);
+                const std::array<std::int64_t, 2> params{id, p2};
+                dispatch_presentation_trigger(world, vm_ctx, st.key, params);
+                if (!follow_presentation_state(world, vm_ctx, presentations) ||
+                    presentation_epoch_ != epoch) {
+                    return;
+                }
+            }
+        }
+    }
+
+    // Draws the open combo popup over everything (port approximation of `rglPopupWidget`).
+    void append_combo_popup(const WseWorldState& world) {
+        if (popup_overlay_ < 0 || static_cast<std::size_t>(popup_overlay_) >= world.overlays.size() ||
+            popup_items_.empty()) {
+            return;
+        }
+        const WsePresentationOverlay& ov = world.overlays[static_cast<std::size_t>(popup_overlay_)];
+        UiWidget panel{};
+        panel.id = "combo_popup";
+        panel.kind = UiWidgetKind::SolidPanel;
+        panel.pos = {popup_items_.back().x0, popup_items_.back().y0};
+        panel.size = {popup_items_.front().x1 - popup_items_.front().x0,
+                      popup_items_.front().y1 - popup_items_.back().y0};
+        panel.color_argb = 0xE0101010U;
+        for (std::size_t k = 0; k < popup_items_.size() && k < ov.m5.items.size(); ++k) {
+            UiWidget item{};
+            item.id = "combo_popup_item_" + std::to_string(k);
+            item.kind = UiWidgetKind::Label;
+            item.pos = {popup_items_[k].x0 - panel.pos.x, popup_items_[k].y0 - panel.pos.y};
+            item.size = {popup_items_[k].x1 - popup_items_[k].x0,
+                         popup_items_[k].y1 - popup_items_[k].y0};
+            item.text = u16_to_utf8(ov.m5.items[k]);
+            item.text_scale = {kUiOverlayTextScale, kUiOverlayTextScale};
+            item.text_color_argb = (static_cast<std::int32_t>(k) == ov.val) ? 0xFFFFDD00U : 0xFFFFFFFFU;
+            panel.children.push_back(std::move(item));
+        }
+        root.children.push_back(std::move(panel));
+    }
+
     std::int32_t presentation_no_ = -1;
     float default_duration_s_ = 100.0f;
     float duration_cs_accum_ = 0.0f;
@@ -1226,6 +1922,8 @@ private:
         world.m5.active_window = kScreenWindowPresentation;
         world.m6.ui.active_window_id = kScreenWindowPresentation;
         presentation_no_ = presentation_no;
+        ++presentation_epoch_;
+        reset_input_state();
         active_triggers_ = prsnt.triggers;
         presentation_elapsed_s = 0.0f;
         duration_cs_accum_ = 0.0f;
@@ -1373,10 +2071,15 @@ private:
         }
         const float ax = px + node.pos.x;
         const float ay = py + node.pos.y;
-        for (std::size_t k = node.children.size(); k > 0U; --k) {
-            if (UiWidget* child_hit =
-                    find_hit_widget(node.children[k - 1U], ui_x, ui_y, ax, ay)) {
-                return child_hit;
+        const bool inside_clip = !node.clip_children ||
+                                 UiRect{ax, ay, ax + node.size.x, ay + node.size.y}.contains(ui_x, ui_y);
+        if (inside_clip) {
+            for (std::size_t k = node.children.size(); k > 0U; --k) {
+                if (UiWidget* child_hit = find_hit_widget(node.children[k - 1U], ui_x, ui_y,
+                                                          ax + node.child_offset.x,
+                                                          ay + node.child_offset.y)) {
+                    return child_hit;
+                }
             }
         }
         if ((node.kind == UiWidgetKind::SimpleButton || node.kind == UiWidgetKind::GameButton) &&
@@ -1386,21 +2089,13 @@ private:
         return nullptr;
     }
 
-    // Updates highlight / pressed flags and records overlay enter (true) / leave (false)
-    // transitions; the triggers run afterwards so they cannot rebuild `root` mid-walk.
-    static void update_hover_state(UiWidget& node,
-                                   const UiWidget* target,
-                                   bool left_down,
-                                   std::vector<std::pair<std::int32_t, bool>>& changes) {
-        const bool was_hl = node.highlighted;
+    // Updates the highlight / pressed visuals of the button under the cursor.
+    static void update_hover_state(UiWidget& node, const UiWidget* target, bool left_down) {
         const bool now_hl = (&node == target);
         node.highlighted = now_hl;
         node.pressed = now_hl && left_down;
-        if (was_hl != now_hl && node.overlay_id >= 0) {
-            changes.emplace_back(node.overlay_id, now_hl);
-        }
         for (UiWidget& c : node.children) {
-            update_hover_state(c, target, left_down, changes);
+            update_hover_state(c, target, left_down);
         }
     }
 };
