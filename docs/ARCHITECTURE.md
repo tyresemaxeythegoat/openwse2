@@ -135,7 +135,7 @@ Exact reader behaviour (v1.1.5.5 `ev_1e3c2566…0fdb0b`, 18/18 functions):
 | --- | --- | --- |
 | `+0x58` | `readFloat` | `strtod(token, nullptr)` (0x14049b238), cast to float |
 | `+0x60` | `readBool` | `_stricmp("true"/"false")`, otherwise `strtol(token,10) != 0` |
-| `+0x68` | `readUInt64` | `rglString::toUInt64Stream` decimal parser |
+| `+0x68` | `readUInt64` (`0x1402afbe0`) | `rglString::toUInt64Stream` (`0x14030f7b0`): sums `(c - '0') * 10^k` from the last character with unchecked 64-bit `imul`/`add`, so decimals above `UINT64_MAX` wrap modulo 2^64 and no digit is validated |
 | `+0x70` | `readInt64` | `rglString::toInt64Stream` decimal parser |
 | `+0x78` | `readUInt32` | 32-bit decimal loop (same code as `readInt32`) |
 | `+0x80` | `readInt32` | 15-character manual loop with a leading `-` |

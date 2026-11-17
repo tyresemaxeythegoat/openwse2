@@ -514,6 +514,20 @@ void test_ini_and_token_helpers() {
     expect(!read_wrapping_u32_token(neg_tok, u),
            "wrapping u32 rejects trailing garbage");
 
+    // readUInt64 (0x1402afbe0) -> toUInt64Stream (0x14030f7b0) wraps modulo 2^64; the
+    // 43-digit token is `itm_drow_c_dagger`'s properties in Phantasy Calradia.
+    wse::io::TokenReader u64_tok(
+        "18446744073709551615 18446744073709551616 4355614296588012332331194975126633110896642 "
+        "12x -1 007");
+    std::uint64_t u64 = 0;
+    expect(u64_tok.read_u64(u64) && u64 == 0xffffffffffffffffULL, "max u64 parses");
+    expect(u64_tok.read_u64(u64) && u64 == 0U, "u64 wraps 2^64 to 0 like toUInt64Stream");
+    expect(u64_tok.read_u64(u64) && u64 == 0x410002ULL,
+           "43-digit Module System flags wrap modulo 2^64");
+    expect(!u64_tok.read_u64(u64), "u64 rejects trailing garbage");
+    expect(!u64_tok.read_u64(u64), "u64 rejects a sign");
+    expect(u64_tok.read_u64(u64) && u64 == 7U, "u64 accepts leading zeros");
+
     expect(initial_troop_xp(5, nullptr) == kCampaignLevelXpTable[4],
            "deterministic XP equals g_levelTable[level]");
     std::uint32_t seed = 12345U;

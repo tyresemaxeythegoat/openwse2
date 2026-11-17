@@ -21,6 +21,8 @@
 //   readFloat  0x1402afa80  strtod(token, nullptr), cast to float
 //   readBool   0x1402afb10  _stricmp "true"/"false", else strtol(token) != 0
 //   readInt32  0x1402afce0  manual 15-char decimal loop, leading '-'
+//   readUInt64 0x1402afbe0  rglString::toUInt64Stream 0x14030f7b0, unchecked
+//                           64-bit digit sum: oversized decimals wrap mod 2^64
 //   readInt64  0x1402afc60  rglString::toInt64Stream (same decimal grammar)
 //   readString 0x1402afe60  raw token, no quote stripping
 // Writers emit the value, then a single 0x20 separator.
@@ -75,7 +77,28 @@ public:
     [[nodiscard]] bool read_i32(std::int32_t& out) noexcept { return read_signed(out); }
     [[nodiscard]] bool read_u32(std::uint32_t& out) noexcept { return read_unsigned(out); }
     [[nodiscard]] bool read_i64(std::int64_t& out) noexcept { return read_signed(out); }
-    [[nodiscard]] bool read_u64(std::uint64_t& out) noexcept { return read_unsigned(out); }
+    // readUInt64 (0x1402afbe0) converts the token with rglString::toUInt64Stream
+    // (0x14030f7b0), which sums `(c - '0') * 10^k` from the last character in unchecked
+    // 64-bit arithmetic: a decimal token above UINT64_MAX wraps modulo 2^64 instead of
+    // failing. Module System flag fields written from Python integers can exceed 64 bits
+    // (e.g. `Phantasy Calradia` `item_kinds1.txt` `itm_drow_c_dagger` properties, 43 digits),
+    // and retail loads them, so all-digit tokens wrap here too. Tokens with any non-digit
+    // byte (including a sign) are still rejected, unlike retail's unvalidated loop.
+    [[nodiscard]] bool read_u64(std::uint64_t& out) noexcept {
+        const std::string_view token = next_token();
+        if (token.empty()) {
+            return false;
+        }
+        std::uint64_t value = 0;
+        for (const char c : token) {
+            if (c < '0' || c > '9') {
+                return false;
+            }
+            value = value * 10U + static_cast<std::uint64_t>(c - '0');
+        }
+        out = value;
+        return true;
+    }
 
     [[nodiscard]] bool read_f32(float& out) noexcept { return read_real(out); }
     [[nodiscard]] bool read_f64(double& out) noexcept { return read_real(out); }
