@@ -433,6 +433,9 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
             if (ov.type == 6 || ov.type == 7) {
                 for (auto& existing : world.overlays) {
+                    if (existing.m5.focused && &existing != &ov) {
+                        existing.m5.commit_pending = true;
+                    }
                     existing.m5.focused = false;
                 }
                 ov.m5.focused = true;

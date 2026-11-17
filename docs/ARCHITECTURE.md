@@ -1158,9 +1158,38 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     | `createIngameButtonOverlay` | `0x14020c7d0` | `mp_inventory_button` kept at native size; stores scale (5.3075, 1.0) (`0x40a9d70a`); highlight text `0xff00ff00` (941) |
     | `rglGameButtonWidget::setScale` | `0x14029bfb0` | multiplies the meshes by new / stored scale per axis; the box stays the hit area |
 
-    Port approximations (not traced): text boxes have no maximum length (`+0x294`), numeric mode
-    (`+0x298`), placeholder clearing (`+0x292`) or IME composition; `overlay_obtain_focus` (949) does not
-    commit a previously focused box. Details in [engine/README.md](../engine/README.md).
+    Port approximations (not traced): text boxes have no numeric mode (`+0x298`), placeholder
+    clearing (`+0x292`) or IME composition (the 28-character cap and the focus commit are item 19).
+    Details in [engine/README.md](../engine/README.md).
+
+19. Mission presentations, text box cap and focus commit, slider track, headless audio, and SAF rename (P9 Part 2 review items 1, 3, 5; P4 review item 6; P6 review items 1, 2).
+    **Resolved:** v1.1.5.5 entry VAs below. Implemented in [ui_runtime.h](../engine/include/wse/game/ui_runtime.h)
+    (`UiSession::update_mission_presentations`, text box limit and focus commit, slider track),
+    [ui_frame.h](../engine/include/wse/platform/ui_frame.h) (input glue),
+    [saf_vfs.h](../engine/include/wse/platform/saf_vfs.h) (rename / move), and
+    [headless_runner.h](../engine/include/wse/game/headless_runner.h) (headless audio). Details in
+    [engine/README.md](../engine/README.md).
+
+    | Function | VA | Finding |
+    | --- | --- | --- |
+    | `start_conversation_presentation` (4907) | `0x1401f296e` | also queues the presentation for the mission side (`m6.ui.pending_conversation_presentations`) |
+    | `mbConversationWindow::startPresentation` | `0x1400888a0` | pushes the presentation onto the pending list (`+0x2298`) |
+    | `mbConversationWindow::updatePresentations` | `0x1400888c0` | per frame: each pending start ends same-presentation or non-`prsntf_manual_end_only` containers, then opens one and runs `-60`; every container runs `-61` and closes when its duration runs out |
+    | `mbPresentationContainer::startPresentation` | `0x1402097b0` | copies the flags and sets the default duration: 10 s for read-only presentations, 100 s otherwise |
+    | `getPresentationContainer` | `0x140088f00` | the conversation window's container for a presentation (used by the 902 mission branch) |
+    | `presentation_set_duration` (902), mission branch | `0x1401cc016` | writes the duration through `m6.ui.mission_duration_requests` |
+    | `is_presentation_active` (903), mission branch | `0x1401cc135` | true for any open conversation-window container of the presentation |
+    | `Native` 900 | `0x1401cbf02` | queues only `0x0f`; no mission branch |
+    | `rglTextBoxWidget` constructor | `0x140316900` | `+0x294` caps a text box at 28 characters (code points) |
+    | `rglTextBoxWidget::loseFocus` | `0x140317220` | the previously focused box commits when `overlay_obtain_focus` (949) takes focus |
+    | `rglTextBoxWidget::obtainFocus` | `0x140317250` | focus acquisition (reference) |
+    | `rglSliderWidget::getPercentage` | `0x14030dae0` | knob position from the value (`slider_hor` track, `handle_hor` knob) |
+    | `mbSoundManager::setTransform` | `0x140332970` | listener position from the camera transform (headless `--audio`) |
+
+    Port approximations (not traced): mission containers are not drawn and take no pointer input; the
+    mission pass runs once per frame and uses the frame's `dt` for its clock; the mixer has no worker
+    thread or command queue; `wse_headless` links no audio codec. Details in
+    [engine/README.md](../engine/README.md).
 
 ## 9. Evidence index
 

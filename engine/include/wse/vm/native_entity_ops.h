@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <string>
 
@@ -324,12 +325,25 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         if (statement.numOperands < 2 ||
             (narrow[1] >= 0 && narrow[1] == world.active_presentation_no)) {
             world.presentation_duration = static_cast<std::int32_t>(wide[0]);
+        } else if (world.lighting.has_scene && narrow[1] >= 0) {
+            // Mission branch (`0x1401cc016`): the conversation window's container for that
+            // presentation (`getPresentationContainer` `0x140088f00`) gets the duration.
+            world.m6.ui.mission_duration_requests.emplace_back(
+                narrow[1], static_cast<std::int32_t>(std::clamp<std::int64_t>(
+                               wide[0], 0, std::numeric_limits<std::int32_t>::max())));
         }
         return NativeDispatch::handled;
-    case 903: // is_presentation_active (0x1401cc09d)
-        return (narrow[0] >= 0 && world.active_presentation_no == narrow[0])
-                   ? NativeDispatch::handled
-                   : NativeDispatch::condition_false;
+    case 903: { // is_presentation_active (0x1401cc09d)
+        if (narrow[0] >= 0 && world.active_presentation_no == narrow[0]) {
+            return NativeDispatch::handled;
+        }
+        // Mission branch (`0x1401cc135`): any open conversation-window container for it.
+        const auto& open = world.m6.ui.active_presentations;
+        const bool open_in_mission =
+            world.lighting.has_scene && narrow[0] >= 0 &&
+            std::find(open.begin(), open.end(), narrow[0]) != open.end();
+        return open_in_mission ? NativeDispatch::handled : NativeDispatch::condition_false;
+    }
     case 910: { // create_text_overlay (0x1401cc194)
         const std::uint8_t tag1 = wse_tag_at(tags, 1);
         if (world.active_presentation_no >= 0 && wse_string_register_ok(narrow[1], tag1, banks)) {

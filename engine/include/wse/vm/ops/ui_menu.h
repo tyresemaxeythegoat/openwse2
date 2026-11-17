@@ -577,6 +577,8 @@ namespace wse::vm {
         if (std::find(prs.begin(), prs.end(), narrow[0]) == prs.end()) {
             prs.push_back(narrow[0]);
         }
+        // Started by `game::UiSession` on the next mission frame (`updatePresentations`).
+        world->m6.ui.pending_conversation_presentations.push_back(narrow[0]);
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::skin_set_blood_color: {

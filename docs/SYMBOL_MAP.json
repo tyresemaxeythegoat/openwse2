@@ -15,9 +15,9 @@
  "inputs": {
   "layouts": 83,
   "globals_scanned": 48658,
-  "symbols_curated": 3844,
+  "symbols_curated": 3845,
   "game_vtables": 76,
-  "function_ranges": 5231,
+  "function_ranges": 5232,
   "global_objects": 25,
   "superseded_vas": 3196
  },
@@ -33804,6 +33804,12 @@
    "va": "0x140317250"
   },
   {
+   "name": "??0rglTextBoxWidget@@QEAA@XZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140316900"
+  },
+  {
    "name": "??_GrglTexture@@UEAAPEAXI@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -65565,6 +65571,12 @@
    "symbol": "?checkLineOfSight@rglTerrain@@QEAA_NAEBVrglVector4@@0@Z"
   },
   {
+   "start": "0x140316900",
+   "end": "0x140316964",
+   "va": "0x140316900",
+   "symbol": "??0rglTextBoxWidget@@QEAA@XZ"
+  },
+  {
    "start": "0x1403169d0",
    "end": "0x140316a10",
    "va": "0x1403169d0",
@@ -71349,6 +71361,7 @@
   "0x1402fae50",
   "0x1402fbfd0",
   "0x1402fc590",
+  "0x1402fcd90",
   "0x1402fce60",
   "0x1402fcea0",
   "0x1402fd060",
@@ -71539,7 +71552,6 @@
   "0x140316600",
   "0x1403167c0",
   "0x1403167e0",
-  "0x140316900",
   "0x140316970",
   "0x1403169f0",
   "0x140316c30",

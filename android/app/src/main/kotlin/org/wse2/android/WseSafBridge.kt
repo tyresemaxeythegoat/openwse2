@@ -127,6 +127,32 @@ class WseSafBridge(
         }
     }
 
+    // Renames a document in place; returns its (possibly new) document id, or null.
+    fun renameDocument(docId: String, newName: String): String? {
+        return try {
+            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+            val renamed = DocumentsContract.renameDocument(context.contentResolver, docUri, newName)
+                ?: return null
+            DocumentsContract.getDocumentId(renamed)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    // Moves a document to another directory of the same tree; returns its new document id, or null.
+    fun moveDocument(docId: String, sourceParentId: String, targetParentId: String): String? {
+        return try {
+            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+            val srcUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, sourceParentId)
+            val dstUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, targetParentId)
+            val moved = DocumentsContract.moveDocument(context.contentResolver, docUri, srcUri, dstUri)
+                ?: return null
+            DocumentsContract.getDocumentId(moved)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     external fun nativeScanTree(): String
     external fun nativeVerifyModule(moduleRelDir: String): String
     external fun nativeProbeVulkanAndRenderMesh(

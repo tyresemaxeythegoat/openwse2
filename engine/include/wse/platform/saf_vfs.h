@@ -65,6 +65,25 @@ public:
                                                 std::string& out_document_id) = 0;
 
     [[nodiscard]] virtual bool delete_document(std::string_view document_id) = 0;
+
+    // Renames a document in place (`DocumentsContract.renameDocument`), writing its possibly
+    // new document ID into `out_document_id`. False when unsupported or on failure.
+    [[nodiscard]] virtual bool rename_document(std::string_view /*document_id*/,
+                                               std::string_view /*new_name*/,
+                                               std::string& out_document_id) {
+        out_document_id.clear();
+        return false;
+    }
+
+    // Moves a document between two directories of the tree (`DocumentsContract.moveDocument`,
+    // API 24), writing its new document ID into `out_document_id`. False when unsupported.
+    [[nodiscard]] virtual bool move_document(std::string_view /*document_id*/,
+                                             std::string_view /*source_parent_id*/,
+                                             std::string_view /*target_parent_id*/,
+                                             std::string& out_document_id) {
+        out_document_id.clear();
+        return false;
+    }
 };
 
 // In-memory document-ID backend for host tests and benchmarks.
@@ -92,6 +111,8 @@ public:
         write_document_calls = 0;
         create_directory_calls = 0;
         delete_document_calls = 0;
+        rename_document_calls = 0;
+        move_document_calls = 0;
     }
 
     [[nodiscard]] std::string root_document_id() const override { return "doc:0"; }
@@ -234,6 +255,45 @@ public:
         return true;
     }
 
+    [[nodiscard]] bool rename_document(std::string_view document_id,
+                                       std::string_view new_name,
+                                       std::string& out_document_id) override {
+        ++rename_document_calls;
+        out_document_id.clear();
+        const auto it = nodes_.find(std::string(document_id));
+        if (it == nodes_.end() || document_id == "doc:0" || new_name.empty() ||
+            !is_valid_component(new_name) || has_child_named(it->second.parent_document_id, new_name)) {
+            return false;
+        }
+        it->second.display_name = std::string(new_name);
+        out_document_id = it->second.document_id;
+        return true;
+    }
+
+    [[nodiscard]] bool move_document(std::string_view document_id,
+                                     std::string_view source_parent_id,
+                                     std::string_view target_parent_id,
+                                     std::string& out_document_id) override {
+        ++move_document_calls;
+        out_document_id.clear();
+        const auto it = nodes_.find(std::string(document_id));
+        const auto dst = nodes_.find(std::string(target_parent_id));
+        if (it == nodes_.end() || dst == nodes_.end() || !dst->second.is_directory ||
+            it->second.parent_document_id != source_parent_id ||
+            has_child_named(dst->first, it->second.display_name)) {
+            return false;
+        }
+        const auto src = nodes_.find(std::string(source_parent_id));
+        if (src != nodes_.end()) {
+            auto& kids = src->second.children;
+            kids.erase(std::remove(kids.begin(), kids.end(), it->first), kids.end());
+        }
+        dst->second.children.push_back(it->first);
+        it->second.parent_document_id = std::string(target_parent_id);
+        out_document_id = it->first;
+        return true;
+    }
+
     // Populates this document-ID tree recursively from `source` under `root_rel`.
     [[nodiscard]] bool seed_from_vfs(Vfs& source, std::string_view root_rel = "") {
         return seed_dir(source, root_rel, "doc:0");
@@ -244,8 +304,24 @@ public:
     std::size_t write_document_calls = 0;
     std::size_t create_directory_calls = 0;
     std::size_t delete_document_calls = 0;
+    std::size_t rename_document_calls = 0;
+    std::size_t move_document_calls = 0;
 
 private:
+    [[nodiscard]] bool has_child_named(const std::string& parent_id, std::string_view name) const {
+        const auto p = nodes_.find(parent_id);
+        if (p == nodes_.end()) {
+            return false;
+        }
+        for (const std::string& kid : p->second.children) {
+            const auto k = nodes_.find(kid);
+            if (k != nodes_.end() && k->second.display_name == name) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     struct Node {
         std::string document_id{};
         std::string parent_document_id{};
@@ -507,6 +583,87 @@ public:
         if (file_count_ > 0) {
             --file_count_;
         }
+        return true;
+    }
+
+    // Replaces `to` with `from` through the backend's move / rename (`Vfs::rename_file`
+    // contract: `to`'s parent must exist). SAF has no atomic replace, so an existing `to` is
+    // deleted first; that window is still far shorter than the remove + write fallback the
+    // callers use when this returns false (a backend without rename / move support).
+    [[nodiscard]] bool rename_file(std::string_view from, std::string_view to) override {
+        if (!backend_ || !index_complete_) {
+            return false;
+        }
+        const auto from_key = normalize_path(from);
+        const auto to_key = normalize_path(to);
+        const auto to_parts = split_path(to);
+        if (!from_key || !to_key || !to_parts || to_parts->empty() || from_key->empty() ||
+            to_key->empty()) {
+            return false;
+        }
+        const auto src = index_.find(*from_key);
+        if (src == index_.end() || src->second.is_directory) {
+            return false;
+        }
+        if (*from_key == *to_key) {
+            return true;
+        }
+        const std::size_t slash = to_key->rfind('/');
+        const std::string to_parent_norm =
+            (slash == std::string::npos) ? std::string() : to_key->substr(0, slash);
+        const auto parent = index_.find(to_parent_norm);
+        if (parent == index_.end() || !parent->second.is_directory) {
+            return false;
+        }
+        const std::string target_parent_doc = parent->second.document_id;
+        const std::string target_parent_rel = parent->second.original_rel_path;
+        const std::string new_name = to_parts->back();
+
+        if (const auto dst = index_.find(*to_key); dst != index_.end()) {
+            if (dst->second.is_directory || !backend_->delete_document(dst->second.document_id)) {
+                return false;
+            }
+            erase_from_parent(*to_key);
+            index_.erase(dst);
+            if (file_count_ > 0) {
+                --file_count_;
+            }
+        }
+
+        IndexNode node = index_.at(*from_key);
+        std::string doc = node.document_id;
+        if (node.parent_document_id != target_parent_doc) {
+            std::string moved;
+            if (!backend_->move_document(doc, node.parent_document_id, target_parent_doc, moved)) {
+                return false;
+            }
+            if (!moved.empty()) {
+                doc = std::move(moved);
+            }
+        }
+        if (node.original_name != new_name) {
+            std::string renamed;
+            if (!backend_->rename_document(doc, new_name, renamed)) {
+                if (node.parent_document_id != target_parent_doc) {
+                    // Moved but not renamed: re-read the tree so the index still finds it.
+                    (void)rebuild_index();
+                }
+                return false;
+            }
+            if (!renamed.empty()) {
+                doc = std::move(renamed);
+            }
+        }
+
+        erase_from_parent(*from_key);
+        index_.erase(*from_key);
+        node.document_id = std::move(doc);
+        node.parent_document_id = target_parent_doc;
+        node.original_name = new_name;
+        node.original_rel_path =
+            target_parent_rel.empty() ? new_name : (target_parent_rel + "/" + new_name);
+        index_.emplace(*to_key, std::move(node));
+        index_[to_parent_norm].children_keys.push_back(*to_key);
         return true;
     }
 

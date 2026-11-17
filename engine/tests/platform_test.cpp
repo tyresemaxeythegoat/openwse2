@@ -546,6 +546,119 @@ bool bytes_equal(const std::vector<std::uint8_t>& b, std::size_t off, const char
     return off + n <= b.size() && std::memcmp(b.data() + off, text, n) == 0;
 }
 
+// SafVfs::rename_file over the SAF rename / move calls, checked through the backend tree.
+void test_saf_vfs_rename() {
+    using namespace wse::platform;
+
+    auto read_str = [](Vfs& vfs, std::string_view path) {
+        std::string out;
+        return vfs.read_text(path, out) ? out : std::string("<read failed>");
+    };
+
+    // Backend without rename / move support: SafTreeBackend defaults return false.
+    class NoRenameSafBackend final : public SafTreeBackend {
+    public:
+        explicit NoRenameSafBackend(std::shared_ptr<MemorySafBackend> inner) : inner_(std::move(inner)) {}
+        [[nodiscard]] std::string root_document_id() const override { return inner_->root_document_id(); }
+        [[nodiscard]] bool list_children(std::string_view parent,
+                                         std::vector<SafChildEntry>& out) override {
+            return inner_->list_children(parent, out);
+        }
+        [[nodiscard]] bool read_document(std::string_view doc, std::vector<std::uint8_t>& out) override {
+            return inner_->read_document(doc, out);
+        }
+        [[nodiscard]] bool write_document(std::string_view parent, std::string_view existing,
+                                          std::string_view name, std::span<const std::uint8_t> data,
+                                          std::string& out) override {
+            return inner_->write_document(parent, existing, name, data, out);
+        }
+        [[nodiscard]] bool create_directory(std::string_view parent, std::string_view name,
+                                            std::string& out) override {
+            return inner_->create_directory(parent, name, out);
+        }
+        [[nodiscard]] bool delete_document(std::string_view doc) override {
+            return inner_->delete_document(doc);
+        }
+
+    private:
+        std::shared_ptr<MemorySafBackend> inner_;
+    };
+
+    // 1. Same-directory rename.
+    auto backend = std::make_shared<MemorySafBackend>();
+    SafVfs saf(backend);
+    expect(saf.make_dir("a"), "saf rename: make a");
+    expect(saf.write_text("a/x.tmp", "PAYLOAD"), "saf rename: write a/x.tmp");
+    backend->reset_call_counts();
+    expect(saf.rename_file("a/x.tmp", "a/x.bin"), "saf rename: same-dir rename succeeds");
+    expect(backend->rename_document_calls == 1 && backend->move_document_calls == 0,
+           "saf rename: same-dir uses rename_document only");
+    expect(read_str(saf, "a/x.bin") == "PAYLOAD", "saf rename: bytes follow the renamed file");
+    expect(!saf.is_file("a/x.tmp"), "saf rename: source name gone");
+    std::vector<VfsEntry> listing;
+    expect(saf.list_dir("a", listing) && listing.size() == 1 && listing[0].name == "x.bin",
+           "saf rename: list_dir shows x.bin only");
+
+    // 2. Cross-directory move plus rename; verified by a fresh index over the backend tree.
+    expect(saf.make_dir("b"), "saf rename: make b");
+    backend->reset_call_counts();
+    expect(saf.rename_file("a/x.bin", "b/y.bin"), "saf rename: cross-dir move+rename succeeds");
+    expect(backend->move_document_calls == 1 && backend->rename_document_calls == 1,
+           "saf rename: cross-dir uses move_document then rename_document");
+    expect(read_str(saf, "b/y.bin") == "PAYLOAD" && !saf.is_file("a/x.bin"),
+           "saf rename: cross-dir source gone, target readable in live index");
+    SafVfs fresh(backend);
+    expect(fresh.index_complete() && fresh.is_file("b/y.bin") && !fresh.is_file("a/x.bin"),
+           "saf rename: fresh rebuild_index sees b/y.bin in the backend tree");
+    expect(read_str(fresh, "b/y.bin") == "PAYLOAD", "saf rename: backend bytes moved with the file");
+    expect(fresh.list_dir("a", listing) && listing.empty(), "saf rename: source directory now empty");
+
+    // 3. Replacing an existing target deletes it first; counts stay consistent.
+    expect(saf.write_text("a/x.tmp", "NEW"), "saf rename: write replacement source");
+    expect(saf.write_text("a/x.bin", "OLD"), "saf rename: write existing target");
+    const std::size_t files_before = saf.index_file_count();
+    expect(saf.rename_file("a/x.tmp", "a/x.bin"), "saf rename: replace existing target succeeds");
+    expect(read_str(saf, "a/x.bin") == "NEW", "saf rename: target holds the source content");
+    expect(!saf.is_file("a/x.tmp"), "saf rename: replaced source gone");
+    expect(saf.index_file_count() == files_before - 1, "saf rename: replace drops one file count");
+    SafVfs replaced(backend);
+    expect(replaced.index_file_count() == saf.index_file_count() &&
+               read_str(replaced, "a/x.bin") == "NEW",
+           "saf rename: fresh index agrees with live counts after replace");
+
+    // 4. Failure cases leave the tree unchanged.
+    expect(!saf.rename_file("b/y.bin", "nope/y.bin"), "saf rename: missing target parent fails");
+    expect(!saf.rename_file("b", "c"), "saf rename: directory source fails");
+    expect(!saf.rename_file("a/missing.bin", "a/z.bin"), "saf rename: missing source fails");
+    expect(read_str(saf, "b/y.bin") == "PAYLOAD" && saf.is_dir("b") && !saf.is_file("nope/y.bin"),
+           "saf rename: failed renames leave the tree unchanged");
+
+    // 5. Case-insensitive paths.
+    expect(saf.make_dir("c"), "saf rename: make c");
+    expect(saf.write_text("C/X.TMP", "CI"), "saf rename: write C/X.TMP");
+    expect(saf.rename_file("c/x.tmp", "C/X.bin"), "saf rename: case-insensitive rename succeeds");
+    expect(saf.is_file("c/x.BIN") && !saf.is_file("C/X.TMP") && read_str(saf, "c/x.bin") == "CI",
+           "saf rename: case-insensitive lookups see the renamed file");
+
+    // 6. Backend without rename / move support returns false and changes nothing.
+    auto inner = std::make_shared<MemorySafBackend>();
+    auto no_rename = std::make_shared<NoRenameSafBackend>(inner);
+    SafVfs limited(no_rename);
+    expect(limited.make_dir("a") && limited.make_dir("b"), "no-rename backend: seed dirs");
+    expect(limited.write_text("a/x.tmp", "PAYLOAD"), "no-rename backend: seed file");
+    expect(!limited.rename_file("a/x.tmp", "a/x.bin"),
+           "no-rename backend: same-dir rename returns false");
+    expect(!limited.rename_file("a/x.tmp", "b/x.bin"),
+           "no-rename backend: cross-dir rename returns false");
+    expect(read_str(limited, "a/x.tmp") == "PAYLOAD" && !limited.is_file("a/x.bin") &&
+               !limited.is_file("b/x.bin"),
+           "no-rename backend: live index unchanged");
+    SafVfs limited_fresh(inner);
+    expect(limited_fresh.is_file("a/x.tmp") && !limited_fresh.is_file("a/x.bin") &&
+               !limited_fresh.is_file("b/x.bin") && limited_fresh.index_file_count() == 1,
+           "no-rename backend: backend tree unchanged");
+}
+
 void test_rhi_and_driver_loader() {
     using namespace wse::platform;
 
@@ -2522,6 +2635,7 @@ int run_platform_suite(const char* fixture_path) {
     test_clock();
     test_log();
     test_saf_vfs();
+    test_saf_vfs_rename();
     test_rhi_and_driver_loader();
     test_rhi_update_buffer_and_first_index();
     test_p5_shader_modules_d3d9_and_material_rhi();

@@ -25,6 +25,7 @@
 #include "wse/io/xml.h"
 #include "wse/platform/rhi.h"
 #include "wse/platform/rhi_ui.h"
+#include "wse/platform/ui_frame.h"
 #include "wse/platform/vfs.h"
 #include "wse/vm/block_vm.h"
 
@@ -1816,6 +1817,282 @@ void test_retail_warband_native_main_menu() {
            "renders retail Native game menu screen cleanly");
 }
 
+// --- Mission presentations, text box limits, 949 commit, slider knob, UI frame input -----------
+const wse::game::UiWidget* find_mesh_widget(const wse::game::UiWidget& node, std::string_view mesh) {
+    if (node.mesh_name == mesh) {
+        return &node;
+    }
+    for (const wse::game::UiWidget& child : node.children) {
+        if (const auto* hit = find_mesh_widget(child, mesh)) {
+            return hit;
+        }
+    }
+    return nullptr;
+}
+
+void test_mission_presentations_and_ui_frame() {
+    using wse::game::LoadedPresentation;
+    using wse::game::kPresentationFlagManualEndOnly;
+    constexpr std::uint32_t kStoreParam1 = 2071U;
+    constexpr std::uint32_t kSetDuration = 902U;
+    constexpr std::size_t kCountA = 30U;
+    constexpr std::size_t kCountB = 31U;
+    constexpr std::size_t kCountC = 32U;
+    constexpr std::size_t kElapsedA = 33U;
+    constexpr std::size_t kElapsedB = 34U;
+    constexpr std::size_t kElapsedC = 35U;
+    const auto rg = [](std::size_t r) { return reg(static_cast<std::int32_t>(r)); };
+
+    // Presentation with a -60 counter (trigger 0) and a -61 that stores the elapsed ms (trigger 1).
+    const auto make_prs = [&](std::uint32_t flags, const char* id, std::size_t count_reg,
+                              std::size_t elapsed_reg) {
+        LoadedPresentation p{};
+        p.id = id;
+        p.flags = flags;
+        wse::game::SimpleTrigger t60{};
+        t60.interval = -60.0f;
+        t60.block.statements.push_back(make_stmt(wse::vm::core_op::kValAdd, {rg(count_reg), 1}));
+        wse::game::SimpleTrigger t61{};
+        t61.interval = -61.0f;
+        t61.block.statements.push_back(make_stmt(kStoreParam1, {rg(elapsed_reg)}));
+        p.triggers.triggers.push_back(std::move(t60));
+        p.triggers.triggers.push_back(std::move(t61));
+        return p;
+    };
+
+    auto ctx_ptr = std::make_unique<wse::vm::VmContext>();
+    wse::vm::VmContext& ctx = *ctx_ptr;
+    wse::game::UiSession session{};
+    ctx.world.lighting.has_scene = true;
+    std::vector<LoadedPresentation> prs{};
+    prs.push_back(make_prs(0U, "prsnt_mission_a", kCountA, kElapsedA));
+    prs.push_back(make_prs(kPresentationFlagManualEndOnly, "prsnt_mission_b", kCountB, kElapsedB));
+    prs.push_back(make_prs(0U, "prsnt_mission_c", kCountC, kElapsedC));
+    const auto step = [&](float dt) { return session.drive_frame(ctx.world, ctx, dt, prs, -1); };
+    const auto push = [&](std::int32_t no) {
+        ctx.world.m6.ui.pending_conversation_presentations.push_back(no);
+    };
+    const auto is_open = [&](std::int32_t no) {
+        const auto& open = ctx.world.m6.ui.active_presentations;
+        return std::find(open.begin(), open.end(), no) != open.end();
+    };
+    const auto open_count = [&]() { return ctx.world.m6.ui.active_presentations.size(); };
+
+    // 1. Mission stack: A; B ends A; C joins B (manual_end_only); B again restarts B and ends C.
+    push(0);
+    auto rep = step(0.1f);
+    expect(ctx.registers[kCountA] == 1 && rep.mission_presentations_open == 1U && is_open(0) &&
+               open_count() == 1U,
+           "pushing A opens its container: -60 fired once, one container open");
+    expect(ctx.registers[kElapsedA] >= 99 && ctx.registers[kElapsedA] <= 101,
+           "A's -61 receives the elapsed milliseconds of its first frame (about 100)");
+
+    push(1);
+    rep = step(0.1f);
+    expect(!is_open(0) && is_open(1) && open_count() == 1U && rep.mission_presentations_open == 1U,
+           "pushing B ends A (no manual_end_only) and opens B");
+    expect(ctx.registers[kCountA] == 1 && ctx.registers[kCountB] == 1,
+           "ended A does not get another -60; B's -60 fired once");
+    expect(ctx.registers[kElapsedB] >= 99 && ctx.registers[kElapsedB] <= 101,
+           "B's -61 receives its own elapsed milliseconds (about 100)");
+
+    push(2);
+    rep = step(0.1f);
+    expect(is_open(1) && is_open(2) && open_count() == 2U && rep.mission_presentations_open == 2U,
+           "pushing C keeps B (manual_end_only) and opens C: two containers open");
+
+    // The header ends every container without manual_end_only, so C (flags 0) also ends here.
+    push(1);
+    rep = step(0.1f);
+    expect(ctx.registers[kCountB] == 2, "pushing B again restarts B (its -60 fires again)");
+    expect(is_open(1) && !is_open(2) && open_count() == 1U && rep.mission_presentations_open == 1U,
+           "pushing B again ends C too (C lacks manual_end_only); only the new B is open");
+
+    // 2. A duration of 0 closes a container.
+    // C's -61 (trigger 1) gets presentation_set_duration 0 (one operand: the presentation's own).
+    prs[2].triggers.triggers[1].block.statements.push_back(make_stmt(kSetDuration, {0}));
+    push(2);
+    rep = step(0.1f);
+    expect(!is_open(2) && is_open(1) && open_count() == 1U && rep.mission_presentations_open == 1U,
+           "presentation_set_duration 0 in C's -61 closes C after that frame; B stays open");
+    ctx.world.m6.ui.mission_duration_requests.emplace_back(1, 0);
+    rep = step(0.1f);
+    expect(!is_open(1) && open_count() == 0U && rep.mission_presentations_open == 0U,
+           "a mission_duration_requests entry {B, 0} closes B on that frame");
+
+    // 3. The campaign state (active presentation, duration, overlays) is restored.
+    ctx.world.active_presentation_no = 77;
+    ctx.world.presentation_duration = 555;
+    wse::game::WsePresentationOverlay campaign_ov{};
+    campaign_ov.text = u"campaign";
+    ctx.world.overlays.assign(1U, campaign_ov);
+    push(0);
+    rep = step(0.1f);
+    expect(is_open(0) && rep.mission_presentations_open == 1U,
+           "A is open while the campaign state holds sentinels");
+    expect(ctx.world.active_presentation_no == 77 && ctx.world.presentation_duration == 555 &&
+               ctx.world.overlays.size() == 1U && ctx.world.overlays[0].text == u"campaign",
+           "mission frame restores active_presentation_no, presentation_duration and overlays");
+
+    // 4. Leaving the scene clears the stack and active_presentations; no further -61.
+    const std::int64_t a_elapsed_before = ctx.registers[kElapsedA];
+    ctx.world.lighting.has_scene = false;
+    rep = step(0.1f);
+    expect(open_count() == 0U && rep.mission_presentations_open == 0U && !is_open(0),
+           "leaving the scene clears the mission stack and active_presentations");
+    expect(ctx.registers[kElapsedA] == a_elapsed_before,
+           "a container dropped by leaving the scene gets no further -61");
+
+    // 5. A focused text box accepts at most kUiTextBoxMaxLength characters.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay tb = boxed_text(0.3f, 0.3f, 0.2f, 0.05f);
+        tb.type = 6;
+        tb.m5.create_opcode = 917;
+        const std::int32_t t = rig.add(tb);
+        rig.press(0.4f, 0.32f);
+        rig.release(0.4f, 0.32f);
+        wse::game::UiPointerInput in{};
+        in.text_input = std::u16string(40U, u'a');
+        rig.send(in);
+        expect(rig.ov(t).m5.focused &&
+                   rig.ov(t).text == std::u16string(wse::game::kUiTextBoxMaxLength, u'a'),
+               "a focused text box keeps at most kUiTextBoxMaxLength (28) typed characters");
+    }
+
+    // 6. overlay_obtain_focus (949) on B commits text box A: -62 for A with its text.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay a_ov = boxed_text(0.3f, 0.3f, 0.2f, 0.05f);
+        a_ov.type = 6;
+        a_ov.m5.create_opcode = 917;
+        const std::int32_t a = rig.add(a_ov);
+        wse::game::WsePresentationOverlay b_ov = boxed_text(0.6f, 0.6f, 0.2f, 0.05f);
+        b_ov.type = 6;
+        b_ov.m5.create_opcode = 917;
+        const std::int32_t b = rig.add(b_ov);
+        rig.press(0.4f, 0.32f);
+        rig.release(0.4f, 0.32f);
+        wse::game::UiPointerInput typed{};
+        typed.text_input = u"hi";
+        rig.send(typed);
+        expect(rig.ov(a).text == u"hi" && rig.n62() == 0, "text box A holds typed text without committing");
+
+        // The fields overlay_obtain_focus (949, native_ui_ops.h) sets for B.
+        rig.ov(a).m5.commit_pending = true;
+        rig.ov(a).m5.focused = false;
+        rig.ov(b).m5.focused = true;
+        rig.ctx.world.m5.focused_overlay_no = b;
+        rig.reset_regs();
+        rig.send(wse::game::UiPointerInput{});
+        expect(rig.n62() == 1 && rig.ctx.registers[12] == a && rig.ctx.stringRegisters[0] == u"hi",
+               "the next handle_input fires -62 once for A, with string register 0 = A's text");
+        expect(!rig.ov(a).m5.commit_pending, "the commit clears commit_pending");
+        rig.reset_regs();
+        rig.send(wse::game::UiPointerInput{});
+        expect(rig.n62() == 0, "the commit does not repeat on the following frame");
+    }
+
+    // 7. Slider: the slider_hor track with a handle_hor knob at the value's position.
+    {
+        OverlayRig rig;
+        rig.session.mesh_bounds["handle_hor"] = wse::game::UiMeshBounds{0.0f, 0.0f, 0.02f, 0.03f};
+        wse::game::WsePresentationOverlay s{};
+        s.type = 2;
+        s.m5.create_opcode = 914;
+        s.m5.min_value = 0.0;
+        s.m5.max_value = 100.0;
+        s.val = 50;
+        s.position = {0.1f, 0.3f};
+        rig.add(s);
+        const wse::game::UiWidget* track = find_mesh_widget(rig.session.root, "slider_hor");
+        expect(track != nullptr && track->children.size() == 1U &&
+                   track->children[0].mesh_name == "handle_hor",
+               "slider builds a slider_hor widget with one handle_hor child");
+        if (track != nullptr && track->children.size() == 1U) {
+            const float expected =
+                wse::game::kUiSliderMargin + 0.5f * (track->size.x - 2.0f * wse::game::kUiSliderMargin);
+            expect(close(track->children[0].pos.x, expected, 1e-3f),
+                   "handle_hor sits at kUiSliderMargin + 0.5 * (width - 2 * margin) at value 50 of 0..100");
+        }
+    }
+
+    // 8. platform::UiInputAccumulator: edges, touch-as-click, cancel, keys, text, wheel.
+    {
+        using wse::platform::RawInputEvent;
+        namespace RawKey = wse::platform::RawKey;
+        wse::platform::UiInputAccumulator acc{};
+        const auto make_event = [](RawInputEvent::Type type) {
+            RawInputEvent e{};
+            e.type = type;
+            return e;
+        };
+
+        RawInputEvent down = make_event(RawInputEvent::Type::MouseButtonDown);
+        down.raw_key = RawKey::kLeftMouse;
+        down.x = 0.5f;
+        down.y = 0.25f;
+        acc.feed(down);
+        wse::game::UiPointerInput in = acc.take(0.0f);
+        expect(in.left_pressed && in.left_down && close(in.x, 0.5f) &&
+                   close(in.y, (1.0f - 0.25f) * 0.75f),
+               "left press: left_pressed and left_down, x = 0.5, y = (1 - 0.25) * 0.75");
+        in = acc.take(0.1f);
+        expect(!in.left_pressed && in.left_down, "the next take has no press edge but still holds");
+
+        RawInputEvent up = make_event(RawInputEvent::Type::MouseButtonUp);
+        up.raw_key = RawKey::kLeftMouse;
+        up.x = 0.5f;
+        up.y = 0.25f;
+        acc.feed(up);
+        in = acc.take(0.2f);
+        expect(in.left_released && !in.left_down, "MouseButtonUp gives left_released");
+
+        RawInputEvent touch_down = make_event(RawInputEvent::Type::TouchDown);
+        touch_down.finger_id = 7;
+        touch_down.x = 0.3f;
+        touch_down.y = 0.6f;
+        acc.feed(touch_down);
+        in = acc.take(0.3f);
+        expect(in.left_pressed && in.left_down, "first touch finger acts as a left press");
+        RawInputEvent touch_up = make_event(RawInputEvent::Type::TouchUp);
+        touch_up.finger_id = 7;
+        touch_up.x = 0.3f;
+        touch_up.y = 0.6f;
+        acc.feed(touch_up);
+        in = acc.take(0.4f);
+        expect(in.left_released && !in.left_down, "touch up on finger 7 gives left_released");
+
+        acc.feed(touch_down);
+        (void)acc.take(0.5f);
+        RawInputEvent cancel = make_event(RawInputEvent::Type::TouchCancel);
+        cancel.finger_id = 7;
+        acc.feed(cancel);
+        in = acc.take(0.6f);
+        expect(close(in.x, -1.0f) && close(in.y, -1.0f) && !in.left_released && !in.left_down,
+               "TouchCancel moves the cursor to (-1, -1) with no release edge");
+
+        RawInputEvent esc = make_event(RawInputEvent::Type::KeyDown);
+        esc.raw_key = RawKey::kEscape;
+        acc.feed(esc);
+        in = acc.take(0.7f);
+        expect(in.escape_pressed && in.text_input == u"\x1b",
+               "Escape gives escape_pressed and U+001B in text_input");
+
+        acc.feed_text("ab");
+        in = acc.take(0.8f);
+        expect(in.text_input == u"ab", "feed_text appends the UTF-8 text as UTF-16");
+
+        RawInputEvent wheel = make_event(RawInputEvent::Type::MouseWheel);
+        wheel.dy = 1.5f;
+        acc.feed(wheel);
+        wheel.dy = 0.5f;
+        acc.feed(wheel);
+        in = acc.take(0.9f);
+        expect(close(in.wheel, 2.0f), "mouse wheel dy accumulates within a frame");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -1833,6 +2110,7 @@ int run_ui_suite(const char* fixture_path) {
     test_ui_session_drive_frame();
     test_overlay_button_boxes();
     test_overlay_animation_textbox_gamebutton();
+    test_mission_presentations_and_ui_frame();
     test_synthetic_ui_rhi_render_and_uv_orientation();
     test_retail_warband_native_main_menu();
     test_batch_menu_remeasure_and_ui_buffers();

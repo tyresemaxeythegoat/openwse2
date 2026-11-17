@@ -468,6 +468,9 @@ inline constexpr float kUiComboItemHeight = 0.035f;
 // the scrollable container nearest the cursor (`mbPresentationContainer::frameMove`). The step
 // per wheel notch and the initial position (content top at the area top) are port choices.
 inline constexpr std::uint32_t kUiTextFlagsScrollable = 0x000E0000U;
+// `rglTextBoxWidget` constructor (`0x140316900`): `+0x294` caps a text box at 28 characters
+// (`rglString::getUnicodeLength`, so code points, not bytes).
+inline constexpr std::size_t kUiTextBoxMaxLength = 28U;
 inline constexpr float kUiScrollStep = 0.05f;
 
 // One frame of pointer input for `UiSession::handle_input`. `*_pressed` / `left_released`
@@ -1019,6 +1022,7 @@ public:
         bool opened_notes = false;         // window 0x15 opened this frame
         bool closed_for_mission = false;   // a modal window was dropped because a scene is up
         bool opened_menu = false;          // menu window 0x12 built this frame
+        std::size_t mission_presentations_open = 0;  // conversation-window containers
         bool presentation_open = false;    // window 0x16 is open after this frame
     };
 
@@ -1051,6 +1055,8 @@ public:
         const bool modal_open =
             current_window == kScreenWindowNotes || current_window == kScreenWindowPresentation;
         if (world.lighting.has_scene) {
+            update_mission_presentations(world, vm_ctx, dt_s, presentations);
+            rep.mission_presentations_open = mission_stack_.size();
             if (modal_open) {
                 const std::int32_t m5_win = world.m5.active_window;
                 const std::int32_t ui_win = world.m6.ui.active_window_id;
@@ -1063,6 +1069,13 @@ public:
             return rep;
         }
 
+        if (!mission_stack_.empty()) {
+            // Leaving the scene closes the conversation window and its containers.
+            mission_stack_.clear();
+            world.m6.ui.active_presentations.clear();
+        }
+        world.m6.ui.pending_conversation_presentations.clear();
+        world.m6.ui.mission_duration_requests.clear();
         const std::int32_t win = world.m5.active_window;
         if (win == kScreenWindowMenu && world.m6.ui.menu_open_serial != seen_menu_serial_) {
             seen_menu_serial_ = world.m6.ui.menu_open_serial;
@@ -1335,7 +1348,6 @@ public:
                 };
                 switch (input_kind) {
                 case UiOverlayInput::Slider: {
-                    w.kind = UiWidgetKind::Slider;
                     float h = kUiSliderFallbackHeight;
                     if (const auto bit = mesh_bounds.find("slider_hor"); bit != mesh_bounds.end()) {
                         h = bit->second.max_y - bit->second.min_y;
@@ -1343,6 +1355,31 @@ public:
                     if (!has_area) {
                         w.size = {kUiSliderWidth, h};
                     }
+                    // `createSliderOverlay` (`0x14020af30`) sets the `slider_hor` track mesh
+                    // and the `handle_hor` knob; the knob sits at the value's position
+                    // between the margins (`rglSliderWidget::getPercentage` `0x14030dae0`).
+                    w.kind = UiWidgetKind::Image;
+                    w.mesh_name = "slider_hor";
+                    w.tint_mesh = true;
+                    UiWidget knob{};
+                    knob.id = w.id + "_knob";
+                    knob.kind = UiWidgetKind::Image;
+                    knob.mesh_name = "handle_hor";
+                    knob.tint_mesh = true;
+                    knob.color_argb = w.color_argb;
+                    UiMeshBounds kb{0.0f, 0.0f, 0.02f, h};
+                    if (const auto kit = mesh_bounds.find("handle_hor"); kit != mesh_bounds.end()) {
+                        kb = kit->second;
+                    }
+                    const double range = ov.m5.max_value - ov.m5.min_value;
+                    const float pct =
+                        (range != 0.0)
+                            ? std::clamp(static_cast<float>((ov.val - ov.m5.min_value) / range), 0.0f, 1.0f)
+                            : 0.0f;
+                    const float knob_x = kUiSliderMargin + pct * (w.size.x - 2.0f * kUiSliderMargin);
+                    knob.pos = {knob_x + kb.min_x, kb.min_y};
+                    knob.size = {kb.max_x - kb.min_x, kb.max_y - kb.min_y};
+                    w.children.push_back(std::move(knob));
                     break;
                 }
                 case UiOverlayInput::NumberBox:
@@ -1534,6 +1571,12 @@ public:
         }
         hovered_overlays_ = std::move(inside);
 
+        for (std::size_t i = 0; i < world.overlays.size(); ++i) {
+            if (world.overlays[i].m5.commit_pending) {
+                world.overlays[i].m5.commit_pending = false;
+                raise(static_cast<std::int32_t>(i), kUiStateChanged);
+            }
+        }
         const std::int32_t text_focus = focused_text_box(world);
         if (text_focus >= 0) {
             // A focused text box has the window manager's focus: it gets every press and the
@@ -1556,7 +1599,8 @@ public:
                             tb.text.pop_back();
                         }
                     }
-                } else if (c >= 0x20U && c != u'<' && c != u'>') {
+                } else if (c >= 0x20U && c != u'<' && c != u'>' &&
+                           utf16_code_points(tb.text) < kUiTextBoxMaxLength) {
                     tb.text.push_back(c);
                 }
             }
@@ -1694,6 +1738,120 @@ public:
     [[nodiscard]] std::int32_t combo_popup_overlay() const noexcept { return popup_overlay_; }
 
 private:
+    // One `mbPresentationContainer` of the mission (conversation) window `0xc`.
+    struct MissionPresentation {
+        std::int32_t no = -1;
+        std::uint32_t flags = 0;
+        SimpleTriggerManager triggers{};
+        std::vector<WsePresentationOverlay> overlays{};
+        std::unordered_map<std::int32_t, WseM6OverlayExt> overlay_ext{};
+        std::int32_t duration_cs = 0;
+        float cs_accum = 0.0f;
+        float elapsed_s = 0.0f;
+    };
+    std::vector<MissionPresentation> mission_stack_{};
+
+    // Makes `mp` the presentation the VM sees (`g_presentationContainer`): its overlays,
+    // number, duration, and triggers are swapped into `world` / `active_triggers_`; calling it
+    // again swaps them back.
+    void swap_mission_presentation(WseWorldState& world, MissionPresentation& mp) {
+        world.overlays.swap(mp.overlays);
+        world.m6.ui.overlay_ext.swap(mp.overlay_ext);
+        std::swap(world.active_presentation_no, mp.no);
+        std::swap(world.presentation_duration, mp.duration_cs);
+        std::swap(active_triggers_, mp.triggers);
+    }
+
+    // `mbConversationWindow::updatePresentations` (`0x1400888c0`), once per mission frame:
+    // 1. each pending `start_conversation_presentation` ends every open container that shows the
+    //    same presentation or lacks `prsntf_manual_end_only` (`kPresentationFlagManualEndOnly`,
+    //    container `+0x1c`), then opens a new container and starts it (`-60`,
+    //    `mbPresentationContainer::startPresentation` `0x1402097b0`);
+    // 2. every container runs its frame (`-61` with the elapsed milliseconds,
+    //    `mbPresentationContainer::frameMove` `0x140208ec0`) and closes once its duration ran out.
+    // `world.m6.ui.active_presentations` lists the open containers afterwards (read by
+    // `presentation_activate` 4901 and the mission branch of `is_presentation_active` 903).
+    // Port: mission containers are not drawn and take no pointer input yet (`STATUS.md` §5).
+    void update_mission_presentations(WseWorldState& world,
+                                      vm::VmContext& vm_ctx,
+                                      float dt_s,
+                                      std::span<const LoadedPresentation> presentations) {
+        const float dt = (std::isfinite(dt_s) && dt_s > 0.0f) ? dt_s : 0.0f;
+        // The campaign presentation state, restored afterwards (a mission has none open).
+        const std::int32_t saved_no = world.active_presentation_no;
+        const std::int32_t saved_duration = world.presentation_duration;
+        const std::uint32_t saved_serial = world.m6.ui.presentation_start_serial;
+        SimpleTriggerManager saved_triggers = std::move(active_triggers_);
+        active_triggers_ = SimpleTriggerManager{};
+
+        for (const auto& [no, cs] : world.m6.ui.mission_duration_requests) {
+            for (MissionPresentation& mp : mission_stack_) {
+                if (mp.no == no) {
+                    mp.duration_cs = cs;
+                    break;
+                }
+            }
+        }
+        world.m6.ui.mission_duration_requests.clear();
+
+        std::vector<std::int32_t> pending;
+        pending.swap(world.m6.ui.pending_conversation_presentations);
+        for (const std::int32_t p : pending) {
+            if (p < 0 || static_cast<std::size_t>(p) >= presentations.size()) {
+                continue;
+            }
+            std::erase_if(mission_stack_, [p](const MissionPresentation& mp) {
+                return mp.no == p || (mp.flags & kPresentationFlagManualEndOnly) == 0U;
+            });
+            MissionPresentation mp{};
+            mp.no = p;
+            mp.flags = presentations[static_cast<std::size_t>(p)].flags;
+            mp.triggers = presentations[static_cast<std::size_t>(p)].triggers;
+            // Read-only (flag bit 0) presentations default to 10.0 s, others to 100 s
+            // (`mbPresentationContainer::startPresentation` `0x1402097b0`).
+            mp.duration_cs = ((mp.flags & 1U) != 0U) ? 1000 : 10000;
+            mission_stack_.push_back(std::move(mp));
+            MissionPresentation& added = mission_stack_.back();
+            swap_mission_presentation(world, added);
+            const std::int32_t saved_container = world.m5.current_container_overlay_no;
+            world.m5.current_container_overlay_no = -1;
+            dispatch_presentation_trigger(world, vm_ctx, -60, {});
+            world.m5.current_container_overlay_no = saved_container;
+            swap_mission_presentation(world, added);
+        }
+
+        for (std::size_t i = 0; i < mission_stack_.size();) {
+            MissionPresentation& mp = mission_stack_[i];
+            mp.elapsed_s += dt;
+            mp.cs_accum += dt * 100.0f;
+            const float whole_cs = std::floor(mp.cs_accum);
+            mp.cs_accum -= whole_cs;
+            swap_mission_presentation(world, mp);
+            const std::array<std::int64_t, 1> params{static_cast<std::int64_t>(mp.elapsed_s * 1000.0f)};
+            dispatch_presentation_trigger(world, vm_ctx, -61, params);
+            if (whole_cs > 0.0f && world.presentation_duration > 0) {
+                const float left = static_cast<float>(world.presentation_duration) - whole_cs;
+                world.presentation_duration = (left > 0.0f) ? static_cast<std::int32_t>(left) : 0;
+            }
+            animate_overlays(world, dt);
+            swap_mission_presentation(world, mp);
+            if (mp.duration_cs <= 0) {
+                mission_stack_.erase(mission_stack_.begin() + static_cast<std::ptrdiff_t>(i));
+            } else {
+                ++i;
+            }
+        }
+
+        world.m6.ui.active_presentations.clear();
+        for (const MissionPresentation& mp : mission_stack_) {
+            world.m6.ui.active_presentations.push_back(mp.no);
+        }
+        world.active_presentation_no = saved_no;
+        world.presentation_duration = saved_duration;
+        world.m6.ui.presentation_start_serial = saved_serial;
+        active_triggers_ = std::move(saved_triggers);
+    }
+
     // `overlay_animate_to_*` (932..937) per `rglWidget::frameMove` (`0x14031c110`): each running
     // channel moves linearly from its start to its target, `(start * (d - t) + target * t) / d`;
     // colour bytes and alpha round half up (`floor`, +1 when the fraction is above 0.5); size and
@@ -1795,6 +1953,14 @@ private:
     std::unordered_map<std::int32_t, float> scroll_pos_{};
     // Bumped by every presentation (re)start so a trigger that restarts it stops the dispatch.
     std::uint32_t presentation_epoch_ = 0;
+
+    [[nodiscard]] static std::size_t utf16_code_points(std::u16string_view s) noexcept {
+        std::size_t n = 0;
+        for (const char16_t c : s) {
+            n += (c >= 0xDC00U && c <= 0xDFFFU) ? 0U : 1U;
+        }
+        return n;
+    }
 
     // The focused text box (`overlay_obtain_focus` 949 or a press), or -1.
     [[nodiscard]] static std::int32_t focused_text_box(const WseWorldState& world) noexcept {

@@ -19,6 +19,8 @@
 #include "wse/game/module_bundle.h"
 #include "wse/game/trigger.h"
 #include "wse/game/ui_runtime.h"
+#include "wse/game/world_audio.h"
+#include "wse/platform/audio.h"
 #include "wse/platform/log.h"
 #include "wse/platform/vfs.h"
 #include "wse/vm/block_vm.h"
@@ -49,6 +51,16 @@ struct HeadlessRunOptions {
     // `start_presentation` never queued window 0x0f and `step_world_frame` never consumed the
     // campaign window queue. The port has no mission lifecycle yet to set it back.
     bool start_on_campaign_map = true;
+    // Drive module audio: a `WorldAudioBridge` is attached before `game_start` (so sound and
+    // music opcodes reach the mixer), and every frame moves the listener to the camera
+    // (`listener_from_camera_transform`, `mbSoundManager::setTransform` `0x140332970`), runs
+    // `WorldAudioBridge::update`, and pumps the mix into a `CaptureAudioDevice`.
+    // `audio_codecs` decodes OGG / MP3 (`wse::asset::create_audio_codec_backend`, in the
+    // `wse_audio` library); without it only WAV samples decode. `preload_audio` decodes every
+    // sample at load instead of on first play (no decode hitch inside a play opcode).
+    bool drive_audio = false;
+    const asset::AudioCodecBackend* audio_codecs = nullptr;
+    bool preload_audio = false;
     platform::LogSink* log = nullptr;
 };
 
@@ -73,6 +85,9 @@ struct HeadlessRunReport {
     std::size_t notes_opened = 0;
     std::size_t menus_opened = 0;
     std::int32_t final_window = -1;  // `world.m5.active_window` after the last frame
+    // `drive_audio` only: load-time path / decode stats and the stereo frames mixed.
+    WorldAudioStats audio_stats{};
+    std::size_t audio_frames_mixed = 0;
 };
 
 struct HeadlessSession {
@@ -214,6 +229,15 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
         ctx.world.lighting.has_scene = false;
     }
 
+    WorldAudioBridge audio{};
+    platform::CaptureAudioDevice audio_device{};
+    if (options.drive_audio) {
+        report.audio_stats =
+            audio.initialize(vfs, ctx.world, bundle.sound_bank, bundle.music_tracks,
+                             options.module_dir, {}, options.audio_codecs, options.preload_audio);
+        (void)audio_device.open(platform::AudioDeviceSpec{});
+    }
+
     if (options.enable_lua && ctx.luaRuntime != nullptr) {
         vm::WseLuaInitConfig lua_cfg{};
         lua_cfg.module_dir = options.module_dir;
@@ -267,6 +291,16 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
         }
         const std::int32_t window_before = ctx.world.m5.active_window;
         ctx.world.step_world_frame(ctx.timersTotal, static_cast<float>(frame_seconds));
+        if (options.drive_audio) {
+            audio.mixer().set_listener(
+                platform::listener_from_camera_transform(ctx.world.misc.camera_transform));
+            audio.update(ctx.appTimeSeconds);
+            // Mix one frame's worth of audio (the device is a capture sink, never drained).
+            const auto frames = static_cast<std::size_t>(
+                frame_seconds * static_cast<double>(audio_device.spec().sample_rate));
+            report.audio_frames_mixed +=
+                audio.mixer().pump_to_latency(audio_device, audio_device.queued_frames() + frames);
+        }
         if (ui != nullptr && options.drive_ui) {
             const UiSession::FrameReport ui_rep =
                 ui->drive_frame(ctx.world, ctx, static_cast<float>(frame_seconds),

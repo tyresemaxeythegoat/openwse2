@@ -205,6 +205,10 @@ struct WseOverlayM5Ext {
     std::vector<std::u16string> items{};
     std::u16string tooltip{};
     bool focused = false;
+    // A text box lost the focus to `overlay_obtain_focus` (949): retail `obtainFocus`
+    // (`0x140317250`) calls the previous widget's `loseFocus` (`0x140317220`), which raises
+    // `0x10000`; `UiSession::handle_input` reports it as `-62` (port bookkeeping).
+    bool commit_pending = false;
     float additional_render_height = 0.0f;
     std::string material_name{};
     std::uint32_t anim_color = 0xffffffffu;

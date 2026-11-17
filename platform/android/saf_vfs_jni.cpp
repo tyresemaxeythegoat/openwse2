@@ -185,6 +185,8 @@ struct ActiveJniBinding {
     jmethodID mid_write = nullptr;
     jmethodID mid_mkdir = nullptr;
     jmethodID mid_delete = nullptr;
+    jmethodID mid_rename = nullptr;
+    jmethodID mid_move = nullptr;
 };
 
 class AndroidJniSafBackend final : public wse::platform::SafTreeBackend {
@@ -376,6 +378,68 @@ public:
         return ok == JNI_TRUE;
     }
 
+    // `DocumentsContract.renameDocument` through `WseSafBridge.renameDocument`.
+    [[nodiscard]] bool rename_document(std::string_view document_id,
+                                       std::string_view new_name,
+                                       std::string& out_document_id) override {
+        out_document_id.clear();
+        if (binding_ == nullptr || binding_->env == nullptr || binding_->bridge == nullptr ||
+            binding_->mid_rename == nullptr) {
+            return false;
+        }
+        JNIEnv* env = binding_->env;
+        jstring jdoc = utf8_to_jstring(env, document_id);
+        jstring jname = utf8_to_jstring(env, new_name);
+        if (jdoc == nullptr || jname == nullptr) {
+            if (jdoc != nullptr) env->DeleteLocalRef(jdoc);
+            if (jname != nullptr) env->DeleteLocalRef(jname);
+            return false;
+        }
+        auto jres = static_cast<jstring>(
+            env->CallObjectMethod(binding_->bridge, binding_->mid_rename, jdoc, jname));
+        env->DeleteLocalRef(jdoc);
+        env->DeleteLocalRef(jname);
+        if (clear_if_exception(env) || jres == nullptr) {
+            return false;
+        }
+        out_document_id = jstring_to_utf8(env, jres);
+        env->DeleteLocalRef(jres);
+        return !out_document_id.empty();
+    }
+
+    // `DocumentsContract.moveDocument` through `WseSafBridge.moveDocument`.
+    [[nodiscard]] bool move_document(std::string_view document_id,
+                                     std::string_view source_parent_id,
+                                     std::string_view target_parent_id,
+                                     std::string& out_document_id) override {
+        out_document_id.clear();
+        if (binding_ == nullptr || binding_->env == nullptr || binding_->bridge == nullptr ||
+            binding_->mid_move == nullptr) {
+            return false;
+        }
+        JNIEnv* env = binding_->env;
+        jstring jdoc = utf8_to_jstring(env, document_id);
+        jstring jsrc = utf8_to_jstring(env, source_parent_id);
+        jstring jdst = utf8_to_jstring(env, target_parent_id);
+        if (jdoc == nullptr || jsrc == nullptr || jdst == nullptr) {
+            if (jdoc != nullptr) env->DeleteLocalRef(jdoc);
+            if (jsrc != nullptr) env->DeleteLocalRef(jsrc);
+            if (jdst != nullptr) env->DeleteLocalRef(jdst);
+            return false;
+        }
+        auto jres = static_cast<jstring>(
+            env->CallObjectMethod(binding_->bridge, binding_->mid_move, jdoc, jsrc, jdst));
+        env->DeleteLocalRef(jdoc);
+        env->DeleteLocalRef(jsrc);
+        env->DeleteLocalRef(jdst);
+        if (clear_if_exception(env) || jres == nullptr) {
+            return false;
+        }
+        out_document_id = jstring_to_utf8(env, jres);
+        env->DeleteLocalRef(jres);
+        return !out_document_id.empty();
+    }
+
 private:
     const ActiveJniBinding* binding_ = nullptr;
 };
@@ -415,6 +479,14 @@ public:
         binding_.mid_mkdir = env->GetMethodID(
             cls_, "createDirectory", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
         binding_.mid_delete = env->GetMethodID(cls_, "deleteDocument", "(Ljava/lang/String;)Z");
+        binding_.mid_rename = env->GetMethodID(
+            cls_, "renameDocument", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+        binding_.mid_move = env->GetMethodID(
+            cls_, "moveDocument",
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+        if (!binding_.mid_delete || !binding_.mid_rename || !binding_.mid_move) {
+            (void)clear_if_exception(env);
+        }
         if (clear_if_exception(env) || !binding_.mid_tree_key || !binding_.mid_root ||
             !binding_.mid_list || !binding_.mid_read || !binding_.mid_write ||
             !binding_.mid_mkdir || !binding_.mid_delete) {

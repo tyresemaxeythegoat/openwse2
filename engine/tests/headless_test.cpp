@@ -165,6 +165,31 @@ void test_headless_drives_presentation_window() {
            "drive_ui = false opens no window");
 }
 
+// `drive_audio` runs the world audio bridge and pumps the mixer each frame, so the mixer
+// reports stereo frames even with no sounds; without it nothing is mixed.
+void test_headless_drives_audio_mixer() {
+    wse::platform::MemoryVfs vfs;
+    seed_minimal_module(vfs, "Modules/AudioMod", build_minimal_scripts());
+
+    wse::game::HeadlessRunOptions opts{};
+    opts.module_dir = "Modules/AudioMod";
+    opts.load_options.require_core_files = false;
+    opts.trigger_frames = 3;
+    opts.frame_ticks = 100000;  // 1.0 s per frame
+
+    opts.drive_audio = true;
+    const auto on = wse::game::run_headless_session(vfs, opts);
+    expect(on.report.ok && on.report.frames_executed == 3U,
+           "drive_audio run completes 3 frames");
+    expect(on.report.audio_frames_mixed > 0,
+           "drive_audio mixes stereo frames each frame (silence still counts)");
+
+    opts.drive_audio = false;
+    const auto off = wse::game::run_headless_session(vfs, opts);
+    expect(off.report.ok && off.report.audio_frames_mixed == 0,
+           "drive_audio = false mixes no audio frames");
+}
+
 void test_headless_unimplemented_opcode_fails_loudly() {
     wse::platform::MemoryVfs vfs;
     seed_minimal_module(vfs, "Modules/BadOpMod", build_minimal_scripts(9999U));
@@ -293,6 +318,7 @@ int run_headless_suite(const char* fixture_path) {
     failures = 0;
     test_headless_memory_game_start_and_frames();
     test_headless_drives_presentation_window();
+    test_headless_drives_audio_mixer();
     test_headless_unimplemented_opcode_fails_loudly();
     test_headless_allow_unimplemented_continues_and_reports();
     test_headless_missing_game_start_and_load_failure();

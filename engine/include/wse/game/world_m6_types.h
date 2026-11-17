@@ -836,6 +836,15 @@ struct WseM6UiExt {
     // rebuilds the menu even when a menu jumps to a menu (port bookkeeping).
     std::uint32_t menu_open_serial = 0U;
     std::vector<std::int32_t> active_presentations{};
+    // Mission (conversation window `0xc`) presentations requested by
+    // `start_conversation_presentation` (4907) and not yet started:
+    // `mbConversationWindow::startPresentation` (`0x1400888a0`) pushes onto `+0x2298`, and
+    // `mbConversationWindow::updatePresentations` (`0x1400888c0`) starts them next frame.
+    std::vector<std::int32_t> pending_conversation_presentations{};
+    // `presentation_set_duration` (902) naming a mission presentation other than the one whose
+    // trigger is running: (presentation, centiseconds), applied by `game::UiSession` (the retail
+    // mission branch writes the container found by `getPresentationContainer` `0x140088f00`).
+    std::vector<std::pair<std::int32_t, std::int32_t>> mission_duration_requests{};
     std::unordered_map<std::int32_t, WseM6OverlayExt> overlay_ext{};
     std::unordered_map<std::int32_t, WseM6DynamicMenu> menus{};
     std::vector<std::int32_t> generated_menu_ids{};

@@ -107,17 +107,17 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `native_world_test.cpp` | 7 |
 | `native_m5_test.cpp` | 5 |
 | `wse_m6_test.cpp` | 7 |
-| `platform_test.cpp` | 14 |
+| `platform_test.cpp` | 15 |
 | `module_loaders_test.cpp` | 6 |
-| `headless_test.cpp` | 6 |
+| `headless_test.cpp` | 7 |
 | `lua_test.cpp` | 7 |
 | `asset_test.cpp` | 10 |
 | `audio_test.cpp` | 8 |
 | `input_test.cpp` | 8 |
 | `scene_test.cpp` | 6 |
-| `ui_test.cpp` | 13 |
+| `ui_test.cpp` | 14 |
 | `selftest_host_test.cpp` *(aggregate runner over the 23 suites)* | 23 suites |
-| **Total (23 standalone suites + aggregate runner)** | **189** |
+| **Total (23 standalone suites + aggregate runner)** | **192** |
 
 ## 4. Blocked
 
@@ -161,9 +161,7 @@ environment cannot make.
    rasterizer for real frames: 8x8 tile binning with empty-tile skipping and one thread per tile
    row; integer power-of-two texture wrap (`& (w - 1)`); a word-at-a-time hash (xxh3) for large
    frames (`hash_rgba8_frame` is a regression contract, so changing it changes every recorded hash).
-6. **`SafVfs` has no `rename_file`.** Staging through it falls back to remove + write (a short
-   window without the file). Driver staging uses `HostVfs`, so nothing depends on it yet; a
-   `DocumentsContract.renameDocument`/`moveDocument` backend call would close it.
+6. ~~**`SafVfs` has no `rename_file`.**~~ **Fixed:** `SafTreeBackend::rename_document` / `move_document` (default unsupported) back `SafVfs::rename_file`. `MemorySafBackend` implements both, as does the Android JNI backend (`WseSafBridge.renameDocument` / `moveDocument` over `DocumentsContract`, API 24, covered by minSdk 29; compile-checked only, device pending). An existing target is deleted first because SAF has no atomic replace, so a move or rename that fails after that delete leaves the target missing (the source stays). Backends without support still return false, so callers keep the remove + write fallback.
 7. **Non-ASCII directory case.** `HostVfs` cache keys fold ASCII only, so two spellings of a
    non-ASCII directory that differ only in case (on a case-insensitive volume) get separate
    listings: correct, one extra scan each. Unicode case folding was not worth a dependency.
@@ -226,15 +224,8 @@ Each needs a translator choice, the retail PDB/binary, hardware, or a change to 
 Found in the review of `f0b4f19`; the bugs it found are fixed (§7, "Slice P6 review fixes").
 These remain because they need retail evidence, hardware, or a design decision.
 
-1. **Audio is not wired into the app.** Nothing outside `audio_test` constructs
-   `WorldAudioBridge` or pumps a device; `platform/sdl/sdl_selftest_main.cpp` only opens and closes
-   the SDL stream. The embedder still has to: call `WorldAudioBridge::update` per frame, feed the
-   listener from the camera (`listener_from_camera_transform`), drive `pump_to_latency` from one
-   thread, and connect Android pause/resume to `AudioDevice::set_paused`.
-2. **Decoding and mixing run on the caller's thread.** Lazy sample decode inside a play opcode is a
-   synchronous file read + decode (preload or a worker thread would remove the hitch), and the
-   mixer has no locking, so it must not move to SDL's audio callback thread without a command
-   queue.
+1. **Audio is only partly wired (partly fixed).** `wse_headless --audio` (`HeadlessRunOptions::drive_audio`) attaches a `WorldAudioBridge` before `game_start`, feeds the listener from the camera each frame (`listener_from_camera_transform`), calls `WorldAudioBridge::update`, and pumps `pump_to_latency` into a `CaptureAudioDevice`; `HeadlessReport::audio_stats` / `audio_frames_mixed` report the result. It decodes WAV only unless a caller passes `audio_codecs`. Still open: the SDL / Android app does not construct `WorldAudioBridge` or pump a device (`platform/sdl/sdl_selftest_main.cpp` only opens and closes the SDL stream), and Android pause/resume is not connected to `AudioDevice::set_paused`.
+2. **Decoding and mixing run on the caller's thread (partly fixed).** `--preload-audio` (`HeadlessRunOptions::preload_audio`) decodes every sample at load, so no play opcode waits on a file read and decode. Still open: the mixer has no locking, so it must not move to SDL's audio callback thread without a command queue or worker thread.
 3. ~~**Unverified retail details.**~~ **Resolved in v1.1.5.5:** `mbAgent::playSound` (`0x140057010`)
    hashes `m_no`, `m_troopNo`, and `m_partyNo` (`WseAgent::party_no`), scales `(acc/871 - 0.5f)`
    by `0.3f` (not `0.14f`), applies `1.0f / (1.0f - delta)` for negative `delta < -0.001f`, and
@@ -447,7 +438,7 @@ Still open:
    mission frame drops an open modal window. Still missing: the Android shell / SDL frame loop
    (pointer and key input through `handle_pointer_and_keys`, rendering with `UiRhiRenderer`),
    menus (fixed, see below), and mission-side presentations
-   (`start_presentation` in a scene queues nothing and is not started). The notes window text
+   (now fixed, see below). The notes window text
    (object name, then description and note slots) is a port approximation of `mbNotesWindow`.
    The headless runner also clears `lighting.has_scene` after loading (option
    `start_on_campaign_map`): the struct default `true` made every headless frame a mission frame,
@@ -460,8 +451,8 @@ Still open:
    each consumed `0x12`) makes a menu-to-menu jump rebuild. The menu number from `jump_to_menu`
    and setting `world.ui.current_menu_no` are port choices. `run_headless_module` passes
    `bundle.menus`, and `wse_headless` prints `menus_opened=` (`HeadlessReport::menus_opened`).
-   **Still open:** the Android/SDL frame loop (input and `UiRhiRenderer`) and mission-side
-   presentations.
+   **Still open:** the Android/SDL frame loop (`wse/platform/ui_frame.h` `run_ui_frame` maps input and renders; calling it from a game activity is device-only).
+   **Mission-side presentations (fixed, P9 #1):** `start_conversation_presentation` (4907, `0x1401f296e`) queues into `world.m6.ui.pending_conversation_presentations`, as `mbConversationWindow::startPresentation` (`0x1400888a0`) does. Each mission frame `UiSession::update_mission_presentations` runs `mbConversationWindow::updatePresentations` (`0x1400888c0`): a pending start ends every open container that shows the same presentation or lacks `prsntf_manual_end_only`, then opens and starts one (`-60`, `mbPresentationContainer::startPresentation` `0x1402097b0`); every container runs `-61` and closes when its duration runs out. `presentation_set_duration` (902, mission branch `0x1401cc016`) and `is_presentation_active` (903, mission branch `0x1401cc135`) reach these containers through `m6.ui.mission_duration_requests` and `m6.ui.active_presentations`. Leaving the scene clears the stack. Native 900 has no mission branch (`0x1401cbf02` only queues `0x0f`). **Still open:** mission containers are not drawn and take no pointer input.
 
 2. **Overlay size semantics (mostly resolved).** Checked against the retail widgets: text size
    is `0.02 * size` (`rglWidget::setScale` `0x14031e7e0`), mesh overlays scale their mesh by the
@@ -488,7 +479,7 @@ Still open:
    `PresentationClosed` behaviour had no retail basis; 17 of Native's 49 presentations handle
    Escape themselves through `key_clicked`). `SYMBOL_MAP.json` now curates `mbConversationWindow`
    (`build_symbol_map.py` token; regenerated from the v1.1.5.5 PDB, +10 symbols). Honouring the bit
-   needs the mission-side presentation stack (item 1).
+   is applied by the mission-side presentation stack (item 1), `update_mission_presentations`.
 4. ~~**Mesh overlays ignore colour and alpha.**~~ **Fixed (software path):** retail
    `rglImageWidget::setColor` / `setAlpha` (`0x1402a6c50` / `0x1402a6c90`) and
    `rglImageButtonWidget::setColor` (`0x1402a6a80`) write the overlay colour into the widget
@@ -526,9 +517,7 @@ Still open:
    button `-62` param 2 passes the overlay value (retail's is a stale trigger parameter), triggers
    run at input time rather than after `-61`, text boxes now take typed characters (**fixed approximately**, `docs/ARCHITECTURE.md` §8 item 18:
    a left press focuses, Enter / Escape / an outside press commits with `-62` and the text, backspace
-   removes one character; no maximum length, numeric mode, placeholder clearing or IME composition, and
-   `overlay_obtain_focus` (949) does not commit a previously focused box), slider / number box
-   / combo meshes are not drawn (text only), the middle-press (`0x100`) sender is untraced, and
+   removes one character; no numeric mode, placeholder clearing or IME composition (the 28-character cap, `rglTextBoxWidget` `0x140316900`, and the focus commit by `overlay_obtain_focus` (949) are fixed), number-box and combo meshes are not drawn (text only; sliders draw their track and knob, `createSliderOverlay` `0x14020af30`, `rglSliderWidget::getPercentage` `0x14030dae0`), the middle-press (`0x100`) sender is untraced, and
    area-less text overlays have no hover box (needs the item 2 anchoring check).
 6. ~~**Per-frame GPU buffer churn.**~~ **Fixed:** `RhiDevice::update_buffer(handle, data, error_out)`
    (`rhi.h`) replaces a live buffer's contents. `SoftwareRhiDevice` writes it directly, and
@@ -582,6 +571,7 @@ Previously closed: the four 2026-11-13 questions (`types_x64`/`globals_x64`/`vta
 | Mesh overlay tint | PASS (Windows `build_host.ps1` with `WSE_WARBAND_ROOT`; `check_citations.py --self-test --docs`; `ui_test.cpp` tint render checks) | capstone disassembly of `0x14020e040`, `0x1402a6c50`, `0x1402a6c90`, `0x1402a6a80`, `0x14031e890` |
 | Interactive overlays (P9 #5) | PASS (Windows `build_host.ps1` with `WSE_WARBAND_ROOT`: `engine host tests: PASS`, `selftest_host` `23/23` `29,907 ms` incl. retail `ui`; changed headers compile standalone with `-Wall -Wextra -Werror`; `check_citations.py --self-test --docs` `83` headers / `2312` VA refs, `1308` doc refs) | `ui_runtime.h` `handle_input` / `UiPointerInput`, `rhi_ui.h` container offset + culling, `native_ui_ops.h` / `native_entity_ops.h` `create_opcode` + 910 container fix, `ui_test.cpp` (3 new functions); `SYMBOL_MAP.json` +8 class tokens (3,835 symbols). Evidence: `docs/ARCHITECTURE.md` §8 item 17. Linux/ASan/NDK left to CI. |
 | GPU buffer reuse, 912 re-measure, `0x12` menus, overlay animation, text boxes, game-button meshes (P9 #1/#2/#4/#5/#6) | PASS (Windows `build_host.ps1` with `WSE_WARBAND_ROOT`: `engine host tests: PASS`, `selftest_host` `23/23` `18,906 ms` incl. retail `ui`; changed headers compile standalone with `-Wall -Wextra -Werror`; `check_citations.py --self-test --docs` `83` headers / `2333` VA refs, `1344` doc refs) | `rhi.h` `update_buffer` / `first_index`, `driver_loader.{h,cpp}`, `rhi_ui.h`, `rhi_scene.h`, `ui_runtime.h`, `native_ui_ops.h`, `native_entity_ops.h`, `world_m5_types.h`, `world_m6_types.h`, `world_state.h`, `headless_runner.h`, `wse_headless.cpp`; `platform_test` / `ui_test` / `scene_test`; `SYMBOL_MAP.json` +`rglTextBoxWidget` (3,844 symbols). Linux/ASan/NDK left to CI. |
+| Mission presentations, `ui_frame.h`, SAF rename, headless audio (P9 #1/#5, P4 #6, P6 #1/#2) | PASS (Windows `build_host.ps1` with `WSE_WARBAND_ROOT`: `engine host tests: PASS`, `selftest_host` `23/23` `9,396 ms` incl. retail `ui`; changed headers compile standalone with `-Wall -Wextra -Werror`; `check_citations.py --self-test --docs` `84` headers / `2350` VA refs, `1376` doc refs; `wse_headless --frames 200 --allow-unimplemented --audio` on Native, Phantasy Calradia, FiveDynastiesAndTenKingdoms, Suvarnabhumi Mahayuth 1_19: `ok=true`, 0 errors, 0 unimplemented, 19,200,000 frames mixed each, 357 / 1,007 / 469 / 822 samples resolved) | `ui_runtime.h` mission stack, text-box cap, 949 commit, slider meshes; `ui_frame.h` (new); `saf_vfs.h`; `headless_runner.h` / `wse_headless.cpp` audio; `native_entity_ops.h` 902/903 mission branches; `ops/ui_menu.h` 4907; `world_m5_types.h` / `world_m6_types.h`; `ui_test` / `platform_test` / `headless_test`; `SYMBOL_MAP.json` +`??0rglTextBoxWidget` (3,845 symbols). Android `saf_vfs_jni.cpp` / `WseSafBridge.kt` compile in CI only. |
 | Review fixes for `5ab81a4` (Phase 2A / P9 Part 1) | PASS (Linux clang++ 18.1.3: header-only gate loop `18/18` + `script`, CMake + CTest `23/23` incl. `selftest_host` (glslang from a local `16.6.0` checkout); g++ 13 ASan/UBSan on the touched suites `savegame`, `block_vm`, `native_m5`, `native_world`, `module_loaders`, `headless`, `scene`; `check_citations.py --self-test --docs`). Full `WSE_SANITIZE` CMake tree not run locally (disk allowance); CI `host-sanitizers` covers it | Fixed the 8 items in §5 "Phase 2A / P9 Part 1 review (`5ab81a4`)": stale `m6.ui.active_window_id`, undrained window types + `kMaxQueuedWindows`, `900` queueing in missions, `kMaxPartyKeys` bound on `m_nextKey`, sparse party keys past `m_numSlots`, `instantiate_scene_objects` references / kinds / entry points, `1819` pruning flag, top-4 renormalized skin weights; plus the `.sco` / `map.txt` bounds and leftover parser lines. Regression tests in `block_vm_test`, `native_m5_test`, `savegame_test`, and `scene_test` |
 | Phase 2E review resolutions (`afab774` PR #22) + **Phase 2A completion & Slice P9 Part 1** | PASS (Windows `build_host.ps1` `22/22` / `174` funcs, `selftest_host` `6,495 ms` + retail `Native`/`Phantasy Calradia` CLI + `check_citations` + `extract_wse_opcodes`) | Resolved ALL `10` open §5 items from `afab774`: `consume_campaign_queued_window` `0x12`/`0x0f`/`0x10` filter + `m6.ui.active_window_id` sync (`0x140118987`/`0x1400f0c50`), `900` `start_presentation` queue (`0x1401cbf02`), `2055` loading state, `mbGame::removeParty` / `addPartyToParty` (`0x1400dd990`/`0x1400de230`), `416` `m5.enable_pruning` filter & active-player reset (`0x140147a80`), `rglHashVector<mbParty>` `m_nextKey` (`+0x138f0`, `0x1400e7b80`/`0x1400e7de0`), `[802..1174]` version-invariance (`0x1400e7640`/`0x1400bae70`), dead `WseQuestNote::available` removal (`0x1401b9e90`) + `current_day` fix in `1113`/`1114`/`1116`/`1118`/`1119` (`0x1401de2ee`), and `fx.trigger_agent_no` reset. Completed **Phase 2A** (`wse/game/scene_loaders.h`: `map.txt` `0x1400d9a00`, `SceneObj/*.sco` `0x140210be0`, `Data/skeleton_bodies.xml` `0x1400cbb70`/`0x140211ba0`, `dialog_states.txt` confirmed absent from retail binary) & **Slice P9 Part 1** (`wse/asset/brf.h` `skeleton_anim` `(qx,qy,qz,qw)` fix `0x14030c320`, `wse/asset/skeleton.h` FK & CPU linear-blend skinning `0x14030a770`/`0x14030b8f0`/`0x140258800`, `wse/platform/rhi_scene.h` terrain chunking + `BrfSceneRenderer`, `scene_test.cpp`); regenerated `docs/SYMBOL_MAP.json`; validated retail `Native` `wse_headless` (`20` frames / `755` parties / `errorCount=0`), `wse_brf` (`Native` `221/221`, `Phantasy Calradia` `333/333`, `271/271` shaders at `spv_fail=0`), and all `1,382/1,382` `Native` + `Phantasy Calradia` `.sco` files |
 | Phase 2E review fixes (`e6c4d0e`) | PASS (Linux clang++ 18: header-only gate loop, CMake + CTest; g++ ASan/UBSan touched suites; `check_citations.py --self-test --docs`) | Fixed in review of `e6c4d0e`. **Mission objects:** `scene_prop_fade_out` (1822) no longer deletes the prop (`scene_prop_fade_in` 1823 could not restore it and the id was recycled); `multiplayer_clear_scene` (416) keeps scene-placed props (`spawned_at_runtime`) and no longer wipes player equipment; `remove_mission_object` also drops `attached_missiles` / edit-mode selections. **Agents:** `unlink_agent_references` clears team leader / order listener / division leaders, look / AI targets, offers, cached enemies, one-sided horse/rider links, `parent_agent_no`, camera target, and dialog speaker before a slot is recycled. **Players:** `disconnect_player` keeps `mp.saved_ban`, so `ban_player_using_saved_ban_info` (468) works after a kick. **Parties:** `remove_party` clears `encountered_party_2_no` and refuses the main party; `attach_party` refuses cycles; dead `num_parties_created` removed. **Frame step:** `step_world_frame` consumes the window queue only on the campaign map. **Savegame:** `<= 1136` bodies keep live combat options; the mismatched-header test pins `truncated`; dead `legacy_layout_unsupported` check removed. **Misc:** free-list release is O(1); `kQueuedWindowSaveExitBreakType` folded into `kQueuedWindowMenuType`; entry VAs `0x140117f90` / `0x140120240` / `0x14002a220` cited. Open items: §5. |

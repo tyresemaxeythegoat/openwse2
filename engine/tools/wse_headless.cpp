@@ -27,6 +27,8 @@ void print_usage(const char* argv0) {
                  "  --step-ticks T         Engine ticks added per frame (default: 200000 = 2.0s)\n"
                  "  --allow-unimplemented  Count and report unimplemented opcodes without failing the run\n"
                  "  --no-ui                Do not drive notes / presentation windows between frames\n"
+                 "  --audio                Mix module audio into a capture device (WAV samples only)\n"
+                 "  --preload-audio        With --audio: decode every sample at load\n"
                  "  -h, --help             Show this help\n",
                  argv0 != nullptr ? argv0 : "wse_headless");
 }
@@ -66,6 +68,14 @@ int main(int argc, char** argv) {
         }
         if (arg == "--no-ui") {
             opts.drive_ui = false;
+            continue;
+        }
+        if (arg == "--audio") {
+            opts.drive_audio = true;
+            continue;
+        }
+        if (arg == "--preload-audio") {
+            opts.preload_audio = true;
             continue;
         }
         if (arg == "--frames") {
@@ -169,6 +179,13 @@ int main(int argc, char** argv) {
     std::printf("ui=%s presentations_opened=%zu notes_opened=%zu menus_opened=%zu final_window=%d\n",
                 opts.drive_ui ? "on" : "off", r.presentations_opened, r.notes_opened,
                 r.menus_opened, r.final_window);
+    if (opts.drive_audio) {
+        std::printf("audio=on samples_resolved=%zu samples_missing=%zu samples_decoded=%zu "
+                    "decode_failures=%zu music_resolved=%zu frames_mixed=%zu\n",
+                    r.audio_stats.sample_paths_resolved, r.audio_stats.sample_paths_missing,
+                    r.audio_stats.samples_decoded, r.audio_stats.sample_decode_failures,
+                    r.audio_stats.music_paths_resolved, r.audio_frames_mixed);
+    }
     std::printf("FINAL: ok=%s errorCount=%zu unimplementedCount=%zu uniqueUnimpl=%zu\n",
                 r.ok ? "true" : "false", r.error_count, r.unimplemented_count,
                 r.unimplemented_opcodes.size());
