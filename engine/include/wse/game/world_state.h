@@ -1454,6 +1454,7 @@ struct WseWorldState {
         case kQueuedWindowMenuType:
             m5.enqueued_windows.clear();
             screen_win = kScreenWindowMenu;
+            ++m6.ui.menu_open_serial;
             break;
         case kQueuedWindowPresentationType:
             m5.enqueued_windows.pop_back();

@@ -1138,6 +1138,30 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     `0x140261d10` not traced); list boxes act like combo buttons; the middle-press (`0x100`)
     sender is untraced. Details in [engine/README.md](../engine/README.md).
 
+18. Overlay animation, text box entry, and game-button mesh scale (P9 Part 2 review items 2, 4, 5).
+    **Resolved:** v1.1.5.5 entry VAs below. Implemented in [ui_runtime.h](../engine/include/wse/game/ui_runtime.h)
+    (`UiSession::step_presentation`, `native_ui_start_anim`, text box input) and [rhi_ui.h](../engine/include/wse/platform/rhi_ui.h)
+    (game-button mesh draw). Details in [engine/README.md](../engine/README.md).
+
+    | Function | VA | Finding |
+    | --- | --- | --- |
+    | `rglWidget::frameMove` | `0x14031c110` | per-frame animation step: `(start*(d-t) + target*t)/d`; colour bytes and alpha rounded half-up, size and position unrounded, target set when time is up |
+    | `rglWidget::animateToColor` | `0x14031cbc0` | starts the colour channel toward a target |
+    | `rglWidget::animateToAlpha` | `0x14031cc00` | starts the alpha channel toward a target |
+    | `rglWidget::animateToScale` | `0x14031ccc0` | starts the scale channel toward a target |
+    | `rglWidget::animateToPosition` | `0x14031cd00` | starts the position channel toward a target |
+    | `rglTextBoxWidget::triggerState` | `0x140316bd0` | left press focuses the box; while focused it takes every press and character |
+    | `rglTextBoxWidget::obtainFocus` | `0x140317250` | focus acquisition |
+    | `rglTextBoxWidget::loseFocus` | `0x140317220` | commit on Enter, Escape, or a left press outside; raises `0x10000` |
+    | `mbPresentationContainer::frameMove` | `0x140208ec0` | copies the committed text into string register 0 of `mbBasicGame` (`m_stringRegisters` at `+0x2670`, PDB layout) before `-62` |
+    | `createGameButtonOverlay` | `0x14020c3e0` | `medium_button` meshes scaled uniformly by 5/9 (`0x3f0e38e4`); stores scale (0.148, 0.04); highlight text `0xff007700` (940) |
+    | `createIngameButtonOverlay` | `0x14020c7d0` | `mp_inventory_button` kept at native size; stores scale (5.3075, 1.0) (`0x40a9d70a`); highlight text `0xff00ff00` (941) |
+    | `rglGameButtonWidget::setScale` | `0x14029bfb0` | multiplies the meshes by new / stored scale per axis; the box stays the hit area |
+
+    Port approximations (not traced): text boxes have no maximum length (`+0x294`), numeric mode
+    (`+0x298`), placeholder clearing (`+0x292`) or IME composition; `overlay_obtain_focus` (949) does not
+    commit a previously focused box. Details in [engine/README.md](../engine/README.md).
+
 ## 9. Evidence index
 
 REA evidence records. The first table is the current WSE2 v1.1.5.5 baseline; the second is the

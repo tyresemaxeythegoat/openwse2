@@ -686,6 +686,20 @@ void test_rhi_and_driver_loader() {
                    "VulkanRhiDevice destroys live VkBuffer and VkImage handles");
         }
 
+        // update_buffer with a larger payload re-creates the mirrored VkBuffer but keeps the count.
+        {
+            VulkanRhiDevice vk_rhi(panvk_loader);
+            const std::array<std::uint8_t, 16> small_data{1, 2, 3, 4};
+            const BufferHandle ub = vk_rhi.create_buffer(BufferUsage::vertex, small_data);
+            const std::array<std::uint8_t, 64> big_data{};
+            std::string update_err;
+            expect(ub != 0 && vk_rhi.update_buffer(ub, big_data, &update_err) &&
+                       vk_rhi.live_vk_buffers() == 1U,
+                   "VulkanRhiDevice update_buffer with a larger payload succeeds and keeps live VkBuffer count");
+            vk_rhi.destroy_buffer(ub);
+            expect(vk_rhi.live_vk_buffers() == 0U, "updated VkBuffer is destroyed cleanly");
+        }
+
         expect(probe.instance_api_version == ((1U << 22U) | (3U << 12U)) && probe.texture_compression_bc &&
                    probe.max_image_dimension_2d == 4096U && !probe.used_hal_module,
                "probe reports instance API, BC feature, and 2D image limit");
@@ -1071,6 +1085,120 @@ void test_rhi_and_driver_loader() {
         sw_rhi.destroy_pipeline(pip);
         sw_rhi.destroy_texture(white_th);
     }
+}
+
+// update_buffer replaces live buffer contents, and MeshDrawCall::first_index lets one index
+// buffer back several draws (checked against separate index buffers, and rejected when the
+// range runs past the end of the buffer).
+void test_rhi_update_buffer_and_first_index() {
+    using namespace wse::platform;
+
+    const auto as_u8_span = [](const void* ptr, std::size_t bytes) noexcept {
+        return std::span<const std::uint8_t>(static_cast<const std::uint8_t*>(ptr), bytes);
+    };
+
+    SoftwareRhiDevice sw_rhi;
+    std::string err;
+    const std::array<MeshVertex, 4> quad{{
+        {-1.0f, -1.0f, 0.5f, 0, 0, 1, 0, 0, 0xFFFFFFFFU},
+        {1.0f, -1.0f, 0.5f, 0, 0, 1, 1, 0, 0xFFFFFFFFU},
+        {1.0f, 1.0f, 0.5f, 0, 0, 1, 1, 1, 0xFFFFFFFFU},
+        {-1.0f, 1.0f, 0.5f, 0, 0, 1, 0, 1, 0xFFFFFFFFU},
+    }};
+    const std::array<std::uint16_t, 3> half_a{0, 1, 2};
+    const std::array<std::uint16_t, 3> half_b{0, 2, 3};
+    const std::array<std::uint16_t, 6> both{0, 1, 2, 0, 2, 3};
+    const PipelineHandle no_cull = sw_rhi.create_pipeline(PipelineDesc{true, true, CullMode::none});
+    const BufferHandle qvb =
+        sw_rhi.create_buffer(BufferUsage::vertex, as_u8_span(quad.data(), sizeof(quad)));
+    const BufferHandle iba =
+        sw_rhi.create_buffer(BufferUsage::index, as_u8_span(half_a.data(), sizeof(half_a)));
+    const BufferHandle ibb =
+        sw_rhi.create_buffer(BufferUsage::index, as_u8_span(half_b.data(), sizeof(half_b)));
+    const BufferHandle ibc =
+        sw_rhi.create_buffer(BufferUsage::index, as_u8_span(both.data(), sizeof(both)));
+    expect(qvb != 0U && iba != 0U && ibb != 0U && ibc != 0U && no_cull != 0U,
+           "quad vertex, index, and pipeline resources are created");
+
+    RenderPassDesc pass{};
+    pass.width = 64U;
+    pass.height = 64U;
+    RenderPassDesc black = pass;
+    black.clear_r = black.clear_g = black.clear_b = 0U;
+
+    // 1. update_buffer rejects handle 0, destroyed handles, and empty payloads.
+    const std::array<std::uint8_t, 4> payload{1, 2, 3, 4};
+    expect(!sw_rhi.update_buffer(0U, payload, &err) && !err.empty(),
+           "update_buffer rejects handle 0 and reports an error");
+    err.clear();
+    const BufferHandle gone =
+        sw_rhi.create_buffer(BufferUsage::index, as_u8_span(half_a.data(), sizeof(half_a)));
+    sw_rhi.destroy_buffer(gone);
+    expect(!sw_rhi.update_buffer(gone, as_u8_span(half_a.data(), sizeof(half_a)), &err) &&
+               !err.empty(),
+           "update_buffer rejects a destroyed handle and reports an error");
+    expect(!sw_rhi.update_buffer(qvb, std::span<const std::uint8_t>{}, &err),
+           "update_buffer rejects empty data");
+
+    // 2. One index buffer with two first_index draws matches two separate index buffers.
+    MeshDrawCall qa{};
+    qa.pipeline = no_cull;
+    qa.vertex_buffer = qvb;
+    qa.index_buffer = iba;
+    qa.index_count = 3U;
+    MeshDrawCall qb = qa;
+    qb.index_buffer = ibb;
+    MeshDrawCall split_a = qa;
+    split_a.index_buffer = ibc;
+    split_a.first_index = 0U;
+    MeshDrawCall split_b = split_a;
+    split_b.first_index = 3U;
+
+    std::vector<std::uint8_t> separate;
+    std::vector<std::uint8_t> combined;
+    const std::array<MeshDrawCall, 2> separate_draws{qa, qb};
+    const std::array<MeshDrawCall, 2> combined_draws{split_a, split_b};
+    expect(sw_rhi.render_pass_and_readback(black, separate_draws, separate, &err) &&
+               sw_rhi.render_pass_and_readback(black, combined_draws, combined, &err),
+           "separate and first_index quad draws render");
+    std::size_t lit = 0;
+    for (std::size_t i = 0; i < combined.size(); i += 4U) {
+        lit += (combined[i] == 255U) ? 1U : 0U;
+    }
+    expect(combined == separate && lit > 0U,
+           "first_index draws from one index buffer match separate index buffers pixel for pixel");
+
+    // 3. A draw whose first_index + index_count exceeds the buffer is rejected.
+    MeshDrawCall overrun = split_a;
+    overrun.first_index = 3U;
+    overrun.index_count = 6U;
+    const std::array<MeshDrawCall, 1> overrun_draws{overrun};
+    std::vector<std::uint8_t> overrun_frame;
+    expect(!sw_rhi.render_pass_and_readback(black, overrun_draws, overrun_frame, &err),
+           "draw with first_index + index_count past the index buffer end is rejected");
+
+    // 4. Moved vertex positions through the same live handle change the output.
+    const std::array<MeshDrawCall, 1> one_draw{qa};
+    std::vector<std::uint8_t> before;
+    std::vector<std::uint8_t> after;
+    expect(sw_rhi.render_pass_and_readback(black, one_draw, before, &err),
+           "full-screen quad renders before the vertex update");
+    const std::array<MeshVertex, 4> shrunk{{
+        {-0.5f, -0.5f, 0.5f, 0, 0, 1, 0, 0, 0xFFFFFFFFU},
+        {0.5f, -0.5f, 0.5f, 0, 0, 1, 1, 0, 0xFFFFFFFFU},
+        {0.5f, 0.5f, 0.5f, 0, 0, 1, 1, 1, 0xFFFFFFFFU},
+        {-0.5f, 0.5f, 0.5f, 0, 0, 1, 0, 1, 0xFFFFFFFFU},
+    }};
+    expect(sw_rhi.update_buffer(qvb, as_u8_span(shrunk.data(), sizeof(shrunk)), &err),
+           "update_buffer replaces vertex data on a live handle");
+    expect(sw_rhi.render_pass_and_readback(black, one_draw, after, &err) && after != before,
+           "moved vertices change the rendered output through the same vertex buffer handle");
+
+    sw_rhi.destroy_buffer(ibc);
+    sw_rhi.destroy_buffer(ibb);
+    sw_rhi.destroy_buffer(iba);
+    sw_rhi.destroy_buffer(qvb);
+    sw_rhi.destroy_pipeline(no_cull);
 }
 
 void test_p5_shader_modules_d3d9_and_material_rhi() {
@@ -2395,6 +2523,7 @@ int run_platform_suite(const char* fixture_path) {
     test_log();
     test_saf_vfs();
     test_rhi_and_driver_loader();
+    test_rhi_update_buffer_and_first_index();
     test_p5_shader_modules_d3d9_and_material_rhi();
     test_p4_review_fixes();
     test_p5_rhi_review_fixes();

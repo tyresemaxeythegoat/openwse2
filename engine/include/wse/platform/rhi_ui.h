@@ -436,6 +436,14 @@ public:
     }
 
     void shutdown() noexcept {
+        if (dyn_vb_ != 0) {
+            rhi_.destroy_buffer(dyn_vb_);
+            dyn_vb_ = 0;
+        }
+        if (dyn_ib_ != 0) {
+            rhi_.destroy_buffer(dyn_ib_);
+            dyn_ib_ = 0;
+        }
         for (const auto& kv : meshes_) {
             if (kv.second.vb != 0) rhi_.destroy_buffer(kv.second.vb);
             if (kv.second.ib != 0) rhi_.destroy_buffer(kv.second.ib);
@@ -722,8 +730,14 @@ public:
                 if (mit != meshes_.end()) {
                     const GpuUiMesh& gm = mit->second;
                     float model[16]{};
-                    rhi_ui_detail::make_stretched_model_matrix(
-                        ax, ay, node.size.x, node.size.y, gm.bx0, gm.bx1, gm.by0, gm.by1, model);
+                    if (node.has_mesh_rect) {
+                        rhi_ui_detail::make_stretched_model_matrix(
+                            ax + node.mesh_pos.x, ay + node.mesh_pos.y, node.mesh_size.x,
+                            node.mesh_size.y, gm.bx0, gm.bx1, gm.by0, gm.by1, model);
+                    } else {
+                        rhi_ui_detail::make_stretched_model_matrix(
+                            ax, ay, node.size.x, node.size.y, gm.bx0, gm.bx1, gm.by0, gm.by1, model);
+                    }
                     PendingBatch pb{};
                     pb.is_dynamic = false;
                     pb.static_draw.pipeline =
@@ -800,19 +814,21 @@ public:
         visit(visit, root, 0.0f, 0.0f);
 
         std::vector<MeshDrawCall> draw_calls;
-        std::vector<BufferHandle> temp_buffers;
         draw_calls.reserve(batches.size());
 
-        BufferHandle dyn_vb = 0;
-        if (!dyn_verts.empty()) {
-            dyn_vb = rhi_.create_buffer(
-                BufferUsage::vertex,
-                std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(dyn_verts.data()),
-                                              dyn_verts.size() * sizeof(MeshVertex)));
-            if (dyn_vb == 0) {
+        // All dynamic batches share one vertex and one index buffer, kept across frames and
+        // refilled with `update_buffer`; each batch draws its own range via `first_index`.
+        if (!dyn_verts.empty() && !dyn_indices.empty()) {
+            const auto vb_bytes = std::span<const std::uint8_t>(
+                reinterpret_cast<const std::uint8_t*>(dyn_verts.data()),
+                dyn_verts.size() * sizeof(MeshVertex));
+            const auto ib_bytes = std::span<const std::uint8_t>(
+                reinterpret_cast<const std::uint8_t*>(dyn_indices.data()),
+                dyn_indices.size() * sizeof(std::uint16_t));
+            if (!refill_buffer(dyn_vb_, BufferUsage::vertex, vb_bytes) ||
+                !refill_buffer(dyn_ib_, BufferUsage::index, ib_bytes)) {
                 return false;
             }
-            temp_buffers.push_back(dyn_vb);
         }
 
         for (const PendingBatch& pb : batches) {
@@ -820,22 +836,12 @@ public:
                 draw_calls.push_back(pb.static_draw);
                 continue;
             }
-            const BufferHandle sub_ib = rhi_.create_buffer(
-                BufferUsage::index,
-                std::span<const std::uint8_t>(
-                    reinterpret_cast<const std::uint8_t*>(dyn_indices.data() + pb.first_idx),
-                    pb.idx_count * sizeof(std::uint16_t)));
-            if (sub_ib == 0) {
-                for (const BufferHandle bh : temp_buffers) rhi_.destroy_buffer(bh);
-                return false;
-            }
-            temp_buffers.push_back(sub_ib);
-
             MeshDrawCall dc{};
             dc.pipeline = pb.pip;
-            dc.vertex_buffer = dyn_vb;
-            dc.index_buffer = sub_ib;
+            dc.vertex_buffer = dyn_vb_;
+            dc.index_buffer = dyn_ib_;
             dc.texture = pb.tex;
+            dc.first_index = static_cast<std::uint32_t>(pb.first_idx);
             dc.index_count = static_cast<std::uint32_t>(pb.idx_count);
             std::memcpy(dc.mvp, proj, sizeof(proj));
             rhi_ui_detail::mat4_identity(dc.model);
@@ -851,14 +857,23 @@ public:
         pass.clear_a = cfg.clear_a;
         pass.clear_depth = 1.0f;
 
-        const bool ok = rhi_.render_pass_and_readback(pass, draw_calls, out_rgba8);
-        for (const BufferHandle bh : temp_buffers) {
-            rhi_.destroy_buffer(bh);
-        }
-        return ok;
+        return rhi_.render_pass_and_readback(pass, draw_calls, out_rgba8);
     }
 
+    // The shared dynamic buffers (0 until the first frame with text or panels).
+    [[nodiscard]] BufferHandle dynamic_vertex_buffer() const noexcept { return dyn_vb_; }
+    [[nodiscard]] BufferHandle dynamic_index_buffer() const noexcept { return dyn_ib_; }
+
 private:
+    // Creates `handle` on first use, otherwise replaces its contents in place.
+    bool refill_buffer(BufferHandle& handle, BufferUsage usage, std::span<const std::uint8_t> bytes) {
+        if (handle != 0) {
+            return rhi_.update_buffer(handle, bytes);
+        }
+        handle = rhi_.create_buffer(usage, bytes);
+        return handle != 0;
+    }
+
     struct GpuUiMesh {
         BufferHandle vb = 0;
         BufferHandle ib = 0;
@@ -874,6 +889,8 @@ private:
     RhiDevice& rhi_;
     TextureHandle white_tex_ = 0;
     TextureHandle font_tex_ = 0;
+    BufferHandle dyn_vb_ = 0;
+    BufferHandle dyn_ib_ = 0;
     PipelineHandle alpha_pip_ = 0;
     PipelineHandle add_pip_ = 0;
     std::unordered_map<std::string, TextureHandle> textures_{};

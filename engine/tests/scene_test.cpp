@@ -504,8 +504,8 @@ void test_rhi_scene_terrain_props_and_skinned_render() {
     expect(renderer.update_skinned_mesh(char_id, char_mesh, skin, &err),
            "update_skinned_mesh uploads frame 0 vertex buffer");
     expect(renderer.slot_index_buffer(char_id) == ib_before &&
-               renderer.slot_vertex_buffer(char_id) != vb_before,
-           "update_skinned_mesh updates VB in place while reusing cached IB");
+               renderer.slot_vertex_buffer(char_id) == vb_before && vb_before != 0U,
+           "update_skinned_mesh refills the VB in place while reusing cached IB");
 
     std::vector<std::uint8_t> frame0, frame1;
     expect(renderer.render(96U, 96U, vp, draws, frame0, &err) &&

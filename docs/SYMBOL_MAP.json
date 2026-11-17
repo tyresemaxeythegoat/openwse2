@@ -15,11 +15,11 @@
  "inputs": {
   "layouts": 83,
   "globals_scanned": 48658,
-  "symbols_curated": 3835,
+  "symbols_curated": 3844,
   "game_vtables": 76,
-  "function_ranges": 5224,
+  "function_ranges": 5231,
   "global_objects": 25,
-  "superseded_vas": 3189
+  "superseded_vas": 3196
  },
  "strings": [
   {
@@ -33750,6 +33750,60 @@
    "va": "0x140316100"
   },
   {
+   "name": "?isLanguageChinese@rglTextBoxWidget@@QEBA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140317400"
+  },
+  {
+   "name": "?setAlpha@rglTextBoxWidget@@UEAAXI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1402a6af0"
+  },
+  {
+   "name": "?setScale@rglTextBoxWidget@@UEAAXAEBVrglVector2@@@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403172c0"
+  },
+  {
+   "name": "?getType@rglTextBoxWidget@@UEBAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140258190"
+  },
+  {
+   "name": "?render@rglTextBoxWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1403169d0"
+  },
+  {
+   "name": "?setIntValue@rglTextBoxWidget@@UEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140316a10"
+  },
+  {
+   "name": "?triggerState@rglTextBoxWidget@@UEAA_NI@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140316bd0"
+  },
+  {
+   "name": "?loseFocus@rglTextBoxWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140317220"
+  },
+  {
+   "name": "?obtainFocus@rglTextBoxWidget@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140317250"
+  },
+  {
    "name": "??_GrglTexture@@UEAAPEAXI@Z",
    "kind": "public",
    "source": "pdb-public",
@@ -65511,6 +65565,48 @@
    "symbol": "?checkLineOfSight@rglTerrain@@QEAA_NAEBVrglVector4@@0@Z"
   },
   {
+   "start": "0x1403169d0",
+   "end": "0x140316a10",
+   "va": "0x1403169d0",
+   "symbol": "?render@rglTextBoxWidget@@UEAAXPEAVrglRenderContext@@AEAMAEBVrglVector2@@2@Z"
+  },
+  {
+   "start": "0x140316a10",
+   "end": "0x140316bc4",
+   "va": "0x140316a10",
+   "symbol": "?setIntValue@rglTextBoxWidget@@UEAAXH@Z"
+  },
+  {
+   "start": "0x140316bd0",
+   "end": "0x140317219",
+   "va": "0x140316bd0",
+   "symbol": "?triggerState@rglTextBoxWidget@@UEAA_NI@Z"
+  },
+  {
+   "start": "0x140317220",
+   "end": "0x140317250",
+   "va": "0x140317220",
+   "symbol": "?loseFocus@rglTextBoxWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x140317250",
+   "end": "0x1403172b3",
+   "va": "0x140317250",
+   "symbol": "?obtainFocus@rglTextBoxWidget@@UEAAXXZ"
+  },
+  {
+   "start": "0x1403172c0",
+   "end": "0x1403173fa",
+   "va": "0x1403172c0",
+   "symbol": "?setScale@rglTextBoxWidget@@UEAAXAEBVrglVector2@@@Z"
+  },
+  {
+   "start": "0x140317400",
+   "end": "0x140317480",
+   "va": "0x140317400",
+   "symbol": "?isLanguageChinese@rglTextBoxWidget@@QEBA_NXZ"
+  },
+  {
    "start": "0x140317570",
    "end": "0x140317640",
    "va": "0x140317570",
@@ -71253,6 +71349,13 @@
   "0x1402fae50",
   "0x1402fbfd0",
   "0x1402fc590",
+  "0x1402fce60",
+  "0x1402fcea0",
+  "0x1402fd060",
+  "0x1402fd6b0",
+  "0x1402fd6e0",
+  "0x1402fd750",
+  "0x1402fd890",
   "0x1402fda00",
   "0x1402fdb00",
   "0x1402fdba0",

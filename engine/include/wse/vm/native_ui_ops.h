@@ -15,6 +15,14 @@
 
 namespace wse::vm {
 
+// `rglWidget::animateTo*` (`0x14031cbc0` / `0x14031cc00` / `0x14031ccc0` / `0x14031cd00`):
+// the caller stored the target, duration, and the current value as the start; this restarts
+// the clock and marks the channel running (`UiSession::step_presentation` interpolates it).
+inline void native_ui_start_anim(game::WseOverlayM5Ext& m5, std::uint8_t bit, std::size_t slot) {
+    m5.anim_active = static_cast<std::uint8_t>(m5.anim_active | bit);
+    m5.anim_elapsed[slot] = 0.0f;
+}
+
 [[nodiscard]] inline std::int64_t native_ui_push_overlay(
     game::WsePresentationOverlay ov,
     std::uint32_t opcode,
@@ -56,7 +64,8 @@ inline void native_ui_create_text_button_overlay(
     std::int32_t button_opcode,
     VmContext& ctx,
     std::uint64_t dst,
-    std::span<std::int64_t> locals) {
+    std::span<std::int64_t> locals,
+    std::uint32_t highlight_rgb = 0xffffffffU) {
     if (ctx.world.active_presentation_no < 0 ||
         !wse_string_register_ok(string_index, tag, native_string_banks(ctx))) {
         return;
@@ -67,6 +76,7 @@ inline void native_ui_create_text_button_overlay(
     ov.m5.widget_flags = widget_flags;
     ov.m5.is_button = true;
     ov.m5.button_opcode = button_opcode;
+    ov.m5.highlight_color = highlight_rgb;
     (void)native_ui_push_overlay(std::move(ov), static_cast<std::uint32_t>(button_opcode), ctx,
                                  dst, locals);
 }
@@ -309,16 +319,22 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         return NativeDispatch::handled;
     case 932: // overlay_animate_to_color (0x1401cc887)
         if (world.is_valid_overlay(narrow[0])) {
-            auto& m5 = world.overlays[static_cast<std::size_t>(narrow[0])].m5;
+            auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
+            auto& m5 = ov.m5;
             m5.anim_color = static_cast<std::uint32_t>(narrow[2]);
             m5.anim_color_duration = static_cast<float>(wide[1]) / 1000.0f;
+            m5.anim_color_start = ov.color;
+            native_ui_start_anim(m5, game::kOverlayAnimColor, 0);
         }
         return NativeDispatch::handled;
     case 933: // overlay_animate_to_alpha (0x1401cc8c6)
         if (world.is_valid_overlay(narrow[0])) {
-            auto& m5 = world.overlays[static_cast<std::size_t>(narrow[0])].m5;
+            auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
+            auto& m5 = ov.m5;
             m5.anim_alpha = static_cast<float>(narrow[2]) / 255.0f;
             m5.anim_alpha_duration = static_cast<float>(wide[1]) / 1000.0f;
+            m5.anim_alpha_start = ov.alpha;
+            native_ui_start_anim(m5, game::kOverlayAnimAlpha, 1);
         }
         return NativeDispatch::handled;
     case 934: // overlay_animate_to_highlight_color (0x1401cc905)
@@ -326,6 +342,8 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             auto& m5 = world.overlays[static_cast<std::size_t>(narrow[0])].m5;
             m5.anim_highlight_color = static_cast<std::uint32_t>(narrow[2]);
             m5.anim_highlight_color_duration = static_cast<float>(wide[1]) / 1000.0f;
+            m5.anim_highlight_color_start = m5.highlight_color;
+            native_ui_start_anim(m5, game::kOverlayAnimHighlightColor, 2);
         }
         return NativeDispatch::handled;
     case 935: // overlay_animate_to_highlight_alpha (0x1401cc944)
@@ -333,22 +351,30 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             auto& m5 = world.overlays[static_cast<std::size_t>(narrow[0])].m5;
             m5.anim_highlight_alpha = static_cast<float>(narrow[2]) / 255.0f;
             m5.anim_highlight_alpha_duration = static_cast<float>(wide[1]) / 1000.0f;
+            m5.anim_highlight_alpha_start = m5.highlight_alpha;
+            native_ui_start_anim(m5, game::kOverlayAnimHighlightAlpha, 3);
         }
         return NativeDispatch::handled;
     case 936: // overlay_animate_to_size (0x1401cc983)
         if (world.is_valid_overlay(narrow[0]) && wse_register_ok(narrow[2])) {
-            auto& m5 = world.overlays[static_cast<std::size_t>(narrow[0])].m5;
+            auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
+            auto& m5 = ov.m5;
             const auto& o = ctx.positions[static_cast<std::size_t>(narrow[2])].o;
             m5.anim_size = {o.x, o.y};
             m5.anim_size_duration = static_cast<float>(wide[1]) / 1000.0f;
+            m5.anim_size_start = ov.size;
+            native_ui_start_anim(m5, game::kOverlayAnimSize, 4);
         }
         return NativeDispatch::handled;
     case 937: // overlay_animate_to_position (0x1401cc9f6)
         if (world.is_valid_overlay(narrow[0]) && wse_register_ok(narrow[2])) {
-            auto& m5 = world.overlays[static_cast<std::size_t>(narrow[0])].m5;
+            auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
+            auto& m5 = ov.m5;
             const auto& o = ctx.positions[static_cast<std::size_t>(narrow[2])].o;
             m5.anim_position = {o.x, o.y};
             m5.anim_position_duration = static_cast<float>(wide[1]) / 1000.0f;
+            m5.anim_position_start = ov.position;
+            native_ui_start_anim(m5, game::kOverlayAnimPosition, 5);
         }
         return NativeDispatch::handled;
     case 938: // create_image_button_overlay_with_tableau_material (0x1401cca69)
@@ -361,11 +387,14 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         return NativeDispatch::handled;
     // Both build an `rglGameButtonWidget` whose text flags are fixed to 0x10 (centre) by
     // `createGameButtonOverlay` (0x14020c3e0) / `createIngameButtonOverlay` (0x14020c7d0).
+    // Their highlight text colours are `0xff007700` / `0xff00ff00` (`setTextHighlightColor`).
     case 940: // create_game_button_overlay (0x1401ccb55)
-        native_ui_create_text_button_overlay(narrow[1], tag1, 0x10U, 940, ctx, dst, locals);
+        native_ui_create_text_button_overlay(narrow[1], tag1, 0x10U, 940, ctx, dst, locals,
+                                             0x007700U);
         return NativeDispatch::handled;
     case 941: // create_in_game_button_overlay (0x1401ccbed)
-        native_ui_create_text_button_overlay(narrow[1], tag1, 0x10U, 941, ctx, dst, locals);
+        native_ui_create_text_button_overlay(narrow[1], tag1, 0x10U, 941, ctx, dst, locals,
+                                             0x00FF00U);
         return NativeDispatch::handled;
     case 942: // create_number_box_overlay (0x1401ccc85)
         native_ui_create_range_overlay(opcode, 2, wide[1], wide[2], ctx, dst, locals);

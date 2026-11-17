@@ -405,6 +405,10 @@ struct MeshDrawCall {
     BufferHandle index_buffer = 0;
     TextureHandle texture = 0;
     std::uint32_t index_count = 0;
+    // First index read from `index_buffer` (in indices, not bytes), so several draws can share
+    // one index buffer (`vkCmdDrawIndexed` `firstIndex`). `first_index + index_count` must not
+    // exceed the buffer's index count.
+    std::uint32_t first_index = 0;
     float mvp[16] = {
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
@@ -442,6 +446,13 @@ public:
                                                      std::span<const std::uint8_t> data,
                                                      std::string* error_out = nullptr) = 0;
     virtual void destroy_buffer(BufferHandle handle) = 0;
+    // Replaces the whole contents of a live buffer (any non-empty size; the usage stays), so
+    // per-frame geometry can reuse one buffer instead of a create / destroy pair. Safe between
+    // `render_pass_and_readback` calls, which are synchronous. False (contents unchanged) for
+    // an unknown handle or empty data.
+    [[nodiscard]] virtual bool update_buffer(BufferHandle handle,
+                                             std::span<const std::uint8_t> data,
+                                             std::string* error_out = nullptr) = 0;
 
     [[nodiscard]] virtual TextureHandle create_texture_rgba8(
         std::uint32_t width,
@@ -506,6 +517,20 @@ public:
         if (handle != 0) {
             buffers_.erase(handle);
         }
+    }
+
+    [[nodiscard]] bool update_buffer(BufferHandle handle,
+                                     std::span<const std::uint8_t> data,
+                                     std::string* error_out = nullptr) override {
+        const auto it = buffers_.find(handle);
+        if (it == buffers_.end()) {
+            return rhi_detail::set_error(error_out, "update_buffer references invalid RHI buffer");
+        }
+        if (data.empty()) {
+            return rhi_detail::set_error(error_out, "cannot update RHI buffer with empty data");
+        }
+        it->second.bytes.assign(data.begin(), data.end());
+        return true;
     }
 
     [[nodiscard]] TextureHandle create_texture_rgba8(
@@ -678,7 +703,8 @@ public:
             const std::vector<std::uint8_t>& ib = ib_it->second.bytes;
             const std::size_t num_verts = vb.size() / sizeof(MeshVertex);
             const std::size_t num_indices = ib.size() / sizeof(std::uint16_t);
-            if (draw.index_count > num_indices || (draw.index_count % 3U) != 0U) {
+            if (draw.first_index > num_indices || draw.index_count > num_indices - draw.first_index ||
+                (draw.index_count % 3U) != 0U) {
                 return fail("invalid draw index count");
             }
 
@@ -712,7 +738,8 @@ public:
                 clip_scratch_[i] = cv;
             }
 
-            for (std::uint32_t idx = 0; idx + 2U < draw.index_count; idx += 3U) {
+            const std::uint32_t idx_end = draw.first_index + draw.index_count;
+            for (std::uint32_t idx = draw.first_index; idx + 2U < idx_end; idx += 3U) {
                 std::uint16_t tri[3]{};
                 std::memcpy(tri, ib.data() + static_cast<std::size_t>(idx) * 2U, sizeof(tri));
                 if (tri[0] >= num_verts || tri[1] >= num_verts || tri[2] >= num_verts) {

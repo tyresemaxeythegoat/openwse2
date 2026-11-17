@@ -166,9 +166,9 @@ int main(int argc, char** argv) {
                 r.triggers_ok ? "true" : "false",
                 r.simple_triggers_ok ? "true" : "false",
                 r.party_count);
-    std::printf("ui=%s presentations_opened=%zu notes_opened=%zu final_window=%d\n",
+    std::printf("ui=%s presentations_opened=%zu notes_opened=%zu menus_opened=%zu final_window=%d\n",
                 opts.drive_ui ? "on" : "off", r.presentations_opened, r.notes_opened,
-                r.final_window);
+                r.menus_opened, r.final_window);
     std::printf("FINAL: ok=%s errorCount=%zu unimplementedCount=%zu uniqueUnimpl=%zu\n",
                 r.ok ? "true" : "false", r.error_count, r.unimplemented_count,
                 r.unimplemented_opcodes.size());

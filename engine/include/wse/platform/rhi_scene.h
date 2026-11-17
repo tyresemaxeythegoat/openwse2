@@ -187,6 +187,22 @@ namespace scene_rhi_detail {
         error_out);
 }
 
+// Refills `handle` in place with `update_buffer`, or creates it when it is still 0.
+template <typename T>
+[[nodiscard]] inline bool refill_buffer(RhiDevice& rhi,
+                                        BufferHandle& handle,
+                                        BufferUsage usage,
+                                        std::span<const T> items,
+                                        std::string* error_out) {
+    const std::span<const std::uint8_t> bytes(reinterpret_cast<const std::uint8_t*>(items.data()),
+                                              items.size() * sizeof(T));
+    if (handle != 0U) {
+        return rhi.update_buffer(handle, bytes, error_out);
+    }
+    handle = rhi.create_buffer(usage, bytes, error_out);
+    return handle != 0U;
+}
+
 }  // namespace scene_rhi_detail
 
 // Triangulates a `WorldMapManifold` into one or more `< 65536`-vertex chunks
@@ -378,8 +394,8 @@ public:
 
     // Updates an already-uploaded skinned mesh slot using the cached deduplicated
     // template vertices, cached per-vertex bone weights, and the cached GPU index buffer
-    // (`slot.ib` is kept while the source mesh stays the same). The vertex buffer is still
-    // recreated per call: `RhiDevice` has no buffer-update entry point yet (`STATUS.md` §5).
+    // (`slot.ib` is kept while the source mesh stays the same). Both buffers are refilled in
+    // place with `RhiDevice::update_buffer` rather than recreated every frame.
     [[nodiscard]] bool update_skinned_mesh(SceneMeshId mesh_id,
                                            const wse::asset::BrfMesh& source_mesh,
                                            std::span<const wse::core::WseTransform> skin_transforms,
@@ -401,15 +417,11 @@ public:
             if (chunk.vertices.empty() || chunk.indices.empty()) {
                 return false;
             }
-            const BufferHandle new_ib =
-                scene_rhi_detail::upload_index_buffer(*rhi_, chunk.indices, error_out);
-            if (new_ib == 0U) {
+            if (!scene_rhi_detail::refill_buffer(*rhi_, slot.ib, BufferUsage::index,
+                                                 std::span<const std::uint16_t>(chunk.indices),
+                                                 error_out)) {
                 return false;
             }
-            if (slot.ib != 0U) {
-                rhi_->destroy_buffer(slot.ib);
-            }
-            slot.ib = new_ib;
             slot.index_count = static_cast<std::uint32_t>(chunk.indices.size());
             cache_slot_skin_template(slot, source_mesh, chunk.vertices, vert_pos_indices);
         }
@@ -438,14 +450,9 @@ public:
             }
         }
 
-        BufferHandle new_vb =
-            scene_rhi_detail::upload_vertex_buffer(*rhi_, skinned_scratch_, error_out);
-        if (new_vb == 0U) {
-            return false;
-        }
-        rhi_->destroy_buffer(slot.vb);
-        slot.vb = new_vb;
-        return true;
+        return scene_rhi_detail::refill_buffer(*rhi_, slot.vb, BufferUsage::vertex,
+                                               std::span<const MeshVertex>(skinned_scratch_),
+                                               error_out);
     }
 
     [[nodiscard]] BufferHandle slot_vertex_buffer(SceneMeshId mesh_id) const noexcept {

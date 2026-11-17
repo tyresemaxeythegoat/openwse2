@@ -304,6 +304,11 @@ struct UiWidget {
     // entirely outside it (the RHI has no scissor yet, so partly visible children draw whole).
     wse::core::WseVec2 child_offset{};
     bool clip_children = false;
+    // Draw the mesh into this rectangle (relative to `pos`) instead of stretching it over the
+    // widget box: game buttons keep their native-scaled mesh while the box is the hit area.
+    bool has_mesh_rect = false;
+    wse::core::WseVec2 mesh_pos{};
+    wse::core::WseVec2 mesh_size{};
     std::vector<UiWidget> children{};
 
     // Populates widget geometry and typography from `GameVariablesTable` following
@@ -404,6 +409,14 @@ inline constexpr float kUiGameButtonHeight = 0.04f;
 // with `mp_inventory_button` for both states and a `0.2123 x 0.04` box.
 inline constexpr float kUiInGameButtonWidth = 0.2123f;
 inline constexpr float kUiInGameButtonHeight = 0.04f;
+// Game-button meshes are not stretched over the box. `createGameButtonOverlay` (`0x14020c3e0`)
+// scales the `medium_button` meshes uniformly by `0x3f0e38e4` (5/9) and stores the scale
+// `(0.148, 0.04)`; `createIngameButtonOverlay` (`0x14020c7d0`) keeps `mp_inventory_button` at its
+// native size and stores the scale `(5.3075, 1.0)` (`0x40a9d70a`). `rglGameButtonWidget::setScale`
+// (`0x14029bfb0`) multiplies the meshes by `new / stored` per axis.
+inline constexpr float kUiGameButtonMeshScale = 5.0f / 9.0f;
+inline constexpr float kUiInGameButtonStoredScaleX = 5.3075f;
+inline constexpr float kUiInGameButtonStoredScaleY = 1.0f;
 
 // --- Interactive overlays ---------------------------------------------------------------
 // Retail input path. `rglWindowManager::frameMove` (`0x14032a0d0`) sends mouse presses as
@@ -471,6 +484,10 @@ struct UiPointerInput {
     bool escape_pressed = false;
     float wheel = 0.0f;
     float time_s = 0.0f;
+    // Characters typed this frame, in order (`rglWindowManager` delivers each as state `0x1000`
+    // with the code in `+0x3498`): printable text, `\b` (8) backspace, `\r` (13) Enter,
+    // `\x1b` (27) Escape.
+    std::u16string text_input{};
 };
 
 // Meshes the built-in windows and button overlays below draw by name (lower case).
@@ -986,6 +1003,7 @@ public:
             const float left = static_cast<float>(world.presentation_duration) - whole_cs;
             world.presentation_duration = (left > 0.0f) ? static_cast<std::int32_t>(left) : 0;
         }
+        animate_overlays(world, dt);
         if (!follow_presentation_state(world, vm_ctx, presentations)) {
             return false;
         }
@@ -1000,6 +1018,7 @@ public:
         bool opened_presentation = false;  // window 0x16 opened this frame (`-60` fired)
         bool opened_notes = false;         // window 0x15 opened this frame
         bool closed_for_mission = false;   // a modal window was dropped because a scene is up
+        bool opened_menu = false;          // menu window 0x12 built this frame
         bool presentation_open = false;    // window 0x16 is open after this frame
     };
 
@@ -1016,11 +1035,18 @@ public:
     //   campaign windows, so an open notes / presentation window is dropped here without writing
     //   a campaign window back. Mission-side presentations (`start_presentation` in a scene,
     //   which queues nothing) are not driven yet (`STATUS.md` §5).
+    // - a consumed `0x12` (`jump_to_menu` 2060, `mbMapWindow::frameMove` `0x140117f90` opens
+    //   `mbMenuWindow` `0x12`) builds the menu window for `world.jump_menu_no` from `menus`
+    //   (`mbMenuWindow::open` `0x140120240`, which runs the menu's operations), closing an open
+    //   notes / presentation window first. Port: the menu number comes from `jump_to_menu`,
+    //   and `world.ui.current_menu_no` records it. Without `menus` the queue is still consumed
+    //   but no menu is built.
     FrameReport drive_frame(WseWorldState& world,
                             vm::VmContext& vm_ctx,
                             float dt_s,
                             std::span<const LoadedPresentation> presentations,
-                            std::int32_t window_before_frame) {
+                            std::int32_t window_before_frame,
+                            std::span<const LoadedMenu> menus = {}) {
         FrameReport rep{};
         const bool modal_open =
             current_window == kScreenWindowNotes || current_window == kScreenWindowPresentation;
@@ -1038,6 +1064,20 @@ public:
         }
 
         const std::int32_t win = world.m5.active_window;
+        if (win == kScreenWindowMenu && world.m6.ui.menu_open_serial != seen_menu_serial_) {
+            seen_menu_serial_ = world.m6.ui.menu_open_serial;
+            const std::int32_t menu_no = world.jump_menu_no;
+            if (menu_no >= 0 && static_cast<std::size_t>(menu_no) < menus.size()) {
+                if (modal_open) {
+                    close_active_modal_window(world);
+                }
+                world.ui.current_menu_no = menu_no;
+                build_menu_window(world, menu_no, menus, &vm_ctx);
+                rep.opened_menu = true;
+            }
+            rep.presentation_open = current_window == kScreenWindowPresentation;
+            return rep;
+        }
         // Return target for a window opened this frame: the window that was up before the
         // queue was consumed, or (from another modal window) wherever that one returns to.
         std::int32_t prev = kScreenWindowMap;
@@ -1230,6 +1270,21 @@ public:
                     w.text_scale = {kUiOverlayTextScale, kUiOverlayTextScale};
                     w.mesh_name = (op == 940) ? "medium_button" : "mp_inventory_button";
                     w.highlight_mesh_name = (op == 940) ? "medium_button_down" : "mp_inventory_button";
+                    const bool game = (op == 940);
+                    const float base = game ? kUiGameButtonMeshScale : 1.0f;
+                    float kx = base;
+                    float ky = base;
+                    if (ov.m5.size_set) {
+                        kx *= scale_x / (game ? kUiGameButtonWidth : kUiInGameButtonStoredScaleX);
+                        ky *= scale_y / (game ? kUiGameButtonHeight : kUiInGameButtonStoredScaleY);
+                    }
+                    UiMeshBounds b{};
+                    if (const auto bit = mesh_bounds.find(w.mesh_name); bit != mesh_bounds.end()) {
+                        b = bit->second;
+                    }
+                    w.has_mesh_rect = true;
+                    w.mesh_pos = {b.min_x * kx, b.min_y * ky};
+                    w.mesh_size = {(b.max_x - b.min_x) * kx, (b.max_y - b.min_y) * ky};
                 }
                 if (!has_area) {
                     if (op == 940 || op == 941) {
@@ -1240,10 +1295,14 @@ public:
                                                           game ? kUiGameButtonHeight
                                                                : kUiInGameButtonHeight};
                     } else if (font != nullptr && !w.text.empty()) {
-                        // Box = text extent at the creation text size (see
-                        // `kUiOverlayButtonWidth`).
+                        // Box = text extent at the text size in force when the text was last
+                        // set (see `kUiOverlayButtonWidth` and `m5.text_measure_scale`).
+                        const auto ms = ov.m5.text_measure_scale;
+                        const float msx = std::isfinite(ms.x) ? std::max(0.0f, ms.x) : 1.0f;
+                        const float msy = std::isfinite(ms.y) ? std::max(0.0f, ms.y) : 1.0f;
                         const auto [tw, th] = font->measure_text(
-                            w.text, 0.0f, kUiOverlayTextScale, kUiOverlayTextScale, w.text_flags);
+                            w.text, 0.0f, kUiOverlayTextScale * msx, kUiOverlayTextScale * msy,
+                            w.text_flags);
                         w.size = {tw, th};
                     } else {
                         w.size = {kUiOverlayButtonWidth * scale_x, kUiOverlayButtonHeight * scale_y};
@@ -1290,6 +1349,11 @@ public:
                     w.text = std::to_string(ov.val);
                     if (!has_area) {
                         w.size = {kUiNumberBoxWidth, kUiInputBoxHeight};
+                    }
+                    break;
+                case UiOverlayInput::TextBox:
+                    if (!has_area) {
+                        w.size = {kUiComboWidth, kUiInputBoxHeight};
                     }
                     break;
                 case UiOverlayInput::ComboButton:
@@ -1470,7 +1534,51 @@ public:
         }
         hovered_overlays_ = std::move(inside);
 
-        if (drag_overlay_ >= 0) {
+        const std::int32_t text_focus = focused_text_box(world);
+        if (text_focus >= 0) {
+            // A focused text box has the window manager's focus: it gets every press and the
+            // typed characters instead of the tree (`rglTextBoxWidget::triggerState`
+            // `0x140316bd0`). Enter / Escape, or a left press outside the box, commit the text
+            // (`rglTextBoxWidget::loseFocus` `0x140317220` raises `0x10000`).
+            WsePresentationOverlay& tb = world.overlays[static_cast<std::size_t>(text_focus)];
+            bool commit = false;
+            for (const char16_t c : in.text_input) {
+                if (c == u'\r' || c == 0x1BU) {
+                    commit = true;
+                    break;
+                }
+                if (c == u'\b') {
+                    if (!tb.text.empty()) {
+                        const char16_t last = tb.text.back();
+                        tb.text.pop_back();
+                        if (last >= 0xDC00U && last <= 0xDFFFU && !tb.text.empty() &&
+                            tb.text.back() >= 0xD800U && tb.text.back() <= 0xDBFFU) {
+                            tb.text.pop_back();
+                        }
+                    }
+                } else if (c >= 0x20U && c != u'<' && c != u'>') {
+                    tb.text.push_back(c);
+                }
+            }
+            const UiHitEntry* e = find_hit_entry(hits, text_focus);
+            if (in.left_pressed) {
+                raise(text_focus, kUiStateLeftPress);
+                if (e == nullptr || !e->contains(in.x, in.y)) {
+                    commit = true;
+                }
+            }
+            if (in.right_pressed) {
+                raise(text_focus, kUiStateRightPress);
+            }
+            if (in.middle_pressed) {
+                raise(text_focus, kUiStateMiddlePress);
+            }
+            if (commit) {
+                tb.m5.focused = false;
+                world.m5.focused_overlay_no = -1;
+                raise(text_focus, kUiStateChanged);
+            }
+        } else if (drag_overlay_ >= 0) {
             // A dragged slider has the focus: it gets the input instead of the tree.
             const UiHitEntry* e = find_hit_entry(hits, drag_overlay_);
             if (!valid(drag_overlay_) || e == nullptr || in.left_released || !in.left_down) {
@@ -1586,6 +1694,92 @@ public:
     [[nodiscard]] std::int32_t combo_popup_overlay() const noexcept { return popup_overlay_; }
 
 private:
+    // `overlay_animate_to_*` (932..937) per `rglWidget::frameMove` (`0x14031c110`): each running
+    // channel moves linearly from its start to its target, `(start * (d - t) + target * t) / d`;
+    // colour bytes and alpha round half up (`floor`, +1 when the fraction is above 0.5); size and
+    // position stay unrounded. Once `t` reaches the duration the target is set and the channel
+    // stops. Port: time advances with the presentation frame time (`step_presentation`).
+    static void animate_overlays(WseWorldState& world, float dt) {
+        const auto lerp = [](float s, float g, float t, float d) {
+            return (s * (d - t) + g * t) * (1.0f / d);
+        };
+        const auto round_half_up = [](float v) {
+            const float f = std::floor(v);
+            return static_cast<std::int32_t>(f) + ((v - f) > 0.5f ? 1 : 0);
+        };
+        const auto lerp_byte = [&](std::uint32_t s, std::uint32_t g, unsigned shift, float t, float d) {
+            const auto sv = static_cast<float>((s >> shift) & 0xFFU);
+            const auto gv = static_cast<float>((g >> shift) & 0xFFU);
+            const std::int32_t v = round_half_up(lerp(sv, gv, t, d));
+            return static_cast<std::uint32_t>(std::clamp(v, 0, 255)) << shift;
+        };
+        const auto lerp_rgb = [&](std::uint32_t s, std::uint32_t g, std::uint32_t keep, float t, float d) {
+            return (keep & 0xFF000000U) | lerp_byte(s, g, 16U, t, d) | lerp_byte(s, g, 8U, t, d) |
+                   lerp_byte(s, g, 0U, t, d);
+        };
+        const auto lerp_alpha = [&](float s, float g, float t, float d) {
+            const std::int32_t v = round_half_up(lerp(s * 255.0f, g * 255.0f, t, d));
+            return static_cast<float>(std::clamp(v, 0, 255)) / 255.0f;
+        };
+        for (WsePresentationOverlay& ov : world.overlays) {
+            WseOverlayM5Ext& m = ov.m5;
+            if (m.anim_active == 0U) {
+                continue;
+            }
+            // Returns the elapsed time while the channel runs, or a negative value once it ended.
+            const auto advance = [&m, dt](std::uint8_t bit, std::size_t slot, float dur) -> float {
+                if ((m.anim_active & bit) == 0U) {
+                    return -2.0f;
+                }
+                m.anim_elapsed[slot] += dt;
+                const float t = m.anim_elapsed[slot];
+                if (std::isfinite(dur) && dur > t) {
+                    return t;
+                }
+                m.anim_active = static_cast<std::uint8_t>(m.anim_active & ~bit);
+                return -1.0f;
+            };
+            if (const float t = advance(kOverlayAnimColor, 0, m.anim_color_duration); t >= 0.0f) {
+                ov.color = lerp_rgb(m.anim_color_start, m.anim_color, ov.color, t, m.anim_color_duration);
+            } else if (t == -1.0f) {
+                ov.color = m.anim_color;
+            }
+            if (const float t = advance(kOverlayAnimAlpha, 1, m.anim_alpha_duration); t >= 0.0f) {
+                ov.alpha = lerp_alpha(m.anim_alpha_start, m.anim_alpha, t, m.anim_alpha_duration);
+            } else if (t == -1.0f) {
+                ov.alpha = m.anim_alpha;
+            }
+            if (const float t = advance(kOverlayAnimHighlightColor, 2, m.anim_highlight_color_duration);
+                t >= 0.0f) {
+                m.highlight_color = lerp_rgb(m.anim_highlight_color_start, m.anim_highlight_color,
+                                             m.highlight_color, t, m.anim_highlight_color_duration);
+            } else if (t == -1.0f) {
+                m.highlight_color = m.anim_highlight_color;
+            }
+            if (const float t = advance(kOverlayAnimHighlightAlpha, 3, m.anim_highlight_alpha_duration);
+                t >= 0.0f) {
+                m.highlight_alpha = lerp_alpha(m.anim_highlight_alpha_start, m.anim_highlight_alpha, t,
+                                               m.anim_highlight_alpha_duration);
+            } else if (t == -1.0f) {
+                m.highlight_alpha = m.anim_highlight_alpha;
+            }
+            if (const float t = advance(kOverlayAnimSize, 4, m.anim_size_duration); t >= 0.0f) {
+                ov.size = {lerp(m.anim_size_start.x, m.anim_size.x, t, m.anim_size_duration),
+                           lerp(m.anim_size_start.y, m.anim_size.y, t, m.anim_size_duration)};
+                m.size_set = true;
+            } else if (t == -1.0f) {
+                ov.size = m.anim_size;
+                m.size_set = true;
+            }
+            if (const float t = advance(kOverlayAnimPosition, 5, m.anim_position_duration); t >= 0.0f) {
+                ov.position = {lerp(m.anim_position_start.x, m.anim_position.x, t, m.anim_position_duration),
+                               lerp(m.anim_position_start.y, m.anim_position.y, t, m.anim_position_duration)};
+            } else if (t == -1.0f) {
+                ov.position = m.anim_position;
+            }
+        }
+    }
+
     // Interactive-overlay state (see `handle_input`).
     std::vector<std::int32_t> hovered_overlays_{};  // sorted
     std::int32_t armed_overlay_ = -1;
@@ -1601,6 +1795,16 @@ private:
     std::unordered_map<std::int32_t, float> scroll_pos_{};
     // Bumped by every presentation (re)start so a trigger that restarts it stops the dispatch.
     std::uint32_t presentation_epoch_ = 0;
+
+    // The focused text box (`overlay_obtain_focus` 949 or a press), or -1.
+    [[nodiscard]] static std::int32_t focused_text_box(const WseWorldState& world) noexcept {
+        const std::int32_t id = world.m5.focused_overlay_no;
+        if (id < 0 || static_cast<std::size_t>(id) >= world.overlays.size()) {
+            return -1;
+        }
+        const WsePresentationOverlay& ov = world.overlays[static_cast<std::size_t>(id)];
+        return (ov.visible && ov.m5.focused && overlay_input_kind(ov) == UiOverlayInput::TextBox) ? id : -1;
+    }
 
     void reset_input_state() noexcept {
         hovered_overlays_.clear();
@@ -1750,6 +1954,14 @@ private:
             raise(e.overlay_id, kUiStateChanged);
             return true;
         }
+        case UiOverlayInput::TextBox:
+            // `rglTextBoxWidget::triggerState` (`0x140316bd0`) -> `obtainFocus` (`0x140317250`).
+            for (WsePresentationOverlay& other : world.overlays) {
+                other.m5.focused = false;
+            }
+            ov.m5.focused = true;
+            world.m5.focused_overlay_no = e.overlay_id;
+            return true;
         case UiOverlayInput::ComboButton:
         case UiOverlayInput::ListBox:
             // `rglComboButtonWidget::triggerState` (`0x140261340`): consumes the press and
@@ -1836,6 +2048,13 @@ private:
                 const std::int64_t p2 =
                     st.param2 >= 0 ? st.param2
                                    : changed_value(world.overlays[static_cast<std::size_t>(id)]);
+                if (st.bit == kUiStateChanged &&
+                    overlay_input_kind(world.overlays[static_cast<std::size_t>(id)]) ==
+                        UiOverlayInput::TextBox) {
+                    // `mbPresentationContainer::frameMove` (`0x140208ec0`) copies a text box's
+                    // text into string register 0 (`mbBasicGame::m_stringRegisters` `+0x2670`).
+                    vm_ctx.stringRegisters[0] = world.overlays[static_cast<std::size_t>(id)].text;
+                }
                 const std::array<std::int64_t, 2> params{id, p2};
                 dispatch_presentation_trigger(world, vm_ctx, st.key, params);
                 if (!follow_presentation_state(world, vm_ctx, presentations) ||
@@ -1878,6 +2097,8 @@ private:
     std::int32_t presentation_no_ = -1;
     float default_duration_s_ = 100.0f;
     float duration_cs_accum_ = 0.0f;
+    // `world.m6.ui.menu_open_serial` as of the last menu `drive_frame` built.
+    std::uint32_t seen_menu_serial_ = 0U;
     // `world.m6.ui.presentation_start_serial` as of the last handled start request.
     std::uint32_t seen_start_serial_ = 0U;
     // Mutable copy of the open presentation's triggers, taken once per presentation
@@ -1929,6 +2150,7 @@ private:
         duration_cs_accum_ = 0.0f;
         // Overlay ids restart at 0 for every presentation.
         world.overlays.clear();
+        world.m5.focused_overlay_no = -1;
         world.m6.ui.overlay_ext.clear();
         world.m5.current_container_overlay_no = -1;
         // Read-only (flag bit 0) presentations default to 10.0 s (0x1402098c7).

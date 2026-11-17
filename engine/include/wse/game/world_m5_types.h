@@ -158,6 +158,14 @@ struct WseMissionObjectM5Ext {
     std::int32_t material_submesh = -1;
 };
 
+// `WseOverlayM5Ext::anim_active` bits (one per `overlay_animate_to_*` opcode 932..937).
+inline constexpr std::uint8_t kOverlayAnimColor = 0x01U;
+inline constexpr std::uint8_t kOverlayAnimAlpha = 0x02U;
+inline constexpr std::uint8_t kOverlayAnimHighlightColor = 0x04U;
+inline constexpr std::uint8_t kOverlayAnimHighlightAlpha = 0x08U;
+inline constexpr std::uint8_t kOverlayAnimSize = 0x10U;
+inline constexpr std::uint8_t kOverlayAnimPosition = 0x20U;
+
 struct WseOverlayM5Ext {
     std::int32_t mesh_no = -1;
     std::int32_t pressed_mesh_no = -1;
@@ -180,6 +188,11 @@ struct WseOverlayM5Ext {
     // `overlay_set_size` (925) was applied: game buttons (940/941) then take the size vector as
     // their box instead of their creation default (port bookkeeping, not a retail field).
     bool size_set = false;
+    // `overlay_set_size` scale in force when the text was last set (creation or
+    // `overlay_set_text` 920): `rglWidget::setText` (`0x14031e330`) re-measures a
+    // `create_button_overlay` box at the text size current at that moment (0.02 x scale), so
+    // the box follows the order of `overlay_set_size` and `overlay_set_text` (port bookkeeping).
+    wse::core::WseVec2 text_measure_scale{1.0f, 1.0f};
     std::uint32_t widget_flags = 0;
     double min_value = 0.0;
     double max_value = 0.0;
@@ -206,6 +219,19 @@ struct WseOverlayM5Ext {
     float anim_size_duration = 0.0f;
     wse::core::WseVec2 anim_position{};
     float anim_position_duration = 0.0f;
+    // Running `overlay_animate_to_*` state (`rglWidget::animateTo*` `0x14031cbc0`..
+    // `0x14031cd00` capture the current value as the start and the time; `rglWidget::frameMove`
+    // `0x14031c110` interpolates). Bits of `anim_active`: `kOverlayAnim*`.
+    std::uint8_t anim_active = 0;
+    std::uint32_t anim_color_start = 0;
+    float anim_alpha_start = 1.0f;
+    std::uint32_t anim_highlight_color_start = 0;
+    float anim_highlight_alpha_start = 1.0f;
+    wse::core::WseVec2 anim_size_start{1.0f, 1.0f};
+    wse::core::WseVec2 anim_position_start{};
+    // Seconds since each animation started: colour, alpha, highlight colour, highlight
+    // alpha, size, position (the `kOverlayAnim*` bit order).
+    std::array<float, 6> anim_elapsed{};
 };
 
 struct WseMissionCameraState {

@@ -1243,6 +1243,166 @@ void test_overlay_button_boxes() {
            "overlay_set_size gives a game button its box and keeps its text size");
 }
 
+// Overlay animation (`overlay_animate_to_*` 932..937 via `animate_overlays`), text boxes
+// (`rglTextBoxWidget`, create 917) and game-button mesh boxes (`sync_overlays_from_world`).
+void test_overlay_animation_textbox_gamebutton() {
+    // 1. Colour and alpha animation: 0.5 s of a 1 s channel, then the rest of it.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay o{};
+        o.type = 1;
+        o.position = {0.4f, 0.4f};
+        o.m5.area_size = {0.2f, 0.1f};
+        o.color = 0x000000u;
+        o.alpha = 0.0f;
+        const std::int32_t id = rig.add(o);
+        wse::game::WseOverlayM5Ext& m = rig.ov(id).m5;
+        m.anim_color = 0xFF8040u;
+        m.anim_color_duration = 1.0f;
+        m.anim_color_start = 0x000000u;
+        m.anim_alpha = 1.0f;
+        m.anim_alpha_duration = 1.0f;
+        m.anim_alpha_start = 0.0f;
+        m.anim_active = static_cast<std::uint8_t>(wse::game::kOverlayAnimColor | wse::game::kOverlayAnimAlpha);
+        m.anim_elapsed = {};
+
+        rig.session.step_presentation(rig.ctx.world, rig.ctx, 0.5f, rig.prs);
+        expect(rig.ov(id).color == 0x7F4020u,
+               "colour at 0.5 s of 1 s, black to 0xFF8040: round half up gives 0x7F4020");
+        expect(close(rig.ov(id).alpha, 127.0f / 255.0f),
+               "alpha at 0.5 s of 1 s, 0 to 1: 127/255 (fraction exactly 0.5 does not round up)");
+        expect(rig.ov(id).m5.anim_active != 0U, "colour and alpha channels still running at 0.5 s");
+
+        rig.session.step_presentation(rig.ctx.world, rig.ctx, 0.6f, rig.prs);
+        expect(rig.ov(id).color == 0xFF8040u && close(rig.ov(id).alpha, 1.0f) &&
+                   rig.ov(id).m5.anim_active == 0U,
+               "past the duration the exact target is set and the anim_active bits are cleared");
+    }
+
+    // 1b. Size and position: 1 s of a 2 s channel.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay o{};
+        o.type = 1;
+        o.position = {0.1f, 0.1f};
+        o.m5.area_size = {0.2f, 0.1f};
+        const std::int32_t id = rig.add(o);
+        wse::game::WseOverlayM5Ext& m = rig.ov(id).m5;
+        m.anim_size_start = {1.0f, 1.0f};
+        m.anim_size = {3.0f, 1.0f};
+        m.anim_size_duration = 2.0f;
+        m.anim_position_start = {0.0f, 0.0f};
+        m.anim_position = {4.0f, 2.0f};
+        m.anim_position_duration = 2.0f;
+        m.anim_active = static_cast<std::uint8_t>(wse::game::kOverlayAnimSize | wse::game::kOverlayAnimPosition);
+        m.size_set = false;
+
+        rig.session.step_presentation(rig.ctx.world, rig.ctx, 1.0f, rig.prs);
+        const wse::game::WsePresentationOverlay& after = rig.ov(id);
+        expect(close(after.size.x, 2.0f) && close(after.size.y, 1.0f) && after.m5.size_set,
+               "size at 1 s of 2 s, (1,1) to (3,1): (2,1) and size_set");
+        expect(close(after.position.x, 2.0f) && close(after.position.y, 1.0f),
+               "position at 1 s of 2 s, (0,0) to (4,2): (2,1)");
+    }
+
+    // 2. Text box: typing, backspace, commit by Enter / Escape / outside press.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay tb{};
+        tb.type = 6;
+        tb.position = {0.3f, 0.3f};
+        tb.m5.area_size = {0.2f, 0.05f};
+        tb.m5.create_opcode = 917;
+        const std::int32_t t = rig.add(tb);
+        const std::int32_t b = rig.add(box_button(0.6f, 0.6f, 0.2f, 0.05f));
+        const auto typed = [&rig](std::u16string s) {
+            wse::game::UiPointerInput in{};
+            in.text_input = std::move(s);
+            return rig.send(in);
+        };
+
+        rig.press(0.4f, 0.32f);
+        expect(rig.ov(t).m5.focused && rig.ctx.world.m5.focused_overlay_no == t,
+               "a left press inside a text box focuses it");
+        rig.release(0.4f, 0.32f);
+        rig.reset_regs();
+        typed(u"ab<c");
+        expect(rig.ov(t).text == u"abc" && rig.n62() == 0,
+               "typed characters are added, '<' and '>' are rejected, and nothing commits");
+        typed(u"\b");
+        expect(rig.ov(t).text == u"ab", "backspace removes the last character");
+        typed(u"\r");
+        expect(rig.n62() == 1 && rig.ctx.registers[12] == t && rig.ctx.stringRegisters[0] == u"ab",
+               "Enter commits once: -62 fires and string register 0 holds the text");
+        expect(!rig.ov(t).m5.focused && rig.ctx.world.m5.focused_overlay_no == -1,
+               "commit clears the text box focus");
+
+        rig.press(0.4f, 0.32f);
+        rig.release(0.4f, 0.32f);
+        rig.reset_regs();
+        typed(u"x\x1b");
+        expect(rig.n62() == 1 && rig.ctx.stringRegisters[0] == u"abx" && !rig.ov(t).m5.focused,
+               "Escape commits the text (typed 'x' before it is kept)");
+
+        rig.press(0.4f, 0.32f);
+        rig.release(0.4f, 0.32f);
+        typed(u"z");
+        rig.reset_regs();
+        const auto pe = rig.press(0.65f, 0.61f);  // over the button, outside the text box
+        expect(rig.n62() == 1 && rig.ctx.registers[12] == t && rig.ctx.stringRegisters[0] == u"abxz" &&
+                   rig.ctx.world.m5.focused_overlay_no == -1,
+               "a left press outside the box commits it once");
+        expect(rig.n64() == 1 && rig.ctx.registers[16] == t && rig.ctx.registers[16] != b,
+               "the outside press reaches only the text box with -64, not the button under it");
+        rig.reset_regs();
+        const auto re = rig.release(0.65f, 0.61f);
+        expect(pe.empty() && re.empty() && rig.n62() == 0 && rig.n64() == 0,
+               "the button is not armed by that press, so its release fires nothing");
+    }
+
+    // 3. Game button mesh rectangles (`sync_overlays_from_world`, opcodes 940 / 941).
+    {
+        OverlayRig rig;
+        rig.session.mesh_bounds["medium_button"] = wse::game::UiMeshBounds{0.0f, 0.0f, 0.3f, 0.09f};
+        wse::game::WsePresentationOverlay g{};
+        g.type = 1;
+        g.text = u"Go";
+        g.m5.is_button = true;
+        g.m5.button_opcode = 940;
+        const std::int32_t gid = rig.add(g);
+        const std::string gid_str = "overlay_" + std::to_string(gid);
+        const auto* w = find_widget(rig.session.root, gid_str);
+        expect(w != nullptr && w->has_mesh_rect && close(w->mesh_size.x, 0.3f * 5.0f / 9.0f) &&
+                   close(w->mesh_size.y, 0.09f * 5.0f / 9.0f),
+               "940 without size_set: mesh rect is the medium_button bounds times 5/9");
+        expect(w != nullptr && close(w->size.x, wse::game::kUiGameButtonWidth) &&
+                   close(w->size.y, wse::game::kUiGameButtonHeight),
+               "940 without an area: box is kUiGameButtonWidth x kUiGameButtonHeight");
+
+        rig.ov(gid).size = {0.296f, 0.08f};
+        rig.ov(gid).m5.size_set = true;
+        rig.session.sync_overlays_from_world(rig.ctx.world);
+        w = find_widget(rig.session.root, gid_str);
+        expect(w != nullptr && close(w->mesh_size.x, 2.0f * 0.3f * 5.0f / 9.0f) &&
+                   close(w->mesh_size.y, 2.0f * 0.09f * 5.0f / 9.0f),
+               "940 with size_set = (0.296, 0.08): mesh rect doubles with the 2x scale");
+    }
+    {
+        OverlayRig rig;
+        rig.session.mesh_bounds["mp_inventory_button"] = wse::game::UiMeshBounds{0.0f, 0.0f, 0.4f, 0.05f};
+        wse::game::WsePresentationOverlay g{};
+        g.type = 1;
+        g.text = u"Inv";
+        g.m5.is_button = true;
+        g.m5.button_opcode = 941;
+        const std::int32_t gid = rig.add(g);
+        const auto* w = find_widget(rig.session.root, "overlay_" + std::to_string(gid));
+        expect(w != nullptr && w->has_mesh_rect && close(w->mesh_size.x, 0.4f) &&
+                   close(w->mesh_size.y, 0.05f),
+               "941 without size_set: mesh rect is the mp_inventory_button bounds at scale 1");
+    }
+}
+
 void test_synthetic_ui_rhi_render_and_uv_orientation() {
     // 16x16 font atlas: glyph 'A' covers x=[0..8), y=[0..16), top half red, bottom half blue
     // in top-down DDS/RGBA8 coordinates (row 0..7 red, row 8..15 blue).
@@ -1449,6 +1609,124 @@ void test_synthetic_ui_rhi_render_and_uv_orientation() {
     root.children[0].color_argb = 0xFFFFFFFFU;
 }
 
+// Campaign menu window 0x12 (`drive_frame` menu path), text-button re-measure at 912 when the
+// overlay's measure scale changes, and `UiRhiRenderer` dynamic buffer reuse across frames.
+void test_batch_menu_remeasure_and_ui_buffers() {
+    // 1. Menu window 0x12 built from `jump_menu_no`, rebuilt only on a new queued 0x12.
+    auto ctx_ptr = std::make_unique<wse::vm::VmContext>();
+    wse::vm::VmContext& ctx = *ctx_ptr;
+    ctx.world.lighting.has_scene = false;
+    std::array<wse::game::LoadedMenu, 2> menus{};
+    for (std::size_t i = 0; i < menus.size(); ++i) {
+        menus[i].id = "menu_" + std::to_string(i);
+        wse::game::LoadedMenuOption opt{};
+        opt.id = "opt";
+        opt.text = "Option " + std::to_string(i);
+        menus[i].options.push_back(opt);
+    }
+    wse::game::UiSession session{};
+    auto open_menu = [&](std::int32_t menu_no) {
+        ctx.world.jump_menu_no = menu_no;
+        ctx.world.enqueue_window(wse::game::kQueuedWindowMenuType);
+        (void)ctx.world.consume_campaign_queued_window();
+        return session.drive_frame(ctx.world, ctx, 0.016f, {}, wse::game::kScreenWindowMap, menus);
+    };
+
+    const auto first = open_menu(1);
+    expect(first.opened_menu && session.current_window == wse::game::kScreenWindowMenu &&
+               session.current_menu_index == 1 && ctx.world.ui.current_menu_no == 1,
+           "queued 0x12 builds menu 1 from jump_menu_no");
+    const auto idle = session.drive_frame(ctx.world, ctx, 0.016f, {}, wse::game::kScreenWindowMap,
+                                          menus);
+    expect(!idle.opened_menu && session.current_menu_index == 1,
+           "drive_frame without a new queued 0x12 does not reopen the menu");
+    const auto second = open_menu(0);
+    expect(second.opened_menu && session.current_menu_index == 0 &&
+               ctx.world.ui.current_menu_no == 0,
+           "jumping to menu 0 rebuilds the menu with current_menu_index 0");
+    const auto out_of_range = open_menu(5);
+    expect(!out_of_range.opened_menu,
+           "an out-of-range jump_menu_no builds nothing");
+
+    // Shared synthetic bitmap font for checks 2 and 3 (same XML as the button-box test).
+    wse::asset::FontData font;
+    expect(font.parse_xml(
+               "<FontData width=\"256\" height=\"256\" padding=\"10\" font_size=\"64\" "
+               "font_scale=\"100\" line_spacing=\"100\"><FontDetails>"
+               "<character code=\"65\" u=\"60\" v=\"20\" w=\"104\" h=\"76\" preshift=\"2\" "
+               "yadjust=\"48\" postshift=\"40\"/>"
+               "<character code=\"72\" u=\"120\" v=\"20\" w=\"164\" h=\"76\" preshift=\"2\" "
+               "yadjust=\"48\" postshift=\"40\"/>"
+               "</FontDetails></FontData>"),
+           "synthetic re-measure font parses");
+
+    // 2. Text button (912) box follows text_measure_scale after sync_overlays_from_world.
+    {
+        auto world_ptr = std::make_unique<wse::vm::VmContext>();
+        wse::game::WseWorldState& world = world_ptr->world;
+        world.active_presentation_no = 0;
+        wse::game::WsePresentationOverlay ov{};
+        ov.type = 1;
+        ov.m5.is_button = true;
+        ov.m5.button_opcode = 912;
+        ov.m5.create_opcode = 912;
+        ov.text = u"Hello";
+        world.overlays.push_back(ov);
+
+        wse::game::UiSession ui{};
+        ui.current_window = wse::game::kScreenWindowPresentation;
+        ui.font = &font;
+        ui.sync_overlays_from_world(world);
+        const auto* w1 = find_widget(ui.root, "overlay_0");
+        const float width_1x = (w1 != nullptr) ? w1->size.x : 0.0f;
+
+        world.overlays[0].m5.text_measure_scale = {2.0f, 2.0f};
+        ui.sync_overlays_from_world(world);
+        const auto* w2 = find_widget(ui.root, "overlay_0");
+        const float width_2x = (w2 != nullptr) ? w2->size.x : 0.0f;
+        expect(width_1x > 0.0f && std::fabs(width_2x - 2.0f * width_1x) <= 0.1f * 2.0f * width_1x,
+               "912 button box width doubles (within 10%) when text_measure_scale is 2x");
+    }
+
+    // 3. UiRhiRenderer keeps the same dynamic VB/IB handles across identical frames.
+    {
+        wse::platform::SoftwareRhiDevice rhi{};
+        wse::platform::UiRhiRenderer renderer(rhi);
+        std::string err;
+        expect(renderer.init(nullptr, &err), "dynamic-buffer renderer init succeeds");
+        std::vector<std::uint8_t> font_tex(16U * 16U * 4U, 0xFFU);
+        expect(renderer.upload_texture("font", 16, 16, font_tex), "upload font atlas for buffer test");
+
+        wse::game::UiWidget root{};
+        root.id = "root";
+        root.kind = wse::game::UiWidgetKind::Container;
+        root.size = {1.0f, 0.75f};
+        wse::game::UiWidget btn{};
+        btn.id = "btn";
+        btn.kind = wse::game::UiWidgetKind::SimpleButton;
+        btn.pos = {0.10f, 0.20f};
+        btn.size = {0.30f, 0.35f};
+        btn.text = "A";
+        btn.text_scale = {0.25f, 0.25f};
+        btn.text_flags = wse::asset::kTextFlagCenterAlign;
+        btn.text_color_argb = 0xFFFFFFFFU;
+        root.children.push_back(btn);
+
+        wse::platform::UiRenderConfig cfg{};
+        cfg.viewport_width = 100;
+        cfg.viewport_height = 75;
+        std::vector<std::uint8_t> fb_a, fb_b;
+        expect(renderer.render_tree(root, font, cfg, fb_a), "first buffer-test frame renders");
+        const auto vb_a = renderer.dynamic_vertex_buffer();
+        const auto ib_a = renderer.dynamic_index_buffer();
+        expect(renderer.render_tree(root, font, cfg, fb_b), "second buffer-test frame renders");
+        const auto vb_b = renderer.dynamic_vertex_buffer();
+        const auto ib_b = renderer.dynamic_index_buffer();
+        expect(vb_a != 0U && ib_a != 0U && vb_a == vb_b && ib_a == ib_b && fb_a == fb_b,
+               "UiRhiRenderer reuses its dynamic VB/IB across identical frames");
+    }
+}
+
 void test_retail_warband_native_main_menu() {
     const std::string root = find_retail_warband_root();
     if (root.empty()) {
@@ -1554,8 +1832,10 @@ int run_ui_suite(const char* fixture_path) {
     test_overlay_containers_and_dispatch_stop();
     test_ui_session_drive_frame();
     test_overlay_button_boxes();
+    test_overlay_animation_textbox_gamebutton();
     test_synthetic_ui_rhi_render_and_uv_orientation();
     test_retail_warband_native_main_menu();
+    test_batch_menu_remeasure_and_ui_buffers();
 
     if (g_failures == 0) {
         std::printf("ui tests: PASS\n");

@@ -71,6 +71,7 @@ struct HeadlessRunReport {
     std::size_t party_count = 0;
     std::size_t presentations_opened = 0;
     std::size_t notes_opened = 0;
+    std::size_t menus_opened = 0;
     std::int32_t final_window = -1;  // `world.m5.active_window` after the last frame
 };
 
@@ -269,9 +270,10 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
         if (ui != nullptr && options.drive_ui) {
             const UiSession::FrameReport ui_rep =
                 ui->drive_frame(ctx.world, ctx, static_cast<float>(frame_seconds),
-                                bundle.presentations, window_before);
+                                bundle.presentations, window_before, bundle.menus);
             report.presentations_opened += ui_rep.opened_presentation ? 1U : 0U;
             report.notes_opened += ui_rep.opened_notes ? 1U : 0U;
+            report.menus_opened += ui_rep.opened_menu ? 1U : 0U;
         }
         report.triggers_ok = report.triggers_ok && trig_ok;
         report.simple_triggers_ok = report.simple_triggers_ok && strig_ok;

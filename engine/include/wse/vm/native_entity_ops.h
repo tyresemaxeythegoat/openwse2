@@ -350,8 +350,11 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
     case 920: { // overlay_set_text (0x1401cc511)
         const std::uint8_t tag1 = wse_tag_at(tags, 1);
         if (world.is_valid_overlay(narrow[0]) && wse_string_register_ok(narrow[1], tag1, banks)) {
-            world.overlays[static_cast<std::size_t>(narrow[0])].text =
-                native_resolve_and_parse(narrow[1], tag1, ctx);
+            auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
+            ov.text = native_resolve_and_parse(narrow[1], tag1, ctx);
+            // `setOverlayText` (`0x14020df90`) -> `rglWidget::setText` (`0x14031e330`), which
+            // re-measures a 912 button box at the current text size.
+            ov.m5.text_measure_scale = ov.size;
         }
         return NativeDispatch::handled;
     }

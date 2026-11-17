@@ -215,6 +215,9 @@ public:
                                              std::span<const std::uint8_t> data,
                                              std::string* error_out = nullptr) override;
     void destroy_buffer(BufferHandle handle) override;
+    [[nodiscard]] bool update_buffer(BufferHandle handle,
+                                     std::span<const std::uint8_t> data,
+                                     std::string* error_out = nullptr) override;
 
     [[nodiscard]] TextureHandle create_texture_rgba8(
         std::uint32_t width,
@@ -248,6 +251,8 @@ private:
     struct VkRef {
         std::uint64_t handle = 0;
         std::uint64_t generation = 0;  // loader device generation at creation
+        std::size_t bytes = 0;         // buffers: VkBuffer size
+        BufferUsage usage = BufferUsage::vertex;  // buffers only
     };
     std::unordered_map<BufferHandle, VkRef> vk_buffers_{};
     std::unordered_map<TextureHandle, VkRef> vk_textures_{};

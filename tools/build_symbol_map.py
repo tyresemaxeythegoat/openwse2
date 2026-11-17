@@ -158,6 +158,7 @@ SYMBOL_TOKENS = [
     "@rglComboButtonWidget@@",
     "@rglScrollableWidget@@",
     "@rglWindowManager@@",
+    "@rglTextBoxWidget@@",
     "mbSentence",
     "mbFloraKind",
     "mbGroundSpec",

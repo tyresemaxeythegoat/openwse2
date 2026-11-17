@@ -832,6 +832,9 @@ struct WseM6UiExt {
     // `presentation_set_duration 0` + `start_presentation <self>`) from no request at all
     // (port bookkeeping, not a retail field).
     std::uint32_t presentation_start_serial = 0U;
+    // Bumped each time `consume_campaign_queued_window` opens menu window `0x12`, so the UI
+    // rebuilds the menu even when a menu jumps to a menu (port bookkeeping).
+    std::uint32_t menu_open_serial = 0U;
     std::vector<std::int32_t> active_presentations{};
     std::unordered_map<std::int32_t, WseM6OverlayExt> overlay_ext{};
     std::unordered_map<std::int32_t, WseM6DynamicMenu> menus{};

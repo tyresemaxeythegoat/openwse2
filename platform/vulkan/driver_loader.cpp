@@ -1894,9 +1894,35 @@ BufferHandle VulkanRhiDevice::create_buffer(BufferUsage usage,
         return 0;
     }
     if (vk_h != 0) {
-        vk_buffers_.emplace(h, VkRef{vk_h, loader_->device_generation()});
+        vk_buffers_.emplace(h, VkRef{vk_h, loader_->device_generation(), data.size(), usage});
     }
     return h;
+}
+
+bool VulkanRhiDevice::update_buffer(BufferHandle handle,
+                                    std::span<const std::uint8_t> data,
+                                    std::string* error_out) {
+    if (!loader_ || !loader_->has_device()) {
+        if (error_out != nullptr) {
+            *error_out = "VulkanRhiDevice requires an initialized VulkanDriverLoader device";
+        }
+        return false;
+    }
+    // Grow the mirrored VkBuffer first so a failure leaves the buffer untouched.
+    const auto it = vk_buffers_.find(handle);
+    if (it != vk_buffers_.end() && data.size() > it->second.bytes) {
+        std::uint64_t vk_h = 0;
+        if (!loader_->create_vk_buffer(data.size(), it->second.usage, vk_h, error_out)) {
+            return false;
+        }
+        loader_->destroy_vk_buffer(it->second.handle, it->second.generation);
+        if (vk_h == 0) {
+            vk_buffers_.erase(it);
+        } else {
+            it->second = VkRef{vk_h, loader_->device_generation(), data.size(), it->second.usage};
+        }
+    }
+    return rasterizer_.update_buffer(handle, data, error_out);
 }
 
 void VulkanRhiDevice::destroy_buffer(BufferHandle handle) {
@@ -1930,7 +1956,7 @@ TextureHandle VulkanRhiDevice::create_texture_rgba8(std::uint32_t width,
         return 0;
     }
     if (vk_h != 0) {
-        vk_textures_.emplace(h, VkRef{vk_h, loader_->device_generation()});
+        vk_textures_.emplace(h, VkRef{vk_h, loader_->device_generation(), 0U, BufferUsage::vertex});
     }
     return h;
 }
@@ -1964,7 +1990,7 @@ ShaderModuleHandle VulkanRhiDevice::create_shader_module(const ShaderModuleDesc&
         return 0;
     }
     if (vk_h != 0) {
-        vk_shader_modules_.emplace(h, VkRef{vk_h, loader_->device_generation()});
+        vk_shader_modules_.emplace(h, VkRef{vk_h, loader_->device_generation(), 0U, BufferUsage::vertex});
     }
     return h;
 }
