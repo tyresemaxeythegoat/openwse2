@@ -1328,9 +1328,9 @@ private:
         // positive odd event keys abort the remaining triggers once a type-0x12 window (`mbMenuWindow`,
         // enqueued by `jump_to_menu` `0x1401dc2b1`) sits at the back of `enqueued_windows`.
         // Campaign frames consume and pop it via `WseWorldState::consume_campaign_queued_window`
-        // (matching `mbMapWindow::frameMove` `0x140118987` + `mbMenuWindow::open` `0x1401202e0`).
+        // (`mbMapWindow::frameMove` `0x140117f90` + `mbMenuWindow::open` `0x140120240`).
         if (eventKey > 0 && (eventKey & 1) != 0 && !ctx.world.m5.enqueued_windows.empty() &&
-            ctx.world.m5.enqueued_windows.back().first == game::kQueuedWindowSaveExitBreakType) {
+            ctx.world.m5.enqueued_windows.back().first == game::kQueuedWindowMenuType) {
             break;
         }
     }

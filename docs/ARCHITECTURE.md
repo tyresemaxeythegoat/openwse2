@@ -463,7 +463,7 @@ latch `timer.value = now`. Execute the single block; the return value is ignored
 `mbSimpleTriggerManager::execute` (`0x1402101a0`) aborts its loop when `key > 0` is odd and a
 type-`0x12` queued window is at the back of `mbGame` `+0x04b0` (`0x1402101d2..0x1402101f7`);
 reconstructed in `wse/vm/block_vm.h` (`execute_simple_trigger_manager`) checking
-`ctx.world.m5.enqueued_windows.back().first == game::kQueuedWindowSaveExitBreakType` (`0x12`).
+`ctx.world.m5.enqueued_windows.back().first == game::kQueuedWindowMenuType` (`0x12`).
 
 ### Trigger savegames
 
@@ -609,6 +609,21 @@ Verified in [SYMBOL_MAP.json](SYMBOL_MAP.json) and modeled in [world_state.h](..
 | `rglMesh` | 872 (`0x0368`) | `0x68 m_materialName : rglString`, `0xc0 m_materialColor : uint32_t`, `0xd8 m_faceCorners` (`rglMeshFaceCorner` `68 B`), `0x128 m_vertices` (`rglMeshVertex` `24 B`), `0x140 m_vertexGroups` (`rglMeshVertexGroup` `32 B`), `0x158 m_faces` (`rglMeshFace` `6 B`), `0x1a8 m_vertexKeys` (`rglMeshVertexKey` `48 B`); stream reader `0x1402b84b0` ([brf.h](../engine/include/wse/asset/brf.h)) |
 | `rglMetaMesh` | 344 (`0x0158`) | `0x48 m_lods : rglMetaMeshLod[...]` (`rglMetaMeshLod` `24 B`), `0xc0 m_numLods : int32_t`, `0x110 m_meshName : rglString`; grouped by `createMetaMesh` (`0x1402f29a0`, `.lod[1-4]`) ([brf.h](../engine/include/wse/asset/brf.h)) |
 | `mbMission` | 346,704 (`0x54a50`) | `0x98d8 m_teams : mbTeam[512]` (opcodes validate teams `0..7`), `0xa4f4 m_waterLevel : float`, `0x54a40` use-objects tooltip flags ([world_state.h](../engine/include/wse/game/world_state.h)) |
+
+### Entity container lifetimes (Phase 2E)
+
+Retail functions the containers in [world_state.h](../engine/include/wse/game/world_state.h) follow
+(entry VAs, all curated in [SYMBOL_MAP.json](SYMBOL_MAP.json)):
+
+| Container | Allocate | Remove | Notes |
+| --- | --- | --- | --- |
+| `rglHashVector<mbParty>` | `getFreeItem` `0x1400e8730` | `mbGame::removeParty` `0x1400dd990` | Monotonic keys; removed parties stay as tombstones |
+| `rglStableVector<mbAgent>` | `createItem` `0x14014b960` | `remove` `0x14014b810`, `mbMission::removeAgent` `0x140138590` | LIFO slot reuse, trailing slots trimmed; fade-out removal checked in `mbAgent::frameMove` `0x14002a220` |
+| `rglStableVector<mbMissionObject>` | `createItem` `0x14014c030` | `remove` `0x14014bdc0`, `mbMission::removeMissionObject` `0x140132ba0` | LIFO slot reuse, trailing slots trimmed |
+| `mbnetPlayer` roster | `create` `0x1401b8980` | `clear` `0x1401b7580`, `mbnetData::disconnectPlayer` `0x14017c650` | Fixed capacity (`kMaxPlayers` 250) |
+
+The campaign window queue is consumed by `mbMapWindow::frameMove` (`0x140117f90`); type `0x12`
+opens `mbMenuWindow` (`open` `0x140120240`), which clears the rest of the queue.
 
 ## 5. Module/script entry points
 
@@ -925,8 +940,8 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    event keys when the queued-window stack (`g_game` `0x14061f070` `+0x04b0`) back entry has type
    `0x12` (`mbMenuWindow`, enqueued by `jump_to_menu` `0x1401dc2b1`); wired into
    `execute_simple_trigger_manager` (`wse/vm/block_vm.h`), `native_mission_ops.h`, and
-   `WseWorldState::consume_campaign_queued_window` (`mbMapWindow::frameMove` `0x140118987` +
-   `mbMenuWindow::open` `0x1401202e0`) in `headless_runner.h`.
+   `WseWorldState::consume_campaign_queued_window` (`mbMapWindow::frameMove` `0x140117f90`, pop at
+   `0x140118987`; `mbMenuWindow::open` `0x140120240`), run from `step_world_frame` on campaign frames.
 3. ~~Locate `gameOperation` table construction in `WSELuaManager`.~~ **Resolved (2F):** Disassembly of
    `WSELuaManager::initialize` (`0x14033ca80`), `loadOperations` (`0x14033dff0`), `loadGameConstants`
    (`0x14033f630`), `loadGlobalVars` (`0x14033f400`), `initLGameTable` (`0x140340920`), `doMainScript`

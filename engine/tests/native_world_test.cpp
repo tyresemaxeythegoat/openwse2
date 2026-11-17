@@ -761,6 +761,24 @@ void test_m4_review_regressions() {
                    w.parties[0].player_no == -1,
                "kick_player clears scores/items/slots/name/team and unlinks agent & party");
     }
+
+    // Review regression (e6c4d0e): saved ban info outlives the player's connection, so a ban
+    // poll that ends after the player was kicked still bans them.
+    {
+        VmContext bctx;
+        auto& w = bctx.world;
+        w.is_server = true;
+        w.init_players(4);
+        expect(w.connect_player(2, "Griefer", 9001, 0), "connect_player activates slot 2");
+        expect(run_stmt(bctx, 467U, {2}) && w.mp.saved_ban.valid,
+               "467 save_ban_info_of_player stores the record");
+        expect(run_stmt(bctx, 465U, {2}) && !w.is_valid_player(2) && w.mp.saved_ban.valid,
+               "465 kick_player keeps the saved ban record");
+        const std::size_t bans_before = w.mp.banned_players.size();
+        expect(run_stmt(bctx, 468U, {}) && w.mp.banned_players.size() == bans_before + 1U &&
+                   w.mp.banned_players.back().unique_id == 9001 && !w.mp.saved_ban.valid,
+               "468 ban_player_using_saved_ban_info bans the kicked player");
+    }
 }
 
 }  // namespace

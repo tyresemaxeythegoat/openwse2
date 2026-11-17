@@ -941,8 +941,11 @@ void test_savegame_transactional_and_hostile_input() {
     }
     expect(patched, "record-present flag 2 is reported as corrupt_record");
 
-    // Mismatched header version (`1136` header stamped onto a `1174` body) fails body parsing cleanly
-    // without mutating live world state; valid pre-1174 encoded saves across `[802..1174]` load cleanly.
+    // Mismatched header version (`1136` header stamped onto a `1174` body). The reader cannot detect
+    // the mismatch itself (the header is the only version source, as in retail); this fixture fails
+    // only because skipping the combat options shifts every later field until a count runs past the
+    // end. Pin that exact outcome so a misparse that "succeeds" is caught, and check the live world
+    // is untouched. Valid pre-1174 encoded saves across `[802..1174]` load cleanly below.
     std::vector<std::byte> legacy = good;
     const std::int32_t v1136 = 1136;
     std::memcpy(legacy.data() + 4, &v1136, sizeof(v1136));
@@ -951,7 +954,7 @@ void test_savegame_transactional_and_hostile_input() {
     SavegameRuntimeContext lrc{};
     lrc.world = &lw;
     const SavegameLoadReport lrep = read_savegame_container(legacy, lrc);
-    expect(!lrep.succeeded() &&
+    expect(lrep.status == SavegameContainerResult::truncated &&
                lrep.header.savegame_version == 1136 && lw.campaign_time == 5,
            "header-mismatched 1174 body stamped as 1136 fails cleanly without mutating live world");
 
@@ -999,8 +1002,9 @@ void test_savegame_transactional_and_hostile_input() {
                    (expect_extra ? vdst.parties[0].extra_icon_no == 7
                                  : vdst.parties[0].extra_icon_no == -1) &&
                    (expect_combat ? vdst.combat_damage_to_self == 2
-                                  : vdst.combat_damage_to_self == 0),
-               "pre-1174 versioned savegame body round-trips with exact retail field gates");
+                                  : vdst.combat_damage_to_self == 9),
+               "pre-1174 versioned savegame body round-trips with exact retail field gates "
+               "(bodies <= 1136 keep the live combat options)");
     }
 
     WseWorldState vbad = make_small_world();

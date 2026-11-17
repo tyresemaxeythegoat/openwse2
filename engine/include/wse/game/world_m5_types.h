@@ -121,6 +121,9 @@ struct WsePlayerM5Ext {
 
 struct WseMissionObjectM5Ext {
     bool is_spawned_item = false;
+    // Set by `WseWorldState::allocate_mission_object` (spawn_item / spawn_scene_prop); false for
+    // props placed by the scene, which `multiplayer_clear_scene` (416) must keep.
+    bool spawned_at_runtime = false;
     float prune_time = 0.0f;
     bool enable_pruning = false;
     bool collision_enabled = true;

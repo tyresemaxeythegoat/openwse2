@@ -1122,7 +1122,9 @@ template <typename T>
 
 // Mirrors rglStableVector<T>::remove (`0x14014b810` mbAgent / `0x14014bdc0` mbMissionObject):
 // resets the deactivated slot, shrinks trailing inactive capacity to the new high-water
-// mark, and records interior holes on the LIFO free list.
+// mark, and records interior holes on the LIFO free list. The free list is not scanned for
+// duplicates (that made mass removal O(n^2)): a slot is pushed only on an active->inactive
+// transition, and `allocate_stable_entry` skips any stale entry whose slot is active again.
 template <typename T>
 inline bool release_stable_entry(std::vector<T>& vec,
                                  std::vector<std::int32_t>& free_slots,
@@ -1144,7 +1146,7 @@ inline bool release_stable_entry(std::vector<T>& vec,
         std::erase_if(free_slots, [new_limit](std::int32_t slot) noexcept {
             return slot < 0 || slot >= new_limit;
         });
-    } else if (std::find(free_slots.begin(), free_slots.end(), id) == free_slots.end()) {
+    } else {
         free_slots.push_back(id);
     }
     return true;
@@ -1220,7 +1222,6 @@ struct WseWorldState {
     std::vector<WseMissionObject> mission_objects{};
     std::vector<std::int32_t> agent_free_slots{};           // rglStableVector<mbAgent> LIFO pool
     std::vector<std::int32_t> mission_object_free_slots{};  // rglStableVector<mbMissionObject> LIFO pool
-    std::int32_t num_parties_created = 0;                   // rglHashVector<mbParty> monotonic ID count
     std::vector<WseMissionTemplate> mission_templates{};
     std::vector<WsePresentationOverlay> overlays{};
     std::vector<WseMultiplayerMessage> multiplayer_messages{};
@@ -1415,8 +1416,11 @@ struct WseWorldState {
         return id >= 0 && static_cast<std::size_t>(id) < mp.profiles.size();
     }
 
-    // Consumes the top queued campaign window transition (`mbMapWindow::frameMove` `0x140118987`
-    // and `mbMenuWindow::open` `0x1401202e0`, which clears any remaining queue entries on 0x12).
+    // Consumes the top queued campaign window transition (`mbMapWindow::frameMove`
+    // `0x140117f90`, pop at `0x140118987`; `mbMenuWindow::open` `0x140120240`, which clears any
+    // remaining queue entries once type 0x12 opens). Only the campaign map runs this consumer,
+    // so `step_world_frame` skips it while a mission scene is up. The pop order (back entry)
+    // and the link to `m6.ui.active_window_id` are not yet confirmed (STATUS.md §5).
     std::int32_t consume_campaign_queued_window() noexcept {
         if (m5.enqueued_windows.empty()) {
             return -1;
@@ -1430,20 +1434,13 @@ struct WseWorldState {
         return win_type;
     }
 
-    void sync_party_creation_count() noexcept {
-        const auto count = static_cast<std::int32_t>(parties.size());
-        if (num_parties_created < count) {
-            num_parties_created = count;
-        }
-    }
-
     // Allocates a fresh party with monotonic script ID (mirrors rglHashVector<mbParty>::getFreeItem
-    // `0x1400e8730` monotonic `+0x138f0` key allocation: removed party handles are never reused).
+    // `0x1400e8730` monotonic key allocation). `parties` never shrinks while a game runs (removed
+    // parties stay as tombstones), so `parties.size()` is the next key and handles are never reused.
     [[nodiscard]] std::int32_t allocate_party(WseParty party) {
         party.active = true;
         const auto new_id = static_cast<std::int32_t>(parties.size());
         parties.push_back(std::move(party));
-        sync_party_creation_count();
         return new_id;
     }
 
@@ -1463,10 +1460,29 @@ struct WseWorldState {
         return true;
     }
 
+    // True when `ancestor_no` is `party_no` or lies on its `attached_to_party_no` chain.
+    // The walk is bounded by `parties.size()` so a pre-existing cycle cannot hang it.
+    [[nodiscard]] bool party_is_attached_under(std::int32_t party_no,
+                                               std::int32_t ancestor_no) const noexcept {
+        std::int32_t cur = party_no;
+        for (std::size_t steps = 0; steps <= parties.size(); ++steps) {
+            if (cur == ancestor_no) {
+                return true;
+            }
+            if (cur < 0 || static_cast<std::size_t>(cur) >= parties.size()) {
+                return false;
+            }
+            cur = parties[static_cast<std::size_t>(cur)].attached_to_party_no;
+        }
+        return false;
+    }
+
     // Attaches `party_no` to `target_no`, detaching any prior parent first.
+    // Safety deviation: refuses an attachment that would close a cycle (`target_no` already
+    // attached under `party_no`), so attachment walks always terminate.
     bool attach_party(std::int32_t party_no, std::int32_t target_no) {
         if (!is_valid_party(party_no) || !is_valid_party(target_no) ||
-            party_no == target_no) {
+            party_is_attached_under(target_no, party_no)) {
             return false;
         }
         (void)detach_party(party_no);
@@ -1480,12 +1496,15 @@ struct WseWorldState {
         return true;
     }
 
-    // Full retail party teardown matching `mbGame::removeParty` (`0x1400dd990`): detaches
-    // parent/child links, increments template `num_destroyed`, clears AI behavior targets,
-    // unlinks agent/player/world references, marks `pf_disabled` (`0x100`), frees buffers, and
-    // keeps removed IDs as tombstones so script handles are never reused.
+    // Party teardown after `mbGame::removeParty` (`0x1400dd990`): detaches parent/child links,
+    // increments template `num_destroyed`, clears AI behavior targets, unlinks agent/player/world
+    // references, marks `pf_disabled` (`0x100`), frees buffers, and keeps removed IDs as
+    // tombstones so script handles are never reused.
+    // Safety deviation: the main party is never removed (returns false). Removing it left
+    // `main_party_no` at -1 and silently disabled every main-party path; whether retail allows
+    // it is open (STATUS.md §5).
     bool remove_party(std::int32_t party_no) {
-        if (!detach_party(party_no)) {
+        if (party_no == main_party_no || !detach_party(party_no)) {
             return false;
         }
         auto& p = parties[static_cast<std::size_t>(party_no)];
@@ -1524,11 +1543,11 @@ struct WseWorldState {
             }
         }
         p.player_no = -1;
-        if (main_party_no == party_no) {
-            main_party_no = -1;
-        }
         if (encountered_party_no == party_no) {
             encountered_party_no = -1;
+        }
+        if (encountered_party_2_no == party_no) {
+            encountered_party_2_no = -1;
         }
         if (camera_follow_party_no == party_no) {
             camera_follow_party_no = -1;
@@ -1550,45 +1569,66 @@ struct WseWorldState {
         return id;
     }
 
+    // Clears every world-held reference to agent `agent_no` (all of them when `agent_no` is -1).
+    // Agent slots are recycled, so a stale id would otherwise alias the next agent spawned in
+    // that slot (team leader, look/AI target, horse, camera target, conversation speaker, ...).
+    // `fx.missiles` (a spawn-event log) and `fx.trigger_agent_no` (current trigger parameter)
+    // are left alone.
+    void unlink_agent_references(std::int32_t agent_no) {
+        const auto matches = [agent_no](std::int32_t ref) noexcept {
+            return ref >= 0 && (agent_no < 0 || ref == agent_no);
+        };
+        const auto reset = [&matches](std::int32_t& ref) noexcept {
+            if (matches(ref)) {
+                ref = -1;
+            }
+        };
+        for (auto& other : agents) {
+            reset(other.horse_agent_no);
+            reset(other.rider_agent_no);
+            reset(other.m5.look_target_agent_no);
+            reset(other.m5.ai_move_target_agent_no);
+            reset(other.m5.ai_behavior_target_agent_no);
+            std::erase_if(other.m5.offers, [&matches](const WseAgentOffer& offer) noexcept {
+                return matches(offer.agent_no);
+            });
+            std::erase_if(other.m5.cached_enemies, matches);
+        }
+        for (auto& obj : mission_objects) {
+            reset(obj.parent_agent_no);
+        }
+        for (auto& team : teams) {
+            reset(team.leader_agent_no);
+            reset(team.order_listener);
+            for (auto& leader : team.division_leaders) {
+                reset(leader);
+            }
+        }
+        for (auto& pl : players) {
+            reset(pl.agent_no);
+        }
+        reset(player_agent_no);
+        reset(m6.scene.spectated_agent_no);
+        reset(m5.mission_camera.target_agent_no);
+        reset(dialog.speaker_agent_no);
+        reset(dialog.pending_mission_agent_no);
+    }
+
     // Full container removal matching `mbMission::removeAgent` (`0x140138590`) +
-    // `rglStableVector<mbAgent>::remove` (`0x14014b810`): unlinks rider/horse, player/world refs,
-    // clears M6 ext state, and recycles/trims the backing slot.
+    // `rglStableVector<mbAgent>::remove` (`0x14014b810`): unlinks every world reference
+    // (`unlink_agent_references`), clears M6 ext state, and recycles/trims the backing slot.
     bool remove_agent(std::int32_t agent_no) {
         if (!is_valid_agent(agent_no)) {
             return false;
         }
-        auto& ag = agents[static_cast<std::size_t>(agent_no)];
-        if (is_valid_agent(ag.horse_agent_no) && ag.horse_agent_no != agent_no) {
-            auto& horse = agents[static_cast<std::size_t>(ag.horse_agent_no)];
-            if (horse.rider_agent_no == agent_no) {
-                horse.rider_agent_no = -1;
-            }
-        }
-        if (is_valid_agent(ag.rider_agent_no) && ag.rider_agent_no != agent_no) {
-            auto& rider = agents[static_cast<std::size_t>(ag.rider_agent_no)];
-            if (rider.horse_agent_no == agent_no) {
-                rider.horse_agent_no = -1;
-            }
-        }
-        if (ag.player_no >= 0 &&
-            static_cast<std::size_t>(ag.player_no) < players.size()) {
-            auto& pl = players[static_cast<std::size_t>(ag.player_no)];
-            if (pl.agent_no == agent_no) {
-                pl.agent_no = -1;
-            }
-        }
-        if (player_agent_no == agent_no) {
-            player_agent_no = -1;
-        }
-        if (m6.scene.spectated_agent_no == agent_no) {
-            m6.scene.spectated_agent_no = -1;
-        }
+        unlink_agent_references(agent_no);
         m6.agents.erase(agent_no);
         return container_detail::release_stable_entry(agents, agent_free_slots, agent_no);
     }
 
     // Allocates a mission object via `rglStableVector<mbMissionObject>` recycling (`0x14014c030`).
     [[nodiscard]] std::int32_t allocate_mission_object(WseMissionObject obj) {
+        obj.m5.spawned_at_runtime = true;
         const std::int32_t id = container_detail::allocate_stable_entry(
             mission_objects, mission_object_free_slots, kMaxSpawnedMissionObjects,
             std::move(obj));
@@ -1599,7 +1639,8 @@ struct WseWorldState {
     }
 
     // Removes a mission object matching `mbMission::removeMissionObject` (`0x140132ba0`) +
-    // `rglStableVector<mbMissionObject>::remove` (`0x14014bdc0`).
+    // `rglStableVector<mbMissionObject>::remove` (`0x14014bdc0`), first clearing every
+    // world reference so a recycled slot does not inherit them.
     bool remove_mission_object(std::int32_t obj_no) {
         if (!is_valid_mission_object(obj_no)) {
             return false;
@@ -1610,9 +1651,6 @@ struct WseWorldState {
             }
         }
         for (auto& ag : agents) {
-            if (!ag.active) {
-                continue;
-            }
             for (auto& att : ag.attached_mission_object_nos) {
                 if (att == obj_no) {
                     att = -1;
@@ -1622,28 +1660,53 @@ struct WseWorldState {
                 ag.m5.standing_mission_object_no = -1;
             }
         }
+        std::erase_if(m5.attached_missiles, [obj_no](const WseAttachedMissile& m) noexcept {
+            return m.mission_object_no == obj_no;
+        });
+        std::erase(edit_mode.selected_prop_instances, obj_no);
         m6.mission_objects.erase(obj_no);
         return container_detail::release_stable_entry(
             mission_objects, mission_object_free_slots, obj_no);
     }
 
-    void clear_mission_entities() {
-        for (auto& pl : players) {
-            pl.agent_no = -1;
-        }
+    // Removes every agent at once (no per-agent sweep) and clears all agent references.
+    void clear_agents() {
+        unlink_agent_references(-1);
         agents.clear();
         agent_free_slots.clear();
         m6.agents.clear();
+    }
+
+    // Drops every agent and mission object (module reset / new scene).
+    void clear_mission_entities() {
+        clear_agents();
         mission_objects.clear();
         mission_object_free_slots.clear();
         m6.mission_objects.clear();
+        m5.attached_missiles.clear();
+        edit_mode.selected_prop_instances.clear();
         fx.spawn_effector_mission_object_nos.fill(-1);
-        player_agent_no = -1;
-        m6.scene.spectated_agent_no = -1;
     }
 
-    // Advances faded/pruned entity lifetimes: removes agents whose fade-out exceeded
-    // `30.0s` (`mbAgent::frameMove` `0x14002a3a1`), plus expired/faded mission objects.
+    // `multiplayer_clear_scene` (416): removes every agent and every runtime-spawned mission
+    // object (items and props from spawn_item / spawn_scene_prop) but keeps the props the scene
+    // placed, so their prop-instance ids stay valid. Whether retail also resets those props to
+    // their starting state is open (STATUS.md §5).
+    void clear_multiplayer_scene() {
+        clear_agents();
+        for (std::int32_t i = static_cast<std::int32_t>(mission_objects.size()) - 1; i >= 0; --i) {
+            const auto idx = static_cast<std::size_t>(i);
+            if (idx < mission_objects.size() && mission_objects[idx].active &&
+                mission_objects[idx].m5.spawned_at_runtime) {
+                (void)remove_mission_object(i);
+            }
+        }
+    }
+
+    // Advances entity lifetimes: removes agents whose fade-out (`agent_fade_out`, 1749) is
+    // older than `30.0s` (`mbAgent::frameMove` `0x14002a220`, check at `0x14002a3a1`) and
+    // spawned items whose prune timer ran out. A faded-out scene prop is NOT removed:
+    // `scene_prop_fade_in` (1823) must be able to bring it back, and its id must stay valid.
     void advance_mission_lifetimes(const std::array<std::int64_t, 3>& timers_total,
                                    float dt_seconds) {
         static constexpr std::int64_t kAgentFadeOutTicks = 3000000LL;  // 30.0s * 100k ticks/s
@@ -1668,19 +1731,22 @@ struct WseWorldState {
                 continue;
             }
             auto& m5_ext = mission_objects[idx].m5;
-            if (m5_ext.fade_out) {
-                m5_ext.fade_duration -= dt_seconds;
-                if (m5_ext.fade_duration <= 0.0f) {
-                    (void)remove_mission_object(i);
-                    continue;
-                }
-            }
             if (m5_ext.enable_pruning && m5_ext.prune_time > 0.0f) {
                 m5_ext.prune_time -= dt_seconds;
                 if (m5_ext.prune_time <= 0.0f) {
                     (void)remove_mission_object(i);
                 }
             }
+        }
+    }
+
+    // Per-frame world housekeeping run after the trigger managers: the campaign map consumes
+    // one queued window; a mission advances agent fade-out and item pruning.
+    void step_world_frame(const std::array<std::int64_t, 3>& timers_total, float dt_seconds) {
+        if (lighting.has_scene) {
+            advance_mission_lifetimes(timers_total, dt_seconds);
+        } else {
+            (void)consume_campaign_queued_window();
         }
     }
 
@@ -1754,13 +1820,12 @@ struct WseWorldState {
     }
 
     // Disconnects player `player_no` (`mbnetNetworkServer::disconnectPlayer` `0x1401a8c20` ->
-    // `mbnetData::disconnectPlayer` `0x14017c650`).
+    // `mbnetData::disconnectPlayer` `0x14017c650`). `mp.saved_ban` is deliberately kept:
+    // `save_ban_info_of_player` (467) exists so `ban_player_using_saved_ban_info` (468) still
+    // works after the player has left or been kicked while a ban poll runs.
     bool disconnect_player(std::int32_t player_no, bool preserve_temp_ban = false) {
         if (player_no < 0 || static_cast<std::size_t>(player_no) >= players.size()) {
             return false;
-        }
-        if (mp.saved_ban.valid && mp.saved_ban.player_no == player_no) {
-            mp.saved_ban.valid = false;
         }
         clear_player_slot(player_no, preserve_temp_ban);
         return true;

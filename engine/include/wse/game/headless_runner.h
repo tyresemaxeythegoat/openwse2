@@ -235,11 +235,7 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
             ctx.luaRuntime->on_world_trigger(
                 static_cast<float>(ctx.appTimeSeconds / 3600.0));
         }
-        (void)ctx.world.consume_campaign_queued_window();
-        if (ctx.world.lighting.has_scene) {
-            ctx.world.advance_mission_lifetimes(
-                ctx.timersTotal, static_cast<float>(frame_seconds));
-        }
+        ctx.world.step_world_frame(ctx.timersTotal, static_cast<float>(frame_seconds));
         report.triggers_ok = report.triggers_ok && trig_ok;
         report.simple_triggers_ok = report.simple_triggers_ok && strig_ok;
         ++report.frames_executed;
