@@ -15,11 +15,11 @@
  "inputs": {
   "layouts": 83,
   "globals_scanned": 48658,
-  "symbols_curated": 3687,
+  "symbols_curated": 3697,
   "game_vtables": 76,
-  "function_ranges": 5046,
+  "function_ranges": 5068,
   "global_objects": 25,
-  "superseded_vas": 3052
+  "superseded_vas": 3061
  },
  "strings": [
   {
@@ -16206,10 +16206,70 @@
    "va": "0x1400699e0"
   },
   {
+   "name": "?updateChoice@mbConversationWindow@@QEAAHH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140088f40"
+  },
+  {
    "name": "?getPresentationContainer@mbConversationWindow@@QEAAPEAVmbPresentationContainer@@H@Z",
    "kind": "public",
    "source": "pdb-public",
    "va": "0x140088f00"
+  },
+  {
+   "name": "?endPresentations@mbConversationWindow@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140088dc0"
+  },
+  {
+   "name": "?updatePresentations@mbConversationWindow@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400888c0"
+  },
+  {
+   "name": "?startPresentation@mbConversationWindow@@QEAAXH@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400888a0"
+  },
+  {
+   "name": "?updateCamera@mbConversationWindow@@QEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140087f00"
+  },
+  {
+   "name": "?getPartnerAgentNo@mbConversationWindow@@QEAAHXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140087dc0"
+  },
+  {
+   "name": "?isFullscreen@mbConversationWindow@@UEAA_NXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x14006f980"
+  },
+  {
+   "name": "?frameMove@mbConversationWindow@@UEAAXM@Z",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400874a0"
+  },
+  {
+   "name": "?open@mbConversationWindow@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x1400857d0"
+  },
+  {
+   "name": "?close@mbConversationWindow@@UEAAXXZ",
+   "kind": "public",
+   "source": "pdb-public",
+   "va": "0x140085790"
   },
   {
    "name": "??1?$rglVector@PEAVmbPresentationContainer@@@@QEAA@XZ",
@@ -40146,7 +40206,7 @@
    "start": "0x14006f980",
    "end": "0x14006f990",
    "va": "0x14006f980",
-   "symbol": "?hasCursor@mbGameWindow@@UEAA_NXZ"
+   "symbol": "?isFullscreen@mbConversationWindow@@UEAA_NXZ"
   },
   {
    "start": "0x14006f990",
@@ -40791,10 +40851,142 @@
    "symbol": "?getRawIndex@?$rglHashVector@VmbParty@@@@QEBA?BHH@Z"
   },
   {
+   "start": "0x140085790",
+   "end": "0x1400857c9",
+   "va": "0x140085790",
+   "symbol": "?close@mbConversationWindow@@UEAAXXZ"
+  },
+  {
+   "start": "0x1400857d0",
+   "end": "0x140087496",
+   "va": "0x1400857d0",
+   "symbol": "?open@mbConversationWindow@@UEAAXXZ"
+  },
+  {
+   "start": "0x1400874a0",
+   "end": "0x1400874b5",
+   "va": "0x1400874a0",
+   "symbol": "?frameMove@mbConversationWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x1400874b5",
+   "end": "0x14008767c",
+   "va": "0x1400874a0",
+   "symbol": "?frameMove@mbConversationWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x14008767c",
+   "end": "0x1400878d7",
+   "va": "0x1400874a0",
+   "symbol": "?frameMove@mbConversationWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x1400878d7",
+   "end": "0x140087a8d",
+   "va": "0x1400874a0",
+   "symbol": "?frameMove@mbConversationWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x140087a8d",
+   "end": "0x140087dc0",
+   "va": "0x1400874a0",
+   "symbol": "?frameMove@mbConversationWindow@@UEAAXM@Z"
+  },
+  {
+   "start": "0x140087dc0",
+   "end": "0x140087e36",
+   "va": "0x140087dc0",
+   "symbol": "?getPartnerAgentNo@mbConversationWindow@@QEAAHXZ"
+  },
+  {
+   "start": "0x140087e36",
+   "end": "0x140087e7e",
+   "va": "0x140087dc0",
+   "symbol": "?getPartnerAgentNo@mbConversationWindow@@QEAAHXZ"
+  },
+  {
+   "start": "0x140087e7e",
+   "end": "0x140087eee",
+   "va": "0x140087dc0",
+   "symbol": "?getPartnerAgentNo@mbConversationWindow@@QEAAHXZ"
+  },
+  {
+   "start": "0x140087eee",
+   "end": "0x140087ef3",
+   "va": "0x140087dc0",
+   "symbol": "?getPartnerAgentNo@mbConversationWindow@@QEAAHXZ"
+  },
+  {
+   "start": "0x140087ef3",
+   "end": "0x140087ef8",
+   "va": "0x140087dc0",
+   "symbol": "?getPartnerAgentNo@mbConversationWindow@@QEAAHXZ"
+  },
+  {
+   "start": "0x140087f00",
+   "end": "0x140087f35",
+   "va": "0x140087f00",
+   "symbol": "?updateCamera@mbConversationWindow@@QEAAXXZ"
+  },
+  {
+   "start": "0x140087f35",
+   "end": "0x1400883e4",
+   "va": "0x140087f00",
+   "symbol": "?updateCamera@mbConversationWindow@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400883e4",
+   "end": "0x14008877c",
+   "va": "0x140087f00",
+   "symbol": "?updateCamera@mbConversationWindow@@QEAAXXZ"
+  },
+  {
+   "start": "0x14008877c",
+   "end": "0x140088822",
+   "va": "0x140087f00",
+   "symbol": "?updateCamera@mbConversationWindow@@QEAAXXZ"
+  },
+  {
+   "start": "0x140088822",
+   "end": "0x140088890",
+   "va": "0x140087f00",
+   "symbol": "?updateCamera@mbConversationWindow@@QEAAXXZ"
+  },
+  {
+   "start": "0x140088890",
+   "end": "0x14008889b",
+   "va": "0x140087f00",
+   "symbol": "?updateCamera@mbConversationWindow@@QEAAXXZ"
+  },
+  {
+   "start": "0x1400888a0",
+   "end": "0x1400888be",
+   "va": "0x1400888a0",
+   "symbol": "?startPresentation@mbConversationWindow@@QEAAXH@Z"
+  },
+  {
+   "start": "0x1400888c0",
+   "end": "0x140088dc0",
+   "va": "0x1400888c0",
+   "symbol": "?updatePresentations@mbConversationWindow@@QEAAXXZ"
+  },
+  {
+   "start": "0x140088dc0",
+   "end": "0x140088efa",
+   "va": "0x140088dc0",
+   "symbol": "?endPresentations@mbConversationWindow@@QEAAXXZ"
+  },
+  {
    "start": "0x140088f00",
    "end": "0x140088f40",
    "va": "0x140088f00",
    "symbol": "?getPresentationContainer@mbConversationWindow@@QEAAPEAVmbPresentationContainer@@H@Z"
+  },
+  {
+   "start": "0x140088f40",
+   "end": "0x140089f9c",
+   "va": "0x140088f40",
+   "symbol": "?updateChoice@mbConversationWindow@@QEAAHH@Z"
   },
   {
    "start": "0x140089fa0",
@@ -66850,7 +67042,16 @@
   "0x140085460",
   "0x1400854e0",
   "0x1400854f0",
+  "0x1400856d0",
+  "0x140085710",
+  "0x1400873e0",
+  "0x140087d00",
+  "0x140087e40",
+  "0x1400887e0",
+  "0x140088800",
+  "0x140088d00",
   "0x140088e40",
+  "0x140088e80",
   "0x140089ee0",
   "0x140089f70",
   "0x14008a000",

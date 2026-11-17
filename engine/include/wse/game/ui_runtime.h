@@ -343,7 +343,6 @@ enum class UiActionKind : std::uint8_t {
     DialogYes = 12,
     DialogNo = 13,
     DialogOk = 14,
-    PresentationClosed = 15,  // Escape closed window 0x16; `param` = presentation number
 };
 
 struct UiEvent {
@@ -357,9 +356,15 @@ struct UiEvent {
 // `mbPresentationContainer`, `mbPresentationWindow`, `mbNotesWindow`)
 // -----------------------------------------------------------------------------
 
-// Module System `header_presentations.py` `prsntf_manual_end_only`: the presentation ignores
-// Escape and closes only through `presentation_set_duration`. Retail handler VA not yet
-// traced (`STATUS.md` §5).
+// Module System `header_presentations.py` `prsntf_manual_end_only` (flags bit `0x2`, copied to
+// the container by `mbPresentationContainer::startPresentation` `0x1402097b0`). Retail tests it
+// in one place only: `mbConversationWindow::updatePresentations` (`0x1400888c0`), which, when
+// a presentation queued by `mbConversationWindow::startPresentation` (`0x1400888a0`) starts,
+// ends every other open presentation container except those with this bit. The campaign
+// presentation window never reads it (`mbPresentationWindow::frameMove` `0x140174ed0`), and
+// no retail window closes a presentation on Escape: modules poll `key_clicked` themselves
+// (17 of Native's 49 presentations). It matters once mission-side presentations are driven
+// (`STATUS.md` §5).
 inline constexpr std::uint32_t kPresentationFlagManualEndOnly = 0x00000002U;
 
 // `prev_window` default for `open_notes_window` / `start_presentation`: return to the
@@ -422,7 +427,6 @@ public:
                        (entry.second == closing_no || entry.second < 0);
             });
             presentation_no_ = -1;
-            presentation_flags_ = 0U;
             active_triggers_ = SimpleTriggerManager{};
         } else {
             std::erase_if(world.m5.enqueued_windows, [](const auto& entry) {
@@ -1060,8 +1064,9 @@ public:
     // (`rglCreateSimpleButtonWidget` `0x14031f110`), firing presentation
     // triggers `-63` (`mouse_enter_leave`: param 1 = overlay, param 2 = 0 enter / 1 leave)
     // and `-62` (`state_change`: param 1 = overlay, param 2 = value) and closing
-    // `mbNotesWindow` on Return/Escape cleanly (`0x140161ad2..0x140161bd4`). Escape leaves a
-    // `prsntf_manual_end_only` presentation open.
+    // `mbNotesWindow` on Return/Escape cleanly (`0x140161ad2..0x140161bd4`). Escape does not
+    // close a presentation (`mbPresentationWindow::frameMove` `0x140174ed0` has no key check;
+    // see `kPresentationFlagManualEndOnly`): the module's own `-61` trigger handles it.
     std::vector<UiEvent> handle_pointer_and_keys(WseWorldState& world,
                                                  float ui_x,
                                                  float ui_y,
@@ -1077,14 +1082,6 @@ public:
             const std::string id = root.id;
             close_active_modal_window(world);
             events.push_back(UiEvent{UiActionKind::NotesReturn, -1, id});
-            return events;
-        }
-        if (escape_pressed && current_window == kScreenWindowPresentation &&
-            (presentation_flags_ & kPresentationFlagManualEndOnly) == 0U) {
-            const std::int32_t closing_no = presentation_no_;
-            const std::string id = root.id;
-            close_active_modal_window(world);
-            events.push_back(UiEvent{UiActionKind::PresentationClosed, closing_no, id});
             return events;
         }
 
@@ -1135,7 +1132,6 @@ public:
 
 private:
     std::int32_t presentation_no_ = -1;
-    std::uint32_t presentation_flags_ = 0U;
     float default_duration_s_ = 100.0f;
     float duration_cs_accum_ = 0.0f;
     // `world.m6.ui.presentation_start_serial` as of the last handled start request.
@@ -1182,7 +1178,6 @@ private:
         world.m5.active_window = kScreenWindowPresentation;
         world.m6.ui.active_window_id = kScreenWindowPresentation;
         presentation_no_ = presentation_no;
-        presentation_flags_ = static_cast<std::uint32_t>(prsnt.flags);
         active_triggers_ = prsnt.triggers;
         presentation_elapsed_s = 0.0f;
         duration_cs_accum_ = 0.0f;

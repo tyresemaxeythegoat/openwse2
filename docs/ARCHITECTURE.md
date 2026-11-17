@@ -1068,6 +1068,23 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     retail VAs; their behaviour notes and port approximations are in
     [engine/README.md](../engine/README.md#ui-runtime-bitmap-fonts--rhi-widgets-p9-part-2) and the
     open items in [STATUS.md](../STATUS.md) §5.
+14. ~~Find where `prsntf_manual_end_only` (`0x2`) is tested.~~
+    **Resolved:** `mbPresentation::readStream` (`0x1401c3b80`) reads the id string, the flags
+    (`readUInt32` into `+0x48`), and the mesh (`readInt32` into `+0x68`);
+    `mbPresentationContainer::startPresentation` (`0x1402097b0`) copies the flags to container
+    `+0x1c` and tests bit `0x1` (read-only, 10 s duration). The only test of bit `0x2` in `.text`
+    (direct and register-loaded bit-test sweeps over both offsets) is in
+    `mbConversationWindow::updatePresentations` (`0x1400888c0`): for each presentation number
+    queued by `mbConversationWindow::startPresentation` (`0x1400888a0`, pushed onto the int vector
+    at window `+0x2298`), it walks the container vector at `+0x2280` from the back and destroys
+    every container whose presentation number (`+0x18`) differs and whose flags lack `0x2`, or
+    whose number matches (restart), then creates and starts a new container.
+    `mbPresentationWindow::frameMove` (`0x140174ed0`) closes only when the duration expires or a
+    queued window replaces it; its vtable (`0x1405542b0`) has no key handler (folded empty
+    stubs), and no `mbGameScreen` method special-cases window `0x16`. Escape therefore never
+    closes a presentation in retail.
+    `rglString::toUInt64Stream` (`0x14030f7b0`, behind `rglTextStream::readUInt64` `0x1402afbe0`)
+    is recorded in §2's text-stream table.
 
 ## 9. Evidence index
 

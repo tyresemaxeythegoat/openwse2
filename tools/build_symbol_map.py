@@ -140,6 +140,9 @@ SYMBOL_TOKENS = [
     "mbAction",
     "mbActionSet",
     "mbConversationManager",
+    # mbConversationWindow::updatePresentations (0x1400888c0) keeps prsntf_manual_end_only
+    # presentations when closing the others; its methods own the mission-side presentations.
+    "@mbConversationWindow@@",
     "mbSentence",
     "mbFloraKind",
     "mbGroundSpec",

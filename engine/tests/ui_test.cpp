@@ -486,21 +486,25 @@ void test_ui_session_windows_and_regressions() {
                close(mesh_w->size.x, 0.5f) && close(mesh_w->size.y, 0.375f),
            "mesh overlay spans its native mesh extent times overlay_set_size");
 
-    // Escape closes a normal presentation with PresentationClosed.
+    // Escape never closes a presentation (retail `mbPresentationWindow::frameMove` has no key
+    // check; modules poll `key_clicked` in their own triggers), with or without
+    // prsntf_manual_end_only (0x2).
     const auto esc_evs =
         session.handle_pointer_and_keys(ctx.world, 0.9f, 0.7f, false, false, true, &ctx, prsnts);
-    expect(esc_evs.size() == 1U && esc_evs[0].kind == wse::game::UiActionKind::PresentationClosed &&
-               esc_evs[0].param == 0 && ctx.world.active_presentation_no == -1 &&
+    expect(esc_evs.empty() && ctx.world.active_presentation_no == 0 &&
+               session.current_window == wse::game::kScreenWindowPresentation,
+           "Escape leaves the presentation open and emits no event");
+    session.close_active_modal_window(ctx.world);
+    expect(ctx.world.active_presentation_no == -1 &&
                session.current_window == wse::game::kScreenWindowMenu,
-           "Escape closes the presentation back to the window it was opened from");
+           "closing the presentation returns to the window it was opened from");
 
-    // prsntf_manual_end_only (0x2): Escape is ignored.
     prsnts[0].flags = wse::game::kPresentationFlagManualEndOnly;
     expect(session.start_presentation(ctx.world, ctx, 0, prsnts), "restart presentation 0");
     (void)session.handle_pointer_and_keys(ctx.world, 0.9f, 0.7f, false, false, true, &ctx, prsnts);
     expect(ctx.world.active_presentation_no == 0 &&
                session.current_window == wse::game::kScreenWindowPresentation,
-           "Escape leaves a manual_end_only presentation open");
+           "Escape leaves a manual_end_only presentation open too");
     session.close_active_modal_window(ctx.world);
 
     // presentation_set_duration (902): a long duration outlives the default, 0 closes it.
