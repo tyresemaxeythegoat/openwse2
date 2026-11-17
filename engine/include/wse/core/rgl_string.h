@@ -43,6 +43,35 @@ public:
     RglString() noexcept = default;
     explicit RglString(std::string_view text) { assign(text); }
 
+    RglString(const RglString&) = default;
+    RglString& operator=(const RglString&) = default;
+
+    // A defaulted move would empty `heap_` but keep the source's heap `capacity_`, so the
+    // next `assign`/`append` on the moved-from object skipped `reserve_buffer` and wrote
+    // past the 48-byte inline buffer. Moves reset the source to an empty inline string.
+    RglString(RglString&& other) noexcept
+        : cursor_(other.cursor_),
+          length_(other.length_),
+          capacity_(other.capacity_),
+          inline_(other.inline_),
+          heap_(std::move(other.heap_)) {
+        other.reset_to_empty_inline();
+    }
+
+    RglString& operator=(RglString&& other) noexcept {
+        if (this != &other) {
+            cursor_ = other.cursor_;
+            length_ = other.length_;
+            capacity_ = other.capacity_;
+            inline_ = other.inline_;
+            heap_ = std::move(other.heap_);
+            other.reset_to_empty_inline();
+        }
+        return *this;
+    }
+
+    ~RglString() = default;
+
     [[nodiscard]] std::string_view view() const noexcept {
         return std::string_view(data_ptr(), length_);
     }
@@ -124,7 +153,7 @@ public:
 
     // Mirrors rglString::getNextToken (0x14030e810): skips bytes <= 0x20, then
     // reads maximal run of bytes > 0x20 and leaves cursor after the token.
-    [[nodiscard]] std::string next_token() noexcept {
+    [[nodiscard]] std::string next_token() {
         const char* src = data_ptr();
         std::size_t pos = cursor_ > 0 ? static_cast<std::size_t>(cursor_) : 0U;
         while (pos < length_ && static_cast<unsigned char>(src[pos]) <= 0x20U) {
@@ -142,6 +171,10 @@ public:
         return std::string(src + begin, pos - begin);
     }
 
+    // Strict decimal parsers: the whole string must be one optionally signed integer.
+    // Retail `toInt64Stream` (0x14030f6d0) / `toUInt64Stream` (0x14030f7b0) return a bare
+    // integer with no error path; their whitespace / sign / trailing-text handling is not
+    // yet confirmed from disassembly (STATUS.md §5), so callers must not rely on leniency.
     [[nodiscard]] bool parse_i64(std::int64_t& out) const noexcept {
         const std::string_view v = view();
         if (v.empty()) {
@@ -197,6 +230,14 @@ public:
     }
 
 private:
+    void reset_to_empty_inline() noexcept {
+        std::vector<char>().swap(heap_);
+        capacity_ = kInlineCapacity;
+        length_ = 0U;
+        cursor_ = 0;
+        inline_[0] = '\0';
+    }
+
     // Mirrors rglString::reallocate (0x14030e960) 8-byte aligned growth once
     // payload + NUL exceeds 48 bytes.
     void reserve_buffer(std::size_t required_bytes) {

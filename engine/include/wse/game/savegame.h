@@ -41,8 +41,19 @@
 //     decoded container arrays against `kMaxSavegameArrayCount` to prevent OOM.
 //   - Retail count mismatches trigger `rglError` popups and discard/keep surplus
 //     or missing records; portable codecs return explicit `SavegameContainerResult`
-//     status codes (plus `exceeded_section_counts` warning bit when surplus entries
-//     were safely consumed and skipped).
+//     status codes (plus the `count_exceeded` warning bit when surplus entries
+//     were safely consumed and skipped, or a party record named an out-of-range key).
+//   - Loads are transactional: `read_savegame_container` parses into staged copies of
+//     the world, global variables, and trigger managers and commits them only when the
+//     whole body parsed, so a corrupt or truncated file leaves the live game untouched.
+//   - `rglHashVector` / `rglStableVector` record-present flags other than 0 or 1 are
+//     rejected as `corrupt_record` instead of being read as empty (which desynchronizes
+//     every following field).
+//   - Only the version-1174 body layout is reconstructed. `mbParty::readStream`,
+//     `mbEvent::readStream`, and the `rglHashVector` / `rglStableVector` readers take the
+//     savegame version (`...@H@Z`), so older bodies branch in ways not yet recovered:
+//     headers in [802..1173] still validate (the load window lists them), but
+//     `read_savegame_container` refuses their bodies with `legacy_layout_unsupported`.
 
 #pragma once
 
@@ -70,7 +81,11 @@ namespace wse::game {
 inline constexpr std::uint32_t kSavegameMagic = 0x52445257U;  // "WRDR" LE
 inline constexpr std::int32_t kSavegameMinVersion = 802;      // 0x322
 inline constexpr std::int32_t kSavegameFormatVersion = 1174;  // 0x496
-inline constexpr std::int32_t kSavegameCompatDiffMinVersion = 0x470;  // 1136
+// Bodies written by versions strictly above 0x470 (1136) carry the five combat-option
+// int32 fields after the scalar preamble (`mbGame::readStream` 0x1400c8520).
+inline constexpr std::int32_t kSavegameCombatOptionsAfterVersion = 0x470;  // 1136
+// Oldest body layout `read_world_body_sections` reconstructs (see safety deviations).
+inline constexpr std::int32_t kSavegameOldestReconstructedBodyVersion = kSavegameFormatVersion;
 inline constexpr std::size_t kMaxSavegameArrayCount = (1U << 20U);
 
 enum class SavegameContainerResult : std::uint8_t {
@@ -83,6 +98,8 @@ enum class SavegameContainerResult : std::uint8_t {
     count_limit_exceeded,
     io_error,
     checksum_mismatch,
+    corrupt_record,
+    legacy_layout_unsupported,
 };
 
 [[nodiscard]] constexpr std::string_view describe(SavegameContainerResult result) noexcept {
@@ -105,6 +122,10 @@ enum class SavegameContainerResult : std::uint8_t {
         return "savegame VFS I/O failure";
     case SavegameContainerResult::checksum_mismatch:
         return "savegame byte-sum checksum verification failed";
+    case SavegameContainerResult::corrupt_record:
+        return "savegame record-present flag is neither 0 nor 1";
+    case SavegameContainerResult::legacy_layout_unsupported:
+        return "savegame body layout older than version 1174 is not reconstructed yet";
     }
     return "unknown savegame container result";
 }
@@ -188,7 +209,9 @@ struct SavegameConstContext {
         elapsed_ticks =
             timers_total[static_cast<std::size_t>(world.date_timer_no)] - world.date_timer_value;
     }
-    header.game_date_hours = static_cast<float>(elapsed_ticks) / 100000.0f;
+    // Divide in double: int64 -> float first drops tick precision after ~2^24 ticks.
+    header.game_date_hours =
+        static_cast<float>(static_cast<double>(elapsed_ticks) / 100000.0);
     return header;
 }
 
@@ -271,15 +294,23 @@ inline void write_slots(io::BinaryWriter& w, const wse::vm::Slots& slots) {
     if (rc != SavegameContainerResult::ok) {
         return rc;
     }
+    if (out_slots == nullptr) {
+        // Skip without allocating; read_checked_count already proved the bytes exist.
+        for (std::int32_t i = 0; i < count; ++i) {
+            std::int64_t ignored = 0;
+            if (!r.read_i64(ignored)) {
+                return SavegameContainerResult::truncated;
+            }
+        }
+        return SavegameContainerResult::ok;
+    }
     std::vector<std::int64_t> tmp(static_cast<std::size_t>(count), 0);
     for (std::int32_t i = 0; i < count; ++i) {
         if (!r.read_i64(tmp[static_cast<std::size_t>(i)])) {
             return SavegameContainerResult::truncated;
         }
     }
-    if (out_slots != nullptr) {
-        out_slots->assign(tmp);
-    }
+    out_slots->assign(std::move(tmp));
     return SavegameContainerResult::ok;
 }
 
@@ -326,15 +357,20 @@ template <typename NoteT>
     return SavegameContainerResult::ok;
 }
 
+// Retail `mbItem` keeps one item amount (`troop_inventory_slot_{get,set}_item_amount`
+// 0x1401d0b64 / 0x1401d08c3, i.e. `WseInventorySlot::ammo`) next to the modifier. The
+// portable `hit_points` field has no retail counterpart in the slot, so it is never
+// written; folding it into the amount turned shield hit points into ammo on reload.
 [[nodiscard]] inline std::uint32_t pack_inventory_flags(const WseInventorySlot& slot) noexcept {
     const std::uint32_t mod_bits =
         (static_cast<std::uint32_t>(std::max<std::int32_t>(0, slot.modifier)) & 0xFFU) << 24U;
-    const std::int32_t low = slot.ammo != 0 ? slot.ammo : slot.hit_points;
     const std::uint32_t low_bits =
-        static_cast<std::uint32_t>(std::max<std::int32_t>(0, low)) & 0xFFFFU;
+        static_cast<std::uint32_t>(std::max<std::int32_t>(0, slot.ammo)) & 0xFFFFU;
     return mod_bits | low_bits;
 }
 
+// `hit_points` is not persisted (no retail slot field); it reloads as 0, matching
+// `WseTroop::set_item` (`mbTroop::setItem` 0x1402467a0).
 inline void unpack_inventory_flags(std::int32_t item_no,
                                    std::uint32_t packed,
                                    WseInventorySlot& out) noexcept {
@@ -342,6 +378,25 @@ inline void unpack_inventory_flags(std::int32_t item_no,
     out.modifier = static_cast<std::int32_t>((packed >> 24U) & 0xFFU);
     out.ammo = static_cast<std::int32_t>(packed & 0xFFFFU);
     out.hit_points = 0;
+}
+
+// Party icons live in the low byte of `mbParty::m_flags` (the module loader derives
+// `icon_no` from `flags & 0xff`); `party_set_icon` updates only `icon_no`, so fold it back.
+[[nodiscard]] inline std::uint64_t party_flags_with_icon(const WseParty& p) noexcept {
+    return (p.flags & ~std::uint64_t{0xFFU}) |
+           (static_cast<std::uint64_t>(static_cast<std::uint32_t>(p.icon_no)) & 0xFFU);
+}
+
+// Float -> int64 conversion that is defined for NaN, infinities, and out-of-range values.
+[[nodiscard]] inline std::int64_t saturating_float_to_i64(float value) noexcept {
+    if (!std::isfinite(value) || value <= 0.0f) {
+        return 0;
+    }
+    // 2^63 is exactly representable as float; anything at or above it saturates.
+    if (value >= 9223372036854775808.0f) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+    return static_cast<std::int64_t>(value);
 }
 
 [[nodiscard]] inline SavegameContainerResult map_trigger_result(SavegameResult r) noexcept {
@@ -449,7 +504,7 @@ inline void write_party_record(io::BinaryWriter& w, const WseParty& p) {
     // mbParty::writeStream (0x1401bac00)
     w.write_string(p.id);
     w.write_string(p.name);
-    w.write_u64(p.flags);
+    w.write_u64(party_flags_with_icon(p));
     w.write_i32(p.menu_no);
     w.write_i32(p.template_no);
     w.write_i32(p.faction_no);
@@ -486,7 +541,7 @@ inline void write_party_record(io::BinaryWriter& w, const WseParty& p) {
     w.write_i32(p.ai_state);
     w.write_f32(static_cast<float>(p.bandit_attraction) / 100.0f);
     w.write_i32(p.is_marshall ? 1 : 0);
-    w.write_i64(static_cast<std::int64_t>(p.ignore_player_timer));
+    w.write_i64(saturating_float_to_i64(p.ignore_player_timer));
     w.write_i32(p.banner_icon_no);
     w.write_i32(p.extra_icon_no);
     w.write_f32(p.extra_icon_up_down_distance);
@@ -533,6 +588,7 @@ inline void write_party_record(io::BinaryWriter& w, const WseParty& p) {
         return SavegameContainerResult::truncated;
     }
     p.personality = static_cast<std::uint32_t>(pers);
+    p.icon_no = static_cast<std::int32_t>(p.flags & 0xFFULL);
 
     const SavegameContainerResult sc_rc = read_checked_count(r, stack_count, 16U);
     if (sc_rc != SavegameContainerResult::ok) {
@@ -560,7 +616,11 @@ inline void write_party_record(io::BinaryWriter& w, const WseParty& p) {
         !r.read_bool(attached_b)) {
         return SavegameContainerResult::truncated;
     }
-    p.bandit_attraction = static_cast<std::int32_t>(std::lround(bandit_attraction_f * 100.0f));
+    p.bandit_attraction =
+        std::isfinite(bandit_attraction_f)
+            ? static_cast<std::int32_t>(std::lround(
+                  std::clamp(bandit_attraction_f * 100.0f, -2147483520.0f, 2147483520.0f)))
+            : 0;
     p.is_marshall = is_marshall_i != 0;
     p.ignore_player_timer = static_cast<float>(ignore_timer_i);
     p.ignore_with_player_party = ignore_player_i != 0;
@@ -820,7 +880,8 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
 [[nodiscard]] inline SavegameContainerResult read_quests_section(
     io::BinaryReader& r, WseWorldState& world, bool& out_count_exceeded) {
     std::int32_t file_count = 0;
-    const SavegameContainerResult rc = read_checked_count(r, file_count);
+    // u32 flags + i32 giver + i32 number + f32 date + 3 string lengths.
+    const SavegameContainerResult rc = read_checked_count(r, file_count, 28U);
     if (rc != SavegameContainerResult::ok) return rc;
     const std::size_t avail = world.quests.size();
     if (static_cast<std::size_t>(file_count) > avail) out_count_exceeded = true;
@@ -868,7 +929,7 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
         !r.read_u32(world.encounter_flags)) {
         return SavegameContainerResult::truncated;
     }
-    if (savegame_version > kSavegameCompatDiffMinVersion) {
+    if (savegame_version > kSavegameCombatOptionsAfterVersion) {
         if (!r.read_i32(world.combat_damage_to_self) ||
             !r.read_i32(world.combat_damage_to_friends) || !r.read_i32(world.reduce_battle_ai) ||
             !r.read_i32(world.reduce_campaign_ai) || !r.read_i32(world.combat_speed)) {
@@ -907,7 +968,9 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
     // info_pages
     {
         std::int32_t count = 0;
-        const auto rc = read_checked_count(r, count);
+        // Each info page is 16 notes of (string length, date, int, bool).
+        const auto rc =
+            read_checked_count(r, count, static_cast<std::size_t>(kNumQuestNotes) * 13U);
         if (rc != SavegameContainerResult::ok) return rc;
         if (static_cast<std::size_t>(count) > world.info_pages.size()) out_count_exceeded = true;
         for (std::int32_t i = 0; i < count; ++i) {
@@ -926,7 +989,7 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
     // sites
     {
         std::int32_t count = 0;
-        const auto rc = read_checked_count(r, count);
+        const auto rc = read_checked_count(r, count, 4U);
         if (rc != SavegameContainerResult::ok) return rc;
         if (static_cast<std::size_t>(count) > world.sites.size()) out_count_exceeded = true;
         for (std::int32_t i = 0; i < count; ++i) {
@@ -942,7 +1005,7 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
     // factions
     {
         std::int32_t count = 0;
-        const auto rc = read_checked_count(r, count);
+        const auto rc = read_checked_count(r, count, 4U);
         if (rc != SavegameContainerResult::ok) return rc;
         if (static_cast<std::size_t>(count) > world.factions.size()) out_count_exceeded = true;
         for (std::int32_t i = 0; i < count; ++i) {
@@ -997,7 +1060,7 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
     // party templates
     {
         std::int32_t count = 0;
-        const auto rc = read_checked_count(r, count);
+        const auto rc = read_checked_count(r, count, 16U);
         if (rc != SavegameContainerResult::ok) return rc;
         if (static_cast<std::size_t>(count) > world.party_templates.size()) {
             out_count_exceeded = true;
@@ -1036,12 +1099,18 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
         if (static_cast<std::size_t>(num_slots) > kMaxSavegameArrayCount) {
             return SavegameContainerResult::count_limit_exceeded;
         }
+        // Every slot holds at least its int32 present flag; checking this before the
+        // allocation stops a few-byte file from allocating ~1.2 GB of `WseParty`.
+        if (static_cast<std::size_t>(num_slots) > r.remaining() / 4U) {
+            return SavegameContainerResult::truncated;
+        }
         world.parties.assign(static_cast<std::size_t>(num_slots), WseParty{});
         for (auto& slot : world.parties) slot.active = false;
 
         for (std::int32_t i = 0; i < num_slots; ++i) {
             std::int32_t valid = 0;
             if (!r.read_i32(valid)) return SavegameContainerResult::truncated;
+            if (valid != 0 && valid != 1) return SavegameContainerResult::corrupt_record;
             if (valid == 1) {
                 std::int32_t raw_idx = 0;
                 std::int32_t key = 0;
@@ -1051,6 +1120,7 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
                 WseParty* dst = (key >= 0 && static_cast<std::size_t>(key) < world.parties.size())
                                     ? &world.parties[static_cast<std::size_t>(key)]
                                     : nullptr;
+                if (dst == nullptr) out_count_exceeded = true;  // record consumed, dropped
                 if (const auto p_rc = read_party_record(r, dst);
                     p_rc != SavegameContainerResult::ok) {
                     return p_rc;
@@ -1091,10 +1161,14 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
         if (static_cast<std::size_t>(count) > kMaxSavegameArrayCount) {
             return SavegameContainerResult::count_limit_exceeded;
         }
+        if (static_cast<std::size_t>(count) > r.remaining() / 4U) {
+            return SavegameContainerResult::truncated;
+        }
         world.events.assign(static_cast<std::size_t>(count), WseSavegameEvent{});
         for (std::int32_t i = 0; i < count; ++i) {
             std::int32_t valid = 0;
             if (!r.read_i32(valid)) return SavegameContainerResult::truncated;
+            if (valid != 0 && valid != 1) return SavegameContainerResult::corrupt_record;
             if (valid == 1) {
                 std::int32_t dummy = 0;
                 float df0 = 0.0f;
@@ -1114,7 +1188,7 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
     // troops + skills max levels
     {
         std::int32_t count = 0;
-        const auto rc = read_checked_count(r, count);
+        const auto rc = read_checked_count(r, count, 4U);
         if (rc != SavegameContainerResult::ok) return rc;
         if (static_cast<std::size_t>(count) > world.troops.size()) out_count_exceeded = true;
         for (std::int32_t i = 0; i < count; ++i) {
@@ -1146,7 +1220,9 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
             tmp.home_entry_no = static_cast<std::int16_t>((site_entry >> 16U) & 0xFFFFU);
             tmp.skin_no = static_cast<std::int32_t>(tmp.flags & 0xFU);
 
-            if (tmp.is_hero() || !ctx.dont_load_regular_troop_inventories) {
+            const bool has_inventory_block =
+                tmp.is_hero() || !ctx.dont_load_regular_troop_inventories;
+            if (has_inventory_block) {
                 if (!r.read_i32(tmp.gold) || !r.read_i32(tmp.xp) || !r.read_f32(tmp.hit_points) ||
                     !r.read_i32(tmp.faction_no)) {
                     return SavegameContainerResult::truncated;
@@ -1181,17 +1257,41 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
                 if (!r.read_i32(tmp.class_no)) return SavegameContainerResult::truncated;
             }
 
+            // Merge only what the file carried. Replacing the whole troop reset every
+            // regular troop's gold / xp / hit points / faction / inventory / face / class
+            // to `WseTroop{}` defaults whenever `bDontLoadRegularTroopInventories` skipped
+            // that block, and dropped module-only fields such as upgrade paths.
             if (static_cast<std::size_t>(i) < world.troops.size()) {
                 WseTroop& dst = world.troops[static_cast<std::size_t>(i)];
-                if (!tmp.renamed) {
-                    tmp.name = dst.name;
-                    tmp.plural_name = dst.plural_name;
+                dst.slots = std::move(tmp.slots);
+                dst.attributes = tmp.attributes;
+                dst.proficiencies = tmp.proficiencies;
+                dst.skills = tmp.skills;
+                dst.notes = std::move(tmp.notes);
+                dst.note_tableau_material_no = tmp.note_tableau_material_no;
+                dst.note_available = tmp.note_available;
+                dst.flags = tmp.flags;
+                dst.skin_no = tmp.skin_no;
+                dst.home_site_no = tmp.home_site_no;
+                dst.home_entry_no = tmp.home_entry_no;
+                dst.skill_points = tmp.skill_points;
+                dst.attribute_points = tmp.attribute_points;
+                dst.proficiency_points = tmp.proficiency_points;
+                dst.level = tmp.level;
+                if (has_inventory_block) {
+                    dst.gold = tmp.gold;
+                    dst.xp = tmp.xp;
+                    dst.hit_points = tmp.hit_points;
+                    dst.faction_no = tmp.faction_no;
+                    dst.inventory = tmp.inventory;
+                    dst.face_keys[0] = tmp.face_keys[0];
+                    dst.renamed = tmp.renamed;
+                    if (tmp.renamed) {
+                        dst.name = std::move(tmp.name);
+                        dst.plural_name = std::move(tmp.plural_name);
+                    }
+                    dst.class_no = tmp.class_no;
                 }
-                tmp.upgrade_troop_nos = dst.upgrade_troop_nos;
-                tmp.age = dst.age;
-                tmp.auto_equip = dst.auto_equip;
-                tmp.face_keys[1] = dst.face_keys[1];
-                dst = std::move(tmp);
             }
         }
         for (std::int32_t s = 0; s < kMaxSkills; ++s) {
@@ -1204,7 +1304,7 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
     // item-kind slots
     {
         std::int32_t count = 0;
-        const auto rc = read_checked_count(r, count);
+        const auto rc = read_checked_count(r, count, 4U);
         if (rc != SavegameContainerResult::ok) return rc;
         if (static_cast<std::size_t>(count) > world.items.size()) out_count_exceeded = true;
         for (std::int32_t i = 0; i < count; ++i) {
@@ -1252,11 +1352,12 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
         write_savegame_header(raw, header);
         savegame_detail::write_world_body_sections(raw, ctx);
     });
+    // The in-memory buffer cannot disagree with its own running sum; the meaningful
+    // verification is the read-back in `save_world_to_vfs`, as in `mbGame::save`.
     res.checksum = writer.checksum();
     res.bytes_written = writer.size();
-    res.ok = writer.verify_checksum();
-    res.status =
-        res.ok ? SavegameContainerResult::ok : SavegameContainerResult::checksum_mismatch;
+    res.ok = true;
+    res.status = SavegameContainerResult::ok;
     return res;
 }
 
@@ -1264,6 +1365,8 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
 // `expected_checksum` (if provided) and `compatible_module_version`. Note:
 // `ctx.world->troops` must already hold the module's troop hero flags before
 // loading so `loadParties` (`0x1400c92c0`) distinguishes hero vs regular stacks.
+// The body is parsed into staged copies of every target and committed only on
+// success; on any failure the world, globals, and trigger managers are unchanged.
 [[nodiscard]] inline SavegameLoadReport read_savegame_container(
     std::span<const std::byte> bytes,
     SavegameRuntimeContext& ctx,
@@ -1287,10 +1390,44 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
         return report;
     }
 
+    if (report.header.savegame_version < kSavegameOldestReconstructedBodyVersion) {
+        report.status = SavegameContainerResult::legacy_layout_unsupported;
+        report.bytes_consumed = r.cursor();
+        return report;
+    }
+
+    WseWorldState staged_world = *ctx.world;
+    wse::vm::Slots staged_globals;
+    TriggerManager staged_triggers;
+    SimpleTriggerManager staged_simple;
+    SavegameRuntimeContext staged = ctx;
+    staged.world = &staged_world;
+    if (ctx.global_variables != nullptr) {
+        staged_globals = *ctx.global_variables;
+        staged.global_variables = &staged_globals;
+    }
+    if (ctx.triggers != nullptr) {
+        staged_triggers = *ctx.triggers;
+        staged.triggers = &staged_triggers;
+    }
+    if (ctx.simple_triggers != nullptr) {
+        staged_simple = *ctx.simple_triggers;
+        staged.simple_triggers = &staged_simple;
+    }
+
+    bool count_exceeded = false;
     const SavegameContainerResult b_rc = savegame_detail::read_world_body_sections(
-        r, report.header.savegame_version, ctx, report.count_exceeded);
+        r, report.header.savegame_version, staged, count_exceeded);
     report.bytes_consumed = r.cursor();
     report.status = b_rc;
+    if (b_rc != SavegameContainerResult::ok) {
+        return report;
+    }
+    report.count_exceeded = count_exceeded;
+    *ctx.world = std::move(staged_world);
+    if (ctx.global_variables != nullptr) *ctx.global_variables = std::move(staged_globals);
+    if (ctx.triggers != nullptr) *ctx.triggers = std::move(staged_triggers);
+    if (ctx.simple_triggers != nullptr) *ctx.simple_triggers = std::move(staged_simple);
     return report;
 }
 
@@ -1348,7 +1485,11 @@ inline void write_world_body_sections(io::BinaryWriter& w, const SavegameConstCo
     }
     const std::span<const std::byte> rb_bytes(
         reinterpret_cast<const std::byte*>(readback.data()), readback.size());
-    if (io::compute_savegame_checksum(rb_bytes) != res.checksum) {
+    // A byte sum alone misses lost zero bytes (a save truncated inside trailing zero
+    // fields sums identically), so also require the same length and contents.
+    if (readback.size() != payload.size() ||
+        !std::equal(readback.begin(), readback.end(), payload.begin()) ||
+        io::compute_savegame_checksum(rb_bytes) != res.checksum) {
         res.ok = false;
         res.status = SavegameContainerResult::checksum_mismatch;
         return res;

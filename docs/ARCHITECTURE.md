@@ -916,7 +916,10 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    `mbGame::save` (`0x1400e16c0`), `fillSavegameHeader` (`0x1400e1e30`), `mbSavegame::readStream`
    (`0x1400c73b0`), `mbLoadSaveWindow::updatePanels` (`0x140113c10`), `rglOutputBinaryFileStreamWithChecksum`
    (`0x140565b40`), and all `mbGame::{writeStream,readStream}` (`0x1400c9a90`/`0x1400c8520`) section
-   codecs are verified and implemented in `wse/io/binary_stream.h` and `wse/game/savegame.h`.
+   codecs are verified and implemented in `wse/io/binary_stream.h` and `wse/game/savegame.h` for
+   version-`1174` bodies. The party / event / hash-vector readers take the savegame version
+   (`mbParty::readStream` `0x1401ba5e0`, `mbEvent::readStream` `0x1400bae70`), so pre-1174 body
+   layouts and the per-note `mbNotes` fields remain open (`STATUS.md` §5).
 2. ~~`mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state~~ **Resolved (Phase 2C):**
    disassembly at `0x1402101a0` (`0x1402101d2..0x1402101f7`) shows the check tests positive odd
    event keys when the queued-window stack (`g_game` `0x14061f070` `+0x04b0`) back entry has type

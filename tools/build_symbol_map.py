@@ -323,6 +323,26 @@ STRINGS = [
     (r"%sTextures\%s", 0x14056B418),
     (r"Textures\languages\%s\%s", 0x14056B428),
     (r"%sTextures\languages\%s\%s.dds", 0x14056B448),
+    # Slice P5 shader / effect loader strings (restored after 9cc4431 regenerated the map
+    # from a list that lacked them).
+    ("mb_2b.fxo", 0x140562058),
+    ("mb_2a.fxo", 0x140562068),
+    ("mb_wse2_3_0.fxo", 0x140562078),
+    ("mb_wse2_2b.fxo", 0x140562088),
+    ("mb_wse2_2a.fxo", 0x140562098),
+    ("mb.fx", 0x1405620A8),
+    ("EFFECT file=%s", 0x1405620B0),
+    ("PostFx.fx", 0x140562C48),
+    ("#if WSE2", 0x140562C58),
+    ('#include "postFX_WSE2.fx"', 0x140562C70),
+    ("postFX_WSE2.fx", 0x140562C90),
+    ("earlyZ.fxo", 0x140566610),
+    ("earlyz_wse2.fxo", 0x140566620),
+    ("EARLYZ file=%s", 0x140566630),
+    ("wse2_shaders.ini", 0x140567D70),
+    (r"Resource\wse2_shaders.brf", 0x140568168),
+    (r"CommonRes\wse2_shaders.brf", 0x140568188),
+    ("Loading optional shader resource wse2_shaders", 0x1405681A8),
 ]
 
 TABLES = [

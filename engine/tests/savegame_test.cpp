@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -745,6 +747,302 @@ void test_savegame_container_validation_and_vfs() {
            "minimum supported version 802 accepted");
 }
 
+// Writes `world` with no globals / triggers and returns the container bytes.
+std::vector<std::byte> save_bytes(const wse::game::WseWorldState& world,
+                                  bool dont_load_regular_troop_inventories = false) {
+    using namespace wse;
+    using namespace wse::game;
+    SavegameConstContext c{};
+    c.world = &world;
+    c.dont_load_regular_troop_inventories = dont_load_regular_troop_inventories;
+    io::BinaryChecksumWriter cw;
+    (void)write_savegame_container(cw, c);
+    return {cw.bytes().begin(), cw.bytes().end()};
+}
+
+// Minimal world: hero player troop 0, regular troop 1, main party 0, one faction.
+wse::game::WseWorldState make_small_world() {
+    wse::game::WseWorldState w;
+    w.troops.resize(2);
+    w.troops[0].flags = 0x10ULL;
+    w.troops[1].flags = 0x0ULL;
+    w.player_troop_no = 0;
+    w.main_party_no = 0;
+    w.parties.resize(1);
+    w.parties[0].id = "p_main_party";
+    w.factions.resize(1);
+    return w;
+}
+
+void test_rgl_string_move() {
+    using wse::core::RglString;
+    const std::string long60(60U, 'x');
+
+    RglString a(long60);
+    RglString b(std::move(a));
+    expect(b.view() == long60 && !b.using_inline_storage(), "move-constructed RglString keeps heap text");
+    expect(a.empty() && a.using_inline_storage() &&  // NOLINT(bugprone-use-after-move)
+               a.capacity() == RglString::kInlineCapacity && a.c_str()[0] == '\0',
+           "moved-from RglString is an empty inline string");
+    // Previously this wrote 71 bytes into the 48-byte inline buffer (heap capacity kept).
+    const std::string long70(70U, 'y');
+    a.assign(long70);
+    expect(a.view() == long70 && !a.using_inline_storage() && a.capacity() >= 71U,
+           "moved-from RglString regrows to heap on reuse");
+
+    RglString c("short");
+    c = std::move(b);
+    expect(c.view() == long60 && b.empty() && b.capacity() == RglString::kInlineCapacity,
+           "move assignment transfers heap text and resets the source");
+    b.append(long70);
+    expect(b.view() == long70, "move-assigned-from RglString appends safely");
+
+    RglString d(long60);
+    RglString e = d;
+    e.append("z");
+    expect(d.view() == long60 && e.size() == 61U, "copies of heap RglString are independent");
+}
+
+void test_savegame_troop_merge_and_inventory() {
+    using namespace wse::game;
+
+    // bDontLoadRegularTroopInventories: regular troops keep their live inventory block.
+    WseWorldState w = make_small_world();
+    w.troops[1].inventory[0] = {7, 0, 0, 0};
+    w.troops[1].faction_no = 3;
+    w.troops[1].hit_points = 40.0f;
+    w.troops[1].class_no = 2;
+    w.troops[1].upgrade_troop_nos = {4, 5};
+    w.troops[1].level = 9;
+    const std::vector<std::byte> bytes = save_bytes(w, true);
+
+    WseWorldState d = make_small_world();
+    d.troops[1] = w.troops[1];
+    d.troops[1].level = 1;
+    SavegameRuntimeContext rc{};
+    rc.world = &d;
+    rc.dont_load_regular_troop_inventories = true;
+    const SavegameLoadReport rep = read_savegame_container(bytes, rc);
+    expect(rep.succeeded() && d.troops[1].inventory[0].item_no == 7 &&
+               d.troops[1].faction_no == 3 && d.troops[1].hit_points == 40.0f &&
+               d.troops[1].class_no == 2 && d.troops[1].upgrade_troop_nos[1] == 5 &&
+               d.troops[1].level == 9,
+           "skipped regular-troop inventory block keeps live fields; saved fields still load");
+
+    // The slot amount is the retail item amount (`ammo`); hit_points must not leak into it.
+    WseWorldState hp = make_small_world();
+    hp.troops[0].inventory[0] = {5, 3, 0, 180};
+    hp.troops[0].inventory[11] = {6, 0, 30, 0};
+    const std::vector<std::byte> hp_bytes = save_bytes(hp);
+    WseWorldState hd = make_small_world();
+    SavegameRuntimeContext hrc{};
+    hrc.world = &hd;
+    expect(read_savegame_container(hp_bytes, hrc).succeeded() &&
+               hd.troops[0].inventory[0].ammo == 0 && hd.troops[0].inventory[0].modifier == 3 &&
+               hd.troops[0].inventory[11].ammo == 30,
+           "inventory hit_points are not saved as the item amount");
+}
+
+void test_savegame_party_icon_and_timer() {
+    using namespace wse::game;
+    WseWorldState w = make_small_world();
+    w.parties[0].flags = 0x1200ULL;  // icon byte 0
+    w.parties[0].icon_no = 5;        // as set by party_set_icon
+    w.parties[0].ignore_player_timer = 9.3e18f;  // above INT64_MAX: must saturate, not UB
+    const std::vector<std::byte> bytes = save_bytes(w);
+    WseWorldState d = make_small_world();
+    SavegameRuntimeContext rc{};
+    rc.world = &d;
+    expect(read_savegame_container(bytes, rc).succeeded() && d.parties[0].icon_no == 5 &&
+               d.parties[0].flags == 0x1205ULL,
+           "party icon_no is folded into flags on save and restored on load");
+    expect(d.parties[0].ignore_player_timer > 9.0e18f,
+           "huge ignore_player_timer saturates to INT64_MAX");
+
+    expect(savegame_detail::saturating_float_to_i64(std::nanf("")) == 0 &&
+               savegame_detail::saturating_float_to_i64(-5.0f) == 0 &&
+               savegame_detail::saturating_float_to_i64(12.75f) == 12 &&
+               savegame_detail::saturating_float_to_i64(1.0e30f) ==
+                   std::numeric_limits<std::int64_t>::max(),
+           "saturating_float_to_i64 handles NaN, negative, fractional, and huge values");
+}
+
+void test_savegame_transactional_and_hostile_input() {
+    using namespace wse;
+    using namespace wse::game;
+
+    const WseWorldState src = make_small_world();
+    const std::vector<std::byte> good = save_bytes(src);
+
+    // Truncated body: nothing in the live world, globals, or triggers changes.
+    std::vector<std::byte> cut(good.begin(), good.end() - 40);
+    WseWorldState live = make_small_world();
+    live.parties[0].name = "LIVE";
+    live.campaign_time = 777;
+    wse::vm::Slots globals;
+    globals.set(3, 33);
+    SimpleTriggerManager simple;
+    simple.triggers.resize(1);
+    simple.triggers[0].timer.value = 99;
+    SavegameRuntimeContext rc{};
+    rc.world = &live;
+    rc.global_variables = &globals;
+    rc.simple_triggers = &simple;
+    const SavegameLoadReport rep = read_savegame_container(cut, rc);
+    expect(rep.status == SavegameContainerResult::truncated && live.campaign_time == 777 &&
+               live.parties.size() == 1U && live.parties[0].name == "LIVE" &&
+               globals.get(3) == 33 && simple.triggers[0].timer.value == 99,
+           "failed load leaves world, globals, and simple triggers untouched");
+
+    // Header + body up to a parties slot count of 2^20, then EOF: must fail before
+    // allocating ~1.2 GB of WseParty.
+    WseWorldState empty_parties = make_small_world();
+    empty_parties.parties.clear();
+    io::BinaryWriter bw;
+    write_savegame_header(bw, fill_savegame_header(empty_parties, {}));
+    bw.write_i64(0);
+    bw.write_i32(0);
+    bw.write_u32(0);
+    for (int i = 0; i < 5; ++i) bw.write_i32(0);
+    savegame_detail::write_save_game_section(bw, empty_parties);
+    for (int i = 0; i < 3; ++i) bw.write_i32(0);  // globals, triggers, simple triggers
+    for (int i = 0; i < 6; ++i) bw.write_i32(0);  // quests .. party templates
+    bw.write_i32(1 << 20);
+    bw.write_i32(0);
+    WseWorldState huge = make_small_world();
+    SavegameRuntimeContext hrc{};
+    hrc.world = &huge;
+    expect(read_savegame_container(bw.bytes(), hrc).status == SavegameContainerResult::truncated &&
+               huge.parties.size() == 1U,
+           "oversized party slot count is rejected before allocation");
+
+    // A record-present flag other than 0/1 is corrupt, not an empty slot.
+    WseWorldState flagged = make_small_world();
+    flagged.parties.resize(2);
+    flagged.parties[1].active = false;
+    const std::vector<std::byte> two_slots = save_bytes(flagged);
+    {
+        WseWorldState probe = make_small_world();
+        SavegameRuntimeContext prc{};
+        prc.world = &probe;
+        expect(read_savegame_container(two_slots, prc).succeeded(), "two-slot party save loads");
+    }
+    // Set each byte to 2 in turn; the party / event present flags are the positions
+    // where that must surface as corrupt_record rather than an empty slot.
+    bool patched = false;
+    for (std::size_t i = 0; i < two_slots.size() && !patched; ++i) {
+        std::vector<std::byte> trial = two_slots;
+        trial[i] = std::byte{2};
+        WseWorldState t = make_small_world();
+        SavegameRuntimeContext trc{};
+        trc.world = &t;
+        patched = read_savegame_container(trial, trc).status ==
+                  SavegameContainerResult::corrupt_record;
+    }
+    expect(patched, "record-present flag 2 is reported as corrupt_record");
+
+    // Bodies older than the reconstructed 1174 layout are refused, not misparsed.
+    std::vector<std::byte> legacy = good;
+    const std::int32_t v1136 = 1136;
+    std::memcpy(legacy.data() + 4, &v1136, sizeof(v1136));
+    WseWorldState lw = make_small_world();
+    lw.campaign_time = 5;
+    SavegameRuntimeContext lrc{};
+    lrc.world = &lw;
+    const SavegameLoadReport lrep = read_savegame_container(legacy, lrc);
+    expect(lrep.status == SavegameContainerResult::legacy_layout_unsupported &&
+               lrep.header.savegame_version == 1136 && lw.campaign_time == 5,
+           "pre-1174 savegame body is refused with legacy_layout_unsupported");
+    expect(describe(SavegameContainerResult::corrupt_record) != "unknown savegame container result" &&
+               describe(SavegameContainerResult::legacy_layout_unsupported) !=
+                   "unknown savegame container result",
+           "new container results have descriptions");
+}
+
+// Deterministic mutation / truncation fuzz: every input either loads or leaves the
+// live world untouched, and never crashes (ASan/UBSan in the sanitizer CI job).
+void test_savegame_fuzz() {
+    using namespace wse::game;
+    WseWorldState src = make_test_savegame_world_fixture();
+    const std::vector<std::byte> good = save_bytes(src);
+    std::uint64_t state = 0x9E3779B97F4A7C15ULL;
+    const auto next = [&state]() {
+        state ^= state << 13U;
+        state ^= state >> 7U;
+        state ^= state << 17U;
+        return state;
+    };
+    int unchanged_failures = 0;
+    for (int iter = 0; iter < 1500; ++iter) {
+        std::vector<std::byte> input = good;
+        const std::uint64_t mode = next() % 3U;
+        if (mode == 0U) {
+            input.resize(static_cast<std::size_t>(next() % good.size()));
+        } else {
+            const int flips = 1 + static_cast<int>(next() % 4U);
+            for (int f = 0; f < flips; ++f) {
+                input[static_cast<std::size_t>(next() % input.size())] =
+                    static_cast<std::byte>(next() & 0xFFU);
+            }
+            if (mode == 2U) input.resize(input.size() - static_cast<std::size_t>(next() % 64U));
+        }
+        WseWorldState live = make_test_savegame_world_fixture();
+        live.campaign_time = -12345;
+        live.parties[0].name = "LIVE";
+        SavegameRuntimeContext rc{};
+        rc.world = &live;
+        const SavegameLoadReport rep = read_savegame_container(input, rc);
+        if (!rep.succeeded() &&
+            (live.campaign_time != -12345 || live.parties.size() != 2U ||
+             live.parties[0].name != "LIVE")) {
+            ++unchanged_failures;
+        }
+    }
+    expect(unchanged_failures == 0, "fuzzed savegames never partially overwrite the live world");
+}
+
+// VFS that loses the last `drop` bytes of every write, like a torn write.
+class TruncatingVfs final : public wse::platform::Vfs {
+public:
+    explicit TruncatingVfs(std::size_t drop) : drop_(drop) {}
+    bool read_file(std::string_view p, std::vector<std::uint8_t>& out) override {
+        return inner_.read_file(p, out);
+    }
+    bool write_file(std::string_view p, std::span<const std::uint8_t> data) override {
+        return inner_.write_file(p, data.first(data.size() > drop_ ? data.size() - drop_ : 0U));
+    }
+    bool remove_file(std::string_view p) override { return inner_.remove_file(p); }
+    bool list_dir(std::string_view p, std::vector<wse::platform::VfsEntry>& out) override {
+        return inner_.list_dir(p, out);
+    }
+    bool is_file(std::string_view p) override { return inner_.is_file(p); }
+    bool is_dir(std::string_view p) override { return inner_.is_dir(p); }
+    bool make_dir(std::string_view p) override { return inner_.make_dir(p); }
+    bool rename_file(std::string_view a, std::string_view b) override {
+        return inner_.rename_file(a, b);
+    }
+
+private:
+    wse::platform::MemoryVfs inner_;
+    std::size_t drop_;
+};
+
+void test_savegame_vfs_readback_detects_torn_write() {
+    using namespace wse::game;
+    const WseWorldState w = make_small_world();
+    const std::vector<std::byte> bytes = save_bytes(w);
+    std::size_t zeros = 0;
+    while (zeros < bytes.size() && bytes[bytes.size() - 1U - zeros] == std::byte{0}) ++zeros;
+    expect(zeros >= 4U, "small save ends in zero bytes (byte sum blind spot)");
+    TruncatingVfs vfs(zeros);
+    SavegameConstContext c{};
+    c.world = &w;
+    const SavegameWriteResult res = save_world_to_vfs(vfs, "Savegames", "sg01.sav", c);
+    expect(!res.ok && res.status == SavegameContainerResult::checksum_mismatch &&
+               !vfs.is_file("Savegames/sg01.sav"),
+           "save_world_to_vfs rejects a read-back that lost trailing zero bytes");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -764,6 +1062,12 @@ int run_savegame_suite(const char* fixture_path) {
     test_checksum_writer();
     test_savegame_container_roundtrip();
     test_savegame_container_validation_and_vfs();
+    test_rgl_string_move();
+    test_savegame_troop_merge_and_inventory();
+    test_savegame_party_icon_and_timer();
+    test_savegame_transactional_and_hostile_input();
+    test_savegame_fuzz();
+    test_savegame_vfs_readback_detects_torn_write();
 
     if (failures != 0) {
         std::printf("savegame tests: FAIL (%d)\n", failures);

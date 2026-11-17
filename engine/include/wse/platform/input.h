@@ -1948,6 +1948,9 @@ public:
     }
 
     [[nodiscard]] const InputFrameState& frame_state() const noexcept { return frame_; }
+    // Number of frames processed so far; lets consumers apply one-frame impulses
+    // (such as `map_zoom_delta`) exactly once even if they mirror state repeatedly.
+    [[nodiscard]] std::uint64_t frame_counter() const noexcept { return frame_counter_; }
 
     [[nodiscard]] const std::array<bool, kMaxRawInputKeys>& raw_down() const noexcept {
         return raw_down_;

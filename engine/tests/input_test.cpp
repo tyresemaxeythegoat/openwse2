@@ -997,8 +997,12 @@ void test_p8_sensors_and_pinch_zoom() {
             {touch(T::TouchMove, 10, 0.35f, 0.50f), touch(T::TouchMove, 11, 0.55f, 0.50f)}});
         wse::game::WorldInputBridge::step_and_sync(mgr, backend, world);
         const float zoom_out = mgr.frame_state().map_zoom_delta;
+        const float zoomed_dist = world.input.map_camera_distance;
+        // Mirroring the same frame again must not apply the zoom impulse twice.
+        wse::game::WorldInputBridge::sync_to_world(mgr, world);
         const bool bridged = close(world.input.map_zoom_delta, zoom_out) &&
-                             world.input.map_camera_distance > initial_dist;
+                             zoomed_dist > initial_dist &&
+                             world.input.map_camera_distance == zoomed_dist;
 
         // Lifting one finger exits pinch without jumping look; re-check context/toggle gating.
         mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchUp, 10, 0.35f, 0.50f)}});
