@@ -391,6 +391,12 @@ void test_skeleton_pose_and_skinning() {
 
     std::vector<wse::core::WseTransform> pose_mid, skin_mid;
     wse::asset::evaluate_skeleton_pose(bind, &anim, 0, 10, 1.0f, pose_mid);
+    // Verify analytical root motion (`0x14030a96b` / `0x140309ad2`): bone 0 origin gains
+    // root translation key `(0, 0, 0.5)`, and bone 1 world origin follows rotated bone 0 + offset.
+    expect(close(pose_mid[0].o.x, 0.0f) && close(pose_mid[0].o.y, 0.0f) &&
+               close(pose_mid[0].o.z, 1.5f) && close(pose_mid[1].o.x, 0.0f) &&
+               close(pose_mid[1].o.y, 1.0f) && close(pose_mid[1].o.z, 1.5f),
+           "evaluate_skeleton_pose composes root translation key directly onto root bone[0].o");
     wse::asset::compute_skinning_transforms(bind, pose_mid, skin_mid);
 
     // Build a rigged mesh with vertex v4 at rest tip origin (0, 2, 1) which is
@@ -492,8 +498,14 @@ void test_rhi_scene_terrain_props_and_skinned_render() {
     std::vector<wse::core::WseTransform> pose, skin;
     wse::asset::evaluate_skeleton_pose(bind, &anim, 0, 10, 0.0f, pose);
     wse::asset::compute_skinning_transforms(bind, pose, skin);
+    const auto vb_before = renderer.slot_vertex_buffer(char_id);
+    const auto ib_before = renderer.slot_index_buffer(char_id);
+    expect(vb_before != 0U && ib_before != 0U, "initial skinned slot holds valid GPU VB/IB");
     expect(renderer.update_skinned_mesh(char_id, char_mesh, skin, &err),
            "update_skinned_mesh uploads frame 0 vertex buffer");
+    expect(renderer.slot_index_buffer(char_id) == ib_before &&
+               renderer.slot_vertex_buffer(char_id) != vb_before,
+           "update_skinned_mesh updates VB in place while reusing cached IB");
 
     std::vector<std::uint8_t> frame0, frame1;
     expect(renderer.render(96U, 96U, vp, draws, frame0, &err) &&
@@ -503,8 +515,20 @@ void test_rhi_scene_terrain_props_and_skinned_render() {
     wse::asset::evaluate_skeleton_pose(bind, &anim, 0, 10, 1.0f, pose);
     wse::asset::compute_skinning_transforms(bind, pose, skin);
     expect(renderer.update_skinned_mesh(char_id, char_mesh, skin, &err) &&
+               renderer.slot_index_buffer(char_id) == ib_before &&
                renderer.render(96U, 96U, vp, draws, frame1, &err),
-           "BrfSceneRenderer updates and renders bent pose frame 1");
+           "BrfSceneRenderer updates and renders bent pose frame 1 without IB rebuild");
+
+    // Equivalence check: cached VB update matches uploading `skin_brf_mesh` directly.
+    wse::asset::BrfMesh direct_deformed;
+    wse::asset::skin_brf_mesh(char_mesh, skin, direct_deformed);
+    const auto direct_char_id = renderer.upload_brf_mesh(direct_deformed, nullptr, &err);
+    std::vector<wse::platform::SceneDrawInstance> direct_draws = draws;
+    direct_draws[2].mesh_id = direct_char_id;
+    std::vector<std::uint8_t> frame1_direct;
+    expect(direct_char_id != 0U && renderer.render(96U, 96U, vp, direct_draws, frame1_direct, &err) &&
+               frame1_direct == frame1,
+           "cached update_skinned_mesh matches direct skin_brf_mesh upload pixel-for-pixel");
 
     const std::uint64_t h0 = wse::platform::hash_rgba8_frame(frame0);
     const std::uint64_t h1 = wse::platform::hash_rgba8_frame(frame1);

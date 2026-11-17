@@ -31,6 +31,7 @@
 #include "wse/game/world_state.h"
 #include "wse/io/binary_stream.h"
 #include "wse/io/text_stream.h"
+#include "wse/io/xml.h"
 #include "wse/platform/vfs.h"
 
 namespace wse::game {
@@ -498,12 +499,6 @@ struct LoadedSkeletonDesc {
 
 namespace xml_detail {
 
-inline void skip_ws(std::string_view xml, std::size_t& pos) noexcept {
-    while (pos < xml.size() && static_cast<unsigned char>(xml[pos]) <= 0x20U) {
-        ++pos;
-    }
-}
-
 inline void normalize_dir_or_default(core::WseVec4& v,
                                      float def_x,
                                      float def_y,
@@ -521,170 +516,6 @@ inline void normalize_dir_or_default(core::WseVec4& v,
     }
 }
 
-struct XmlElementNode {
-    std::string tag{};
-    std::unordered_map<std::string, std::string> attrs{};
-    std::vector<XmlElementNode> children{};
-};
-
-inline bool parse_xml_element(std::string_view xml,
-                              std::size_t& pos,
-                              XmlElementNode& out,
-                              int depth,
-                              std::string* error_out) {
-    if (depth > 32) {
-        if (error_out) *error_out = "XML nesting exceeds depth limit";
-        return false;
-    }
-    if (pos >= xml.size() || xml[pos] != '<') {
-        if (error_out) *error_out = "expected '<' in XML";
-        return false;
-    }
-    ++pos;
-    const std::size_t tag_start = pos;
-    while (pos < xml.size() && static_cast<unsigned char>(xml[pos]) > 0x20U &&
-           xml[pos] != '>' && xml[pos] != '/') {
-        ++pos;
-    }
-    out.tag = std::string(xml.substr(tag_start, pos - tag_start));
-    if (out.tag.empty()) {
-        if (error_out) *error_out = "empty XML tag name";
-        return false;
-    }
-
-    bool self_closing = false;
-    while (pos < xml.size()) {
-        skip_ws(xml, pos);
-        if (pos >= xml.size()) {
-            if (error_out) *error_out = "unterminated XML open tag";
-            return false;
-        }
-        if (xml[pos] == '>') {
-            ++pos;
-            break;
-        }
-        if (pos + 1U < xml.size() && xml[pos] == '/' && xml[pos + 1U] == '>') {
-            pos += 2U;
-            self_closing = true;
-            break;
-        }
-        const std::size_t kstart = pos;
-        while (pos < xml.size() && static_cast<unsigned char>(xml[pos]) > 0x20U &&
-               xml[pos] != '=' && xml[pos] != '>' && xml[pos] != '/') {
-            ++pos;
-        }
-        const std::string key(xml.substr(kstart, pos - kstart));
-        skip_ws(xml, pos);
-        if (pos >= xml.size() || xml[pos] != '=') {
-            if (error_out) *error_out = "expected '=' after XML attribute " + key;
-            return false;
-        }
-        ++pos;
-        skip_ws(xml, pos);
-        if (pos >= xml.size() || (xml[pos] != '"' && xml[pos] != '\'')) {
-            if (error_out) *error_out = "expected quoted attribute value for " + key;
-            return false;
-        }
-        const char quote = xml[pos++];
-        const std::size_t vstart = pos;
-        const std::size_t vend = xml.find(quote, vstart);
-        if (vend == std::string_view::npos) {
-            if (error_out) *error_out = "unterminated XML attribute string";
-            return false;
-        }
-        out.attrs[key] = std::string(xml.substr(vstart, vend - vstart));
-        pos = vend + 1U;
-    }
-
-    if (self_closing) {
-        return true;
-    }
-
-    while (pos < xml.size()) {
-        const std::size_t lt = xml.find('<', pos);
-        if (lt == std::string_view::npos) {
-            if (error_out) *error_out = "unclosed XML element <" + out.tag + ">";
-            return false;
-        }
-        pos = lt;
-        if (pos + 3U < xml.size() && xml.substr(pos, 4U) == "<!--") {
-            const std::size_t end_cmt = xml.find("-->", pos + 4U);
-            if (end_cmt == std::string_view::npos) {
-                if (error_out) *error_out = "unterminated XML comment";
-                return false;
-            }
-            pos = end_cmt + 3U;
-            continue;
-        }
-        if (pos + 1U < xml.size() && xml[pos + 1U] == '/') {
-            pos += 2U;
-            const std::size_t cstart = pos;
-            while (pos < xml.size() && static_cast<unsigned char>(xml[pos]) > 0x20U &&
-                   xml[pos] != '>') {
-                ++pos;
-            }
-            const std::string_view close_tag = xml.substr(cstart, pos - cstart);
-            skip_ws(xml, pos);
-            if (pos >= xml.size() || xml[pos] != '>' || close_tag != out.tag) {
-                if (error_out) *error_out = "mismatched closing tag for <" + out.tag + ">";
-                return false;
-            }
-            ++pos;
-            return true;
-        }
-        XmlElementNode child{};
-        if (!parse_xml_element(xml, pos, child, depth + 1, error_out)) {
-            return false;
-        }
-        out.children.push_back(std::move(child));
-    }
-
-    if (error_out) *error_out = "unexpected EOF inside <" + out.tag + ">";
-    return false;
-}
-
-inline const XmlElementNode* find_child(const XmlElementNode& node,
-                                        std::string_view tag) noexcept {
-    for (const XmlElementNode& c : node.children) {
-        if (c.tag == tag) {
-            return &c;
-        }
-    }
-    return nullptr;
-}
-
-inline void read_attr_str(const XmlElementNode& node,
-                          const char* key,
-                          std::string& dst) {
-    const auto it = node.attrs.find(key);
-    if (it != node.attrs.end()) {
-        dst = it->second;
-    }
-}
-
-inline void read_attr_f32(const XmlElementNode& node,
-                          const char* key,
-                          float& dst,
-                          float scale = 1.0f) noexcept {
-    const auto it = node.attrs.find(key);
-    float val = 0.0f;
-    if (it != node.attrs.end() && scene_detail::parse_f32_sv(it->second, val)) {
-        dst = val * scale;
-    }
-}
-
-inline void read_attr_flag_bit(const XmlElementNode& node,
-                               const char* key,
-                               bool& dst) noexcept {
-    const auto it = node.attrs.find(key);
-    std::int32_t val = 0;
-    if (it != node.attrs.end() && scene_detail::parse_i32_sv(it->second, val)) {
-        dst = (val != 0);
-    } else {
-        dst = false;
-    }
-}
-
 }  // namespace xml_detail
 
 [[nodiscard]] inline bool parse_skeleton_bodies_xml(
@@ -692,90 +523,57 @@ inline void read_attr_flag_bit(const XmlElementNode& node,
     std::vector<LoadedSkeletonDesc>& out,
     std::string* error_out = nullptr) {
     out.clear();
-    std::size_t pos = 0;
-    if (xml.size() >= 3U && static_cast<unsigned char>(xml[0]) == 0xEFU &&
-        static_cast<unsigned char>(xml[1]) == 0xBBU &&
-        static_cast<unsigned char>(xml[2]) == 0xBFU) {
-        pos = 3U;
-    }
-    while (pos < xml.size()) {
-        xml_detail::skip_ws(xml, pos);
-        if (pos + 1U < xml.size() && xml.substr(pos, 2U) == "<?") {
-            const std::size_t end_pi = xml.find("?>", pos + 2U);
-            if (end_pi == std::string_view::npos) {
-                if (error_out) *error_out = "unterminated XML processing instruction";
-                return false;
-            }
-            pos = end_pi + 2U;
-            continue;
-        }
-        if (pos + 3U < xml.size() && xml.substr(pos, 4U) == "<!--") {
-            const std::size_t end_cmt = xml.find("-->", pos + 4U);
-            if (end_cmt == std::string_view::npos) {
-                if (error_out) *error_out = "unterminated XML comment";
-                return false;
-            }
-            pos = end_cmt + 3U;
-            continue;
-        }
-        break;
-    }
-    if (pos >= xml.size()) {
-        if (error_out) *error_out = "empty skeleton_bodies XML";
+    io::XmlElementNode root{};
+    if (!io::parse_xml_document(xml, root, error_out)) {
         return false;
     }
-
-    xml_detail::XmlElementNode root{};
-    if (!xml_detail::parse_xml_element(xml, pos, root, 0, error_out)) {
-        return false;
-    }
-    const xml_detail::XmlElementNode* skeletons_el =
-        (root.tag == "Skeletons") ? &root : xml_detail::find_child(root, "Skeletons");
+    const io::XmlElementNode* skeletons_el =
+        (root.tag == "Skeletons") ? &root : io::find_xml_child(root, "Skeletons");
     if (skeletons_el == nullptr) {
         if (error_out) *error_out = "missing <Skeletons> element";
         return false;
     }
 
     constexpr float kDegToRad = 0.017453292519943295f;  // __real@3c8efa35 at 0x140211603
-    for (const xml_detail::XmlElementNode& skel_el : skeletons_el->children) {
+    for (const io::XmlElementNode& skel_el : skeletons_el->children) {
         if (skel_el.tag != "Skeleton") {
             continue;
         }
         LoadedSkeletonDesc skel{};
-        xml_detail::read_attr_str(skel_el, "name", skel.name);
-        const xml_detail::XmlElementNode* bones_el = xml_detail::find_child(skel_el, "Bones");
+        io::read_xml_attr_str(skel_el, "name", skel.name);
+        const io::XmlElementNode* bones_el = io::find_xml_child(skel_el, "Bones");
         if (bones_el != nullptr) {
-            for (const xml_detail::XmlElementNode& bone_el : bones_el->children) {
+            for (const io::XmlElementNode& bone_el : bones_el->children) {
                 if (bone_el.tag != "Bone") {
                     continue;
                 }
                 LoadedSkeletonBoneDesc bone{};
-                xml_detail::read_attr_str(bone_el, "name", bone.name);
-                xml_detail::read_attr_f32(bone_el, "bone_mass", bone.mass);
-                xml_detail::read_attr_f32(bone_el, "bone_cone_min", bone.cone_min);
-                xml_detail::read_attr_f32(bone_el, "bone_cone_max", bone.cone_max);
-                xml_detail::read_attr_f32(bone_el, "bone_twist_limit_min", bone.twist_limit_min);
-                xml_detail::read_attr_f32(bone_el, "bone_twist_limit_max", bone.twist_limit_max);
+                io::read_xml_attr_str(bone_el, "name", bone.name);
+                io::read_xml_attr_f32(bone_el, "bone_mass", bone.mass);
+                io::read_xml_attr_f32(bone_el, "bone_cone_min", bone.cone_min);
+                io::read_xml_attr_f32(bone_el, "bone_cone_max", bone.cone_max);
+                io::read_xml_attr_f32(bone_el, "bone_twist_limit_min", bone.twist_limit_min);
+                io::read_xml_attr_f32(bone_el, "bone_twist_limit_max", bone.twist_limit_max);
                 // Initialize optional vector components to 0 before attribute read, then normalize.
                 core::WseVec4 sock{0.0f, 0.0f, 0.0f, 0.0f};
-                xml_detail::read_attr_f32(bone_el, "socket_dir_x", sock.x);
-                xml_detail::read_attr_f32(bone_el, "socket_dir_y", sock.y);
-                xml_detail::read_attr_f32(bone_el, "socket_dir_z", sock.z);
+                io::read_xml_attr_f32(bone_el, "socket_dir_x", sock.x);
+                io::read_xml_attr_f32(bone_el, "socket_dir_y", sock.y);
+                io::read_xml_attr_f32(bone_el, "socket_dir_z", sock.z);
                 xml_detail::normalize_dir_or_default(sock, 0.0f, 1.0f, 0.0f);
                 bone.socket_dir = sock;
 
                 core::WseVec4 plane{0.0f, 0.0f, 0.0f, 0.0f};
-                xml_detail::read_attr_f32(bone_el, "plane_dir_x", plane.x);
-                xml_detail::read_attr_f32(bone_el, "plane_dir_y", plane.y);
-                xml_detail::read_attr_f32(bone_el, "plane_dir_z", plane.z);
+                io::read_xml_attr_f32(bone_el, "plane_dir_x", plane.x);
+                io::read_xml_attr_f32(bone_el, "plane_dir_y", plane.y);
+                io::read_xml_attr_f32(bone_el, "plane_dir_z", plane.z);
                 xml_detail::normalize_dir_or_default(plane, 1.0f, 0.0f, 0.0f);
                 bone.plane_dir = plane;
 
-                xml_detail::read_attr_f32(bone_el, "rotate_side", bone.rotate_side_rad, kDegToRad);
-                xml_detail::read_attr_f32(bone_el, "rotate_forward", bone.rotate_forward_rad, kDegToRad);
-                xml_detail::read_attr_f32(bone_el, "rotate_up", bone.rotate_up_rad, kDegToRad);
-                xml_detail::read_attr_f32(bone_el, "bone_plane_min", bone.plane_min);
-                xml_detail::read_attr_f32(bone_el, "bone_plane_max", bone.plane_max);
+                io::read_xml_attr_f32(bone_el, "rotate_side", bone.rotate_side_rad, kDegToRad);
+                io::read_xml_attr_f32(bone_el, "rotate_forward", bone.rotate_forward_rad, kDegToRad);
+                io::read_xml_attr_f32(bone_el, "rotate_up", bone.rotate_up_rad, kDegToRad);
+                io::read_xml_attr_f32(bone_el, "bone_plane_min", bone.plane_min);
+                io::read_xml_attr_f32(bone_el, "bone_plane_max", bone.plane_max);
 
                 // Retail 0x1402118f8: when twist_limit_max == -1.0f, mirror +/- twist_limit_min.
                 if (bone.twist_limit_max == -1.0f) {
@@ -783,23 +581,23 @@ inline void read_attr_flag_bit(const XmlElementNode& node,
                     bone.twist_limit_min = -bone.twist_limit_min;
                 }
 
-                const xml_detail::XmlElementNode* bodies_el = xml_detail::find_child(bone_el, "Bodies");
+                const io::XmlElementNode* bodies_el = io::find_xml_child(bone_el, "Bodies");
                 if (bodies_el != nullptr) {
-                    for (const xml_detail::XmlElementNode& body_el : bodies_el->children) {
+                    for (const io::XmlElementNode& body_el : bodies_el->children) {
                         if (body_el.tag != "body") {
                             continue;
                         }
                         LoadedSkeletonBody body{};
-                        xml_detail::read_attr_str(body_el, "type", body.type);
-                        xml_detail::read_attr_f32(body_el, "radius", body.radius);
-                        xml_detail::read_attr_f32(body_el, "pos_x", body.pos.x);
-                        xml_detail::read_attr_f32(body_el, "pos_y", body.pos.y);
-                        xml_detail::read_attr_f32(body_el, "pos_z", body.pos.z);
-                        xml_detail::read_attr_f32(body_el, "pos2_x", body.pos2.x);
-                        xml_detail::read_attr_f32(body_el, "pos2_y", body.pos2.y);
-                        xml_detail::read_attr_f32(body_el, "pos2_z", body.pos2.z);
-                        xml_detail::read_attr_flag_bit(body_el, "for_ragdoll_only", body.for_ragdoll_only);
-                        xml_detail::read_attr_flag_bit(body_el, "for_collision_only", body.for_collision_only);
+                        io::read_xml_attr_str(body_el, "type", body.type);
+                        io::read_xml_attr_f32(body_el, "radius", body.radius);
+                        io::read_xml_attr_f32(body_el, "pos_x", body.pos.x);
+                        io::read_xml_attr_f32(body_el, "pos_y", body.pos.y);
+                        io::read_xml_attr_f32(body_el, "pos_z", body.pos.z);
+                        io::read_xml_attr_f32(body_el, "pos2_x", body.pos2.x);
+                        io::read_xml_attr_f32(body_el, "pos2_y", body.pos2.y);
+                        io::read_xml_attr_f32(body_el, "pos2_z", body.pos2.z);
+                        io::read_xml_attr_flag_bit(body_el, "for_ragdoll_only", body.for_ragdoll_only);
+                        io::read_xml_attr_flag_bit(body_el, "for_collision_only", body.for_collision_only);
                         bone.bodies.push_back(std::move(body));
                     }
                 }

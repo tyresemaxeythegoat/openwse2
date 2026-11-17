@@ -1047,6 +1047,22 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     implemented in [scene_loaders.h](../engine/include/wse/game/scene_loaders.h),
     [skeleton.h](../engine/include/wse/asset/skeleton.h), and
     [rhi_scene.h](../engine/include/wse/platform/rhi_scene.h).
+13. ~~Reconstruct v1.1.5.5 bitmap font, localization, widget layout, and window/presentation flow for Slice P9 Part 2.~~
+    **Resolved (Slice P9 Part 2):** Verified `rglFont::readFile` (`0x1402978c0`), `rglFont::drawText`
+    (`0x140297fa0`), `rglFont::measureText` (`0x14029b4f0`), and `rglFont::drawGlyph` (`0x14029b670`:
+    bottom-up `uv.y = (height - v + 4)/height`, `v_bottom = (height - h + padding - 6)/height`,
+    `<c=0xRRGGBB>` forcing alpha `0xFF`, alignment flags `0x8`/`0x10`/`0x100`/`0x200`/`0x800`/`0x4000`/`0x10000`);
+    verified `mbLanguageManager::readLanguageFiles` (`0x14028d6f0`) and `getText` (`0x14028e300`),
+    `rglReadWidgetProperties` (`0x140328680`), `rglWidget::drawText` (`0x14031e5a0`),
+    `rglWidget::setMeshStretched` (`0x14031d310`), `rglCreateImageWidget` (`0x14031ec20`),
+    `rglCreateSimpleButtonWidget` (`0x14031f110`), `mbMenuWindow::open`/`frameMove`
+    (`0x140120240`/`0x140121110`), `mbPresentationContainer::startPresentation`/`frameMove`
+    (`0x1402097b0`/`0x140208ec0`), `mbPresentationWindow::frameMove` (`0x140174ed0`),
+    `mbNotesWindow::frameMove` (`0x140161520`), and `mbGameScreen::setWindow` (`0x1400f0c80`);
+    implemented in [xml.h](../engine/include/wse/io/xml.h),
+    [font.h](../engine/include/wse/asset/font.h),
+    [ui_runtime.h](../engine/include/wse/game/ui_runtime.h), and
+    [rhi_ui.h](../engine/include/wse/platform/rhi_ui.h).
 
 ## 9. Evidence index
 

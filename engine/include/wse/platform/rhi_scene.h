@@ -341,7 +341,10 @@ public:
             return 0U;
         }
         RhiMeshChunk chunk{};
-        build_rhi_mesh_from_brf(mesh, chunk.vertices, chunk.indices);
+        const bool is_skinned = !mesh.vertex_groups.empty();
+        std::vector<std::int32_t> vert_pos_indices;
+        build_rhi_mesh_from_brf_mapped(mesh, chunk.vertices, chunk.indices,
+                                       is_skinned ? &vert_pos_indices : nullptr);
         if (chunk.vertices.empty() || chunk.indices.empty()) {
             return 0U;
         }
@@ -365,11 +368,17 @@ public:
             }
             return 0U;
         }
-        meshes_[id - 1U].owns_tex = owns_tex;
+        GpuSlot& slot = meshes_[id - 1U];
+        slot.owns_tex = owns_tex;
+        if (is_skinned) {
+            cache_slot_skin_template(slot, mesh, chunk.vertices, vert_pos_indices);
+        }
         return id;
     }
 
-    // Updates an already-uploaded skinned mesh slot cleanly (swaps GPU VB in place).
+    // Updates an already-uploaded skinned mesh slot using the cached deduplicated
+    // template vertices, cached per-vertex bone weights, and immutable GPU index
+    // buffer (`slot.ib` is never destroyed or recreated once cached).
     [[nodiscard]] bool update_skinned_mesh(SceneMeshId mesh_id,
                                            const wse::asset::BrfMesh& source_mesh,
                                            std::span<const wse::core::WseTransform> skin_transforms,
@@ -377,28 +386,75 @@ public:
         if (rhi_ == nullptr || mesh_id == 0U || mesh_id > meshes_.size()) {
             return false;
         }
-        wse::asset::BrfMesh deformed;
-        wse::asset::skin_brf_mesh(source_mesh, skin_transforms, deformed);
-        std::vector<MeshVertex> verts;
-        std::vector<std::uint16_t> indices;
-        build_rhi_mesh_from_brf(deformed, verts, indices);
-        if (verts.empty() || indices.empty()) {
-            return false;
-        }
-        BufferHandle new_vb = scene_rhi_detail::upload_vertex_buffer(*rhi_, verts, error_out);
-        BufferHandle new_ib = scene_rhi_detail::upload_index_buffer(*rhi_, indices, error_out);
-        if (new_vb == 0U || new_ib == 0U) {
-            if (new_vb != 0U) rhi_->destroy_buffer(new_vb);
-            if (new_ib != 0U) rhi_->destroy_buffer(new_ib);
-            return false;
-        }
         GpuSlot& slot = meshes_[mesh_id - 1U];
+        if (slot.rest_vertices.empty() || slot.skin_weights.empty()) {
+            RhiMeshChunk chunk{};
+            std::vector<std::int32_t> vert_pos_indices;
+            build_rhi_mesh_from_brf_mapped(source_mesh, chunk.vertices, chunk.indices,
+                                           &vert_pos_indices);
+            if (chunk.vertices.empty() || chunk.indices.empty()) {
+                return false;
+            }
+            if (chunk.indices.size() != slot.index_count || slot.ib == 0U) {
+                BufferHandle new_ib = scene_rhi_detail::upload_index_buffer(*rhi_, chunk.indices, error_out);
+                if (new_ib == 0U) {
+                    return false;
+                }
+                if (slot.ib != 0U) {
+                    rhi_->destroy_buffer(slot.ib);
+                }
+                slot.ib = new_ib;
+                slot.index_count = static_cast<std::uint32_t>(chunk.indices.size());
+            }
+            cache_slot_skin_template(slot, source_mesh, chunk.vertices, vert_pos_indices);
+        }
+
+        const std::size_t nverts = slot.rest_vertices.size();
+        skinned_scratch_.resize(nverts);
+        if (skin_transforms.empty() || source_mesh.vertex_groups.empty()) {
+            std::memcpy(skinned_scratch_.data(), slot.rest_vertices.data(),
+                        nverts * sizeof(MeshVertex));
+        } else {
+            for (std::size_t i = 0; i < nverts; ++i) {
+                MeshVertex dst = slot.rest_vertices[i];
+                const wse::asset::Vec3f rp{dst.px, dst.py, dst.pz};
+                const wse::asset::Vec3f rn{dst.nx, dst.ny, dst.nz};
+                wse::asset::Vec3f dp{};
+                wse::asset::Vec3f dn{};
+                wse::asset::evaluate_skinned_vertex(rp, &rn, slot.skin_weights[i],
+                                                    skin_transforms, dp, &dn);
+                dst.px = dp.x;
+                dst.py = dp.y;
+                dst.pz = dp.z;
+                dst.nx = dn.x;
+                dst.ny = dn.y;
+                dst.nz = dn.z;
+                skinned_scratch_[i] = dst;
+            }
+        }
+
+        BufferHandle new_vb =
+            scene_rhi_detail::upload_vertex_buffer(*rhi_, skinned_scratch_, error_out);
+        if (new_vb == 0U) {
+            return false;
+        }
         rhi_->destroy_buffer(slot.vb);
-        rhi_->destroy_buffer(slot.ib);
         slot.vb = new_vb;
-        slot.ib = new_ib;
-        slot.index_count = static_cast<std::uint32_t>(indices.size());
         return true;
+    }
+
+    [[nodiscard]] BufferHandle slot_vertex_buffer(SceneMeshId mesh_id) const noexcept {
+        if (mesh_id == 0U || mesh_id > meshes_.size()) {
+            return 0U;
+        }
+        return meshes_[mesh_id - 1U].vb;
+    }
+
+    [[nodiscard]] BufferHandle slot_index_buffer(SceneMeshId mesh_id) const noexcept {
+        if (mesh_id == 0U || mesh_id > meshes_.size()) {
+            return 0U;
+        }
+        return meshes_[mesh_id - 1U].ib;
     }
 
     [[nodiscard]] bool render(std::uint32_t width,
@@ -457,12 +513,35 @@ private:
         TextureHandle tex = 0U;
         bool owns_tex = false;
         std::uint32_t index_count = 0U;
+        std::vector<MeshVertex> rest_vertices{};
+        std::vector<wse::asset::VertexSkinWeights> skin_weights{};
     };
+
+    static void cache_slot_skin_template(GpuSlot& slot,
+                                         const wse::asset::BrfMesh& mesh,
+                                         const std::vector<MeshVertex>& rest_verts,
+                                         const std::vector<std::int32_t>& vert_pos_indices) {
+        const std::size_t nv =
+            (!mesh.vertex_keys.empty() && !mesh.vertex_keys[0].positions.empty())
+                ? mesh.vertex_keys[0].positions.size()
+                : mesh.positions.size();
+        const std::vector<wse::asset::VertexSkinWeights> pos_weights =
+            wse::asset::build_mesh_skin_data(mesh, nv);
+        slot.rest_vertices = rest_verts;
+        slot.skin_weights.assign(rest_verts.size(), wse::asset::VertexSkinWeights{});
+        for (std::size_t i = 0; i < vert_pos_indices.size() && i < rest_verts.size(); ++i) {
+            const std::int32_t pidx = vert_pos_indices[i];
+            if (pidx >= 0 && static_cast<std::size_t>(pidx) < pos_weights.size()) {
+                slot.skin_weights[i] = pos_weights[static_cast<std::size_t>(pidx)];
+            }
+        }
+    }
 
     RhiDevice* rhi_ = nullptr;
     TextureHandle default_tex_ = 0U;
     PipelineHandle pipeline_ = 0U;
     std::vector<GpuSlot> meshes_{};
+    mutable std::vector<MeshVertex> skinned_scratch_{};
 };
 
 }  // namespace wse::platform

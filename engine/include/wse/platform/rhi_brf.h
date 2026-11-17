@@ -69,42 +69,63 @@ namespace wse::platform {
 }
 
 // Builds a de-duplicated indexed stream from a decoded `BrfMesh`: face corners
-// with byte-identical attributes (position, normal, UV, colour) share one vertex,
-// and corners no face references are dropped. `.brf` stores one corner per face
-// vertex, so this typically cuts the vertex stream (and GPU vertex shading and
-// bandwidth) by 2-6x. Faces naming a corner past `face_corners` are skipped.
-inline void build_rhi_mesh_from_brf(const wse::asset::BrfMesh& mesh,
-                                    std::vector<MeshVertex>& out_verts,
-                                    std::vector<std::uint16_t>& out_indices,
-                                    std::size_t frame_index = 0) {
+// with byte-identical attributes (position, normal, UV, colour; plus source
+// `vertex_index` when `out_vert_pos_indices != nullptr` so coincident vertices
+// bound to different bones stay distinct) share one vertex, and unreferenced
+// corners are dropped. Faces naming a corner past `face_corners` are skipped.
+inline void build_rhi_mesh_from_brf_mapped(const wse::asset::BrfMesh& mesh,
+                                           std::vector<MeshVertex>& out_verts,
+                                           std::vector<std::uint16_t>& out_indices,
+                                           std::vector<std::int32_t>* out_vert_pos_indices,
+                                           std::size_t frame_index = 0) {
     static_assert(sizeof(MeshVertex) == 9U * 4U, "MeshVertex must have no padding bytes");
     out_verts.clear();
     out_indices.clear();
+    if (out_vert_pos_indices != nullptr) {
+        out_vert_pos_indices->clear();
+    }
     const std::vector<MeshVertex> corners = build_rhi_vertices_from_brf(mesh, frame_index);
+    const bool keep_pos_map = (out_vert_pos_indices != nullptr);
 
     struct CornerHash {
         const std::vector<MeshVertex>* verts;
+        const std::vector<wse::asset::BrfFaceCorner>* brf_corners;
+        bool check_pos_idx;
         std::size_t operator()(std::uint32_t i) const noexcept {
             const auto* p = reinterpret_cast<const std::uint8_t*>(&(*verts)[i]);
             std::uint64_t h = 14695981039346656037ULL;
             for (std::size_t k = 0; k < sizeof(MeshVertex); ++k) {
                 h = (h ^ p[k]) * 1099511628211ULL;
             }
+            if (check_pos_idx) {
+                const auto vidx = static_cast<std::uint32_t>((*brf_corners)[i].vertex_index);
+                h = (h ^ vidx) * 1099511628211ULL;
+            }
             return static_cast<std::size_t>(h);
         }
     };
     struct CornerEq {
         const std::vector<MeshVertex>* verts;
+        const std::vector<wse::asset::BrfFaceCorner>* brf_corners;
+        bool check_pos_idx;
         bool operator()(std::uint32_t a, std::uint32_t b) const noexcept {
+            if (check_pos_idx &&
+                (*brf_corners)[a].vertex_index != (*brf_corners)[b].vertex_index) {
+                return false;
+            }
             return std::memcmp(&(*verts)[a], &(*verts)[b], sizeof(MeshVertex)) == 0;
         }
     };
     std::unordered_map<std::uint32_t, std::uint16_t, CornerHash, CornerEq> unique(
-        corners.size(), CornerHash{&corners}, CornerEq{&corners});
+        corners.size(), CornerHash{&corners, &mesh.face_corners, keep_pos_map},
+        CornerEq{&corners, &mesh.face_corners, keep_pos_map});
     constexpr std::uint32_t kUnmapped = 0xFFFFFFFFU;
     std::vector<std::uint32_t> remap(corners.size(), kUnmapped);
 
     out_verts.reserve(corners.size());
+    if (out_vert_pos_indices != nullptr) {
+        out_vert_pos_indices->reserve(corners.size());
+    }
     out_indices.reserve(mesh.faces.size() * 3U);
     for (const wse::asset::BrfMeshFace& face : mesh.faces) {
         if (face.corners[0] >= corners.size() || face.corners[1] >= corners.size() ||
@@ -116,18 +137,31 @@ inline void build_rhi_mesh_from_brf(const wse::asset::BrfMesh& mesh,
                 if (out_verts.size() >= 65536U) {
                     out_verts.clear();
                     out_indices.clear();
+                    if (out_vert_pos_indices != nullptr) {
+                        out_vert_pos_indices->clear();
+                    }
                     return;
                 }
                 const auto [it, inserted] = unique.try_emplace(
                     corner, static_cast<std::uint16_t>(out_verts.size()));
                 if (inserted) {
                     out_verts.push_back(corners[corner]);
+                    if (out_vert_pos_indices != nullptr) {
+                        out_vert_pos_indices->push_back(mesh.face_corners[corner].vertex_index);
+                    }
                 }
                 remap[corner] = it->second;
             }
             out_indices.push_back(static_cast<std::uint16_t>(remap[corner]));
         }
     }
+}
+
+inline void build_rhi_mesh_from_brf(const wse::asset::BrfMesh& mesh,
+                                    std::vector<MeshVertex>& out_verts,
+                                    std::vector<std::uint16_t>& out_indices,
+                                    std::size_t frame_index = 0) {
+    build_rhi_mesh_from_brf_mapped(mesh, out_verts, out_indices, nullptr, frame_index);
 }
 
 // Uploads one textured static `.brf` mesh to an `RhiDevice` once and renders it

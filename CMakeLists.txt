@@ -413,6 +413,7 @@ if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
         engine/tests/audio_test.cpp
         engine/tests/input_test.cpp
         engine/tests/scene_test.cpp
+        engine/tests/ui_test.cpp
     )
     set_target_properties(wse_selftest PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_compile_definitions(wse_selftest PRIVATE WSE_SELF_TEST_LIBRARY=1)
@@ -461,6 +462,7 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
     wse_add_host_test(audio)
     wse_add_host_test(input)
     wse_add_host_test(scene)
+    wse_add_host_test(ui)
 
     add_executable(selftest_host_test engine/tests/selftest_host_test.cpp)
     target_link_libraries(selftest_host_test PRIVATE wse_selftest)
