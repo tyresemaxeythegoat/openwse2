@@ -107,6 +107,52 @@ R0 deviation: translated loads and stores are plain (no `LDAPR`/`STLR`); the mem
 lowering lands in R3. A run that crashes inside generated code leaves `r0/report.txt`, which
 the next run shows.
 
+## R1 design (2026-11-19)
+
+Decided with the user: Zydis 4.1.0 decodes (MIT, amalgamated `Zydis.c`/`Zydis.h`, archive
+SHA-256 `aa9b82be3a37a2998bd8e16cf583bbf2b6c3d80e97dc20504169dc32ca1ced59`, pinned in CMake);
+the reference is a real CPU, not a second implementation; all of R1 lands as one batch.
+Measured on v1.1.5.6 (Capstone, local): 1,181,537 instructions in 14,644 `.pdata` functions,
+243 mnemonics. Functions containing: integer 14,514; direct calls 9,779; `rep`/string 4,345;
+indirect calls 3,396; SSE 3,284 (mostly scalar float: `movss` 39,542, `mulss` 18,649); system
+(`int3`, `cpuid`, …) 819; indirect `jmp` 363; `lock` 201; x87 18 (48 instructions); AVX none.
+
+**CPU state** (`wse/recomp/cpu_state.h`): 16 GPRs, `rip`, flags CF PF AF ZF SF OF DF as bytes,
+16 XMM registers (16-byte aligned), MXCSR. R0's offsets stay valid; new fields follow them.
+
+**Function ABI.** A translated function is `void fn(CpuState*)` and runs with guest memory equal
+to host memory (the image is mapped at its base). Guest calls keep the Win64 stack exactly: a
+direct `call T` pushes the return VA on the guest stack and calls `fn_T(state)`; on return the
+caller checks `state->rip` equals that return VA (anything else goes to
+`wse_rt_bad_return`). Indirect calls and `jmp`s to another function go through
+`wse_rt_dispatch(state, va)` (a sorted VA -> function table emitted with the module); an
+unknown VA calls `wse_rt_missing(state, va)`, which aborts loudly with the address (no
+translation during play). Calls through the import table call `wse_rt_import(state, slot_va)`
+(the R4 shims plug in there). A `jmp` to another function's entry is a tail call.
+
+**Function discovery.** Entries: `.pdata` begins (merging chained-unwind fragments into their
+parent), PDB publics in `.text`, and every direct call target. Bodies are found by following
+control flow from the entry (not by the `.pdata` range), so code shared between fragments is
+reached. Indirect `jmp`s inside a function are resolved as MSVC jump tables (bounded by the
+preceding `cmp`/`ja`); an unresolved one aborts at run time with its VA.
+
+**Lifting.** Integer (all ALU, shifts/rotates, `mul`/`imul`/`div`/`idiv`, `bt*`, `setcc`,
+`cmovcc`, `bswap`, `bsf`/`bsr`/`lzcnt`/`tzcnt`/`popcnt`, `cbw`…`cqo`, `xchg`, `xadd`,
+`cmpxchg`), `lock` forms as LLVM atomics, SSE/SSE2/SSE3/SSSE3/SSE4.1 scalar and packed
+(float, double, integer, conversions honouring MXCSR rounding, shuffles), and `rep`/string
+instructions as loops honouring DF. x87, AVX and privileged instructions are reported as
+unsupported. Memory ordering stays plain until R3.
+
+**Coverage meter.** Per build: how many functions decode, lift and verify, with the top
+unsupported mnemonics. It runs with the phone's R0 report and in CI on the synthetic corpus.
+
+**Oracle.** CI (x86-64 Linux): a corpus of C functions (ours) compiled by clang for Win64
+(`--target=x86_64-pc-windows-msvc`, freestanding) into a PE; the test maps it at its base, runs
+each function natively through an `ms_abi` pointer and translated for x86-64, on generated
+inputs, and compares registers, return values and memory. Retail: this PC runs chosen retail
+functions natively and records result hashes (as `tools/r0_pc_reference.cpp` does); the phone
+runs their translations and compares.
+
 ## What carries over
 
 - P-slices: the launcher (P10/P12), SAF `Vfs`, the Vulkan RHI and GPU path (P4), shader

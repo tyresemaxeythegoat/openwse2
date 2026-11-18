@@ -512,24 +512,106 @@ if(WSE_ENABLE_LLVM)
         core passes support target mc object option codegen ${_wse_llvm_target_components})
     separate_arguments(_wse_llvm_defs NATIVE_COMMAND "${LLVM_DEFINITIONS}")
 
+    # Zydis 4.1.0 x86-64 decoder (MIT), the amalgamated single-file release, SHA-256 pinned
+    # (`docs/RECOMP_PLAN.md` "R1 design"). Offline: -DWSE_ZYDIS_SOURCE_DIR=<dir with Zydis.c/.h>.
+    set(WSE_ZYDIS_URL
+        "https://github.com/zyantific/zydis/releases/download/v4.1.0/zydis-amalgamated.tar.gz")
+    set(WSE_ZYDIS_SHA256 "aa9b82be3a37a2998bd8e16cf583bbf2b6c3d80e97dc20504169dc32ca1ced59")
+    if(DEFINED WSE_ZYDIS_SOURCE_DIR)
+        set(wse_zydis_src_dir "${WSE_ZYDIS_SOURCE_DIR}")
+    else()
+        set(wse_zydis_tp_dir "${CMAKE_CURRENT_BINARY_DIR}/_third_party/zydis")
+        set(wse_zydis_tar "${wse_zydis_tp_dir}/zydis-amalgamated-4.1.0.tar.gz")
+        set(wse_zydis_src_dir "${wse_zydis_tp_dir}/amalgamated-dist")
+        file(MAKE_DIRECTORY "${wse_zydis_tp_dir}")
+        if(EXISTS "${wse_zydis_tar}")
+            file(SHA256 "${wse_zydis_tar}" _wse_zydis_actual_sha)
+            if(NOT _wse_zydis_actual_sha STREQUAL WSE_ZYDIS_SHA256)
+                file(REMOVE "${wse_zydis_tar}")
+                file(REMOVE_RECURSE "${wse_zydis_src_dir}")
+            endif()
+        endif()
+        if(NOT EXISTS "${wse_zydis_tar}")
+            message(STATUS "Downloading zydis-amalgamated 4.1.0 (SHA-256 verified)...")
+            file(DOWNLOAD "${WSE_ZYDIS_URL}" "${wse_zydis_tar}"
+                 EXPECTED_HASH "SHA256=${WSE_ZYDIS_SHA256}" TLS_VERIFY ON
+                 STATUS _wse_zydis_dl_status)
+            list(GET _wse_zydis_dl_status 0 _wse_zydis_dl_code)
+            if(NOT _wse_zydis_dl_code EQUAL 0)
+                file(REMOVE "${wse_zydis_tar}")
+                message(FATAL_ERROR "Failed to download Zydis: ${_wse_zydis_dl_status}")
+            endif()
+        endif()
+        if(NOT EXISTS "${wse_zydis_src_dir}/Zydis.c")
+            file(ARCHIVE_EXTRACT INPUT "${wse_zydis_tar}" DESTINATION "${wse_zydis_tp_dir}")
+        endif()
+    endif()
+    if(NOT EXISTS "${wse_zydis_src_dir}/Zydis.c")
+        message(FATAL_ERROR "Zydis source not found at ${wse_zydis_src_dir}")
+    endif()
+    add_library(wse_zydis STATIC "${wse_zydis_src_dir}/Zydis.c")
+    set_target_properties(wse_zydis PROPERTIES POSITION_INDEPENDENT_CODE ON LINKER_LANGUAGE C)
+    target_include_directories(wse_zydis SYSTEM PUBLIC "${wse_zydis_src_dir}")
+    # Decoder only: the formatter is kept for diagnostics (instruction text in reports).
+    target_compile_definitions(wse_zydis PUBLIC ZYDIS_STATIC_BUILD ZYCORE_STATIC_BUILD)
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(wse_zydis PRIVATE -w)
+    endif()
+
     add_library(wse_recomp STATIC
         engine/src/recomp/lifter_llvm.cpp
         engine/src/recomp/r0_spikes.cpp
+        engine/src/recomp/discover.cpp
+        engine/src/recomp/lift_r1.cpp
+        engine/src/recomp/lift_r1_int.cpp
+        engine/src/recomp/lift_r1_sse.cpp
+        engine/src/recomp/lift_r1_string.cpp
     )
     set_target_properties(wse_recomp PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_include_directories(wse_recomp SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${LLD_INCLUDE_DIRS})
     target_compile_definitions(wse_recomp PRIVATE ${_wse_llvm_defs})
     if(NOT LLVM_ENABLE_RTTI)
-        set_source_files_properties(engine/src/recomp/lifter_llvm.cpp PROPERTIES COMPILE_OPTIONS "-fno-rtti")
+        # Every translator source includes LLVM headers (classes with RTTI-free vtables).
+        target_compile_options(wse_recomp PRIVATE -fno-rtti)
     endif()
-    target_link_libraries(wse_recomp PUBLIC wse_engine PRIVATE lldELF lldCommon ${_wse_llvm_libs} ${CMAKE_DL_LIBS})
+    target_link_libraries(wse_recomp PUBLIC wse_engine PRIVATE wse_zydis lldELF lldCommon ${_wse_llvm_libs} ${CMAKE_DL_LIBS})
     wse_apply_strict_warnings(wse_recomp)
 
     if(WSE_BUILD_TESTS AND BUILD_TESTING AND NOT ANDROID)
         add_executable(recomp_llvm_test engine/tests/recomp_llvm_test.cpp)
-        target_link_libraries(recomp_llvm_test PRIVATE wse_recomp ${CMAKE_DL_LIBS})
+        target_link_libraries(recomp_llvm_test PRIVATE wse_recomp wse_zydis ${CMAKE_DL_LIBS})
         wse_apply_strict_warnings(recomp_llvm_test)
         add_test(NAME recomp_llvm COMMAND recomp_llvm_test)
+
+        # R1 differential corpus: our own C compiled for Win64 into a PE at 0x140000000 with no
+        # relocations or imports (`engine/tests/recomp_corpus/`). CI requires it
+        # (-DWSE_REQUIRE_RECOMP_CORPUS=ON); elsewhere the test skips it when the tools are missing.
+        option(WSE_REQUIRE_RECOMP_CORPUS "Fail configuration when the R1 Win64 corpus cannot be built" OFF)
+        find_program(WSE_CORPUS_CLANG NAMES clang-18 clang HINTS "${LLVM_TOOLS_BINARY_DIR}")
+        find_program(WSE_CORPUS_LLD_LINK NAMES lld-link-18 lld-link HINTS "${LLVM_TOOLS_BINARY_DIR}")
+        if(WSE_CORPUS_CLANG AND WSE_CORPUS_LLD_LINK)
+            set(_wse_corpus_dir "${CMAKE_CURRENT_BINARY_DIR}/recomp_corpus")
+            set(_wse_corpus_src "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/int_corpus.c")
+            set(_wse_corpus_exe "${_wse_corpus_dir}/int_corpus.exe")
+            file(MAKE_DIRECTORY "${_wse_corpus_dir}")
+            add_custom_command(
+                OUTPUT "${_wse_corpus_exe}"
+                COMMAND "${WSE_CORPUS_CLANG}" --target=x86_64-pc-windows-msvc -O2 -ffreestanding
+                        -fno-builtin -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx
+                        -fno-vectorize -fno-slp-vectorize -Wall -Wextra -Werror
+                        -c "${_wse_corpus_src}" -o "${_wse_corpus_dir}/int_corpus.obj"
+                COMMAND "${WSE_CORPUS_LLD_LINK}" -nologo "-out:${_wse_corpus_exe}" -entry:corpus_entry
+                        -subsystem:console -fixed -base:0x140000000 -nodefaultlib
+                        "${_wse_corpus_dir}/int_corpus.obj"
+                DEPENDS "${_wse_corpus_src}"
+                COMMENT "Building the R1 Win64 integer corpus"
+                VERBATIM)
+            add_custom_target(wse_recomp_corpus DEPENDS "${_wse_corpus_exe}")
+            add_dependencies(recomp_llvm_test wse_recomp_corpus)
+            target_compile_definitions(recomp_llvm_test PRIVATE "WSE_RECOMP_INT_CORPUS=\"${_wse_corpus_exe}\"")
+        elseif(WSE_REQUIRE_RECOMP_CORPUS)
+            message(FATAL_ERROR "R1 corpus: clang (${WSE_CORPUS_CLANG}) or lld-link (${WSE_CORPUS_LLD_LINK}) not found")
+        endif()
     endif()
 
     if(WSE_BUILD_ANDROID_APP)

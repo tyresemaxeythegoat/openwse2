@@ -1,21 +1,31 @@
 // Host test of the LLVM translator (`wse_recomp`, `WSE_ENABLE_LLVM=ON`; CI job `recomp-host`
 // against Ubuntu's LLVM 18). Synthetic code only (`recomp_test.cpp` functions and
 // `x86_synth.h`): lifts, optimizes, links with the embedded LLD, loads the result and checks
-// it against the reference interpreter; then runs the R0 spikes (a)-(c) as on the phone.
+// it against the reference interpreter; runs the R1 differential corpus (our C compiled for
+// Win64: native vs translated); then runs the R0 spikes (a)-(c) as on the phone.
 
 #include <dlfcn.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
+#include <iterator>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
+#include "../src/recomp/discover.h"
+#include "../src/recomp/lift_r1.h"
 #include "../src/recomp/r0_spikes.h"
 #include "../src/recomp/recomp_llvm.h"
+#include "wse/recomp/pe_image.h"
 #include "wse/recomp/r0_inputs.h"
+#include "wse/recomp/runtime.h"
 #include "wse/recomp/x86_interp.h"
 #include "wse/recomp/x86_synth.h"
 
@@ -31,7 +41,6 @@ void expect(bool condition, const char* what) {
 }
 
 using namespace wse::recomp;
-using GuestFn = void (*)(CpuState*);
 
 constexpr std::uint64_t kBase = 0x140001000ULL;
 
@@ -113,6 +122,280 @@ void test_translate_small_functions(const std::string& dir) {
     dlclose(h);
 }
 
+// --- R1 differential corpus (`engine/tests/recomp_corpus/int_corpus.c`) ---------------------
+// Our own C, compiled by clang for Win64 into a PE at 0x140000000 (CMake). The PE is mapped at
+// its base; every export runs natively (ms_abi) and translated on the same inputs.
+
+using NativeFn = std::uint64_t(__attribute__((ms_abi)) *)(std::uint64_t, std::uint64_t,
+                                                          std::uint64_t, std::uint64_t);
+
+struct Export {
+    std::string name;
+    std::uint64_t va = 0;
+};
+
+std::uint32_t rd32m(const std::uint8_t* p, std::size_t off) {
+    std::uint32_t v = 0;
+    std::memcpy(&v, p + off, 4);
+    return v;
+}
+
+std::vector<Export> read_exports(const std::uint8_t* mapped, std::size_t size, std::uint64_t base) {
+    std::vector<Export> out;
+    const std::uint32_t pe = rd32m(mapped, 0x3C);
+    const std::uint32_t dir = rd32m(mapped, pe + 24 + 112);  // PE32+ data directory 0
+    if (dir == 0 || dir + 40 > size) {
+        return out;
+    }
+    const std::uint32_t n_names = rd32m(mapped, dir + 0x18);
+    const std::uint32_t funcs = rd32m(mapped, dir + 0x1C);
+    const std::uint32_t names = rd32m(mapped, dir + 0x20);
+    const std::uint32_t ords = rd32m(mapped, dir + 0x24);
+    for (std::uint32_t i = 0; i < n_names; ++i) {
+        const std::uint32_t name_rva = rd32m(mapped, names + 4 * i);
+        std::uint16_t ord = 0;
+        std::memcpy(&ord, mapped + ords + 2 * i, 2);
+        Export e;
+        e.name = reinterpret_cast<const char*>(mapped + name_rva);
+        e.va = base + rd32m(mapped, funcs + 4U * ord);
+        out.push_back(e);
+    }
+    return out;
+}
+
+struct Rng {
+    std::uint64_t s = 0x9E3779B97F4A7C15ULL;
+    std::uint64_t next() {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        return s;
+    }
+};
+
+std::uint64_t pick(Rng& r) {
+    static const std::uint64_t kEdges[] = {0,
+                                           1,
+                                           2,
+                                           7,
+                                           0xFF,
+                                           0x100,
+                                           0x7FFF,
+                                           0x8000,
+                                           0xFFFF,
+                                           0x7FFFFFFF,
+                                           0x80000000ULL,
+                                           0xFFFFFFFFULL,
+                                           0x100000000ULL,
+                                           0x7FFFFFFFFFFFFFFFULL,
+                                           0x8000000000000000ULL,
+                                           ~0ULL,
+                                           ~0ULL - 1};
+    const std::uint64_t k = r.next();
+    switch (k % 4) {
+    case 0: return kEdges[(k >> 8) % (sizeof(kEdges) / sizeof(kEdges[0]))];
+    case 1: return (k >> 8) & 0xFFF;  // small: loop counts, shift counts, indices
+    default: return r.next();
+    }
+}
+
+void test_int_corpus(const char* path) {
+    std::ifstream in(path, std::ios::binary);
+    const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    PeImage img;
+    std::string err;
+    expect(!file.empty() && parse_pe(file.data(), file.size(), img, &err), "corpus: the Win64 PE parses");
+    if (file.empty() || img.size_of_image == 0) {
+        std::printf("  corpus %s: %s\n", path, err.c_str());
+        return;
+    }
+    const std::size_t map_size = (img.size_of_image + 0xFFFU) & ~static_cast<std::size_t>(0xFFF);
+    void* at = mmap(reinterpret_cast<void*>(img.image_base), map_size, PROT_READ | PROT_WRITE | PROT_EXEC,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    expect(at == reinterpret_cast<void*>(img.image_base), "corpus: the PE maps at its base");
+    if (at != reinterpret_cast<void*>(img.image_base)) {
+        return;
+    }
+    struct Unmap {  // R0 (b) maps 0x140000000 again later in this process
+        void* p;
+        std::size_t n;
+        ~Unmap() { munmap(p, n); }
+    } unmap{at, map_size};
+    auto* mapped = static_cast<std::uint8_t*>(at);
+    expect(map_pe_sections(file.data(), file.size(), img, mapped), "corpus: sections copy");
+
+    std::uint64_t text_b = 0;
+    std::uint64_t text_e = 0;
+    for (const PeSection& s : img.sections) {
+        if (s.name == ".text") {
+            text_b = img.image_base + s.virtual_address;
+            text_e = text_b + s.virtual_size;
+        }
+    }
+    const std::vector<Export> exports = read_exports(mapped, img.size_of_image, img.image_base);
+    expect(exports.size() >= 30, "corpus: exports are found");
+
+    // Entries: exports, non-chained .pdata begins, then direct call targets to a fixed point.
+    std::set<std::uint64_t> entries;
+    for (const Export& e : exports) {
+        entries.insert(e.va);
+    }
+    for (const PeFunctionRange& r : img.functions) {
+        if (((mapped[r.unwind] >> 3) & 0x4) == 0) {
+            entries.insert(img.image_base + r.begin);
+        }
+    }
+    ImageView view(mapped, img.image_base, img.size_of_image, text_b, text_e);
+    Discoverer disc(view);
+    std::map<std::uint64_t, DFunction> fns;
+    std::vector<std::uint64_t> work(entries.begin(), entries.end());
+    while (!work.empty()) {
+        const std::uint64_t e = work.back();
+        work.pop_back();
+        if (fns.count(e) != 0) {
+            continue;
+        }
+        DFunction f = disc.discover(e, entries);
+        for (const std::uint64_t t : f.call_targets) {
+            if (view.in_text(t) && entries.insert(t).second) {
+                work.push_back(t);
+            }
+        }
+        fns.emplace(e, std::move(f));
+    }
+    std::size_t complete = 0;
+    for (const auto& [va, f] : fns) {
+        if (f.error.empty() && f.unresolved_indirect_jumps.empty()) {
+            ++complete;
+        } else {
+            std::printf("  discover 0x%llx: %s\n", static_cast<unsigned long long>(va), f.error.c_str());
+        }
+    }
+    expect(complete == fns.size(), "corpus: every function body decodes completely");
+
+    ImageInfo info;
+    info.base = img.image_base;
+    R1Translator tr(info);
+    expect(tr.init_error().empty(), "corpus: the R1 translator initializes");
+    tr.declare(std::vector<std::uint64_t>(entries.begin(), entries.end()));
+    std::set<std::uint64_t> lifted;
+    for (const auto& [va, f] : fns) {
+        std::string why;
+        if (tr.lift(f, &why)) {
+            lifted.insert(va);
+        } else {
+            std::printf("  lift 0x%llx: %s\n", static_cast<unsigned long long>(va), why.c_str());
+        }
+    }
+    const LiftReport rep = tr.report();
+    std::printf("  coverage: %zu/%zu functions lifted\n", rep.lifted, rep.attempted);
+    for (const auto& [what, n] : rep.unsupported) {
+        std::printf("    unsupported %-32s %zu\n", what.c_str(), n);
+    }
+    expect(rep.lifted == fns.size(), "corpus: every integer function lifts");
+
+    std::vector<char> obj;
+    TranslateTimings t;
+    expect(tr.emit_object(2, obj, &t, &err) && !obj.empty(), "corpus: emit the O2 object");
+    char tmpl[] = "/tmp/wse_r1_corpus_XXXXXX";
+    const char* dir = mkdtemp(tmpl);
+    if (dir == nullptr || obj.empty()) {
+        std::printf("  emit: %s\n", err.c_str());
+        return;
+    }
+    const std::string o = std::string(dir) + "/int_corpus.o";
+    const std::string so = std::string(dir) + "/int_corpus.so";
+    std::ofstream(o, std::ios::binary).write(obj.data(), static_cast<std::streamsize>(obj.size()));
+    std::string log;
+    expect(link_shared_object({o}, so, &log), "corpus: LLD links the translated module");
+    void* h = dlopen(so.c_str(), RTLD_NOW | RTLD_LOCAL);
+    expect(h != nullptr, "corpus: dlopen the translated module");
+    if (h == nullptr) {
+        std::printf("  link: %s dlopen: %s\n", log.c_str(), dlerror());
+        return;
+    }
+    const auto* rows = static_cast<const FnRow*>(dlsym(h, "wse_fn_table"));
+    const auto* count = static_cast<const std::uint64_t*>(dlsym(h, "wse_fn_table_count"));
+    expect(rows != nullptr && count != nullptr && *count == lifted.size(),
+           "corpus: the module exports its dispatch table (defined functions only)");
+    if (rows == nullptr || count == nullptr) {
+        return;
+    }
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    rt.add_table(rows, static_cast<std::size_t>(*count));
+    std::printf("  translated %zu functions (lift %.1f ms, opt %.1f ms, codegen %.1f ms, %zu B)\n",
+                rt.function_count(), t.lift_ms, t.optimize_ms, t.codegen_ms, obj.size());
+
+    constexpr int kRuns = 200;
+    constexpr int kCalleeSaved[] = {3, 5, 6, 7, 12, 13, 14, 15};
+    alignas(16) static std::uint8_t buf_native[4096];
+    alignas(16) static std::uint8_t buf_trans[4096];
+    Rng rng;
+    std::size_t checked = 0;
+    for (const Export& e : exports) {
+        if (lifted.count(e.va) == 0) {
+            continue;
+        }
+        const bool is_mem = e.name.rfind("m_", 0) == 0;
+        int bad = 0;
+        for (int run = 0; run < kRuns && bad < 3; ++run) {
+            std::uint64_t arg[4] = {pick(rng), pick(rng), pick(rng), pick(rng)};
+            for (std::uint8_t& b : buf_native) {
+                b = static_cast<std::uint8_t>(rng.next());
+            }
+            std::memcpy(buf_trans, buf_native, sizeof(buf_trans));
+            if (is_mem) {
+                arg[0] = reinterpret_cast<std::uintptr_t>(buf_native);
+            }
+            const std::uint64_t want = reinterpret_cast<NativeFn>(e.va)(arg[0], arg[1], arg[2], arg[3]);
+
+            GuestStack stack;
+            CpuState s;
+            stack.prepare(s);
+            for (int r = 0; r < 16; ++r) {
+                if (r != 4) {
+                    s.gpr[r] = rng.next();
+                }
+            }
+            s.gpr[1] = is_mem ? reinterpret_cast<std::uintptr_t>(buf_trans) : arg[0];
+            s.gpr[2] = arg[1];
+            s.gpr[8] = arg[2];
+            s.gpr[9] = arg[3];
+            const CpuState before = s;
+            faults.clear();
+            const bool ran = rt.run(s, e.va);
+            const bool same_mem = std::memcmp(buf_native, buf_trans, sizeof(buf_trans)) == 0;
+            bool ok = ran && faults.empty() && s.gpr[0] == want && s.rip == GuestStack::kReturnSentinel &&
+                      s.gpr[4] == before.gpr[4] + 8 && same_mem;
+            for (const int r : kCalleeSaved) {
+                ok = ok && s.gpr[r] == before.gpr[r];
+            }
+            if (!ok) {
+                ++bad;
+                std::printf("  MISMATCH %s(0x%llx, 0x%llx, 0x%llx, 0x%llx): native 0x%llx translated 0x%llx "
+                            "rip 0x%llx faults %zu memory %s\n",
+                            e.name.c_str(), static_cast<unsigned long long>(arg[0]),
+                            static_cast<unsigned long long>(arg[1]), static_cast<unsigned long long>(arg[2]),
+                            static_cast<unsigned long long>(arg[3]), static_cast<unsigned long long>(want),
+                            static_cast<unsigned long long>(s.gpr[0]), static_cast<unsigned long long>(s.rip),
+                            faults.size(), same_mem ? "same" : "differs");
+                for (const Fault& f : faults) {
+                    std::printf("    fault: %s at 0x%llx %s\n", fault_name(f.kind),
+                                static_cast<unsigned long long>(f.va), f.what.c_str());
+                }
+            }
+        }
+        if (bad == 0) {
+            ++checked;
+        }
+    }
+    std::printf("  differential: %zu/%zu exports match native on %d inputs each\n", checked, exports.size(), kRuns);
+    expect(checked == exports.size(), "corpus: every export matches native (rax, memory, callee-saved, rsp)");
+    dlclose(h);
+}
+
 }  // namespace
 
 int main() {
@@ -123,6 +406,11 @@ int main() {
         return 1;
     }
     test_translate_small_functions(dir);
+#ifdef WSE_RECOMP_INT_CORPUS
+    test_int_corpus(WSE_RECOMP_INT_CORPUS);
+#else
+    std::printf("  (no Win64 corpus: clang/lld-link were not found at configure time)\n");
+#endif
 
     R0SpikeInput in;
     in.work_dir = dir;

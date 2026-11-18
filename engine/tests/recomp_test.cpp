@@ -19,6 +19,7 @@
 #include "wse/recomp/pdb_reader.h"
 #include "wse/recomp/pe_image.h"
 #include "wse/recomp/r0_inputs.h"
+#include "wse/recomp/runtime.h"
 #include "wse/recomp/x86_decode.h"
 #include "wse/recomp/x86_interp.h"
 #include "wse/recomp/x86_synth.h"
@@ -2423,6 +2424,137 @@ void test_pdb_reader() {
     }
 }
 
+// --- R1 runtime (`runtime.h`): plain C++ functions stand in for translated ones -------------
+
+namespace rt_test {
+
+constexpr std::uint64_t kLeafVa = 0x140010000ULL;
+constexpr std::uint64_t kCallerVa = 0x140010100ULL;
+constexpr std::uint64_t kSlotVa = 0x1400F0008ULL;
+
+void guest_ret(CpuState* s) {
+    std::uint64_t ret = 0;
+    std::memcpy(&ret, reinterpret_cast<const void*>(s->gpr[4]), 8);
+    s->gpr[4] += 8;
+    s->rip = ret;
+}
+
+void leaf(CpuState* s) {  // rax = rcx * 3
+    s->gpr[0] = s->gpr[1] * 3;
+    guest_ret(s);
+}
+
+// What the lifter emits for `call [dispatch target]`: push the return VA, flush, call the
+// dispatch hook, then check `rip`.
+void push_and_hook(CpuState* s, std::uint64_t ret_va, std::uint64_t target, bool import) {
+    s->gpr[4] -= 8;
+    std::memcpy(reinterpret_cast<void*>(s->gpr[4]), &ret_va, 8);
+    if (import) {
+        s->hooks->import_call(s, target);
+    } else {
+        s->hooks->dispatch(s, target);
+    }
+    if (s->rip != ret_va) {
+        s->hooks->bad_return(s, ret_va);
+    }
+}
+
+void caller(CpuState* s) {  // rax = leaf(rcx) + 1 through the dispatcher
+    push_and_hook(s, kCallerVa + 0x10, kLeafVa, false);
+    s->gpr[0] += 1;
+    guest_ret(s);
+}
+
+}  // namespace rt_test
+
+void test_runtime_dispatch() {
+    using namespace rt_test;
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    const FnRow rows[] = {{kCallerVa, &caller}, {kLeafVa, &leaf}, {kCallerVa, &leaf}};
+    rt.add_table(rows, 3);
+    expect(rt.function_count() == 2, "runtime: duplicate VAs collapse to one row");
+    expect(rt.find(kLeafVa) == &leaf && rt.find(kCallerVa) == &caller,
+           "runtime: unsorted rows sort; the first function of a duplicate VA wins");
+    expect(rt.find(kLeafVa + 1) == nullptr && rt.find(0) == nullptr && rt.find(~0ULL) == nullptr,
+           "runtime: VAs between, below and above the table are not found");
+
+    GuestStack stack;
+    CpuState s;
+    stack.prepare(s);
+    s.gpr[1] = 14;
+    const std::uint64_t rsp0 = s.gpr[4];
+    expect(rt.run(s, kCallerVa) && s.gpr[0] == 43 && s.rip == GuestStack::kReturnSentinel &&
+               s.gpr[4] == rsp0 + 8 && faults.empty(),
+           "runtime: nested dispatch runs and returns to the sentinel with rsp popped");
+    expect(s.hooks == rt.hooks() && rt.hooks()->context == &rt, "runtime: attach sets the hook table");
+
+    stack.prepare(s);
+    expect(!rt.run(s, 0x140099999ULL) && faults.size() == 1 &&
+               faults[0].kind == FaultKind::missing_function && faults[0].va == 0x140099999ULL &&
+               s.rip == Runtime::kFaultRip,
+           "runtime: an unknown entry VA faults with its address");
+
+    // A dispatched call to a missing VA faults once (the caller's return check stays quiet).
+    faults.clear();
+    stack.prepare(s);
+    rt.attach(s);
+    push_and_hook(&s, 0x140020000ULL, 0x140077777ULL, false);
+    expect(faults.size() == 1 && faults[0].kind == FaultKind::missing_function &&
+               faults[0].va == 0x140077777ULL,
+           "runtime: a missing dispatch target reports once, not again as a bad return");
+
+    // Imports: no shim -> fault; a shim pops the return VA like the real callee.
+    faults.clear();
+    stack.prepare(s);
+    rt.attach(s);
+    push_and_hook(&s, 0x140020010ULL, kSlotVa, true);
+    expect(faults.size() == 1 && faults[0].kind == FaultKind::missing_import && faults[0].va == kSlotVa,
+           "runtime: an import with no shim faults with its IAT slot");
+    rt.set_import(kSlotVa, [](CpuState& st) {
+        st.gpr[0] = 0x5151;
+        Runtime::return_from_import(st);
+    });
+    faults.clear();
+    stack.prepare(s);
+    rt.attach(s);
+    const std::uint64_t rsp1 = s.gpr[4];
+    push_and_hook(&s, 0x140020020ULL, kSlotVa, true);
+    expect(faults.empty() && s.gpr[0] == 0x5151 && s.rip == 0x140020020ULL && s.gpr[4] == rsp1,
+           "runtime: an import shim returns to the caller with rsp balanced");
+
+    // A callee that returns elsewhere is reported with the expected VA.
+    faults.clear();
+    stack.prepare(s);
+    rt.attach(s);
+    s.rip = 0x140030000ULL;
+    s.hooks->bad_return(&s, 0x140020030ULL);
+    expect(faults.size() == 1 && faults[0].kind == FaultKind::bad_return &&
+               faults[0].va == 0x140020030ULL && faults[0].rip == 0x140030000ULL,
+           "runtime: bad_return reports the expected VA and the actual rip");
+
+    // Unsupported code carries the translator's reason.
+    faults.clear();
+    s.hooks->unsupported(&s, 0x140040000ULL, "fld");
+    expect(faults.size() == 1 && faults[0].kind == FaultKind::unsupported && faults[0].what == "fld" &&
+               s.rip == Runtime::kFaultRip,
+           "runtime: unsupported reports the instruction VA and reason");
+
+    // Segment bases.
+    faults.clear();
+    s.rip = 0x140050000ULL;
+    expect(s.hooks->segment_base(&s, Runtime::kSegGs) == 0 && faults.size() == 1 &&
+               faults[0].kind == FaultKind::segment && s.rip == 0x140050000ULL,
+           "runtime: an unset segment base faults and keeps rip");
+    rt.set_segment_base(Runtime::kSegGs, 0x7FF000000000ULL);
+    rt.set_segment_base(Runtime::kSegFs, 0x1000ULL);
+    expect(s.hooks->segment_base(&s, Runtime::kSegGs) == 0x7FF000000000ULL &&
+               s.hooks->segment_base(&s, Runtime::kSegFs) == 0x1000ULL && faults.size() == 1,
+           "runtime: set segment bases are returned");
+    expect(rt.fault_count == 6, "runtime: every fault is counted");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -2450,6 +2582,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_interp_flags_exhaustive();
     test_eval_cond_exhaustive();
     test_register_and_memory_writes();
+    test_runtime_dispatch();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");
         return 0;

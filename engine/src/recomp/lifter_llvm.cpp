@@ -7,6 +7,7 @@
 // lands with R3; R0 only runs a single-threaded leaf function.
 
 #include "recomp_llvm.h"
+#include "llvm_common.h"
 
 #include <chrono>
 #include <cstddef>
@@ -63,13 +64,9 @@ void init_llvm_once() {
     });
 }
 
-struct TargetSetup {
-    std::string triple;
-    std::unique_ptr<llvm::TargetMachine> tm;
-    std::string error;
-};
+using llvm_common::TargetSetup;
 
-TargetSetup make_target(int opt_level) {
+TargetSetup make_target_impl(int opt_level) {
     init_llvm_once();
     TargetSetup t;
     t.triple = llvm::sys::getProcessTriple();
@@ -406,7 +403,7 @@ private:
     std::map<std::uint64_t, llvm::BasicBlock*> blocks_;
 };
 
-bool optimize_and_emit(llvm::Module& m, llvm::TargetMachine& tm, int opt_level,
+bool optimize_and_emit_impl(llvm::Module& m, llvm::TargetMachine& tm, int opt_level,
                        std::vector<char>& object, TranslateTimings* timings, std::string* error) {
     m.setTargetTriple(tm.getTargetTriple().str());
     m.setDataLayout(tm.createDataLayout());
@@ -455,6 +452,17 @@ bool optimize_and_emit(llvm::Module& m, llvm::TargetMachine& tm, int opt_level,
 
 }  // namespace
 
+namespace llvm_common {
+
+TargetSetup make_target(int opt_level) { return make_target_impl(opt_level); }
+
+bool optimize_and_emit(llvm::Module& m, llvm::TargetMachine& tm, int opt_level,
+                       std::vector<char>& object, TranslateTimings* timings, std::string* error) {
+    return optimize_and_emit_impl(m, tm, opt_level, object, timings, error);
+}
+
+}  // namespace llvm_common
+
 struct Translator::Impl {
     std::unique_ptr<llvm::LLVMContext> context = std::make_unique<llvm::LLVMContext>();
     std::unique_ptr<llvm::Module> module;
@@ -471,7 +479,7 @@ struct Translator::Impl {
 };
 
 Translator::Translator() : impl_(std::make_unique<Impl>()) {
-    const TargetSetup t = make_target(2);
+    const TargetSetup t = make_target_impl(2);
     impl_->triple = t.triple;
     impl_->init_error = t.error;
     impl_->reset_module();
@@ -505,7 +513,7 @@ bool Translator::add_function(const DecodedFunction& fn, const std::string& symb
 
 bool Translator::emit_object(int opt_level, std::vector<char>& object, TranslateTimings* timings,
                              std::string* error) {
-    const TargetSetup t = make_target(opt_level);
+    const TargetSetup t = make_target_impl(opt_level);
     if (!t.tm) {
         if (error != nullptr) {
             *error = t.error;
@@ -516,13 +524,13 @@ bool Translator::emit_object(int opt_level, std::vector<char>& object, Translate
         *timings = TranslateTimings{};
         timings->lift_ms = impl_->lift_ms;
     }
-    const bool ok = optimize_and_emit(*impl_->module, *t.tm, opt_level, object, timings, error);
+    const bool ok = optimize_and_emit_impl(*impl_->module, *t.tm, opt_level, object, timings, error);
     impl_->reset_module();
     return ok;
 }
 
 bool emit_probe_object(const std::string& symbol, std::vector<char>& object, std::string* error) {
-    const TargetSetup t = make_target(2);
+    const TargetSetup t = make_target_impl(2);
     if (!t.tm) {
         if (error != nullptr) {
             *error = t.error;
@@ -537,7 +545,7 @@ bool emit_probe_object(const std::string& symbol, std::vector<char>& object, std
     auto* f = llvm::Function::Create(fty, llvm::Function::ExternalLinkage, symbol, m);
     b.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", f));
     b.CreateRet(b.CreateAdd(b.CreateMul(f->getArg(0), f->getArg(1)), f->getArg(2)));
-    return optimize_and_emit(m, *t.tm, 2, object, nullptr, error);
+    return optimize_and_emit_impl(m, *t.tm, 2, object, nullptr, error);
 }
 
 bool link_shared_object(const std::vector<std::string>& objects, const std::string& output,

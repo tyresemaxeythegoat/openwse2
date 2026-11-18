@@ -19,19 +19,12 @@
 #include <string>
 #include <vector>
 
+#include "wse/recomp/cpu_state.h"
 #include "wse/recomp/x86_decode.h"
 
 namespace wse::recomp {
 
-struct CpuState {
-    std::uint64_t gpr[16] = {};
-    std::uint64_t rip = 0;
-    bool cf = false;
-    bool pf = false;
-    bool zf = false;
-    bool sf = false;
-    bool of = false;
-};
+// The interpreter models the R0 integer subset of `CpuState` (`cpu_state.h`).
 
 struct DecodedFunction {
     std::uint64_t start = 0;

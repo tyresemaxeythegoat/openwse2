@@ -78,13 +78,14 @@ jobs:
       - name: Install LLVM 18 + LLD development packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev liblld-18-dev zlib1g-dev libzstd-dev \
+          sudo apt-get install -y llvm-18-dev liblld-18-dev clang-18 lld-18 zlib1g-dev libzstd-dev \
             libxml2-dev libedit-dev libffi-dev libncurses-dev libcurl4-openssl-dev
 
       - name: Build and run the translator test
         run: |
           CXX=clang++-18 cmake -S . -B build-recomp -DWSE_ENABLE_LLVM=ON \
-            -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm -DLLD_DIR=/usr/lib/llvm-18/lib/cmake/lld
+            -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm -DLLD_DIR=/usr/lib/llvm-18/lib/cmake/lld \
+            -DWSE_REQUIRE_RECOMP_CORPUS=ON
           cmake --build build-recomp -j"$(nproc)" --target recomp_llvm_test recomp_test
           ./build-recomp/recomp_test
           ./build-recomp/recomp_llvm_test
