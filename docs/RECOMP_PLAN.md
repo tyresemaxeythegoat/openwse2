@@ -123,18 +123,25 @@ indirect calls 3,396; SSE 3,284 (mostly scalar float: `movss` 39,542, `mulss` 18
 **Function ABI.** A translated function is `void fn(CpuState*)` and runs with guest memory equal
 to host memory (the image is mapped at its base). Guest calls keep the Win64 stack exactly: a
 direct `call T` pushes the return VA on the guest stack and calls `fn_T(state)`; on return the
-caller checks `state->rip` equals that return VA (anything else goes to
-`wse_rt_bad_return`). Indirect calls and `jmp`s to another function go through
-`wse_rt_dispatch(state, va)` (a sorted VA -> function table emitted with the module); an
-unknown VA calls `wse_rt_missing(state, va)`, which aborts loudly with the address (no
-translation during play). Calls through the import table call `wse_rt_import(state, slot_va)`
-(the R4 shims plug in there). A `jmp` to another function's entry is a tail call.
+caller checks `state->rip` equals that return VA (anything else calls the `bad_return` hook).
+Every call out of translated code goes through the `RuntimeHooks` table that `CpuState::hooks`
+points at (`wse/recomp/cpu_state.h`), so a translated module imports nothing; the link uses
+`-z defs` to enforce that. Indirect calls and `jmp`s to another function call `dispatch(state,
+va)`, which looks the VA up in the `wse_fn_table` each module exports (defined functions only);
+an unknown VA is a fault that aborts loudly with the address (no translation during play). Calls
+through the import table call `import_call(state, slot_va)` (the R4 shims plug in there).
+`gs:`/`fs:` operands ask `segment_base` (R3). A 64-bit `div`/`idiv` whose `rdx` is more than
+`rax`'s extension calls `div128`, because LLVM lowers a 128-bit division to a compiler-rt call.
+A `jmp` to another function's entry is a tail call. The host side is `wse/recomp/runtime.h`
+(`Runtime`: the table, the hooks, and faults reported to a handler).
 
 **Function discovery.** Entries: `.pdata` begins (merging chained-unwind fragments into their
 parent), PDB publics in `.text`, and every direct call target. Bodies are found by following
 control flow from the entry (not by the `.pdata` range), so code shared between fragments is
 reached. Indirect `jmp`s inside a function are resolved as MSVC jump tables (bounded by the
-preceding `cmp`/`ja`); an unresolved one aborts at run time with its VA.
+preceding `cmp`/`ja`, or by an `and idx, 2^k - 1` mask), in MSVC's shape (image-relative
+entries) and clang's (entries relative to the table); an unresolved one aborts at run time with
+its VA.
 
 **Lifting.** Integer (all ALU, shifts/rotates, `mul`/`imul`/`div`/`idiv`, `bt*`, `setcc`,
 `cmovcc`, `bswap`, `bsf`/`bsr`/`lzcnt`/`tzcnt`/`popcnt`, `cbw`…`cqo`, `xchg`, `xadd`,
@@ -143,13 +150,24 @@ preceding `cmp`/`ja`); an unresolved one aborts at run time with its VA.
 instructions as loops honouring DF. x87, AVX and privileged instructions are reported as
 unsupported. Memory ordering stays plain until R3.
 
+R1 deviations (each also noted next to its code): a `lock` operand is assumed naturally aligned
+(AArch64 atomics need it; x86 would bus-lock a misaligned one); `cvtsd2ss`/`cvtpd2ps` round to
+nearest whatever MXCSR.RC says; with two NaN inputs the NaN that propagates may differ from x86
+(LLVM treats `fadd` and friends as commutative); string instructions with a `gs:`/`fs:` override
+and 16-bit addressing are unsupported.
+
 **Coverage meter.** Per build: how many functions decode, lift and verify, with the top
 unsupported mnemonics. It runs with the phone's R0 report and in CI on the synthetic corpus.
 
-**Oracle.** CI (x86-64 Linux): a corpus of C functions (ours) compiled by clang for Win64
-(`--target=x86_64-pc-windows-msvc`, freestanding) into a PE; the test maps it at its base, runs
-each function natively through an `ms_abi` pointer and translated for x86-64, on generated
-inputs, and compares registers, return values and memory. Retail: this PC runs chosen retail
+**Oracle.** CI (x86-64 Linux): a corpus of C functions (ours: `engine/tests/recomp_corpus/`
+`int_corpus.c` without SSE, `string_corpus.c` with inline-asm string instructions, `sse_corpus.c`
+at `-msse4.1` with the vectorizers on) compiled by clang for Win64
+(`--target=x86_64-pc-windows-msvc`, freestanding) and linked by lld-link into one PE at
+0x140000000; the test maps it at its base, runs each export natively through an `ms_abi` pointer
+and translated for x86-64, 200 generated inputs each, and compares `rax`, the memory buffer, the
+callee-saved registers (`rbx rbp rsi rdi r12-r15`, `xmm6-xmm15`), `rsp` and DF. Functions that are
+reached only through a pointer table are exported, as retail code reaches them through PDB
+publics. Retail: this PC runs chosen retail
 functions natively and records result hashes (as `tools/r0_pc_reference.cpp` does); the phone
 runs their translations and compares.
 

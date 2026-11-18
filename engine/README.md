@@ -30,13 +30,16 @@ engine/
   include/wse/asset/  brf.h, dds.h, shader.h, skeleton.h,  .brf / .dds / WAV+OGG+MP3 asset decoders, module resource catalog, shader/material/SPIR-V pipeline, skeletal FK & skinning
                       audio.h, audio_codecs.h
   include/wse/recomp/ x86_decode.h, x86_interp.h,             Phase 5 R0 x86-64 decoder subset, reference interpreter,
-                      pe_image.h, r0_inputs.h, x86_synth.h    PE32+ reader, R0 (d) vectors, synthetic test code
+                      pe_image.h, r0_inputs.h, x86_synth.h,   PE32+ reader, R0 (d) vectors, synthetic test code,
+                      pdb_reader.h, cpu_state.h, runtime.h    PDB publics, R1 CPU state + hooks, R1 dispatcher/runtime
   src/audio/          wse_audio_internal.hpp,               `stb_vorbis` + `dr_mp3` codec backend (`wse_audio`, isolated from public headers)
                       wse_audio_{vendor,codecs}.cpp
   src/lua/            lua_bitop.*, lua_globals_script.hpp,    stock MIT Lua 5.1.5 WSE runtime (`wse_lua`, `<lua.h>` isolated here)
                       wse_lua_{internal.hpp,ops,callbacks,manager}.cpp
-  src/recomp/         recomp_llvm.h, r0_spikes.h,             Phase 5 R0 LLVM 18 + LLD lifter & spike runner
-                      lifter_llvm.cpp, r0_spikes.cpp          (`wse_recomp`, built only with `-DWSE_ENABLE_LLVM=ON`)
+  src/recomp/         recomp_llvm.h, r0_spikes.h,             Phase 5 R0 LLVM 18 + LLD lifter & spike runner;
+                      lifter_llvm.cpp, r0_spikes.cpp,         R1 Zydis discovery and lifter (core, integer, SSE,
+                      discover.*, lift_r1*.{h,cpp},           string families) (`wse_recomp`, built only with
+                      llvm_common.h                           `-DWSE_ENABLE_LLVM=ON`)
   tools/              wse_headless.cpp, wse_brf.cpp           headless module CLI validator (`Modules/Native`) + `.brf`/`.dds` inspector
   tests/              one *_test.cpp per suite (+ wse_test_common.h),
                       plus wse_selftest.{h,cpp} and selftest_host_test.cpp, no framework
@@ -116,7 +119,9 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `include/wse/recomp/x86_synth.h` | synthetic x86-64 test function generator (`make_synthetic_function`) in the R0 decoder subset for R0 (c) timing and host tests | port infrastructure |
 | `src/recomp/{recomp_llvm,r0_spikes}.h`, `src/recomp/{lifter_llvm,r0_spikes}.cpp` | Phase 5 R0 LLVM 18 + LLD lifter, optimizer, object emitter, embedded linker (`Translator`, `emit_probe_object`, `link_shared_object`), and spike runner (`run_r0_spikes`; `wse_recomp` under `-DWSE_ENABLE_LLVM=ON`, `libwse_r0.so` via `../platform/android/r0_jni.cpp` for `../android/app/src/main/kotlin/org/wse2/android/launcher/R0Spikes.kt`) | port infrastructure (`rglString::indexOf` `0x1403103f0` checked for R0 (d); design in `docs/RECOMP_PLAN.md`) |
 | `tests/recomp_test.cpp` | host suite `recomp`: `decode_insn` operands/rejections, `Interpreter` flags, `decode_function`, synthetic R0 (c) model match, `parse_pe`/`map_pe_sections`, and R0 (d) vectors/FNV-1a | synthetic x86-64 bytes + synthetic PE32+ |
-| `tests/recomp_llvm_test.cpp` | host translator test (`recomp_llvm`, built with `-DWSE_ENABLE_LLVM=ON`, CI job `recomp-host`): lifts/optimizes/links synthetic functions and runs R0 spikes (a)–(c) against `Interpreter` | synthetic x86-64 bytes only |
+| `include/wse/recomp/cpu_state.h`, `include/wse/recomp/runtime.h` | R1 `CpuState` (448 B: GPRs, `rip`, flags, XMM, MXCSR, hook table) and `RuntimeHooks`; `Runtime`: the `wse_fn_table` dispatcher, `import_call` shims, `bad_return` / `unsupported` / segment faults, `div128` | port infrastructure |
+| `src/recomp/discover.{h,cpp}`, `src/recomp/lift_r1*.{h,cpp}`, `src/recomp/llvm_common.h` | R1: Zydis 4.1.0 function discovery (control flow from each entry, MSVC and clang jump tables, tail calls) and the LLVM 18 lifter (`R1Translator`; families `lift_r1_int.cpp`, `lift_r1_sse.cpp`, `lift_r1_string.cpp`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R1 design") |
+| `tests/recomp_llvm_test.cpp` | host translator test (`recomp_llvm`, built with `-DWSE_ENABLE_LLVM=ON`, CI job `recomp-host`): lifts/optimizes/links synthetic functions, runs the R1 differential corpus (`tests/recomp_corpus/*_corpus.c` compiled for Win64: every export native vs translated) and R0 spikes (a)–(c) against `Interpreter` | synthetic x86-64 bytes and our own C only |
 | `tests/wse_selftest.{h,cpp}`, `tests/selftest_host_test.cpp` | shared aggregate runner invoking all `24` core suites (`WSE_SELF_TEST_LIBRARY=1`) for both host verification (`selftest_host_test`) and the Android SDL3 `libwse2.so` app shell (`platform/sdl/sdl_selftest_main.cpp`); `run_all_suites` takes an optional stop callback polled between suites. In the CMake build each suite is compiled once into `wse_selftest` and every `<name>_test` executable is `tests/suite_main.cpp` linked against it | all 24 suites + `fixtures/scripts.txt` |
 
 ## Module text format
@@ -853,6 +858,23 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   (`LoadedCode::load_own`) accepts only 64-bit `ET_DYN` ELF objects with `PT_LOAD` segments,
   `.dynsym` symbols, `R_AARCH64_RELATIVE` / `R_X86_64_RELATIVE` relocations, and zero `DT_NEEDED`
   entries (external imports and all other relocation types are refused).
+- **R1 runtime faults (`runtime.h`):** a dispatch to an untranslated VA, a callee returning to
+  the wrong VA, an untranslated instruction, an import with no shim and an unset segment base
+  all go to `Runtime::on_fault`; the default prints the fault with its address and aborts (no
+  translation during play). After a fault `rip` is set to `Runtime::kFaultRip`, so the caller's
+  return check stays quiet instead of reporting the same fault twice.
+- **R1 `#DE` (`lift_r1_int.cpp`):** a zero divisor or a quotient that does not fit calls the
+  `unsupported` hook with `#DE` in place of raising the exception (Win64 SEH arrives in R3).
+- **R1 aligned `lock` (`lift_r1_int.cpp`):** `lock`-prefixed operands are lowered as naturally
+  aligned LLVM atomics; a misaligned one is not atomic-safe on the phone (x86 would bus-lock).
+- **R1 SSE (`lift_r1_sse.cpp`):** `cvtsd2ss`/`cvtpd2ps` round to nearest whatever MXCSR.RC says;
+  with two NaN inputs the propagated NaN may differ from x86. Float-to-int conversions give the
+  x86 "integer indefinite" value out of range instead of LLVM poison.
+- **R1 string instructions (`lift_r1_string.cpp`):** `gs:`/`fs:` overrides, `lock` and 16-bit
+  addressing are reported unsupported; there is no `memmove`/`memset` fast path (it would import
+  libc).
+- **Import-free modules (`lifter_llvm.cpp`):** translated modules link with `-z defs`; on an
+  x86-64 host the target CPU is `x86-64-v2` so `llvm.floor`/`roundeven` stay inline.
 - **R0 (d) input bounds (`r0_inputs.h`):** `make_r0_index_of_cases` keeps `start` in `[0, len]`
   because retail `rglString::indexOf` (`0x1403103f0`) does not check `start`. `pe_image.h`
   bounds-checks all PE32+ headers, sections, and `.pdata` reads against the input buffer.

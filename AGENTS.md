@@ -55,12 +55,13 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
 - **Recompiler gate (`WSE_ENABLE_LLVM`, Linux/CI):**
   ```sh
   CXX=clang++-18 cmake -S . -B build-recomp -DWSE_ENABLE_LLVM=ON \
-    -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm -DLLD_DIR=/usr/lib/llvm-18/lib/cmake/lld
+    -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm -DLLD_DIR=/usr/lib/llvm-18/lib/cmake/lld \
+    -DWSE_REQUIRE_RECOMP_CORPUS=ON
   cmake --build build-recomp -j"$(nproc)" --target recomp_llvm_test recomp_test
   ./build-recomp/recomp_test
   ./build-recomp/recomp_llvm_test
   ```
-  Requires `llvm-18-dev` and `liblld-18-dev` (plus their transitive dev packages; CI job `recomp-host`, synthetic code only).
+  Requires `llvm-18-dev`, `liblld-18-dev`, `clang-18` and `lld-18` (plus their transitive dev packages; CI job `recomp-host`, synthetic code only). CMake downloads Zydis 4.1.0 (SHA-256 pinned; offline: `-DWSE_ZYDIS_SOURCE_DIR=<dir with Zydis.c>`). `clang` and `lld-link` build the R1 differential corpus (`engine/tests/recomp_corpus/*_corpus.c`) into a Win64 PE; `recomp_llvm_test` must print `differential: N/N exports match`. A corpus function reached only through a pointer must be exported (discovery follows direct calls only). Translated modules link with `-z defs`: an LLVM lowering that needs libm, libatomic or compiler-rt fails the link and must be kept inline or moved behind a `RuntimeHooks` entry.
 - **Android NDK gate (CI-verified for every pushed commit on any branch):**
   ```sh
   aarch64-linux-android29-clang++ -std=c++20 -O2 -Wall -Wextra -Werror ...
