@@ -266,6 +266,42 @@ Lifted muldiv(Ctx& c, const DInsn& d) {
     c.B.SetInsertPoint(de);
     c.emit_unsupported(d.va, "#DE divide error");
     c.B.SetInsertPoint(ok);
+    if (n == 64) {
+        // 128/64: when rdx is only rax's extension the quotient is a 64-bit division (the one
+        // overflow is INT64_MIN / -1); otherwise the runtime divides (`RuntimeHooks::div128`),
+        // since an i128 division would become a compiler-rt call.
+        Value* ext_only = sgn ? c.B.CreateICmpEQ(hi, c.B.CreateAShr(lo, 63)) : c.B.CreateICmpEQ(hi, cint(c, src, 0));
+        llvm::BasicBlock* fast = llvm::BasicBlock::Create(c.C, "div64", c.F);
+        llvm::BasicBlock* slow = llvm::BasicBlock::Create(c.C, "div128", c.F);
+        llvm::BasicBlock* join = llvm::BasicBlock::Create(c.C, "div_done", c.F);
+        llvm::BasicBlock* de3 = llvm::BasicBlock::Create(c.C, "div_overflow", c.F);
+        c.B.CreateCondBr(ext_only, fast, slow);
+        c.B.SetInsertPoint(fast);
+        if (sgn) {
+            Value* ovf = c.B.CreateAnd(c.B.CreateICmpEQ(lo, cint(c, src, 0x8000000000000000ULL)),
+                                       c.B.CreateICmpEQ(src, cint(c, src, ~0ULL)));
+            llvm::BasicBlock* fast_ok = llvm::BasicBlock::Create(c.C, "div64_ok", c.F);
+            c.B.CreateCondBr(ovf, de3, fast_ok);
+            c.B.SetInsertPoint(fast_ok);
+        }
+        put(sgn ? c.B.CreateSDiv(lo, src) : c.B.CreateUDiv(lo, src),
+            sgn ? c.B.CreateSRem(lo, src) : c.B.CreateURem(lo, src));
+        c.B.CreateBr(join);
+        c.B.SetInsertPoint(slow);
+        c.flush();
+        Value* okv = c.call_hook(offsetof(RuntimeHooks, div128), {src, c.B.getInt32(sgn ? 1 : 0)},
+                                 {c.B.getInt64Ty(), c.B.getInt32Ty()}, c.B.getInt32Ty());
+        c.reload();
+        c.B.CreateCondBr(c.B.CreateICmpNE(okv, c.B.getInt32(0)), join, de3);
+        c.B.SetInsertPoint(de3);
+        c.emit_unsupported(d.va, "#DE quotient overflow");
+        c.B.SetInsertPoint(join);
+        (void)dividend;
+        (void)divisor;
+        (void)ok2;
+        ok2->eraseFromParent();
+        return Lifted::yes;
+    }
     Value* q = sgn ? c.B.CreateSDiv(dividend, divisor) : c.B.CreateUDiv(dividend, divisor);
     Value* r = sgn ? c.B.CreateSRem(dividend, divisor) : c.B.CreateURem(dividend, divisor);
     Value* q_t = c.B.CreateTrunc(q, t);

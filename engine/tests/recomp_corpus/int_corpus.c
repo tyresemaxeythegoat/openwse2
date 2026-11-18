@@ -165,6 +165,30 @@ EXPORT u64 div_signed(u64 a, u64 b, u64 c, u64 d) {
     return (u64)r;
 }
 
+/* 128/64 division with a real high half (the translator's `div128` runtime path). */
+EXPORT u64 div_wide(u64 a, u64 b, u64 c, u64 d) {
+    u64 r = 0;
+    u64 hi = a % (b | 1), lo = c, q = 0, rem = 0;
+    if ((b | 1) > hi) { /* quotient fits in 64 bits: no #DE */
+        __asm__("divq %4" : "=a"(q), "=d"(rem) : "a"(lo), "d"(hi), "r"(b | 1));
+        r = q ^ (rem << 1);
+    }
+    i64 sd = (i64)(d | 1) >> 1;
+    if (sd == 0) sd = 3;
+    i64 shi = (i64)lo >> 63; /* sign half of lo: the fast path */
+    i64 sq = 0, sr = 0;
+    if (!((u64)lo == 0x8000000000000000ULL && sd == -1)) {
+        __asm__("idivq %4" : "=a"(sq), "=d"(sr) : "a"(lo), "d"(shi), "r"(sd));
+    }
+    /* A genuine 128-bit signed dividend: |hi:lo| / |sd| fits when |hi| is small. */
+    i64 whi = (i64)(a & 0x3F) - 32, wq = 0, wr = 0;
+    u64 big = (sd < 0 ? (u64)-sd : (u64)sd);
+    if (big > 64) {
+        __asm__("idivq %4" : "=a"(wq), "=d"(wr) : "a"(b), "d"(whi), "r"(sd));
+    }
+    return r + (u64)sq * 3 + (u64)sr * 5 + (u64)wq * 7 + (u64)wr * 11;
+}
+
 /* --- control flow --------------------------------------------------------------------------- */
 
 EXPORT u64 switch_dense(u64 a, u64 b, u64 c, u64 d) {

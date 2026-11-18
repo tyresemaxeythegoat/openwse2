@@ -888,13 +888,16 @@ EXPORT u64 vec_pmov_extend(u64 a, u64 b, u64 c, u64 d) {
 EXPORT u64 m_sum_floats(u64 a, u64 b, u64 c, u64 d) {
     (void)c;
     (void)d;
-    const float* p = (const float*)a;
+    const u32* p = (const u32*)a;
     u64 n = (b & 1023ULL);
     float sum = 0.0f;
     for (u64 i = 0; i < n; ++i) {
-        sum += p[i];
+        /* Clear the exponent's top bit so every input is finite: random bits are mostly NaN,
+         * and with two NaN inputs x86 and LLVM may propagate different payloads (the
+         * documented R1 deviation). */
+        sum += f_of(p[i] & 0xBFFFFFFFU);
     }
-    return bits_f(sum);
+    return sum != sum ? 0x7FC00000ULL : bits_f(sum);
 }
 
 EXPORT u64 m_saxpy_f32(u64 a, u64 b, u64 c, u64 d) {

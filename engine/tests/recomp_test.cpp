@@ -2553,6 +2553,30 @@ void test_runtime_dispatch() {
                s.hooks->segment_base(&s, Runtime::kSegFs) == 0x1000ULL && faults.size() == 1,
            "runtime: set segment bases are returned");
     expect(rt.fault_count == 6, "runtime: every fault is counted");
+
+    // div128: rdx:rax / divisor, quotient -> rax, remainder -> rdx, 0 on #DE.
+    CpuState q;
+    rt.attach(q);
+    q.gpr[2] = 1;
+    q.gpr[0] = 5;  // 2^64 + 5
+    expect(q.hooks->div128(&q, 3, 0) == 1 && q.gpr[0] == 0x5555555555555557ULL && q.gpr[2] == 0,
+           "runtime: div128 unsigned (2^64 + 5) / 3");
+    q.gpr[2] = 7;
+    q.gpr[0] = 0;
+    expect(q.hooks->div128(&q, 7, 0) == 0 && q.gpr[2] == 7, "runtime: div128 unsigned quotient overflow is #DE");
+    expect(q.hooks->div128(&q, 0, 0) == 0 && q.hooks->div128(&q, 0, 1) == 0, "runtime: div128 by zero is #DE");
+    q.gpr[2] = ~0ULL;
+    q.gpr[0] = 0xFFFFFFFF00000000ULL;  // -2^32 as a 128-bit value
+    expect(q.hooks->div128(&q, static_cast<std::uint64_t>(-3), 1) == 1 && q.gpr[0] == 0x55555555ULL &&
+               q.gpr[2] == static_cast<std::uint64_t>(-1),
+           "runtime: div128 signed -2^32 / -3 = 1431655765 rem -1");
+    q.gpr[2] = 0;
+    q.gpr[0] = 0x8000000000000000ULL;  // +2^63: positive 128-bit value
+    expect(q.hooks->div128(&q, 1, 1) == 0, "runtime: div128 signed 2^63 / 1 overflows (#DE)");
+    q.gpr[2] = ~0ULL;
+    q.gpr[0] = 0x8000000000000000ULL;  // -2^63
+    expect(q.hooks->div128(&q, static_cast<std::uint64_t>(-1), 1) == 0,
+           "runtime: div128 signed INT64_MIN / -1 overflows (#DE)");
 }
 
 }  // namespace

@@ -26,6 +26,11 @@ struct RuntimeHooks {
     void (*unsupported)(CpuState* state, std::uint64_t va, const char* what) = nullptr;
     // `gs:`/`fs:` segment base (Win64 TEB and TLS: R3).
     std::uint64_t (*segment_base)(CpuState* state, int segment) = nullptr;
+    // 64-bit DIV/IDIV whose dividend rdx:rax is not just rax extended: divides rdx:rax by
+    // `divisor` (signed when `is_signed`), writes the quotient to rax and the remainder to rdx,
+    // and returns 0 on #DE (quotient overflow). Kept out of translated code because LLVM lowers
+    // a 128-bit division to a compiler-rt call, and translated modules import nothing.
+    int (*div128)(CpuState* state, std::uint64_t divisor, int is_signed) = nullptr;
     // Owner of this table (`wse::recomp::Runtime` in `runtime.h`); translated code never reads it.
     void* context = nullptr;
 };

@@ -12,6 +12,7 @@
 #pragma once
 
 #include <algorithm>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -71,6 +72,7 @@ public:
         hooks_.bad_return = &Runtime::hook_bad_return;
         hooks_.unsupported = &Runtime::hook_unsupported;
         hooks_.segment_base = &Runtime::hook_segment;
+        hooks_.div128 = &Runtime::hook_div128;
         hooks_.context = this;
         on_fault = [](const Fault& f) {
             std::fprintf(stderr, "wse recomp: %s at 0x%llx (rip 0x%llx)%s%s\n", fault_name(f.kind),
@@ -178,6 +180,30 @@ private:
     }
     static void hook_unsupported(CpuState* s, std::uint64_t va, const char* what) {
         of(s).fault(*s, FaultKind::unsupported, va, what != nullptr ? what : "");
+    }
+    static int hook_div128(CpuState* s, std::uint64_t divisor, int is_signed) {
+        if (divisor == 0) {
+            return 0;
+        }
+        const unsigned __int128 n = (static_cast<unsigned __int128>(s->gpr[2]) << 64) | s->gpr[0];
+        if (is_signed != 0) {
+            const auto sn = static_cast<__int128>(n);
+            const auto sd = static_cast<__int128>(static_cast<std::int64_t>(divisor));
+            const __int128 q = sn / sd;
+            if (q < INT64_MIN || q > INT64_MAX) {
+                return 0;
+            }
+            s->gpr[0] = static_cast<std::uint64_t>(static_cast<std::int64_t>(q));
+            s->gpr[2] = static_cast<std::uint64_t>(static_cast<std::int64_t>(sn % sd));
+            return 1;
+        }
+        const unsigned __int128 q = n / divisor;
+        if ((q >> 64) != 0) {
+            return 0;
+        }
+        s->gpr[0] = static_cast<std::uint64_t>(q);
+        s->gpr[2] = static_cast<std::uint64_t>(n % divisor);
+        return 1;
     }
     static std::uint64_t hook_segment(CpuState* s, int segment) {
         Runtime& rt = of(s);

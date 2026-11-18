@@ -85,7 +85,11 @@ TargetSetup make_target_impl(int opt_level) {
         level = llvm::CodeGenOptLevel::Aggressive;
     }
     llvm::TargetOptions options;
-    t.tm.reset(target->createTargetMachine(t.triple, "generic", "", options, llvm::Reloc::PIC_,
+    // AArch64 "generic" has FRINT*, so llvm.floor/roundeven stay inline. On an x86-64 host
+    // (CI tests) "generic" lacks ROUNDSS and LLVM would call libm, giving the translated module
+    // imports; x86-64-v2 (SSE4.1) keeps it import-free.
+    const bool x86_host = t.triple.rfind("x86_64", 0) == 0;
+    t.tm.reset(target->createTargetMachine(t.triple, x86_host ? "x86-64-v2" : "generic", "", options, llvm::Reloc::PIC_,
                                            llvm::CodeModel::Small, level));
     if (!t.tm) {
         t.error = "createTargetMachine failed for " + t.triple;
@@ -552,8 +556,11 @@ bool link_shared_object(const std::vector<std::string>& objects, const std::stri
                         std::string* log) {
     static std::mutex lld_mutex;  // LLD keeps global state while it runs
     std::lock_guard<std::mutex> lock(lld_mutex);
+    // `-z defs`: a translated module must import nothing (every call out goes through
+    // `RuntimeHooks`), so any undefined symbol, such as a libm or libatomic call LLVM chose
+    // to emit, fails the link instead of the load.
     std::vector<const char*> args = {"ld.lld", "-shared", "--hash-style=gnu", "-z", "noexecstack",
-                                     "-z", "now", "-o", output.c_str()};
+                                     "-z", "now", "-z", "defs", "-o", output.c_str()};
     for (const std::string& o : objects) {
         args.push_back(o.c_str());
     }

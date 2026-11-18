@@ -720,8 +720,10 @@ Lifted lift_sse(Ctx& c, const DInsn& d) {
         bool ok = true;
         Value* s = read_vec(c, d, 1, v4i32_ty(c), &ok);
         if (!ok) return fail_insn(c, d);
-        const auto mask = mn == ZYDIS_MNEMONIC_MOVSLDUP ? llvm::ArrayRef<int>{0, 0, 2, 2}
-                                                         : llvm::ArrayRef<int>{1, 1, 3, 3};
+        // (An ArrayRef of a braced list would dangle after this statement: keep real arrays.)
+        static constexpr int kLow[4] = {0, 0, 2, 2};
+        static constexpr int kHigh[4] = {1, 1, 3, 3};
+        const llvm::ArrayRef<int> mask(mn == ZYDIS_MNEMONIC_MOVSLDUP ? kLow : kHigh, 4);
         c.set_xmm(dst, B.CreateShuffleVector(s, llvm::PoisonValue::get(v4i32_ty(c)), mask));
         return Lifted::yes;
     }
