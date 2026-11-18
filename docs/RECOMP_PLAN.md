@@ -69,6 +69,42 @@ there are no CRT DLLs to replace:
 | **R8 Phone bring-up** | Translation service and progress screen in the launcher, cache invalidated by the exe hash and translator version; Native from the main menu to a battle on Mali-G68. |
 | **R9 Performance and hardening** | Profiling on the phone: cheaper ordering where provably safe, register passing between translated functions, hot-path tuning; a crash report listing missing targets and imports; several WSE2 mods (Native, Phantasy Calradia, FiveDynastiesAndTenKingdoms) played end to end. |
 
+## R0 implementation (2026-11-18)
+
+Decided with the user: all four spikes in one batch, LLVM built from source in CI, results
+read on the phone from Advanced > "R0 spikes" (Copy / Share), using the v1.1.5.5 exe already
+in the phone's install.
+
+| Piece | Where |
+| --- | --- |
+| x86-64 decoder subset, reference interpreter, PE reader, R0 (d) vectors, synthetic test code | `engine/include/wse/recomp/` (header-only, host suite `recomp`) |
+| LLVM 18 lifter, optimizer, object emission, embedded LLD, R0 spike runner | `engine/src/recomp/` (`wse_recomp`, only with `WSE_ENABLE_LLVM=ON`) |
+| Android library and entry | `libwse_r0.so` (`platform/android/r0_jni.cpp`), loaded only by `R0Spikes.kt` |
+| LLVM for the phone | CI job `llvm-android`: tag `llvmorg-18.1.8` (commit `3b5b5c1e…`, checked), NDK `30.0.16248370`, `MinSizeRel`, AArch64 target only, static, no RTTI; cached |
+| Translator test on a PC | CI job `recomp-host` (Ubuntu `llvm-18-dev`, synthetic code only) |
+| PC reference for (d) | `tools/r0_pc_reference.cpp`, Windows, local only (calls the user's retail code) |
+
+How each spike is answered on the phone:
+
+- **(a)** LLVM emits a small probe function, LLD links it, and the report tries three loaders
+  in order: `dlopen` of the file made read-only, `dlopen` from a `memfd`
+  (`android_dlopen_ext`), and our own ELF loader into anonymous memory (the Risks fallback).
+  Later steps use the first loader that worked. Android may refuse executable mappings of
+  app-data files for apps targeting API 29+, which is why all three are reported.
+- **(b)** `mmap(0x140000000, SizeOfImage, MAP_FIXED_NOREPLACE)`, then the exe's sections are <!-- citation-check: ignore-line -->
+  copied in.
+- **(c)** The APK cost of `libwse_r0.so` is printed by the CI APK check. On the phone: a
+  42 KB synthetic function (2,000 blocks) is lifted, optimized at O2 and O1, compiled, linked
+  and checked against the interpreter; every retail function the R0 subset decodes is
+  translated as one batch; the whole `.text` time is extrapolated from both rates.
+- **(d)** `rglString::indexOf` is decoded from the mapped image, translated at O2, and run on
+  the 512 cases; the report compares its hash with the PC's `0x7aeac64f5cbff537`, the
+  interpreter and the model.
+
+R0 deviation: translated loads and stores are plain (no `LDAPR`/`STLR`); the memory-ordering
+lowering lands in R3. A run that crashes inside generated code leaves `r0/report.txt`, which
+the next run shows.
+
 ## What carries over
 
 - P-slices: the launcher (P10/P12), SAF `Vfs`, the Vulkan RHI and GPU path (P4), shader

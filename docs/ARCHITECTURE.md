@@ -87,6 +87,14 @@ bytes `<= 0x20` and advances `m_cursor` across runs `> 0x20`; `swapUnderscoresWi
 (`toInt64Stream` `0x14030f6d0` / `toUInt64Stream` `0x14030f7b0`), and savegame log `"-1"` sentinel
 semantics are implemented in `engine/include/wse/core/rgl_string.h`.
 
+`rglString::indexOf(const rglString&, int) const` (`0x14030f630`, 145 bytes, `.pdata` leaf, no
+calls or globals) is the Phase 5 R0 (d) function. Disassembly (Capstone, local): it reads
+`m_buffer` (`+0x08`) and `m_strLength` (`+0x14`) of both strings, sign-extends `start`, and
+returns the first `p` in `[start, hay_len - needle_len]` where the bytes match, else `-1`
+(`or eax, -1`). `start` is not range-checked. On the PC, the native function, the reference
+interpreter (`wse/recomp/x86_interp.h`) and that model agree on the 512 cases of
+`wse/recomp/r0_inputs.h` (FNV-1a `0x7aeac64f5cbff537`, `tools/r0_pc_reference.cpp`).
+
 ### `rglStream` — 160 bytes, type 0x1b18a
 
 | Offset | Member | Type |
@@ -902,6 +910,19 @@ and VM-backed `execute_script`, `execute_mapped_script`, `execute_trigger`,
 | `WINMM.dll` | 3 | static | Timers -> `std::chrono`/SDL |
 | `XINPUT1_3.dll` | 3 | static | SDL game controller API |
 | `PSAPI.DLL`, `GDI32.dll`, `d3d9.dll`, `DINPUT8.dll`, `urlmon.dll`, `WININET.dll` | 1 each | static | Replace per subsystem |
+
+### v1.1.5.5 image facts used by the recompiler (Phase 5 R0)
+
+Measured locally with `wse/recomp/pe_image.h` (`tools/r0_pc_reference.cpp`) on the pinned exe
+(7,060,992 B, SHA-256 `d4e97d56…4e29709`):
+
+| Fact | Value |
+| --- | --- |
+| Preferred base / SizeOfImage | `0x140000000` / 8,232,960 B <!-- citation-check: ignore-line --> |
+| `.text` virtual size | 5,242,293 B |
+| `.pdata` functions | 14,618 (4,929,618 bytes of code) |
+| Sections | `.text`, `.rdata`, `.data`, `.pdata`, `.tls`, `.rsrc`, `.reloc` |
+| R0 decoder subset (`x86_decode.h`) | 837 of 14,618 functions decode completely (16,615 bytes): the rest need SSE, calls, prefixes or other opcodes (R1) |
 
 ## 7. Android port architecture (planned)
 
