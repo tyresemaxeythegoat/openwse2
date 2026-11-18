@@ -22,15 +22,15 @@
 
 namespace wse::recomp {
 
-inline constexpr std::uint64_t kR0IndexOfVa = 0x14030f630ULL;
+// Located by name through the install's own PDB (`pdb_reader.h`), so any WSE2 build works
+// (its address per build is in `docs/ARCHITECTURE.md`).
+inline constexpr const char* kR0IndexOfSymbol = "?indexOf@rglString@@QEBAHAEBV1@H@Z";
 inline constexpr std::size_t kRglStringSize = 72;
 inline constexpr std::size_t kRglStringBufferOffset = 0x8;
 inline constexpr std::size_t kRglStringBufferLengthOffset = 0x10;
 inline constexpr std::size_t kRglStringLengthOffset = 0x14;
 inline constexpr std::size_t kR0CaseCount = 512;
 
-// The pinned v1.1.5.5 exe (`docs/RECOMP_PLAN.md` "The target").
-inline constexpr std::uint64_t kWse2V1155ExeSize = 7060992ULL;
 
 struct R0IndexOfCase {
     std::string haystack;

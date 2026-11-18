@@ -13,6 +13,7 @@ import java.util.Locale
 // The exe bytes stay in memory and in app-private storage; nothing leaves the device.
 object R0Spikes {
     private const val EXE_NAME = "mb_warband_wse2_x64.exe"
+    private const val PDB_NAME = "mb_warband_wse2_x64.pdb"
     private const val MAX_EXE_BYTES = 64L * 1024L * 1024L
 
     private val loadError: String? by lazy {
@@ -30,6 +31,8 @@ object R0Spikes {
         exe: ByteArray?,
         exeSha256: String,
         exeError: String,
+        pdb: ByteArray?,
+        pdbError: String,
         apkBytes: Long
     ): String
 
@@ -78,6 +81,23 @@ object R0Spikes {
                 exe = null
             }
         }
+        // WSE2 ships its PDB next to the exe; it lets the translator find functions by name in
+        // whatever build is installed.
+        var pdb: ByteArray? = null
+        var pdbError = ""
+        if (treeUri != null && exe != null) {
+            try {
+                val doc = findRootChild(app, treeUri, PDB_NAME)
+                if (doc == null) {
+                    pdbError = "$PDB_NAME not found in the folder root"
+                } else {
+                    pdb = readAll(app, doc)
+                }
+            } catch (t: Throwable) {
+                pdbError = "reading $PDB_NAME failed: ${t.message ?: t.javaClass.simpleName}"
+                pdb = null
+            }
+        }
         val apkBytes = try {
             File(app.applicationInfo.sourceDir).length()
         } catch (_: Throwable) {
@@ -86,7 +106,7 @@ object R0Spikes {
         val marker = runningMarker(app)
         marker.parentFile?.mkdirs()
         marker.writeText("running")
-        val report = nativeRun(workDir(app).absolutePath, exe, sha, exeError, apkBytes)
+        val report = nativeRun(workDir(app).absolutePath, exe, sha, exeError, pdb, pdbError, apkBytes)
         marker.delete()
         return if (crashed != null) "$report\n\n----\n$crashed" else report
     }

@@ -2,10 +2,11 @@
 //
 //   zig c++ -std=c++20 -O2 -target x86_64-windows-gnu -I engine/include \
 //       -o r0_pc_reference.exe tools/r0_pc_reference.cpp
-//   r0_pc_reference.exe <path to mb_warband_wse2_x64.exe v1.1.5.5>
+//   r0_pc_reference.exe <mb_warband_wse2_x64.exe> <mb_warband_wse2_x64.pdb>
 //
-// Maps the exe at its preferred base (`0x140000000`), calls `rglString::indexOf`
-// (`0x14030f630`) natively on the `r0_inputs.h` cases, runs the same cases through the
+// Maps the exe at its preferred base, finds `rglString::indexOf` by name in the PDB
+// (`pdb_reader.h`; the PDB must match the exe's RSDS GUID), calls it natively on the
+// `r0_inputs.h` cases, runs the same cases through the
 // reference interpreter and the C++ model, and prints the FNV-1a hash of each. The phone's
 // "R0 spikes" report prints the hash of the translated function for comparison. It also
 // reports how many `.pdata` functions the R0 decoder subset decodes completely.
@@ -20,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "wse/recomp/pdb_reader.h"
 #include "wse/recomp/pe_image.h"
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/x86_interp.h"
@@ -27,24 +29,38 @@
 using namespace wse::recomp;
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::fprintf(stderr, "usage: r0_pc_reference <mb_warband_wse2_x64.exe>\n");
+    if (argc < 3) {
+        std::fprintf(stderr, "usage: r0_pc_reference <exe> <pdb>\n");
         return 2;
     }
     std::ifstream in(argv[1], std::ios::binary);
     const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)),
                                          std::istreambuf_iterator<char>());
-    if (file.size() != kWse2V1155ExeSize) {
-        std::fprintf(stderr, "expected the v1.1.5.5 exe (%llu bytes), got %zu bytes\n",
-                     static_cast<unsigned long long>(kWse2V1155ExeSize), file.size());
-        return 2;
-    }
+    std::ifstream pin(argv[2], std::ios::binary);
+    const std::vector<std::uint8_t> pdb((std::istreambuf_iterator<char>(pin)),
+                                        std::istreambuf_iterator<char>());
     PeImage img;
     std::string err;
     if (!parse_pe(file.data(), file.size(), img, &err)) {
         std::fprintf(stderr, "PE: %s\n", err.c_str());
         return 2;
     }
+    PeCodeView cv;
+    std::vector<PdbPublic> publics;
+    PdbGuidAge ga;
+    if (!read_pe_codeview(file.data(), file.size(), img, cv, &err) ||
+        !read_pdb_publics(pdb.data(), pdb.size(), publics, &ga, &err) || ga.guid != cv.guid) {
+        std::fprintf(stderr, "PDB: %s\n", err.empty() ? "GUID does not match the exe" : err.c_str());
+        return 2;
+    }
+    const auto found = pdb_public_va(publics, kR0IndexOfSymbol, img.sections, img.image_base);
+    if (!found) {
+        std::fprintf(stderr, "PDB has no %s\n", kR0IndexOfSymbol);
+        return 2;
+    }
+    const std::uint64_t index_of_va = *found;
+    std::printf("exe %zu bytes, PDB age %u, %zu publics, indexOf at 0x%llx\n", file.size(), ga.age,
+                publics.size(), static_cast<unsigned long long>(index_of_va));
     auto* base = static_cast<std::uint8_t*>(
         VirtualAlloc(reinterpret_cast<void*>(img.image_base), img.size_of_image,
                      MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE));
@@ -73,7 +89,7 @@ int main(int argc, char** argv) {
             ++decoded;
             decoded_bytes += r.end - r.begin;
         }
-        if (img.image_base + r.begin == kR0IndexOfVa) {
+        if (img.image_base + r.begin == index_of_va) {
             index_of = fn;
         }
     }
@@ -86,7 +102,7 @@ int main(int argc, char** argv) {
     }
 
     using IndexOf = int (*)(const void*, const void*, int);
-    const auto native = reinterpret_cast<IndexOf>(static_cast<std::uintptr_t>(kR0IndexOfVa));
+    const auto native = reinterpret_cast<IndexOf>(static_cast<std::uintptr_t>(index_of_va));
     const std::vector<R0IndexOfCase> cases = make_r0_index_of_cases();
     std::vector<std::int32_t> native_r;
     std::vector<std::int32_t> interp_r;
@@ -102,7 +118,7 @@ int main(int argc, char** argv) {
         s.gpr[static_cast<int>(Reg::rcx)] = reinterpret_cast<std::uintptr_t>(hay.bytes);
         s.gpr[static_cast<int>(Reg::rdx)] = reinterpret_cast<std::uintptr_t>(needle.bytes);
         s.gpr[static_cast<int>(Reg::r8)] = static_cast<std::uint32_t>(c.start);
-        s.rip = kR0IndexOfVa;
+        s.rip = index_of_va;
         if (!interp.run(s, GuestStack::kReturnSentinel,
                         [&](std::uint64_t va) { return index_of.at(va); }, 1U << 20, &err)) {
             std::fprintf(stderr, "interpreter: %s\n", err.c_str());

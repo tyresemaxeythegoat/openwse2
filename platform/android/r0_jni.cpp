@@ -31,7 +31,8 @@ std::string to_string(JNIEnv* env, jstring s) {
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_wse2_android_launcher_R0Spikes_nativeRun(JNIEnv* env, jclass /*clazz*/, jstring work_dir,
                                                    jbyteArray exe, jstring exe_sha256,
-                                                   jstring exe_error, jlong apk_bytes) {
+                                                   jstring exe_error, jbyteArray pdb,
+                                                   jstring pdb_error, jlong apk_bytes) {
     wse::recomp::R0SpikeInput input;
     input.work_dir = to_string(env, work_dir);
     input.exe_sha256 = to_string(env, exe_sha256);
@@ -41,6 +42,12 @@ Java_org_wse2_android_launcher_R0Spikes_nativeRun(JNIEnv* env, jclass /*clazz*/,
         const jsize n = env->GetArrayLength(exe);
         input.exe.resize(static_cast<std::size_t>(n));
         env->GetByteArrayRegion(exe, 0, n, reinterpret_cast<jbyte*>(input.exe.data()));
+    }
+    input.pdb_error = to_string(env, pdb_error);
+    if (pdb != nullptr) {
+        const jsize n = env->GetArrayLength(pdb);
+        input.pdb.resize(static_cast<std::size_t>(n));
+        env->GetByteArrayRegion(pdb, 0, n, reinterpret_cast<jbyte*>(input.pdb.data()));
     }
     const wse::recomp::R0SpikeResult result = wse::recomp::run_r0_spikes(input);
     __android_log_write(ANDROID_LOG_INFO, "WSE2-R0", result.report.c_str());

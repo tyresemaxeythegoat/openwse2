@@ -19,6 +19,8 @@ struct R0SpikeInput {
     std::vector<std::uint8_t> exe;     // the user's `mb_warband_wse2_x64.exe`, or empty
     std::string exe_sha256;            // lowercase hex, computed by the caller
     std::string exe_error;             // why `exe` is empty, for the report
+    std::vector<std::uint8_t> pdb;     // the PDB shipped next to the exe, or empty
+    std::string pdb_error;             // why `pdb` is empty
     std::uint64_t apk_bytes = 0;       // 0 when unknown
     std::size_t synthetic_blocks = 2000;
 };
@@ -33,11 +35,15 @@ struct R0SpikeResult {
 
 R0SpikeResult run_r0_spikes(const R0SpikeInput& input);
 
-// SHA-256 of the pinned v1.1.5.5 exe (`docs/RECOMP_PLAN.md` "The target").
+// SHA-256 of the WSE2 x64 builds verified on the PC, used only to label the report: any build
+// whose own PDB matches it is accepted (`docs/RECOMP_PLAN.md` "The target").
 inline constexpr const char* kWse2V1155ExeSha256 =
     "d4e97d56981a6dab3de0348e3a0513ae200e7b5701b86732a4654b0aa4e29709";
+inline constexpr const char* kWse2V1156ExeSha256 =
+    "fbe9808c7644414da86713d21900f520063e4ae308d71a5ab18ceb1f4e164898";
 // FNV-1a hash of `rglString::indexOf` over the `r0_inputs.h` cases, measured on the PC with
-// `tools/r0_pc_reference.cpp` (native call == interpreter == model, 2026-11-18).
+// `tools/r0_pc_reference.cpp` (native call == interpreter == model) on v1.1.5.5 (2026-11-18)
+// and v1.1.5.6 (2026-11-19): the same value, as the function is byte-identical in both.
 inline constexpr std::uint64_t kR0IndexOfPcHash = 0x7aeac64f5cbff537ULL;
 
 }  // namespace wse::recomp

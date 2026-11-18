@@ -37,6 +37,7 @@
 #endif
 
 #include "recomp_llvm.h"
+#include "wse/recomp/pdb_reader.h"
 #include "wse/recomp/pe_image.h"
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/x86_interp.h"
@@ -501,18 +502,41 @@ R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
 
     // --- exe -----------------------------------------------------------------------------
     rep.line("");
+    // Any WSE2 x64 build is accepted when its own PDB (shipped next to it) matches it: functions
+    // are found by name, not by a pinned address.
     PeImage img;
     bool exe_ok = false;
+    std::uint64_t index_of_va = 0;
     if (input.exe.empty()) {
         rep.line("exe: not provided (%s)", input.exe_error.empty() ? "no install" : input.exe_error.c_str());
-    } else if (input.exe.size() != kWse2V1155ExeSize || to_lower(input.exe_sha256) != kWse2V1155ExeSha256) {
-        rep.line("exe: %zu bytes, SHA-256 %s: NOT the pinned v1.1.5.5 build (%llu bytes, %.12s...)",
-                 input.exe.size(), input.exe_sha256.c_str(),
-                 static_cast<unsigned long long>(kWse2V1155ExeSize), kWse2V1155ExeSha256);
     } else {
         std::string err;
-        exe_ok = parse_pe(input.exe.data(), input.exe.size(), img, &err);
-        rep.line("exe: v1.1.5.5 (SHA-256 matches), %s", exe_ok ? "PE parsed" : err.c_str());
+        PeCodeView cv;
+        std::vector<PdbPublic> publics;
+        PdbGuidAge ga;
+        const std::string sha = to_lower(input.exe_sha256);
+        const char* label = sha == kWse2V1155ExeSha256   ? "v1.1.5.5"
+                            : sha == kWse2V1156ExeSha256 ? "v1.1.5.6"
+                                                         : "unknown build";
+        rep.line("exe: %zu bytes, SHA-256 %.16s... (%s)", input.exe.size(), sha.c_str(), label);
+        if (!parse_pe(input.exe.data(), input.exe.size(), img, &err)) {
+            rep.line("  PE: %s", err.c_str());
+        } else if (!read_pe_codeview(input.exe.data(), input.exe.size(), img, cv, &err)) {
+            rep.line("  no PDB link in the exe: %s", err.c_str());
+        } else if (input.pdb.empty()) {
+            rep.line("  PDB: not provided (%s)", input.pdb_error.empty() ? "missing" : input.pdb_error.c_str());
+        } else if (!read_pdb_publics(input.pdb.data(), input.pdb.size(), publics, &ga, &err)) {
+            rep.line("  PDB: %s", err.c_str());
+        } else if (ga.guid != cv.guid) {
+            rep.line("  PDB does not belong to this exe (GUID differs; exe age %u, PDB age %u)", cv.age, ga.age);
+        } else if (const auto va = pdb_public_va(publics, kR0IndexOfSymbol, img.sections, img.image_base); !va) {
+            rep.line("  PDB matches (age %u, %zu publics) but has no %s", ga.age, publics.size(), kR0IndexOfSymbol);
+        } else {
+            index_of_va = *va;
+            exe_ok = true;
+            rep.line("  PDB matches (GUID, age %u), %zu publics; rglString::indexOf at 0x%llx", ga.age,
+                     publics.size(), static_cast<unsigned long long>(index_of_va));
+        }
     }
 
     // --- (b) ---------------------------------------------------------------------------
@@ -654,13 +678,13 @@ R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
 
     // --- (d) ---------------------------------------------------------------------------
     rep.line("");
-    rep.line("(d) rglString::indexOf (0x14030f630) translated vs PC");
+    rep.line("(d) rglString::indexOf (found through the PDB) translated vs PC");
     if (!exe_ok || !result.a_loads) {
         rep.line("  skipped: %s", !result.a_loads ? "no load method works" : "no mapped v1.1.5.5 exe");
     } else {
         const PeFunctionRange* range = nullptr;
         for (const PeFunctionRange& r : img.functions) {
-            if (image_base + r.begin == kR0IndexOfVa) {
+            if (image_base + r.begin == index_of_va) {
                 range = &r;
             }
         }
@@ -674,12 +698,12 @@ R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
                                  image_base + range->begin, image_base + range->end);
         }
         if (range == nullptr) {
-            rep.line("  FAILED: no .pdata entry at 0x14030f630");
-        } else if (!tr.add_function(fn, "wse_fn_14030f630", &err) ||
+            rep.line("  FAILED: no .pdata entry at the PDB address of indexOf");
+        } else if (!tr.add_function(fn, "wse_fn_index_of", &err) ||
                    !build_and_load(tr, 2, ws, method, loaded, &t, &link_ms, nullptr, &err)) {
             rep.line("  FAILED: %s", err.c_str());
         } else {
-            auto* gfn = reinterpret_cast<GuestFn>(loaded.sym("wse_fn_14030f630"));
+            auto* gfn = reinterpret_cast<GuestFn>(loaded.sym("wse_fn_index_of"));
             const std::vector<R0IndexOfCase> cases = make_r0_index_of_cases();
             std::vector<std::int32_t> translated;
             std::vector<std::int32_t> interpreted;
@@ -696,7 +720,7 @@ R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
                 for (int pass = 0; pass < 2; ++pass) {
                     CpuState s;
                     stack.prepare(s);
-                    s.rip = kR0IndexOfVa;
+                    s.rip = index_of_va;
                     s.gpr[static_cast<int>(Reg::rcx)] = reinterpret_cast<std::uintptr_t>(hay.bytes);
                     s.gpr[static_cast<int>(Reg::rdx)] = reinterpret_cast<std::uintptr_t>(needle.bytes);
                     s.gpr[static_cast<int>(Reg::r8)] = static_cast<std::uint32_t>(c.start);
