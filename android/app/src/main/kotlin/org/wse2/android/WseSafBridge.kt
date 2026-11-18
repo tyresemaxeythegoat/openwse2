@@ -174,13 +174,25 @@ class WseSafBridge(
     ): String
 
     companion object {
+        // `<configRoot>/config/performance.json` is the one saved copy of the performance and
+        // launcher settings; these read, update and apply it through the native serializer.
         @JvmStatic
-        external fun nativeSetPerformanceAndInputConfig(
+        external fun nativeLoadPerformanceSettings(configRoot: String): String
+
+        @JvmStatic
+        external fun nativeSavePerformanceSettings(
+            configRoot: String,
             frameRateCapHz: Int,
+            presentMode: String,
+            thermalThrottlingEnabled: Boolean,
+            dynamicResolutionEnabled: Boolean,
+            lodBiasScalingEnabled: Boolean,
             gyroAimEnabled: Boolean,
-            pinchZoomEnabled: Boolean,
-            thermalThrottlingEnabled: Boolean
-        )
+            pinchZoomEnabled: Boolean
+        ): Boolean
+
+        @JvmStatic
+        external fun nativeApplyPerformanceSettings(configRoot: String)
 
         @JvmStatic
         external fun nativeUpdateThermalState(

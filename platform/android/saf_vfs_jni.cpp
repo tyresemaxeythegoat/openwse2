@@ -662,22 +662,58 @@ Java_org_wse2_android_WseSafBridge_nativeVerifyModule(JNIEnv* env,
     return utf8_to_jstring(env, summary);
 }
 
-JNIEXPORT void JNICALL
-Java_org_wse2_android_WseSafBridge_nativeSetPerformanceAndInputConfig(
-    JNIEnv* env,
-    jclass clazz,
-    jint frame_rate_cap_hz,
-    jboolean gyro_aim_enabled,
-    jboolean pinch_zoom_enabled,
-    jboolean thermal_throttling_enabled) {
-    (void)env;
+// `config/performance.json` under the app's private files directory (`configRoot`) is the one
+// saved copy of the performance and launcher settings (`STATUS.md` §5 P8 review item 4).
+
+// Returns the settings as JSON (the defaults when the file is missing or corrupt).
+JNIEXPORT jstring JNICALL
+Java_org_wse2_android_WseSafBridge_nativeLoadPerformanceSettings(JNIEnv* env,
+                                                                 jclass clazz,
+                                                                 jstring config_root) {
     (void)clazz;
-    wse::platform::RuntimeLaunchPerfConfig cfg{};
-    cfg.frame_rate_cap =
+    wse::platform::HostVfs vfs{std::filesystem::path(jstring_to_utf8(env, config_root))};
+    wse::platform::PerformanceSettings s{};
+    (void)wse::platform::load_performance_settings_or_default(vfs, s);
+    return utf8_to_jstring(env, wse::platform::serialize_performance_settings_json(s));
+}
+
+// Applies the launcher's choices on top of the stored file and saves it.
+JNIEXPORT jboolean JNICALL
+Java_org_wse2_android_WseSafBridge_nativeSavePerformanceSettings(JNIEnv* env,
+                                                                 jclass clazz,
+                                                                 jstring config_root,
+                                                                 jint frame_rate_cap_hz,
+                                                                 jstring present_mode,
+                                                                 jboolean thermal_throttling_enabled,
+                                                                 jboolean dynamic_resolution_enabled,
+                                                                 jboolean lod_bias_scaling_enabled,
+                                                                 jboolean gyro_aim_enabled,
+                                                                 jboolean pinch_zoom_enabled) {
+    (void)clazz;
+    wse::platform::HostVfs vfs{std::filesystem::path(jstring_to_utf8(env, config_root))};
+    wse::platform::LauncherPerformanceChoices c{};
+    c.frame_rate_cap =
         wse::platform::frame_rate_cap_from_hz(static_cast<std::int32_t>(frame_rate_cap_hz));
-    cfg.gyro_aim_enabled = (gyro_aim_enabled == JNI_TRUE);
-    cfg.pinch_zoom_enabled = (pinch_zoom_enabled == JNI_TRUE);
-    cfg.thermal_throttling_enabled = (thermal_throttling_enabled == JNI_TRUE);
+    if (!wse::platform::parse_present_mode(jstring_to_utf8(env, present_mode), c.present_mode)) {
+        c.present_mode = wse::platform::PresentModePreference::Fifo;
+    }
+    c.thermal_throttling_enabled = (thermal_throttling_enabled == JNI_TRUE);
+    c.dynamic_resolution_enabled = (dynamic_resolution_enabled == JNI_TRUE);
+    c.lod_bias_scaling_enabled = (lod_bias_scaling_enabled == JNI_TRUE);
+    c.gyro_aim_enabled = (gyro_aim_enabled == JNI_TRUE);
+    c.pinch_zoom_enabled = (pinch_zoom_enabled == JNI_TRUE);
+    return wse::platform::save_launcher_choices(vfs, c) ? JNI_TRUE : JNI_FALSE;
+}
+
+// Loads the file into `RuntimePerformanceHub` for the SDL frame loop (called by `WseActivity`).
+JNIEXPORT void JNICALL
+Java_org_wse2_android_WseSafBridge_nativeApplyPerformanceSettings(JNIEnv* env,
+                                                                  jclass clazz,
+                                                                  jstring config_root) {
+    (void)clazz;
+    wse::platform::HostVfs vfs{std::filesystem::path(jstring_to_utf8(env, config_root))};
+    wse::platform::RuntimeLaunchPerfConfig cfg{};
+    (void)wse::platform::load_performance_settings_or_default(vfs, cfg.settings);
     wse::platform::RuntimePerformanceHub::global().set_launch_config(cfg);
 }
 

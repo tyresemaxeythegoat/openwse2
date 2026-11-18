@@ -8,6 +8,7 @@
 
 #include "sdl_audio.h"
 #include "sdl_input.h"
+#include "wse/platform/audio_worker.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/performance.h"
 
@@ -23,6 +24,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -136,12 +138,25 @@ void collect_failure_lines(const std::string& log_path,
     }
 }
 
-// SDL documents that SDL_EVENT_TERMINATING must be handled from an event
-// watch: by the time it could be polled the OS may already have killed the
-// process. The watch only raises a flag the main loop and worker observe.
+struct AppLifecycle {
+    std::atomic<bool> terminating{false};
+    wse::platform::AudioMixerWorker* audio = nullptr;  // set before the watch is added
+};
+
+// SDL documents that the Android lifecycle events (SDL_EVENT_TERMINATING,
+// SDL_EVENT_WILL_ENTER_BACKGROUND, SDL_EVENT_DID_ENTER_FOREGROUND) must be handled
+// from an event watch: by the time they could be polled the OS may already have
+// suspended or killed the process. The watch raises the terminate flag the main loop
+// and worker observe, and pauses / resumes the audio device with the activity
+// (`AudioDevice::set_paused`, STATUS.md §5 P6 review item 1).
 bool SDLCALL on_app_event(void* userdata, SDL_Event* event) {
+    auto* app = static_cast<AppLifecycle*>(userdata);
     if (event->type == SDL_EVENT_TERMINATING) {
-        static_cast<std::atomic<bool>*>(userdata)->store(true);
+        app->terminating.store(true);
+    } else if (event->type == SDL_EVENT_WILL_ENTER_BACKGROUND && app->audio != nullptr) {
+        app->audio->set_paused(true);
+    } else if (event->type == SDL_EVENT_DID_ENTER_FOREGROUND && app->audio != nullptr) {
+        app->audio->set_paused(false);
     }
     return true;
 }
@@ -211,14 +226,21 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Exercise the SDL3 audio stream & input backends non-fatally on startup.
+    // The SDL3 audio stream stays open for the app's lifetime: a `WseAudioMixer` mixes on
+    // `AudioMixerWorker`'s thread (no sounds are loaded until a game world drives a
+    // `WorldAudioBridge` through `audio_worker->lock()`), and the lifecycle watch pauses it
+    // while the activity is in the background. Audio is optional (non-fatal).
     auto audio_dev = wse::platform::create_sdl_audio_device();
+    wse::platform::WseAudioMixer audio_mixer{};
+    std::unique_ptr<wse::platform::AudioMixerWorker> audio_worker;
     if (audio_dev && audio_dev->open(wse::platform::AudioDeviceSpec{48000U, 2U})) {
-        SDL_Log("SDL3 audio stream ready (%s, %u Hz)", audio_dev->backend_name(),
-                audio_dev->spec().sample_rate);
-        audio_dev->close();
+        audio_mixer.set_output_sample_rate(audio_dev->spec().sample_rate);
+        audio_worker = std::make_unique<wse::platform::AudioMixerWorker>(audio_mixer, *audio_dev);
+        const bool started = audio_worker->start();
+        SDL_Log("SDL3 audio stream ready (%s, %u Hz, mixer thread %s)", audio_dev->backend_name(),
+                audio_dev->spec().sample_rate, started ? "running" : "not started");
     } else {
-        SDL_Log("SDL3 audio probe skipped or unavailable (non-fatal)");
+        SDL_Log("SDL3 audio unavailable (non-fatal)");
     }
     auto sdl_input = wse::platform::create_sdl_input_backend();
     wse::platform::WseInputManager input_mgr;
@@ -233,20 +255,36 @@ int main(int argc, char* argv[]) {
     std::int32_t last_applied_fps_cap = -1;
     std::int32_t last_requested_fps_cap = -1;
     wse::platform::FrameTimeStats frame_stats;
-    if (wse::platform::RuntimePerformanceHub::global().poll_launch_config(launch_cfg_rev,
-                                                                           launch_cfg)) {
+    // `config/performance.json` is the one saved copy of these settings: on Android
+    // `WseActivity` loads it (`nativeApplyPerformanceSettings`) into the hub; elsewhere it is
+    // read from SDL's per-user preference directory.
+    const auto apply_launch_cfg = [&](const wse::platform::RuntimeLaunchPerfConfig& cfg) {
         auto prof = input_mgr.profile();
-        prof.gyro_aim_enabled = launch_cfg.gyro_aim_enabled;
-        prof.pinch_zoom_enabled = launch_cfg.pinch_zoom_enabled;
+        prof.gyro_aim_enabled = cfg.settings.gyro_aim_enabled;
+        prof.pinch_zoom_enabled = cfg.settings.pinch_zoom_enabled;
         wse::platform::sanitize_input_profile(prof);
         input_mgr.profile() = prof;
-        auto ps = perf_ctrl.settings();
-        ps.frame_rate_cap = launch_cfg.frame_rate_cap;
-        ps.thermal_throttling_enabled = launch_cfg.thermal_throttling_enabled;
-        perf_ctrl.set_settings(ps);
+        perf_ctrl.set_settings(cfg.settings);
         if (sdl_input) {
             sdl_input->set_gyro_enabled(prof.gyro_aim_enabled);
         }
+    };
+#ifndef __ANDROID__
+    if (char* pref = SDL_GetPrefPath("wse2", "wse2-android"); pref != nullptr) {
+        wse::platform::HostVfs pref_vfs{std::filesystem::path(pref)};
+        SDL_free(pref);
+        wse::platform::RuntimeLaunchPerfConfig desktop_cfg{};
+        bool present = false;
+        if (wse::platform::load_performance_settings_or_default(pref_vfs, desktop_cfg.settings,
+                                                                &present) &&
+            present) {
+            wse::platform::RuntimePerformanceHub::global().set_launch_config(desktop_cfg);
+        }
+    }
+#endif
+    if (wse::platform::RuntimePerformanceHub::global().poll_launch_config(launch_cfg_rev,
+                                                                           launch_cfg)) {
+        apply_launch_cfg(launch_cfg);
     }
 
     std::string cli_fixture;
@@ -275,8 +313,10 @@ int main(int argc, char* argv[]) {
     UiState ui;
     std::atomic<bool> stop_requested{false};
     std::atomic<bool> rerun_requested{true};
-    std::atomic<bool> terminating{false};
-    SDL_AddEventWatch(on_app_event, &terminating);
+    AppLifecycle app;
+    app.audio = audio_worker.get();
+    std::atomic<bool>& terminating = app.terminating;
+    SDL_AddEventWatch(on_app_event, &app);
 
     std::thread worker([&]() {
         while (!stop_requested.load()) {
@@ -392,18 +432,7 @@ int main(int argc, char* argv[]) {
         }
         if (wse::platform::RuntimePerformanceHub::global().poll_launch_config(launch_cfg_rev,
                                                                                launch_cfg)) {
-            auto prof = input_mgr.profile();
-            prof.gyro_aim_enabled = launch_cfg.gyro_aim_enabled;
-            prof.pinch_zoom_enabled = launch_cfg.pinch_zoom_enabled;
-            wse::platform::sanitize_input_profile(prof);
-            input_mgr.profile() = prof;
-            auto ps = perf_ctrl.settings();
-            ps.frame_rate_cap = launch_cfg.frame_rate_cap;
-            ps.thermal_throttling_enabled = launch_cfg.thermal_throttling_enabled;
-            perf_ctrl.set_settings(ps);
-            if (sdl_input) {
-                sdl_input->set_gyro_enabled(prof.gyro_aim_enabled);
-            }
+            apply_launch_cfg(launch_cfg);
         }
         std::uint64_t next_thermal_rev = thermal_rev;
         const auto therm =
@@ -710,7 +739,13 @@ int main(int argc, char* argv[]) {
 
     stop_requested.store(true);
     worker.join();
-    SDL_RemoveEventWatch(on_app_event, &terminating);
+    SDL_RemoveEventWatch(on_app_event, &app);
+    if (audio_worker) {
+        audio_worker->stop();
+    }
+    if (audio_dev) {
+        audio_dev->close();
+    }
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();

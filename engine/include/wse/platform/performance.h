@@ -21,6 +21,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "wse/core/json.h"
@@ -319,6 +320,11 @@ struct PerformanceSettings {
     bool lod_bias_scaling_enabled = true;
     float min_resolution_scale = 0.65f;
     float max_lod_bias = 1.5f;
+    // Launcher toggles stored here too, so `config/performance.json` is the one saved copy
+    // (the launcher reads and writes it through JNI; `STATUS.md` §5 P8 review item 4). They
+    // seed `InputProfile::gyro_aim_enabled` / `pinch_zoom_enabled` at launch.
+    bool gyro_aim_enabled = false;
+    bool pinch_zoom_enabled = true;
 
     [[nodiscard]] bool operator==(const PerformanceSettings&) const noexcept = default;
 };
@@ -404,6 +410,8 @@ inline std::string fmt_float(float v) {
     entries["lod_bias_scaling_enabled"] = s.lod_bias_scaling_enabled ? "true" : "false";
     entries["min_resolution_scale"] = perf_detail::fmt_float(s.min_resolution_scale);
     entries["max_lod_bias"] = perf_detail::fmt_float(s.max_lod_bias);
+    entries["gyro_aim_enabled"] = s.gyro_aim_enabled ? "true" : "false";
+    entries["pinch_zoom_enabled"] = s.pinch_zoom_enabled ? "true" : "false";
     return wse::core::wse_serialize_json_object(entries, true);
 }
 
@@ -464,6 +472,15 @@ inline std::string fmt_float(float v) {
         if (!perf_detail::parse_bool_exact(it->second, s.lod_bias_scaling_enabled)) {
             if (error_out != nullptr) {
                 *error_out = "invalid lod_bias_scaling_enabled";
+            }
+            return false;
+        }
+    }
+    for (const auto& [key, field] : {std::pair{"gyro_aim_enabled", &s.gyro_aim_enabled},
+                                     std::pair{"pinch_zoom_enabled", &s.pinch_zoom_enabled}}) {
+        if (auto it = raw.find(key); it != raw.end() && !perf_detail::parse_bool_exact(it->second, *field)) {
+            if (error_out != nullptr) {
+                *error_out = std::string("invalid ") + key;
             }
             return false;
         }
@@ -529,6 +546,63 @@ inline std::string fmt_float(float v) {
     }
     const std::string_view sv(reinterpret_cast<const char*>(raw.data()), raw.size());
     return deserialize_performance_settings_json(sv, out, error_out);
+}
+
+// Loads `config/performance.json`, falling back to the defaults. `present_out` (optional)
+// says whether the file existed; a corrupt or unsupported file yields the defaults and
+// `false`, a missing one the defaults and `true`.
+[[nodiscard]] inline bool load_performance_settings_or_default(Vfs& vfs,
+                                                               PerformanceSettings& out,
+                                                               bool* present_out = nullptr,
+                                                               std::string* error_out = nullptr) {
+    const bool present = vfs.is_file(performance_settings_vfs_path());
+    if (present_out != nullptr) {
+        *present_out = present;
+    }
+    PerformanceSettings loaded{};
+    if (present && !load_performance_settings(vfs, loaded, error_out)) {
+        out = PerformanceSettings{};
+        return false;
+    }
+    out = loaded;
+    return true;
+}
+
+// Fields the launcher edits; the rest of `config/performance.json` (resolution floor, LOD
+// bias ceiling) is kept as stored.
+struct LauncherPerformanceChoices {
+    FrameRateCap frame_rate_cap = FrameRateCap::Fps60;
+    PresentModePreference present_mode = PresentModePreference::Fifo;
+    bool thermal_throttling_enabled = true;
+    bool dynamic_resolution_enabled = true;
+    bool lod_bias_scaling_enabled = true;
+    bool gyro_aim_enabled = false;
+    bool pinch_zoom_enabled = true;
+};
+
+inline void apply_launcher_choices(PerformanceSettings& s, const LauncherPerformanceChoices& c) noexcept {
+    s.frame_rate_cap = c.frame_rate_cap;
+    s.present_mode = c.present_mode;
+    s.thermal_throttling_enabled = c.thermal_throttling_enabled;
+    s.dynamic_resolution_enabled = c.dynamic_resolution_enabled;
+    s.lod_bias_scaling_enabled = c.lod_bias_scaling_enabled;
+    s.gyro_aim_enabled = c.gyro_aim_enabled;
+    s.pinch_zoom_enabled = c.pinch_zoom_enabled;
+    sanitize_performance_settings(s);
+}
+
+// Load (or default), apply the launcher's choices, save. A corrupt file is replaced.
+[[nodiscard]] inline bool save_launcher_choices(Vfs& vfs,
+                                                const LauncherPerformanceChoices& c,
+                                                PerformanceSettings* out = nullptr,
+                                                std::string* error_out = nullptr) {
+    PerformanceSettings s{};
+    (void)load_performance_settings_or_default(vfs, s);
+    apply_launcher_choices(s, c);
+    if (out != nullptr) {
+        *out = s;
+    }
+    return save_performance_settings(vfs, s, error_out);
 }
 
 struct PerformanceAdaptation {
@@ -925,11 +999,9 @@ private:
     bool has_origin_ = false;
 };
 
+// What the frame loop applies at launch: the whole `config/performance.json`.
 struct RuntimeLaunchPerfConfig {
-    FrameRateCap frame_rate_cap = FrameRateCap::Fps60;
-    bool gyro_aim_enabled = false;
-    bool pinch_zoom_enabled = true;
-    bool thermal_throttling_enabled = true;
+    PerformanceSettings settings{};
 };
 
 // Thread-safe process bridge connecting Android JNI callbacks (`WseActivity` ->

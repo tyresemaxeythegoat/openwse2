@@ -28,12 +28,8 @@ class WseActivity : SDLActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val fpsCap = intent?.getIntExtra(WseLauncherActivity.EXTRA_FRAME_RATE_CAP, 60) ?: 60
-        val gyroAim = intent?.getBooleanExtra(WseLauncherActivity.EXTRA_GYRO_AIM, false) ?: false
-        val pinchZoom = intent?.getBooleanExtra(WseLauncherActivity.EXTRA_PINCH_ZOOM, true) ?: true
-        val thermalThrottle =
-            intent?.getBooleanExtra(WseLauncherActivity.EXTRA_THERMAL_THROTTLE, true) ?: true
-        WseSafBridge.nativeSetPerformanceAndInputConfig(fpsCap, gyroAim, pinchZoom, thermalThrottle)
+        // The launcher saved its choices into config/performance.json under filesDir.
+        WseSafBridge.nativeApplyPerformanceSettings(filesDir.absolutePath)
 
         powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
         super.onCreate(savedInstanceState)

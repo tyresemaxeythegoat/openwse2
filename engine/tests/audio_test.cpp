@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +21,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include "wse/asset/audio.h"
@@ -27,6 +30,7 @@
 #include "wse/game/module_asset_loaders.h"
 #include "wse/game/world_audio.h"
 #include "wse/platform/audio.h"
+#include "wse/platform/audio_worker.h"
 #include "wse/platform/vfs.h"
 #include "wse/vm/block_vm.h"
 
@@ -1382,6 +1386,85 @@ void test_review_regressions_vm() {
            "undecodable sample fails consistently and 615 reports -1");
 }
 
+// P6 review item 2: the mixer runs on a worker thread behind one mutex.
+void test_audio_mixer_worker_thread() {
+    using wse::platform::AudioMixerWorker;
+    // A device that drains as the test "plays" frames (thread-safe counters).
+    class DrainingDevice final : public wse::platform::AudioDevice {
+    public:
+        bool open(const wse::platform::AudioDeviceSpec& s) override {
+            spec_ = s;
+            open_ = true;
+            return true;
+        }
+        void close() override { open_ = false; }
+        [[nodiscard]] bool is_open() const noexcept override { return open_; }
+        [[nodiscard]] wse::platform::AudioDeviceSpec spec() const noexcept override { return spec_; }
+        bool submit_frames(std::span<const float> pcm) override {
+            submitted_.fetch_add(pcm.size() / 2U);
+            return true;
+        }
+        [[nodiscard]] std::size_t queued_frames() const noexcept override {
+            const std::size_t sub = submitted_.load();
+            const std::size_t played = played_.load();
+            return sub > played ? sub - played : 0U;
+        }
+        void clear() override { played_.store(submitted_.load()); }
+        void set_paused(bool p) override { paused_.store(p); }
+        [[nodiscard]] const char* backend_name() const noexcept override { return "draining"; }
+        void play(std::size_t frames) { played_.fetch_add(frames); }
+        [[nodiscard]] bool paused() const noexcept { return paused_.load(); }
+
+    private:
+        wse::platform::AudioDeviceSpec spec_{};
+        bool open_ = false;
+        std::atomic<std::size_t> submitted_{0U};
+        std::atomic<std::size_t> played_{0U};
+        std::atomic<bool> paused_{false};
+    };
+
+    wse::platform::WseAudioMixer mixer{};
+    DrainingDevice dev{};
+    AudioMixerWorker::Options opt{};
+    opt.target_queued_frames = 1024U;
+    opt.max_block_frames = 256U;
+    opt.period = std::chrono::microseconds{500};
+    {
+        AudioMixerWorker closed(mixer, dev, opt);
+        expect(!closed.start() && !closed.running(), "the worker does not start on a closed device");
+    }
+    expect(dev.open(wse::platform::AudioDeviceSpec{48000U, 2U}), "draining device opens");
+    AudioMixerWorker worker(mixer, dev, opt);
+    expect(worker.pump_once() == 1024U && worker.pump_once() == 0U && dev.queued_frames() == 1024U,
+           "pump_once tops the queue up to the target latency and no further");
+
+    worker.set_paused(true);
+    dev.play(512U);
+    expect(dev.paused() && worker.paused() && worker.pump_once() == 0U,
+           "a paused worker pauses the device and submits nothing");
+    worker.set_paused(false);
+    expect(!dev.paused() && worker.pump_once() == 512U, "resuming tops the queue up again");
+
+    expect(worker.start() && worker.running() && worker.start(), "the worker thread starts (idempotent)");
+    const std::uint64_t base = worker.frames_submitted();
+    std::size_t game_calls = 0U;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (worker.frames_submitted() < base + 8192U && std::chrono::steady_clock::now() < deadline) {
+        dev.play(256U);
+        // Game-thread mixer calls under the worker's mutex while it mixes.
+        game_calls += worker.with_mixer([](wse::platform::WseAudioMixer& m) {
+            return m.output_sample_rate() == 48000U ? 1U : 0U;
+        });
+        std::this_thread::sleep_for(std::chrono::microseconds(200));
+    }
+    worker.stop();
+    expect(!worker.running() && worker.frames_submitted() >= base + 8192U && game_calls > 0U,
+           "the worker thread keeps the draining device topped up while the game thread uses the mixer");
+    expect(dev.queued_frames() <= 1024U, "the worker never queues past the target latency");
+    worker.stop();
+    expect(!worker.running(), "stop is idempotent");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -1396,6 +1479,7 @@ int run_audio_suite(const char* fixture_path) {
     test_vm_and_world_audio_bridge_integration();
     test_review_regressions();
     test_review_regressions_vm();
+    test_audio_mixer_worker_thread();
     test_retail_warband_audio_gate();
 
     if (g_failures == 0) {

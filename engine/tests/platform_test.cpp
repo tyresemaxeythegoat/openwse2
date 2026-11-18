@@ -2418,6 +2418,66 @@ void test_p8_performance_and_frame_pacing() {
                "sanitize_performance_settings replaces NaN and clamps bounds");
     }
 
+    // 2b. config/performance.json is the one saved copy of the launcher toggles (P8 review #4).
+    {
+        MemoryVfs vfs;
+        PerformanceSettings s{};
+        bool present = true;
+        std::string err;
+        expect(load_performance_settings_or_default(vfs, s, &present) && !present &&
+                   s == PerformanceSettings{},
+               "a missing performance.json loads the defaults and reports it absent");
+
+        PerformanceSettings tuned{};
+        tuned.min_resolution_scale = 0.8f;
+        tuned.max_lod_bias = 0.5f;
+        expect(save_performance_settings(vfs, tuned, &err), "seed performance.json");
+        LauncherPerformanceChoices c{};
+        c.frame_rate_cap = FrameRateCap::Fps120;
+        c.present_mode = PresentModePreference::Mailbox;
+        c.thermal_throttling_enabled = false;
+        c.dynamic_resolution_enabled = false;
+        c.lod_bias_scaling_enabled = false;
+        c.gyro_aim_enabled = true;
+        c.pinch_zoom_enabled = false;
+        PerformanceSettings merged{};
+        PerformanceSettings back{};
+        expect(save_launcher_choices(vfs, c, &merged, &err) &&
+                   load_performance_settings_or_default(vfs, back, &present) && present &&
+                   back == merged && back.frame_rate_cap == FrameRateCap::Fps120 &&
+                   back.present_mode == PresentModePreference::Mailbox &&
+                   !back.thermal_throttling_enabled && !back.dynamic_resolution_enabled &&
+                   !back.lod_bias_scaling_enabled && back.gyro_aim_enabled &&
+                   !back.pinch_zoom_enabled,
+               "launcher choices are written into performance.json and read back");
+        expect(std::fabs(back.min_resolution_scale - 0.8f) < 1e-5f &&
+                   std::fabs(back.max_lod_bias - 0.5f) < 1e-5f,
+               "launcher choices keep the JSON-only resolution floor and LOD ceiling");
+
+        PerformanceSettings old{};
+        expect(deserialize_performance_settings_json(
+                   "{\"version\":\"1\",\"frame_rate_cap\":\"90\"}", old, &err) &&
+                   !old.gyro_aim_enabled && old.pinch_zoom_enabled,
+               "a file from before the launcher toggles moved loads their defaults");
+        expect(!deserialize_performance_settings_json("{\"gyro_aim_enabled\":\"maybe\"}", old,
+                                                      &err),
+               "an invalid launcher toggle is rejected");
+
+        const std::string junk = "{not json";
+        expect(vfs.write_file("config/performance.json",
+                              std::span<const std::uint8_t>(
+                                  reinterpret_cast<const std::uint8_t*>(junk.data()), junk.size())),
+               "write a corrupt performance.json");
+        PerformanceSettings fallback{};
+        fallback.max_lod_bias = 2.0f;
+        expect(!load_performance_settings_or_default(vfs, fallback, &present) && present &&
+                   fallback == PerformanceSettings{},
+               "a corrupt performance.json yields the defaults and false");
+        expect(save_launcher_choices(vfs, c, nullptr, &err) &&
+                   load_performance_settings(vfs, back, &err) && back.gyro_aim_enabled,
+               "saving launcher choices replaces a corrupt performance.json");
+    }
+
     // 3. ThermalPerformanceController: headroom + status + hysteresis + toggles + resolution extent.
     {
         ThermalPerformanceController ctrl;

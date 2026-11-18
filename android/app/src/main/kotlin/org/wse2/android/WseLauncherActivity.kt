@@ -63,6 +63,9 @@ class WseLauncherActivity : Activity() {
     private lateinit var gyroAimCheck: CheckBox
     private lateinit var pinchZoomCheck: CheckBox
     private lateinit var thermalThrottleCheck: CheckBox
+    private lateinit var presentModeSpinner: Spinner
+    private lateinit var dynamicResolutionCheck: CheckBox
+    private lateinit var lodBiasScalingCheck: CheckBox
     private lateinit var mockFallbackCheck: CheckBox
     private lateinit var outputStatusText: TextView
     private lateinit var rescanButton: Button
@@ -237,6 +240,27 @@ class WseLauncherActivity : Activity() {
         }
         container.addView(thermalThrottleCheck)
 
+        presentModeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@WseLauncherActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                presentModeLabels
+            )
+        }
+        container.addView(presentModeSpinner)
+
+        dynamicResolutionCheck = CheckBox(this).apply {
+            text = "Dynamic resolution under thermal load"
+            isChecked = true
+        }
+        container.addView(dynamicResolutionCheck)
+
+        lodBiasScalingCheck = CheckBox(this).apply {
+            text = "LOD bias scaling under thermal load"
+            isChecked = true
+        }
+        container.addView(lodBiasScalingCheck)
+
         addSectionTitle("Runtime")
         container.addView(Button(this).apply {
             text = "Launch WSE2 SDL3 Self-Test (WseActivity)"
@@ -252,6 +276,96 @@ class WseLauncherActivity : Activity() {
 
         setContentView(rootScroll)
         restorePreferences()
+    }
+
+    private val configRoot: String
+        get() = filesDir.absolutePath
+
+    // config/performance.json is the one saved copy of these settings (native serializer via
+    // JNI). Builds that kept them in SharedPreferences are migrated once.
+    private fun restorePerformanceSettings() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val json = File(configRoot, PERFORMANCE_JSON)
+        if (!json.isFile && prefs.contains(KEY_FRAME_RATE_CAP)) {
+            WseSafBridge.nativeSavePerformanceSettings(
+                configRoot,
+                prefs.getInt(KEY_FRAME_RATE_CAP, 60),
+                "fifo",
+                prefs.getBoolean(KEY_THERMAL_THROTTLE, true),
+                true,
+                true,
+                prefs.getBoolean(KEY_GYRO_AIM, false),
+                prefs.getBoolean(KEY_PINCH_ZOOM, true)
+            )
+        }
+        prefs.edit()
+            .remove(KEY_FRAME_RATE_CAP)
+            .remove(KEY_GYRO_AIM)
+            .remove(KEY_PINCH_ZOOM)
+            .remove(KEY_THERMAL_THROTTLE)
+            .apply()
+
+        val stored = try {
+            JSONObject(WseSafBridge.nativeLoadPerformanceSettings(configRoot))
+        } catch (_: Exception) {
+            JSONObject()
+        }
+        val capKey = stored.optString("frame_rate_cap", "60")
+        val savedCapHz = if (capKey == "uncapped") 0 else capKey.toIntOrNull() ?: 60
+        // A cap saved on another display (or before a panel mode change) falls back to the
+        // highest offered rate below it.
+        val capIdx = frameRateValues.indexOf(savedCapHz).let { exact ->
+            if (exact >= 0) {
+                exact
+            } else {
+                val best = frameRateValues.filter { it in 1..savedCapHz }.maxOrNull() ?: 60
+                frameRateValues.indexOf(best).coerceAtLeast(0)
+            }
+        }
+        frameRateSpinner.setSelection(capIdx)
+        presentModeSpinner.setSelection(
+            presentModeKeys.indexOf(stored.optString("present_mode", "fifo")).coerceAtLeast(0)
+        )
+        fun flag(key: String, fallback: Boolean) =
+            stored.optString(key, fallback.toString()).let { it == "true" || it == "1" }
+        gyroAimCheck.isChecked = flag("gyro_aim_enabled", false)
+        pinchZoomCheck.isChecked = flag("pinch_zoom_enabled", true)
+        thermalThrottleCheck.isChecked = flag("thermal_throttling_enabled", true)
+        dynamicResolutionCheck.isChecked = flag("dynamic_resolution_enabled", true)
+        lodBiasScalingCheck.isChecked = flag("lod_bias_scaling_enabled", true)
+
+        val spinnerListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                savePerformanceSettings()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        frameRateSpinner.onItemSelectedListener = spinnerListener
+        presentModeSpinner.onItemSelectedListener = spinnerListener
+        for (check in listOf(
+            gyroAimCheck, pinchZoomCheck, thermalThrottleCheck, dynamicResolutionCheck,
+            lodBiasScalingCheck
+        )) {
+            check.setOnCheckedChangeListener { _, _ -> savePerformanceSettings() }
+        }
+    }
+
+    private fun savePerformanceSettings() {
+        val modeIdx = presentModeSpinner.selectedItemPosition.coerceIn(0, presentModeKeys.size - 1)
+        val ok = WseSafBridge.nativeSavePerformanceSettings(
+            configRoot,
+            selectedFrameRateCapHz(),
+            presentModeKeys[modeIdx],
+            thermalThrottleCheck.isChecked,
+            dynamicResolutionCheck.isChecked,
+            lodBiasScalingCheck.isChecked,
+            gyroAimCheck.isChecked,
+            pinchZoomCheck.isChecked
+        )
+        if (!ok) {
+            outputStatusText.text = "ERROR: could not save $PERFORMANCE_JSON"
+        }
     }
 
     override fun onDestroy() {
@@ -278,41 +392,7 @@ class WseLauncherActivity : Activity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        val savedCapHz = prefs.getInt(KEY_FRAME_RATE_CAP, 60)
-        // A cap saved on another display (or before a panel mode change) falls back to the
-        // highest offered rate below it.
-        val capIdx = frameRateValues.indexOf(savedCapHz).let { exact ->
-            if (exact >= 0) {
-                exact
-            } else {
-                val best = frameRateValues.filter { it in 1..savedCapHz }.maxOrNull() ?: 60
-                frameRateValues.indexOf(best).coerceAtLeast(0)
-            }
-        }
-        frameRateSpinner.setSelection(capIdx)
-        frameRateSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
-                val hz = frameRateValues[pos.coerceIn(0, frameRateValues.size - 1)]
-                prefs.edit().putInt(KEY_FRAME_RATE_CAP, hz).apply()
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-
-        gyroAimCheck.isChecked = prefs.getBoolean(KEY_GYRO_AIM, false)
-        gyroAimCheck.setOnCheckedChangeListener { _, checked ->
-            prefs.edit().putBoolean(KEY_GYRO_AIM, checked).apply()
-        }
-
-        pinchZoomCheck.isChecked = prefs.getBoolean(KEY_PINCH_ZOOM, true)
-        pinchZoomCheck.setOnCheckedChangeListener { _, checked ->
-            prefs.edit().putBoolean(KEY_PINCH_ZOOM, checked).apply()
-        }
-
-        thermalThrottleCheck.isChecked = prefs.getBoolean(KEY_THERMAL_THROTTLE, true)
-        thermalThrottleCheck.setOnCheckedChangeListener { _, checked ->
-            prefs.edit().putBoolean(KEY_THERMAL_THROTTLE, checked).apply()
-        }
+        restorePerformanceSettings()
 
         val savedTree = prefs.getString(KEY_TREE_URI, null)
         if (!savedTree.isNullOrEmpty()) {
@@ -803,10 +883,6 @@ class WseLauncherActivity : Activity() {
             putExtra(EXTRA_MODULE_NAME, selectedMod)
             // Stable mode id ("system" / "turnip" / "panvk"), as parse_driver_mode expects.
             putExtra(EXTRA_GPU_DRIVER, selectedDriverModeKey())
-            putExtra(EXTRA_FRAME_RATE_CAP, selectedFrameRateCapHz())
-            putExtra(EXTRA_GYRO_AIM, gyroAimCheck.isChecked)
-            putExtra(EXTRA_PINCH_ZOOM, pinchZoomCheck.isChecked)
-            putExtra(EXTRA_THERMAL_THROTTLE, thermalThrottleCheck.isChecked)
         }
         startActivity(intent)
     }
@@ -826,13 +902,15 @@ class WseLauncherActivity : Activity() {
         private const val KEY_GYRO_AIM = "gyro_aim_enabled"
         private const val KEY_PINCH_ZOOM = "pinch_zoom_enabled"
         private const val KEY_THERMAL_THROTTLE = "thermal_throttling_enabled"
+        private const val PERFORMANCE_JSON = "config/performance.json"
+        private val presentModeKeys = listOf("fifo", "mailbox", "immediate", "fifo_relaxed")
+        private val presentModeLabels = listOf(
+            "Present: FIFO (vsync)", "Present: mailbox", "Present: immediate (tearing)",
+            "Present: FIFO relaxed"
+        )
 
         const val EXTRA_TREE_URI = "wse2.extra.TREE_URI"
         const val EXTRA_MODULE_NAME = "wse2.extra.MODULE_NAME"
         const val EXTRA_GPU_DRIVER = "wse2.extra.GPU_DRIVER"
-        const val EXTRA_FRAME_RATE_CAP = "wse2.extra.FRAME_RATE_CAP"
-        const val EXTRA_GYRO_AIM = "wse2.extra.GYRO_AIM"
-        const val EXTRA_PINCH_ZOOM = "wse2.extra.PINCH_ZOOM"
-        const val EXTRA_THERMAL_THROTTLE = "wse2.extra.THERMAL_THROTTLE"
     }
 }

@@ -1188,8 +1188,9 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
     Port approximations (not traced): mission containers draw in stack order and take input top
     container first, but a pressed container is not raised to the top; the
-    mission pass runs once per frame and uses the frame's `dt` for its clock; the mixer has no worker
-    thread or command queue; `wse_headless` links no audio codec. Details in
+    mission pass runs once per frame and uses the frame's `dt` for its clock; the mixer runs on a
+    port worker thread behind one mutex (`AudioMixerWorker`) instead of FMOD's; `wse_headless`
+    links no audio codec. Details in
     [engine/README.md](../engine/README.md).
 
 ## 9. Evidence index
