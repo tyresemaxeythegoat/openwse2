@@ -253,7 +253,7 @@ inline void wse_skip_json_ws(std::string_view src, std::size_t& pos) noexcept {
     return true;
 }
 
-// Parses top-level JSON object (0x1402a97f0 requires Json::objectValue).
+// Parses top-level JSON object (0x1402a9a60 requires Json::objectValue).
 // Validates and steps over one JSON value of any kind (nested arrays/objects
 // included, up to `max_depth` levels) without storing it.
 [[nodiscard]] inline bool wse_skip_json_value(std::string_view src,

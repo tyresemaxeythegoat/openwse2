@@ -3,7 +3,7 @@
 // Decodes one instruction into a small operation/operand record that both the reference
 // interpreter (`x86_interp.h`) and the LLVM lifter (`recomp/src/lifter_llvm.cpp`) consume, so
 // the two always agree on what an instruction means. The subset is the integer core that
-// leaf functions such as `rglString::indexOf` (`0x14030f630`) use: moves, sign/zero
+// leaf functions such as `rglString::indexOf` (`0x1403103f0`) use: moves, sign/zero
 // extension, `lea`, `push`/`pop`, the eight ALU group operations except `adc`/`sbb`, `test`,
 // `inc`/`dec`, conditional and unconditional near branches, `ret` and `nop`. Anything else
 // fails with the opcode bytes in the message; R1 replaces the opcode table with Zydis.

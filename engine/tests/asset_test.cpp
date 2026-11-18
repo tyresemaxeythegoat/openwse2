@@ -237,7 +237,7 @@ void test_brf_unversioned_all_eight_types() {
     write_vec3(w, 0.0f, 0.0f, 1.0f);
     write_vec3(w, 0.0f, 0.0f, 0.25f);
 
-    // 7. skeleton_anim (stream quaternion order: qx, qy, qz, qw; 0x14030c320 + 0x1402b65d0)
+    // 7. skeleton_anim (stream quaternion order: qx, qy, qz, qw; 0x14030d0e0 + 0x1402b6840)
     w.write_string("skeleton_anim");
     w.write_i32(1);
     w.write_string("anim_swing");
@@ -267,7 +267,7 @@ void test_brf_unversioned_all_eight_types() {
     expect(file.rfver == 0, "unversioned rfver == 0");
     expect(file.textures.size() == 1 && file.textures[0].flags == 0x7U, "texture masks bit 0x10000000");
     expect(file.shaders.size() == 1 && file.shaders[0].flags == 0x80040001U && file.shaders[0].alternatives.size() == 2,
-           "shader flag rules match 0x140301940");
+           "shader flag rules match 0x140302750");
     expect(file.materials.size() == 1 && file.materials[0].specular_coeff == 12.5f &&
                file.materials[0].texture_names[0] == "sword_tex.dds",
            "material parsed");
@@ -353,7 +353,7 @@ void test_brf_rfver1_metamesh_and_catalog() {
                groups[0].lod_mesh_indices[4].size() == 1,
            "MetaMesh LOD buckets [0..4]");
 
-    // Verified createMetaMesh (0x1402f29a0) edge cases: dotted non-LOD names land in LOD 0,
+    // Verified createMetaMesh (0x1402f3030) edge cases: dotted non-LOD names land in LOD 0,
     // ".lod3_alt" still selects LOD 3, and prefixes shorter than 2 chars before '.' are not split.
     {
         std::vector<wse::asset::BrfMesh> edge_meshes(4);
@@ -951,7 +951,7 @@ void test_dds_formats_and_resolver() {
         expect(!wse::asset::parse_dds(bad, img, &err), "reject bad DDS magic");
     }
 
-    // 6. Texture path resolution priority (tryGetTexture 0x1402f2f10 + initDeviceObjects 0x140317710)
+    // 6. Texture path resolution priority (tryGetTexture 0x1402f35a0 + initDeviceObjects 0x1403184d0)
     {
         expect(wse::asset::texture_frame_count(0U) == 1U &&
                    wse::asset::texture_frame_count(0x01000000U) == 4U &&
@@ -1286,7 +1286,7 @@ void test_p5_shader_review_regressions() {
                "#ifdef WSE2 PostFx is not given a duplicate include");
     }
 
-    // Material: resolved shader flag `kShaderFlagHasSpecular` (0x20, 0x1402e8454) gates
+    // Material: resolved shader flag `kShaderFlagHasSpecular` (0x20, 0x1402e8734) gates
     // specular even when material specular fields are non-zero; without a shader, material
     // properties decide.
     {
@@ -1637,7 +1637,7 @@ void test_p5_shaders_materials_and_spirv_cache() {
                    st_cut.uses_specular,
                "decode_material_render_state decodes opaque cutout, nibble render_order, and slots");
 
-        // Retail setAlphaTestMode (0x1402a00b0) keeps D3DRS_ALPHATESTENABLE active when blended.
+        // Retail setAlphaTestMode (0x1402a0260) keeps D3DRS_ALPHATESTENABLE active when blended.
         mat.flags = (1U << 8U) | (3U << 12U) | (2U << 24U);
         const MaterialRenderState st_blend = decode_material_render_state(mat, &sh_bump);
         expect(st_blend.blend_mode == MaterialBlendMode::AlphaBlend &&

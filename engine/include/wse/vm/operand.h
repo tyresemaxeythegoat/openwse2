@@ -1,10 +1,10 @@
 // Tagged script-VM operands.
 //
 // Evidence:
-//   mbStatement::parseOperand  (0x1401c6070)  Ghidra 12.1.4 pseudocode
-//   mbStatement::returnValue   (0x1401c6100)
-//   mbStatementBlock::execute  (0x1401f69d0)
-//   mbStatementBlock::analyze  (0x1401f6740)
+//   mbStatement::parseOperand  (0x1401c61f0)  Ghidra 12.1.4 pseudocode
+//   mbStatement::returnValue   (0x1401c6280)
+//   mbStatementBlock::execute  (0x1401f6b50)
+//   mbStatementBlock::analyze  (0x1401f68c0)
 //
 // Encoding (proven by the pseudocode above):
 //   bits  0..55  payload

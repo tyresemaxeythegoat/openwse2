@@ -71,7 +71,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
 
     switch (static_cast<WseOpcode>(opcode)) {
     case WseOpcode::player_set_skin: {
-        // 2900 (0x1401e4f8e): sets player skin in multiplayer when compat broken.
+        // 2900 (0x1401e510e): sets player skin in multiplayer when compat broken.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -86,7 +86,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::player_stop_controlling_agent: {
-        // 2901 (0x1401e5079): returns controlled agent to AI control.
+        // 2901 (0x1401e51f9): returns controlled agent to AI control.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -109,7 +109,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::player_set_banner_id: {
-        // 2902 (0x1401e51f2)
+        // 2902 (0x1401e5372)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -121,7 +121,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::player_set_username: {
-        // 2903 (0x1401e5226): parses string operand 1 into player name.
+        // 2903 (0x1401e53a6): parses string operand 1 into player name.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -135,7 +135,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::player_temp_ban: {
-        // 2904 (0x1401e52e1): bans non-admin non-host player for wide[1] > 0.
+        // 2904 (0x1401e5461): bans non-admin non-host player for wide[1] > 0.
         if (narrow.size() < 2 || wide.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -162,7 +162,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::player_get_wse2_version: {
-        // 2905 (0x1401e537f)
+        // 2905 (0x1401e54ff)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -175,7 +175,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled;
     }
     case WseOpcode::player_get_party_id: {
-        // 2906 (0x1401e53b7)
+        // 2906 (0x1401e5537)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -188,7 +188,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled;
     }
     case WseOpcode::player_set_party_id: {
-        // 2907 (0x1401e53ef -> 0x1400e7330)
+        // 2907 (0x1401e556f -> 0x1400e7490)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -221,7 +221,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::player_get_anticheat_stat: {
-        // 2908 (0x1401e5442 -> WSEAntiCheat::getStat)
+        // 2908 (0x1401e55c2 -> WSEAntiCheat::getStat)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -234,7 +234,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled;
     }
     case WseOpcode::player_anticheat_report: {
-        // 2909 (0x1401e546b -> WSEAntiCheat::report)
+        // 2909 (0x1401e55eb -> WSEAntiCheat::report)
         if (narrow.size() < 2 || wide.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -248,7 +248,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::multiplayer_send_chat_message_to_player: {
-        // 3400 (0x1401e96e3)
+        // 3400 (0x1401e9863)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -267,7 +267,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::multiplayer_send_composite_message_to_player: {
-        // 3401 (0x1401e97f6)
+        // 3401 (0x1401e9976)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -294,7 +294,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::multiplayer_send_composite_message_to_server: {
-        // 3402 (0x1401e998b)
+        // 3402 (0x1401e9b0b)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -318,7 +318,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::multiplayer_get_cur_profile: {
-        // 3403 (0x1401e9ac9)
+        // 3403 (0x1401e9c49)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -330,7 +330,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled;
     }
     case WseOpcode::multiplayer_get_num_profiles: {
-        // 3404 (0x1401e9ada)
+        // 3404 (0x1401e9c5a)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -342,7 +342,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled;
     }
     case WseOpcode::multiplayer_message_init: {
-        // 3405 (0x1401e9aeb): clears buffer and reserves 24-bit header (4+12+8).
+        // 3405 (0x1401e9c6b): clears buffer and reserves 24-bit header (4+12+8).
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -358,7 +358,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::multiplayer_message_put_string: {
-        // 3406 (0x1401e9b6c)
+        // 3406 (0x1401e9cec)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -372,7 +372,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::multiplayer_message_put_int: {
-        // 3407 (0x1401e9c04)
+        // 3407 (0x1401e9d84)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -389,7 +389,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
     }
     case WseOpcode::multiplayer_message_put_position:
     case WseOpcode::multiplayer_message_put_coordinate: {
-        // 3408 / 3409 (0x1401e9c74 / 0x1401e9d34)
+        // 3408 / 3409 (0x1401e9df4 / 0x1401e9eb4)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -413,7 +413,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::multiplayer_cur_message_get_string: {
-        // 3410 (0x1401e9dd8)
+        // 3410 (0x1401e9f58)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -427,7 +427,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return wse_mp_store_utf8(strings, narrow[0], out);
     }
     case WseOpcode::multiplayer_cur_message_get_int: {
-        // 3411 (0x1401e9e57)
+        // 3411 (0x1401e9fd7)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -448,7 +448,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
     }
     case WseOpcode::multiplayer_cur_message_get_position:
     case WseOpcode::multiplayer_cur_message_get_coordinate: {
-        // 3412 / 3413 (0x1401e9eae / 0x1401ea020)
+        // 3412 / 3413 (0x1401ea02e / 0x1401ea1a0)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -471,7 +471,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::multiplayer_cur_profile_get_skin: {
-        // 3414 (0x1401ea0b2)
+        // 3414 (0x1401ea232)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -486,7 +486,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled;
     }
     case WseOpcode::multiplayer_connect_to_server: {
-        // 3415 (0x1401ea0c7): raw getString on address & password.
+        // 3415 (0x1401ea247): raw getString on address & password.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -508,14 +508,14 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::multiplayer_is_campaign: {
-        // 3416 (0x1401ea170 -> mbBasicGame::isMultiplayerCampaign)
+        // 3416 (0x1401ea2f0 -> mbBasicGame::isMultiplayerCampaign)
         return (world != nullptr && world->m6.server.switching_to_campaign)
                    ? WseDispatch::handled_no_store
                    : WseDispatch::condition_false;
     }
     case WseOpcode::server_set_password_admin:
     case WseOpcode::server_set_password_private: {
-        // 3500 / 3501 (0x1401ea184 / 0x1401ea217)
+        // 3500 / 3501 (0x1401ea304 / 0x1401ea397)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -537,7 +537,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
     case WseOpcode::server_map_rotation_get_count:
     case WseOpcode::server_map_rotation_get_index:
     case WseOpcode::server_map_rotation_get_map: {
-        // 3502 / 3503 / 3505 (0x1401e812f): retail always stores -1.
+        // 3502 / 3503 / 3505 (0x1401e82af): retail always stores -1.
         const std::size_t min_ops =
             (opcode ==
              static_cast<std::uint32_t>(WseOpcode::server_map_rotation_get_map))
@@ -555,11 +555,11 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
     case WseOpcode::server_map_rotation_remove_map:
     case WseOpcode::server_set_password_rcon:
     case WseOpcode::execute_server_console_command: {
-        // 3504 / 3506 / 3507 / 3513 / 3514 (0x1401f49c1): immediate true no-op.
+        // 3504 / 3506 / 3507 / 3513 / 3514 (0x1401f4b41): immediate true no-op.
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::server_get_horse_friendly_fire: {
-        // 3508 (0x1401ea2aa)
+        // 3508 (0x1401ea42a)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -572,7 +572,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled;
     }
     case WseOpcode::server_set_horse_friendly_fire: {
-        // 3509 (0x1401ea2e2)
+        // 3509 (0x1401ea462)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -588,7 +588,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::server_get_show_crosshair: {
-        // 3510 (0x1401ea336)
+        // 3510 (0x1401ea4b6)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -601,7 +601,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled;
     }
     case WseOpcode::server_set_show_crosshair: {
-        // 3511 (0x1401ea361)
+        // 3511 (0x1401ea4e1)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -617,7 +617,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::get_server_option_at_connect: {
-        // 3512 (0x1401ea3b5)
+        // 3512 (0x1401ea535)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -642,7 +642,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled;
     }
     case WseOpcode::add_anonymous_player: {
-        // 3515 (0x1401ea530)
+        // 3515 (0x1401ea6b0)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -657,7 +657,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::remove_anonymous_player: {
-        // 3516 (0x1401ea5c3)
+        // 3516 (0x1401ea743)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -669,7 +669,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::clear_anonymous_players: {
-        // 3517 (0x1401ea5fa)
+        // 3517 (0x1401ea77a)
         if (world == nullptr || !world->is_server) {
             return WseDispatch::ignored;
         }
@@ -678,7 +678,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::server_set_ghost_mode_advanced: {
-        // 3518 (0x1401ea61f)
+        // 3518 (0x1401ea79f)
         if (narrow.size() < 5) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -694,7 +694,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::server_set_anticheat_option: {
-        // 3519 (0x1401ea669)
+        // 3519 (0x1401ea7e9)
         if (narrow.size() < 2 || wide.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -706,7 +706,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::server_get_anticheat_option: {
-        // 3520 (0x1401ea68e)
+        // 3520 (0x1401ea80e)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -720,7 +720,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return WseDispatch::handled;
     }
     case WseOpcode::str_store_multiplayer_profile_name: {
-        // 4225 (0x1401eef9c)
+        // 4225 (0x1401ef11c)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -736,7 +736,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
     }
     case WseOpcode::str_store_server_password_admin:
     case WseOpcode::str_store_server_password_private: {
-        // 4227 / 4228 (0x1401ef126 / 0x1401ef160)
+        // 4227 / 4228 (0x1401ef2a6 / 0x1401ef2e0)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -752,7 +752,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return wse_mp_store_utf8(strings, narrow[0], pwd);
     }
     case WseOpcode::str_store_player_ip: {
-        // 4230 (0x1401ef213)
+        // 4230 (0x1401ef393)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -768,7 +768,7 @@ inline void wse_mp_stamp_net_header(wse::game::WseNetBuffer& buf,
         return wse_mp_store_utf8(strings, narrow[0], ip);
     }
     case WseOpcode::str_store_multiplayer_profile_face_keys: {
-        // 4237 (0x1401ef676)
+        // 4237 (0x1401ef7f6)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }

@@ -1210,8 +1210,8 @@ void test_ui_session_drive_frame() {
            "an unknown queued presentation falls back to the window it came from");
 }
 
-// Text button hit boxes per create opcode (`createButtonOverlay` 0x14020abe0,
-// `createGameButtonOverlay` 0x14020c3e0, `createIngameButtonOverlay` 0x14020c7d0).
+// Text button hit boxes per create opcode (`createButtonOverlay` 0x14020ad60,
+// `createGameButtonOverlay` 0x14020c560, `createIngameButtonOverlay` 0x14020c950).
 void test_overlay_button_boxes() {
     auto ctx_ptr = std::make_unique<wse::vm::VmContext>();
     wse::vm::VmContext& ctx = *ctx_ptr;

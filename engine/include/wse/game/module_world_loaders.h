@@ -102,7 +102,7 @@ template <class Fn>
 
 } // namespace detail
 
-// skills.txt (0x1400cb950 / mbSkill::readStream 0x140213450): zero header tokens.
+// skills.txt (0x1400cbab0 / mbSkill::readStream 0x1402135d0): zero header tokens.
 [[nodiscard]] inline ModuleLoadError load_skills(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -148,7 +148,7 @@ template <class Fn>
         });
 }
 
-// factions.txt (0x1400cb4d0 / mbFaction::readStream 0x1400c5ff0): 3 header tokens.
+// factions.txt (0x1400cb630 / mbFaction::readStream 0x1400c6150): 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_factions(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -228,7 +228,7 @@ template <class Fn>
         });
 }
 
-// troops.txt (0x1400cbc00 / mbTroop::readStream 0x1402455f0):
+// troops.txt (0x1400cbd60 / mbTroop::readStream 0x140245770):
 // skips 2 strings, reads `version`, then `num_troops`.
 [[nodiscard]] inline ModuleLoadError load_troops(
     io::TokenReader& reader,
@@ -377,7 +377,7 @@ template <class Fn>
         });
 }
 
-// item_kinds1.txt (0x1400971f0 / mbItemKind::readStream 0x14010f790):
+// item_kinds1.txt (0x140097350 / mbItemKind::readStream 0x14010f8f0):
 // skips 2 strings, reads `version`, then `num_items`.
 [[nodiscard]] inline ModuleLoadError load_item_kinds(
     io::TokenReader& reader,
@@ -498,7 +498,7 @@ template <class Fn>
         });
 }
 
-// party_templates.txt (0x140097fd0 / mbPartyTemplate::readStream 0x1401c3a40): 3 header tokens.
+// party_templates.txt (0x140098130 / mbPartyTemplate::readStream 0x1401c3bc0): 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_party_templates(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -562,7 +562,7 @@ template <class Fn>
         });
 }
 
-// parties.txt (0x1400cd680 / rglHashVector<mbParty> 0x1400e7b80 / mbParty::readStream 0x1401ba5e0).
+// parties.txt (0x1400cd7e0 / rglHashVector<mbParty> 0x1400e7ce0 / mbParty::readStream 0x1401ba760).
 [[nodiscard]] inline ModuleLoadError load_parties(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -692,7 +692,7 @@ template <class Fn>
         });
 }
 
-// scenes.txt (0x1400cc090 / mbSite::readStream 0x1402107d0): 3 header tokens.
+// scenes.txt (0x1400cc1f0 / mbSite::readStream 0x140210950): 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_sites(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -792,7 +792,7 @@ template <class Fn>
         });
 }
 
-// quests.txt (0x1400cc510 / mbQuest::readStream 0x1401c4510): 3 header tokens.
+// quests.txt (0x1400cc670 / mbQuest::readStream 0x1401c4690): 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_quests(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -833,7 +833,7 @@ template <class Fn>
         });
 }
 
-// info_pages.txt (0x1400cc980): 3 header tokens.
+// info_pages.txt (0x1400ccae0): 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_info_pages(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -875,7 +875,7 @@ template <class Fn>
         });
 }
 
-// strings.txt (0x140096d40): 3 header tokens; quick_strings.txt (0x1400970e0): 0 header tokens.
+// strings.txt (0x140096ea0): 3 header tokens; quick_strings.txt (0x140097240): 0 header tokens.
 [[nodiscard]] inline ModuleLoadError load_string_bank(
     io::TokenReader& reader,
     std::size_t header_skip_tokens,
@@ -940,7 +940,7 @@ template <class Fn>
         });
 }
 
-// game_variables.txt (0x14008c4f0): Native fallback followed by module override.
+// game_variables.txt (0x14008c650): Native fallback followed by module override.
 inline void load_game_variables(platform::Vfs& vfs,
                                 std::string_view module_dir,
                                 std::string_view native_dir,
@@ -974,7 +974,7 @@ inline void load_game_variables(platform::Vfs& vfs,
     return {};
 }
 
-// INI sections (0x1402a6d80) into world.module_settings; returns false if missing.
+// INI sections (0x1402a6ff0) into world.module_settings; returns false if missing.
 inline bool load_module_settings(platform::Vfs& vfs,
                                  std::string_view ini_path,
                                  WseWorldState& world) {
@@ -986,7 +986,7 @@ inline bool load_module_settings(platform::Vfs& vfs,
     return true;
 }
 
-// Data/item_modifiers.txt (0x140093e20): fixed 43 entries (no count token).
+// Data/item_modifiers.txt (0x140093f80): fixed 43 entries (no count token).
 [[nodiscard]] inline ModuleLoadError load_item_modifiers(
     io::TokenReader& reader,
     std::vector<LoadedItemModifier>& out,

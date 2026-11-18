@@ -44,7 +44,7 @@ namespace wse::platform {
 
 // Builds the pipeline state for one decoded material. Shader handles are left 0
 // for the caller to fill. Retail `.brf` meshes have CCW triangles around outward
-// normals (`rglRenderer::renderMesh` 0x1402e8ccd uses RH projection 0x14025ac20
+// normals (`rglRenderer::renderMesh` 0x1402e8fb3 uses RH projection 0x14025ada0
 // with `D3DCULL_CW`), and `make_orbit_mvp_matrix` + `SoftwareRhiDevice` keeps
 // those CCW outward faces when `front_face == FrontFace::counter_clockwise`.
 [[nodiscard]] inline PipelineDesc make_pipeline_desc(const wse::asset::MaterialRenderState& state,

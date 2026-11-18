@@ -16,7 +16,7 @@ namespace wse::vm {
     switch (static_cast<WseOpcode>(opcode)) {
     // Position vector operations (4100, 4102..4104 / 0x1004, 0x1006..0x1008).
     case WseOpcode::position_get_vector_to_position: {
-        // 4100 (0x1004, 0x1401ecd5a): (dest_dist, pos_no, pos1, pos2).
+        // 4100 (0x1004, 0x1401eceda): (dest_dist, pos_no, pos1, pos2).
         if (narrow.size() < 4) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -47,7 +47,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::position_get_length: {
-        // 4102 (0x1006, 0x1401ed0c1): (dest_len, pos_no) -> length(pos.o).
+        // 4102 (0x1006, 0x1401ed241): (dest_len, pos_no) -> length(pos.o).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -63,7 +63,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::get_dot_product_of_positions: {
-        // 4103 (0x1007, 0x1401ed10f): (dest, pos1, pos2) -> dot(p1.o, p2.o).
+        // 4103 (0x1007, 0x1401ed28f): (dest, pos1, pos2) -> dot(p1.o, p2.o).
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -84,7 +84,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::get_cross_product_of_positions: {
-        // 4104 (0x1008, 0x1401ed158): (dest_pos, pos1, pos2) -> cross -> dest.o.
+        // 4104 (0x1008, 0x1401ed2d8): (dest_pos, pos1, pos2) -> cross -> dest.o.
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }

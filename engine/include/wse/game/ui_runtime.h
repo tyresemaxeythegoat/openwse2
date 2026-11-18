@@ -2,23 +2,23 @@
 // and menu/initial/notes window controllers (`docs/PLATFORM_PLAN.md`, P9 Part 2).
 //
 // Reconstructed from v1.1.5.5 PE + PDB evidence (`mb_warband_wse2_x64.pdb`):
-// - mbLanguageManager::getText             (0x14028e300),
-//   mbLanguageManager file scan            (0x14028d6f0: languages/<lang>/*.csv)
-// - rglReadWidgetProperties                (0x140328680: <prefix>_text_color,
+// - mbLanguageManager::getText             (0x14028e460),
+//   mbLanguageManager file scan            (0x14028d850: languages/<lang>/*.csv)
+// - rglReadWidgetProperties                (0x140329440: <prefix>_text_color,
 //   _highlight_text_color, _position_x/y, _size_x/y, _text_size_x/y, _text_flags)
 // - rglWidget                              (size 632 B),
-//   rglWidget::drawText                    (0x14031e5a0),
-//   rglWidget::setMeshStretched            (0x14031d310),
-//   rglCreateImageWidget                   (0x14031ec20),
-//   rglCreateSimpleButtonWidget            (0x14031f110)
+//   rglWidget::drawText                    (0x14031f360),
+//   rglWidget::setMeshStretched            (0x14031e0d0),
+//   rglCreateImageWidget                   (0x14031f9e0),
+//   rglCreateSimpleButtonWidget            (0x14031fed0)
 // - mbInitialWindow                        (PDB layout/properties via `initial_*` game_variables)
-// - mbMenuWindow::open                     (0x140120240),
-//   mbMenuWindow::frameMove                (0x140121110)
-// - mbPresentationContainer::startPresentation (0x1402097b0),
-//   mbPresentationContainer::frameMove         (0x140208ec0),
-//   mbPresentationWindow::frameMove            (0x140174ed0)
-// - mbNotesWindow::frameMove                 (0x140161520)
-// - mbGameScreen::setWindow / openWindow     (0x1400f0c80 / 0x1400f0dd0)
+// - mbMenuWindow::open                     (0x1401203a0),
+//   mbMenuWindow::frameMove                (0x140121270)
+// - mbPresentationContainer::startPresentation (0x140209930),
+//   mbPresentationContainer::frameMove         (0x140209040),
+//   mbPresentationWindow::frameMove            (0x140175050)
+// - mbNotesWindow::frameMove                 (0x1401616a0)
+// - mbGameScreen::setWindow / openWindow     (0x1400f0de0 / 0x1400f0f30)
 #pragma once
 
 #include <algorithm>
@@ -47,12 +47,12 @@
 
 namespace wse::game {
 
-// Additional screen window identifiers extending `world_subsystem_types.h` (`0x1400ef710`).
+// Additional screen window identifiers extending `world_subsystem_types.h` (`0x1400ef870`).
 inline constexpr std::int32_t kScreenWindowInitial = 0x00;
 inline constexpr std::int32_t kScreenWindowOptions = 0x13;
 inline constexpr std::int32_t kScreenWindowMessageBox = 0x14;
 
-// Warband UI coordinate extents (`rglWindowManager::render` `0x14032ace0`).
+// Warband UI coordinate extents (`rglWindowManager::render` `0x14032baa0`).
 inline constexpr float kUiScreenWidth = 1.0f;
 inline constexpr float kUiScreenHeight = 0.75f;
 
@@ -135,7 +135,7 @@ public:
         return any;
     }
 
-    // Resolves `ui_*` key (`mbLanguageManager::getText` `0x14028e300`), falling back cleanly
+    // Resolves `ui_*` key (`mbLanguageManager::getText` `0x14028e460`), falling back cleanly
     // to a human-readable string stripped of the `ui_` prefix when absent.
     [[nodiscard]] std::string get_text(std::string_view key) const {
         const std::string skey(key);
@@ -282,9 +282,9 @@ struct UiWidget {
     std::uint32_t text_flags = asset::kTextFlagCenterAlign;
     std::uint32_t color_argb = 0xFFFFFFFFU;
     // Multiply the widget's mesh by `color_argb` (mesh overlays and image buttons: retail
-    // `rglImageWidget::setColor` / `setAlpha` `0x1402a6c50` / `0x1402a6c90` and
-    // `rglImageButtonWidget::setColor` `0x1402a6a80` write it into the widget mesh's colour;
-    // game buttons keep `rglWidget::setColor` `0x14031e890`, which leaves their meshes alone).
+    // `rglImageWidget::setColor` / `setAlpha` `0x1402a6ec0` / `0x1402a6f00` and
+    // `rglImageButtonWidget::setColor` `0x1402a6cf0` write it into the widget mesh's colour;
+    // game buttons keep `rglWidget::setColor` `0x14031f650`, which leaves their meshes alone).
     bool tint_mesh = false;
     std::uint32_t text_color_argb = 0xFF110000U;
     std::uint32_t highlight_color_argb = 0xFFFFDD00U;
@@ -313,7 +313,7 @@ struct UiWidget {
     std::vector<UiWidget> children{};
 
     // Populates widget geometry and typography from `GameVariablesTable` following
-    // `rglReadWidgetProperties` (`0x140328680`: `<prefix>_position_x/y`, `_size_x/y`,
+    // `rglReadWidgetProperties` (`0x140329440`: `<prefix>_position_x/y`, `_size_x/y`,
     // `_text_size_x/y`, `_text_flags`, `_text_color`, `_highlight_text_color`).
     void apply_properties(const GameVariablesTable& vars, std::string_view prefix) {
         const auto k = [prefix](std::string_view suffix) {
@@ -375,11 +375,11 @@ struct UiEvent {
 // -----------------------------------------------------------------------------
 
 // Module System `header_presentations.py` `prsntf_manual_end_only` (flags bit `0x2`, copied to
-// the container by `mbPresentationContainer::startPresentation` `0x1402097b0`). Retail tests it
-// in one place only: `mbConversationWindow::updatePresentations` (`0x1400888c0`), which, when
-// a presentation queued by `mbConversationWindow::startPresentation` (`0x1400888a0`) starts,
+// the container by `mbPresentationContainer::startPresentation` `0x140209930`). Retail tests it
+// in one place only: `mbConversationWindow::updatePresentations` (`0x140088a20`), which, when
+// a presentation queued by `mbConversationWindow::startPresentation` (`0x140088a00`) starts,
 // ends every other open presentation container except those with this bit. The campaign
-// presentation window never reads it (`mbPresentationWindow::frameMove` `0x140174ed0`), and
+// presentation window never reads it (`mbPresentationWindow::frameMove` `0x140175050`), and
 // no retail window closes a presentation on Escape: modules poll `key_clicked` themselves
 // (17 of Native's 49 presentations). It matters once mission-side presentations are driven
 // (`STATUS.md` §5).
@@ -390,45 +390,45 @@ inline constexpr std::uint32_t kPresentationFlagManualEndOnly = 0x00000002U;
 inline constexpr std::int32_t kUiReturnToCurrentWindow = std::numeric_limits<std::int32_t>::min();
 
 // Overlay text size per unit of `overlay_set_size`: `overlay_set_size` (925) calls
-// `rglWidget::setScale` (`0x14031e7e0`), which sets the text size to `scale * 0.02`
-// (`__real@3ca3d70a`) through `rglWidget::setTextSize` (`0x14031d1c0`).
+// `rglWidget::setScale` (`0x14031f5a0`), which sets the text size to `scale * 0.02`
+// (`__real@3ca3d70a`) through `rglWidget::setTextSize` (`0x14031df80`).
 inline constexpr float kUiOverlayTextScale = 0.020f;
-// `create_button_overlay` (912, `createButtonOverlay` `0x14020abe0`) sets text flag `0x200`, so
-// `rglWidget::setText` (`0x14031e330`) makes the widget's box the laid-out text extent at the
+// `create_button_overlay` (912, `createButtonOverlay` `0x14020ad60`) sets text flag `0x200`, so
+// `rglWidget::setText` (`0x14031f0f0`) makes the widget's box the laid-out text extent at the
 // text size current when the text was set (0.02 at creation); `setScale` later resizes the
 // text only. `UiSession` measures with `UiSession::font` at 0.02; without a font it falls back
 // to this fixed box (port approximation).
 inline constexpr float kUiOverlayButtonWidth = 0.25f;
 inline constexpr float kUiOverlayButtonHeight = 0.038f;
-// `create_game_button_overlay` (940, `createGameButtonOverlay` `0x14020c3e0`): an
+// `create_game_button_overlay` (940, `createGameButtonOverlay` `0x14020c560`): an
 // `rglGameButtonWidget` with `medium_button` / `medium_button_down` meshes and a
 // `0.148 x 0.04` box; its scale field starts at that box, and `rglGameButtonWidget::setScale`
-// (`0x14029bfb0`) makes the `overlay_set_size` vector the new box (meshes rescale with it).
+// (`0x14029c110`) makes the `overlay_set_size` vector the new box (meshes rescale with it).
 inline constexpr float kUiGameButtonWidth = 0.148f;
 inline constexpr float kUiGameButtonHeight = 0.04f;
-// `create_in_game_button_overlay` (941, `createIngameButtonOverlay` `0x14020c7d0`): same widget
+// `create_in_game_button_overlay` (941, `createIngameButtonOverlay` `0x14020c950`): same widget
 // with `mp_inventory_button` for both states and a `0.2123 x 0.04` box.
 inline constexpr float kUiInGameButtonWidth = 0.2123f;
 inline constexpr float kUiInGameButtonHeight = 0.04f;
-// Game-button meshes are not stretched over the box. `createGameButtonOverlay` (`0x14020c3e0`)
+// Game-button meshes are not stretched over the box. `createGameButtonOverlay` (`0x14020c560`)
 // scales the `medium_button` meshes uniformly by `0x3f0e38e4` (5/9) and stores the scale
-// `(0.148, 0.04)`; `createIngameButtonOverlay` (`0x14020c7d0`) keeps `mp_inventory_button` at its
+// `(0.148, 0.04)`; `createIngameButtonOverlay` (`0x14020c950`) keeps `mp_inventory_button` at its
 // native size and stores the scale `(5.3075, 1.0)` (`0x40a9d70a`). `rglGameButtonWidget::setScale`
-// (`0x14029bfb0`) multiplies the meshes by `new / stored` per axis.
+// (`0x14029c110`) multiplies the meshes by `new / stored` per axis.
 inline constexpr float kUiGameButtonMeshScale = 5.0f / 9.0f;
 inline constexpr float kUiInGameButtonStoredScaleX = 5.3075f;
 inline constexpr float kUiInGameButtonStoredScaleY = 1.0f;
 
 // --- Interactive overlays ---------------------------------------------------------------
-// Retail input path. `rglWindowManager::frameMove` (`0x14032a0d0`) sends mouse presses as
+// Retail input path. `rglWindowManager::frameMove` (`0x14032ae90`) sends mouse presses as
 // widget states `0x10` (left) / `0x40` (right) and releases as `0x8` / `0x20`, to the focused
 // widget if there is one, otherwise to the window's widget tree. `rglContainerWidget::triggerState`
-// (`0x14028af30`) sends hover enter `0x2` / leave `0x4` to every visible, enabled child the
+// (`0x14028b090`) sends hover enter `0x2` / leave `0x4` to every visible, enabled child the
 // cursor enters or leaves, whatever its type, and hands a press to the children under the
-// cursor from the top down until one consumes it. `rglWidget::triggerState` (`0x14031dd10`)
-// latches each state with `rglWidget::setState` (`0x14031d120`), and
-// `mbPresentationContainer::frameMove` (`0x140208ec0`) reads the latched states back per
-// overlay, in overlay order, with `rglWidget::checkState` (`0x14031d100`):
+// cursor from the top down until one consumes it. `rglWidget::triggerState` (`0x14031ead0`)
+// latches each state with `rglWidget::setState` (`0x14031dee0`), and
+// `mbPresentationContainer::frameMove` (`0x140209040`) reads the latched states back per
+// overlay, in overlay order, with `rglWidget::checkState` (`0x14031dec0`):
 // `0x2` -> `-63` (param 2 = 0), `0x4` -> `-63` (1), `0x10000` (value changed) -> `-62`,
 // `0x10` / `0x40` / `0x100` -> `-64` (param 2 = 0 / 1 / 2).
 inline constexpr std::uint32_t kUiStateEnter = 0x2U;
@@ -437,18 +437,18 @@ inline constexpr std::uint32_t kUiStateLeftPress = 0x10U;
 inline constexpr std::uint32_t kUiStateRightPress = 0x40U;
 inline constexpr std::uint32_t kUiStateMiddlePress = 0x100U;
 inline constexpr std::uint32_t kUiStateChanged = 0x10000U;
-// `create_slider_overlay` (914, `createSliderOverlay` `0x14020af30`): a horizontal
+// `create_slider_overlay` (914, `createSliderOverlay` `0x14020b0b0`): a horizontal
 // `rglSliderWidget` 0.25 wide (`slider_hor` / `handle_hor` meshes) with a 0.008 knob margin
-// (`0x3c03126f`). `rglSliderWidget::triggerState` (`0x14030d610`) keeps the value when a press
+// (`0x3c03126f`). `rglSliderWidget::triggerState` (`0x14030e3d0`) keeps the value when a press
 // lands within `margin + 0.01` of the knob and otherwise jumps to the cursor
-// (`rglSliderWidget::setAbsolutePosition` `0x14030da60`); while dragging, every cursor move
+// (`rglSliderWidget::setAbsolutePosition` `0x14030e820`); while dragging, every cursor move
 // sets the value again and raises `0x10000`. `-62` reports the value truncated toward zero.
 // The height comes from the `slider_hor` mesh; without its bounds the port uses the fallback.
 inline constexpr float kUiSliderWidth = 0.25f;
 inline constexpr float kUiSliderMargin = 0.008f;
 inline constexpr float kUiSliderKnobTolerance = 0.01f;
 inline constexpr float kUiSliderFallbackHeight = 0.03f;
-// `rglNumberBoxWidget::triggerState` (`0x1402c8310`): a press on an arrow steps the value by
+// `rglNumberBoxWidget::triggerState` (`0x1402c8580`): a press on an arrow steps the value by
 // 1 at once; while the arrow is held the value repeats after 0.5 s every 0.1 s, by 1 up to
 // 2.5 s held, then 3 up to 5 s, then 10 up to 7.5 s, then 50, clamped to the bounds.
 // Releasing or leaving the box stops it.
@@ -457,18 +457,18 @@ inline constexpr float kUiNumberBoxRepeatInterval = 0.1f;
 // Port approximations (layouts not traced): number boxes, combo buttons / labels and list
 // boxes get these boxes, the outer quarter on each side of a number box or combo label is its
 // decrement (left) / increment (right) arrow, and combo popups list their items downwards
-// from the box (`rglComboButtonWidget::openPopup` `0x140261d10` not traced).
+// from the box (`rglComboButtonWidget::openPopup` `0x140261e90` not traced).
 inline constexpr float kUiNumberBoxWidth = 0.12f;
 inline constexpr float kUiComboWidth = 0.25f;
 inline constexpr float kUiInputBoxHeight = 0.04f;
 inline constexpr float kUiArrowFraction = 0.25f;
-// `create_text_overlay` (910, `createTextOverlay` `0x140209a90`) builds an
-// `rglScrollableWidget` (`rglScrollableWidget::getType` `0x140300270` = 8) when text flag bit
+// `create_text_overlay` (910, `createTextOverlay` `0x140209c10`) builds an
+// `rglScrollableWidget` (`rglScrollableWidget::getType` `0x140301080` = 8) when text flag bit
 // 17, 18 or 19 is set; `set_container_overlay` children then live inside it. The wheel scrolls
 // the scrollable container nearest the cursor (`mbPresentationContainer::frameMove`). The step
 // per wheel notch and the initial position (content top at the area top) are port choices.
 inline constexpr std::uint32_t kUiTextFlagsScrollable = 0x000E0000U;
-// `rglTextBoxWidget` constructor (`0x140316900`): `+0x294` caps a text box at 28 characters
+// `rglTextBoxWidget` constructor (`0x1403176c0`): `+0x294` caps a text box at 28 characters
 // (`rglString::getUnicodeLength`, so code points, not bytes).
 inline constexpr std::size_t kUiTextBoxMaxLength = 28U;
 inline constexpr float kUiScrollStep = 0.05f;
@@ -511,13 +511,13 @@ struct UiMeshBounds {
 };
 
 // Input behaviour of a presentation overlay, after its retail widget class
-// (`rglWidget::getType`, read by `mbPresentationContainer::frameMove` `0x140208ec0` to pick
+// (`rglWidget::getType`, read by `mbPresentationContainer::frameMove` `0x140209040` to pick
 // the `-62` value: sliders / progress bars report the float value, number boxes / combo
 // buttons / combo labels / list boxes the int value, check boxes their toggle state).
 enum class UiOverlayInput : std::uint8_t {
     None = 0,         // text, mesh, progress bar: hover and press only
     Button = 1,       // 912 / 940 / 941 text buttons, 913 / 938 image buttons
-    CheckBox = 2,     // 918 (`createCheckBoxOverlay` `0x14020bc50`: image button, toggle flag)
+    CheckBox = 2,     // 918 (`createCheckBoxOverlay` `0x14020bdd0`: image button, toggle flag)
     Slider = 3,       // 914
     NumberBox = 4,    // 942
     ComboButton = 5,  // 916
@@ -619,7 +619,7 @@ public:
     float presentation_elapsed_s = 0.0f;
 
     // Closes window `0x15` (Notes) or `0x16` (Presentation) back to `source_window`
-    // (`mbGameScreen::setWindow` `0x1400f0c80`) so `world.m5.active_window` /
+    // (`mbGameScreen::setWindow` `0x1400f0de0`) so `world.m5.active_window` /
     // `world.m6.ui.active_window_id` never stay wedged (`STATUS.md` §5 item #1).
     // Closing a presentation clears `active_presentation_no` and drops queued `0x0f`
     // entries for that same presentation; closing notes drops queued `0x10` entries.
@@ -660,8 +660,8 @@ public:
     }
 
     // Reconstructs the Native/mod initial title screen (`mbInitialWindow`, laid out via
-    // `rglReadWidgetProperties` `0x140328680` and `rglCreateImageWidget` `0x14031ec20` /
-    // `rglCreateSimpleButtonWidget` `0x14031f110`):
+    // `rglReadWidgetProperties` `0x140329440` and `rglCreateImageWidget` `0x14031f9e0` /
+    // `rglCreateSimpleButtonWidget` `0x14031fed0`):
     // - Full-viewport backdrop `main_menu_nord`
     // - Left parchment column `menu_background` (`ui_quick_battle_a` `[0..0.35] x [0..0.75]`)
     // - Logo (`warrider_logo`), version label, optional module label, and the 8 menu buttons
@@ -788,7 +788,7 @@ public:
         }
     }
 
-    // Builds the game menu screen (`mbMenuWindow::open` `0x140120240`) from loaded module
+    // Builds the game menu screen (`mbMenuWindow::open` `0x1401203a0`) from loaded module
     // menus + dynamic `world.m6.ui.menus` overrides, evaluating item conditions via `world`.
     void build_menu_window(WseWorldState& world,
                            std::int32_t menu_no,
@@ -922,7 +922,7 @@ public:
         return vm::execute_statement_block(cons_blk, vm_ctx);
     }
 
-    // Opens the notes screen (`mbNotesWindow` `0x1401614d0`) remembering `prev_window`
+    // Opens the notes screen (`mbNotesWindow` `0x140161650`) remembering `prev_window`
     // so Return / Escape closes `0x15` cleanly (`STATUS.md` §5 item #1).
     void open_notes_window(WseWorldState& world,
                            std::string_view title,
@@ -974,7 +974,7 @@ public:
         root.children.push_back(std::move(ret_btn));
     }
 
-    // Starts `presentation_no` (`mbPresentationContainer::startPresentation` `0x1402097b0`):
+    // Starts `presentation_no` (`mbPresentationContainer::startPresentation` `0x140209930`):
     // clears the previous presentation's overlays, arms the duration countdown in
     // `world.presentation_duration` (1/100 s, written by `presentation_set_duration` 902),
     // fires `-60` (`ti_on_presentation_load`), and syncs `world.overlays` into `root`.
@@ -997,8 +997,8 @@ public:
     // Advances presentation state by `dt_s`: counts `world.presentation_duration` down,
     // fires `-61` (`ti_on_presentation_run`, trigger param 1 = elapsed ms), re-syncs
     // `world.overlays`, and closes window `0x16` once the duration runs out
-    // (`mbPresentationWindow::frameMove` `0x140174ed0`, `mbPresentationContainer::frameMove`
-    // `0x140208ec0`). Returns whether the presentation is still open.
+    // (`mbPresentationWindow::frameMove` `0x140175050`, `mbPresentationContainer::frameMove`
+    // `0x140209040`). Returns whether the presentation is still open.
     bool step_presentation(WseWorldState& world,
                            vm::VmContext& vm_ctx,
                            float dt_s,
@@ -1039,9 +1039,9 @@ public:
     // frame after `WseWorldState::step_world_frame`, passing `world.m5.active_window` as it was
     // before that call:
     // - campaign frames: when `consume_campaign_queued_window` (`mbMapWindow::frameMove`
-    //   `0x140117f90`) opened window `0x16`, starts `world.active_presentation_no`
+    //   `0x1401180f0`) opened window `0x16`, starts `world.active_presentation_no`
     //   (`start_presentation`); when it opened `0x15`, opens the notes window for
-    //   `m5.screen_note_kind` / `m5.screen_note_object` (`change_screen_notes` `0x1401dc108`);
+    //   `m5.screen_note_kind` / `m5.screen_note_object` (`change_screen_notes` `0x1401dc288`);
     //   otherwise steps an open presentation (`-61`, duration countdown, auto-close). A
     //   presentation does not also step on the frame it opens.
     // - mission frames (`lighting.has_scene`): `step_world_frame` has already retired the
@@ -1049,9 +1049,9 @@ public:
     //   a campaign window back. The conversation window's containers
     //   (`start_conversation_presentation` 4907) run in `update_mission_presentations`, and
     //   while any is open `root` draws them (`compose_mission_root`).
-    // - a consumed `0x12` (`jump_to_menu` 2060, `mbMapWindow::frameMove` `0x140117f90` opens
+    // - a consumed `0x12` (`jump_to_menu` 2060, `mbMapWindow::frameMove` `0x1401180f0` opens
     //   `mbMenuWindow` `0x12`) builds the menu window for `world.jump_menu_no` from `menus`
-    //   (`mbMenuWindow::open` `0x140120240`, which runs the menu's operations), closing an open
+    //   (`mbMenuWindow::open` `0x1401203a0`, which runs the menu's operations), closing an open
     //   notes / presentation window first. Port: the menu number comes from `jump_to_menu`,
     //   and `world.ui.current_menu_no` records it. Without `menus` the queue is still consumed
     //   but no menu is built.
@@ -1371,9 +1371,9 @@ public:
                     if (!has_area) {
                         w.size = {kUiSliderWidth, h};
                     }
-                    // `createSliderOverlay` (`0x14020af30`) sets the `slider_hor` track mesh
+                    // `createSliderOverlay` (`0x14020b0b0`) sets the `slider_hor` track mesh
                     // and the `handle_hor` knob; the knob sits at the value's position
-                    // between the margins (`rglSliderWidget::getPercentage` `0x14030dae0`).
+                    // between the margins (`rglSliderWidget::getPercentage` `0x14030e8a0`).
                     w.kind = UiWidgetKind::Image;
                     w.mesh_name = "slider_hor";
                     w.tint_mesh = true;
@@ -1495,8 +1495,8 @@ public:
     // Pointer and key input for the open window (`UiPointerInput`, one call per frame).
     //
     // Built-in windows: buttons highlight under the cursor and act on a left release over the
-    // button the left press landed on (`rglSimpleButtonWidget::triggerState` `0x140307770`);
-    // Return/Escape closes `mbNotesWindow` cleanly (`0x140161ad2..0x140161bd4`).
+    // button the left press landed on (`rglSimpleButtonWidget::triggerState` `0x140308530`);
+    // Return/Escape closes `mbNotesWindow` cleanly (`0x140161c52..0x140161d54`).
     //
     // Presentations follow the retail state path described at `kUiStateEnter`:
     // - every visible, enabled overlay whose box holds the cursor gets enter / leave (`-63`),
@@ -1512,7 +1512,7 @@ public:
     // - the wheel scrolls the scrollable container nearest the cursor.
     // The triggers then run per overlay in overlay order (enter, leave, change, left / right /
     // middle press), stopping when one closes or restarts the presentation. Escape does not
-    // close a presentation (`mbPresentationWindow::frameMove` `0x140174ed0` has no key check;
+    // close a presentation (`mbPresentationWindow::frameMove` `0x140175050` has no key check;
     // see `kPresentationFlagManualEndOnly`): the module's own `-61` trigger handles it.
     // Port: the triggers run here, at input time, rather than after `-61` in the frame.
     std::vector<UiEvent> handle_input(WseWorldState& world,
@@ -1602,8 +1602,8 @@ public:
         if (text_focus >= 0) {
             // A focused text box has the window manager's focus: it gets every press and the
             // typed characters instead of the tree (`rglTextBoxWidget::triggerState`
-            // `0x140316bd0`). Enter / Escape, or a left press outside the box, commit the text
-            // (`rglTextBoxWidget::loseFocus` `0x140317220` raises `0x10000`).
+            // `0x140317990`). Enter / Escape, or a left press outside the box, commit the text
+            // (`rglTextBoxWidget::loseFocus` `0x140317fe0` raises `0x10000`).
             WsePresentationOverlay& tb = world.overlays[static_cast<std::size_t>(text_focus)];
             const bool numeric = overlay_input_kind(tb) == UiOverlayInput::NumberBox;
             bool commit = false;
@@ -1613,7 +1613,7 @@ public:
                     break;
                 }
                 if (numeric) {
-                    // Numeric mode (`0x140316ce7`): a digit makes the value
+                    // Numeric mode (`0x140317aa7`): a digit makes the value
                     // `strtol(text) * 10 + digit`, clamped with a minimum of 0; backspace
                     // erases the last character; anything else is ignored.
                     if (c >= u'0' && c <= u'9') {
@@ -1657,7 +1657,7 @@ public:
             }
             if (commit) {
                 if (numeric) {
-                    // `0x1403170db`: the text is read back through `setIntValue`.
+                    // `0x140317e9b`: the text is read back through `setIntValue`.
                     set_number_box_value(tb, number_box_text_value(tb.text));
                 }
                 tb.m5.focused = false;
@@ -1950,7 +1950,7 @@ private:
     // Draws the mission containers: `root` becomes a screen-sized container holding each
     // container's overlay tree in stack order (later = on top), as the conversation window
     // draws its `mbPresentationContainer` children (`mbConversationWindow::updatePresentations`
-    // `0x1400888c0` adds each new container last).
+    // `0x140088a20` adds each new container last).
     void compose_mission_root() {
         reset_root("mission");
         for (const MissionPresentation& mp : mission_stack_) {
@@ -1961,7 +1961,7 @@ private:
     // Pointer and key input for the mission containers, top container first. Each container
     // runs the presentation input path of `handle_input` on its own overlays and triggers
     // (hover enter / leave reach every container); a press one container consumes is not
-    // handed to the containers below it (`rglContainerWidget::triggerState` `0x14028af30`).
+    // handed to the containers below it (`rglContainerWidget::triggerState` `0x14028b090`).
     std::vector<UiEvent> handle_mission_input(WseWorldState& world,
                                               const UiPointerInput& in,
                                               vm::VmContext* vm_ctx,
@@ -1988,13 +1988,13 @@ private:
         return events;
     }
 
-    // `mbConversationWindow::updatePresentations` (`0x1400888c0`), once per mission frame:
+    // `mbConversationWindow::updatePresentations` (`0x140088a20`), once per mission frame:
     // 1. each pending `start_conversation_presentation` ends every open container that shows the
     //    same presentation or lacks `prsntf_manual_end_only` (`kPresentationFlagManualEndOnly`,
     //    container `+0x1c`), then opens a new container and starts it (`-60`,
-    //    `mbPresentationContainer::startPresentation` `0x1402097b0`);
+    //    `mbPresentationContainer::startPresentation` `0x140209930`);
     // 2. every container runs its frame (`-61` with the elapsed milliseconds,
-    //    `mbPresentationContainer::frameMove` `0x140208ec0`) and closes once its duration ran out.
+    //    `mbPresentationContainer::frameMove` `0x140209040`) and closes once its duration ran out.
     // `world.m6.ui.active_presentations` lists the open containers afterwards (read by
     // `presentation_activate` 4901 and the mission branch of `is_presentation_active` 903).
     // Afterwards each container's overlay tree is rebuilt and `root` shows them all
@@ -2032,7 +2032,7 @@ private:
             mp.flags = presentations[static_cast<std::size_t>(p)].flags;
             mp.triggers = presentations[static_cast<std::size_t>(p)].triggers;
             // Read-only (flag bit 0) presentations default to 10.0 s, others to 100 s
-            // (`mbPresentationContainer::startPresentation` `0x1402097b0`).
+            // (`mbPresentationContainer::startPresentation` `0x140209930`).
             mp.duration_cs = ((mp.flags & 1U) != 0U) ? 1000 : 10000;
             mission_stack_.push_back(std::move(mp));
             MissionPresentation& added = mission_stack_.back();
@@ -2076,7 +2076,7 @@ private:
         restore_campaign_presentation(world, saved);
     }
 
-    // `overlay_animate_to_*` (932..937) per `rglWidget::frameMove` (`0x14031c110`): each running
+    // `overlay_animate_to_*` (932..937) per `rglWidget::frameMove` (`0x14031ced0`): each running
     // channel moves linearly from its start to its target, `(start * (d - t) + target * t) / d`;
     // colour bytes and alpha round half up (`floor`, +1 when the fraction is above 0.5); size and
     // position stay unrounded. Once `t` reaches the duration the target is set and the channel
@@ -2221,7 +2221,7 @@ private:
 
     // Absolute boxes of the visible, enabled overlays in draw order (later = on top), clipped by
     // their scrollable containers. A disabled overlay hides its whole subtree from input, as
-    // `rglContainerWidget::triggerState` (`0x14028af30`) skips disabled / hidden children.
+    // `rglContainerWidget::triggerState` (`0x14028b090`) skips disabled / hidden children.
     static void collect_overlay_hits(const UiWidget& node,
                                      float px,
                                      float py,
@@ -2252,7 +2252,7 @@ private:
         return nullptr;
     }
 
-    // `rglSliderWidget::setAbsolutePosition` (`0x14030da60`): the value under `x`, clamped to
+    // `rglSliderWidget::setAbsolutePosition` (`0x14030e820`): the value under `x`, clamped to
     // the bounds (minimum first, as retail compares), stored truncated toward zero (`-62` reads
     // the float value with `cvttss2si`).
     static void set_slider_from_cursor(WsePresentationOverlay& ov, const UiHitEntry& e, float x) {
@@ -2276,8 +2276,8 @@ private:
         ov.val = static_cast<std::int32_t>(std::trunc(v));
     }
 
-    // `rglTextBoxWidget::setIntValue` (`0x140316a10`) in numeric mode, which a number box's inner
-    // text box always is (`rglNumberBoxWidget::updateWidgets` `0x1402c8670` sets `+0x298` and
+    // `rglTextBoxWidget::setIntValue` (`0x1403177d0`) in numeric mode, which a number box's inner
+    // text box always is (`rglNumberBoxWidget::updateWidgets` `0x1402c88e0` sets `+0x298` and
     // copies the range): with `max > min` the value clamps to `[min, max - 1]` (the module
     // header's "max value is excluded"); with an empty range it becomes -1 and the text clears.
     // `min_override` replaces `min` (typing clamps with a minimum of 0). The text mirrors the
@@ -2316,7 +2316,7 @@ private:
         return neg ? -v : v;
     }
 
-    // `rglNumberBoxWidget::triggerState` (`0x1402c8310`): an arrow moves the value by `step`,
+    // `rglNumberBoxWidget::triggerState` (`0x1402c8580`): an arrow moves the value by `step`,
     // bounded by `max` going up and `min` going down, then `setIntValue` clamps it.
     static void step_number_box(WsePresentationOverlay& ov, std::int32_t step) {
         const std::int64_t lo = static_cast<std::int64_t>(ov.m5.min_value);
@@ -2333,7 +2333,7 @@ private:
         WsePresentationOverlay& ov = world.overlays[static_cast<std::size_t>(e.overlay_id)];
         switch (overlay_input_kind(ov)) {
         case UiOverlayInput::Button:
-            // `rglSimpleButtonWidget::triggerState` (`0x140307770`): arm on press, fire on release.
+            // `rglSimpleButtonWidget::triggerState` (`0x140308530`): arm on press, fire on release.
             armed_overlay_ = e.overlay_id;
             return true;
         case UiOverlayInput::CheckBox:
@@ -2342,7 +2342,7 @@ private:
             raise(e.overlay_id, kUiStateChanged);
             return true;
         case UiOverlayInput::Slider: {
-            // `rglSliderWidget::triggerState` (`0x14030d610`). Port: a press on the knob keeps
+            // `rglSliderWidget::triggerState` (`0x14030e3d0`). Port: a press on the knob keeps
             // the knob under the cursor while dragging (the grab offset is not traced).
             const float span = (e.box.x1 - e.box.x0) - 2.0f * kUiSliderMargin;
             const double range = ov.m5.max_value - ov.m5.min_value;
@@ -2362,10 +2362,10 @@ private:
             return true;
         }
         case UiOverlayInput::NumberBox:
-            // `rglNumberBoxWidget::triggerState` (`0x1402c8310`): step 1 at once, then repeat.
+            // `rglNumberBoxWidget::triggerState` (`0x1402c8580`): step 1 at once, then repeat.
             if (!e.on_left_arrow(in.x) && !e.on_right_arrow(in.x)) {
                 // Between the arrows sits the numeric text box: a press focuses it
-                // (`rglTextBoxWidget::triggerState` `0x140316bd0` -> `obtainFocus`).
+                // (`rglTextBoxWidget::triggerState` `0x140317990` -> `obtainFocus`).
                 for (WsePresentationOverlay& other : world.overlays) {
                     other.m5.focused = false;
                 }
@@ -2387,8 +2387,8 @@ private:
             hold_last_s_ = 0.0f;
             return true;
         case UiOverlayInput::ComboLabel: {
-            // `rglComboLabelWidget::triggerState` (`0x140262cd0`) steps by one and always raises
-            // `0x10000`; `rglComboLabelWidget::setIntValue` (`0x140262c70`) wraps around the
+            // `rglComboLabelWidget::triggerState` (`0x140262e50`) steps by one and always raises
+            // `0x10000`; `rglComboLabelWidget::setIntValue` (`0x140262df0`) wraps around the
             // item count and ignores the value when there are no items.
             if (!e.on_left_arrow(in.x) && !e.on_right_arrow(in.x)) {
                 return false;
@@ -2408,7 +2408,7 @@ private:
             return true;
         }
         case UiOverlayInput::TextBox:
-            // `rglTextBoxWidget::triggerState` (`0x140316bd0`) -> `obtainFocus` (`0x140317250`).
+            // `rglTextBoxWidget::triggerState` (`0x140317990`) -> `obtainFocus` (`0x140318010`).
             for (WsePresentationOverlay& other : world.overlays) {
                 other.m5.focused = false;
             }
@@ -2417,12 +2417,12 @@ private:
             return true;
         case UiOverlayInput::ComboButton:
         case UiOverlayInput::ListBox:
-            // `rglComboButtonWidget::triggerState` (`0x140261340`): consumes the press and
+            // `rglComboButtonWidget::triggerState` (`0x1402614c0`): consumes the press and
             // opens the item popup when there are items; picking one raises `0x10000`.
             if (!ov.m5.items.empty()) {
                 popup_overlay_ = e.overlay_id;
                 popup_items_.clear();
-                // `rglComboButtonWidget::openPopup` (`0x140261d10`): the list starts at the
+                // `rglComboButtonWidget::openPopup` (`0x140261e90`): the list starts at the
                 // box's bottom edge and grows downwards, one item per combo-box height
                 // (`size.y * scale.y`).
                 const float item_h = e.box.y1 - e.box.y0;
@@ -2438,7 +2438,7 @@ private:
     }
 
     // Wheel: scrolls the scrollable container closest to the cursor (distance 0 inside it),
-    // as `mbPresentationContainer::frameMove` (`0x140208ec0`) picks it.
+    // as `mbPresentationContainer::frameMove` (`0x140209040`) picks it.
     void scroll_nearest_container(const std::vector<UiHitEntry>& hits, float x, float y, float wheel) {
         const auto axis_dist = [](float v, float lo, float hi) {
             if (v >= lo && v <= hi) {
@@ -2474,7 +2474,7 @@ private:
     }
 
     // Runs the presentation triggers for the latched overlay states in retail order
-    // (`mbPresentationContainer::frameMove` `0x140208ec0`), stopping when a trigger closes or
+    // (`mbPresentationContainer::frameMove` `0x140209040`), stopping when a trigger closes or
     // restarts the presentation.
     void dispatch_overlay_states(WseWorldState& world,
                                  vm::VmContext& vm_ctx,
@@ -2507,7 +2507,7 @@ private:
                 if (st.bit == kUiStateChanged &&
                     overlay_input_kind(world.overlays[static_cast<std::size_t>(id)]) ==
                         UiOverlayInput::TextBox) {
-                    // `mbPresentationContainer::frameMove` (`0x140208ec0`) copies a text box's
+                    // `mbPresentationContainer::frameMove` (`0x140209040`) copies a text box's
                     // text into string register 0 (`mbBasicGame::m_stringRegisters` `+0x2670`).
                     vm_ctx.stringRegisters[0] = world.overlays[static_cast<std::size_t>(id)].text;
                 }
@@ -2617,7 +2617,7 @@ private:
         world.m5.focused_overlay_no = -1;
         world.m6.ui.overlay_ext.clear();
         world.m5.current_container_overlay_no = -1;
-        // Read-only (flag bit 0) presentations default to 10.0 s (0x1402098c7).
+        // Read-only (flag bit 0) presentations default to 10.0 s (0x140209a47).
         const float default_s = ((prsnt.flags & 1U) != 0U) ? 10.0f : default_duration_s_;
         const float default_cs = std::clamp(default_s * 100.0f, 0.0f, 2.0e9f);
         world.presentation_duration = static_cast<std::int32_t>(default_cs);
@@ -2626,7 +2626,7 @@ private:
         seen_start_serial_ = world.m6.ui.presentation_start_serial;
         reset_root("presentation");
 
-        // Fire trigger -60 (`ti_on_presentation_load`, 0x1402099c0..0x140209a60).
+        // Fire trigger -60 (`ti_on_presentation_load`, 0x140209b40..0x140209be0).
         dispatch_presentation_trigger(world, vm_ctx, -60, {});
         sync_overlays_from_world(world);
     }

@@ -499,7 +499,7 @@ void test_ini_and_token_helpers() {
     expect(!read_i32_token(tok, s), "huge out-of-range integer rejected");
     expect(read_wrapping_u32_token(tok, u) &&
                u == static_cast<std::uint32_t>(68451502092ULL),
-           "wrapping u32 mirrors 0x1402afce0 for >32-bit retail colors");
+           "wrapping u32 mirrors 0x1402aff50 for >32-bit retail colors");
 
     wse::io::TokenReader neg_tok("-2147483648 -1 -0 - 4294967296 1x");
     expect(read_wrapping_u32_token(neg_tok, u) && u == 0x80000000U,
@@ -514,7 +514,7 @@ void test_ini_and_token_helpers() {
     expect(!read_wrapping_u32_token(neg_tok, u),
            "wrapping u32 rejects trailing garbage");
 
-    // readUInt64 (0x1402afbe0) -> toUInt64Stream (0x14030f7b0) wraps modulo 2^64; the
+    // readUInt64 (0x1402afe50) -> toUInt64Stream (0x140310570) wraps modulo 2^64; the
     // 43-digit token is `itm_drow_c_dagger`'s properties in Phantasy Calradia.
     wse::io::TokenReader u64_tok(
         "18446744073709551615 18446744073709551616 4355614296588012332331194975126633110896642 "

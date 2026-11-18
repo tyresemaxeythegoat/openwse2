@@ -81,13 +81,13 @@ All offsets below are byte offsets on x64. `type_index` refers to the PDB TPI ty
 | 0x18 | `m_staticBuffer` | `char[48]` |
 
 This is a small-string-optimized string: 48 inline bytes (`m_bufferLength`), spilling to heap
-(`reallocate` `0x14030e960`) once length >= 48. Tokenization (`getNextToken` `0x14030e810`) skips
+(`reallocate` `0x14030f720`) once length >= 48. Tokenization (`getNextToken` `0x14030f5d0`) skips
 bytes `<= 0x20` and advances `m_cursor` across runs `> 0x20`; `swapUnderscoresWithSpaces`
-(`0x14030f240`), `swapSpacesWithUnderscores` (`0x14030f270`), decimal parsers
-(`toInt64Stream` `0x14030f6d0` / `toUInt64Stream` `0x14030f7b0`), and savegame log `"-1"` sentinel
+(`0x140310000`), `swapSpacesWithUnderscores` (`0x140310030`), decimal parsers
+(`toInt64Stream` `0x140310490` / `toUInt64Stream` `0x140310570`), and savegame log `"-1"` sentinel
 semantics are implemented in `engine/include/wse/core/rgl_string.h`.
 
-`rglString::indexOf(const rglString&, int) const` (`0x14030f630`, 145 bytes, `.pdata` leaf, no
+`rglString::indexOf(const rglString&, int) const` (`0x1403103f0`, 145 bytes, `.pdata` leaf, no
 calls or globals) is the Phase 5 R0 (d) function. Disassembly (Capstone, local): it reads
 `m_buffer` (`+0x08`) and `m_strLength` (`+0x14`) of both strings, sign-extends `start`, and
 returns the first `p` in `[start, hay_len - needle_len]` where the bytes match, else `-1`
@@ -114,26 +114,26 @@ These concrete subclasses matter:
 | Class | Size | vftable | Adds |
 | --- | ---: | --- | --- |
 | `rglTextStream` | 160 | inherited | token reader implementations (`readFloat/readInt64/readUInt32/readString`); no standalone vftable is emitted |
-| `rglInputTextFileStream` | 176 | `0x1405651e0` | `m_file` `FILE*` at `+0xA0`, `m_closed` `bool` at `+0xA8`; vtable `+0x50..+0x90` are the `rglTextStream` readers |
-| `rglOutputTextFileStream` | 176 | `0x1405653e0` | `m_file`/`m_closed`/`m_fileOpen` at `+0xA0/+0xA8/+0xA9`; vtable `+0x00..+0x48` are the `rglTextStream` writers; read slots are stubs |
-| `rglBinaryStream` | 160 | `0x14055c780` | 30-slot raw savegame stream; no text parsing, no per-value header |
+| `rglInputTextFileStream` | 176 | `0x140566030` | `m_file` `FILE*` at `+0xA0`, `m_closed` `bool` at `+0xA8`; vtable `+0x50..+0x90` are the `rglTextStream` readers |
+| `rglOutputTextFileStream` | 176 | `0x140566230` | `m_file`/`m_closed`/`m_fileOpen` at `+0xA0/+0xA8/+0xA9`; vtable `+0x00..+0x48` are the `rglTextStream` writers; read slots are stubs |
+| `rglBinaryStream` | 160 | `0x14055d7b0` | 30-slot raw savegame stream; no text parsing, no per-value header |
 
 `rglInputTextFileStream::tryOpen` reads the file into `m_contents`; every reader then skips bytes
 `<= 0x20`, takes the next token, and parses it. Module files (`scripts.txt`, `triggers.txt`,
 `simple_triggers.txt`, `mission_templates.txt`, …) are whitespace-delimited decimal text. The
-separate `rglBinaryStream` (vftable `0x14055c780`, 30 slots) is used for savegames, not module
+separate `rglBinaryStream` (vftable `0x14055d7b0`, 30 slots) is used for savegames, not module
 files. The binary readers use the embedded `m_contents.m_cursor` at `+0x58` and buffer at `+0x60`;
-`rglStream::m_cursor` at `+0x54` is the text-stream cursor. `readInt32` (`0x1402aebe0`),
-`readByte` (`0x1402aec00`), and `readInt64` (`0x1402aec20`) sit at `0x20`-byte strides.
+`rglStream::m_cursor` at `+0x54` is the text-stream cursor. `readInt32` (`0x1402aee50`),
+`readByte` (`0x1402aee70`), and `readInt64` (`0x1402aee90`) sit at `0x20`-byte strides.
 
-`rglOutputBinaryFileStreamWithChecksum` (vtable `0x140565b40`, `0x1402c8a00`–`0x1402c8c00`)
+`rglOutputBinaryFileStreamWithChecksum` (vtable `0x140566990`, `0x1402c8c70`–`0x1402c8e70`)
 accumulates every written unsigned byte modulo `2^64` for savegame read-back verification in
-`mbGame::save` (`0x1400e16c0`). Whole-savegame `.sav` framing writes magic `0x52445257` (`"WRDR"`),
+`mbGame::save` (`0x1400e1820`). Whole-savegame `.sav` framing writes magic `0x52445257` (`"WRDR"`),
 format version `1174` (`0x496`, accepted range `[802..1174]` in `mbLoadSaveWindow::updatePanels`
-`0x140113c10`), `g_moduleVersion` (`0x14061f0c8` checked against
-`g_compatibleSavegameModuleVersion` `0x14061f0c0`), the `mbSavegame` header (`fillSavegameHeader`
-`0x1400e1e30` / `mbSavegame::readStream` `0x1400c73b0`), and `mbGame::{writeStream,readStream}`
-(`0x1400c9a90`/`0x1400c8520`), staged through `new_game.sav` and backed up to
+`0x140113d70`), `g_moduleVersion` (`0x1406200c8` checked against
+`g_compatibleSavegameModuleVersion` `0x1406200c0`), the `mbSavegame` header (`fillSavegameHeader`
+`0x1400e1f90` / `mbSavegame::readStream` `0x1400c7510`), and `mbGame::{writeStream,readStream}`
+(`0x1400c9bf0`/`0x1400c8680`), staged through `new_game.sav` and backed up to
 `last_savegame_backup.sav`; this container codec is implemented in `engine/include/wse/game/savegame.h`
 over `wse/io/binary_stream.h`.
 
@@ -141,9 +141,9 @@ Exact reader behaviour (v1.1.5.5 `ev_1e3c2566…0fdb0b`, 18/18 functions):
 
 | Slot | Method | Behaviour |
 | --- | --- | --- |
-| `+0x58` | `readFloat` | `strtod(token, nullptr)` (0x14049b238), cast to float |
+| `+0x58` | `readFloat` | `strtod(token, nullptr)` (0x14049bfc8), cast to float |
 | `+0x60` | `readBool` | `_stricmp("true"/"false")`, otherwise `strtol(token,10) != 0` |
-| `+0x68` | `readUInt64` (`0x1402afbe0`) | `rglString::toUInt64Stream` (`0x14030f7b0`): sums `(c - '0') * 10^k` from the last character with unchecked 64-bit `imul`/`add`, so decimals above `UINT64_MAX` wrap modulo 2^64 and no digit is validated |
+| `+0x68` | `readUInt64` (`0x1402afe50`) | `rglString::toUInt64Stream` (`0x140310570`): sums `(c - '0') * 10^k` from the last character with unchecked 64-bit `imul`/`add`, so decimals above `UINT64_MAX` wrap modulo 2^64 and no digit is validated |
 | `+0x70` | `readInt64` | `rglString::toInt64Stream` decimal parser |
 | `+0x78` | `readUInt32` | 32-bit decimal loop (same code as `readInt32`) |
 | `+0x80` | `readInt32` | 15-character manual loop with a leading `-` |
@@ -185,7 +185,7 @@ dispatch-table entry type, and `gameConstTable` (56 bytes) holds a named `std::v
 
 ### WSE extended opcode map
 
-`mbStatement::executeWSE` (`0x1401e4dc0`) receives the three decoded operand arrays and handles every
+`mbStatement::executeWSE` (`0x1401e4f40`) receives the three decoded operand arrays and handles every
 opcode above the native jump table. The SDK's extended operation range is 2800–5202.
 `docs/wse_opcodes.json`, `docs/WSE_OPCODES.md`, and the generated
 `engine/include/wse/vm/wse_opcodes.h` map 440/440 in-range SDK operations in WSE2 v1.1.5.5 to their
@@ -202,25 +202,25 @@ shift, `val_lshr`/`store_lshr` a logical right shift, `val_shl`/`store_shl` a le
 leaves operand 0 as the destination lvalue.
 
 The register group covers `register_get` (3000), `register_set` (3001), and `store_wse_version`
-(3002). The bank is the 128-entry int64 array at `g_basicGame+0x270` (`0x140662c30`, the same bank
+(3002). The bank is the 128-entry int64 array at `g_basicGame+0x270` (`0x140663c60`, the same bank
 addressed by operand tag 1); `register_get` stores the indexed value through operand 0 and
 `register_set` writes operand 1 into the register named by operand 0, then returns without a store.
-Both validate the index with `mbCheckRegister` (`0x1401c4e60`) and fall through to `return true` on
+Both validate the index with `mbCheckRegister` (`0x1401c4fe0`) and fall through to `return true` on
 failure. `store_wse_version` ignores its value operand: selector 0 yields the WSE version 5, selector
 1 the Warband build `0x483` (1155), and any other selector the zeroed default
-(`0x1401e553a`–`0x1401e555b`).
+(`0x1401e56ba`–`0x1401e56db`).
 
 The script-context query group covers `store_current_trigger` (3014), `store_num_return_values`
 (3016), `store_return_value` (3017), `store_application_time` (3035), and
 `store_cur_mission_template_no` (3600). `store_current_trigger` returns the statement's context
 argument only when it is negative — the in-trigger marker — and 0 otherwise, matching
 `WSEOperationContext::GetCurrentTrigger`. The return-value bank is 16 int64 slots at
-`0x140698af0` with its count at `0x140698ae8`; `store_return_value` takes a 1-based index, logs
+`0x140699b20` with its count at `0x140699b18`; `store_return_value` takes a 1-based index, logs
 `"invalid script result index %d"` or `"unset result value %d"`, and returns true without storing
 when the slot is out of range or unset. `store_application_time` rounds
-`(float)DXUtil_Timer(TIMER_GETAPPTIME) * 1000.0f` through `rglRound64`; `FUN_1400b9690(5)` returns
-QPC seconds since the app-time baseline and the scale at `0x140576b90` is `1000.0f`.
-`store_cur_mission_template_no` reads the int32 at `[0x14061f078]+0x9ae8`, or -1 when the current
+`(float)DXUtil_Timer(TIMER_GETAPPTIME) * 1000.0f` through `rglRound64`; `FUN_1400b97f0(5)` returns
+QPC seconds since the app-time baseline and the scale at `0x140577c70` is `1000.0f`.
+`store_cur_mission_template_no` reads the int32 at `[0x140620078]+0x9ae8`, or -1 when the current
 mission pointer is null.
 
 The string group covers `str_equals` (4200), `str_contains` (4201), `str_starts_with` (4202),
@@ -234,100 +234,100 @@ The string group covers `str_equals` (4200), `str_contains` (4201), `str_starts_
 `str_store_replace_underscores_with_spaces` (4224), `str_store_float` (4233),
 `str_sanitize` (4234), `str_is_integer` (4236), `str_store_server_password_rcon` (4238),
 `str_regex_match` (4240), `str_regex_search` (4241), `str_regex_get_matches` (4242),
-`str_store_regex_replace` (4243), and `str_decode_url` (4244). The resolver at `0x140219c70` maps tag 0 to the writable
-128-entry string register table at `0x140665030` (stride 0x48; modeled as `WseStringBanks::registers`,
-assigned via `0x14030fd60` and copied out via `0x140310970`), tag 0x16 to the local string
-registers (`[0x140621778]`, count `[0x140621784]`, stride 0x90), and tag 3 or an unknown tag to the
-global registers (`[0x140621770]`, count `[0x140621780]`, stride 0x90). `mbCheckStringRegister`
-(`0x1401c51f0`) bounds tags 3/0x16 by their counts, tag 0 by `0x7f`, and accepts unknown tags; a
+`str_store_regex_replace` (4243), and `str_decode_url` (4244). The resolver at `0x140219df0` maps tag 0 to the writable
+128-entry string register table at `0x140666060` (stride 0x48; modeled as `WseStringBanks::registers`,
+assigned via `0x140310b20` and copied out via `0x140311730`), tag 0x16 to the local string
+registers (`[0x1406227a8]`, count `[0x1406227b4]`, stride 0x90), and tag 3 or an unknown tag to the
+global registers (`[0x1406227a0]`, count `[0x1406227b0]`, stride 0x90). `mbCheckStringRegister`
+(`0x1401c5370`) bounds tags 3/0x16 by their counts, tag 0 by `0x7f`, and accepts unknown tags; a
 failed check logs and returns true without an effect. Destination tag-0 registers validate through
-`mbCheckRegister` (`0..127`). Comparisons use `wcscmp` (`0x1401f86b0`) or `_wcsicmp`
-(`0x1401f86f0`) when operand 2 is nonzero; `str_compare` (`0x1401ee042`) returns `-1/0/1` from
-`0x1401f86b0` on the case-sensitive path and tail-jumps to `_wcsicmp` (`0x1404989d4`) to return the
+`mbCheckRegister` (`0..127`). Comparisons use `wcscmp` (`0x1401f8830`) or `_wcsicmp`
+(`0x1401f8870`) when operand 2 is nonzero; `str_compare` (`0x1401ee1c2`) returns `-1/0/1` from
+`0x1401f8830` on the case-sensitive path and tail-jumps to `_wcsicmp` (`0x140499764`) to return the
 raw folded code-unit difference when operand 3 is nonzero. `str_contains` lower-cases both strings
-(`0x1401f8b40`) and treats an empty needle as not contained. The `str_is_*` predicates call
-`iswalpha`/`iswdigit`/`iswspace` (`0x140498854`/`0x140498860`/`0x14049886c`), scan the whole string
+(`0x1401f8cc0`) and treats an empty needle as not contained. The `str_is_*` predicates call
+`iswalpha`/`iswdigit`/`iswspace` (`0x1404995e4`/`0x1404995f0`/`0x1404995fc`), scan the whole string
 when the index is absent or -1, and leave the initial true result on an out-of-bounds index.
 `str_index_of`/`str_last_index_of` take operand 3 as the start (default 0) and operand 4 as the end
 (default length-1); the last-index handler mirrors the retail loop, which searches again before
 testing `end <= start`. `str_get_char` stores a UTF-16 code unit and stores nothing on an
-out-of-bounds index. `str_to_num` calls `_wtof` (`0x140498878`), multiplies by the fixed-point
-scale (`DAT_140662bb8` = 100) when operand 2 is nonzero, and truncates to int64. `str_split`
-(`0x1401ee178`) writes pieces into consecutive tag-0 registers from operand 1 (capped at `0x7f`),
+out-of-bounds index. `str_to_num` calls `_wtof` (`0x140499608`), multiplies by the fixed-point
+scale (`DAT_140663be8` = 100) when operand 2 is nonzero, and truncates to int64. `str_split`
+(`0x1401ee2f8`) writes pieces into consecutive tag-0 registers from operand 1 (capped at `0x7f`),
 skips empty pieces when operand 4 is nonzero, honors `max` (operand 5) only when more than five
 operands are present, and returns the count via operand 0; as a safety deviation, an empty delimiter
-stores the whole source once rather than spinning forever. `str_sort` (`0x1401ee3eb`) copies a range
-of tag-0 registers, sorts via `0x140200c20` or case-insensitive `0x140200c00` (operand 2), and
+stores the whole source once rather than spinning forever. `str_sort` (`0x1401ee56b`) copies a range
+of tag-0 registers, sorts via `0x140200da0` or case-insensitive `0x140200d80` (operand 2), and
 reverses on copy-back when operand 3 is nonzero. `str_store_lower`/`upper` call
-`MakeLower`/`MakeUpper` (`0x1401f8b40`/`0x1401f8ac0`); `str_store_trim` dispatches mode 0/1/2 to
-`0x1401f8e20`/`0x1401f8d00`/`0x1401f8c40` (`iswspace`); `str_store_replace` calls `0x1401f8710`
-(advancing past the replacement); `str_store_md5` (`0x1401ee956`) hashes UTF-8 (`0xfde9`) bytes via
-`CryptCreateHash(0x8003)` (`0x140330510`) and formats 16 bytes with `"%02x"` (`0x14056bca8`) using
-a portable RFC 1321 implementation; `str_store_substring` (`0x1401eea5a`) uses `0x1401f8e40` with
+`MakeLower`/`MakeUpper` (`0x1401f8cc0`/`0x1401f8c40`); `str_store_trim` dispatches mode 0/1/2 to
+`0x1401f8fa0`/`0x1401f8e80`/`0x1401f8dc0` (`iswspace`); `str_store_replace` calls `0x1401f8890`
+(advancing past the replacement); `str_store_md5` (`0x1401eead6`) hashes UTF-8 (`0xfde9`) bytes via
+`CryptCreateHash(0x8003)` (`0x1403312d0`) and formats 16 bytes with `"%02x"` (`0x14056cd58`) using
+a portable RFC 1321 implementation; `str_store_substring` (`0x1401eebda`) uses `0x1401f8fc0` with
 defaults `start = 0` and `length = end` (leaving destination unchanged if negative or out of bounds);
-`str_store_reverse` calls `std::reverse` (`0x1404992b0`); `str_store_join` appends tag-0 registers
-(`0x1401f90b0`) with an optional valid separator; `4223`/`4224` (`0x1401eeece`/`0x1401eee00`)
-replace `u" "` (`0x14055b3e0`) with `u"_"` (`0x14055b3dc`) or the reverse; `str_store_float`
-(`0x1401ef3a8`) formats `(double)fp[op1]` with `"%.*f"` (`0x14055b3e4`) via `0x140200c40`, defaulting
-precision to 5 when absent or negative; `str_sanitize` (`0x1401ef436`) converts tag-0 operand 0 via
-`MultiByteToWideChar(0xfde9)` (`0x1403100d0`) and removes `u"{"`, `u"}"`, `u"<"`, `u">"`
-(`0x14055b3ec`..`0x14055b3f8`); `str_is_integer` (`0x1401ef55f`) trims (`0x1401f8e20`), rejects empty
-or bare `'-'`, and verifies `iswdigit` (`0x140498860`); `str_store_server_password_rcon` (`4238`,
-`0x108e`) branches directly to `0x1401f49c1` (`return true`, no-op); `str_regex_*` (`4240`–`4243`,
-`0x1401ef741`–`0x1401efbc0`) run ECMAScript `std::regex` over UTF-8 (`0x1400163b0`, `0x140200c70`,
-`0x140200db0`, `0x1401f92f0`, `0x140200df0`), with `str_regex_get_matches` taking `<start_string_register>`
-in operand 0 and returning false/no-op on exception; and `str_decode_url` (`4244`, `0x1401efd4d`)
-models `SHLWAPI.dll!UrlUnescapeA` (`0x140501818`, `dwFlags=0`) in `0x1403108b0`.
+`str_store_reverse` calls `std::reverse` (`0x14049a040`); `str_store_join` appends tag-0 registers
+(`0x1401f9230`) with an optional valid separator; `4223`/`4224` (`0x1401ef04e`/`0x1401eef80`)
+replace `u" "` (`0x14055c410`) with `u"_"` (`0x14055c40c`) or the reverse; `str_store_float`
+(`0x1401ef528`) formats `(double)fp[op1]` with `"%.*f"` (`0x14055c414`) via `0x140200dc0`, defaulting
+precision to 5 when absent or negative; `str_sanitize` (`0x1401ef5b6`) converts tag-0 operand 0 via
+`MultiByteToWideChar(0xfde9)` (`0x140310e90`) and removes `u"{"`, `u"}"`, `u"<"`, `u">"`
+(`0x14055c41c`..`0x14055c428`); `str_is_integer` (`0x1401ef6df`) trims (`0x1401f8fa0`), rejects empty
+or bare `'-'`, and verifies `iswdigit` (`0x1404995f0`); `str_store_server_password_rcon` (`4238`,
+`0x108e`) branches directly to `0x1401f4b41` (`return true`, no-op); `str_regex_*` (`4240`–`4243`,
+`0x1401ef8c1`–`0x1401efd40`) run ECMAScript `std::regex` over UTF-8 (`0x1400163b0`, `0x140200df0`,
+`0x140200f30`, `0x1401f9470`, `0x140200f70`), with `str_regex_get_matches` taking `<start_string_register>`
+in operand 0 and returning false/no-op on exception; and `str_decode_url` (`4244`, `0x1401efecd`)
+models `SHLWAPI.dll!UrlUnescapeA` (`0x140502818`, `dwFlags=0`) in `0x140311670`.
 
-The options flags group (`4300`–`4305`, `0x10cc`–`0x10d1`, `0x1401efff9`–`0x1401f003b`) reads and
-writes the booleans `verbose_casualties` (`0x1406173b7`), `cheat_mode` (`0x14061ef50`), and
-`realistic_headshots` (`0x14061ef39`) via `WseVmState::options`.
+The options flags group (`4300`–`4305`, `0x10cc`–`0x10d1`, `0x1401f0179`–`0x1401f01bb`) reads and
+writes the booleans `verbose_casualties` (`0x1406183b7`), `cheat_mode` (`0x14061ff51`), and
+`realistic_headshots` (`0x14061ff3a`) via `WseVmState::options`.
 
 The floating-point group covers `fld`, `fld_str`, `fld_pos_x`, `fld_pos_y`, `fld_pos_z`, `fst`, `fcpy`, `feq`, `fgt`, `flt`, `fge`,
 `fle`, `fsub`, `fmul`, `fdiv`, `fmin`, `fmax`, `fclamp`, `fadd`, `fsqrt`, `fabs`, `fceil`, `ffloor`,
 `fexp`, `fpow`, `fln`, `flog`, `fmod`, `fsin`, `fcos`, `ftan`, `fsinh`, `fcosh`, `ftanh`, `fasin`,
-`facos`, `fatan`, `feval`, and `fatan2` (4400–4438, 100%). `feval` (`4437`, `0x1401e4dc0` line 8353)
-expands its string operand via `mbBasicGame::parseString` (`0x1400720b0`, converting literal `'^'` at
-`0x140072338` into `'\n'` while leaving expanded `{sN}` contents un-reparsed) before passing the string to
-`mu::Parser` (`0x1a146`, 376 B; `SetExpr` `0x1400a9980`, `Eval` `0x1400ad5a0`, unary `'-'` `prINFIX=6` at
-`0x1400a8310` below `'^'`, `log` and `ln` both bound to `logf` at `0x1400a6c20`, `rint` `floorf(x+0.5)` at
-`0x1400a6c50`), with full-AST compilation preventing partial mutations on errors. `fld_str` (`4401`, `0x1401f00c7`) resolves
-operand 1, calls `atof` (`0x1404989cc`), and stores `(float)` into `fp[operand 0]`, while `fld_pos_{x,y,z}`
-(`4402`–`4404`, `0x1401f0157`–`0x1401f01ff`) load `o.{x,y,z}` from `rglTransform[128]`. The float register bank is the 128-entry float array
-`DAT_140698718` (`g_basicGame+0x35d58`); `mbCheckRegister` (`0x1401c4e60`) accepts indices 0–127 with
+`facos`, `fatan`, `feval`, and `fatan2` (4400–4438, 100%). `feval` (`4437`, `0x1401e4f40` line 8353)
+expands its string operand via `mbBasicGame::parseString` (`0x140072210`, converting literal `'^'` at
+`0x140072498` into `'\n'` while leaving expanded `{sN}` contents un-reparsed) before passing the string to
+`mu::Parser` (`0x1a146`, 376 B; `SetExpr` `0x1400a9ae0`, `Eval` `0x1400ad700`, unary `'-'` `prINFIX=6` at
+`0x1400a8470` below `'^'`, `log` and `ln` both bound to `logf` at `0x1400a6d80`, `rint` `floorf(x+0.5)` at
+`0x1400a6db0`), with full-AST compilation preventing partial mutations on errors. `fld_str` (`4401`, `0x1401f0247`) resolves
+operand 1, calls `atof` (`0x14049975c`), and stores `(float)` into `fp[operand 0]`, while `fld_pos_{x,y,z}`
+(`4402`–`4404`, `0x1401f02d7`–`0x1401f037f`) load `o.{x,y,z}` from `rglTransform[128]`. The float register bank is the 128-entry float array
+`DAT_140699748` (`g_basicGame+0x35d58`); `mbCheckRegister` (`0x1401c4fe0`) accepts indices 0–127 with
 an unsigned comparison.
-`fld` divides the fixed-point operand by the scale at `g_basicGame+0x1f8` (`0x140662bb8`, set to 100 at
-`0x140070ffa` in `mbBasicGame::initialize`);
-`fst` multiplies by 100 and rounds with `rglRound64` (`0x1402a1910`), which is `floorf(x)` plus one
-when the fraction is greater than 0.5. Comparisons go through `rglAbs` (`0x1402a1850`) and
-`FLT_EPSILON`. The call sites at `0x1401f08db`/`0x1401f08e5`, `0x1401f0ca8`/`0x1401f0cb2`, and
-`0x1401f09f5`/`0x1401f0a1e` pass operand 1 in `xmm0` and operand 2 in `xmm1`, proving
+`fld` divides the fixed-point operand by the scale at `g_basicGame+0x1f8` (`0x140663be8`, set to 100 at
+`0x14007115a` in `mbBasicGame::initialize`);
+`fst` multiplies by 100 and rounds with `rglRound64` (`0x1402a1b80`), which is `floorf(x)` plus one
+when the fraction is greater than 0.5. Comparisons go through `rglAbs` (`0x1402a1ac0`) and
+`FLT_EPSILON`. The call sites at `0x1401f0a5b`/`0x1401f0a65`, `0x1401f0e28`/`0x1401f0e32`, and
+`0x1401f0b75`/`0x1401f0b9e` pass operand 1 in `xmm0` and operand 2 in `xmm1`, proving
 `pow(base, exponent)`, `atan2(y, x)`, and `fmod(dividend, divisor)`. `flog` (pseudocode line 8201,
-`0x1401f0968`–`0x1401f099f`) reads the
+`0x1401f0ae8`–`0x1401f0b1f`) reads the
 literal base from the int32 operand array, defaults to 10 when there are fewer than three operands,
 rejects bases below 2 with "invalid logarithm base %d", and returns true without storing.
 Division/modulo by zero log and return true.
 
 Additional reconstructed handler groups:
 - **Extended VM state, timers, MT19937, and profiler** (`3015`, `3020`–`3022`, `3027`–`3028`, `3034`, `3040`–`3043`):
-  `return_values` (`0x1401e5a50`) populates up to 16 slots at `0x140698af0` / count `0x140698ae8`;
-  `mtsrand`/`mtrand` (`0x1401e5b78`/`0x1401e5b85`) wrap `rglMersenneTwister` (`0x6556`, 5,000 B, `0x1402a24f0`/`0x1402a25e0`)
-  with exact unsigned `[min, max)` rejection and zero-draw `span == 0`; `get_time` (`0x1401e5ba2`) returns 32-bit truncated UTC or local epoch seconds;
-  `timer_reset`/`timer_get_elapsed_time` (`0x1401e5dab`/`0x1401e5df5`) track 128 × 16-byte timer slots (`0x140667b18`) against 100,000 Hz `g_timersTotal` (`0x14061f030`, `op1 != 0 ? 0 : 2`) rounded via `rglRound64`;
-  `set_random_seed` (`0x1401e62bb`, `DAT_140617d54`); and `profiler_{start,stop,is_recording,mark}` (`0x14034f7d0`/`0x14034ff40`/`0x1403508a0`) drive `WSEProfiling` (`0xaf0a`, 66,072 B, gated by `g_profiling` `0x1406b4890`).
-- **Dictionary container and `try_for_dict_keys` (`0x12`)** (`3200`–`3222`, `0x1401e6b30`–`0x1402ab900`):
-  backed by `WSEObjectManager` (`0x1b4d3`, 64 B, `0x14034e340`/`0x14034e3b0` LIFO free-ID reuse) and ordered `rglSectionlessIni` (`0x5264`, 16 B) maps,
-  with `.wsedict` binary, `.ini`, JSON (`0x1402a97f0`/`0x1402a9f70` with `\uXXXX` + surrogate pairs), and URL-encoded JSON (`0x1402aaea0`/`0x1402ab370`: `'+'` -> `' '` before `UrlUnescapeA`, percent-escape outside unreserved bytes keeping literal `'+'` as `%2B`),
-  `dict_get_pos`/`dict_set_pos` (`0x1402aa5a0`/`0x1402aa920`, 9 comma-separated `"%f"` floats `(o, f, u)` with `default_pos`/identity fallback and `orthonormalize`), `dict_load_dict` mode 0 no-op vs loader mode 0 clear-then-load, and `mbCheckPath` path sandboxing. `try_for_dict_keys` (`0x1401f7692`/`0x1401f7dde`) iterates sorted map keys into tag-0 `stringRegisters` via `LoopFrame`.
-- **Dynamic arrays** (`5000`–`5022`, `0x1388`–`0x139e`, `0x1401e4dc0` equality line 6427 & switch lines 6802–7510):
+  `return_values` (`0x1401e5bd0`) populates up to 16 slots at `0x140699b20` / count `0x140699b18`;
+  `mtsrand`/`mtrand` (`0x1401e5cf8`/`0x1401e5d05`) wrap `rglMersenneTwister` (`0x6556`, 5,000 B, `0x1402a2760`/`0x1402a2850`)
+  with exact unsigned `[min, max)` rejection and zero-draw `span == 0`; `get_time` (`0x1401e5d22`) returns 32-bit truncated UTC or local epoch seconds;
+  `timer_reset`/`timer_get_elapsed_time` (`0x1401e5f2b`/`0x1401e5f75`) track 128 × 16-byte timer slots (`0x140668b48`) against 100,000 Hz `g_timersTotal` (`0x140620030`, `op1 != 0 ? 0 : 2`) rounded via `rglRound64`;
+  `set_random_seed` (`0x1401e643b`, `DAT_140618d54`); and `profiler_{start,stop,is_recording,mark}` (`0x140350590`/`0x140350d00`/`0x140351660`) drive `WSEProfiling` (`0xaf0a`, 66,072 B, gated by `g_profiling` `0x1406b58c0`).
+- **Dictionary container and `try_for_dict_keys` (`0x12`)** (`3200`–`3222`, `0x1401e6cb0`–`0x1402abb70`):
+  backed by `WSEObjectManager` (`0x1b4d3`, 64 B, `0x14034f100`/`0x14034f170` LIFO free-ID reuse) and ordered `rglSectionlessIni` (`0x5264`, 16 B) maps,
+  with `.wsedict` binary, `.ini`, JSON (`0x1402a9a60`/`0x1402aa1e0` with `\uXXXX` + surrogate pairs), and URL-encoded JSON (`0x1402ab110`/`0x1402ab5e0`: `'+'` -> `' '` before `UrlUnescapeA`, percent-escape outside unreserved bytes keeping literal `'+'` as `%2B`),
+  `dict_get_pos`/`dict_set_pos` (`0x1402aa810`/`0x1402aab90`, 9 comma-separated `"%f"` floats `(o, f, u)` with `default_pos`/identity fallback and `orthonormalize`), `dict_load_dict` mode 0 no-op vs loader mode 0 clear-then-load, and `mbCheckPath` path sandboxing. `try_for_dict_keys` (`0x1401f7812`/`0x1401f7f5e`) iterates sorted map keys into tag-0 `stringRegisters` via `LoopFrame`.
+- **Dynamic arrays** (`5000`–`5022`, `0x1388`–`0x139e`, `0x1401e4f40` equality line 6427 & switch lines 6802–7510):
   shares unified `WSEObjectManager` (`0x1b4d3`, 64 B) / `WSEObjectContainer` (`0x18774`, 16 B) / `WSEObjectType` (`0x18026`, 32 B) handles (`WseObjectManager`) with dictionaries, backing `WSEBasicDynMultiArray` (`0x163ff`, 48 B) and `WSEDynMultiArray<int/rglString/rglTransform>` (`0x66db`/`0x677c`/`0x681f`, 48 B) across 1–14 dimensions;
-  `.wsearray` save/load (`0x1401c5910`/`0x1401c59f0`, with `mbCheckPath` sandboxing) serializes transforms as 9 floats `[o.xyz, f.xyz, u.xyz]` and calls `orthonormalize()` on load;
-  `array_sort`/`array_sort_custom` (`WSEArraySortOptions` `0x18fb1`, 8 B) use bottom-up natural merge sort (`0x1401fdd80`, aborting cleanly without mutation after `n` double-passes), with `array_sort_custom` invoking comparator scripts via `wse_invoke_script_callback`;
-  and `array_eq..array_le` (`0x1401f58a0`, `0x1401f5d30`–`0x1401f606b`) compare elements lexicographically (normalizing position copies and comparing all 12 floats `s, f, u, o`).
-- **Position vector group** (`4100`, `4102`–`4104` at `0x1401ecd5a`, `0x1401ed0c1`, `0x1401ed10f`, `0x1401ed158`):
-  operates on `rglTransform[128]` (`0x140663030`, 64 B, `0x34ac`, four `rglVector4` `0x32d9`: `s, f, u, o`), computing fixed-point length/dot/cross products and `position_get_vector_to_position` orientation (`rotateZ`/`rotateX`).
+  `.wsearray` save/load (`0x1401c5a90`/`0x1401c5b70`, with `mbCheckPath` sandboxing) serializes transforms as 9 floats `[o.xyz, f.xyz, u.xyz]` and calls `orthonormalize()` on load;
+  `array_sort`/`array_sort_custom` (`WSEArraySortOptions` `0x18fb1`, 8 B) use bottom-up natural merge sort (`0x1401fdf00`, aborting cleanly without mutation after `n` double-passes), with `array_sort_custom` invoking comparator scripts via `wse_invoke_script_callback`;
+  and `array_eq..array_le` (`0x1401f5a20`, `0x1401f5eb0`–`0x1401f61eb`) compare elements lexicographically (normalizing position copies and comparing all 12 floats `s, f, u, o`).
+- **Position vector group** (`4100`, `4102`–`4104` at `0x1401eceda`, `0x1401ed241`, `0x1401ed28f`, `0x1401ed2d8`):
+  operates on `rglTransform[128]` (`0x140664060`, 64 B, `0x34ac`, four `rglVector4` `0x32d9`: `s, f, u, o`), computing fixed-point length/dot/cross products and `position_get_vector_to_position` orientation (`rotateZ`/`rotateX`).
 - **World entity slot predicates, agent/party/troop/item groups, scalars, config/skills/savegame MD5, and edit-mode groups** (`3003`–`3013`, `3026`/`3030`–`3031`/`3036`–`3038`/`3045`, `3340`–`3341`, `3601`/`3608`/`3610`/`3619`/`3622`, `3700`–`3709`, `3800`–`3813`, `3900`–`3911`, `4226`/`4231`–`4232`/`4235`/`4239`/`4245`–`4246`, `4600`–`4609`):
-  backed by `WseWorldState` (`engine/include/wse/game/world_state.h` + `wse/game/world_campaign_helpers.h`), wired into `VmContext::world` and `WseVmState::world`. Covers all 11 `*_slot_gt` validators (`0..0xfffff` slots, active party/agent/mission-object, `player.status == 2`, `team 0..7`); `agent_{set,get}_action_speed_modifier` (`3340`–`3341`); `party_stack_get_experience`..`party_get_current_terrain_variant` (`3900`–`3911`); `mbTroop` point getters/setters, `m_flags` mask, packed 4-bit `m_skills[6]` + shared Ironflesh/Strength HP cap (`0x140246010`/`0x1402460b0`), and clamped `[0, 999]` proficiencies (`0x1400a61c0`); `mbItemKind` damage/type nibbles, armors/speeds, particle/blood color, `rglMetaMesh` `caller == -50` `cur_item_*` mesh/material helpers with `spacesToUnderscores` (`0x14030f270`), and horse skeleton validation; case-sensitive module settings/game variables (`0x1402a7da0`/`0x1402aa400`), skill `_desc` translations (`0x1401103d0`/`0x140213520`), `"sg%d%d.sav"` MD5 (`0x14024f4c0`); and `mbGame` edit-mode selection/highlight/mode/dialog queries + option flags (`0x14061ef1a`, `0x14061781a` default `true`, `0x14061efb8`).
+  backed by `WseWorldState` (`engine/include/wse/game/world_state.h` + `wse/game/world_campaign_helpers.h`), wired into `VmContext::world` and `WseVmState::world`. Covers all 11 `*_slot_gt` validators (`0..0xfffff` slots, active party/agent/mission-object, `player.status == 2`, `team 0..7`); `agent_{set,get}_action_speed_modifier` (`3340`–`3341`); `party_stack_get_experience`..`party_get_current_terrain_variant` (`3900`–`3911`); `mbTroop` point getters/setters, `m_flags` mask, packed 4-bit `m_skills[6]` + shared Ironflesh/Strength HP cap (`0x140246190`/`0x140246230`), and clamped `[0, 999]` proficiencies (`0x1400a6320`); `mbItemKind` damage/type nibbles, armors/speeds, particle/blood color, `rglMetaMesh` `caller == -50` `cur_item_*` mesh/material helpers with `spacesToUnderscores` (`0x140310030`), and horse skeleton validation; case-sensitive module settings/game variables (`0x1402a8010`/`0x1402aa670`), skill `_desc` translations (`0x140110530`/`0x1402136a0`), `"sg%d%d.sav"` MD5 (`0x14024f640`); and `mbGame` edit-mode selection/highlight/mode/dialog queries + option flags (`0x14061ff1b`, `0x14061881a` default `true`, `0x14061ffb9`).
 
 Handlers that do not write operand 0 report
 `handled_no_store`; failed comparisons report `condition_false`; invalid registers are successful
@@ -353,7 +353,7 @@ Methods: `readStream(rglStream&, int)`, `execute()`.
 | 0x0c | `m_mappedScripts` | `int32_t[64]` |
 
 Methods: `readStream(rglStream&)`, `mapScripts()`. Global instance `g_scriptManager` at
-`0x14069fac0`.
+`0x1406a0af0`.
 
 ### `mbTrigger` — 256 bytes, type 0x77c9
 
@@ -398,24 +398,24 @@ Same three-member shape as `mbTriggerManager` with `mbSimpleTrigger*` elements.
 
 ### Trigger load flow (pseudocode-confirmed)
 
-`mbGame::readTriggers` (`0x1400ccf20`) and `mbGame::readSimpleTriggers` (`0x1400cd2d0`) both:
+`mbGame::readTriggers` (`0x1400cd080`) and `mbGame::readSimpleTriggers` (`0x1400cd430`) both:
 
-1. Build an `rglInputTextFileStream` (vftable `0x1405651e0`).
+1. Build an `rglInputTextFileStream` (vftable `0x140566030`).
 2. Resolve `getModuleFilePath("triggers.txt")` / `"simple_triggers.txt"` and call `tryOpen` (slot
    `+0xA0`). Failure logs `"Unable to open file %s"`.
 3. Discard exactly three whitespace-delimited header tokens; EOF logs
    `"Unexpected End of File while reading file: %s"`.
-4. Call the manager reader with the literal `"Game"` (`0x1405529c8`) or `"Simple"` (`0x1405529e4`).
+4. Call the manager reader with the literal `"Game"` (`0x1405539f8`) or `"Simple"` (`0x140553a14`).
 
-`mbTriggerManager::readStream` (`0x140244810`):
+`mbTriggerManager::readStream` (`0x140244990`):
 
 1. Read `int32_t m_numTriggers` (slot `+0x80`).
 2. Replace `m_triggers` with a `count * 0x100` array of `mbTrigger` (array cookie + constructor).
 3. For each index, seed all three `rglAppTimer`s with `m_defaultTimerNo` and
-   `g_timersTotal[m_defaultTimerNo]` (`0x14061f030`, `uint64[]`), then call
+   `g_timersTotal[m_defaultTimerNo]` (`0x140620030`, `uint64[]`), then call
    `mbTrigger::readStream(trigger, stream, prefix, index)`.
 
-`mbTrigger::readStream` (`0x140244540`) order:
+`mbTrigger::readStream` (`0x1402446c0`) order:
 
 1. `readFloat` ×3 → `m_checkInterval`/`m_delayInterval`/`m_rearmInterval`.
 2. `mbStatementBlock::readStream` → conditions at `+0x10`.
@@ -423,8 +423,8 @@ Same three-member shape as `mbTriggerManager` with `mbSimpleTrigger*` elements.
 4. Ids via `rglFormat("%s Trigger [%d] Conditions")` into the conditions `m_id` and
    `"%s Trigger [%d] Consequences"` into the consequences `m_id`.
 
-`mbSimpleTriggerManager::readStream` (`0x14020fe60`) is the same with `count * 0x78` records and one
-timer per record. `mbSimpleTrigger::readStream` (`0x14020fab0`) reads one float at `+0x0`, the
+`mbSimpleTriggerManager::readStream` (`0x14020ffe0`) is the same with `count * 0x78` records and one
+timer per record. `mbSimpleTrigger::readStream` (`0x14020fc30`) reads one float at `+0x0`, the
 statement block at `+0x8`, then sets the id `"%s Trigger [%d]"`.
 
 Safety: both managers index `g_timersTotal` with an unchecked `m_defaultTimerNo`. The Android port
@@ -432,7 +432,7 @@ rejects an out-of-range index instead of reading past the array.
 
 ### Trigger runtime (pseudocode-confirmed)
 
-`mbTriggerManager::execute(int)` (`0x140244cd0`) iterates `m_triggers` with stride `0x100` and
+`mbTriggerManager::execute(int)` (`0x140244e50`) iterates `m_triggers` with stride `0x100` and
 **inlines** the `mbTrigger` state machine. The PDB declares `mbTrigger::execute`, but no separate
 public symbol is emitted.
 
@@ -465,41 +465,41 @@ Per trigger:
 `interval_key` is `floor(x)` plus one only when `x - floor(x) > 0.5`; exact halves round toward
 negative infinity.
 
-`mbSimpleTrigger::execute` (`0x14020fb80`): if `interval < -1.0`, require
+`mbSimpleTrigger::execute` (`0x14020fd00`): if `interval < -1.0`, require
 `interval_key(interval) == key`; otherwise require `key >= 0` and `interval <= elapsed(timer)`, then
 latch `timer.value = now`. Execute the single block; the return value is ignored.
-`mbSimpleTriggerManager::execute` (`0x1402101a0`) aborts its loop when `key > 0` is odd and a
-type-`0x12` queued window is at the back of `mbGame` `+0x04b0` (`0x1402101d2..0x1402101f7`);
+`mbSimpleTriggerManager::execute` (`0x140210320`) aborts its loop when `key > 0` is odd and a
+type-`0x12` queued window is at the back of `mbGame` `+0x04b0` (`0x140210352..0x140210377`);
 reconstructed in `wse/vm/block_vm.h` (`execute_simple_trigger_manager`) checking
 `ctx.world.m5.enqueued_windows.back().first == game::kQueuedWindowMenuType` (`0x12`).
 
 ### Trigger savegames
 
-`rglBinaryStream` (vtable `0x14055c780`, 30 slots; v1.1.5.5 writer/stream evidence `ev_8cc48986…1dab2e7` (9/9),
+`rglBinaryStream` (vtable `0x14055d7b0`, 30 slots; v1.1.5.5 writer/stream evidence `ev_8cc48986…1dab2e7` (9/9),
 reader evidence `ev_f09662c6…22777` / `ev_2ddf7a62…ed9b52`):
 
 - The stream stores raw values with no header, version, length, or checksum. PDB aliases share
   addresses: `+0x20` `writeInt64/writeUInt64`, `+0x30` `writeInt32/writeUInt32/writeFloat`,
   `+0x38` `writeBool/writeByte`, `+0x68/+0x70` `readUInt64/readInt64`, `+0x80`
   `readInt32/readUInt32/readFloat`, `+0x88` `readBool/readByte`, `+0x90` `readString`.
-- `writeFloat` (`0x1402ae980`) copies four raw bytes into `m_contents`, `writeInt64`
-  (`0x1402ae9d0`) eight, and `writeBool` (`0x1402aea30`) one. `readInt32` (`0x1402aebe0`) loads
+- `writeFloat` (`0x1402aebf0`) copies four raw bytes into `m_contents`, `writeInt64`
+  (`0x1402aec40`) eight, and `writeBool` (`0x1402aeca0`) one. `readInt32` (`0x1402aee50`) loads
   four raw bytes from `m_contents.m_buffer` (`+0x60`) at the embedded `m_contents.m_cursor`
-  (`+0x58`) and advances by four; `readByte` (`0x1402aec00`) and `readInt64` (`0x1402aec20`) are
+  (`+0x58`) and advances by four; `readByte` (`0x1402aee70`) and `readInt64` (`0x1402aee90`) are
   the same pattern with widths one and eight. The x86-64 copies are little-endian.
 - Strings are an `int32` byte length followed by the bytes with no terminator: `writeString`
-  (`0x1402aeb10`), `writeCString` (`0x1402aea80`), and `readString` (`0x1402aec40`, which reads
+  (`0x1402aed80`), `writeCString` (`0x1402aecf0`), and `readString` (`0x1402aeeb0`, which reads
   the length through slot `+0x80`). Trigger savegames do not use strings.
 - The retail readers perform no bounds check. The portable reader rejects truncated input.
-- `mbTriggerManager::writeSavegameStream` (`0x140244b60`): `writeInt32(count)`; per trigger
+- `mbTriggerManager::writeSavegameStream` (`0x140244ce0`): `writeInt32(count)`; per trigger
   `writeInt32(status)`, `writeInt64(checkTimer.value)`, `writeInt64(delayTimer.value)`,
   `writeInt64(rearmTimer.value)`.
-- `mbTriggerManager::readSavegameStream` (`0x140244970`): `readInt32(count)`; if the file count
-  exceeds the manager count, call `rglError` (`0x14032f450`) with
+- `mbTriggerManager::readSavegameStream` (`0x140244af0`): `readInt32(count)`; if the file count
+  exceeds the manager count, call `rglError` (`0x140330210`) with
   `"Load error: Number of triggers in file: %d, exceeds %d"`. `rglError` formats the message,
   shows a message box, and returns, so the loop still reads status and the three 64-bit values for
   every file entry and discards surplus entries. Timer numbers are not saved.
-- `mbSimpleTriggerManager::readSavegameStream` (`0x14020ffa0`): `readInt32(count)`, error
+- `mbSimpleTriggerManager::readSavegameStream` (`0x140210120`): `readInt32(count)`, error
   `"Load error: Number of simple triggers in file: %d, exceeds %d"`, then one `int64` timer value
   per trigger. No write counterpart appears in the binary.
 
@@ -525,22 +525,22 @@ deviations for malformed input.
 | 0x53a0 | `user_dir` | `std::string` |
 
 The `operationHookLuaRefs[5300]` array proves the extended opcode space has at least 5,300 slots,
-all initialized to `-2` (`LUA_NOREF`) in `WSELuaManager::WSELuaManager` (`0x14033c3d0`).
-Global instance `g_luaManager` at `0x14069a6c0`.
+all initialized to `-2` (`LUA_NOREF`) in `WSELuaManager::WSELuaManager` (`0x14033d190`).
+Global instance `g_luaManager` at `0x14069b6f0`.
 
-Runtime startup (`WSELuaManager::initialize @ 0x14033ca80`):
-- Creates `lua_State*` via `luaL_newstate()`, installs path sandbox (`sandbox_path @ 0x140341740`,
+Runtime startup (`WSELuaManager::initialize @ 0x14033d840`):
+- Creates `lua_State*` via `luaL_newstate()`, installs path sandbox (`sandbox_path @ 0x140342500`,
   allowing `%storage%` / `%savegames%`, Warband read-only traversal up to module/game root,
-  and restricting writes to `lua\`), opens Lua stdlibs, and registers `wse_require_loader @ 0x14034adf0`
-  via `registerWseRequireLoader @ 0x140340fc0`.
-- `loadOperations @ 0x14033dff0`: parses `<module>\lua\msfiles\header_operations.py` into `operationMap`
+  and restricting writes to `lua\`), opens Lua stdlibs, and registers `wse_require_loader @ 0x14034bbb0`
+  via `registerWseRequireLoader @ 0x140341d80`.
+- `loadOperations @ 0x14033edb0`: parses `<module>\lua\msfiles\header_operations.py` into `operationMap`
   with 8-byte `gameOperation` entries (`uint32_t opcode` + flag bits `0x1` = LHS / `lhs_operations` /
   `global_lhs_operations`, `0x2` = CF / `can_fail_operations`).
-- `loadGameConstants @ 0x14033f630`: parses `header_*.py` and `ID_*.py` into `gameConstTables`
+- `loadGameConstants @ 0x1403403f0`: parses `header_*.py` and `ID_*.py` into `gameConstTables`
   (`56`-byte `gameConstTable` = 32B `std::string` name + `std::vector<gameConst>` where `gameConst`
   is `40` bytes: 32B string name + float value + padding).
-- `loadGlobalVars @ 0x14033f400`: parses `<module>\variables.txt` into `gvarMap` (`0`-based index).
-- `initLGameTable @ 0x140340920`: creates `_G.game`, registers 36 `_G_game_callbacks` (`execOperation`,
+- `loadGlobalVars @ 0x1403401c0`: parses `<module>\variables.txt` into `gvarMap` (`0`-based index).
+- `initLGameTable @ 0x1403416e0`: creates `_G.game`, registers 36 `_G_game_callbacks` (`execOperation`,
   `getOperationFlags`, `getReg`, `setReg`, `getGvar`, `setGvar`, `getScriptNo`, `getString`,
   `getStringId`, `getCurTemplateNo`, `getCurTemplateId`, `getNumTemplates`, `getTemplateId`,
   `addTrigger`, `removeTrigger`, `getNumTriggers`, `addItemTrigger`, `removeItemTrigger`,
@@ -548,17 +548,17 @@ Runtime startup (`WSELuaManager::initialize @ 0x14033ca80`):
   `addPrsnt`, `removePrsnt`, `addPsys`, `removePsys`, `getMeshId`, `getNumMeshes`, `partiesIt`,
   `agentsIt`, `propInstIt`, `playersIt`, `hookOperation`, `unhookOperation`, `hookScript`, `fail`)
   plus 7 `_G_callbacks` (`lsdir`, `mkdir`, `rmdir`, `printStack`, `_print`, `log_rgl`, `getTime`),
-  populates `game.const` via `addGameConstantsToLState @ 0x140341d60`, and loads embedded resource
+  populates `game.const` via `addGameConstantsToLState @ 0x140342b20`, and loads embedded resource
   `LuaGlobals` (PE resource `256/105`: `bit`, `table.*`, `string.*`, `game.mt`, `game.op`,
   `game.reg`/`sreg`/`preg`/`gvar`, `game.const.mt`, `game.script`/`string`/`qstring`, `vector3`,
   `game.rotation`, `game.pos`).
-- `doMainScript @ 0x140341f10`: executes `<module>\lua\main.lua` if present, then sets `luaStateIsReady`.
-- Hook and event dispatch: `OnOperationExecute @ 0x14033cdd0` (returns execute/CF/LHS overrides),
-  `OnOperationMgrExecute @ 0x14033d090` (script hook / `game_fail_stack` / param replacement),
-  `lc_execOperation @ 0x140344630` (bypasses op hooks via `isLua=true`, allocates string/pos temp
-  args downward from register `127`, handles `call_script` directly), `OnPostWorldTriggers @ 0x14033d3c0`,
-  `onRglLogMsg @ 0x14033d500`, `onChatMessageReceived @ 0x14033d650`, `onGameLoad @ 0x14033d840`,
-  `onSave @ 0x14033d920`, `onLoadSave @ 0x14033da20`, and `onConversation{Start,Line,End} @ 0x14033dbd0/33dc80/33dd70`.
+- `doMainScript @ 0x140342cd0`: executes `<module>\lua\main.lua` if present, then sets `luaStateIsReady`.
+- Hook and event dispatch: `OnOperationExecute @ 0x14033db90` (returns execute/CF/LHS overrides),
+  `OnOperationMgrExecute @ 0x14033de50` (script hook / `game_fail_stack` / param replacement),
+  `lc_execOperation @ 0x1403453f0` (bypasses op hooks via `isLua=true`, allocates string/pos temp
+  args downward from register `127`, handles `call_script` directly), `OnPostWorldTriggers @ 0x14033e180`,
+  `onRglLogMsg @ 0x14033e2c0`, `onChatMessageReceived @ 0x14033e410`, `onGameLoad @ 0x14033e600`,
+  `onSave @ 0x14033e6e0`, `onLoadSave @ 0x14033e7e0`, and `onConversation{Start,Line,End} @ 0x14033e990/0x14033ea40/0x14033eb30`.
 
 WSESDK cross-reference: `header_operations.py` declares 1,535 operation names (1,489 unique numeric
 IDs, 0–5,202), and `header_operations_addon.py` adds 477 declarations (472 unique). The maximum SDK
@@ -584,7 +584,7 @@ opcode ID.
 | 0x16f38 | `m_editModeSelectedMissionObjectNos` | `rglVector<int>` |
 | 0x16f50 | `m_editModeSelectionChanged` | `bool` |
 
-Global instance `g_game` at `0x14061f070` (with `+8` pointer interior offset for `mbGame` globals); `g_mission` at `0x14061f078`; `g_missionTemplates` at `0x14061f068`.
+Global instance `g_game` at `0x140620070` (with `+8` pointer interior offset for `mbGame` globals); `g_mission` at `0x140620078`; `g_missionTemplates` at `0x140620068`.
 
 ### World/entity, skill, item, mesh, and mission PDB layouts (v1.1.5.5)
 
@@ -606,16 +606,16 @@ Verified in [SYMBOL_MAP.json](SYMBOL_MAP.json) and modeled in [world_state.h](..
 | `mbMissionObject` | 544 (`0x0220`) | `0x170 m_id : rglString`, `0x1f8 m_slots : mbSlots` |
 | `mbSceneProp` | 152 (`0x0098`) | `0x0 m_id : rglString`, `0x48 m_flags : unsigned __int64`, `0x50 m_hitPoints : int32_t` |
 | `rglResource` | 96 (`0x0060`) | `0x8 m_name : rglString`, `0x50 m_inUse : int32_t`, `0x54 m_fileNo : int32_t`, `0x58 m_flags : uint32_t` ([brf.h](../engine/include/wse/asset/brf.h)) |
-| `rglResourceManager` | 1,880 (`0x0758`) | `g_resourceManager` (`0x140623a40`); `0x0 m_resourceFiles : rglVector<rglString>`, `0x20 m_metaMeshes`, `0x38 m_meshes`, `0x470 m_textures`, `0x4a0 m_shaders`, `0x4d0 m_materials`, `0x500 m_bodies`, `0x518 m_skeletonModels`, `0x530 m_skeletonAnimations`, `0x548 m_physicsMaterials`; loaders `0x1402eedf0` / `0x1402eeec0` / `0x1402ef030` / `0x1402efe10` ([brf.h](../engine/include/wse/asset/brf.h)) |
-| `rglTexture` | 288 (`0x0120`) | Inherits `rglResource` (`0x0`); `0x64 m_type`, `0x6c m_width`, `0x70 m_height`, `0xc8 m_path : rglString`; device resolution via `tryGetTexture` (`0x1402f2f10`) + `initDeviceObjects` (`0x140317710`) across `.dds`/`.jpg`/`.tga` ([dds.h](../engine/include/wse/asset/dds.h)) |
-| `rglShader` | 504 (`0x01f8`) | Inherits `rglResource` (`0x0`); `0x64 m_requirementFlags`, `0x68 m_numAlternatives`, `0x70 m_alternatives : rglString[...]`, `0x148 m_techniqueName : rglString`; stream reader `0x140301940` ([brf.h](../engine/include/wse/asset/brf.h), [shader.h](../engine/include/wse/asset/shader.h)) |
-| `rglMaterial` | 632 (`0x0278`) | Inherits `rglResource` (`0x0`); `0x68 m_shaderName : rglString`, `0xb0 m_specularColor : rglVector4`, `0xc0 m_specularPower : float`, `0xd0 m_textureNames : rglString[...]` (`5` slots); stream reader `0x1402b5970` ([brf.h](../engine/include/wse/asset/brf.h), [shader.h](../engine/include/wse/asset/shader.h)) |
-| `rglPhysicsMaterial` | 104 (`0x0068`) | Inherits `rglResource` (`0x0`); `0x60 m_soundOcclusion : float` (default `0.5f`; vftable `0x1405639a8`, [brf.h](../engine/include/wse/asset/brf.h)) |
-| `rglBody` / `rglBodyPart` | 104 (`0x0068`) / 88 (`0x0058`) | `rglBody +0x60 m_bodyPart : rglBodyPart*`; polymorphic body variants `rglSphere` (`128 B`), `rglCapsule` (`160 B`), `rglQuad` (`304 B`), `rglManifoldBody` (`160 B`, `rglManifoldBodyFace` `40 B`), `rglCompositeBody` (`104 B`); stream reader `0x1402581a0` ([brf.h](../engine/include/wse/asset/brf.h)) |
-| `rglSkeletonModel` / `rglSkeletonModelBone` | 152 (`0x0098`) / 360 (`0x0168`) | `rglSkeletonModel +0x60 m_numBones`, `+0x68 m_bones`; `rglSkeletonModelBone +0x0 m_parentBoneNo`, `+0x8 m_transform : rglTransform`, `+0x88 m_name : rglString`; stream reader `0x14030d230` ([brf.h](../engine/include/wse/asset/brf.h)) |
-| `rglSkeletonAnimation` / `rglSkeletonAnimationBone` | 144 (`0x0090`) / 24 (`0x0018`) | `0x60 m_bones : rglVector<rglSkeletonAnimationBone>`, `0x78 m_positionIpo : rglIpo<rglVector3>`; bone `+0x0 m_rotationIpo : rglIpo<rglQuaternion>` (`0x14030c320` reads `qy, qz, qw, qx` in stream order); stream reader `0x14030c130` ([brf.h](../engine/include/wse/asset/brf.h)) |
-| `rglMesh` | 872 (`0x0368`) | `0x68 m_materialName : rglString`, `0xc0 m_materialColor : uint32_t`, `0xd8 m_faceCorners` (`rglMeshFaceCorner` `68 B`), `0x128 m_vertices` (`rglMeshVertex` `24 B`), `0x140 m_vertexGroups` (`rglMeshVertexGroup` `32 B`), `0x158 m_faces` (`rglMeshFace` `6 B`), `0x1a8 m_vertexKeys` (`rglMeshVertexKey` `48 B`); stream reader `0x1402b84b0` ([brf.h](../engine/include/wse/asset/brf.h)) |
-| `rglMetaMesh` | 344 (`0x0158`) | `0x48 m_lods : rglMetaMeshLod[...]` (`rglMetaMeshLod` `24 B`), `0xc0 m_numLods : int32_t`, `0x110 m_meshName : rglString`; grouped by `createMetaMesh` (`0x1402f29a0`, `.lod[1-4]`) ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglResourceManager` | 1,880 (`0x0758`) | `g_resourceManager` (`0x140624a70`); `0x0 m_resourceFiles : rglVector<rglString>`, `0x20 m_metaMeshes`, `0x38 m_meshes`, `0x470 m_textures`, `0x4a0 m_shaders`, `0x4d0 m_materials`, `0x500 m_bodies`, `0x518 m_skeletonModels`, `0x530 m_skeletonAnimations`, `0x548 m_physicsMaterials`; loaders `0x1402ef480` / `0x1402ef550` / `0x1402ef6c0` / `0x1402f04a0` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglTexture` | 288 (`0x0120`) | Inherits `rglResource` (`0x0`); `0x64 m_type`, `0x6c m_width`, `0x70 m_height`, `0xc8 m_path : rglString`; device resolution via `tryGetTexture` (`0x1402f35a0`) + `initDeviceObjects` (`0x1403184d0`) across `.dds`/`.jpg`/`.tga` ([dds.h](../engine/include/wse/asset/dds.h)) |
+| `rglShader` | 504 (`0x01f8`) | Inherits `rglResource` (`0x0`); `0x64 m_requirementFlags`, `0x68 m_numAlternatives`, `0x70 m_alternatives : rglString[...]`, `0x148 m_techniqueName : rglString`; stream reader `0x140302750` ([brf.h](../engine/include/wse/asset/brf.h), [shader.h](../engine/include/wse/asset/shader.h)) |
+| `rglMaterial` | 632 (`0x0278`) | Inherits `rglResource` (`0x0`); `0x68 m_shaderName : rglString`, `0xb0 m_specularColor : rglVector4`, `0xc0 m_specularPower : float`, `0xd0 m_textureNames : rglString[...]` (`5` slots); stream reader `0x1402b5be0` ([brf.h](../engine/include/wse/asset/brf.h), [shader.h](../engine/include/wse/asset/shader.h)) |
+| `rglPhysicsMaterial` | 104 (`0x0068`) | Inherits `rglResource` (`0x0`); `0x60 m_soundOcclusion : float` (default `0.5f`; vftable `0x1405647f8`, [brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglBody` / `rglBodyPart` | 104 (`0x0068`) / 88 (`0x0058`) | `rglBody +0x60 m_bodyPart : rglBodyPart*`; polymorphic body variants `rglSphere` (`128 B`), `rglCapsule` (`160 B`), `rglQuad` (`304 B`), `rglManifoldBody` (`160 B`, `rglManifoldBodyFace` `40 B`), `rglCompositeBody` (`104 B`); stream reader `0x140258320` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglSkeletonModel` / `rglSkeletonModelBone` | 152 (`0x0098`) / 360 (`0x0168`) | `rglSkeletonModel +0x60 m_numBones`, `+0x68 m_bones`; `rglSkeletonModelBone +0x0 m_parentBoneNo`, `+0x8 m_transform : rglTransform`, `+0x88 m_name : rglString`; stream reader `0x14030dff0` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglSkeletonAnimation` / `rglSkeletonAnimationBone` | 144 (`0x0090`) / 24 (`0x0018`) | `0x60 m_bones : rglVector<rglSkeletonAnimationBone>`, `0x78 m_positionIpo : rglIpo<rglVector3>`; bone `+0x0 m_rotationIpo : rglIpo<rglQuaternion>` (`0x14030d0e0` reads `qy, qz, qw, qx` in stream order); stream reader `0x14030cef0` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglMesh` | 872 (`0x0368`) | `0x68 m_materialName : rglString`, `0xc0 m_materialColor : uint32_t`, `0xd8 m_faceCorners` (`rglMeshFaceCorner` `68 B`), `0x128 m_vertices` (`rglMeshVertex` `24 B`), `0x140 m_vertexGroups` (`rglMeshVertexGroup` `32 B`), `0x158 m_faces` (`rglMeshFace` `6 B`), `0x1a8 m_vertexKeys` (`rglMeshVertexKey` `48 B`); stream reader `0x1402b8720` ([brf.h](../engine/include/wse/asset/brf.h)) |
+| `rglMetaMesh` | 344 (`0x0158`) | `0x48 m_lods : rglMetaMeshLod[...]` (`rglMetaMeshLod` `24 B`), `0xc0 m_numLods : int32_t`, `0x110 m_meshName : rglString`; grouped by `createMetaMesh` (`0x1402f3030`, `.lod[1-4]`) ([brf.h](../engine/include/wse/asset/brf.h)) |
 | `mbMission` | 346,704 (`0x54a50`) | `0x98d8 m_teams : mbTeam[512]` (opcodes validate teams `0..7`), `0xa4f4 m_waterLevel : float`, `0x54a40` use-objects tooltip flags ([world_state.h](../engine/include/wse/game/world_state.h)) |
 
 ### Entity container lifetimes (Phase 2E)
@@ -625,13 +625,13 @@ Retail functions the containers in [world_state.h](../engine/include/wse/game/wo
 
 | Container | Allocate | Remove | Notes |
 | --- | --- | --- | --- |
-| `rglHashVector<mbParty>` | `getFreeItem` `0x1400e8730` | `mbGame::removeParty` `0x1400dd990` | Monotonic keys; removed parties stay as tombstones |
-| `rglStableVector<mbAgent>` | `createItem` `0x14014b960` | `remove` `0x14014b810`, `mbMission::removeAgent` `0x140138590` | LIFO slot reuse, trailing slots trimmed; fade-out removal checked in `mbAgent::frameMove` `0x14002a220` |
-| `rglStableVector<mbMissionObject>` | `createItem` `0x14014c030` | `remove` `0x14014bdc0`, `mbMission::removeMissionObject` `0x140132ba0` | LIFO slot reuse, trailing slots trimmed |
-| `mbnetPlayer` roster | `create` `0x1401b8980` | `clear` `0x1401b7580`, `mbnetData::disconnectPlayer` `0x14017c650` | Fixed capacity (`kMaxPlayers` 250) |
+| `rglHashVector<mbParty>` | `getFreeItem` `0x1400e8890` | `mbGame::removeParty` `0x1400ddaf0` | Monotonic keys; removed parties stay as tombstones |
+| `rglStableVector<mbAgent>` | `createItem` `0x14014bae0` | `remove` `0x14014b990`, `mbMission::removeAgent` `0x140138710` | LIFO slot reuse, trailing slots trimmed; fade-out removal checked in `mbAgent::frameMove` `0x14002a270` |
+| `rglStableVector<mbMissionObject>` | `createItem` `0x14014c1b0` | `remove` `0x14014bf40`, `mbMission::removeMissionObject` `0x140132d20` | LIFO slot reuse, trailing slots trimmed |
+| `mbnetPlayer` roster | `create` `0x1401b8b00` | `clear` `0x1401b7700`, `mbnetData::disconnectPlayer` `0x14017c7d0` | Fixed capacity (`kMaxPlayers` 250) |
 
-The campaign window queue is consumed by `mbMapWindow::frameMove` (`0x140117f90`); type `0x12`
-opens `mbMenuWindow` (`open` `0x140120240`), which clears the rest of the queue.
+The campaign window queue is consumed by `mbMapWindow::frameMove` (`0x1401180f0`); type `0x12`
+opens `mbMenuWindow` (`open` `0x1401203a0`), which clears the rest of the queue.
 
 ## 5. Module/script entry points
 
@@ -639,52 +639,52 @@ Verified public symbols (mangled names preserve the exact calling convention):
 
 | Address | Symbol | Role |
 | --- | --- | --- |
-| `0x1400ccf20` | `mbGame::readTriggers()` | loads `triggers.txt` into `m_triggers` |
-| `0x1400cd2d0` | `mbGame::readSimpleTriggers()` | loads `simple_triggers.txt` into `m_simpleTriggers` |
-| `0x1400dbde0` | `mbGame::executeScript(int,int,int)` | executes a module-system script |
-| `0x1400dbe70` | `mbGame::executeMappedScript(int,int,int)` | mapped-script overload |
-| `0x1400dbf00` | `mbGame::executeMappedScript(int,int,int,int)` | mapped-script overload |
-| `0x1400dbfa0` | `mbGame::executeMappedScript(int,int,int,int,int,int,int)` | mapped-script overload |
-| `0x14020f6a0` | `mbScript::readStream(rglStream&, int)` | parses one script |
-| `0x14020f7c0` | `mbScriptManager::readStream(rglStream&)` | parses `scripts.txt` |
-| `0x14020f9a0` | `mbScriptManager::mapScripts()` | builds `m_mappedScripts[64]` |
-| `0x140244540` | `mbTrigger::readStream(rglStream&, char const*, int)` | parses one trigger |
-| `0x140244810` | `mbTriggerManager::readStream(rglStream&, char const*)` | parses `triggers.txt` |
-| `0x140244cd0` | `mbTriggerManager::execute(int)` | per-frame trigger evaluation |
-| `0x14020fab0` | `mbSimpleTrigger::readStream(rglStream&, char const*, int)` | parses one simple trigger |
-| `0x14020fe60` | `mbSimpleTriggerManager::readStream(rglStream&, char const*)` | parses `simple_triggers.txt` |
-| `0x1402101a0` | `mbSimpleTriggerManager::execute(int)` | per-frame simple-trigger evaluation |
-| `0x140341f10` | `WSELuaManager::doMainScript()` | Lua main-script hook |
-| `0x14034a050` | `lc_hookScript(lua_State*)` | Lua C hook for script execution |
+| `0x1400cd080` | `mbGame::readTriggers()` | loads `triggers.txt` into `m_triggers` |
+| `0x1400cd430` | `mbGame::readSimpleTriggers()` | loads `simple_triggers.txt` into `m_simpleTriggers` |
+| `0x1400dbf40` | `mbGame::executeScript(int,int,int)` | executes a module-system script |
+| `0x1400dbfd0` | `mbGame::executeMappedScript(int,int,int)` | mapped-script overload |
+| `0x1400dc060` | `mbGame::executeMappedScript(int,int,int,int)` | mapped-script overload |
+| `0x1400dc100` | `mbGame::executeMappedScript(int,int,int,int,int,int,int)` | mapped-script overload |
+| `0x14020f820` | `mbScript::readStream(rglStream&, int)` | parses one script |
+| `0x14020f940` | `mbScriptManager::readStream(rglStream&)` | parses `scripts.txt` |
+| `0x14020fb20` | `mbScriptManager::mapScripts()` | builds `m_mappedScripts[64]` |
+| `0x1402446c0` | `mbTrigger::readStream(rglStream&, char const*, int)` | parses one trigger |
+| `0x140244990` | `mbTriggerManager::readStream(rglStream&, char const*)` | parses `triggers.txt` |
+| `0x140244e50` | `mbTriggerManager::execute(int)` | per-frame trigger evaluation |
+| `0x14020fc30` | `mbSimpleTrigger::readStream(rglStream&, char const*, int)` | parses one simple trigger |
+| `0x14020ffe0` | `mbSimpleTriggerManager::readStream(rglStream&, char const*)` | parses `simple_triggers.txt` |
+| `0x140210320` | `mbSimpleTriggerManager::execute(int)` | per-frame simple-trigger evaluation |
+| `0x140342cd0` | `WSELuaManager::doMainScript()` | Lua main-script hook |
+| `0x14034ae10` | `lc_hookScript(lua_State*)` | Lua C hook for script execution |
 
 String evidence in `.rdata`:
 
 | Address | Literal |
 | --- | --- |
-| `0x14054e8d8` | `scripts.txt` |
-| `0x1405529b8` | `triggers.txt` |
-| `0x1405529d0` | `simple_triggers.txt` |
-| `0x14054c2c8`, `0x14055da09` | `module.ini` |
-| `0x14055b890` | `Unrecognized opcode %d` |
-| `0x14056d2a0` | `opcode %d out of range` |
-| `0x14055c680` | `Script [%d] %s` |
-| `0x14055c690` | `Unable to map script %s` |
+| `0x14054f8f8` | `scripts.txt` |
+| `0x1405539e8` | `triggers.txt` |
+| `0x140553a00` | `simple_triggers.txt` |
+| `0x14054d2e8`, `0x14055ea39` | `module.ini` |
+| `0x14055c8c0` | `Unrecognized opcode %d` |
+| `0x14056e350` | `opcode %d out of range` |
+| `0x14055d6b0` | `Script [%d] %s` |
+| `0x14055d6c0` | `Unable to map script %s` |
 
 ### Pseudocode-confirmed parse flow (Ghidra 12.1.4)
 
-`mbScriptManager::readStream` (`0x14020f7c0`, pseudocode `decompile-index.json` entry):
+`mbScriptManager::readStream` (`0x14020f940`, pseudocode `decompile-index.json` entry):
 
 1. Calls stream vtable `+0x90` twice into a temporary `rglString` (the values are consumed but not
-   stored by the manager). In the input text stream (`0x1405651e0`), `+0x90` is `readString`, so the
+   stored by the manager). In the input text stream (`0x140566030`), `+0x90` is `readString`, so the
    discarded values are the `scriptsfile`/`version` header words.
 2. Calls stream vtable `+0x80` twice into 4-byte integers; the second destination is
-   `g_scriptManager.m_numScripts` (`0x14069fac8`). Both are read as 32-bit integers.
+   `g_scriptManager.m_numScripts` (`0x1406a0af8`). Both are read as 32-bit integers.
 3. Deletes the old `m_scripts` array with destructors and `operator delete[]`.
 4. Allocates `8 + m_numScripts * 176` bytes (array cookie + `mbScript[]`), constructs the array, and
    calls `mbScript::readStream(&m_scripts[i], stream, i)` for every index.
 5. Calls `mbScriptManager::mapScripts()`.
 
-`mbScript::readStream` (`0x14020f6a0`) reads, in order:
+`mbScript::readStream` (`0x14020f820`) reads, in order:
 
 1. `readString` into `m_id` (stream vtable `+0x90`).
 2. `readFloat` into `m_interval` at `+0x48` (stream vtable `+0x58`).
@@ -692,10 +692,10 @@ String evidence in `.rdata`:
 4. Formats `"Script [%d] %s"` with the script index and `m_id`, then stores it in
    `m_statementBlock.m_id` at `+0x68` (`mbScript + 0x50 + 0x18`).
 
-`mbScriptManager::mapScripts` (`0x14020f9a0`) walks a static 65-entry name table at
-`0x140615ad0` and linearly matches each name against every script's `m_id`
+`mbScriptManager::mapScripts` (`0x14020fb20`) walks a static 65-entry name table at
+`0x140616ad0` and linearly matches each name against every script's `m_id`
 (`m_id.m_buffer` at `+0x8`, `m_id.m_strLength` at `+0x14`). It writes the first matching script
-index into `m_mappedScripts` (`0x14069facc`, 65 × `int32_t`), or `-1` when absent, and calls
+index into `m_mappedScripts` (`0x1406a0afc`, 65 × `int32_t`), or `-1` when absent, and calls
 `rglInfo` with `"Unable to map script %s"` on failure. All 65 names are transcribed in retail order
 in `engine/include/wse/game/script.h`; the table starts `game_start`, `game_quick_start`,
 `game_set_multiplayer_mission_end`, `game_get_console_command` and ends `wse_get_server_info`,
@@ -711,19 +711,19 @@ not defined by that module).
 
 | Address | Symbol | Signature (mangled-name evidence) |
 | --- | --- | --- |
-| `0x1401c6070` | `mbStatement::parseOperand` | `int64_t(int64_t*, int, int&)` |
-| `0x1401c6100` | `mbStatement::returnValue` | `void(int64_t*, int64_t const&)` |
-| `0x1401c6150` | `mbStatement::execute` | `bool(int64_t*, int, bool)` |
-| `0x1401e4dc0` | `mbStatement::executeWSE` | `bool(int64_t*, int64_t*, int*, int*, int)` |
-| `0x1401f58a0` | `mbStatement::arrayCompare` | `bool(int*, int*, cmp_operation)` |
-| `0x1401f6600` | `mbStatementBlock::readStream` | `void(rglStream&)` |
-| `0x1401f6740` | `mbStatementBlock::analyze` | `void()` |
-| `0x1401f69d0` | `mbStatementBlock::execute` | `bool(int,int,int,int64_t*, mbCallStack*)` |
-| `0x1401f7290` | `mbStatementBlock::startLoop` | `void(int64_t*, mbLoopManager&, int&)` |
-| `0x1401f7910` | `mbStatementBlock::endLoop` | `void(int64_t*, mbLoopManager&, int&)` |
-| `0x1401f7f00` | `mbStatementBlock::canLoop` | `bool(int64_t*, mbLoopManager&)` |
-| `0x14033cdd0` | `WSELuaManager::OnStatementExecute` | Statement-level Lua hook (`ev_55263589…b114`) |
-| `0x14033d090` | `WSELuaManager::OnOperationMgrExecute` | `bool(mbStatementBlock*, int&, int64_t*, bool&)` |
+| `0x1401c61f0` | `mbStatement::parseOperand` | `int64_t(int64_t*, int, int&)` |
+| `0x1401c6280` | `mbStatement::returnValue` | `void(int64_t*, int64_t const&)` |
+| `0x1401c62d0` | `mbStatement::execute` | `bool(int64_t*, int, bool)` |
+| `0x1401e4f40` | `mbStatement::executeWSE` | `bool(int64_t*, int64_t*, int*, int*, int)` |
+| `0x1401f5a20` | `mbStatement::arrayCompare` | `bool(int*, int*, cmp_operation)` |
+| `0x1401f6780` | `mbStatementBlock::readStream` | `void(rglStream&)` |
+| `0x1401f68c0` | `mbStatementBlock::analyze` | `void()` |
+| `0x1401f6b50` | `mbStatementBlock::execute` | `bool(int,int,int,int64_t*, mbCallStack*)` |
+| `0x1401f7410` | `mbStatementBlock::startLoop` | `void(int64_t*, mbLoopManager&, int&)` |
+| `0x1401f7a90` | `mbStatementBlock::endLoop` | `void(int64_t*, mbLoopManager&, int&)` |
+| `0x1401f8080` | `mbStatementBlock::canLoop` | `bool(int64_t*, mbLoopManager&)` |
+| `0x14033db90` | `WSELuaManager::OnStatementExecute` | Statement-level Lua hook (`ev_55263589…b114`) |
+| `0x14033de50` | `WSELuaManager::OnOperationMgrExecute` | `bool(mbStatementBlock*, int&, int64_t*, bool&)` |
 
 `WSELuaManager::OnOperationMgrExecute` is the bridge between the native statement VM and the WSE
 operation manager. Its pseudocode confirms that it reads a function from the Lua registry
@@ -734,14 +734,14 @@ override value or a "handled" flag.
 ### Statement encoding (pseudocode-confirmed)
 
 Module files are **whitespace-delimited decimal text**, not binary records. `mbGame::readTriggers`
-(`0x1400ccf20`) and `mbGame::readSimpleTriggers` (`0x1400cd2d0`) construct an
-`rglInputTextFileStream` (vftable `0x1405651e0`), open `triggers.txt`/`simple_triggers.txt`,
+(`0x1400cd080`) and `mbGame::readSimpleTriggers` (`0x1400cd430`) construct an
+`rglInputTextFileStream` (vftable `0x140566030`), open `triggers.txt`/`simple_triggers.txt`,
 discard three header tokens (`triggersfile version 1` in the retail files) with
 `rglString::getNextToken`, then hand the stream to the manager reader.
 
 `rglInputTextFileStream` derives from `rglTextStream`; both keep the 160-byte `rglStream` base and
 the file stream adds `FILE* m_file` at `+0xA0` and `bool m_closed` at `+0xA8`. The readers are token
-parsers, proven from the `rglInputTextFileStream` vtable `0x1405651e0`:
+parsers, proven from the `rglInputTextFileStream` vtable `0x140566030`:
 
 | Vtable slot | Method | Statement use |
 | --- | --- | --- |
@@ -751,12 +751,12 @@ parsers, proven from the `rglInputTextFileStream` vtable `0x1405651e0`:
 | `+0x80` | `readUInt32` (folded `readInt32`) | operand/statement count |
 | `+0x90` | `readString` | script id |
 
-`mbStatementBlock::readStream` (`0x1401f6600`) therefore reads:
+`mbStatementBlock::readStream` (`0x1401f6780`) therefore reads:
 
 1. `int32_t` statement count (`m_numStatements` at `+0x8`).
 2. For each statement: `uint32_t` opcode, `int32_t` operand count, then that many `int64_t` decimal
    operands.
-3. `m_endStatement` at `+0x108` is initialized to `-1` by the constructor (`0x1401c6060`) and filled
+3. `m_endStatement` at `+0x108` is initialized to `-1` by the constructor (`0x1401c61e0`) and filled
    by `analyze`; `m_analyzed` is cleared and `m_numLocalVariablesUsed` is seeded to `0x400`.
 
 The in-memory record remains 272 bytes (`uint32` opcode, `int32` count, 32 × `int64` operands,
@@ -777,11 +777,11 @@ tags:
 | Tag | Meaning | Bounds behaviour |
 | ---: | --- | --- |
 | `0` | immediate value (also all values `<= 0`) | none needed |
-| `1` | global variable array `g_globalVariables` at `0x140662c30`, 8-byte elements | **not checked** in the original |
-| `2` | global slot vector `g_slots` (`mbSlots`, 24 bytes at `0x140662c18`) | read checks `m_values` size, out-of-range yields `0`; write goes through `mbSlots::set` |
+| `1` | global variable array `g_globalVariables` at `0x140663c60`, 8-byte elements | **not checked** in the original |
+| `2` | global slot vector `g_slots` (`mbSlots`, 24 bytes at `0x140663c48`) | read checks `m_values` size, out-of-range yields `0`; write goes through `mbSlots::set` |
 | `0x11` | local variable `m_locals[index]` | **not checked** on read; `analyze` sizes the array from the maximum index |
 
-`mbStatement::parseOperand` (`0x1401c6070`) implements the decoder exactly:
+`mbStatement::parseOperand` (`0x1401c61f0`) implements the decoder exactly:
 
 1. Load `m_operands[index]`.
 2. If the value is `<= 0` (signed), leave it as an immediate and report tag `0`.
@@ -789,7 +789,7 @@ tags:
 4. Resolve tag `1` from the global array, tag `2` from `mbSlots` (bounds-checked), or tag `0x11` from
    the local array; return the payload unchanged for tag `0`.
 
-`mbStatement::returnValue` (`0x1401c6100`) is the matching write-back path. It treats **operand 0**
+`mbStatement::returnValue` (`0x1401c6280`) is the matching write-back path. It treats **operand 0**
 as the destination lvalue (tag byte at `this+0xf`, index at `this+8`):
 
 - tag `1` → write `g_globalVariables[index]`
@@ -799,7 +799,7 @@ as the destination lvalue (tag byte at `this+0xf`, index at `this+8`):
 
 This is how operation results become the input of a following statement.
 
-`analyze` (`0x1401f6740`) computes the local-variable count by scanning operands (clamped to 32) for
+`analyze` (`0x1401f68c0`) computes the local-variable count by scanning operands (clamped to 32) for
 tag `0x11` and storing `maxIndex + 1`, clamped to `[0x20, 0x400]`, in `m_numLocalVariablesUsed`.
 It also resolves control flow: opcode `3` (`try_end`), `4` (`try_begin`), `5` (`else_try`), and the
 loop starters `6, 7, 0xb, 0xc, 0x10, 0x11, 0x12` maintain two 128-entry stacks, and every covered
@@ -808,7 +808,7 @@ count). Nesting beyond 128 is a hard error.
 
 ### Opcode word and dispatch
 
-`mbStatement::execute` (`0x1401c6150`) masks the opcode word with `0x0FFFFFFF`; the top bits are
+`mbStatement::execute` (`0x1401c62d0`) masks the opcode word with `0x0FFFFFFF`; the top bits are
 modifiers:
 
 | Bit | Effect |
@@ -823,27 +823,27 @@ Dispatch order:
 2. If the statement is not WSE-disabled and `operationHookTable[opcode] != -2`, call
    `WSELuaManager::OnOperationExecute`; a hook may supply the return value.
 3. Opcodes `30..2767` (`0x1e..0xACF`) dispatch through a 2,738-entry intra-function jump table of
-   32-bit RVAs at `0x1401e22f0` (image base `0x140000000`, guarded at `0x1401c63e0` by
+   32-bit RVAs at `0x1401e2470` (image base `0x140000000`, guarded at `0x1401c6560` by
    `add esi, -0x1e; cmp esi, 0xab1`). `docs/native_opcodes.json` and `docs/NATIVE_OPCODES.md`
    (generated by `tools/extract_native_opcodes.py`) classify every slot against the public
    `header_operations.py` into dedicated `.text` switch handlers (`switch_handler`, including 3
-   native handlers with no SDK constant, carried under community names), shared `return true` no-op stubs at `0x1401e226b` (`noop_true`), and
-   `0x1401e223e` fallbacks into `executeWSE` (live tallies in `STATUS.md`).
-4. Opcodes `>= 2768` (`0xAD0`) go to `mbStatement::executeWSE` (`0x1401e4dc0`), a 319 KB / 8,844-line
+   native handlers with no SDK constant, carried under community names), shared `return true` no-op stubs at `0x1401e23eb` (`noop_true`), and
+   `0x1401e23be` fallbacks into `executeWSE` (live tallies in `STATUS.md`).
+4. Opcodes `>= 2768` (`0xAD0`) go to `mbStatement::executeWSE` (`0x1401e4f40`), a 319 KB / 8,844-line
    pseudocode function with nine top-level switch sites and 431 `case` labels. This is the WSE2
    extended opcode implementation and the largest single reconstruction target.
 
 ### Block execution
 
-`mbStatementBlock::execute` (`0x1401f69d0`) is the interpreter loop:
+`mbStatementBlock::execute` (`0x1401f6b50`) is the interpreter loop:
 
-- Pushes a frame on the global call stack (`g_curCallStack`, `0x14061eeb8`, referenced three
+- Pushes a frame on the global call stack (`g_curCallStack`, `0x14061fec0`, referenced three
   times in this function); frame storage is `0x1C08` bytes with a
   128-entry loop stack of `0x38`-byte frames and a depth field at `+0x1C00`.
 - Calls `analyze()` on entry, then zeroes `clamp(m_numLocalVariablesUsed, 0x20, 0x400)`
-  qwords of locals when `rglConfig::General::bLocalVariablesZeroInitialization` (`0x140617819`,
-  checked at `0x1401f6c59`, loaded from `[General] bLocalVariablesZeroInitialization` at
-  `0x14026f716` via `rglIni::getBool` `0x1402a84d0` with `.data` default `true`) is enabled.
+  qwords of locals when `rglConfig::General::bLocalVariablesZeroInitialization` (`0x140618819`,
+  checked at `0x1401f6dd9`, loaded from `[General] bLocalVariablesZeroInitialization` at
+  `0x14026f896` via `rglIni::getBool` `0x1402a8740` with `.data` default `true`) is enabled.
   `VmContext::clearLocalsBetweenCalls` defaults to `true` to match retail.
 - If `m_luaHookRef` (`+0x14`) is not `-2`, calls `WSELuaManager::OnOperationMgrExecute` for a
   block-level Lua hook; a `false` return aborts the block.
@@ -862,7 +862,7 @@ Dispatch order:
 Verified supporting layouts added to `docs/SYMBOL_MAP.json` (58 classes, 2,914 symbols, 76 vtables, 4,157 function ranges):
 
 - `mbBasicGame` (221,616 B, type `0xadd3`): `m_globalVariables` (`mbSlots`) at `+0x258`,
-  `m_registers` (`__int64[128]`) at `+0x270` (`0x140662c30`). Operand tag `1`, `store_lvalue`,
+  `m_registers` (`__int64[128]`) at `+0x270` (`0x140663c60`). Operand tag `1`, `store_lvalue`,
   and WSE `register_{get,set}` share this 128-entry bank.
 - `mbCallStack` (3,096 B, type `0x715b`), `mbLoop` (56 B, type `0x1f89a`), and
   `mbLoopManager` (7,176 B, type `0x1eb6b`).
@@ -950,35 +950,35 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
 1. ~~Portable savegame support: the binary `rglBinaryStream` slot semantics and savegame file framing
    (header/version) are documented only at the trigger-record level.~~ **Resolved (Phase 2A):**
-   `mbGame::save` (`0x1400e16c0`), `fillSavegameHeader` (`0x1400e1e30`), `mbSavegame::readStream`
-   (`0x1400c73b0`), `mbLoadSaveWindow::updatePanels` (`0x140113c10`), `rglOutputBinaryFileStreamWithChecksum`
-   (`0x140565b40`), `mbNotes::{writeStream,readStream}` (`0x1401b9f30`/`0x1401b9e90`, scalar
+   `mbGame::save` (`0x1400e1820`), `fillSavegameHeader` (`0x1400e1f90`), `mbSavegame::readStream`
+   (`0x1400c7510`), `mbLoadSaveWindow::updatePanels` (`0x140113d70`), `rglOutputBinaryFileStreamWithChecksum`
+   (`0x140566990`), `mbNotes::{writeStream,readStream}` (`0x1401ba0b0`/`0x1401ba010`, scalar
    `+0x4c0`/`+0x4c4` written per entry of the 16-item loop), `rglHashVector<mbParty>::{readStream,writeStream}`
-   (`0x1400e7b80`/`0x1400e7de0`, monotonic `m_nextKey` `+0x138f0`), and all `mbGame::{writeStream,readStream}`
-   (`0x1400c9a90`/`0x1400c8520`) section codecs plus the four `[802..1174]` version gates
-   (`mbGame::readStream` `0x1400c856d`, `mbParty::readStream` `0x1401ba9d1`/`0x1401baa20`/`0x1401baa7f`) —
-   while `rglHashVector<mbParty>::readStream` (`0x1400e7b80`), `rglStableVector<mbEvent>::readStream`
-   (`0x1400e7640`), and `mbEvent::readStream` (`0x1400bae70`) are verified version-invariant across
+   (`0x1400e7ce0`/`0x1400e7f40`, monotonic `m_nextKey` `+0x138f0`), and all `mbGame::{writeStream,readStream}`
+   (`0x1400c9bf0`/`0x1400c8680`) section codecs plus the four `[802..1174]` version gates
+   (`mbGame::readStream` `0x1400c86cd`, `mbParty::readStream` `0x1401bab51`/`0x1401baba0`/`0x1401babff`) —
+   while `rglHashVector<mbParty>::readStream` (`0x1400e7ce0`), `rglStableVector<mbEvent>::readStream`
+   (`0x1400e77a0`), and `mbEvent::readStream` (`0x1400bafd0`) are verified version-invariant across
    `[802..1174]` (passing `version` only into `mbParty::readStream`) —
    are verified and implemented in `wse/io/binary_stream.h` and `wse/game/savegame.h`.
 2. ~~`mbSimpleTriggerManager::execute` early-out depends on `mbGame` event-queue state~~ **Resolved (Phase 2C + 2A follow-up + 2E audit):**
-   disassembly at `0x1402101a0` (`0x1402101d2..0x1402101f7`) shows the check tests positive odd
-   event keys when the queued-window stack (`g_game` `0x14061f070` `+0x04b0`) back entry has type
-   `0x12` (`mbMenuWindow`, enqueued by `jump_to_menu` `0x1401dc2b1`); `mbMapWindow::frameMove`
-   (`0x140117f90`, `0x140118987..0x140118a80`) pops back entries only for `0x12` (`mbMenuWindow`,
-   `mbMenuWindow::open` `0x140120240` clears remaining entries), `0x0f` (`0x16` presentation, `0x1401cbf02`),
-   or `0x10` (`0x15` notes, `0x1401dc108`), leaving other queued types intact while syncing
-   `g_gameScreen->m_windowStack` (`0x14069a560`, `mbGameScreen::isWindowOpen` `0x1400f0c50`), wired into
+   disassembly at `0x140210320` (`0x140210352..0x140210377`) shows the check tests positive odd
+   event keys when the queued-window stack (`g_game` `0x140620070` `+0x04b0`) back entry has type
+   `0x12` (`mbMenuWindow`, enqueued by `jump_to_menu` `0x1401dc431`); `mbMapWindow::frameMove`
+   (`0x1401180f0`, `0x140118ae7..0x140118be0`) pops back entries only for `0x12` (`mbMenuWindow`,
+   `mbMenuWindow::open` `0x1401203a0` clears remaining entries), `0x0f` (`0x16` presentation, `0x1401cc082`),
+   or `0x10` (`0x15` notes, `0x1401dc288`), leaving other queued types intact while syncing
+   `g_gameScreen->m_windowStack` (`0x14069b590`, `mbGameScreen::isWindowOpen` `0x1400f0db0`), wired into
    `execute_simple_trigger_manager` (`wse/vm/block_vm.h`), `native_mission_ops.h`, `native_campaign_ops_2.h`,
    `native_ui_ops.h`, and `WseWorldState::consume_campaign_queued_window`.
 3. ~~Locate `gameOperation` table construction in `WSELuaManager`.~~ **Resolved (2F):** Disassembly of
-   `WSELuaManager::initialize` (`0x14033ca80`), `loadOperations` (`0x14033dff0`), `loadGameConstants`
-   (`0x14033f630`), `loadGlobalVars` (`0x14033f400`), `initLGameTable` (`0x140340920`), `doMainScript`
-   (`0x140341f10`), `lc_execOperation` (`0x140344630`), `OnOperationExecute` (`0x14033cdd0`),
-   `OnOperationMgrExecute` (`0x14033d090`), and PE resource `LuaGlobals` (`256/105`) mapped all 36
+   `WSELuaManager::initialize` (`0x14033d840`), `loadOperations` (`0x14033edb0`), `loadGameConstants`
+   (`0x1403403f0`), `loadGlobalVars` (`0x1403401c0`), `initLGameTable` (`0x1403416e0`), `doMainScript`
+   (`0x140342cd0`), `lc_execOperation` (`0x1403453f0`), `OnOperationExecute` (`0x14033db90`),
+   `OnOperationMgrExecute` (`0x14033de50`), and PE resource `LuaGlobals` (`256/105`) mapped all 36
    `game.*` C callbacks, 7 `_G.*` callbacks, `gameOperation` (`0x1`/`0x2` LHS/CF flags),
-   `gameConstTable`, `sandbox_path` (`0x140341740`), and event callbacks; both `executeWSE` and the
-   2,738-slot native jump table at `0x1401e22f0` are mapped in `docs/wse_opcodes.json` and
+   `gameConstTable`, `sandbox_path` (`0x140342500`), and event callbacks; both `executeWSE` and the
+   2,738-slot native jump table at `0x1401e2470` are mapped in `docs/wse_opcodes.json` and
    `docs/native_opcodes.json`.
 4. Confirm `rglConfig`/`module.ini` key names and defaults from string xrefs.
 5. ~~Confirm renderer resource formats (`.brf`, `.dds`) from `rglMesh`/`rglMaterial` loaders before
@@ -995,14 +995,14 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    and `tools/check_citations.py` verifies all `1,494` unique header VAs (`1,714` VA refs) across `54` headers (plus REA `ev_*` IDs) in CI.
 9. ~~Measure v1.1.5.5 module effect loading and material/shader technique resolution for P5.~~
    **Resolved (Slice P5):** PE/PDB analysis verified effect search & postFX loading
-   (`rglEffectManager::initDeviceObjects` `0x14028bce0`, `rglGraphicsContext::checkLoadingPostEffects`
-   `0x14029c930`, `rglRenderer::initPostFxShaders` `0x1402db690`, `D3DXCreateEffectFromFileA`
-   import `0x140501b70`), material texture slot normalization (`initMaterialTextures` `0x1402f5390`),
-   `wse2_shaders.brf` + `wse2_shaders.ini` fallback pairs (`loadOptionalShaderResource` `0x1402eeec0`,
-   `initShaderPairs` `0x1402ed3c0`, `initShaderTechniques` `0x1402ecd30`), shader
-   suitability/alternatives (`rglShader::isSuitable` `0x140301ab0`, `getSuitableShader` `0x1402f3db0`,
-   `getSuitableShaderImpl` `0x1402f3eb0`, `getDefaultShader` `0x1402f1ef0`), and `VertexDeclType` /
-   blend / alpha-test dispatch (`0x1402baa30`, `0x14029f590`, `0x1402a00b0`, `0x1402e7f50`), recorded
+   (`rglEffectManager::initDeviceObjects` `0x14028be40`, `rglGraphicsContext::checkLoadingPostEffects`
+   `0x14029ca90`, `rglRenderer::initPostFxShaders` `0x1402db7a0`, `D3DXCreateEffectFromFileA`
+   import `0x140502b70`), material texture slot normalization (`initMaterialTextures` `0x1402f5a20`),
+   `wse2_shaders.brf` + `wse2_shaders.ini` fallback pairs (`loadOptionalShaderResource` `0x1402ef550`,
+   `initShaderPairs` `0x1402eda50`, `initShaderTechniques` `0x1402ed3c0`), shader
+   suitability/alternatives (`rglShader::isSuitable` `0x1403028c0`, `getSuitableShader` `0x1402f4440`,
+   `getSuitableShaderImpl` `0x1402f4540`, `getDefaultShader` `0x1402f2580`), and `VertexDeclType` /
+   blend / alpha-test dispatch (`0x1402baca0`, `0x14029f740`, `0x1402a0260`, `0x1402e8230`), recorded
    in `docs/SYMBOL_MAP.json` and implemented in `engine/include/wse/asset/shader.h`.
    *Correction (P5 review):* this entry previously cited `0x1402a5a90` (no function at all) and <!-- citation-check: ignore-line -->
    `0x1402a5ef0`, `0x1402eec40`, `0x1402eeac0`, `0x1402f09c0`, `0x1402f2b30`, `0x1402f50a0`, `0x1402f0b50`, <!-- citation-check: ignore-line -->
@@ -1010,77 +1010,77 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    `getFormatName`, `createMetaMesh`, `gammaCorrectMeshes`, `dumpUsageInfo`) rather than the
    functions they were labeled as. The citation checker accepts any address inside a known
    function, so it cannot catch a mislabeled interior VA; cite function entry VAs. Subsequent
-   v1.1.5.5 verification confirmed `rglMesh::updateRenderOrder` (`0x1402b9e50`, `0x1402b9ef5`
-   signed nibble `-8..+7`), per-draw blend `7` vertex-alpha dispatch (`0x1402e913f` /
-   `0x1402b9ece`), `D3DRS_ALPHAREF` persistence on blended materials (`0x1402e8439`), the
-   `0x20` shader specular gate (`0x1402e8454`), `FrontFace::counter_clockwise` (`0x1402e8ccd` /
-   `0x14025ac20` / `0x140501b60`), and shader-managed gamma (`rglMesh::gammaCorrect`
-   `0x1402c02b0`, no DX9 `D3DSAMP_SRGBTEXTURE` / `D3DRS_SRGBWRITEENABLE`).
+   v1.1.5.5 verification confirmed `rglMesh::updateRenderOrder` (`0x1402ba0c0`, `0x1402ba165`
+   signed nibble `-8..+7`), per-draw blend `7` vertex-alpha dispatch (`0x1402e93b9` /
+   `0x1402ba13e`), `D3DRS_ALPHAREF` persistence on blended materials (`0x1402e8719`), the
+   `0x20` shader specular gate (`0x1402e8734`), `FrontFace::counter_clockwise` (`0x1402e8fb3` /
+   `0x14025ada0` / `0x140502b60`), and shader-managed gamma (`rglMesh::gammaCorrect`
+   `0x1402c0520`, no DX9 `D3DSAMP_SRGBTEXTURE` / `D3DRS_SRGBWRITEENABLE`).
 10. ~~Audit v1.1.5.5 FMOD Ex audio call sites (`mbSoundManager`, `mbMusicManager`) for P6 replacement.~~
-   **Resolved (Slice P6):** PE/PDB analysis verified `rglConfig::load` (`0x140264580`),
-   `mbSoundSample::readStream` (`0x1403317c0`: 4-step `<module>/Sounds/languages/<lang>`,
+   **Resolved (Slice P6):** PE/PDB analysis verified `rglConfig::load` (`0x140264700`),
+   `mbSoundSample::readStream` (`0x140332580`: 4-step `<module>/Sounds/languages/<lang>`,
    `<module>/Sounds`, `Sounds/languages/<lang>`, `Sounds` lookup; 3D min=`2.0f`/max=`80.0f`),
-   `mbSoundSample::playSound` (`0x140331cb0`: 2D/looping priority `0`, else distance+nibble
-   priority `[2, 255]`), `mbSoundManager::readStream` (`0x1403322e0`), `playSoundAtPosition`
-   (`0x140332ac0`: `0x1000000` LOD fallback >`15m`, culture variant filter),
-   `setChannelPropertiesAndPlay` (`0x140332d80`: volume nibble / `15.0f`, random start pos,
-   freq variation), `setTransform` (`0x140332970`: `-u` forward, `+f` up), `initializeFmod`
-   (`0x140332f80`: `64` audible / `100` virtual channels, `0.47f` distance priority factor),
-   `updateOcclusionDistances` (`0x140333260`: `0.9`/`1.1` hysteresis around `80m`), `update`
-   (`0x140333490`), `stopSound`/`getSoundProgress`/`stopAllSounds` (`0x140332690`/`0x1403326d0`/
-   `0x140332770`), `mbMusicTrack::readStream` (`0x140290710`: `continue_flags |= flags`,
-   culture fallback `0x3f`), `mbMusicManager` (`0x140290ad0`, `frameMove` `0x140290c40`,
-   `startPlaying`/`stopPlaying`/`update` `0x140290e60`/`0x140290f20`/`0x140290f60`: `0.5s` tick,
-   `5.0s` fade, `500.0f` recency weight), and callers (`mbAgent::playSound` `0x140057010`
+   `mbSoundSample::playSound` (`0x140332a70`: 2D/looping priority `0`, else distance+nibble
+   priority `[2, 255]`), `mbSoundManager::readStream` (`0x1403330a0`), `playSoundAtPosition`
+   (`0x140333880`: `0x1000000` LOD fallback >`15m`, culture variant filter),
+   `setChannelPropertiesAndPlay` (`0x140333b40`: volume nibble / `15.0f`, random start pos,
+   freq variation), `setTransform` (`0x140333730`: `-u` forward, `+f` up), `initializeFmod`
+   (`0x140333d40`: `64` audible / `100` virtual channels, `0.47f` distance priority factor),
+   `updateOcclusionDistances` (`0x140334020`: `0.9`/`1.1` hysteresis around `80m`), `update`
+   (`0x140334250`), `stopSound`/`getSoundProgress`/`stopAllSounds` (`0x140333450`/`0x140333490`/
+   `0x140333530`), `mbMusicTrack::readStream` (`0x140290870`: `continue_flags |= flags`,
+   culture fallback `0x3f`), `mbMusicManager` (`0x140290c30`, `frameMove` `0x140290da0`,
+   `startPlaying`/`stopPlaying`/`update` `0x140290fc0`/`0x140291080`/`0x1402910c0`: `0.5s` tick,
+   `5.0s` fade, `500.0f` recency weight), and callers (`mbAgent::playSound` `0x140057170`
    hashing `m_no`, `m_troopNo`, `m_partyNo` with `0.3f` scale and asymmetric `1/(1-delta)` negative
-   pitch branch, keeping player agent at `1.0f`; `setChannelPropertiesAndPlay` `0x140332d80` having
-   no random frequency jitter; `initializeFmod` `0x140332f80` mapping `bDistanceFilter` to
+   pitch branch, keeping player agent at `1.0f`; `setChannelPropertiesAndPlay` `0x140333b40` having
+   no random frequency jitter; `initializeFmod` `0x140333d40` mapping `bDistanceFilter` to
    `FMOD_INIT_DISTANCE_FILTERING` `0x200` and `bHrtfFilter` to `FMOD_INIT_HRTF_LOWPASS` `0x10`;
-   `mbGame::playSound` `0x1400e3900`; `mbMissionObject::playSound` `0x140154340`), implemented
+   `mbGame::playSound` `0x1400e3a60`; `mbMissionObject::playSound` `0x1401544c0`), implemented
    without FMOD via [audio.h](../engine/include/wse/asset/audio.h),
    [platform/audio.h](../engine/include/wse/platform/audio.h),
    [world_audio.h](../engine/include/wse/game/world_audio.h), and `wse_audio` (`stb_vorbis` + `dr_mp3`).
 11. ~~Reconstruct v1.1.5.5 input key tables and `mbGameKeyManager` binding semantics for P7.~~
-    **Resolved (Slice P7):** Disassembly verified `rglInputManager::getKeyName` (`0x1402ad360`: `125`
-    named DirectInput/mouse/gamepad raw keys across `1..255`), `g_gameKeyManager` (`0x14069fbd0`: `95`
+    **Resolved (Slice P7):** Disassembly verified `rglInputManager::getKeyName` (`0x1402ad5d0`: `125`
+    named DirectInput/mouse/gamepad raw keys across `1..255`), `g_gameKeyManager` (`0x1406a0c00`: `95`
     × 32-byte slots holding primary + alt `{key, num_modifiers, mod[2]}` chords),
-    `mbGameKeyManager::reset` (`0x1400e96a0`: `75` built-in keys `MoveForward`..`TakeScreenshot`,
+    `mbGameKeyManager::reset` (`0x1400e9800`: `75` built-in keys `MoveForward`..`TakeScreenshot`,
     `Left Ctrl` modifiers on `54..56`, `13` gamepad alt bindings `0xf0..0xff`, `Custom1..20`),
-    `keyDown`/`keyClicked`/`keyRaised` (`0x1400eedf0`/`0x1400eee90`/`0x1400eef50`), `getKeyName`/
-    `getKeyData` (`0x1400ef130`/`0x1400ef190`: `<mod0>+<mod1>+<key>`), `storeKeys`/`restoreKeys`/
-    `setKey` (`0x1400ef3a0`/`0x1400ef460`/`0x1400ef510`), and `3100 game_key_get_key`
-    (`0x1401e6a42`), implemented in [input.h](../engine/include/wse/platform/input.h),
+    `keyDown`/`keyClicked`/`keyRaised` (`0x1400eef50`/`0x1400eeff0`/`0x1400ef0b0`), `getKeyName`/
+    `getKeyData` (`0x1400ef290`/`0x1400ef2f0`: `<mod0>+<mod1>+<key>`), `storeKeys`/`restoreKeys`/
+    `setKey` (`0x1400ef500`/`0x1400ef5c0`/`0x1400ef670`), and `3100 game_key_get_key`
+    (`0x1401e6bc2`), implemented in [input.h](../engine/include/wse/platform/input.h),
     [world_input.h](../engine/include/wse/game/world_input.h), and
     [sdl_input.cpp](../platform/sdl/sdl_input.cpp).
 12. ~~Reconstruct Phase 2A world/scene/skeleton loaders and Slice P9 Part 1 skeletal evaluation/skinning.~~
-    **Resolved (Phase 2A completion + Slice P9 Part 1):** Verified `mbGame::readMap` (`0x1400d9a00`),
-    `rglManifold::readStream` (`0x1402b1220`), `rglManifoldFace::readStream` (`0x1402b1190`),
-    `rglManifold::computeBounds` (`0x1402b1d00`), `mbSite::readSceneObjFile` (`0x140210be0`, magic
-    `0xfffffd33`, `mbMissionObject::readStream` `0x140152be0` `"spr_"` normalization & `rglTransform::readStream`
-    `0x1402b5b20`, `rglAiMesh::readStream` `0x140252600`, `0xff4ad1a6` ground paint), and
-    `mbGame::readSkeletons` (`0x1400cbb70` / `mbSkeletonManager::readFile` `0x140211ba0` /
-    `mbSkeleton::readXMLElement` `0x1402119c0` / `mbSkeletonBone::readXMLElement` `0x140211480` /
-    `rglSkeletonModelBody::readXMLElement` `0x14030ca30`, noting `dialog_states.txt` has zero runtime
-    references in retail); verified `rglIpo<rglQuaternion>::readStream` (`0x14030c320`) wire order
-    `(qx, qy, qz, qw)` into `rglQuaternion{w,x,y,z}` (`0x1402b65d0` `rglTransform::setRotation`),
-    `rglQuaternion::interpolate` (`0x1402d6bb0`), `rglSkeletonModel::readStream` (`0x14030d230`),
-    `rglSkeleton::getBoneTransformForAnimation` (`0x14030a770`), `rglBone::getSkinningTransform`
-    (`0x140258800`), `rglMesh::updateSkinData` (`0x1402b9930`), and `rglSkeleton::skinMesh` (`0x14030b8f0`);
+    **Resolved (Phase 2A completion + Slice P9 Part 1):** Verified `mbGame::readMap` (`0x1400d9b60`),
+    `rglManifold::readStream` (`0x1402b1490`), `rglManifoldFace::readStream` (`0x1402b1400`),
+    `rglManifold::computeBounds` (`0x1402b1f70`), `mbSite::readSceneObjFile` (`0x140210d60`, magic
+    `0xfffffd33`, `mbMissionObject::readStream` `0x140152d60` `"spr_"` normalization & `rglTransform::readStream`
+    `0x1402b5d90`, `rglAiMesh::readStream` `0x140252780`, `0xff4ad1a6` ground paint), and
+    `mbGame::readSkeletons` (`0x1400cbcd0` / `mbSkeletonManager::readFile` `0x140211d20` /
+    `mbSkeleton::readXMLElement` `0x140211b40` / `mbSkeletonBone::readXMLElement` `0x140211600` /
+    `rglSkeletonModelBody::readXMLElement` `0x14030d7f0`, noting `dialog_states.txt` has zero runtime
+    references in retail); verified `rglIpo<rglQuaternion>::readStream` (`0x14030d0e0`) wire order
+    `(qx, qy, qz, qw)` into `rglQuaternion{w,x,y,z}` (`0x1402b6840` `rglTransform::setRotation`),
+    `rglQuaternion::interpolate` (`0x1402d6e20`), `rglSkeletonModel::readStream` (`0x14030dff0`),
+    `rglSkeleton::getBoneTransformForAnimation` (`0x14030b530`), `rglBone::getSkinningTransform`
+    (`0x140258980`), `rglMesh::updateSkinData` (`0x1402b9ba0`), and `rglSkeleton::skinMesh` (`0x14030c6b0`);
     implemented in [scene_loaders.h](../engine/include/wse/game/scene_loaders.h),
     [skeleton.h](../engine/include/wse/asset/skeleton.h), and
     [rhi_scene.h](../engine/include/wse/platform/rhi_scene.h).
 13. ~~Reconstruct v1.1.5.5 bitmap font, localization, widget layout, and window/presentation flow for Slice P9 Part 2.~~
-    **Resolved (Slice P9 Part 2):** Verified `rglFont::readFile` (`0x1402978c0`), `rglFont::drawText`
-    (`0x140297fa0`), `rglFont::measureText` (`0x14029b4f0`), and `rglFont::drawGlyph` (`0x14029b670`:
+    **Resolved (Slice P9 Part 2):** Verified `rglFont::readFile` (`0x140297a20`), `rglFont::drawText`
+    (`0x140298100`), `rglFont::measureText` (`0x14029b650`), and `rglFont::drawGlyph` (`0x14029b7d0`:
     bottom-up `uv.y = (height - v + 4)/height`, `v_bottom = (height - h + padding - 6)/height`,
     `<c=0xRRGGBB>` forcing alpha `0xFF`, alignment flags `0x8`/`0x10`/`0x100`/`0x200`/`0x800`/`0x4000`/`0x10000`);
-    verified `mbLanguageManager::readLanguageFiles` (`0x14028d6f0`) and `getText` (`0x14028e300`),
-    `rglReadWidgetProperties` (`0x140328680`), `rglWidget::drawText` (`0x14031e5a0`),
-    `rglWidget::setMeshStretched` (`0x14031d310`), `rglCreateImageWidget` (`0x14031ec20`),
-    `rglCreateSimpleButtonWidget` (`0x14031f110`), `mbMenuWindow::open`/`frameMove`
-    (`0x140120240`/`0x140121110`), `mbPresentationContainer::startPresentation`/`frameMove`
-    (`0x1402097b0`/`0x140208ec0`), `mbPresentationWindow::frameMove` (`0x140174ed0`),
-    `mbNotesWindow::frameMove` (`0x140161520`), and `mbGameScreen::setWindow` (`0x1400f0c80`);
+    verified `mbLanguageManager::readLanguageFiles` (`0x14028d850`) and `getText` (`0x14028e460`),
+    `rglReadWidgetProperties` (`0x140329440`), `rglWidget::drawText` (`0x14031f360`),
+    `rglWidget::setMeshStretched` (`0x14031e0d0`), `rglCreateImageWidget` (`0x14031f9e0`),
+    `rglCreateSimpleButtonWidget` (`0x14031fed0`), `mbMenuWindow::open`/`frameMove`
+    (`0x1401203a0`/`0x140121270`), `mbPresentationContainer::startPresentation`/`frameMove`
+    (`0x140209930`/`0x140209040`), `mbPresentationWindow::frameMove` (`0x140175050`),
+    `mbNotesWindow::frameMove` (`0x1401616a0`), and `mbGameScreen::setWindow` (`0x1400f0de0`);
     implemented in [xml.h](../engine/include/wse/io/xml.h),
     [font.h](../engine/include/wse/asset/font.h),
     [ui_runtime.h](../engine/include/wse/game/ui_runtime.h), and
@@ -1091,46 +1091,46 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     [engine/README.md](../engine/README.md#ui-runtime-bitmap-fonts--rhi-widgets-p9-part-2) and the
     open items in [STATUS.md](../STATUS.md) §5.
 14. ~~Find where `prsntf_manual_end_only` (`0x2`) is tested.~~
-    **Resolved:** `mbPresentation::readStream` (`0x1401c3b80`) reads the id string, the flags
+    **Resolved:** `mbPresentation::readStream` (`0x1401c3d00`) reads the id string, the flags
     (`readUInt32` into `+0x48`), and the mesh (`readInt32` into `+0x68`);
-    `mbPresentationContainer::startPresentation` (`0x1402097b0`) copies the flags to container
+    `mbPresentationContainer::startPresentation` (`0x140209930`) copies the flags to container
     `+0x1c` and tests bit `0x1` (read-only, 10 s duration). The only test of bit `0x2` in `.text`
     (direct and register-loaded bit-test sweeps over both offsets) is in
-    `mbConversationWindow::updatePresentations` (`0x1400888c0`): for each presentation number
-    queued by `mbConversationWindow::startPresentation` (`0x1400888a0`, pushed onto the int vector
+    `mbConversationWindow::updatePresentations` (`0x140088a20`): for each presentation number
+    queued by `mbConversationWindow::startPresentation` (`0x140088a00`, pushed onto the int vector
     at window `+0x2298`), it walks the container vector at `+0x2280` from the back and destroys
     every container whose presentation number (`+0x18`) differs and whose flags lack `0x2`, or
     whose number matches (restart), then creates and starts a new container.
-    `mbPresentationWindow::frameMove` (`0x140174ed0`) closes only when the duration expires or a
-    queued window replaces it; its vtable (`0x1405542b0`) has no key handler (folded empty
+    `mbPresentationWindow::frameMove` (`0x140175050`) closes only when the duration expires or a
+    queued window replaces it; its vtable (`0x1405552e0`) has no key handler (folded empty
     stubs), and no `mbGameScreen` method special-cases window `0x16`. Escape therefore never
     closes a presentation in retail.
-    `rglString::toUInt64Stream` (`0x14030f7b0`, behind `rglTextStream::readUInt64` `0x1402afbe0`)
+    `rglString::toUInt64Stream` (`0x140310570`, behind `rglTextStream::readUInt64` `0x1402afe50`)
     is recorded in §2's text-stream table.
 15. ~~Check overlay size semantics against the retail overlay widgets.~~
-    **Resolved (mostly):** `mbPresentationContainer::setOverlaySize` (`0x14020e0c0`) calls the
-    widget's virtual `setScale` (slot `+0x1f8`). `rglWidget::setScale` (`0x14031e7e0`) stores the
+    **Resolved (mostly):** `mbPresentationContainer::setOverlaySize` (`0x14020e240`) calls the
+    widget's virtual `setScale` (slot `+0x1f8`). `rglWidget::setScale` (`0x14031f5a0`) stores the
     vector at `+0x14c`, sets the text size to `scale * 0.02` (`rglWidget::setTextSize`
-    `0x14031d1c0`), and redraws the text (`rglWidget::redrawText` `0x14031dfa0`, which returns
+    `0x14031df80`), and redraws the text (`rglWidget::redrawText` `0x14031ed60`, which returns
     the `rglFont::drawText` extent plus the text offset). `rglImageWidget::setScale`
-    (`0x1402a6bd0`) rescales the mesh by `new / old`. `createButtonOverlay` (`0x14020abe0`)
+    (`0x1402a6e40`) rescales the mesh by `new / old`. `createButtonOverlay` (`0x14020ad60`)
     builds an `rglSimpleButtonWidget` with text flags `(flags & 0x181c) | 0x200`; with `0x200`
-    set and `0x100` clear, `rglWidget::setText` (`0x14031e330`) sets the upper-right corner to
-    the laid-out text extent. `createGameButtonOverlay` (`0x14020c3e0`) and
-    `createIngameButtonOverlay` (`0x14020c7d0`) build an `rglGameButtonWidget` with text flags
+    set and `0x100` clear, `rglWidget::setText` (`0x14031f0f0`) sets the upper-right corner to
+    the laid-out text extent. `createGameButtonOverlay` (`0x14020c560`) and
+    `createIngameButtonOverlay` (`0x14020c950`) build an `rglGameButtonWidget` with text flags
     `0x10`, meshes `medium_button` / `medium_button_down` (scaled `0.5556`) or
     `mp_inventory_button`, and a `0.148 x 0.04` / `0.2123 x 0.04` box stored as the initial scale;
-    `rglGameButtonWidget::setScale` (`0x14029bfb0`) rescales both meshes by `new / old` and makes
+    `rglGameButtonWidget::setScale` (`0x14029c110`) rescales both meshes by `new / old` and makes
     the new vector the box. Implemented in
     [ui_runtime.h](../engine/include/wse/game/ui_runtime.h) (`sync_overlays_from_world`).
 16. ~~Find what `overlay_set_color` / `overlay_set_alpha` do to mesh overlays.~~
-    **Resolved:** `setOverlayColor` / `setOverlayAlpha` (`0x14020e040` / `0x14020e060`) jump to the
+    **Resolved:** `setOverlayColor` / `setOverlayAlpha` (`0x14020e1c0` / `0x14020e1e0`) jump to the
     widget's `setColor` / `setAlpha` (slots `+0x208` / `+0x210`). `rglImageWidget::setColor`
-    (`0x1402a6c50`) replaces the RGB bytes of its mesh's colour (`rglMesh+0xc0`, mesh at widget
-    `+0x178`) and of the widget colour (`+0x240`); `rglImageWidget::setAlpha` (`0x1402a6c90`)
-    replaces the mesh colour's alpha byte. `rglImageButtonWidget::setColor` (`0x1402a6a80`) does
+    (`0x1402a6ec0`) replaces the RGB bytes of its mesh's colour (`rglMesh+0xc0`, mesh at widget
+    `+0x178`) and of the widget colour (`+0x240`); `rglImageWidget::setAlpha` (`0x1402a6f00`)
+    replaces the mesh colour's alpha byte. `rglImageButtonWidget::setColor` (`0x1402a6cf0`) does
     the same for both state meshes (`+0x198`, `+0x190`). `rglGameButtonWidget` and
-    `rglSimpleButtonWidget` use `rglWidget::setColor` (`0x14031e890`), which does not touch a mesh.
+    `rglSimpleButtonWidget` use `rglWidget::setColor` (`0x14031f650`), which does not touch a mesh.
     Implemented as `MeshDrawCall::tint_rgba` in [rhi.h](../engine/include/wse/platform/rhi.h).
 17. ~~Trace how presentation overlays receive and react to pointer input.~~
     **Resolved (mostly):** v1.1.5.5 entry VAs below. Implemented in
@@ -1138,22 +1138,22 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
     | Function | VA | Finding |
     | --- | --- | --- |
-    | `rglWindowManager::frameMove` | `0x14032a0d0` | left / right press -> widget states `0x10` / `0x40`, release -> `0x8` / `0x20`; sent to the focused widget, else the window tree |
-    | `rglContainerWidget::triggerState` | `0x14028af30` | hover enter `0x2` / leave `0x4` to every visible, enabled child the cursor enters or leaves (any type); presses to children under the cursor top-down until one returns true; disabled or hidden children skipped |
-    | `rglWidget::triggerState` | `0x14031dd10` | latches states through `rglWidget::setState` `0x14031d120` |
-    | `rglWidget::checkState` | `0x14031d100` | tests and clears a latched state |
-    | `mbPresentationContainer::frameMove` | `0x140208ec0` | per overlay, in index order: `0x2` -> `-63` (0), `0x4` -> `-63` (1), `0x10000` -> `-62` (value by `getType`: types 2 / 3 float value truncated, 5 / 11 / 12 / 14 int value, 6 / 7 text copied to `s0`, 9 / 10 toggle state when the toggle flag is set), then `0x10` -> `-64` (0), `0x40` -> `-64` (1), `0x100` -> `-64` (2); the wheel scrolls the type 8 scrollable nearest the cursor. `getType`: slider 2, combo button 5, text box 6, simple text box 7, scrollable 8, image button 9, game button 10, number box 11, list box 12, table 13, combo label 14 |
-    | `rglSimpleButtonWidget::triggerState` | `0x140307770` | plain button arms on press, disarms on leave, raises `0x10000` on release while armed; toggle (flag `+0x284` bit 0) flips on press and raises `0x10000`; consumes left presses |
-    | `createCheckBoxOverlay` | `0x14020bc50` | image button + toggle flag |
-    | `createSliderOverlay` | `0x14020af30` | width 0.25, knob margin 0.008, horizontal, starts at min |
-    | `rglSliderWidget::triggerState` | `0x14030d610` | knob tolerance margin + 0.01; while focused (dragging) every move sets the value and raises `0x10000` |
-    | `rglSliderWidget::setAbsolutePosition` | `0x14030da60` | cursor position -> value |
-    | `rglNumberBoxWidget::triggerState` | `0x1402c8310` | arrow press steps 1; hold repeats after 0.5 s every 0.1 s with step 1 / 3 / 10 / 50 (up to 2.5 s / 5 s / 7.5 s / beyond); clamped |
-    | `rglComboLabelWidget::triggerState` | `0x140262cd0` | arrows step +-1 with wrap over the item count, always raise `0x10000` |
-    | `rglComboLabelWidget::setIntValue` | `0x140262c70` | value setter used by the arrows |
-    | `rglComboButtonWidget::triggerState` | `0x140261340` | press opens the popup when there are items |
-    | `createTextOverlay` | `0x140209a90` | text flag bits 17-19 (`0xE0000`) create an `rglScrollableWidget` (`getType` `0x140300270`) |
-    | `mbPresentationContainer::setOverlayValue` | `0x14020e180` | per-type value setter (reference) |
+    | `rglWindowManager::frameMove` | `0x14032ae90` | left / right press -> widget states `0x10` / `0x40`, release -> `0x8` / `0x20`; sent to the focused widget, else the window tree |
+    | `rglContainerWidget::triggerState` | `0x14028b090` | hover enter `0x2` / leave `0x4` to every visible, enabled child the cursor enters or leaves (any type); presses to children under the cursor top-down until one returns true; disabled or hidden children skipped |
+    | `rglWidget::triggerState` | `0x14031ead0` | latches states through `rglWidget::setState` `0x14031dee0` |
+    | `rglWidget::checkState` | `0x14031dec0` | tests and clears a latched state |
+    | `mbPresentationContainer::frameMove` | `0x140209040` | per overlay, in index order: `0x2` -> `-63` (0), `0x4` -> `-63` (1), `0x10000` -> `-62` (value by `getType`: types 2 / 3 float value truncated, 5 / 11 / 12 / 14 int value, 6 / 7 text copied to `s0`, 9 / 10 toggle state when the toggle flag is set), then `0x10` -> `-64` (0), `0x40` -> `-64` (1), `0x100` -> `-64` (2); the wheel scrolls the type 8 scrollable nearest the cursor. `getType`: slider 2, combo button 5, text box 6, simple text box 7, scrollable 8, image button 9, game button 10, number box 11, list box 12, table 13, combo label 14 |
+    | `rglSimpleButtonWidget::triggerState` | `0x140308530` | plain button arms on press, disarms on leave, raises `0x10000` on release while armed; toggle (flag `+0x284` bit 0) flips on press and raises `0x10000`; consumes left presses |
+    | `createCheckBoxOverlay` | `0x14020bdd0` | image button + toggle flag |
+    | `createSliderOverlay` | `0x14020b0b0` | width 0.25, knob margin 0.008, horizontal, starts at min |
+    | `rglSliderWidget::triggerState` | `0x14030e3d0` | knob tolerance margin + 0.01; while focused (dragging) every move sets the value and raises `0x10000` |
+    | `rglSliderWidget::setAbsolutePosition` | `0x14030e820` | cursor position -> value |
+    | `rglNumberBoxWidget::triggerState` | `0x1402c8580` | arrow press steps 1; hold repeats after 0.5 s every 0.1 s with step 1 / 3 / 10 / 50 (up to 2.5 s / 5 s / 7.5 s / beyond); clamped |
+    | `rglComboLabelWidget::triggerState` | `0x140262e50` | arrows step +-1 with wrap over the item count, always raise `0x10000` |
+    | `rglComboLabelWidget::setIntValue` | `0x140262df0` | value setter used by the arrows |
+    | `rglComboButtonWidget::triggerState` | `0x1402614c0` | press opens the popup when there are items |
+    | `createTextOverlay` | `0x140209c10` | text flag bits 17-19 (`0xE0000`) create an `rglScrollableWidget` (`getType` `0x140301080`) |
+    | `mbPresentationContainer::setOverlayValue` | `0x14020e300` | per-type value setter (reference) |
 
     Port approximations (not traced): number-box / combo-label arrows are the outer quarters of a
     fixed box; list boxes act like combo buttons (the combo popup is item 20); the middle-press (`0x100`)
@@ -1166,18 +1166,18 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
     | Function | VA | Finding |
     | --- | --- | --- |
-    | `rglWidget::frameMove` | `0x14031c110` | per-frame animation step: `(start*(d-t) + target*t)/d`; colour bytes and alpha rounded half-up, size and position unrounded, target set when time is up |
-    | `rglWidget::animateToColor` | `0x14031cbc0` | starts the colour channel toward a target |
-    | `rglWidget::animateToAlpha` | `0x14031cc00` | starts the alpha channel toward a target |
-    | `rglWidget::animateToScale` | `0x14031ccc0` | starts the scale channel toward a target |
-    | `rglWidget::animateToPosition` | `0x14031cd00` | starts the position channel toward a target |
-    | `rglTextBoxWidget::triggerState` | `0x140316bd0` | left press focuses the box; while focused it takes every press and character |
-    | `rglTextBoxWidget::obtainFocus` | `0x140317250` | focus acquisition |
-    | `rglTextBoxWidget::loseFocus` | `0x140317220` | commit on Enter, Escape, or a left press outside; raises `0x10000` |
-    | `mbPresentationContainer::frameMove` | `0x140208ec0` | copies the committed text into string register 0 of `mbBasicGame` (`m_stringRegisters` at `+0x2670`, PDB layout) before `-62` |
-    | `createGameButtonOverlay` | `0x14020c3e0` | `medium_button` meshes scaled uniformly by 5/9 (`0x3f0e38e4`); stores scale (0.148, 0.04); highlight text `0xff007700` (940) |
-    | `createIngameButtonOverlay` | `0x14020c7d0` | `mp_inventory_button` kept at native size; stores scale (5.3075, 1.0) (`0x40a9d70a`); highlight text `0xff00ff00` (941) |
-    | `rglGameButtonWidget::setScale` | `0x14029bfb0` | multiplies the meshes by new / stored scale per axis; the box stays the hit area |
+    | `rglWidget::frameMove` | `0x14031ced0` | per-frame animation step: `(start*(d-t) + target*t)/d`; colour bytes and alpha rounded half-up, size and position unrounded, target set when time is up |
+    | `rglWidget::animateToColor` | `0x14031d980` | starts the colour channel toward a target |
+    | `rglWidget::animateToAlpha` | `0x14031d9c0` | starts the alpha channel toward a target |
+    | `rglWidget::animateToScale` | `0x14031da80` | starts the scale channel toward a target |
+    | `rglWidget::animateToPosition` | `0x14031dac0` | starts the position channel toward a target |
+    | `rglTextBoxWidget::triggerState` | `0x140317990` | left press focuses the box; while focused it takes every press and character |
+    | `rglTextBoxWidget::obtainFocus` | `0x140318010` | focus acquisition |
+    | `rglTextBoxWidget::loseFocus` | `0x140317fe0` | commit on Enter, Escape, or a left press outside; raises `0x10000` |
+    | `mbPresentationContainer::frameMove` | `0x140209040` | copies the committed text into string register 0 of `mbBasicGame` (`m_stringRegisters` at `+0x2670`, PDB layout) before `-62` |
+    | `createGameButtonOverlay` | `0x14020c560` | `medium_button` meshes scaled uniformly by 5/9 (`0x3f0e38e4`); stores scale (0.148, 0.04); highlight text `0xff007700` (940) |
+    | `createIngameButtonOverlay` | `0x14020c950` | `mp_inventory_button` kept at native size; stores scale (5.3075, 1.0) (`0x40a9d70a`); highlight text `0xff00ff00` (941) |
+    | `rglGameButtonWidget::setScale` | `0x14029c110` | multiplies the meshes by new / stored scale per axis; the box stays the hit area |
 
     Port approximations (not traced): no IME composition (the 28-character cap and the focus
     commit are item 19; numeric mode and placeholders are item 20).
@@ -1193,19 +1193,19 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
     | Function | VA | Finding |
     | --- | --- | --- |
-    | `start_conversation_presentation` (4907) | `0x1401f296e` | also queues the presentation for the mission side (`m6.ui.pending_conversation_presentations`) |
-    | `mbConversationWindow::startPresentation` | `0x1400888a0` | pushes the presentation onto the pending list (`+0x2298`) |
-    | `mbConversationWindow::updatePresentations` | `0x1400888c0` | per frame: each pending start ends same-presentation or non-`prsntf_manual_end_only` containers, then opens one and runs `-60`; every container runs `-61` and closes when its duration runs out |
-    | `mbPresentationContainer::startPresentation` | `0x1402097b0` | copies the flags and sets the default duration: 10 s for read-only presentations, 100 s otherwise |
-    | `getPresentationContainer` | `0x140088f00` | the conversation window's container for a presentation (used by the 902 mission branch) |
-    | `presentation_set_duration` (902), mission branch | `0x1401cc016` | writes the duration through `m6.ui.mission_duration_requests` |
-    | `is_presentation_active` (903), mission branch | `0x1401cc135` | true for any open conversation-window container of the presentation |
-    | `Native` 900 | `0x1401cbf02` | queues only `0x0f`; no mission branch |
-    | `rglTextBoxWidget` constructor | `0x140316900` | `+0x294` caps a text box at 28 characters (code points) |
-    | `rglTextBoxWidget::loseFocus` | `0x140317220` | the previously focused box commits when `overlay_obtain_focus` (949) takes focus |
-    | `rglTextBoxWidget::obtainFocus` | `0x140317250` | focus acquisition (reference) |
-    | `rglSliderWidget::getPercentage` | `0x14030dae0` | knob position from the value (`slider_hor` track, `handle_hor` knob) |
-    | `mbSoundManager::setTransform` | `0x140332970` | listener position from the camera transform (headless `--audio`) |
+    | `start_conversation_presentation` (4907) | `0x1401f2aee` | also queues the presentation for the mission side (`m6.ui.pending_conversation_presentations`) |
+    | `mbConversationWindow::startPresentation` | `0x140088a00` | pushes the presentation onto the pending list (`+0x2298`) |
+    | `mbConversationWindow::updatePresentations` | `0x140088a20` | per frame: each pending start ends same-presentation or non-`prsntf_manual_end_only` containers, then opens one and runs `-60`; every container runs `-61` and closes when its duration runs out |
+    | `mbPresentationContainer::startPresentation` | `0x140209930` | copies the flags and sets the default duration: 10 s for read-only presentations, 100 s otherwise |
+    | `getPresentationContainer` | `0x140089060` | the conversation window's container for a presentation (used by the 902 mission branch) |
+    | `presentation_set_duration` (902), mission branch | `0x1401cc196` | writes the duration through `m6.ui.mission_duration_requests` |
+    | `is_presentation_active` (903), mission branch | `0x1401cc2b5` | true for any open conversation-window container of the presentation |
+    | `Native` 900 | `0x1401cc082` | queues only `0x0f`; no mission branch |
+    | `rglTextBoxWidget` constructor | `0x1403176c0` | `+0x294` caps a text box at 28 characters (code points) |
+    | `rglTextBoxWidget::loseFocus` | `0x140317fe0` | the previously focused box commits when `overlay_obtain_focus` (949) takes focus |
+    | `rglTextBoxWidget::obtainFocus` | `0x140318010` | focus acquisition (reference) |
+    | `rglSliderWidget::getPercentage` | `0x14030e8a0` | knob position from the value (`slider_hor` track, `handle_hor` knob) |
+    | `mbSoundManager::setTransform` | `0x140333730` | listener position from the camera transform (headless `--audio`) |
 
     Port approximations (not traced): mission containers draw in stack order and take input top
     container first, but a pressed container is not raised to the top; the
@@ -1222,12 +1222,12 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
     | Function | VA | Finding |
     | --- | --- | --- |
-    | `rglNumberBoxWidget::updateWidgets` | `0x1402c8670` | the number box holds a `rglSimpleTextBoxWidget` (`+0x2e0`) with numeric mode `+0x298 = 1` and the box's range (`+0x25c` min, `+0x260` max) |
-    | `rglTextBoxWidget::setIntValue` | `0x140316a10` | numeric mode: with `max > min` the value clamps to `[min, max - 1]` (max excluded, as the module header says) and the text becomes the decimal value; with `max <= min` the value is -1 and the text empty |
-    | `rglTextBoxWidget::triggerState` | `0x140316bd0` | numeric typing: a digit sets `strtol(text) * 10 + digit` through `setIntValue` with the minimum forced to 0; backspace erases the last character; other characters are ignored; Enter / Escape / losing focus read the text back through `setIntValue`. A placeholder (`+0x292`) is cleared on the focusing press (empty text, colour `0xff000000`) |
-    | `rglTextBoxWidget::rglTextBoxWidget` | `0x140316900` | `+0x292` / `+0x298` start cleared; only the character and terrain-generator windows and the number box set them, so module overlays never have a placeholder |
-    | `rglNumberBoxWidget::triggerState` | `0x1402c8310` | arrows: `min(v + step, max)` / `max(v - step, min)` through `setIntValue`, then raise `0x10000` on the text box; `checkState` / `getIntValue` forward to the text box, so a committed typed value reaches `-62` |
-    | `rglComboButtonWidget::openPopup` | `0x140261d10` | the popup starts at the box's bottom edge and grows downwards; each item is `size.y * scale.y` high (the combo box height) |
+    | `rglNumberBoxWidget::updateWidgets` | `0x1402c88e0` | the number box holds a `rglSimpleTextBoxWidget` (`+0x2e0`) with numeric mode `+0x298 = 1` and the box's range (`+0x25c` min, `+0x260` max) |
+    | `rglTextBoxWidget::setIntValue` | `0x1403177d0` | numeric mode: with `max > min` the value clamps to `[min, max - 1]` (max excluded, as the module header says) and the text becomes the decimal value; with `max <= min` the value is -1 and the text empty |
+    | `rglTextBoxWidget::triggerState` | `0x140317990` | numeric typing: a digit sets `strtol(text) * 10 + digit` through `setIntValue` with the minimum forced to 0; backspace erases the last character; other characters are ignored; Enter / Escape / losing focus read the text back through `setIntValue`. A placeholder (`+0x292`) is cleared on the focusing press (empty text, colour `0xff000000`) |
+    | `rglTextBoxWidget::rglTextBoxWidget` | `0x1403176c0` | `+0x292` / `+0x298` start cleared; only the character and terrain-generator windows and the number box set them, so module overlays never have a placeholder |
+    | `rglNumberBoxWidget::triggerState` | `0x1402c8580` | arrows: `min(v + step, max)` / `max(v - step, min)` through `setIntValue`, then raise `0x10000` on the text box; `checkState` / `getIntValue` forward to the text box, so a committed typed value reaches `-62` |
+    | `rglComboButtonWidget::openPopup` | `0x140261e90` | the popup starts at the box's bottom edge and grows downwards; each item is `size.y * scale.y` high (the combo box height) |
 
     Port approximations (not traced): the number box's text box is the middle half of the box
     (between the arrow quarters); typed values saturate where retail's 32-bit `value * 10 + digit`
@@ -1242,13 +1242,13 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
     | Function | VA | Finding |
     | --- | --- | --- |
-    | `mbParty::getMaxNumCompanions` | `0x1401c1720` | mapped script `0x15` (party, 0) wins via the trigger result; else `iBaseCompanionLimit` (20) + leader leadership × `iLeadershipSkillBonus` (3) + leader charisma (`mbTroop` `+0x14c`, `m_attributes[3]`) |
-    | `mbParty::getMaxNumPrisoners` | `0x1401c17a0` | mapped script `0x16` (party, 0) wins; else leader prisoner management × `iPrisonerManagementSkillBonus` (5) |
-    | `mbGame::getTroopSkill` | `0x1400dcbf0` | level nibble capped by the skill's maximum; with the flag set, adds `game_get_skill_modifier_for_troop` (slot `0x1b`, trigger result zeroed first) and clamps to `[0, max level]` |
-    | `mbGame::executeMappedScript` | `0x1400dbe70` | `(slot, param1, param2)`; returns whether the module defines the script |
+    | `mbParty::getMaxNumCompanions` | `0x1401c18a0` | mapped script `0x15` (party, 0) wins via the trigger result; else `iBaseCompanionLimit` (20) + leader leadership × `iLeadershipSkillBonus` (3) + leader charisma (`mbTroop` `+0x14c`, `m_attributes[3]`) |
+    | `mbParty::getMaxNumPrisoners` | `0x1401c1920` | mapped script `0x16` (party, 0) wins; else leader prisoner management × `iPrisonerManagementSkillBonus` (5) |
+    | `mbGame::getTroopSkill` | `0x1400dcd50` | level nibble capped by the skill's maximum; with the flag set, adds `game_get_skill_modifier_for_troop` (slot `0x1b`, trigger result zeroed first) and clamps to `[0, max level]` |
+    | `mbGame::executeMappedScript` | `0x1400dbfd0` | `(slot, param1, param2)`; returns whether the module defines the script |
 
-    `store_skill_level` (2170, `0x1401dd8e0`) passes the flag too. A script started by a handler runs
-    in a fresh frame, as `mbStatementBlock::execute` (`0x1401f69d0`) takes locals and loop frames
+    `store_skill_level` (2170, `0x1401dda60`) passes the flag too. A script started by a handler runs
+    in a fresh frame, as `mbStatementBlock::execute` (`0x1401f6b50`) takes locals and loop frames
     from a per-call pool; the port's `VmContext::activeBlocks` puts such calls at `currentDepth + 1`.
 
 ## 9. Evidence index
@@ -1260,21 +1260,21 @@ superseded 2026-10-14 build, kept only to explain older citations.
 
 | ID | Operation | Notes |
 | --- | --- | --- |
-| `ev_2aaa96a845fb5e0466129d8f6726e8172c13981585db951f98d8235a415cf0f9` | `decompile_all --address-start 0x1401e4dc0 --address-end 0x1401e4dc0` | 1 procedure written, 0 failures; 8,844-line `executeWSE` pseudocode from which 440/440 opcodes are mapped |
+| `ev_2aaa96a845fb5e0466129d8f6726e8172c13981585db951f98d8235a415cf0f9` | `decompile_all --address-start 0x1401e4f40 --address-end 0x1401e4f40` | 1 procedure written, 0 failures; 8,844-line `executeWSE` pseudocode from which 440/440 opcodes are mapped |
 | `ev_7641bf02b4fb1b7a257143d21ebbc3db30c63508b4e651c54f7df703201f8413` | `decompile_all --name mbStatement` | 0 selected, 20,268 excluded: the new PDB names are not seeded into Ghidra, so name search cannot be used; address ranges are required |
 | `ev_e323351db6dcd0c5ee6971adff8ece53dd20436dc59b424d88e46d882168cd0a` | v1.1.5.5 `binary_overview` | 9 segments, 20,276 procedures, 7,448 strings (`ev_fa7fc7d68d7977c7c161b00f64de44258e1e974d7358980b949cb2aa2f04d2e4`) |
 | `ev_a4af0bca5d107b626454d91f4c69c2aef5d4f21b466cbb174333d7c8cd687fc6` | v1.1.5.5 `inspect_pe_imports` | 21 static + 2 delay DLLs (23 total), 482 + 64 = 546 functions |
-| `ev_3ebcea855452bcdf0c3325185a7803f0ab38d671cdbdae50289c5be298015986` | v1.1.5.5 `stmt_core` (`0x1401c5f90`–`0x1401c6150`) | 4/4 procedures (`mbCallStack::print`, `parseOperand`, `returnValue`, `execute`) |
-| `ev_ffc38aa54dea8de3e505a585b91ac665291570c4257be680c2ea8f20da2cb4d8` | v1.1.5.5 `stmt_block` (`0x1401f6600`–`0x1401f7f00`) | 10/10 procedures (`readStream`, `analyze`, `execute`, `startLoop`, `endLoop`, `canLoop`, …) |
-| `ev_8d37a0c8ff4172b27be70bc38d0a325287abd882f115359535ef213a2601e995` | v1.1.5.5 `script` (`0x14020f6a0`–`0x14020f9a0`) | 4/4 procedures (`mbScript` / `mbScriptManager`) |
+| `ev_3ebcea855452bcdf0c3325185a7803f0ab38d671cdbdae50289c5be298015986` | v1.1.5.5 `stmt_core` (`0x1401c6110`–`0x1401c62d0`) | 4/4 procedures (`mbCallStack::print`, `parseOperand`, `returnValue`, `execute`) |
+| `ev_ffc38aa54dea8de3e505a585b91ac665291570c4257be680c2ea8f20da2cb4d8` | v1.1.5.5 `stmt_block` (`0x1401f6780`–`0x1401f8080`) | 10/10 procedures (`readStream`, `analyze`, `execute`, `startLoop`, `endLoop`, `canLoop`, …) |
+| `ev_8d37a0c8ff4172b27be70bc38d0a325287abd882f115359535ef213a2601e995` | v1.1.5.5 `script` (`0x14020f820`–`0x14020fb20`) | 4/4 procedures (`mbScript` / `mbScriptManager`) |
 | `ev_3157906d86eb2e91fde12ab398ac456985e8ddc8b446b09c38bc04ae85fdfcfb` | v1.1.5.5 `simple_trigger` | 12/12 procedures (`mbSimpleTrigger::execute`, manager, serialization) |
 | `ev_f62843ac4a6fc192dce93d0c44b029607a38d68ecaa72909b908275472a0a688` | v1.1.5.5 `trigger` | 12/12 procedures (`mbTriggerManager::execute`, serialization) |
-| `ev_fc9bd1a4a59df50e5043ba9e6cc9a8e8abe92e0f206060e19e569d623f54193d` | v1.1.5.5 `game_scripts` (`0x1400dbde0`, `0x1400dbe70`) | 4/4 procedures (`executeScript`, `executeMappedScript`) |
+| `ev_fc9bd1a4a59df50e5043ba9e6cc9a8e8abe92e0f206060e19e569d623f54193d` | v1.1.5.5 `game_scripts` (`0x1400dbf40`, `0x1400dbfd0`) | 4/4 procedures (`executeScript`, `executeMappedScript`) |
 | `ev_052f2d86c898108ec8770657941dd3034c6860ffa565dea31236c1a546509c96` | v1.1.5.5 `game_triggers` | 2/2 procedures |
 | `ev_8cc48986006b9c7e64b7e7b94e4b37bb06c9950ecba367a50b0b601381dab2e7` | v1.1.5.5 `streams_bin` | 9/9 `rglBinaryStream` procedures |
 | `ev_1e3c25667502f1b1e6ce2e296ecc792c1cd592a4e85440bf9b7e535e8e0fdb0b` | v1.1.5.5 `streams_txt` | 18/18 `rglTextStream` procedures |
-| `ev_f09662c6d0cc3ac83fd7d6958bae56ed569f98784c32065e6d90a9a0f6d22777` | v1.1.5.5 `read_bytes` (`0x1401e22f0`) | binary byte reader + `0x140615ad0` (`ev_2ddf7a62e571269d791d6ec829d50b48c3c15367d99dec63005158fe42ed9b52`) |
-| `ev_b1f807d9…bada` / `ev_a267813e…5bba` / `ev_55263589…b114` / `ev_266b9f4c…5351` / `ev_94c53440…ec9a` / `ev_bd739bd0…056e` | v1.1.5.5 singles | `mbBasicGame::initialize` (`0x140070f90`), `mbSlots::set` (`0x1402183d0`), `WSELuaManager::OnStatementExecute` (`0x14033cdd0`), `OnOperationMgrExecute` (`0x14033d090`), `rglAppTimer::reset` (`0x140318970`), `0x1403189e0` |
+| `ev_f09662c6d0cc3ac83fd7d6958bae56ed569f98784c32065e6d90a9a0f6d22777` | v1.1.5.5 `read_bytes` (`0x1401e2470`) | binary byte reader + `0x140616ad0` (`ev_2ddf7a62e571269d791d6ec829d50b48c3c15367d99dec63005158fe42ed9b52`) |
+| `ev_b1f807d9…bada` / `ev_a267813e…5bba` / `ev_55263589…b114` / `ev_266b9f4c…5351` / `ev_94c53440…ec9a` / `ev_bd739bd0…056e` | v1.1.5.5 singles | `mbBasicGame::initialize` (`0x1400710f0`), `mbSlots::set` (`0x140218550`), `WSELuaManager::OnStatementExecute` (`0x14033db90`), `OnOperationMgrExecute` (`0x14033de50`), `rglAppTimer::reset` (`0x140319730`), `0x1403197a0` |
 
 ### Superseded 2026-10-14 evidence IDs (retained for historical traceability only)
 
@@ -1288,7 +1288,7 @@ superseded 2026-10-14 build, kept only to explain older citations.
 | `ev_e3530f99c32b3f59ecc82debcfff9db29d8641fd14d5f7576ccf12eb4cbe8d05` | `decompile_all --name Trigger` (superseded) | 52 procedures written, 0 failures; trigger layouts, loaders, runtime, and savegames |
 | `ev_cebc7ae0bef7bccaddbcbb53c560d5d2020a5acf60c5bc03a77c496077e8c8d3` | `decompile_all --name rglTextStream` (superseded) | 18 procedures written, 0 failures; exact token reader/writer semantics |
 | `ev_24eecfa4fc91587dd7b5b29ca767a78c8747a538e953f37b295746c67f18c0b6` | `decompile_all --name rglBinaryStream` (superseded) | 9 procedures written, 0 failures; raw 8/4/1-byte writers and length-prefixed strings |
-| `ev_130d8023206760c8a441e940113e7a231d384634f4a73d4813a3ae6b412c62e6` | `decompile_all --address-start 0x1402a1d00 --address-end 0x1402a1d7f` (superseded) | 2 procedures written, 0 failures; 4-byte raw reader (`FUN_1402a1d00`); adjacent 1/8-byte entries confirmed by PDB aliases and disassembly |
+| `ev_130d8023206760c8a441e940113e7a231d384634f4a73d4813a3ae6b412c62e6` | `decompile_all --address-start 0x1402a1d00 --address-end 0x1402a1d7f` (superseded) | 2 procedures written, 0 failures; 4-byte raw reader (`FUN_1402a1d00`); adjacent 1/8-byte entries confirmed by PDB aliases and disassembly | <!-- citation-check: ignore-line -->
 
 Derived PDB/PE artifacts (retained outside the repository; hashes pin the exact v1.1.5.5 inputs unless noted):
 

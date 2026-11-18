@@ -146,7 +146,7 @@ template <typename Fn>
 
     switch (static_cast<WseOpcode>(opcode)) {
     case WseOpcode::set_ally_collision_threshold: {
-        // 3602 (0x1401ea751)
+        // 3602 (0x1401ea8d1)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -161,7 +161,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::particle_system_remove: {
-        // 3603 (0x1401ea7be)
+        // 3603 (0x1401ea93e)
         if (world == nullptr) {
             return WseDispatch::ignored;
         }
@@ -170,7 +170,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::get_spectated_agent_no: {
-        // 3604 (0x1401ea7fa)
+        // 3604 (0x1401ea97a)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -182,7 +182,7 @@ template <typename Fn>
         return WseDispatch::handled;
     }
     case WseOpcode::prop_instance_set_forced_lod: {
-        // 3605 (0x1401ea826)
+        // 3605 (0x1401ea9a6)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -194,7 +194,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::prop_instance_set_variation_id: {
-        // 3606 (0x1401ea880)
+        // 3606 (0x1401eaa00)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -206,7 +206,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::prop_instance_set_variation_id_2: {
-        // 3607 (0x1401ea8be)
+        // 3607 (0x1401eaa3e)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -218,7 +218,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::missile_get_path_point_position: {
-        // 3609 (0x1401ea9ff)
+        // 3609 (0x1401eab7f)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -244,7 +244,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::missile_remove_on_hit: {
-        // 3611 (0x1401eabfa): active during ti_on_missile_hit (-52).
+        // 3611 (0x1401ead7a): active during ti_on_missile_hit (-52).
         if (world == nullptr || operands.state.caller != -52) {
             return WseDispatch::ignored;
         }
@@ -256,7 +256,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::missile_is_valid: {
-        // 3612 (0x1401eac26)
+        // 3612 (0x1401eada6)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -268,7 +268,7 @@ template <typename Fn>
                    : WseDispatch::condition_false;
     }
     case WseOpcode::missile_get_cur_position: {
-        // 3613 (0x1401eac47)
+        // 3613 (0x1401eadc7)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -293,7 +293,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::set_prop_collision_threshold: {
-        // 3614 (0x1401eae2c)
+        // 3614 (0x1401eafac)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -310,7 +310,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::get_camera_position: {
-        // 3615 (0x1401eaeb1)
+        // 3615 (0x1401eb031)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -323,7 +323,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::prop_instance_remove_particle_system: {
-        // 3616 (0x1401eaef1)
+        // 3616 (0x1401eb071)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -341,7 +341,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::prop_instance_remove_light: {
-        // 3617 (0x1401eb021)
+        // 3617 (0x1401eb1a1)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -352,7 +352,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::prop_instance_get_sound_progress: {
-        // 3618 (0x1401eb086)
+        // 3618 (0x1401eb206)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -376,7 +376,7 @@ template <typename Fn>
         return WseDispatch::handled;
     }
     case WseOpcode::cast_ray_agents: {
-        // 3620 (0x1401eb5f4)
+        // 3620 (0x1401eb774)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -449,7 +449,7 @@ template <typename Fn>
         return WseDispatch::handled;
     }
     case WseOpcode::ai_mesh_face_group_translate: {
-        // 3621 (0x1401ebb0a)
+        // 3621 (0x1401ebc8a)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -465,7 +465,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::shift_entry_point: {
-        // 3623 (0x1401ebc9c)
+        // 3623 (0x1401ebe1c)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -478,7 +478,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::missile_remove: {
-        // 3624 (0x1401ebcdf)
+        // 3624 (0x1401ebe5f)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -489,7 +489,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::scene_prop_remove: {
-        // 3625 (0x1401ebd53)
+        // 3625 (0x1401ebed3)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -508,7 +508,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::position_align_to_ground: {
-        // 4101 (0x1401ecf37)
+        // 4101 (0x1401ed0b7)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -535,7 +535,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::scene_set_flags: {
-        // 4500 (0x1401f0dd3)
+        // 4500 (0x1401f0f53)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -550,7 +550,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::scene_set_water_level: {
-        // 4501 (0x1401f0e02)
+        // 4501 (0x1401f0f82)
         if (narrow.size() < 2 || wide.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -563,7 +563,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::scene_set_bounds: {
-        // 4502 (0x1401f0e48)
+        // 4502 (0x1401f0fc8)
         if (narrow.size() < 5 || wide.size() < 5) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -578,7 +578,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::scene_set_outer_terrain: {
-        // 4503 (0x1401f0ee9)
+        // 4503 (0x1401f1069)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -704,7 +704,7 @@ template <typename Fn>
         });
     }
     case WseOpcode::scene_set_height_fog: {
-        // 4518 (0x1401f16f4)
+        // 4518 (0x1401f1874)
         if (wide.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -727,7 +727,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::scene_set_water_waves: {
-        // 4519 (0x1401f17a0)
+        // 4519 (0x1401f1920)
         if (wide.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -743,7 +743,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::scene_set_flora_wind: {
-        // 4520 (0x1401f185c)
+        // 4520 (0x1401f19dc)
         if (wide.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -759,7 +759,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::scene_rebake_sky_cube: {
-        // 4521 (0x1401f1911)
+        // 4521 (0x1401f1a91)
         if (world == nullptr) {
             return WseDispatch::ignored;
         }
@@ -767,7 +767,7 @@ template <typename Fn>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::scene_set_weather_direction: {
-        // 4522 (0x1401f1937)
+        // 4522 (0x1401f1ab7)
         if (wide.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }

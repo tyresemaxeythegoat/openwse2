@@ -1,25 +1,25 @@
 // Portable statement-block interpreter and trigger/script execution bridge.
 //
 // Evidence (WSE2 v1.1.5.5 PE + Ghidra 12.1.4 REA pseudocode + PDB TPI):
-//   mbStatement::parseOperand      0x1401c6070  operand decode + fallback tags
-//   mbStatement::returnValue       0x1401c6100  register/slot/local lvalue store
-//   mbStatement::execute           0x1401c6150  this_or_next / neg / dispatch
-//   mbStatementBlock::analyze      0x1401f6740  two-stack block endStatement + locals
-//   mbStatementBlock::execute      0x1401f69d0  call stack (257), try/else, params
-//   mbStatementBlock::startLoop    0x1401f7290  loop frame push + initial write
-//   mbStatementBlock::endLoop      0x1401f7910  loop step/pop + register advance
-//   mbStatementBlock::canLoop      0x1401f7f00  try_for_range[_backwards] bounds
-//   mbTriggerManager::execute      0x140244cd0  trigger condition/consequence VM
-//   mbSimpleTrigger::execute       0x14020fb80  simple-trigger VM dispatch
-//   mbSimpleTriggerManager::execute 0x1402101a0 simple-trigger manager loop
-//   mbGame::executeScript          0x1400dbde0  script caller = 0x200000
-//   mbGame::executeMappedScript    0x1400dbe70  mapped script lookup
+//   mbStatement::parseOperand      0x1401c61f0  operand decode + fallback tags
+//   mbStatement::returnValue       0x1401c6280  register/slot/local lvalue store
+//   mbStatement::execute           0x1401c62d0  this_or_next / neg / dispatch
+//   mbStatementBlock::analyze      0x1401f68c0  two-stack block endStatement + locals
+//   mbStatementBlock::execute      0x1401f6b50  call stack (257), try/else, params
+//   mbStatementBlock::startLoop    0x1401f7410  loop frame push + initial write
+//   mbStatementBlock::endLoop      0x1401f7a90  loop step/pop + register advance
+//   mbStatementBlock::canLoop      0x1401f8080  try_for_range[_backwards] bounds
+//   mbTriggerManager::execute      0x140244e50  trigger condition/consequence VM
+//   mbSimpleTrigger::execute       0x14020fd00  simple-trigger VM dispatch
+//   mbSimpleTriggerManager::execute 0x140210320 simple-trigger manager loop
+//   mbGame::executeScript          0x1400dbf40  script caller = 0x200000
+//   mbGame::executeMappedScript    0x1400dbfd0  mapped script lookup
 //   Layouts: mbBasicGame (0xadd3, 221616B), mbCallStack (0x715b, 3096B),
 //            mbLoop (0x1f89a, 56B), mbLoopManager (0x1eb6b, 7176B).
 //
 // Key structural facts verified directly against v1.1.5.5:
-//   - mbBasicGame +0x270 (0x140662c30) is the 128-entry int64 register array
-//     accessed by operand tag 1; +0x258 (0x140662c18) is mbSlots m_globalVariables
+//   - mbBasicGame +0x270 (0x140663c60) is the 128-entry int64 register array
+//     accessed by operand tag 1; +0x258 (0x140663c48) is mbSlots m_globalVariables
 //     accessed by operand tag 2; frame locals are accessed by operand tag 0x11.
 //   - mbStatement::parseOperand returns payload for unknown tags (such as tag 3
 //     and tag 0x16 string operands) and forwards the tag byte to executeWSE.
@@ -69,11 +69,11 @@ inline constexpr std::uint32_t kNativeOpcodeMin = 30U;
 inline constexpr std::uint32_t kNativeOpcodeMax = 2767U;
 inline constexpr std::uint32_t kWseOpcodeMin = 2768U;
 
-inline constexpr std::int32_t kMaxCallDepth = 255;       // 0x1401f7051 (< 256)
-inline constexpr std::size_t kMaxBlockStackDepth = 128;  // 0x1401f67b6
-inline constexpr std::size_t kMinLocalVariables = 32;    // 0x1401f6965
-inline constexpr std::int32_t kScriptCaller = 0x200000;  // 0x1400dbde0
-inline constexpr std::int64_t kDivisionByZeroSentinel = 40000000LL;  // 0x1401dceb0
+inline constexpr std::int32_t kMaxCallDepth = 255;       // 0x1401f71d1 (< 256)
+inline constexpr std::size_t kMaxBlockStackDepth = 128;  // 0x1401f6936
+inline constexpr std::size_t kMinLocalVariables = 32;    // 0x1401f6ae5
+inline constexpr std::int32_t kScriptCaller = 0x200000;  // 0x1400dbf40
+inline constexpr std::int64_t kDivisionByZeroSentinel = 40000000LL;  // 0x1401dd030
 
 namespace core_op {
 inline constexpr std::uint32_t kCallScript = 1U;
@@ -198,8 +198,8 @@ struct VmContext {
     WseDictionaryStore dictionaries{};
     wse::game::WseWorldState world{};
 
-    // 0x1401f6c59 checks rglConfig::General::bLocalVariablesZeroInitialization
-    // (loaded at 0x14026f716 via rglIni::getBool 0x1402a84d0; default true).
+    // 0x1401f6dd9 checks rglConfig::General::bLocalVariablesZeroInitialization
+    // (loaded at 0x14026f896 via rglIni::getBool 0x1402a8740; default true).
     bool clearLocalsBetweenCalls = true;
     std::int32_t maxCallDepth = kMaxCallDepth;
     std::int32_t currentDepth = 0;
@@ -254,7 +254,7 @@ struct VmContext {
 };
 
 // Floor-with-half-up rounding shared by retail trigonometric/math helpers
-// (0x1402a1910: floorf(x), ++rax iff x - floorf(x) > 0.5f).
+// (0x1402a1b80: floorf(x), ++rax iff x - floorf(x) > 0.5f).
 [[nodiscard]] inline std::int64_t f2i_round(float value) noexcept {
     const float base = std::floor(value);
     auto out = static_cast<std::int64_t>(base);
@@ -310,7 +310,7 @@ struct VmContext {
     return lhs % rhs;
 }
 
-// Decodes one statement operand (0x1401c6070). Values <= 0 are signed 64-bit
+// Decodes one statement operand (0x1401c61f0). Values <= 0 are signed 64-bit
 // immediates; positive values extract tag (bits 56..62) and 56-bit payload.
 // Tags other than 0, 1, 2, 0x11 return the raw payload and expose `outTag` for
 // downstream WSE string/object handlers.
@@ -349,7 +349,7 @@ struct VmContext {
     return static_cast<std::int64_t>(payload);
 }
 
-// Writes `value` into a statement's lvalue operand (0x1401c6100).
+// Writes `value` into a statement's lvalue operand (0x1401c6280).
 inline bool store_lvalue(std::uint64_t raw,
                          std::int64_t value,
                          VmContext& ctx,
@@ -386,7 +386,7 @@ inline bool store_lvalue(std::uint64_t raw,
     return false;
 }
 
-// Mirrors mbStatementBlock::analyze (0x1401f6740): pairs try/loop openers with
+// Mirrors mbStatementBlock::analyze (0x1401f68c0): pairs try/loop openers with
 // else_try (5) and try_end (3), links inner failing statements' endStatement to
 // the enclosing branch target, and estimates local storage in [32, 1024].
 inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = nullptr) {
@@ -566,7 +566,7 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
 }
 
 // Executes one leaf statement (>= 30), honoring g_skipStatement (0x40000000
-// this_or_next) and negation (0x80000000 neg). Mirrors 0x1401c6150.
+// this_or_next) and negation (0x80000000 neg). Mirrors 0x1401c62d0.
 [[nodiscard]] inline bool execute_statement(const Statement& statement,
                                             std::int32_t caller,
                                             VmContext& ctx,
@@ -589,7 +589,7 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
     std::array<std::int32_t, kMaxOperands> narrow{};
     std::array<std::uint8_t, kMaxOperands> tags{};
 
-    // First 5 slots start zeroed (0x1401c6219-0x1401c626c); remaining slots stay zero too.
+    // First 5 slots start zeroed (0x1401c6399-0x1401c63ec); remaining slots stay zero too.
     for (std::size_t i = 0; i < count; ++i) {
         const std::int64_t value =
             parse_operand(static_cast<std::uint64_t>(statement.operands[i]), ctx, locals, tags[i]);
@@ -815,7 +815,7 @@ inline void start_loop(const StatementBlock& block,
         }
         ++pc;
     } else {
-        // Retail 0x1401f78ac jumps directly to try_end, which executes end_loop
+        // Retail 0x1401f7a2c jumps directly to try_end, which executes end_loop
         // on the next iteration and pops the unentered loop frame.
         pc = stmt.endStatement;
     }
@@ -930,7 +930,7 @@ inline bool execute_call_script(const Statement& stmt,
         ctx);
 }
 
-// Interprets `block` (0x1401f69d0). Analyzes lazily on first run, tracks call
+// Interprets `block` (0x1401f6b50). Analyzes lazily on first run, tracks call
 // depth and loop frames, and returns true unless a top-level (numLoops == 0)
 // statement or nested call_script fails.
 inline bool execute_statement_block(StatementBlock& block,
@@ -1157,7 +1157,7 @@ inline bool execute_statement_block(StatementBlock& block, VmContext& ctx) {
     return ok;
 }
 
-// Executes a loaded script by index (0x1400dbde0, default caller 0x200000).
+// Executes a loaded script by index (0x1400dbf40, default caller 0x200000).
 inline bool execute_script(game::ScriptManager& manager,
                            std::int32_t scriptIndex,
                            VmContext& ctx,
@@ -1197,7 +1197,7 @@ inline bool execute_script(game::ScriptManager& manager,
     return false;
 }
 
-// Executes a mapped static script slot (0x1400dbe70).
+// Executes a mapped static script slot (0x1400dbfd0).
 inline bool execute_mapped_script(game::ScriptManager& manager,
                                   std::size_t mappedSlot,
                                   VmContext& ctx,
@@ -1214,7 +1214,7 @@ inline constexpr std::size_t kMappedGetPartyCompanionLimit = 0x15U;
 inline constexpr std::size_t kMappedGetPartyPrisonerLimit = 0x16U;
 inline constexpr std::size_t kMappedGetSkillModifierForTroop = 0x1bU;
 
-// `mbGame::getTroopSkill(troop, skill, true)` (`0x1400dcbf0`): the troop's level capped by the
+// `mbGame::getTroopSkill(troop, skill, true)` (`0x1400dcd50`): the troop's level capped by the
 // skill's maximum, plus whatever `game_get_skill_modifier_for_troop` (troop, skill) leaves in
 // the trigger result (reset to 0 first), clamped to `[0, max level]`.
 [[nodiscard]] inline std::int32_t troop_skill_level(VmContext& ctx,
@@ -1237,7 +1237,7 @@ inline constexpr std::size_t kMappedGetSkillModifierForTroop = 0x1bU;
     return static_cast<std::int32_t>(std::clamp<std::int64_t>(level, 0, cap));
 }
 
-// `mbParty::getMaxNumCompanions` (`0x1401c1720`) / `getMaxNumPrisoners` (`0x1401c17a0`): the
+// `mbParty::getMaxNumCompanions` (`0x1401c18a0`) / `getMaxNumPrisoners` (`0x1401c1920`): the
 // module's `game_get_party_companion_limit` / `game_get_party_prisoner_limit` (party, 0) wins
 // when it exists (its trigger result is the limit); otherwise the built-in formula with the
 // leader's skill from `getTroopSkill(..., true)`.
@@ -1416,11 +1416,11 @@ private:
     const TriggerIterationScope iterationScope(ctx);
     for (auto& trigger : manager.triggers) {
         if (!execute_simple_trigger(trigger, eventKey, timersTotal, ctx)) return false;
-        // Mirrors mbSimpleTriggerManager::execute (0x1402101d2..0x1402101f7):
+        // Mirrors mbSimpleTriggerManager::execute (0x140210352..0x140210377):
         // positive odd event keys abort the remaining triggers once a type-0x12 window (`mbMenuWindow`,
-        // enqueued by `jump_to_menu` `0x1401dc2b1`) sits at the back of `enqueued_windows`.
+        // enqueued by `jump_to_menu` `0x1401dc431`) sits at the back of `enqueued_windows`.
         // Campaign frames consume and pop it via `WseWorldState::consume_campaign_queued_window`
-        // (`mbMapWindow::frameMove` `0x140117f90` + `mbMenuWindow::open` `0x140120240`).
+        // (`mbMapWindow::frameMove` `0x1401180f0` + `mbMenuWindow::open` `0x1401203a0`).
         if (eventKey > 0 && (eventKey & 1) != 0 && !ctx.world.m5.enqueued_windows.empty() &&
             ctx.world.m5.enqueued_windows.back().first == game::kQueuedWindowMenuType) {
             break;

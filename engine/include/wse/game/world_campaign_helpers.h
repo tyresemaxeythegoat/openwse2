@@ -297,14 +297,14 @@ inline void troop_add_xp(WseTroop& troop, std::int32_t amount) noexcept {
     }
 }
 
-// `rglConfig::Campaign` defaults read by `mbParty::getMaxNumCompanions` (`0x1401c1720`) and
-// `mbParty::getMaxNumPrisoners` (`0x1401c17a0`): `iBaseCompanionLimit` 20,
+// `rglConfig::Campaign` defaults read by `mbParty::getMaxNumCompanions` (`0x1401c18a0`) and
+// `mbParty::getMaxNumPrisoners` (`0x1401c1920`): `iBaseCompanionLimit` 20,
 // `iLeadershipSkillBonus` 3, `iPrisonerManagementSkillBonus` 5.
 inline constexpr std::int32_t kBaseCompanionLimit = 20;
 inline constexpr std::int32_t kLeadershipSkillBonus = 3;
 inline constexpr std::int32_t kPrisonerManagementSkillBonus = 5;
 
-// A troop's skill level capped by the skill's maximum (`getTroopSkill` `0x1400dcbf0` without
+// A troop's skill level capped by the skill's maximum (`getTroopSkill` `0x1400dcd50` without
 // the modifier script).
 [[nodiscard]] inline std::int32_t troop_skill_capped(const WseWorldState& world,
                                                      std::int32_t troop_no,
@@ -330,7 +330,7 @@ inline constexpr std::int32_t kPrisonerManagementSkillBonus = 5;
 // The built-in limits `getMaxNumCompanions` / `getMaxNumPrisoners` fall back to when the module
 // has no `game_get_party_companion_limit` / `game_get_party_prisoner_limit` script:
 // `20 + leadership * 3 + charisma` and `prisoner_management * 5`, with the leader's skills as
-// `getTroopSkill` (`0x1400dcbf0`) returns them. `leadership` / `prisoner_management` are those
+// `getTroopSkill` (`0x1400dcd50`) returns them. `leadership` / `prisoner_management` are those
 // levels (the VM passes them with the module's skill modifier applied); -1 means "the raw level,
 // capped by the skill's maximum".
 [[nodiscard]] inline std::int32_t party_max_companions(const WseWorldState& world,

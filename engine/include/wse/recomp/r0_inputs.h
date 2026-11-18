@@ -1,6 +1,6 @@
 // R0 (d) test vectors: one retail function checked against the PC (`docs/RECOMP_PLAN.md`).
 //
-// The function is `rglString::indexOf(const rglString&, int) const` (`0x14030f630`), a leaf
+// The function is `rglString::indexOf(const rglString&, int) const` (`0x1403103f0`), a leaf
 // that reads two strings. The same seeded cases run on the PC (native call into the user's
 // mapped exe, `tools/r0_pc_reference.cpp`, local only) and on the phone (the translated
 // function); both print the FNV-1a hash of the results, and the hashes must match.

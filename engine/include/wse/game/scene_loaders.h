@@ -2,13 +2,13 @@
 // XML loaders via Vfs/TokenReader/BinaryReader.
 //
 // Reconstructed from v1.1.5.5 PE + PDB evidence:
-// - mbGame::readMap (0x1400d9a00), rglManifold::readStream (0x1402b1220),
-//   rglManifoldFace::readStream (0x1402b1190), rglManifold::computeBounds (0x1402b1d00)
-// - mbSite::readSceneObjFile (0x140210be0), mbMissionObject::readStream (0x140152be0),
-//   rglAiMesh::readStream (0x140252600)
-// - mbGame::readSkeletons (0x1400cbb70), mbSkeletonManager::readFile (0x140211ba0),
-//   mbSkeleton::readXMLElement (0x1402119c0), mbSkeletonBone::readXMLElement (0x140211480),
-//   rglSkeletonModelBody::readXMLElement (0x14030ca30)
+// - mbGame::readMap (0x1400d9b60), rglManifold::readStream (0x1402b1490),
+//   rglManifoldFace::readStream (0x1402b1400), rglManifold::computeBounds (0x1402b1f70)
+// - mbSite::readSceneObjFile (0x140210d60), mbMissionObject::readStream (0x140152d60),
+//   rglAiMesh::readStream (0x140252780)
+// - mbGame::readSkeletons (0x1400cbcd0), mbSkeletonManager::readFile (0x140211d20),
+//   mbSkeleton::readXMLElement (0x140211b40), mbSkeletonBone::readXMLElement (0x140211600),
+//   rglSkeletonModelBody::readXMLElement (0x14030d7f0)
 #pragma once
 
 #include <algorithm>
@@ -37,7 +37,7 @@
 namespace wse::game {
 
 // -----------------------------------------------------------------------------
-// World map manifold (`Modules/<mod>/map.txt`: rglManifold 0x1402b1220)
+// World map manifold (`Modules/<mod>/map.txt`: rglManifold 0x1402b1490)
 // -----------------------------------------------------------------------------
 
 struct WorldMapVertex {
@@ -47,8 +47,8 @@ struct WorldMapVertex {
 };
 
 struct WorldMapFace {
-    std::uint16_t material_no = 0;  // bottom 8 bits at mbGame::readMap (0x1400d9b9e)
-    std::uint16_t extra = 0;        // upper 8 bits when packed >= 0x100 (0x1400d9ba8)
+    std::uint16_t material_no = 0;  // bottom 8 bits at mbGame::readMap (0x1400d9cfe)
+    std::uint16_t extra = 0;        // upper 8 bits when packed >= 0x100 (0x1400d9d08)
     std::uint32_t flags = 0;
     std::vector<std::uint32_t> vertex_indices{};
 };
@@ -59,7 +59,7 @@ struct WorldMapManifold {
     WorldMapVertex min_bounds{};
     WorldMapVertex max_bounds{};
 
-    // Mirrors rglManifold::computeBounds (0x1402b1d00).
+    // Mirrors rglManifold::computeBounds (0x1402b1f70).
     void compute_bounds() noexcept {
         if (vertices.empty()) {
             min_bounds = {};
@@ -208,19 +208,19 @@ struct WorldMapManifold {
 }
 
 // -----------------------------------------------------------------------------
-// Scene object binary files (`SceneObj/*.sco`: mbSite::readSceneObjFile 0x140210be0)
+// Scene object binary files (`SceneObj/*.sco`: mbSite::readSceneObjFile 0x140210d60)
 // -----------------------------------------------------------------------------
 
 inline constexpr std::uint32_t kSceneObjMagic = 0xFFFFFD33U;
 inline constexpr std::uint32_t kSceneGroundPaintMagic = 0xFF4AD1A6U;
 
 struct LoadedSceneObject {
-    std::uint32_t kind_type = 0;  // 0=scene_prop, 2=item, 4=flora (0x140152be0)
+    std::uint32_t kind_type = 0;  // 0=scene_prop, 2=item, 4=flora (0x140152d60)
     std::uint32_t sub_kind = 0;
     std::uint32_t file_var_id = 0;
     core::WseTransform transform = core::WseTransform::identity();
     std::string raw_id{};
-    std::string normalized_id{};  // prefixed with "spr_" when kind_type == 0 (0x140152cef)
+    std::string normalized_id{};  // prefixed with "spr_" when kind_type == 0 (0x140152e6f)
     std::uint32_t variation_id = 0;
     std::uint32_t variation_id_2 = 0;
     core::WseVec4 scale{1.0f, 1.0f, 1.0f, 1.0f};
@@ -241,7 +241,7 @@ namespace scene_detail {
 
 [[nodiscard]] inline bool read_transform_binary(io::BinaryReader& r,
                                                 core::WseTransform& tf) noexcept {
-    // Mirrors rglTransform::readStream (0x1402b5b20): sequential s, f, u, o Vec3.
+    // Mirrors rglTransform::readStream (0x1402b5d90): sequential s, f, u, o Vec3.
     tf = core::WseTransform::identity();
     return r.read_f32(tf.s.x) && r.read_f32(tf.s.y) && r.read_f32(tf.s.z) &&
            r.read_f32(tf.f.x) && r.read_f32(tf.f.y) && r.read_f32(tf.f.z) &&
@@ -256,7 +256,7 @@ namespace scene_detail {
 
 inline void extract_ai_mesh_header(std::span<const std::uint8_t> bytes,
                                    SceneObjectFile& out) noexcept {
-    // Mirrors the head of rglAiMesh::readStream (0x140252600): int32 num_vertices,
+    // Mirrors the head of rglAiMesh::readStream (0x140252780): int32 num_vertices,
     // num_vertices * Vec3 (12 B), int32 num_edges. The edge and face records that follow are
     // kept only as raw bytes (`ai_mesh_bytes`).
     io::BinaryReader ai_r(std::as_bytes(bytes));
@@ -411,7 +411,7 @@ inline constexpr std::uint32_t kSceneObjKindItem = 2U;
 inline constexpr std::uint32_t kSceneObjKindPassage = 5U;
 
 // Replaces the current scene's mission entities with the `.sco` placements and marks them
-// non-prunable (`mbSite::readSceneObjFile` 0x140210cf5). Every record keeps its kind in
+// non-prunable (`mbSite::readSceneObjFile` 0x140210e75). Every record keeps its kind in
 // `meta_mesh_no`; only scene props, passages, and items carry a `scene_prop_no` (prop or item
 // kind), so entry points and flora never alias the scene-prop kind of the same number. Entry
 // points also fill `world.entry_points`. Returns the number of records dropped because the
@@ -463,7 +463,7 @@ inline std::size_t instantiate_scene_objects(
 }
 
 // -----------------------------------------------------------------------------
-// Skeleton Physics Bodies (`Data/skeleton_bodies.xml`: 0x140211ba0 / 0x140211480)
+// Skeleton Physics Bodies (`Data/skeleton_bodies.xml`: 0x140211d20 / 0x140211600)
 // -----------------------------------------------------------------------------
 
 struct LoadedSkeletonBody {
@@ -534,7 +534,7 @@ inline void normalize_dir_or_default(core::WseVec4& v,
         return false;
     }
 
-    constexpr float kDegToRad = 0.017453292519943295f;  // __real@3c8efa35 at 0x140211603
+    constexpr float kDegToRad = 0.017453292519943295f;  // __real@3c8efa35 at 0x140211783
     for (const io::XmlElementNode& skel_el : skeletons_el->children) {
         if (skel_el.tag != "Skeleton") {
             continue;
@@ -575,7 +575,7 @@ inline void normalize_dir_or_default(core::WseVec4& v,
                 io::read_xml_attr_f32(bone_el, "bone_plane_min", bone.plane_min);
                 io::read_xml_attr_f32(bone_el, "bone_plane_max", bone.plane_max);
 
-                // Retail 0x1402118f8: when twist_limit_max == -1.0f, mirror +/- twist_limit_min.
+                // Retail 0x140211a78: when twist_limit_max == -1.0f, mirror +/- twist_limit_min.
                 if (bone.twist_limit_max == -1.0f) {
                     bone.twist_limit_max = bone.twist_limit_min;
                     bone.twist_limit_min = -bone.twist_limit_min;

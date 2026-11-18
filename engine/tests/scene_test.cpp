@@ -377,7 +377,7 @@ void test_skeleton_pose_and_skinning() {
     const wse::asset::Quatf q1_neg{0.0f, 0.0f, -0.70710678f, -0.70710678f};
     const wse::asset::Quatf qm = wse::asset::interpolate_quat(q0, q1_neg, 0.5f);
     expect(qm.w > 0.8f && qm.z > 0.3f,
-           "interpolate_quat flips negative-dot hemisphere like 0x1402d6bb0");
+           "interpolate_quat flips negative-dot hemisphere like 0x1402d6e20");
 
     // Animation: bone 0 stays aligned to rest (+90 deg Z: z=sin45, w=cos45) and
     // translates +0.5 Z at end; bone 1 rotates +90 deg Z relative to bone 0!
@@ -391,7 +391,7 @@ void test_skeleton_pose_and_skinning() {
 
     std::vector<wse::core::WseTransform> pose_mid, skin_mid;
     wse::asset::evaluate_skeleton_pose(bind, &anim, 0, 10, 1.0f, pose_mid);
-    // Verify analytical root motion (`0x14030a96b` / `0x140309ad2`): bone 0 origin gains
+    // Verify analytical root motion (`0x14030b72b` / `0x14030a892`): bone 0 origin gains
     // root translation key `(0, 0, 0.5)`, and bone 1 world origin follows rotated bone 0 + offset.
     expect(close(pose_mid[0].o.x, 0.0f) && close(pose_mid[0].o.y, 0.0f) &&
                close(pose_mid[0].o.z, 1.5f) && close(pose_mid[1].o.x, 0.0f) &&

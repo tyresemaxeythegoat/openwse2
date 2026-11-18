@@ -41,7 +41,7 @@ inline void wse_array_serialize_slice(const WseDynArray& arr,
         }
         break;
     case WseArrayType::position:
-        // 0x1401c5910 writes o.xyz, f.xyz, u.xyz (9 floats = 36 bytes).
+        // 0x1401c5a90 writes o.xyz, f.xyz, u.xyz (9 floats = 36 bytes).
         for (const auto& t : slice.positions) {
             wse_append_le32(out, 36U);
             wse_append_le_f32(out, t.o.x);
@@ -124,7 +124,7 @@ inline void wse_array_serialize_slice(const WseDynArray& arr,
         }
         return true;
     case WseArrayType::position:
-        // 0x1401c59f0 reads o, f, u (36 bytes) and orthonormalizes.
+        // 0x1401c5b70 reads o, f, u (36 bytes) and orthonormalizes.
         for (auto& dst : slice.positions) {
             if (bytes.size() - offset < 40U) {
                 return false;
@@ -254,7 +254,7 @@ inline void wse_array_serialize_slice(const WseDynArray& arr,
     return lhs.size() > rhs.size() ? 1 : 0;
 }
 
-// Mirrors 0x1401fde40 / 0x1401fddb2: stable natural merge sort over dim 0,
+// Mirrors 0x1401fdfc0 / 0x1401fdf32: stable natural merge sort over dim 0,
 // aborting without mutating `arr` if not sorted within `n` double-passes.
 template <typename BeforeOrEqual>
 [[nodiscard]] inline bool wse_array_natural_merge_sort(
@@ -513,7 +513,7 @@ template <typename BeforeOrEqual>
     return WseDispatch::condition_false;
 }
 
-// Mirrors 0x14030f270 (rglString::spacesToUnderscores): in-place ' ' -> '_'.
+// Mirrors 0x140310030 (rglString::spacesToUnderscores): in-place ' ' -> '_'.
 
 [[nodiscard]] inline WseDispatch execute_wse_array(std::uint32_t opcode,
                                                      const WseOperands& operands,

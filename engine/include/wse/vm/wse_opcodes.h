@@ -3,7 +3,7 @@
 //
 // Names come from the public WSE SDK header_operations_addon.py; the
 // numeric mapping is the mbStatement::executeWSE dispatch evidence at
-// 0x1401e4dc0. Values are the unmasked operation numbers.
+// 0x1401e4f40. Values are the unmasked operation numbers.
 
 #pragma once
 

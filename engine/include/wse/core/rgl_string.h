@@ -7,16 +7,16 @@
 //                          +0x10 int32_t  m_bufferLength (inline capacity 48)
 //                          +0x14 int32_t  m_strLength
 //                          +0x18 char[48] m_staticBuffer
-//   getNextToken         0x14030e810: skips bytes <= 0x20, extracts maximal run of
+//   getNextToken         0x14030f5d0: skips bytes <= 0x20, extracts maximal run of
 //                          bytes > 0x20, and advances m_cursor past the token.
-//   reallocate           0x14030e960: grows buffer on heap once length >= 48.
-//   swapUnderscoresWithSpaces 0x14030f240: in-place '_' -> ' '.
-//   swapSpacesWithUnderscores 0x14030f270: in-place ' ' -> '_'.
-//   toInt64Stream        0x14030f6d0: decimal integer parse from current string.
-//   toUInt64Stream       0x14030f7b0: unsigned decimal integer parse.
-//   Savegame log string  mbGame::saveGame 0x1400c9fc0..0x1400c9ff7 writes "-1"
+//   reallocate           0x14030f720: grows buffer on heap once length >= 48.
+//   swapUnderscoresWithSpaces 0x140310000: in-place '_' -> ' '.
+//   swapSpacesWithUnderscores 0x140310030: in-place ' ' -> '_'.
+//   toInt64Stream        0x140310490: decimal integer parse from current string.
+//   toUInt64Stream       0x140310570: unsigned decimal integer parse.
+//   Savegame log string  mbGame::saveGame 0x1400ca120..0x1400ca157 writes "-1"
 //                          when empty and replaces ' ' with '_' otherwise;
-//                          mbGame::loadGame 0x1400c8b26..0x1400c8b93 reverses it.
+//                          mbGame::loadGame 0x1400c8c86..0x1400c8cf3 reverses it.
 
 #pragma once
 
@@ -131,7 +131,7 @@ public:
         length_ = next_len;
     }
 
-    // Mirrors rglString::swapSpacesWithUnderscores (0x14030f270).
+    // Mirrors rglString::swapSpacesWithUnderscores (0x140310030).
     void swap_spaces_with_underscores() noexcept {
         char* dst = mutable_data_ptr();
         for (std::size_t i = 0; i < length_; ++i) {
@@ -141,7 +141,7 @@ public:
         }
     }
 
-    // Mirrors rglString::swapUnderscoresWithSpaces (0x14030f240).
+    // Mirrors rglString::swapUnderscoresWithSpaces (0x140310000).
     void swap_underscores_with_spaces() noexcept {
         char* dst = mutable_data_ptr();
         for (std::size_t i = 0; i < length_; ++i) {
@@ -151,7 +151,7 @@ public:
         }
     }
 
-    // Mirrors rglString::getNextToken (0x14030e810): skips bytes <= 0x20, then
+    // Mirrors rglString::getNextToken (0x14030f5d0): skips bytes <= 0x20, then
     // reads maximal run of bytes > 0x20 and leaves cursor after the token.
     [[nodiscard]] std::string next_token() {
         const char* src = data_ptr();
@@ -172,7 +172,7 @@ public:
     }
 
     // Strict decimal parsers: the whole string must be one optionally signed integer.
-    // Retail `toInt64Stream` (`0x14030f6d0`) / `toUInt64Stream` (`0x14030f7b0`) have no error path:
+    // Retail `toInt64Stream` (`0x140310490`) / `toUInt64Stream` (`0x140310570`) have no error path:
     // they inspect only byte 0 for `'-'` and accumulate backward mod `2^64` without validating
     // digits or whitespace. Strict validation here (`from_chars` / full-slice match) is an
     // intentional safety deviation so malformed inputs fail cleanly instead of wrapping garbage.
@@ -239,7 +239,7 @@ private:
         inline_[0] = '\0';
     }
 
-    // Mirrors rglString::reallocate (0x14030e960) 8-byte aligned growth once
+    // Mirrors rglString::reallocate (0x14030f720) 8-byte aligned growth once
     // payload + NUL exceeds 48 bytes.
     void reserve_buffer(std::size_t required_bytes) {
         if (required_bytes <= capacity_) {

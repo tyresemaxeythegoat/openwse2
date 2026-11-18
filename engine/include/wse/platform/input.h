@@ -5,20 +5,20 @@
 // Keeps `<SDL3/SDL.h>` out of engine headers (`platform/sdl/sdl_input.{h,cpp}`
 // implements `InputBackend` for SDL3); `WseGameKeyManager` reconstructs WSE2
 // v1.1.5.5 `rglInputManager` / `mbGameKeyManager` semantics from PDB/binary evidence:
-//   - rglInputManager::getKeyName         0x1402ad360 (125 key names across 1..255)
-//   - mbGameKeyManager::mbGameKeyManager  0x1400e9590 (`g_gameKeyManager` 0x14069fbd0, 95 slots)
-//   - mbGameKeyManager::reset             0x1400e96a0 (75 default keys + Custom1..20 + 13 gamepad alts)
-//   - mbGameKeyManager::loadKeys          0x1400ee2e0 / 0x1400ee370
-//   - mbGameKeyManager::saveKeys          0x1400ee7a0 / 0x1400ee830
-//   - mbGameKeyManager::keyDown           0x1400eedf0 (primary + alt chord match)
-//   - mbGameKeyManager::keyClicked        0x1400eee90 (modifiers down, key down && !prev)
-//   - mbGameKeyManager::keyRaised         0x1400eef50 (modifiers down, !key down && prev)
-//   - mbGameKeyManager::defineBinding     0x1400ef010
-//   - mbGameKeyManager::getKeyName        0x1400ef130
-//   - mbGameKeyManager::getKeyData        0x1400ef190 (`mod0+mod1+key`, `ui_no_key_assigned`, `/`)
-//   - mbGameKeyManager::storeKeys         0x1400ef3a0
-//   - mbGameKeyManager::restoreKeys       0x1400ef460
-//   - mbGameKeyManager::setKey            0x1400ef510
+//   - rglInputManager::getKeyName         0x1402ad5d0 (125 key names across 1..255)
+//   - mbGameKeyManager::mbGameKeyManager  0x1400e96f0 (`g_gameKeyManager` 0x1406a0c00, 95 slots)
+//   - mbGameKeyManager::reset             0x1400e9800 (75 default keys + Custom1..20 + 13 gamepad alts)
+//   - mbGameKeyManager::loadKeys          0x1400ee440 / 0x1400ee4d0
+//   - mbGameKeyManager::saveKeys          0x1400ee900 / 0x1400ee990
+//   - mbGameKeyManager::keyDown           0x1400eef50 (primary + alt chord match)
+//   - mbGameKeyManager::keyClicked        0x1400eeff0 (modifiers down, key down && !prev)
+//   - mbGameKeyManager::keyRaised         0x1400ef0b0 (modifiers down, !key down && prev)
+//   - mbGameKeyManager::defineBinding     0x1400ef170
+//   - mbGameKeyManager::getKeyName        0x1400ef290
+//   - mbGameKeyManager::getKeyData        0x1400ef2f0 (`mod0+mod1+key`, `ui_no_key_assigned`, `/`)
+//   - mbGameKeyManager::storeKeys         0x1400ef500
+//   - mbGameKeyManager::restoreKeys       0x1400ef5c0
+//   - mbGameKeyManager::setKey            0x1400ef670
 //
 // Touch overlay, context visibility (`InputContext`), layout editor,
 // `FreeCameraController`, and JSON profiles are port infrastructure (no retail
@@ -52,7 +52,7 @@ inline constexpr std::int32_t kMaxRawInputKeys = 256;
 inline constexpr std::int32_t kNumGameInputKeys = 95;  // 75 built-in + 20 Custom1..20
 inline constexpr std::int32_t kNumBuiltInGameKeys = 75;
 
-// DirectInput / Warband raw key indices matching `rglInputManager::getKeyName` (0x1402ad360).
+// DirectInput / Warband raw key indices matching `rglInputManager::getKeyName` (0x1402ad5d0).
 namespace RawKey {
 inline constexpr std::int32_t kEscape = 0x01;
 inline constexpr std::int32_t k1 = 0x02;
@@ -181,7 +181,7 @@ inline constexpr std::int32_t kRightStick = 0xfe;
 inline constexpr std::int32_t kLeftStick = 0xff;
 }  // namespace RawKey
 
-// Exact `rglInputManager::getKeyName` (`0x1402ad360`) table for raw key codes `0..255`.
+// Exact `rglInputManager::getKeyName` (`0x1402ad5d0`) table for raw key codes `0..255`.
 [[nodiscard]] inline std::string_view get_raw_key_name(std::int32_t raw_key) noexcept {
     switch (raw_key) {
     case 0x01: return "Esc";
@@ -313,7 +313,7 @@ inline constexpr std::int32_t kLeftStick = 0xff;
     }
 }
 
-// Warband / WSE2 `gk_*` indices matching `mbGameKeyManager::reset` (`0x1400e96a0`).
+// Warband / WSE2 `gk_*` indices matching `mbGameKeyManager::reset` (`0x1400e9800`).
 enum class GameKeyId : std::int32_t {
     MoveForward = 0,
     MoveBackward = 1,
@@ -412,7 +412,7 @@ enum class GameKeyId : std::int32_t {
     Custom20 = 94,
 };
 
-// One 16-byte binding record inside a `g_gameKeyManager` (`0x14069fbd0`) 32-byte slot:
+// One 16-byte binding record inside a `g_gameKeyManager` (`0x1406a0c00`) 32-byte slot:
 // `{key, num_modifiers, modifiers[0], modifiers[1]}`.
 struct KeyChord {
     std::int32_t key = -1;
@@ -450,7 +450,7 @@ struct GameKeyBinding {
     std::string config_name{};
 };
 
-// Reconstructs `mbGameKeyManager::reset` (`0x1400e96a0`) defaults across all 95 slots
+// Reconstructs `mbGameKeyManager::reset` (`0x1400e9800`) defaults across all 95 slots
 // (`0..74` built-in controls incl. modifiers & gamepad alts + `75..94` `Custom1..Custom20`).
 [[nodiscard]] inline std::array<GameKeyBinding, kNumGameInputKeys>
 default_game_key_bindings() {
@@ -558,7 +558,7 @@ default_game_key_bindings() {
     return out;
 }
 
-// Reconstructs `mbGameKeyManager` (`g_gameKeyManager` `0x14069fbd0`).
+// Reconstructs `mbGameKeyManager` (`g_gameKeyManager` `0x1406a0c00`).
 class WseGameKeyManager {
 public:
     WseGameKeyManager() { reset(); }
@@ -591,7 +591,7 @@ public:
         return bindings_;
     }
 
-    // Mirrors `mbGameKeyManager::setKey` (`0x1400ef510`): writes either primary (`alt==0`)
+    // Mirrors `mbGameKeyManager::setKey` (`0x1400ef670`): writes either primary (`alt==0`)
     // or alt (`alt==1`) chord. Rejects invalid indices.
     bool set_key(std::int32_t gk, std::int32_t alt, const KeyChord& chord) noexcept {
         if (gk < 0 || gk >= kNumGameInputKeys || (alt != 0 && alt != 1)) {
@@ -618,7 +618,7 @@ public:
         return true;
     }
 
-    // Mirrors `mbGameKeyManager::storeKeys` (`0x1400ef3a0`) / `restoreKeys` (`0x1400ef460`).
+    // Mirrors `mbGameKeyManager::storeKeys` (`0x1400ef500`) / `restoreKeys` (`0x1400ef5c0`).
     void store_keys() { stored_ = bindings_; }
     bool restore_keys() {
         if (!stored_.has_value()) {
@@ -629,7 +629,7 @@ public:
         return true;
     }
 
-    // Mirrors `mbGameKeyManager::keyDown` (`0x1400eedf0`).
+    // Mirrors `mbGameKeyManager::keyDown` (`0x1400eef50`).
     [[nodiscard]] bool key_down(std::int32_t gk,
                                 const std::array<bool, kMaxRawInputKeys>& raw_down) const noexcept {
         const GameKeyBinding* b = get(gk);
@@ -640,7 +640,7 @@ public:
                chord_matches(b->alt, raw_down, nullptr, Mode::Down);
     }
 
-    // Mirrors `mbGameKeyManager::keyClicked` (`0x1400eee90`): modifiers held now, main key rose.
+    // Mirrors `mbGameKeyManager::keyClicked` (`0x1400eeff0`): modifiers held now, main key rose.
     [[nodiscard]] bool key_clicked(
         std::int32_t gk,
         const std::array<bool, kMaxRawInputKeys>& raw_down,
@@ -653,7 +653,7 @@ public:
                chord_matches(b->alt, raw_down, &raw_prev_down, Mode::Clicked);
     }
 
-    // Mirrors `mbGameKeyManager::keyRaised` (`0x1400eef50`): modifiers held now, main key released.
+    // Mirrors `mbGameKeyManager::keyRaised` (`0x1400ef0b0`): modifiers held now, main key released.
     [[nodiscard]] bool key_raised(
         std::int32_t gk,
         const std::array<bool, kMaxRawInputKeys>& raw_down,
@@ -666,7 +666,7 @@ public:
                chord_matches(b->alt, raw_down, &raw_prev_down, Mode::Raised);
     }
 
-    // Mirrors `mbGameKeyManager::getKeyData` (`0x1400ef190`) / `getKeyName` (`0x1400ef130`).
+    // Mirrors `mbGameKeyManager::getKeyData` (`0x1400ef2f0`) / `getKeyName` (`0x1400ef290`).
     [[nodiscard]] std::string get_key_data(
         std::int32_t gk,
         std::int32_t alt,
@@ -1771,7 +1771,7 @@ struct InputFrameState {
 //     key pressed and released inside one frame still reports a click (and a
 //     release) instead of vanishing. Each wheel notch is its own click.
 //   - Physical game-key clicks / releases follow `mbGameKeyManager::keyClicked`
-//     (`0x1400eee90`) / `keyRaised` (`0x1400eef50`): the chord's modifiers must be
+//     (`0x1400eeff0`) / `keyRaised` (`0x1400ef0b0`): the chord's modifiers must be
 //     held and the *main* key must change state, so holding J and then pressing
 //     Ctrl does not click `RearHorse`.
 //   - `omit_key_once(raw)` suppresses the next press of that key for game-key
@@ -1793,7 +1793,7 @@ public:
     // Attack / block swipe classification waits until displacement exceeds
     // `swipe_threshold` or this hold duration elapses (whichever comes first).
     static constexpr float kSwipeClassifyDelaySeconds = 0.120f;
-    // Gamepad raw keys occupy `0xf0..0xff` in `rglInputManager::getKeyName` (`0x1402ad360`).
+    // Gamepad raw keys occupy `0xf0..0xff` in `rglInputManager::getKeyName` (`0x1402ad5d0`).
     static constexpr std::int32_t kFirstGamepadRawKey = RawKey::kGamepadA;
     static constexpr std::size_t kNumGamepadRawKeys = 16U;
 
@@ -3162,7 +3162,7 @@ struct FreeCameraController {
     }
 
     // Exports into the Warband camera frame (`s`=right, `f`=up, `-u`=forward, `o`=pos),
-    // the convention `mbSoundManager::setTransform` (`0x140332970`) consumes (see
+    // the convention `mbSoundManager::setTransform` (`0x140333730`) consumes (see
     // `listener_from_camera_transform` in `wse/platform/audio.h`).
     [[nodiscard]] wse::core::WseTransform to_transform() const noexcept {
         const float cp = std::cos(pitch_rad);

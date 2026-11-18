@@ -119,7 +119,7 @@ inline void underscores_to_spaces(std::string& text) noexcept {
     return out;
 }
 
-// Mirrors rglTextStream::readInt32 (0x1402afce0): accepts signed or unsigned
+// Mirrors rglTextStream::readInt32 (0x1402aff50): accepts signed or unsigned
 // 32-bit decimals that wrap modulo 2^32 in retail module text generators.
 [[nodiscard]] inline bool read_i32_token(io::TokenReader& reader,
                                          std::int32_t& out) noexcept {
@@ -150,7 +150,7 @@ inline void underscores_to_spaces(std::string& text) noexcept {
     return true;
 }
 
-// Mirrors retail rglInputTextFileStream::readUint32 (0x1402afce0) modulo-2^32
+// Mirrors retail rglInputTextFileStream::readUint32 (0x1402aff50) modulo-2^32
 // decimal wrap (up to 15 chars), needed for retail color literals such as
 // `68451502092` in Native `skins.txt` while rejecting non-numeric garbage.
 [[nodiscard]] inline bool read_wrapping_u32_token(io::TokenReader& reader,
@@ -277,7 +277,7 @@ inline void for_each_ini_line(std::string_view text, Callback&& cb) {
     }
 }
 
-// Mirrors rglSectionlessIni::read (0x1402a8f20): strips UTF-8 BOM on line 1,
+// Mirrors rglSectionlessIni::read (0x1402a9190): strips UTF-8 BOM on line 1,
 // truncates comments at `//`, `;`, `#`, and stores `key = value` pairs.
 inline void parse_sectionless_ini(
     std::string_view text,
@@ -296,7 +296,7 @@ inline void parse_sectionless_ini(
     });
 }
 
-// Mirrors rglIni::read (0x1402a6d80): supports `[section]` headers and `key = value` lines.
+// Mirrors rglIni::read (0x1402a6ff0): supports `[section]` headers and `key = value` lines.
 inline void parse_ini_sections(
     std::string_view text,
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& out) {
@@ -335,7 +335,7 @@ struct ModuleIniData {
     std::vector<std::string> load_mod_resources{};
 };
 
-// Mirrors mbCoreGame::readModuleCommands (0x14008cb40): strips `#` comments,
+// Mirrors mbCoreGame::readModuleCommands (0x14008cca0): strips `#` comments,
 // trims whitespace, keeps non-empty lines, and records `load_resource` / `load_mod_resource`.
 inline void parse_module_ini(std::string_view text, ModuleIniData& out) {
     out.commands.clear();
@@ -373,7 +373,7 @@ inline void parse_module_ini(std::string_view text, ModuleIniData& out) {
     });
 }
 
-// Mirrors mbTroop::readStream (0x1402455f0) XP seeding via g_levelTable (0x140618b20).
+// Mirrors mbTroop::readStream (0x140245770) XP seeding via g_levelTable (0x140619b20).
 // kCampaignLevelXpTable[level - 1] matches g_levelTable[level] for levels 1..63.
 [[nodiscard]] inline std::int32_t initial_troop_xp(
     std::int32_t level,

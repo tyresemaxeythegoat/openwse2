@@ -507,7 +507,7 @@ void test_triggers_and_wse_integration() {
                    menuCtx.world.m5.enqueued_windows.empty(),
                "campaign consumer pops type-0x12 menu window and syncs m6.ui.active_window_id");
 
-        // `mbMapWindow::frameMove` (0x140118987) opens 0x12 (-> 0x12), 0x0f (-> 0x16), and
+        // `mbMapWindow::frameMove` (0x140118ae7) opens 0x12 (-> 0x12), 0x0f (-> 0x16), and
         // 0x10 (-> 0x15) from the back; every other type is popped into an unknown window (-1)
         // because the engine models no window that would consume it.
         menuCtx.world.enqueue_window(2);  // loot window (menu-only)
@@ -2328,8 +2328,8 @@ void test_native_campaign_safety_deviations() {
            "party_stack_upgrade with path 2 upgrades along the second path");
 }
 
-// mbParty::getMaxNumCompanions (0x1401c1720) / getMaxNumPrisoners (0x1401c17a0) run the
-// module's limit scripts first; getTroopSkill (0x1400dcbf0) adds the skill-modifier script.
+// mbParty::getMaxNumCompanions (0x1401c18a0) / getMaxNumPrisoners (0x1401c1920) run the
+// module's limit scripts first; getTroopSkill (0x1400dcd50) adds the skill-modifier script.
 void test_party_limits_and_skill_modifier() {
     using namespace wse::vm;
     VmContext ctx;

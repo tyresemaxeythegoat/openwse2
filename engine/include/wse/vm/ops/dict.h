@@ -134,7 +134,7 @@ inline void wse_dict_save_binary(
     (void)wse_dict_write_file_bytes(vfs, rel_path, out);
 }
 
-// Shared loader applying 0x1401e6c18..0x1401e7f48 mode semantics:
+// Shared loader applying 0x1401e6d98..0x1401e80c8 mode semantics:
 // mode == 0 clears then inserts all; mode == 1 overwrites existing;
 // any other mode inserts only missing keys.
 inline void wse_dict_apply_load(
@@ -151,7 +151,7 @@ inline void wse_dict_apply_load(
     }
 }
 
-// 0x1402aa920: serializes o.xyz, f.xyz, u.xyz using "%f" separated by ','.
+// 0x1402aab90: serializes o.xyz, f.xyz, u.xyz using "%f" separated by ','.
 inline void wse_dict_set_transform(WseDictionary& dict,
                                    const std::string& key,
                                    const WseTransform& t) {
@@ -173,7 +173,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
     dict.set(key, std::move(encoded));
 }
 
-// 0x1402aa5a0: splits on ',' preserving empty tokens, parses 9 floats into
+// 0x1402aa810: splits on ',' preserving empty tokens, parses 9 floats into
 // (o, f, u) and orthonormalizes, or returns `fallback` when token count != 9.
 [[nodiscard]] inline WseTransform wse_dict_get_transform(
     const WseDictionary& dict,
@@ -221,7 +221,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
     switch (static_cast<WseOpcode>(opcode)) {
     // Dictionary group (3200..3222 / 0xc80..0xc96).
     case WseOpcode::dict_create: {
-        // 3200 (0xc80, 0x1401e6b30): allocates handle in WSEObjectManager.
+        // 3200 (0xc80, 0x1401e6cb0): allocates handle in WSEObjectManager.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -234,7 +234,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
         return WseDispatch::handled;
     }
     case WseOpcode::dict_free: {
-        // 3201 (0xc81, 0x1401e6b6c): destroys dictionary and frees ID.
+        // 3201 (0xc81, 0x1401e6cec): destroys dictionary and frees ID.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -495,7 +495,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::dict_get_key_by_iterator: {
-        // 3214 (0xc8e, 0x1402aae20): (sreg, dict, [index]).
+        // 3214 (0xc8e, 0x1402ab090): (sreg, dict, [index]).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -520,7 +520,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
                                       : std::string_view{});
     }
     case WseOpcode::dict_get_pos: {
-        // 3215 (0xc8f, 0x1402aa5a0): (pos_dest, dict, key_str, [default_pos]).
+        // 3215 (0xc8f, 0x1402aa810): (pos_dest, dict, key_str, [default_pos]).
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -553,7 +553,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::dict_set_pos: {
-        // 3216 (0xc90, 0x1402aa920): (dict, key_str, pos_no).
+        // 3216 (0xc90, 0x1402aab90): (dict, key_str, pos_no).
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -576,7 +576,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::dict_load_file_json: {
-        // 3217 (0xc91, 0x1402a97f0): (dict, file_str, [mode]).
+        // 3217 (0xc91, 0x1402a9a60): (dict, file_str, [mode]).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -607,7 +607,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::dict_save_json: {
-        // 3218 (0xc92, 0x1402a9f70): (dict, file_str).
+        // 3218 (0xc92, 0x1402aa1e0): (dict, file_str).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -629,7 +629,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::dict_from_url_encoded_json: {
-        // 3219 (0xc93, 0x1402aaea0): (dict, encoded_str, [mode]).
+        // 3219 (0xc93, 0x1402ab110): (dict, encoded_str, [mode]).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -660,7 +660,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::dict_to_url_encoded_json: {
-        // 3220 (0xc94, 0x1402ab370): (sreg, dict).
+        // 3220 (0xc94, 0x1402ab5e0): (sreg, dict).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -680,7 +680,7 @@ inline void wse_dict_set_transform(WseDictionary& dict,
                                      wse_url_escape(compact));
     }
     case WseOpcode::dict_erase: {
-        // 3221 (0xc95, 0x1402ab900): (dict, key_str).
+        // 3221 (0xc95, 0x1402abb70): (dict, key_str).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }

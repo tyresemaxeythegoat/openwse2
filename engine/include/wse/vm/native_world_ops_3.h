@@ -257,58 +257,58 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
     // -----------------------------------------------------------------
     // input, options, profiles, and HTTP (16 opcodes)
     // -----------------------------------------------------------------
-    case 78: // clear_omitted_keys (0x1401c69e2)
+    case 78: // clear_omitted_keys (0x1401c6b62)
         world.input.omitted_keys.fill(false);
         return NativeDispatch::handled;
-    case 260: // options_get_damage_to_player (0x1401c7079)
+    case 260: // options_get_damage_to_player (0x1401c71f9)
         native_world_get_damage_option(ctx.options.damage_to_player, narrow[1],
                                        dst, ctx, locals);
         return NativeDispatch::handled;
-    case 261: // options_set_damage_to_player (0x1401c70f5)
+    case 261: // options_set_damage_to_player (0x1401c7275)
         native_world_set_damage_option(narrow[0], narrow[1],
                                        ctx.options.damage_to_player);
         return NativeDispatch::handled;
-    case 262: // options_get_damage_to_friends (0x1401c7180)
+    case 262: // options_get_damage_to_friends (0x1401c7300)
         native_world_get_damage_option(ctx.options.damage_to_friends, narrow[1],
                                        dst, ctx, locals);
         return NativeDispatch::handled;
-    case 263: // options_set_damage_to_friends (0x1401c71fc)
+    case 263: // options_set_damage_to_friends (0x1401c737c)
         native_world_set_damage_option(narrow[0], narrow[1],
                                        ctx.options.damage_to_friends);
         return NativeDispatch::handled;
-    case 264: // options_get_combat_ai (0x1401c7287)
+    case 264: // options_get_combat_ai (0x1401c7407)
         store_lvalue(dst, static_cast<std::int64_t>(ctx.options.combat_ai), ctx,
                      locals);
         return NativeDispatch::handled;
-    case 265: // options_set_combat_ai (0x1401c72ae)
+    case 265: // options_set_combat_ai (0x1401c742e)
         native_world_set_bounded_option(narrow[0], 3, ctx.options.combat_ai);
         return NativeDispatch::handled;
-    case 266: // options_get_campaign_ai (0x1401c72d3)
+    case 266: // options_get_campaign_ai (0x1401c7453)
         store_lvalue(dst, static_cast<std::int64_t>(ctx.options.campaign_ai),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 267: // options_set_campaign_ai (0x1401c72fa)
+    case 267: // options_set_campaign_ai (0x1401c747a)
         native_world_set_bounded_option(narrow[0], 3, ctx.options.campaign_ai);
         return NativeDispatch::handled;
-    case 268: // options_get_combat_speed (0x1401c731f)
+    case 268: // options_get_combat_speed (0x1401c749f)
         store_lvalue(dst, static_cast<std::int64_t>(ctx.options.combat_speed),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 269: // options_set_combat_speed (0x1401c7346)
+    case 269: // options_set_combat_speed (0x1401c74c6)
         native_world_set_bounded_option(narrow[0], 5, ctx.options.combat_speed);
         return NativeDispatch::handled;
-    case 270: // options_get_battle_size (0x1401c736b)
+    case 270: // options_get_battle_size (0x1401c74eb)
         store_lvalue(dst,
                      native_world_3_round(ctx.options.battle_size * 1000.0f),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 271: // options_set_battle_size (0x1401c73a0)
+    case 271: // options_set_battle_size (0x1401c7520)
         if (narrow[0] >= 0 && narrow[0] < 10001) {
             ctx.options.battle_size =
                 static_cast<float>(wide[0]) / 1000.0f;
         }
         return NativeDispatch::handled;
-    case 350: // profile_get_banner_id (0x1401c73da)
+    case 350: // profile_get_banner_id (0x1401c755a)
         if (world.is_valid_profile(world.mp.current_profile_no)) {
             store_lvalue(
                 dst,
@@ -319,14 +319,14 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 351: // profile_set_banner_id (0x1401c742e)
+    case 351: // profile_set_banner_id (0x1401c75ae)
         if (world.is_valid_profile(world.mp.current_profile_no)) {
             world.mp.profiles[static_cast<std::size_t>(
                                   world.mp.current_profile_no)]
                 .banner_no = narrow[0];
         }
         return NativeDispatch::handled;
-    case 380: { // send_message_to_url (0x1401c74d7)
+    case 380: { // send_message_to_url (0x1401c7657)
         const auto banks = native_string_banks(ctx);
         if (wse_string_register_ok(narrow[0], tag0, banks)) {
             const bool encode = (wide[1] != 0);
@@ -345,7 +345,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
     // -----------------------------------------------------------------
     // spawn effectors and network moderation (6 opcodes)
     // -----------------------------------------------------------------
-    case 426: // set_spawn_effector_scene_prop_kind (0x1401c861a)
+    case 426: // set_spawn_effector_scene_prop_kind (0x1401c879a)
         if (world.is_valid_team(narrow[0]) &&
             static_cast<std::size_t>(narrow[0]) <
                 world.fx.spawn_effector_scene_prop_kinds.size() &&
@@ -354,14 +354,14 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
                 narrow[0])] = narrow[1];
         }
         return NativeDispatch::handled;
-    case 427: // set_spawn_effector_scene_prop_id (0x1401c865e)
+    case 427: // set_spawn_effector_scene_prop_id (0x1401c87de)
         if (narrow[0] >= 0 && narrow[0] < game::kMaxSpawnEffectorSlots &&
             (narrow[1] == -1 || world.is_valid_mission_object(narrow[1]))) {
             world.fx.spawn_effector_mission_object_nos[static_cast<std::size_t>(
                 narrow[0])] = narrow[1];
         }
         return NativeDispatch::handled;
-    case 465: // kick_player (0x1401c8dd9)
+    case 465: // kick_player (0x1401c8f59)
         if (world.is_valid_player(narrow[0]) && world.is_server &&
             narrow[0] != 0) {
             auto& pl = world.players[static_cast<std::size_t>(narrow[0])];
@@ -370,7 +370,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             }
         }
         return NativeDispatch::handled;
-    case 466: // ban_player (0x1401c8e37)
+    case 466: // ban_player (0x1401c8fb7)
         if (world.is_valid_player(narrow[0]) && narrow[0] != 0 &&
             (narrow[1] > 0 || world.is_valid_player(narrow[2])) &&
             world.is_server) {
@@ -382,7 +382,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             }
         }
         return NativeDispatch::handled;
-    case 467: // save_ban_info_of_player (0x1401c8f02)
+    case 467: // save_ban_info_of_player (0x1401c9082)
         if (world.is_valid_player(narrow[0]) && narrow[0] != 0 &&
             world.is_server) {
             const auto& pl =
@@ -393,7 +393,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             }
         }
         return NativeDispatch::handled;
-    case 468: // ban_player_using_saved_ban_info (0x1401c8f99)
+    case 468: // ban_player_using_saved_ban_info (0x1401c9119)
         if (world.mp.saved_ban.valid && world.is_server) {
             world.mp.saved_ban.valid = false;
             native_world_push_ban_record(world, world.mp.saved_ban.player_no,
@@ -410,7 +410,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
     // -----------------------------------------------------------------
     // multiplayer launch, audio, positions, UI, and difficulty (13 opcodes)
     // -----------------------------------------------------------------
-    case 470: // start_multiplayer_mission (0x1401c9042)
+    case 470: // start_multiplayer_mission (0x1401c91c2)
         if (world.is_valid_site(narrow[1]) &&
             world.is_valid_mission_template(narrow[0])) {
             world.mp.started_manually = (narrow[2] != 0);
@@ -427,7 +427,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             }
         }
         return NativeDispatch::handled;
-    case 616: // stop_sound_channel (0x1401ca8f8)
+    case 616: // stop_sound_channel (0x1401caa78)
         if (narrow[0] >= 0) {
             if (world.audio_runtime != nullptr) {
                 world.audio_runtime->stop_channel(narrow[0]);
@@ -441,13 +441,13 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             }
         }
         return NativeDispatch::handled;
-    case 702: // get_trigger_object_position (0x1401caa95)
+    case 702: // get_trigger_object_position (0x1401cac15)
         if (wse_register_ok(narrow[0])) {
             ctx.positions[static_cast<std::size_t>(narrow[0])] =
                 world.fx.trigger_transform;
         }
         return NativeDispatch::handled;
-    case 715: // get_sq_distance_between_position_heights (0x1401caf8e)
+    case 715: // get_sq_distance_between_position_heights (0x1401cb10e)
         if (wse_register_ok(narrow[1]) && wse_register_ok(narrow[2])) {
             const float dz =
                 ctx.positions[static_cast<std::size_t>(narrow[1])].o.z -
@@ -457,23 +457,23 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             store_lvalue(dst, 0, ctx, locals);
         }
         return NativeDispatch::handled;
-    case 960: // show_object_details_overlay (0x1401cd02b)
+    case 960: // show_object_details_overlay (0x1401cd1ab)
         world.ui.show_object_details_overlay = (wide[0] != 0);
         return NativeDispatch::handled;
-    case 970: // show_item_details (0x1401cd03a)
+    case 970: // show_item_details (0x1401cd1ba)
         native_world_set_item_tooltip(world, ctx, narrow[0], 0, narrow[1],
                                       narrow[2]);
         return NativeDispatch::handled;
-    case 971: // close_item_details (0x1401cd0e5)
+    case 971: // close_item_details (0x1401cd265)
         world.ui.item_tooltip.visible = false;
         return NativeDispatch::handled;
-    case 972: // show_item_details_with_modifier (0x1401cd0fb)
+    case 972: // show_item_details_with_modifier (0x1401cd27b)
         if (narrow[1] >= 0) {
             native_world_set_item_tooltip(world, ctx, narrow[0], narrow[1],
                                           narrow[2], narrow[3]);
         }
         return NativeDispatch::handled;
-    case 980: // context_menu_add_item (0x1401cd1c7)
+    case 980: // context_menu_add_item (0x1401cd347)
         if (world.ui.context_menu_items.size() < game::kMaxContextMenuItems &&
             wse_string_register_ok(narrow[0], tag0, native_string_banks(ctx))) {
             game::WseContextMenuEntry item{};
@@ -484,13 +484,13 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
                                game::kMaxContextMenuItems);
         }
         return NativeDispatch::handled;
-    case 985: // auto_save (0x1401cd27c)
+    case 985: // auto_save (0x1401cd3fc)
         ++world.misc.auto_save_count;
         return NativeDispatch::handled;
-    case 988: // allow_ironman (0x1401cd2d6)
+    case 988: // allow_ironman (0x1401cd456)
         world.misc.ironman_allowed = (narrow[0] != 0);
         return NativeDispatch::handled;
-    case 990: { // get_average_game_difficulty (0x1401cd2e9)
+    case 990: { // get_average_game_difficulty (0x1401cd469)
         const std::int32_t cur = native_world_current_difficulty(ctx);
         const float cur_timer =
             static_cast<float>(static_cast<std::uint64_t>(ctx.timersTotal[0])) /
@@ -519,7 +519,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
         store_lvalue(dst, static_cast<std::int64_t>(avg), ctx, locals);
         return NativeDispatch::handled;
     }
-    case 991: // get_level_boundary (0x1401cd326)
+    case 991: // get_level_boundary (0x1401cd4a6)
         if (narrow[1] >= 0 &&
             static_cast<std::size_t>(narrow[1]) <
                 game::kCampaignLevelXpTable.size()) {
@@ -533,7 +533,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
     // -----------------------------------------------------------------
     // dialog, notes, quests, and encounters (19 opcodes)
     // -----------------------------------------------------------------
-    case 1025: // start_map_conversation (0x1401cd49d)
+    case 1025: // start_map_conversation (0x1401cd61d)
         world.dialog.map_conversation_troop_no = narrow[0];
         world.dialog.map_conversation_troop_dna =
             (narrow[2] != 0) ? narrow[3] : 5;
@@ -541,76 +541,76 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             world.dialog.map_conversation_active = true;
         }
         return NativeDispatch::handled;
-    case 1090: // add_info_page_note_tableau_mesh (0x1401cd653)
+    case 1090: // add_info_page_note_tableau_mesh (0x1401cd7d3)
         if (world.is_valid_info_page(narrow[0]) &&
             world.is_valid_tableau_material(narrow[1])) {
             world.info_pages[static_cast<std::size_t>(narrow[0])]
                 .note_tableau_material_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1091: // add_info_page_note_from_dialog (0x1401cd693)
+    case 1091: // add_info_page_note_from_dialog (0x1401cd813)
         if (ctx.currentCaller == 4 && world.is_valid_info_page(narrow[0])) {
             native_world_assign_dialog_note(
                 world.info_pages[static_cast<std::size_t>(narrow[0])].notes,
                 narrow[1], narrow[2] != 0, world);
         }
         return NativeDispatch::handled;
-    case 1092: // add_info_page_note_from_sreg (0x1401cd787)
+    case 1092: // add_info_page_note_from_sreg (0x1401cd907)
         if (world.is_valid_info_page(narrow[0])) {
             native_world_assign_sreg_note(
                 world.info_pages[static_cast<std::size_t>(narrow[0])].notes,
                 narrow[1], narrow[2], tag2, narrow[3] != 0, ctx);
         }
         return NativeDispatch::handled;
-    case 1109: // add_faction_note_tableau_mesh (0x1401cdc3e)
+    case 1109: // add_faction_note_tableau_mesh (0x1401cddbe)
         if (world.is_valid_faction(narrow[0]) &&
             world.is_valid_tableau_material(narrow[1])) {
             world.factions[static_cast<std::size_t>(narrow[0])]
                 .note_tableau_material_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1111: // add_quest_note_tableau_mesh (0x1401cdcbe)
+    case 1111: // add_quest_note_tableau_mesh (0x1401cde3e)
         if (world.is_valid_quest(narrow[0]) &&
             world.is_valid_tableau_material(narrow[1])) {
             world.quests[static_cast<std::size_t>(narrow[0])]
                 .note_tableau_material_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1112: // add_quest_note_from_dialog (0x1401cdcfe)
+    case 1112: // add_quest_note_from_dialog (0x1401cde7e)
         if (ctx.currentCaller == 4 && world.is_valid_quest(narrow[0])) {
             native_world_assign_dialog_note(
                 world.quests[static_cast<std::size_t>(narrow[0])].notes,
                 narrow[1], narrow[2] != 0, world);
         }
         return NativeDispatch::handled;
-    case 1115: // add_faction_note_from_dialog (0x1401cdfa6)
+    case 1115: // add_faction_note_from_dialog (0x1401ce126)
         if (ctx.currentCaller == 4 && world.is_valid_faction(narrow[0])) {
             native_world_assign_dialog_note(
                 world.factions[static_cast<std::size_t>(narrow[0])].notes,
                 narrow[1], narrow[2] != 0, world);
         }
         return NativeDispatch::handled;
-    case 1118: // add_faction_note_from_sreg (0x1401ce254)
+    case 1118: // add_faction_note_from_sreg (0x1401ce3d4)
         if (world.is_valid_faction(narrow[0])) {
             native_world_assign_sreg_note(
                 world.factions[static_cast<std::size_t>(narrow[0])].notes,
                 narrow[1], narrow[2], tag2, narrow[3] != 0, ctx);
         }
         return NativeDispatch::handled;
-    case 1130: // set_tooltip_text (0x1401ce929)
+    case 1130: // set_tooltip_text (0x1401ceaa9)
         if (wse_string_register_ok(narrow[0], tag0, native_string_banks(ctx))) {
             world.ui.tooltip_text = wse_utf16_to_utf8(
                 native_resolve_and_parse(narrow[0], tag0, ctx));
         }
         return NativeDispatch::handled;
-    case 1285: // set_quest_progression (0x1401cfd61)
+    case 1285: // set_quest_progression (0x1401cfee1)
         if (world.is_valid_quest(narrow[0])) {
             auto& q = world.quests[static_cast<std::size_t>(narrow[0])];
             q.progression_flags = (q.progression_flags & ~0xffU) |
                                   static_cast<std::uint32_t>(narrow[1] & 0xff);
         }
         return NativeDispatch::handled;
-    case 1290: // setup_quest_text (0x1401cfdb7)
+    case 1290: // setup_quest_text (0x1401cff37)
         if (world.is_valid_quest(narrow[0])) {
             auto& q = world.quests[static_cast<std::size_t>(narrow[0])];
             const std::string text_key =
@@ -622,14 +622,14 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             q.title = native_world_parse_quest_text(world, q.id, q.title, ctx);
         }
         return NativeDispatch::handled;
-    case 1291: // setup_quest_giver (0x1401cfe5e)
+    case 1291: // setup_quest_giver (0x1401cffde)
         if (world.is_valid_quest(narrow[0]) &&
             wse_string_register_ok(narrow[1], tag1, native_string_banks(ctx))) {
             world.misc.quest_strings[narrow[0]].giver_name = wse_utf16_to_utf8(
                 native_resolve_and_parse(narrow[1], tag1, ctx));
         }
         return NativeDispatch::handled;
-    case 1300: { // start_encounter (0x1401cfee9 -> 0x1400e08d0)
+    case 1300: { // start_encounter (0x1401d0069 -> 0x1400e0a30)
         if (world.is_valid_party(narrow[0])) {
             const std::int32_t p1 = (narrow[1] < 1)
                                         ? world.misc.camp_bandits_party_no
@@ -658,31 +658,31 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
         }
         return NativeDispatch::handled;
     }
-    case 1301: // leave_encounter (0x1401cff1d)
+    case 1301: // leave_encounter (0x1401d009d)
         // Own flag: save_mode_flags feeds native_world_current_difficulty.
         world.misc.encounter_left = true;
         return NativeDispatch::handled;
-    case 1303: // select_enemy (0x1401cff30)
+    case 1303: // select_enemy (0x1401d00b0)
         if (static_cast<std::uint32_t>(narrow[0]) < 2U) {
             world.main_party_side = 1 - narrow[0];
         }
         return NativeDispatch::handled;
-    case 1304: // set_passage_menu (0x1401cff56)
+    case 1304: // set_passage_menu (0x1401d00d6)
         if (world.is_valid_menu(narrow[0])) {
             world.misc.passage_menu_no = narrow[0];
         }
         return NativeDispatch::handled;
-    case 1305: // auto_set_meta_mission_at_end_commited (0x1401cff75)
+    case 1305: // auto_set_meta_mission_at_end_commited (0x1401d00f5)
         world.misc.meta_mission_end_committed = false;
         return NativeDispatch::handled;
-    case 1307: // end_current_battle (0x1401cff81)
+    case 1307: // end_current_battle (0x1401d0101)
         world.misc.meta_mission_event_ended = true;
         return NativeDispatch::handled;
 
     // -----------------------------------------------------------------
     // mission FX, missiles, tableau triggers, talk/menu UI (16 opcodes)
     // -----------------------------------------------------------------
-    case 1805: { // ai_mesh_face_group_show_hide (0x1401d68e4)
+    case 1805: { // ai_mesh_face_group_show_hide (0x1401d6a64)
         const bool visible = (wide[1] != 0);
         for (auto& face : world.fx.ai_mesh_faces) {
             if (face.group_id == narrow[0]) {
@@ -691,7 +691,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
         }
         return NativeDispatch::handled;
     }
-    case 1829: // add_missile (0x1401d73eb)
+    case 1829: // add_missile (0x1401d756b)
         if (world.is_valid_agent(narrow[0]) && wse_register_ok(narrow[1]) &&
             world.is_valid_item(narrow[3]) && world.is_valid_item(narrow[5])) {
             game::WseMissileSpawnEntry entry{};
@@ -714,7 +714,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
                                kMaxNativeMissileSpawns);
         }
         return NativeDispatch::handled;
-    case 1891: // replace_scene_items_with_scene_props (0x1401d9008)
+    case 1891: // replace_scene_items_with_scene_props (0x1401d9188)
         if (world.is_valid_item(narrow[0]) &&
             world.is_valid_scene_prop(narrow[1]) &&
             static_cast<std::uint32_t>(ctx.currentCaller + 20) < 2U) {
@@ -728,7 +728,7 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             }
         }
         return NativeDispatch::handled;
-    case 1920: { // start_mission_conversation (0x1401d947b)
+    case 1920: { // start_mission_conversation (0x1401d95fb)
         std::int32_t found = -1;
         for (std::size_t i = 0; i < world.agents.size(); ++i) {
             if (world.agents[i].active &&
@@ -740,33 +740,33 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
         world.dialog.pending_mission_agent_no = found;
         return NativeDispatch::handled;
     }
-    case 1950: // set_current_color (0x1401d96e5)
+    case 1950: // set_current_color (0x1401d9865)
         world.fx.trigger_current_color = wse::core::WseVec4{
             static_cast<float>(wide[0]) / 100.0f,
             static_cast<float>(wide[1]) / 100.0f,
             static_cast<float>(wide[2]) / 100.0f, 1.0f};
         return NativeDispatch::handled;
-    case 1955: // set_position_delta (0x1401d975b)
+    case 1955: // set_position_delta (0x1401d98db)
         world.fx.trigger_position_delta = wse::core::WseVec4{
             static_cast<float>(wide[0]) / 100.0f,
             static_cast<float>(wide[1]) / 100.0f,
             static_cast<float>(wide[2]) / 100.0f, 0.0f};
         return NativeDispatch::handled;
-    case 1982: // cur_scene_prop_set_tableau_material (0x1401da411)
+    case 1982: // cur_scene_prop_set_tableau_material (0x1401da591)
         if (world.is_valid_tableau_material(narrow[0]) &&
             ctx.currentCaller == -40) {
             world.fx.cur_scene_prop_tableau_material_no = narrow[0];
             world.fx.cur_scene_prop_tableau_param = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1983: // cur_map_icon_set_tableau_material (0x1401da499)
+    case 1983: // cur_map_icon_set_tableau_material (0x1401da619)
         if (world.is_valid_tableau_material(narrow[0]) &&
             ctx.currentCaller == -70) {
             world.fx.cur_map_icon_tableau_material_no = narrow[0];
             world.fx.cur_map_icon_tableau_param = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1986: // cur_agent_set_banner_tableau_material (0x1401da507)
+    case 1986: // cur_agent_set_banner_tableau_material (0x1401da687)
         if (world.is_valid_tableau_material(narrow[0]) &&
             world.is_valid_agent(world.fx.trigger_agent_no)) {
             auto& ag =
@@ -776,13 +776,13 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             ag.show_banner = true;
         }
         return NativeDispatch::handled;
-    case 2020: // talk_info_show (0x1401dbd4a)
+    case 2020: // talk_info_show (0x1401dbeca)
         world.dialog.show_talk_info = (narrow[0] != 0);
         return NativeDispatch::handled;
-    case 2021: // talk_info_set_relation_bar (0x1401dbd62)
+    case 2021: // talk_info_set_relation_bar (0x1401dbee2)
         world.dialog.talk_info_relation_value = narrow[0];
         return NativeDispatch::handled;
-    case 2022: // talk_info_set_line (0x1401dbd75)
+    case 2022: // talk_info_set_line (0x1401dbef5)
         if (narrow[0] >= 0 && narrow[0] < game::kMaxTalkInfoLines &&
             wse_string_register_ok(narrow[1], tag1, native_string_banks(ctx))) {
             world.dialog.talk_info_lines[static_cast<std::size_t>(narrow[0])] =
@@ -791,14 +791,14 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
             world.dialog.show_talk_info = true;
         }
         return NativeDispatch::handled;
-    case 2031: // set_background_mesh (0x1401dbe0a)
+    case 2031: // set_background_mesh (0x1401dbf8a)
         if (world.is_valid_mesh(narrow[0]) &&
             world.is_valid_menu(world.ui.current_menu_no)) {
             world.ui.background_mesh_name =
                 world.mesh_names[static_cast<std::size_t>(narrow[0])];
         }
         return NativeDispatch::handled;
-    case 2032: // set_game_menu_tableau_mesh (0x1401dbe5f)
+    case 2032: // set_game_menu_tableau_mesh (0x1401dbfdf)
         if (world.is_valid_tableau_material(narrow[0]) &&
             world.is_valid_menu(world.ui.current_menu_no) &&
             wse_register_ok(narrow[2])) {
@@ -808,10 +808,10 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
                 ctx.positions[static_cast<std::size_t>(narrow[2])].o;
         }
         return NativeDispatch::handled;
-    case 2061: // disable_menu_option (0x1401dc2f4)
+    case 2061: // disable_menu_option (0x1401dc474)
         world.ui.current_menu_option_disabled = true;
         return NativeDispatch::handled;
-    case 2198: // set_conversation_speaker_agent (0x1401ddc75)
+    case 2198: // set_conversation_speaker_agent (0x1401dddf5)
         if (world.is_valid_agent(narrow[0])) {
             world.dialog.speaker_agent_no = narrow[0];
         }
@@ -820,49 +820,49 @@ inline void native_world_store_light_rgb(std::int32_t reg_idx,
     // -----------------------------------------------------------------
     // lighting, skybox, and postfx (10 opcodes)
     // -----------------------------------------------------------------
-    case 2386: // set_postfx (0x1401df6bc)
+    case 2386: // set_postfx (0x1401df83c)
         if (world.is_valid_post_effect(narrow[0])) {
             world.lighting.active_postfx_no = narrow[0];
         }
         return NativeDispatch::handled;
-    case 2387: // set_river_shader_to_mud (0x1401df6e6)
+    case 2387: // set_river_shader_to_mud (0x1401df866)
         if (world.lighting.has_scene) {
             world.lighting.river_shader_mud = true;
         }
         return NativeDispatch::handled;
-    case 2389: // set_skybox (0x1401df800)
+    case 2389: // set_skybox (0x1401df980)
         world.lighting.hdr_skybox_no = narrow[1];
         world.lighting.skybox_no = narrow[0];
         return NativeDispatch::handled;
-    case 2390: // set_startup_sun_light (0x1401df81d)
+    case 2390: // set_startup_sun_light (0x1401df99d)
         native_world_set_fp_rgb(wide, fp, world.lighting.sun_color);
         return NativeDispatch::handled;
-    case 2391: // set_startup_ambient_light (0x1401df8ef)
+    case 2391: // set_startup_ambient_light (0x1401dfa6f)
         native_world_set_fp_rgb(wide, fp, world.lighting.ambient_color);
         if (world.lighting.has_scene) {
             world.lighting.ambient_color.w = 1.0f;
             world.lighting.ground_ambient_color.w = 1.0f;
         }
         return NativeDispatch::handled;
-    case 2392: // set_startup_ground_ambient_light (0x1401df9c0)
+    case 2392: // set_startup_ground_ambient_light (0x1401dfb40)
         native_world_set_fp_rgb(wide, fp, world.lighting.ground_ambient_color);
         if (world.lighting.has_scene) {
             world.lighting.ambient_color.w = 1.0f;
             world.lighting.ground_ambient_color.w = 1.0f;
         }
         return NativeDispatch::handled;
-    case 2393: // rebuild_shadow_map (0x1401dfa77)
+    case 2393: // rebuild_shadow_map (0x1401dfbf7)
         world.lighting.shadow_map_needs_restore = true;
         return NativeDispatch::handled;
-    case 2394: // get_startup_sun_light (0x1401dfa83)
+    case 2394: // get_startup_sun_light (0x1401dfc03)
         native_world_store_light_rgb(narrow[0], world.lighting.has_ambient_light,
                                      world.lighting.sun_color, true, ctx);
         return NativeDispatch::handled;
-    case 2395: // get_startup_ambient_light (0x1401dfaf0)
+    case 2395: // get_startup_ambient_light (0x1401dfc70)
         native_world_store_light_rgb(narrow[0], world.lighting.has_scene,
                                      world.lighting.ambient_color, false, ctx);
         return NativeDispatch::handled;
-    case 2396: // get_startup_ground_ambient_light (0x1401dfb56)
+    case 2396: // get_startup_ground_ambient_light (0x1401dfcd6)
         native_world_store_light_rgb(narrow[0], world.lighting.has_scene,
                                      world.lighting.ground_ambient_color, false,
                                      ctx);

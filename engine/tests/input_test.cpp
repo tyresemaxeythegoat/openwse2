@@ -158,7 +158,7 @@ void test_raw_keys_and_game_key_manager() {
                get_raw_key_name(RawKey::kGamepadA) == "Gamepad A" &&
                get_raw_key_name(RawKey::kRightTrigger) == "Right Trigger" &&
                get_raw_key_name(RawKey::kLeftStick) == "Left Stick",
-           "get_raw_key_name matches all 125 v1.1.5.5 keys (`0x1402ad360`)");
+           "get_raw_key_name matches all 125 v1.1.5.5 keys (`0x1402ad5d0`)");
 
     WseGameKeyManager km;
     expect(km.find_by_config_name("MoveForward") == 0 &&
@@ -735,7 +735,7 @@ void test_review_regressions() {
                "attack-zone tap inside one frame still attacks");
     }
 
-    // 7. Physical clicks follow keyClicked (0x1400eee90): only the main key's edge counts.
+    // 7. Physical clicks follow keyClicked (0x1400eeff0): only the main key's edge counts.
     {
         WseInputManager mgr;
         mgr.process_frame(std::array<RawInputEvent, 1>{{key(T::KeyDown, RawKey::kJ)}});

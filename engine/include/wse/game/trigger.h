@@ -1,12 +1,12 @@
 // Trigger records and their module-text readers.
 //
 // Evidence (Ghidra 12.1.4 pseudocode):
-//   mbTriggerManager::readStream         0x140244810
-//   mbTrigger::readStream                0x140244540
-//   mbSimpleTriggerManager::readStream   0x14020fe60
-//   mbSimpleTrigger::readStream          0x14020fab0
-//   mbGame::readTriggers                 0x1400ccf20
-//   mbGame::readSimpleTriggers           0x1400cd2d0
+//   mbTriggerManager::readStream         0x140244990
+//   mbTrigger::readStream                0x1402446c0
+//   mbSimpleTriggerManager::readStream   0x14020ffe0
+//   mbSimpleTrigger::readStream          0x14020fc30
+//   mbGame::readTriggers                 0x1400cd080
+//   mbGame::readSimpleTriggers           0x1400cd430
 //
 // Layouts (PDB):
 //   mbTrigger             256 bytes type 0x078ba
@@ -20,10 +20,10 @@
 //
 // Both managers read a count and then construct that many entries, seeding
 // every timer with m_defaultTimerNo and g_timersTotal[m_defaultTimerNo]
-// (0x14061f030, public symbol ?g_timersTotal@@3PA_KA).
+// (0x140620030, public symbol ?g_timersTotal@@3PA_KA).
 //
-// Runtime (mbTriggerManager::execute 0x140244cd0, mbSimpleTrigger::execute
-// 0x14020fb80, mbSimpleTriggerManager::execute 0x1402101a0):
+// Runtime (mbTriggerManager::execute 0x140244e50, mbSimpleTrigger::execute
+// 0x14020fd00, mbSimpleTriggerManager::execute 0x140210320):
 //   status 0 idle, 1 waiting for the delay, 2 waiting for the rearm.
 //   Intervals are seconds; timers advance in units of 100000 per second.
 //   The int argument is a trigger event key, not a clock. Interval triggers
@@ -36,14 +36,14 @@
 //   mbTriggerManager::execute inlines the whole mbTrigger state machine; the
 //   PDB declares mbTrigger::execute but no separate public symbol is emitted.
 //
-// Savegames (rglBinaryStream, vtable 0x14055c780):
-//   mbTriggerManager::readSavegameStream  0x140244970
-//   mbTriggerManager::writeSavegameStream 0x140244b60
-//   mbSimpleTriggerManager::readSavegameStream 0x14020ffa0
+// Savegames (rglBinaryStream, vtable 0x14055d7b0):
+//   mbTriggerManager::readSavegameStream  0x140244af0
+//   mbTriggerManager::writeSavegameStream 0x140244ce0
+//   mbSimpleTriggerManager::readSavegameStream 0x140210120
 //   int32 trigger count, then per trigger int32 status and three int64 timer
 //   values (check/delay/rearm); a simple trigger stores one int64 timer value.
 //   Timer numbers are not saved. Extra file entries are read and discarded;
-//   the retail reader shows a message box through rglError (0x14032f450) and
+//   the retail reader shows a message box through rglError (0x140330210) and
 //   then continues. rglBinaryStream stores raw little-endian values with no
 //   per-value header (see wse/io/binary_stream.h).
 //
@@ -247,17 +247,17 @@ struct SimpleTriggerManager {
 // Savegames (rglBinaryStream)
 // ---------------------------------------------------------------------------
 //
-// mbTriggerManager::writeSavegameStream 0x140244b60 writes:
+// mbTriggerManager::writeSavegameStream 0x140244ce0 writes:
 //   int32 count
 //   per trigger: int32 status, int64 check, delay, rearm timer values
-// mbTriggerManager::readSavegameStream 0x140244970 reads the same order. When
+// mbTriggerManager::readSavegameStream 0x140244af0 reads the same order. When
 // the file count exceeds the manager count it reports the retail error
 // "Load error: Number of triggers in file: %d, exceeds %d" and still consumes
 // every file entry, discarding the surplus.
-// mbSimpleTriggerManager::readSavegameStream 0x14020ffa0 reads an int32 count
+// mbSimpleTriggerManager::readSavegameStream 0x140210120 reads an int32 count
 // and one int64 timer value per entry, with the analogous
 // "Load error: Number of simple triggers in file: %d, exceeds %d" error.
-// mbGame::writeStream (0x1400c9ba5..0x1400c9bea) writes the matching int32 count
+// mbGame::writeStream (0x1400c9d05..0x1400c9d4a) writes the matching int32 count
 // followed by each simple trigger's int64 timer value inline.
 
 enum class SavegameResult : std::uint8_t {

@@ -57,8 +57,8 @@ template <typename Predicate>
                : WseDispatch::condition_false;
 }
 
-// Shared implementation for 4232 str_store_skill_name (0x1401103d0) and 4245
-// str_store_skill_desc (0x140213520, adding "_desc" before translation lookup).
+// Shared implementation for 4232 str_store_skill_name (0x140110530) and 4245
+// str_store_skill_desc (0x1402136a0, adding "_desc" before translation lookup).
 [[nodiscard]] inline WseDispatch wse_store_skill_text(
     const wse::game::WseWorldState* world,
     WseStringBanks& strings,
@@ -81,8 +81,8 @@ template <typename Predicate>
                                  is_desc ? skill.description : skill.name);
 }
 
-// Mirrors 0x14024f4c0 ("sg%d%d.sav" using slot/10 and slot%10) and 4246
-// (0x1401efadc..0x1401efc8d). Clears destination sreg before file open.
+// Mirrors 0x14024f640 ("sg%d%d.sav" using slot/10 and slot%10) and 4246
+// (0x1401efc5c..0x1401efe0d). Clears destination sreg before file open.
 [[nodiscard]] inline WseDispatch wse_store_savegame_md5(
     const wse::game::WseWorldState* world,
     WseStringBanks& strings,
@@ -122,7 +122,7 @@ template <typename Predicate>
     // without an effect; condition handlers therefore report `ignored`, which
     // the trigger runtime treats as a passing condition.
     case WseOpcode::str_equals: {
-        // 4200 (0x1068 equality branch, 0x1401ed1bd): compare operands 0 and
+        // 4200 (0x1068 equality branch, 0x1401ed33d): compare operands 0 and
         // 1 with wcscmp or _wcsicmp when operand 2 is nonzero.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -390,8 +390,8 @@ template <typename Predicate>
     }
     case WseOpcode::str_compare: {
         // 4212 (0x1074): operand 1 and 2 are strings, operand 3 selects
-        // _wcsicmp (0x1401f86f0) instead of the normalised compare
-        // (0x1401f86b0). The result is written through operand 0.
+        // _wcsicmp (0x1401f8870) instead of the normalised compare
+        // (0x1401f8830). The result is written through operand 0.
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -518,7 +518,7 @@ template <typename Predicate>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::str_store_lower: {
-        // 4215 (0x1077): MakeLower (0x1401f8b40) of operand 1 into tag-0
+        // 4215 (0x1077): MakeLower (0x1401f8cc0) of operand 1 into tag-0
         // register operand 0.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -539,7 +539,7 @@ template <typename Predicate>
                    : WseDispatch::ignored;
     }
     case WseOpcode::str_store_upper: {
-        // 4216 (0x1078): MakeUpper (0x1401f8ac0) of operand 1 into tag-0
+        // 4216 (0x1078): MakeUpper (0x1401f8c40) of operand 1 into tag-0
         // register operand 0.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -560,8 +560,8 @@ template <typename Predicate>
                    : WseDispatch::ignored;
     }
     case WseOpcode::str_store_trim: {
-        // 4217 (0x1079): operand 2 selects Trim (0x1401f8e20), TrimLeft
-        // (0x1401f8d00), or TrimRight (0x1401f8c40); other values copy the
+        // 4217 (0x1079): operand 2 selects Trim (0x1401f8fa0), TrimLeft
+        // (0x1401f8e80), or TrimRight (0x1401f8dc0); other values copy the
         // source unchanged.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -588,7 +588,7 @@ template <typename Predicate>
     }
     case WseOpcode::str_store_replace: {
         // 4218 (0x107a): replace occurrences of operand 2 in operand 1 with
-        // operand 3 (0x1401f8710) and store the result in tag-0 operand 0.
+        // operand 3 (0x1401f8890) and store the result in tag-0 operand 0.
         if (narrow.size() < 4) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -612,7 +612,7 @@ template <typename Predicate>
                    : WseDispatch::ignored;
     }
     case WseOpcode::str_store_md5: {
-        // 4219 (0x107b, 0x1401ee956): UTF-8 MD5 digest formatted as 32
+        // 4219 (0x107b, 0x1401eead6): UTF-8 MD5 digest formatted as 32
         // lowercase hex digits in tag-0 operand 0.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -665,7 +665,7 @@ template <typename Predicate>
     }
     case WseOpcode::str_store_reverse: {
         // 4221 (0x107d): reverse the UTF-16 code units of operand 1 into
-        // tag-0 operand 0 (std::reverse at 0x1404992b0).
+        // tag-0 operand 0 (std::reverse at 0x14049a040).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -725,8 +725,8 @@ template <typename Predicate>
                    : WseDispatch::ignored;
     }
     case WseOpcode::str_store_replace_spaces_with_underscores: {
-        // 4223 (0x107f): replace u" " (0x14055b3e0) with u"_"
-        // (0x14055b3dc) in operand 1 and store the result in operand 0.
+        // 4223 (0x107f): replace u" " (0x14055c410) with u"_"
+        // (0x14055c40c) in operand 1 and store the result in operand 0.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -764,8 +764,8 @@ template <typename Predicate>
                    : WseDispatch::ignored;
     }
     case WseOpcode::str_store_float: {
-        // 4233 (0x1089, 0x1401ef3a8): format fp[operand 1] with "%.*f"
-        // (0x14055b3e4) into tag-0 operand 0; precision defaults to 5 when
+        // 4233 (0x1089, 0x1401ef528): format fp[operand 1] with "%.*f"
+        // (0x14055c414) into tag-0 operand 0; precision defaults to 5 when
         // fewer than 3 operands or negative.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -786,7 +786,7 @@ template <typename Predicate>
                    : WseDispatch::ignored;
     }
     case WseOpcode::str_sanitize: {
-        // 4234 (0x108a, 0x1401ef436): strip '{', '}', '<', '>' from tag-0
+        // 4234 (0x108a, 0x1401ef5b6): strip '{', '}', '<', '>' from tag-0
         // register operand 0 in place.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
@@ -800,8 +800,8 @@ template <typename Predicate>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::str_is_integer: {
-        // 4236 (0x108c, 0x1401ef55f): trim both ends, reject empty or bare
-        // '-', and check remaining code units with iswdigit (0x140498860).
+        // 4236 (0x108c, 0x1401ef6df): trim both ends, reject empty or bare
+        // '-', and check remaining code units with iswdigit (0x1404995f0).
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -826,13 +826,13 @@ template <typename Predicate>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::str_store_server_password_rcon: {
-        // 4238 (0x108e -> 0x1401f49c1): retail jump table exits immediately
+        // 4238 (0x108e -> 0x1401f4b41): retail jump table exits immediately
         // returning true with no side effects.
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::str_regex_match:
     case WseOpcode::str_regex_search: {
-        // 4240/4241 (0x1090/0x1091, 0x1401ef741/0x1401ef84d): ECMAScript regex
+        // 4240/4241 (0x1090/0x1091, 0x1401ef8c1/0x1401ef9cd): ECMAScript regex
         // match/search over UTF-8 operand 0 with pattern operand 1.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -850,7 +850,7 @@ template <typename Predicate>
             wse_resolve_string(narrow[1], pattern_tag, strings), full_match);
     }
     case WseOpcode::str_regex_get_matches: {
-        // 4242 (0x1092, 0x1401ef959): write full regex matches of operand 2
+        // 4242 (0x1092, 0x1401efad9): write full regex matches of operand 2
         // against operand 1 into tag-0 registers starting at operand 0,
         // stopping after optional operand 3 matches when nonzero or at s127.
         if (narrow.size() < 3) {
@@ -892,7 +892,7 @@ template <typename Predicate>
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::str_store_regex_replace: {
-        // 4243 (0x1093, 0x1401efbc0): regex_replace(operand 1, operand 2,
+        // 4243 (0x1093, 0x1401efd40): regex_replace(operand 1, operand 2,
         // operand 3) stored in tag-0 operand 0.
         if (narrow.size() < 4) {
             return WseDispatch::operand_count_out_of_range;
@@ -926,7 +926,7 @@ template <typename Predicate>
         }
     }
     case WseOpcode::str_decode_url: {
-        // 4244 (0x1094, 0x1401efd4d): UrlUnescapeA (0x1403108b0) on UTF-8
+        // 4244 (0x1094, 0x1401efecd): UrlUnescapeA (0x140311670) on UTF-8
         // operand 1 stored into tag-0 operand 0.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -945,7 +945,7 @@ template <typename Predicate>
                    : WseDispatch::ignored;
     }
     case WseOpcode::str_store_module_setting: {
-        // 4226 (0x1082, 0x1401ef0ef / L6003): (sreg, setting, section).
+        // 4226 (0x1082, 0x1401ef26f / L6003): (sreg, setting, section).
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -1008,7 +1008,7 @@ template <typename Predicate>
     }
     case WseOpcode::str_store_item_id:
     case WseOpcode::str_store_item_mesh_name: {
-        // 4235 (0x108b, 0x1401ef52e) / 4239 (0x108f, 0x1401ef710).
+        // 4235 (0x108b, 0x1401ef6ae) / 4239 (0x108f, 0x1401ef890).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }

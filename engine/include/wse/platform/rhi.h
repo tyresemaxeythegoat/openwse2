@@ -419,7 +419,7 @@ struct MeshDrawCall {
     TextureHandle specular_texture = 0;
     // Per-draw colour multiplied into every vertex colour, packed like
     // `MeshVertex::color_rgba` (R in the low byte). Mirrors the per-mesh colour that
-    // `rglImageWidget::setColor` / `setAlpha` (`0x1402a6c50` / `0x1402a6c90`) write into the
+    // `rglImageWidget::setColor` / `setAlpha` (`0x1402a6ec0` / `0x1402a6f00`) write into the
     // widget mesh for `overlay_set_color` / `overlay_set_alpha`. White leaves draws unchanged.
     std::uint32_t tint_rgba = 0xFFFFFFFFU;
     // Column-major object -> world matrix used only to bring normals and tangents

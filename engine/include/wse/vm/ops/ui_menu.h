@@ -122,7 +122,7 @@ namespace wse::vm {
 
     switch (static_cast<WseOpcode>(opcode)) {
     case WseOpcode::set_forced_lod: {
-        // 3018 (0x1401e59d2)
+        // 3018 (0x1401e5b52)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -133,19 +133,19 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::send_message_to_url_advanced:
-        // 3019 (0x1401e5a12)
+        // 3019 (0x1401e5b92)
         return wse_m6_enqueue_url_request(operands, false);
     case WseOpcode::send_post_message_to_url_advanced:
-        // 3033 (0x1401e61ed)
+        // 3033 (0x1401e636d)
         return wse_m6_enqueue_url_request(operands, true);
     case WseOpcode::order_flag_is_active: {
-        // 3023 (0x1401e5bed)
+        // 3023 (0x1401e5d6d)
         return (world != nullptr && world->m6.ui.order_flag_active)
                    ? WseDispatch::handled_no_store
                    : WseDispatch::condition_false;
     }
     case WseOpcode::play_bink_file: {
-        // 3024 (0x1401e5c3a)
+        // 3024 (0x1401e5dba)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -160,7 +160,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::process_advanced_url_messages: {
-        // 3025 (0x1401e5d8b)
+        // 3025 (0x1401e5f0b)
         if (world == nullptr) {
             return WseDispatch::ignored;
         }
@@ -170,7 +170,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::shell_open_url: {
-        // 3029 (0x1401e5e41)
+        // 3029 (0x1401e5fc1)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -184,7 +184,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::make_screenshot: {
-        // 3032 (0x1401e60a1)
+        // 3032 (0x1401e6221)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -198,7 +198,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::get_mouse_map_coordinates: {
-        // 3039 (0x1401e64c3)
+        // 3039 (0x1401e6643)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -226,7 +226,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::conversation_screen_auto_update_choice: {
-        // 3044 (0x1401e69fe)
+        // 3044 (0x1401e6b7e)
         if (world == nullptr ||
             (world->m6.ui.active_window_id != -1 &&
              world->m6.ui.active_window_id != 12)) {
@@ -236,7 +236,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::game_key_get_key: {
-        // 3100 (0x1401e6a42)
+        // 3100 (0x1401e6bc2)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -255,7 +255,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::key_released: {
-        // 3101 (0x1401e6a94)
+        // 3101 (0x1401e6c14)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -270,7 +270,7 @@ namespace wse::vm {
         return ok ? WseDispatch::handled_no_store : WseDispatch::condition_false;
     }
     case WseOpcode::game_key_released: {
-        // 3102 (0x1401e6ae5)
+        // 3102 (0x1401e6c65)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -285,7 +285,7 @@ namespace wse::vm {
         return ok ? WseDispatch::handled_no_store : WseDispatch::condition_false;
     }
     case WseOpcode::str_store_overlay_text: {
-        // 4229 (0x1401ef19a)
+        // 4229 (0x1401ef31a)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -322,7 +322,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::reload_item_kinds: {
-        // 4701 (0x1401f1e78)
+        // 4701 (0x1401f1ff8)
         if (world == nullptr) {
             return WseDispatch::ignored;
         }
@@ -331,7 +331,7 @@ namespace wse::vm {
             world->m6.ui.item_kinds_file);
     }
     case WseOpcode::reload_troops: {
-        // 4702 (0x1401f1eea)
+        // 4702 (0x1401f206a)
         if (world == nullptr) {
             return WseDispatch::ignored;
         }
@@ -349,7 +349,7 @@ namespace wse::vm {
             world->m6.ui.parties_file);
     }
     case WseOpcode::menu_create_new: {
-        // 4800 (0x1401f1fce)
+        // 4800 (0x1401f214e)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -386,7 +386,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::menu_add_item: {
-        // 4801 (0x1401f2213)
+        // 4801 (0x1401f2393)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -405,7 +405,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::menu_clear_items: {
-        // 4802 (0x1401f2503)
+        // 4802 (0x1401f2683)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -419,7 +419,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::menu_clear_generated: {
-        // 4803 (0x1401f255e)
+        // 4803 (0x1401f26de)
         if (world == nullptr) {
             return WseDispatch::ignored;
         }
@@ -433,7 +433,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::overlay_get_val: {
-        // 4900 (0x1401f25c9)
+        // 4900 (0x1401f2749)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -450,7 +450,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::presentation_activate: {
-        // 4901 (0x1401f263a)
+        // 4901 (0x1401f27ba)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -470,7 +470,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::overlay_button_set_type: {
-        // 4902 (0x1401f2708)
+        // 4902 (0x1401f2888)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -487,7 +487,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::overlay_get_scroll_pos: {
-        // 4903 (0x1401f2780)
+        // 4903 (0x1401f2900)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -512,7 +512,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::overlay_set_scroll_pos: {
-        // 4904 (0x1401f2814)
+        // 4904 (0x1401f2994)
         if (narrow.size() < 2 || wide.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -532,7 +532,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::overlay_enable: {
-        // 4905 (0x1401f28b8)
+        // 4905 (0x1401f2a38)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -543,7 +543,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::overlay_item_set_text: {
-        // 4906 (0x1401f28fb)
+        // 4906 (0x1401f2a7b)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -562,7 +562,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::start_conversation_presentation: {
-        // 4907 (0x1401f296e)
+        // 4907 (0x1401f2aee)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -582,7 +582,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::skin_set_blood_color: {
-        // 5200 (0x1401f4780)
+        // 5200 (0x1401f4900)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -595,7 +595,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::skeleton_model_set_bone_body_section: {
-        // 5201 (0x1401f47ac)
+        // 5201 (0x1401f492c)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -615,7 +615,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::skeleton_model_clean_body_sections: {
-        // 5202 (0x1401f491d)
+        // 5202 (0x1401f4a9d)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }

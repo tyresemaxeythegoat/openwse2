@@ -139,19 +139,19 @@ inline void native_world_push_tableau_mesh(
     // -----------------------------------------------------------------
     // game_state_and_stores (35 opcodes)
     // -----------------------------------------------------------------
-    case 50: // store_repeat_object (0x1401c65f3)
+    case 50: // store_repeat_object (0x1401c6773)
         store_lvalue(dst, world.misc.repeat_object, ctx, locals);
         return NativeDispatch::handled;
-    case 55: // get_operation_set_version (0x1401c6621)
+    case 55: // get_operation_set_version (0x1401c67a1)
         store_lvalue(dst, 9999, ctx, locals);
         return NativeDispatch::handled;
-    case 58: // set_physics_delta_time (0x1401c6648)
+    case 58: // set_physics_delta_time (0x1401c67c8)
         world.misc.physics_delta_time = static_cast<float>(wide[0]) / fp;
         return NativeDispatch::handled;
-    case 61: // is_camera_in_first_person (0x1401c66d2)
+    case 61: // is_camera_in_first_person (0x1401c6852)
         return world.misc.camera_first_person ? NativeDispatch::handled
                                               : NativeDispatch::condition_false;
-    case 62: { // set_camera_in_first_person (0x1401c66e4)
+    case 62: { // set_camera_in_first_person (0x1401c6864)
         const bool first_person = (narrow[0] != 0);
         if (world.misc.camera_first_person != first_person) {
             world.misc.camera_first_person = first_person;
@@ -162,21 +162,21 @@ inline void native_world_push_tableau_mesh(
         }
         return NativeDispatch::handled;
     }
-    case 90: // get_global_cloud_amount (0x1401c69f3)
+    case 90: // get_global_cloud_amount (0x1401c6b73)
         store_lvalue(dst,
                      game::native_f2i_saturate(world.lighting.cloud_amount * 100.0f),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 91: // set_global_cloud_amount (0x1401c6a31)
+    case 91: // set_global_cloud_amount (0x1401c6bb1)
         world.lighting.cloud_amount =
             static_cast<float>(std::clamp(narrow[0], 0, 99)) / 100.0f;
         return NativeDispatch::handled;
-    case 92: // get_global_haze_amount (0x1401c6a62)
+    case 92: // get_global_haze_amount (0x1401c6be2)
         store_lvalue(dst,
                      game::native_f2i_saturate(world.lighting.haze_amount * 100.0f),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 93: // set_global_haze_amount (0x1401c6aa0)
+    case 93: // set_global_haze_amount (0x1401c6c20)
         world.lighting.haze_amount =
             static_cast<float>(std::clamp(narrow[0], 0, 99)) / 100.0f;
         return NativeDispatch::handled;
@@ -184,7 +184,7 @@ inline void native_world_push_tableau_mesh(
     // -----------------------------------------------------------------
     // audio_particles_and_tableau (audio part: 601..609) + 615 store
     // -----------------------------------------------------------------
-    case 601: // play_track (0x1401ca843)
+    case 601: // play_track (0x1401ca9c3)
         if (world.is_valid_music_track(narrow[0]) && narrow[1] >= 0 &&
             narrow[1] < 3) {
             world.music.current_track_no = narrow[0];
@@ -194,7 +194,7 @@ inline void native_world_push_tableau_mesh(
             }
         }
         return NativeDispatch::handled;
-    case 602: // play_cue_track (0x1401ca883)
+    case 602: // play_cue_track (0x1401caa03)
         if (world.is_valid_music_track(narrow[0])) {
             world.music.cue_track_no = narrow[0];
             if (world.audio_runtime != nullptr) {
@@ -202,25 +202,25 @@ inline void native_world_push_tableau_mesh(
             }
         }
         return NativeDispatch::handled;
-    case 603: // music_set_situation (0x1401ca8a2)
+    case 603: // music_set_situation (0x1401caa22)
         world.music.situation_flags = static_cast<std::uint32_t>(narrow[0]);
         if (world.audio_runtime != nullptr) {
             world.audio_runtime->set_music_situation(world.music.situation_flags);
         }
         return NativeDispatch::handled;
-    case 604: // music_set_culture (0x1401ca8ae)
+    case 604: // music_set_culture (0x1401caa2e)
         world.music.culture_flags = static_cast<std::uint32_t>(narrow[0]);
         if (world.audio_runtime != nullptr) {
             world.audio_runtime->set_music_culture(world.music.culture_flags);
         }
         return NativeDispatch::handled;
-    case 609: // stop_all_sounds (0x1401ca8ba)
+    case 609: // stop_all_sounds (0x1401caa3a)
         world.music.all_sounds_stopped = (narrow[0] != 0);
         if (world.audio_runtime != nullptr) {
             world.audio_runtime->stop_all_sounds(narrow[0] != 0);
         }
         return NativeDispatch::handled;
-    case 615: // store_last_sound_channel (0x1401ca8d1)
+    case 615: // store_last_sound_channel (0x1401caa51)
         if (world.audio_runtime != nullptr) {
             world.music.last_sound_channel =
                 world.audio_runtime->last_sound_channel();
@@ -232,8 +232,8 @@ inline void native_world_push_tableau_mesh(
     // -----------------------------------------------------------------
     // game_state_and_stores (world/campaign/mission stores)
     // -----------------------------------------------------------------
-    case 1030: // rest_for_hours (0x1401cd4ef)
-    case 1031: // rest_for_hours_interactive (0x1401cd566)
+    case 1030: // rest_for_hours (0x1401cd66f)
+    case 1031: // rest_for_hours_interactive (0x1401cd6e6)
         world.misc.rest_hours = narrow[0];
         world.misc.rest_time_speed = narrow[1];
         world.misc.rest_interactive = (opcode == 1031U);
@@ -242,7 +242,7 @@ inline void native_world_push_tableau_mesh(
                 (wide[2] == 0) ? 8 : 0;
         }
         return NativeDispatch::handled;
-    case 1490: { // set_merchandise_modifier_quality (0x1401cffb3)
+    case 1490: { // set_merchandise_modifier_quality (0x1401d0133)
         // Kept as a float fraction: truncating to an integer turned 150 into 1
         // and anything below 100 into 0.
         world.misc.merchandise_modifier_quality =
@@ -253,21 +253,21 @@ inline void native_world_push_tableau_mesh(
     // -----------------------------------------------------------------
     // mission_combat_and_teams (8 opcodes)
     // -----------------------------------------------------------------
-    case 1784: // team_get_hold_fire_order (0x1401d5e1c)
+    case 1784: // team_get_hold_fire_order (0x1401d5f9c)
         if (!world.is_valid_team(narrow[1])) {
             return NativeDispatch::handled;
         }
         return native_world_read_team_sub_order(
             world.teams[static_cast<std::size_t>(narrow[1])].sub_orders.hold_fire,
             narrow[2], 2, dst, ctx, locals);
-    case 1786: // team_get_riding_order (0x1401d5eac)
+    case 1786: // team_get_riding_order (0x1401d602c)
         if (!world.is_valid_team(narrow[1])) {
             return NativeDispatch::handled;
         }
         return native_world_read_team_sub_order(
             world.teams[static_cast<std::size_t>(narrow[1])].sub_orders.riding,
             narrow[2], 3, dst, ctx, locals);
-    case 1787: // team_get_weapon_usage_order (0x1401d5ef4)
+    case 1787: // team_get_weapon_usage_order (0x1401d6074)
         if (!world.is_valid_team(narrow[1])) {
             return NativeDispatch::handled;
         }
@@ -275,7 +275,7 @@ inline void native_world_push_tableau_mesh(
             world.teams[static_cast<std::size_t>(narrow[1])]
                 .sub_orders.weapon_usage,
             narrow[2], 4, dst, ctx, locals);
-    case 1828: // team_get_gap_distance (0x1401d737e)
+    case 1828: // team_get_gap_distance (0x1401d74fe)
         if (!world.is_valid_team(narrow[1]) || narrow[2] < 0 ||
             narrow[2] >= game::kNumDivisions) {
             return NativeDispatch::handled;
@@ -283,14 +283,14 @@ inline void native_world_push_tableau_mesh(
         return native_world_read_team_sub_order(
             world.teams[static_cast<std::size_t>(narrow[1])].sub_orders.gap_distance,
             narrow[2], 0, dst, ctx, locals);
-    case 1837: // class_set_name (0x1401d7744)
+    case 1837: // class_set_name (0x1401d78c4)
         if (narrow[0] >= 0 && narrow[0] < game::kNumDivisions &&
             wse_string_register_ok(narrow[1], tag1, native_string_banks(ctx))) {
             world.class_names[static_cast<std::size_t>(narrow[0])] =
                 wse_utf16_to_utf8(native_resolve_and_parse(narrow[1], tag1, ctx));
         }
         return NativeDispatch::handled;
-    case 1900: { // cast_ray (0x1401d90e0)
+    case 1900: { // cast_ray (0x1401d9260)
         if (!wse_register_ok(narrow[1]) || !wse_register_ok(narrow[2])) {
             return NativeDispatch::handled;
         }
@@ -325,8 +325,8 @@ inline void native_world_push_tableau_mesh(
     // -----------------------------------------------------------------
     // point lights, particle systems & spawned items (1960..1976)
     // -----------------------------------------------------------------
-    case 1960: // add_point_light (0x1401d97d1)
-    case 1961: // add_point_light_to_entity (0x1401d98e6)
+    case 1960: // add_point_light (0x1401d9951)
+    case 1961: // add_point_light_to_entity (0x1401d9a66)
         if (narrow[0] >= 0 && narrow[1] >= 0 &&
             (opcode == 1960U ||
              native_world_has_trigger_entity(world, ctx.currentCaller))) {
@@ -343,7 +343,7 @@ inline void native_world_push_tableau_mesh(
             game::push_bounded(world.fx.point_lights, entry, game::kMaxPointLights);
         }
         return NativeDispatch::handled;
-    case 1965: // particle_system_add_new (0x1401d9ac1)
+    case 1965: // particle_system_add_new (0x1401d9c41)
         if (world.is_valid_particle_system(narrow[0])) {
             game::WseParticleSystemEntry ev{};
             ev.kind_no = narrow[0];
@@ -355,7 +355,7 @@ inline void native_world_push_tableau_mesh(
                                game::kMaxParticleEvents);
         }
         return NativeDispatch::handled;
-    case 1968: // particle_system_emit (0x1401d9c68)
+    case 1968: // particle_system_emit (0x1401d9de8)
         if (world.is_valid_particle_system(narrow[0]) &&
             native_world_has_trigger_entity(world, ctx.currentCaller)) {
             for (auto& ev : world.fx.particle_events) {
@@ -365,8 +365,8 @@ inline void native_world_push_tableau_mesh(
             }
         }
         return NativeDispatch::handled;
-    case 1971: // spawn_item (0x1401d9ee2)
-    case 1976: // spawn_item_without_refill (0x1401da07c)
+    case 1971: // spawn_item (0x1401da062)
+    case 1976: // spawn_item_without_refill (0x1401da1fc)
         if (world.is_valid_item(narrow[0]) && narrow[2] >= 0 &&
             world.lighting.has_scene) {
             const std::int32_t obj_no = game::mission_spawn_item(
@@ -374,7 +374,7 @@ inline void native_world_push_tableau_mesh(
             ctx.registers[0] = static_cast<std::int64_t>(obj_no);
         }
         return NativeDispatch::handled;
-    case 1975: // particle_system_burst_no_sync (0x1401da009)
+    case 1975: // particle_system_burst_no_sync (0x1401da189)
         if (world.is_valid_particle_system(narrow[0]) && wse_register_ok(narrow[1])) {
             const std::int32_t strength = (narrow[2] != 0) ? narrow[2] : 100;
             game::mission_burst_particle_system(
@@ -386,7 +386,7 @@ inline void native_world_push_tableau_mesh(
     // -----------------------------------------------------------------
     // cur_tableau_* (1980, 1984, 1985, 1987..1994, 1996..2000)
     // -----------------------------------------------------------------
-    case 1980: // cur_tableau_add_tableau_mesh (0x1401da29e)
+    case 1980: // cur_tableau_add_tableau_mesh (0x1401da41e)
         if (world.tableau.active && world.is_valid_tableau_material(narrow[0]) &&
             wse_register_ok(narrow[2])) {
             const float s = (wide[3] == 0) ? 1.0f : (static_cast<float>(wide[3]) / fp);
@@ -400,30 +400,30 @@ inline void native_world_push_tableau_mesh(
                                game::kMaxTableauItems);
         }
         return NativeDispatch::handled;
-    case 1984: // cur_tableau_render_as_alpha_mask (0x1401da4b9)
+    case 1984: // cur_tableau_render_as_alpha_mask (0x1401da639)
         if (world.tableau.active) {
             world.tableau.render_as_alpha_mask = true;
         }
         return NativeDispatch::handled;
-    case 1985: // cur_tableau_set_background_color (0x1401da4de)
+    case 1985: // cur_tableau_set_background_color (0x1401da65e)
         if (world.tableau.active) {
             world.tableau.background_color = static_cast<std::uint32_t>(narrow[0]);
         }
         return NativeDispatch::handled;
-    case 1987: // cur_tableau_set_ambient_light (0x1401da599)
+    case 1987: // cur_tableau_set_ambient_light (0x1401da719)
         if (world.tableau.active) {
             world.tableau.ambient_r = static_cast<float>(wide[0]) / fp;
             world.tableau.ambient_g = static_cast<float>(wide[1]) / fp;
             world.tableau.ambient_b = static_cast<float>(wide[2]) / fp;
         }
         return NativeDispatch::handled;
-    case 1988: // cur_tableau_set_camera_position (0x1401da60c)
+    case 1988: // cur_tableau_set_camera_position (0x1401da78c)
         if (world.tableau.active && wse_register_ok(narrow[0])) {
             world.tableau.camera_position =
                 ctx.positions[static_cast<std::size_t>(narrow[0])];
         }
         return NativeDispatch::handled;
-    case 1989: // cur_tableau_set_camera_parameters (0x1401da654)
+    case 1989: // cur_tableau_set_camera_parameters (0x1401da7d4)
         if (world.tableau.active) {
             world.tableau.camera_orthogonal = (wide[0] != 0);
             world.tableau.camera_fov_or_width = static_cast<float>(wide[1]) / fp;
@@ -432,8 +432,8 @@ inline void native_world_push_tableau_mesh(
             world.tableau.camera_far = static_cast<float>(wide[4]) / fp;
         }
         return NativeDispatch::handled;
-    case 1990: // cur_tableau_add_point_light (0x1401da6e0)
-    case 1991: // cur_tableau_add_sun_light (0x1401da776)
+    case 1990: // cur_tableau_add_point_light (0x1401da860)
+    case 1991: // cur_tableau_add_sun_light (0x1401da8f6)
         if (world.tableau.active && wse_register_ok(narrow[0])) {
             game::WseTableauLight light{};
             light.is_sun = (opcode == 1991U);
@@ -445,8 +445,8 @@ inline void native_world_push_tableau_mesh(
                                game::kMaxTableauItems);
         }
         return NativeDispatch::handled;
-    case 1992: // cur_tableau_add_mesh (0x1401da80c)
-    case 1993: { // cur_tableau_add_mesh_with_vertex_color (0x1401da8e0)
+    case 1992: // cur_tableau_add_mesh (0x1401da98c)
+    case 1993: { // cur_tableau_add_mesh_with_vertex_color (0x1401daa60)
         if (world.tableau.active && world.is_valid_mesh(narrow[0]) &&
             wse_register_ok(narrow[1])) {
             const float s = (wide[2] == 0) ? 1.0f : (static_cast<float>(wide[2]) / fp);
@@ -459,7 +459,7 @@ inline void native_world_push_tableau_mesh(
         }
         return NativeDispatch::handled;
     }
-    case 1994: // cur_tableau_add_map_icon (0x1401da9b5)
+    case 1994: // cur_tableau_add_map_icon (0x1401dab35)
         if (world.tableau.active && world.is_valid_map_icon(narrow[0]) &&
             wse_register_ok(narrow[1])) {
             const float s = (wide[2] == 0) ? 1.0f : (static_cast<float>(wide[2]) / fp);
@@ -472,7 +472,7 @@ inline void native_world_push_tableau_mesh(
                                game::kMaxTableauItems);
         }
         return NativeDispatch::handled;
-    case 1996: // cur_tableau_add_horse (0x1401daacc)
+    case 1996: // cur_tableau_add_horse (0x1401dac4c)
         if (world.tableau.active && world.is_valid_item(narrow[0]) &&
             wse_register_ok(narrow[1]) && world.is_valid_action(narrow[2])) {
             game::WseTableauRenderItem item{};
@@ -485,23 +485,23 @@ inline void native_world_push_tableau_mesh(
                                game::kMaxTableauItems);
         }
         return NativeDispatch::handled;
-    case 1997: // cur_tableau_set_override_flags (0x1401dab4d)
+    case 1997: // cur_tableau_set_override_flags (0x1401daccd)
         if (world.tableau.active) {
             world.tableau.override_flags = static_cast<std::uint32_t>(narrow[0]);
         }
         return NativeDispatch::handled;
-    case 1998: // cur_tableau_clear_override_items (0x1401dab76)
+    case 1998: // cur_tableau_clear_override_items (0x1401dacf6)
         if (world.tableau.active) {
             world.tableau.override_items.clear();
         }
         return NativeDispatch::handled;
-    case 1999: // cur_tableau_add_override_item (0x1401dab9b)
+    case 1999: // cur_tableau_add_override_item (0x1401dad1b)
         if (world.tableau.active) {
             game::push_bounded(world.tableau.override_items, narrow[0],
                                game::kMaxTableauOverrideItems);
         }
         return NativeDispatch::handled;
-    case 2000: { // cur_tableau_add_mesh_with_scale_and_vertex_color (0x1401dabc4)
+    case 2000: { // cur_tableau_add_mesh_with_scale_and_vertex_color (0x1401dad44)
         if (world.tableau.active && world.is_valid_mesh(narrow[0]) &&
             wse_register_ok(narrow[1]) && wse_register_ok(narrow[2])) {
             const auto& so = ctx.positions[static_cast<std::size_t>(narrow[2])].o;
@@ -518,7 +518,7 @@ inline void native_world_push_tableau_mesh(
     // -----------------------------------------------------------------
     // trigger params & store_* queries (2070..2385)
     // -----------------------------------------------------------------
-    case 2070: // store_trigger_param (0x1401dc4bf)
+    case 2070: // store_trigger_param (0x1401dc63f)
         if (narrow[1] >= 1 && narrow[1] < 17) {
             store_lvalue(dst,
                          world.misc.trigger_params[static_cast<std::size_t>(narrow[1] - 1)],
@@ -528,19 +528,19 @@ inline void native_world_push_tableau_mesh(
                              std::to_string(narrow[1]));
         }
         return NativeDispatch::handled;
-    case 2071: // store_trigger_param_1 (0x1401dc51a)
+    case 2071: // store_trigger_param_1 (0x1401dc69a)
         store_lvalue(dst, world.misc.trigger_params[0], ctx, locals);
         return NativeDispatch::handled;
-    case 2072: // store_trigger_param_2 (0x1401dc531)
+    case 2072: // store_trigger_param_2 (0x1401dc6b1)
         store_lvalue(dst, world.misc.trigger_params[1], ctx, locals);
         return NativeDispatch::handled;
-    case 2073: // store_trigger_param_3 (0x1401dc548)
+    case 2073: // store_trigger_param_3 (0x1401dc6c8)
         store_lvalue(dst, world.misc.trigger_params[2], ctx, locals);
         return NativeDispatch::handled;
-    case 2155: // store_num_free_prisoner_stacks (0x1401dd61e)
+    case 2155: // store_num_free_prisoner_stacks (0x1401dd79e)
         store_lvalue(dst, 10, ctx, locals);
         return NativeDispatch::handled;
-    case 2159: { // store_num_regular_prisoners (0x1401dd736)
+    case 2159: { // store_num_regular_prisoners (0x1401dd8b6)
         std::int64_t total = 0;
         if (world.is_valid_party(world.main_party_no)) {
             const auto& main_p =
@@ -555,7 +555,7 @@ inline void native_world_push_tableau_mesh(
         store_lvalue(dst, total, ctx, locals);
         return NativeDispatch::handled;
     }
-    case 2167: // store_free_inventory_capacity (0x1401dd896)
+    case 2167: // store_free_inventory_capacity (0x1401dda16)
         if (world.is_valid_troop(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -563,19 +563,19 @@ inline void native_world_push_tableau_mesh(
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2199: // store_conversation_agent (0x1401ddc9b)
+    case 2199: // store_conversation_agent (0x1401dde1b)
         store_lvalue(dst, static_cast<std::int64_t>(world.dialog.speaker_agent_no),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2211: // store_current_scene (0x1401dddc6)
+    case 2211: // store_current_scene (0x1401ddf46)
         store_lvalue(dst, static_cast<std::int64_t>(world.current_site_no), ctx,
                      locals);
         return NativeDispatch::handled;
-    case 2220: // store_zoom_amount (0x1401dde1a)
+    case 2220: // store_zoom_amount (0x1401ddf9a)
         store_lvalue(dst, game::native_f2i_saturate(fp * world.zoom_amount), ctx,
                      locals);
         return NativeDispatch::handled;
-    case 2240: { // store_partner_quest (0x1401ddf20)
+    case 2240: { // store_partner_quest (0x1401de0a0)
         std::int32_t found = -1;
         for (std::int32_t qi = 0; qi < static_cast<std::int32_t>(world.quests.size());
              ++qi) {
@@ -588,11 +588,11 @@ inline void native_world_push_tableau_mesh(
         store_lvalue(dst, static_cast<std::int64_t>(found), ctx, locals);
         return NativeDispatch::handled;
     }
-    case 2271: // store_time_of_day (0x1401de29b)
+    case 2271: // store_time_of_day (0x1401de41b)
         store_lvalue(dst, static_cast<std::int64_t>(world.current_hours % 24),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2300: // store_num_parties_created (0x1401de56f)
+    case 2300: // store_num_parties_created (0x1401de6ef)
         if (world.is_valid_party_template(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -601,7 +601,7 @@ inline void native_world_push_tableau_mesh(
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2301: // store_num_parties_destroyed (0x1401de5ba)
+    case 2301: // store_num_parties_destroyed (0x1401de73a)
         if (world.is_valid_party_template(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -610,7 +610,7 @@ inline void native_world_push_tableau_mesh(
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2302: // store_num_parties_destroyed_by_player (0x1401de605)
+    case 2302: // store_num_parties_destroyed_by_player (0x1401de785)
         if (world.is_valid_party_template(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -619,22 +619,22 @@ inline void native_world_push_tableau_mesh(
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2360: // store_remaining_team_no (0x1401df231)
+    case 2360: // store_remaining_team_no (0x1401df3b1)
         store_lvalue(dst,
                      static_cast<std::int64_t>(
                          native_world_highest_remaining_team_no(world)),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2380: // store_enemy_count (0x1401df428)
+    case 2380: // store_enemy_count (0x1401df5a8)
         store_lvalue(dst, native_world_count_team(ctx, 1), ctx, locals);
         return NativeDispatch::handled;
-    case 2381: // store_friend_count (0x1401df460)
+    case 2381: // store_friend_count (0x1401df5e0)
         store_lvalue(dst, native_world_count_team(ctx, 0), ctx, locals);
         return NativeDispatch::handled;
-    case 2382: // store_ally_count (0x1401df491)
+    case 2382: // store_ally_count (0x1401df611)
         store_lvalue(dst, 0, ctx, locals);
         return NativeDispatch::handled;
-    case 2383: { // store_defender_count (0x1401df4b1)
+    case 2383: { // store_defender_count (0x1401df631)
         const std::int32_t team =
             (world.main_party_side == 1 ||
              (world.main_party_side != 0 && world.enemy_side == 0))
@@ -643,7 +643,7 @@ inline void native_world_push_tableau_mesh(
         store_lvalue(dst, native_world_count_team(ctx, team), ctx, locals);
         return NativeDispatch::handled;
     }
-    case 2384: { // store_attacker_count (0x1401df582)
+    case 2384: { // store_attacker_count (0x1401df702)
         const std::int32_t team =
             (world.main_party_side == 0 ||
              (world.main_party_side != 1 && world.enemy_side == 1))
@@ -652,7 +652,7 @@ inline void native_world_push_tableau_mesh(
         store_lvalue(dst, native_world_count_team(ctx, team), ctx, locals);
         return NativeDispatch::handled;
     }
-    case 2385: // store_normalized_team_count (0x1401df657)
+    case 2385: // store_normalized_team_count (0x1401df7d7)
         store_lvalue(dst,
                      world.is_valid_team(narrow[1])
                          ? native_world_count_team(ctx, narrow[1])

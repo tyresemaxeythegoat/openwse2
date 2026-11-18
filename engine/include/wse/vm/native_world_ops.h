@@ -1,12 +1,12 @@
 // Extended native Warband opcode handlers (world, face keys, input, notes,
 // items, parties, troops). Grounded in official WSE2 v1.1.5.5 PDB/binary
 // decompilation:
-//   undocumented (53, 2180, 2749)          0x1401c659c, 0x1401ddb29, 0x1401e1373
-//   input (65, 70..73, 77)                 0x1401c6752..0x1401c69b5
-//   positions_and_math (707, 750, 1628..)  0x1401cac4c, 0x1401cbc3c, 0x1401d1f79
-//   parties & troops (110..2388)           0x1401c6cd1..0x1401df780
-//   strings & items (1964..2747)           0x1401d9999..0x1401e1258
-//   face_keys (2752..2767)                 0x1401e1621..0x1401e2150
+//   undocumented (53, 2180, 2749)          0x1401c671c, 0x1401ddca9, 0x1401e14f3
+//   input (65, 70..73, 77)                 0x1401c68d2..0x1401c6b35
+//   positions_and_math (707, 750, 1628..)  0x1401cadcc, 0x1401cbdbc, 0x1401d20f9
+//   parties & troops (110..2388)           0x1401c6e51..0x1401df900
+//   strings & items (1964..2747)           0x1401d9b19..0x1401e13d8
+//   face_keys (2752..2767)                 0x1401e17a1..0x1401e22d0
 
 #pragma once
 
@@ -237,10 +237,10 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
 
     switch (opcode) {
     // -- undocumented (3): 53, 2180, 2749 --
-    case 53: // is_cheat_mode_enabled (0x1401c659c)
+    case 53: // is_cheat_mode_enabled (0x1401c671c)
         return ctx.options.cheat_mode ? NativeDispatch::handled
                                       : NativeDispatch::condition_false;
-    case 2180: { // store_main_party_wounded (0x1401ddb29)
+    case 2180: { // store_main_party_wounded (0x1401ddca9)
         std::int32_t wounded = 0;
         if (world.is_valid_party(world.main_party_no)) {
             const std::int32_t ironflesh_cap =
@@ -263,7 +263,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         store_lvalue(dst, static_cast<std::int64_t>(wounded), ctx, locals);
         return NativeDispatch::handled;
     }
-    case 2749: { // op_2749 (0x1401e1373): str_store_agent_face_keys (sreg, agent_id)
+    case 2749: { // op_2749 (0x1401e14f3): str_store_agent_face_keys (sreg, agent_id)
         if (wse_register_ok(narrow[0]) && world.is_valid_agent(narrow[1])) {
             const auto& ag = world.agents[static_cast<std::size_t>(narrow[1])];
             game::WseFaceKeys fk = ag.face_keys;
@@ -286,7 +286,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
     }
 
     // -- input (6): 65, 70, 71, 72, 73, 77 --
-    case 65: // game_key_get_mapped_key_name (0x1401c6752)
+    case 65: // game_key_get_mapped_key_name (0x1401c68d2)
         if (wse_register_ok(narrow[0]) && narrow[1] >= 0 &&
             narrow[1] < game::kMaxGameKeys && narrow[2] >= 0 && narrow[2] < 2) {
             const std::string& name =
@@ -296,30 +296,30 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
             ctx.stringRegisters[static_cast<std::size_t>(narrow[0])] = wse_utf8_to_utf16(name);
         }
         return NativeDispatch::handled;
-    case 70: // key_is_down (0x1401c67e5)
+    case 70: // key_is_down (0x1401c6965)
         return native_world_check_key_state(
             narrow[0], statement.numOperands >= 2 && narrow[1] != 0,
             world.input.key_down, world);
-    case 71: // key_clicked (0x1401c683f)
+    case 71: // key_clicked (0x1401c69bf)
         return native_world_check_key_state(
             narrow[0], statement.numOperands >= 2 && narrow[1] != 0,
             world.input.key_clicked, world);
-    case 72: // game_key_is_down (0x1401c6899)
+    case 72: // game_key_is_down (0x1401c6a19)
         return native_world_check_key_state(
             narrow[0], statement.numOperands >= 2 && narrow[1] != 0,
             world.input.game_key_down, world);
-    case 73: // game_key_clicked (0x1401c68f1)
+    case 73: // game_key_clicked (0x1401c6a71)
         return native_world_check_key_state(
             narrow[0], statement.numOperands >= 2 && narrow[1] != 0,
             world.input.game_key_clicked, world);
-    case 77: // omit_key_once (0x1401c69b5)
+    case 77: // omit_key_once (0x1401c6b35)
         if (narrow[0] >= 0 && narrow[0] < game::kMaxRawKeys) {
             world.input.omitted_keys[static_cast<std::size_t>(narrow[0])] = true;
         }
         return NativeDispatch::handled;
 
     // -- positions_and_math (4): 707, 750, 1628, 1629 --
-    case 707: { // position_has_line_of_sight_to_position (0x1401cac4c)
+    case 707: { // position_has_line_of_sight_to_position (0x1401cadcc)
         if (!world.lighting.has_scene || !wse_register_ok(narrow[0]) ||
             !wse_register_ok(narrow[1])) {
             return NativeDispatch::condition_false;
@@ -336,7 +336,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
             native_world_ray_aabb_hit(world, a, diff, seg_len, 0xffffffffu);
         return hit.hit ? NativeDispatch::condition_false : NativeDispatch::handled;
     }
-    case 750: { // position_get_screen_projection (0x1401cbc3c -> rglCamera 0x1402ff7b0)
+    case 750: { // position_get_screen_projection (0x1401cbdbc -> rglCamera 0x1403005c0)
         if (wse_register_ok(narrow[0]) && wse_register_ok(narrow[1])) {
             const auto& p = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
             const auto& cam = world.misc.camera_transform;
@@ -362,8 +362,8 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         }
         return NativeDispatch::handled;
     }
-    case 1628: // map_get_land_position_around_position (0x1401d1f79)
-    case 1629: { // map_get_water_position_around_position (0x1401d2001)
+    case 1628: // map_get_land_position_around_position (0x1401d20f9)
+    case 1629: { // map_get_water_position_around_position (0x1401d2181)
         if (wse_register_ok(narrow[0]) && wse_register_ok(narrow[1]) && wide[2] >= 0) {
             const float radius = static_cast<float>(wide[2]) / fp;
             const auto& src = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
@@ -382,7 +382,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
     }
 
     // -- strings (7): 2337, 2340, 2345, 2351, 2352, 2353, 2747 --
-    case 2337: // str_store_info_page_name (0x1401ded19)
+    case 2337: // str_store_info_page_name (0x1401dee99)
         if (wse_register_ok(narrow[0]) && world.is_valid_info_page(narrow[1])) {
             const auto banks = native_string_banks(ctx);
             const std::u16string raw = wse_utf8_to_utf16(
@@ -391,7 +391,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
                 wse_parse_string(raw, ctx.registers, banks);
         }
         return NativeDispatch::handled;
-    case 2340: // str_store_date (0x1401ded9f)
+    case 2340: // str_store_date (0x1401def1f)
         if (wse_register_ok(narrow[0]) && narrow[1] >= 0) {
             world.result_string.clear();
             if (ctx.scripts != nullptr) {
@@ -404,32 +404,32 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
                 wse_utf8_to_utf16(world.result_string);
         }
         return NativeDispatch::handled;
-    case 2345: // str_store_info_page_name_link (0x1401df054)
+    case 2345: // str_store_info_page_name_link (0x1401df1d4)
         if (wse_register_ok(narrow[0]) && world.is_valid_info_page(narrow[1])) {
             native_store_name_link(narrow[0], "ip", narrow[1],
                                    world.info_pages[static_cast<std::size_t>(narrow[1])].title,
                                    ctx);
         }
         return NativeDispatch::handled;
-    case 2351: // str_store_server_password (0x1401df175)
+    case 2351: // str_store_server_password (0x1401df2f5)
         if (wse_register_ok(narrow[0])) {
             ctx.stringRegisters[static_cast<std::size_t>(narrow[0])] =
                 wse_utf8_to_utf16(world.mp.server_password);
         }
         return NativeDispatch::handled;
-    case 2352: // str_store_server_name (0x1401df191)
+    case 2352: // str_store_server_name (0x1401df311)
         if (wse_register_ok(narrow[0])) {
             ctx.stringRegisters[static_cast<std::size_t>(narrow[0])] =
                 wse_utf8_to_utf16(world.mp.server_name);
         }
         return NativeDispatch::handled;
-    case 2353: // str_store_welcome_message (0x1401df1ad)
+    case 2353: // str_store_welcome_message (0x1401df32d)
         if (wse_register_ok(narrow[0])) {
             ctx.stringRegisters[static_cast<std::size_t>(narrow[0])] =
                 wse_utf8_to_utf16(world.mp.welcome_message);
         }
         return NativeDispatch::handled;
-    case 2747: // str_store_player_face_keys (0x1401e1258)
+    case 2747: // str_store_player_face_keys (0x1401e13d8)
         if (wse_register_ok(narrow[0]) && world.is_valid_player(narrow[1])) {
             ctx.stringRegisters[static_cast<std::size_t>(narrow[0])] = wse_utf8_to_utf16(
                 world.players[static_cast<std::size_t>(narrow[1])].face_keys.to_string());
@@ -437,25 +437,25 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         return NativeDispatch::handled;
 
     // -- factions_quests_menus_options (4): 1098, 1275, 1276, 1277 --
-    case 1098: // quest_set_note_available (0x1401cd8f5)
+    case 1098: // quest_set_note_available (0x1401cda75)
         if (world.is_valid_quest(narrow[0])) {
             world.quests[static_cast<std::size_t>(narrow[0])].note_available = (wide[1] != 0);
         }
         return NativeDispatch::handled;
-    case 1275: // faction_set_name (0x1401cfb85)
+    case 1275: // faction_set_name (0x1401cfd05)
         if (world.is_valid_faction(narrow[0]) &&
             wse_string_register_ok(narrow[1], tag1, native_string_banks(ctx))) {
             world.factions[static_cast<std::size_t>(narrow[0])].name =
                 wse_utf16_to_utf8(native_resolve_and_parse(narrow[1], tag1, ctx));
         }
         return NativeDispatch::handled;
-    case 1276: // faction_set_color (0x1401cfc10)
+    case 1276: // faction_set_color (0x1401cfd90)
         if (world.is_valid_faction(narrow[0])) {
             world.factions[static_cast<std::size_t>(narrow[0])].color =
                 static_cast<std::uint32_t>(narrow[1]);
         }
         return NativeDispatch::handled;
-    case 1277: // faction_get_color (0x1401cfc41)
+    case 1277: // faction_get_color (0x1401cfdc1)
         if (world.is_valid_faction(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -465,7 +465,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         return NativeDispatch::handled;
 
     // -- items (5): 1964, 1978, 1981, 2725, 2726 --
-    case 1964: { // cur_item_add_mesh (0x1401d9999)
+    case 1964: { // cur_item_add_mesh (0x1401d9b19)
         if (ctx.currentCaller != -50 || world.cur_item_meta_mesh == nullptr ||
             !wse_string_register_ok(narrow[0], tag0, native_string_banks(ctx))) {
             return NativeDispatch::handled;
@@ -509,7 +509,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         }
         return NativeDispatch::handled;
     }
-    case 1978: { // cur_item_set_material (0x1401da17c)
+    case 1978: { // cur_item_set_material (0x1401da2fc)
         if (ctx.currentCaller != -50 || world.cur_item_meta_mesh == nullptr ||
             !wse_string_register_ok(narrow[0], tag0, native_string_banks(ctx))) {
             return NativeDispatch::handled;
@@ -537,7 +537,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         }
         return NativeDispatch::handled;
     }
-    case 1981: { // cur_item_set_tableau_material (0x1401da389)
+    case 1981: { // cur_item_set_tableau_material (0x1401da509)
         if (ctx.currentCaller == -50 && world.cur_item_meta_mesh != nullptr &&
             world.is_valid_tableau_material(narrow[0])) {
             world.fx.cur_item_tableau_material_no = narrow[0];
@@ -551,7 +551,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         }
         return NativeDispatch::handled;
     }
-    case 2725: // item_has_modifier (0x1401e11d7)
+    case 2725: // item_has_modifier (0x1401e1357)
         if (!world.is_valid_item(narrow[0])) {
             return NativeDispatch::condition_false;
         }
@@ -560,7 +560,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
                 1ULL) != 0ULL
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 2726: { // item_has_faction (0x1401e1216)
+    case 2726: { // item_has_faction (0x1401e1396)
         if (!world.is_valid_item(narrow[0]) || !world.is_valid_faction(narrow[1])) {
             return NativeDispatch::condition_false;
         }
@@ -574,7 +574,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
     }
 
     // -- parties (14): 110, 1110, 1116, 1119, 1320, 1663, 1666, 1667, 1678, 1679, 1682, 1697, 1698, 2050 --
-    case 110: { // main_party_has_troop (0x1401c6cd1)
+    case 110: { // main_party_has_troop (0x1401c6e51)
         if (!world.is_valid_party(world.main_party_no)) {
             return NativeDispatch::condition_false;
         }
@@ -586,38 +586,38 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         }
         return NativeDispatch::condition_false;
     }
-    case 1110: // add_party_note_tableau_mesh (0x1401cdc7e)
+    case 1110: // add_party_note_tableau_mesh (0x1401cddfe)
         if (world.is_valid_party(narrow[0]) && world.is_valid_tableau_material(narrow[1])) {
             world.parties[static_cast<std::size_t>(narrow[0])].note_tableau_material_no =
                 narrow[1];
         }
         return NativeDispatch::handled;
-    case 1116: // add_party_note_from_dialog (0x1401ce097)
+    case 1116: // add_party_note_from_dialog (0x1401ce217)
         if (ctx.currentCaller == 4 && world.is_valid_party(narrow[0])) {
             native_world_assign_dialog_note(
                 world.parties[static_cast<std::size_t>(narrow[0])].notes, narrow[1],
                 narrow[2] != 0, world);
         }
         return NativeDispatch::handled;
-    case 1119: // add_party_note_from_sreg (0x1401ce31d)
+    case 1119: // add_party_note_from_sreg (0x1401ce49d)
         if (world.is_valid_party(narrow[0])) {
             native_world_assign_sreg_note(
                 world.parties[static_cast<std::size_t>(narrow[0])].notes, narrow[1], narrow[2],
                 tag2, narrow[3] != 0, ctx);
         }
         return NativeDispatch::handled;
-    case 1320: // set_mercenary_source_party (0x1401cff8d)
+    case 1320: // set_mercenary_source_party (0x1401d010d)
         if (world.is_valid_party(narrow[0])) {
             world.misc.mercenary_source_party_no = narrow[0];
         }
         return NativeDispatch::handled;
-    case 1663: // party_quick_attach_to_current_battle (0x1401d2ad0)
+    case 1663: // party_quick_attach_to_current_battle (0x1401d2c50)
         game::party_attach_to_current_battle(world, narrow[0], narrow[1]);
         return NativeDispatch::handled;
-    case 1666: // party_leave_cur_battle (0x1401d2b68)
+    case 1666: // party_leave_cur_battle (0x1401d2ce8)
         game::party_leave_cur_battle(world, narrow[0]);
         return NativeDispatch::handled;
-    case 1667: // party_set_next_battle_simulation_time (0x1401d2b95)
+    case 1667: // party_set_next_battle_simulation_time (0x1401d2d15)
         if (world.is_valid_party(narrow[0])) {
             const auto& p = world.parties[static_cast<std::size_t>(narrow[0])];
             if (p.battle_event_index >= 0 &&
@@ -629,19 +629,19 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
             }
         }
         return NativeDispatch::handled;
-    case 1678: // party_add_particle_system (0x1401d306f)
+    case 1678: // party_add_particle_system (0x1401d31ef)
         if (world.is_valid_party(narrow[0]) && world.is_valid_particle_system(narrow[1])) {
             game::push_bounded(
                 world.parties[static_cast<std::size_t>(narrow[0])].particle_system_nos,
                 narrow[1], game::kMaxPartyParticleSystems);
         }
         return NativeDispatch::handled;
-    case 1679: // party_clear_particle_systems (0x1401d30b1)
+    case 1679: // party_clear_particle_systems (0x1401d3231)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].particle_system_nos.clear();
         }
         return NativeDispatch::handled;
-    case 1682: // party_set_extra_icon (0x1401d3221)
+    case 1682: // party_set_extra_icon (0x1401d33a1)
         if (world.is_valid_party(narrow[0]) && world.is_valid_map_icon(narrow[1]) &&
             wide[2] >= 0 && wide[3] >= 0 && wide[4] >= 0 && wide[5] >= 0) {
             auto& p = world.parties[static_cast<std::size_t>(narrow[0])];
@@ -652,7 +652,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
             p.extra_icon_fade_distance = static_cast<float>(wide[5]) / fp;
         }
         return NativeDispatch::handled;
-    case 1697: { // inflict_casualties_to_party_group (0x1401d3603)
+    case 1697: { // inflict_casualties_to_party_group (0x1401d3783)
         if (world.is_valid_party(narrow[0])) {
             const std::int32_t cas_party =
                 (narrow[2] == world.misc.camp_bandits_party_no ||
@@ -664,10 +664,10 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         }
         return NativeDispatch::handled;
     }
-    case 1698: // distribute_party_among_party_group (0x1401d3674)
+    case 1698: // distribute_party_among_party_group (0x1401d37f4)
         game::party_distribute_among_group(world, narrow[0], narrow[1]);
         return NativeDispatch::handled;
-    case 2050: // change_screen_exchange_with_party (0x1401dc089)
+    case 2050: // change_screen_exchange_with_party (0x1401dc209)
         if (world.is_valid_party(narrow[0])) {
             world.ui.exchange_party_no = narrow[0];
             world.ui.exchange_window_open = true;
@@ -675,27 +675,27 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         return NativeDispatch::handled;
 
     // -- troops (10): 1108, 1114, 1503, 1995, 2160, 2161, 2197, 2200, 2231, 2388 --
-    case 1108: // add_troop_note_tableau_mesh (0x1401cdbfe)
+    case 1108: // add_troop_note_tableau_mesh (0x1401cdd7e)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_tableau_material(narrow[1])) {
             world.troops[static_cast<std::size_t>(narrow[0])].note_tableau_material_no =
                 narrow[1];
         }
         return NativeDispatch::handled;
-    case 1114: // add_troop_note_from_dialog (0x1401cdeb2)
+    case 1114: // add_troop_note_from_dialog (0x1401ce032)
         if (ctx.currentCaller == 4 && world.is_valid_troop(narrow[0])) {
             native_world_assign_dialog_note(
                 world.troops[static_cast<std::size_t>(narrow[0])].notes, narrow[1],
                 narrow[2] != 0, world);
         }
         return NativeDispatch::handled;
-    case 1503: // troop_set_face_key_from_current_profile (0x1401d016f)
+    case 1503: // troop_set_face_key_from_current_profile (0x1401d02ef)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_profile(world.mp.current_profile_no)) {
             world.troops[static_cast<std::size_t>(narrow[0])].face_keys[0] =
                 world.mp.profiles[static_cast<std::size_t>(world.mp.current_profile_no)]
                     .face_keys.keys;
         }
         return NativeDispatch::handled;
-    case 1995: // cur_tableau_add_troop (0x1401daa40)
+    case 1995: // cur_tableau_add_troop (0x1401dabc0)
         if (world.is_valid_troop(narrow[0]) && wse_register_ok(narrow[1]) &&
             world.is_valid_action(narrow[2]) && world.tableau.active) {
             game::WseTableauRenderItem item{};
@@ -707,7 +707,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
             game::push_bounded(world.tableau.items, std::move(item), game::kMaxTableauItems);
         }
         return NativeDispatch::handled;
-    case 2160: // store_troop_count_companions (0x1401dd7b5)
+    case 2160: // store_troop_count_companions (0x1401dd935)
         if (world.is_valid_party(narrow[2])) {
             store_lvalue(
                 dst,
@@ -716,7 +716,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2161: // store_troop_count_prisoners (0x1401dd800)
+    case 2161: // store_troop_count_prisoners (0x1401dd980)
         if (world.is_valid_party(narrow[2])) {
             store_lvalue(
                 dst,
@@ -725,16 +725,16 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2197: // set_conversation_speaker_troop (0x1401ddc56)
+    case 2197: // set_conversation_speaker_troop (0x1401dddd6)
         if (world.is_valid_troop(narrow[0])) {
             world.dialog.speaker_troop_no = narrow[0];
         }
         return NativeDispatch::handled;
-    case 2200: // store_conversation_troop (0x1401ddcc3)
+    case 2200: // store_conversation_troop (0x1401dde43)
         store_lvalue(dst, static_cast<std::int64_t>(world.conversation_partner_troop_no), ctx,
                      locals);
         return NativeDispatch::handled;
-    case 2231: // store_troop_value (0x1401ddedd)
+    case 2231: // store_troop_value (0x1401de05d)
         if (world.is_valid_troop(narrow[1])) {
             std::int32_t join_cost = 0;
             world.trigger_result = 0;
@@ -756,7 +756,7 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
             store_lvalue(dst, static_cast<std::int64_t>(join_cost), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2388: // show_troop_details (0x1401df780)
+    case 2388: // show_troop_details (0x1401df900)
         if (world.is_valid_troop(narrow[0]) && wse_register_ok(narrow[1]) && narrow[2] >= 0) {
             const auto& pos = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
             world.ui.troop_tooltip.visible = true;
@@ -767,56 +767,56 @@ inline void native_world_spaces_to_underscores(std::string& text) noexcept {
         return NativeDispatch::handled;
 
     // -- face_keys (16): 2752..2767 --
-    case 2752: // face_keys_get_hair (0x1401e1621)
+    case 2752: // face_keys_get_hair (0x1401e17a1)
         native_world_fk_get6(dst, narrow[1], tag1, 0U, ctx, locals);
         return NativeDispatch::handled;
-    case 2753: // face_keys_set_hair (0x1401e16c9)
+    case 2753: // face_keys_set_hair (0x1401e1849)
         native_world_fk_set6(narrow[0], tag0, narrow[1], 0U, ctx);
         return NativeDispatch::handled;
-    case 2754: // face_keys_get_beard (0x1401e1794)
+    case 2754: // face_keys_get_beard (0x1401e1914)
         native_world_fk_get6(dst, narrow[1], tag1, 6U, ctx, locals);
         return NativeDispatch::handled;
-    case 2755: // face_keys_set_beard (0x1401e183c)
+    case 2755: // face_keys_set_beard (0x1401e19bc)
         native_world_fk_set6(narrow[0], tag0, narrow[1], 6U, ctx);
         return NativeDispatch::handled;
-    case 2756: // face_keys_get_face_texture (0x1401e1907)
+    case 2756: // face_keys_get_face_texture (0x1401e1a87)
         native_world_fk_get6(dst, narrow[1], tag1, 12U, ctx, locals);
         return NativeDispatch::handled;
-    case 2757: // face_keys_set_face_texture (0x1401e19ae)
+    case 2757: // face_keys_set_face_texture (0x1401e1b2e)
         native_world_fk_set6(narrow[0], tag0, narrow[1], 12U, ctx);
         return NativeDispatch::handled;
-    case 2758: // face_keys_get_hair_texture (0x1401e1a77)
+    case 2758: // face_keys_get_hair_texture (0x1401e1bf7)
         native_world_fk_get6(dst, narrow[1], tag1, 18U, ctx, locals);
         return NativeDispatch::handled;
-    case 2759: // face_keys_set_hair_texture (0x1401e1b1e)
+    case 2759: // face_keys_set_hair_texture (0x1401e1c9e)
         native_world_fk_set6(narrow[0], tag0, narrow[1], 18U, ctx);
         return NativeDispatch::handled;
-    case 2760: // face_keys_get_hair_color (0x1401e1be7)
+    case 2760: // face_keys_get_hair_color (0x1401e1d67)
         native_world_fk_get6(dst, narrow[1], tag1, 24U, ctx, locals);
         return NativeDispatch::handled;
-    case 2761: // face_keys_set_hair_color (0x1401e1c9a)
+    case 2761: // face_keys_set_hair_color (0x1401e1e1a)
         native_world_fk_set6(narrow[0], tag0, narrow[1], 24U, ctx);
         return NativeDispatch::handled;
-    case 2762: // face_keys_get_age (0x1401e1d70)
+    case 2762: // face_keys_get_age (0x1401e1ef0)
         native_world_fk_get6(dst, narrow[1], tag1, 30U, ctx, locals);
         return NativeDispatch::handled;
-    case 2763: // face_keys_set_age (0x1401e1e23)
+    case 2763: // face_keys_set_age (0x1401e1fa3)
         native_world_fk_set6(narrow[0], tag0, narrow[1], 30U, ctx);
         return NativeDispatch::handled;
-    case 2764: // face_keys_get_skin_color (0x1401e1ef9)
+    case 2764: // face_keys_get_skin_color (0x1401e2079)
         native_world_fk_get6(dst, narrow[1], tag1, 36U, ctx, locals);
         return NativeDispatch::handled;
-    case 2765: // face_keys_set_skin_color (0x1401e1fac)
+    case 2765: // face_keys_set_skin_color (0x1401e212c)
         native_world_fk_set6(narrow[0], tag0, narrow[1], 36U, ctx);
         return NativeDispatch::handled;
-    case 2766: // face_keys_get_morph_key (0x1401e2082)
+    case 2766: // face_keys_get_morph_key (0x1401e2202)
         if (wse_string_register_ok(narrow[1], tag1, native_string_banks(ctx)) &&
             narrow[2] >= 0 && narrow[2] < game::kNumFaceMorphKeys) {
             const game::WseFaceKeys fk = native_world_parse_face_keys(narrow[1], tag1, ctx);
             store_lvalue(dst, static_cast<std::int64_t>(fk.get_morph_key(narrow[2])), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2767: // face_keys_set_morph_key (0x1401e2150)
+    case 2767: // face_keys_set_morph_key (0x1401e22d0)
         if (wse_register_ok(narrow[0]) && narrow[1] >= 0 &&
             narrow[1] < game::kNumFaceMorphKeys) {
             game::WseFaceKeys fk = native_world_parse_face_keys(narrow[0], tag0, ctx);

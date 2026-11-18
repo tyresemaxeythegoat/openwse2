@@ -1,14 +1,14 @@
 // Clean-room v1.1.5.5 skeletal pose evaluation and CPU linear-blend skinning.
 //
 // Reconstructed from v1.1.5.5 PE + PDB evidence:
-// - rglSkeletonModel::readStream (0x14030d230): rest-world bone chain + origins
-// - rglSkeleton::updateBonePositions (0x140308b00)
-// - rglSkeleton::getBoneTransformForAnimation (0x14030a770)
-// - rglQuaternion::interpolate (0x1402d6bb0)
-// - rglTransform::setRotation (0x1402b65d0)
-// - rglBone::getSkinningTransform (0x140258800)
-// - rglSkeleton::skinMesh (0x14030b8f0)
-// - rglMesh::updateSkinData (0x1402b9930)
+// - rglSkeletonModel::readStream (0x14030dff0): rest-world bone chain + origins
+// - rglSkeleton::updateBonePositions (0x1403098c0)
+// - rglSkeleton::getBoneTransformForAnimation (0x14030b530)
+// - rglQuaternion::interpolate (0x1402d6e20)
+// - rglTransform::setRotation (0x1402b6840)
+// - rglBone::getSkinningTransform (0x140258980)
+// - rglSkeleton::skinMesh (0x14030c6b0)
+// - rglMesh::updateSkinData (0x1402b9ba0)
 #pragma once
 
 #include <algorithm>
@@ -25,7 +25,7 @@
 namespace wse::asset {
 
 inline constexpr std::size_t kMaxVertexSkinInfluences = 4U;
-inline constexpr float kMinSkinWeightThreshold = 1.0e-5f;  // __real@3727c5ac at 0x1402b9a2d
+inline constexpr float kMinSkinWeightThreshold = 1.0e-5f;  // __real@3727c5ac at 0x1402b9c9d
 
 [[nodiscard]] inline Quatf normalize_quat(const Quatf& q) noexcept {
     const float norm2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
@@ -36,7 +36,7 @@ inline constexpr float kMinSkinWeightThreshold = 1.0e-5f;  // __real@3727c5ac at
     return {q.x * inv, q.y * inv, q.z * inv, q.w * inv};
 }
 
-// Mirrors rglTransform::setRotation(const rglQuaternion&) (0x1402b65d0), where
+// Mirrors rglTransform::setRotation(const rglQuaternion&) (0x1402b6840), where
 // rglQuaternion stores {w, x, y, z} in memory and Quatf exposes {x, y, z, w}.
 inline void set_rotation_quat(core::WseTransform& out, const Quatf& raw_q) noexcept {
     const Quatf q = normalize_quat(raw_q);
@@ -85,7 +85,7 @@ inline void set_rotation_quat(core::WseTransform& out, const Quatf& raw_q) noexc
     };
 }
 
-// Mirrors rglQuaternion::interpolate (0x1402d6bb0) shortest-arc linear blend,
+// Mirrors rglQuaternion::interpolate (0x1402d6e20) shortest-arc linear blend,
 // normalized so rigid bone transforms preserve unit scale on coarse keys.
 [[nodiscard]] inline Quatf interpolate_quat(const Quatf& q0,
                                             const Quatf& q1,
@@ -103,7 +103,7 @@ inline void set_rotation_quat(core::WseTransform& out, const Quatf& raw_q) noexc
 }
 
 // Binary-searches bracketing keys in [keys.front().time_frame .. back().time_frame]
-// matching rglIpo::getKeyForTime (0x140103480).
+// matching rglIpo::getKeyForTime (0x1401035e0).
 template <typename KeyT>
 inline void find_ipo_bracket(std::span<const KeyT> keys,
                              float frame_time,
@@ -171,7 +171,7 @@ inline void find_ipo_bracket(std::span<const KeyT> keys,
     };
 }
 
-// Precomputed rest-pose bone hierarchy matching rglSkeletonModel (0x14030d230).
+// Precomputed rest-pose bone hierarchy matching rglSkeletonModel (0x14030dff0).
 struct SkeletonBindPose {
     std::vector<std::int32_t> parent_indices{};
     std::vector<core::WseTransform> local_rest{};
@@ -213,7 +213,7 @@ inline void evaluate_bone_hierarchy(std::span<const std::int32_t> parents,
 
 }  // namespace skeleton_detail
 
-// Mirrors rglSkeletonModel::readStream (0x14030d340..0x14030d50a) hierarchy build.
+// Mirrors rglSkeletonModel::readStream (0x14030e100..0x14030e2ca) hierarchy build.
 [[nodiscard]] inline SkeletonBindPose build_skeleton_bind_pose(const BrfSkeleton& skel) {
     SkeletonBindPose pose{};
     const std::size_t n = skel.bones.size();
@@ -231,9 +231,9 @@ inline void evaluate_bone_hierarchy(std::span<const std::int32_t> parents,
 }
 
 // Evaluates world-space bone transforms at normalized progress in [0, 1] over
-// [start_frame .. end_frame] (rglSkeleton::getBoneTransformForAnimation 0x14030a770,
-// root motion 0x14030a96b..0x14030a996; rglSkeleton::updateBonePositions 0x140308b00,
-// root motion 0x140309ad2..0x140309b0b: m_positionIpo adds directly to root bone[0].m_transform.o).
+// [start_frame .. end_frame] (rglSkeleton::getBoneTransformForAnimation 0x14030b530,
+// root motion 0x14030b72b..0x14030b756; rglSkeleton::updateBonePositions 0x1403098c0,
+// root motion 0x14030a892..0x14030a8cb: m_positionIpo adds directly to root bone[0].m_transform.o).
 // If `anim == nullptr`, returns the bind rest pose (`pose.world_rest`).
 inline void evaluate_skeleton_pose(const SkeletonBindPose& pose,
                                    const BrfSkeletonAnimation* anim,
@@ -268,8 +268,8 @@ inline void evaluate_skeleton_pose(const SkeletonBindPose& pose,
 }
 
 // Computes rigid skinning transforms `anim_world[i] * inverse(rest_world[i])`,
-// equivalent to rglBone::getSkinningTransform (0x140258800) + rest-origin offset
-// applied by rglSkeleton::skinMesh (0x14030bb07).
+// equivalent to rglBone::getSkinningTransform (0x140258980) + rest-origin offset
+// applied by rglSkeleton::skinMesh (0x14030c8c7).
 inline void compute_skinning_transforms(const SkeletonBindPose& pose,
                                         std::span<const core::WseTransform> bone_world,
                                         std::vector<core::WseTransform>& out_skin) {
@@ -305,7 +305,7 @@ struct VertexSkinWeights {
 };
 
 // Extracts up to 4 per-vertex bone weights from `BrfMesh::vertex_groups`
-// (rglMesh::updateSkinData 0x1402b9930). Safety deviation: a vertex with more than 4
+// (rglMesh::updateSkinData 0x1402b9ba0). Safety deviation: a vertex with more than 4
 // influences keeps its 4 largest weights (replacing the smallest held one), independent
 // of vertex-group order; `skin_brf_mesh` renormalizes what is kept.
 [[nodiscard]] inline std::vector<VertexSkinWeights> build_mesh_skin_data(
@@ -397,7 +397,7 @@ inline void evaluate_skinned_vertex(const Vec3f& rest_pos,
     }
 }
 
-// Applies CPU linear-blend skinning (rglSkeleton::skinMesh 0x14030b8f0) to a
+// Applies CPU linear-blend skinning (rglSkeleton::skinMesh 0x14030c6b0) to a
 // `BrfMesh`, producing a pose-deformed copy suitable for `build_rhi_mesh_from_brf`.
 // Unweighted vertices or out-of-range bone indices fall back safely to bind pose.
 inline void skin_brf_mesh(const BrfMesh& src,

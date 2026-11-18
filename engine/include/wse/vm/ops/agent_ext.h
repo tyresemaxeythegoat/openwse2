@@ -78,7 +78,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_get_item_slot_modifier: {
-        // 3301 (0x1401e7fc0)
+        // 3301 (0x1401e8140)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -94,7 +94,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_get_animation_progress: {
-        // 3302 (0x1401e801a)
+        // 3302 (0x1401e819a)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -111,7 +111,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_get_dna: {
-        // 3303 (0x1401e8080)
+        // 3303 (0x1401e8200)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -123,7 +123,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_get_ground_scene_prop: {
-        // 3304 (0x1401e80b4)
+        // 3304 (0x1401e8234)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -143,7 +143,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_set_item_slot_ammo: {
-        // 3305 (0x1401e8140)
+        // 3305 (0x1401e82c0)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -157,7 +157,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_item_slot_hit_points: {
-        // 3306 (0x1401e8190)
+        // 3306 (0x1401e8310)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -172,7 +172,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_set_item_slot_hit_points: {
-        // 3307 (0x1401e81ea)
+        // 3307 (0x1401e836a)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -195,7 +195,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_wielded_item_slot_no: {
-        // 3308 (0x1401e823a)
+        // 3308 (0x1401e83ba)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -223,7 +223,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_get_scale: {
-        // 3309 (0x1401e8281)
+        // 3309 (0x1401e8401)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -238,7 +238,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_set_forced_lod: {
-        // 3310 (0x1401e82c9)
+        // 3310 (0x1401e8449)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -250,7 +250,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_item_slot_flags: {
-        // 3311 (0x1401e831f)
+        // 3311 (0x1401e849f)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -268,7 +268,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_ai_get_move_target_position: {
-        // 3312 (0x1401e8366)
+        // 3312 (0x1401e84e6)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -291,7 +291,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_set_horse: {
-        // 3313 (0x1401e8499)
+        // 3313 (0x1401e8619)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -323,7 +323,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_ai_set_simple_behavior: {
-        // 3314 (0x1401e854a)
+        // 3314 (0x1401e86ca)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -342,7 +342,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_accelerate: {
-        // 3315 (0x1401e85b9)
+        // 3315 (0x1401e8739)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -364,7 +364,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_set_item_slot_modifier: {
-        // 3316 (0x1401e8641)
+        // 3316 (0x1401e87c1)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -379,7 +379,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_body_meta_mesh_set_vertex_keys_time_point: {
-        // 3317 (0x1401e86af): body_meta_mesh inclusive 0..28, raw narrow[2].
+        // 3317 (0x1401e882f): body_meta_mesh inclusive 0..28, raw narrow[2].
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -394,7 +394,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_body_meta_mesh_set_visibility: {
-        // 3318 (0x1401e870e)
+        // 3318 (0x1401e888e)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -407,7 +407,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_set_personal_animation: {
-        // 3319 (0x1401e8772)
+        // 3319 (0x1401e88f2)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -420,7 +420,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_personal_animation: {
-        // 3320 (0x1401e88e6)
+        // 3320 (0x1401e8a66)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -441,7 +441,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_set_default_animations: {
-        // 3321 (0x1401e893e)
+        // 3321 (0x1401e8abe)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -452,7 +452,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_cancel_current_animation: {
-        // 3322 (0x1401e89d5)
+        // 3322 (0x1401e8b55)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -471,7 +471,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_ranged_damage_modifier: {
-        // 3323 (0x1401e8a33)
+        // 3323 (0x1401e8bb3)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -485,7 +485,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_add_stun: {
-        // 3324 (0x1401e8a78)
+        // 3324 (0x1401e8bf8)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -499,7 +499,7 @@ namespace wse::vm {
     }
     case WseOpcode::agent_body_meta_mesh_deform_in_range:
     case WseOpcode::agent_body_meta_mesh_deform_in_cycle_loop: {
-        // 3325 / 3326 (0x1401e8abd / 0x1401e8b3e)
+        // 3325 / 3326 (0x1401e8c3d / 0x1401e8cbe)
         if (narrow.size() < 5 || wide.size() < 5) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -523,7 +523,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_body_meta_mesh_get_current_deform_progress: {
-        // 3327 (0x1401e8bbf)
+        // 3327 (0x1401e8d3f)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -542,7 +542,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_body_meta_mesh_get_current_deform_frame: {
-        // 3328 (0x1401e8c14)
+        // 3328 (0x1401e8d94)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -560,7 +560,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_set_footstep_sound: {
-        // 3329 (0x1401e8c6e)
+        // 3329 (0x1401e8dee)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -576,7 +576,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_horse_rotation_velocity: {
-        // 3330 (0x1401e8cca)
+        // 3330 (0x1401e8e4a)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -590,7 +590,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_get_current_vertical_speed: {
-        // 3331 (0x1401e8d07)
+        // 3331 (0x1401e8e87)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -604,7 +604,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_set_current_vertical_speed: {
-        // 3332 (0x1401e8d41)
+        // 3332 (0x1401e8ec1)
         if (narrow.size() < 2 || wide.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -618,7 +618,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_position_in_group: {
-        // 3333 (0x1401e8dc6)
+        // 3333 (0x1401e8f46)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -640,7 +640,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_current_ai_mesh_face_group: {
-        // 3334 (0x1401e8e59)
+        // 3334 (0x1401e8fd9)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -653,7 +653,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_set_time_speed_multiplier: {
-        // 3335 (0x1401e8eb9)
+        // 3335 (0x1401e9039)
         if (narrow.size() < 2 || wide.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -665,7 +665,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_time_speed_multiplier: {
-        // 3336 (0x1401e8efc)
+        // 3336 (0x1401e907c)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -680,7 +680,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_kick: {
-        // 3337 (0x1401e8f39)
+        // 3337 (0x1401e90b9)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -698,7 +698,7 @@ namespace wse::vm {
     }
     case WseOpcode::agent_set_dropped_items_prune_time:
     case WseOpcode::agent_set_missile_items_prune_time: {
-        // 3338 / 3339 (0x1401e9031 / 0x1401e9071): wide[1] seconds, NO fp_mul.
+        // 3338 / 3339 (0x1401e91b1 / 0x1401e91f1): wide[1] seconds, NO fp_mul.
         if (narrow.size() < 2 || wide.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -751,7 +751,7 @@ namespace wse::vm {
     }
     case WseOpcode::agent_fade_out_advanced:
     case WseOpcode::agent_fade_in_advanced: {
-        // 3345 / 3346 (0x1401e91e3 / 0x1401e926a)
+        // 3345 / 3346 (0x1401e9363 / 0x1401e93ea)
         if (narrow.size() < 2 || wide.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -774,7 +774,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_set_voice_sound: {
-        // 3347 (0x1401e92f1)
+        // 3347 (0x1401e9471)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -789,7 +789,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_set_rider_rotation_angles: {
-        // 3349 (0x1401e937f)
+        // 3349 (0x1401e94ff)
         if (narrow.size() < 4 || wide.size() < 4) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -805,7 +805,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_rider_rotation_angles: {
-        // 3350 (0x1401e9414)
+        // 3350 (0x1401e9594)
         if (narrow.size() < 4) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -827,7 +827,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_set_default_rider_rotation_angles: {
-        // 3351 (0x1401e9488)
+        // 3351 (0x1401e9608)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -840,7 +840,7 @@ namespace wse::vm {
     }
     case WseOpcode::agent_set_can_multihit:
     case WseOpcode::agent_set_can_piercing: {
-        // 3353 / 3359 (0x1401e9516 / 0x1401e958f)
+        // 3353 / 3359 (0x1401e9696 / 0x1401e970f)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -862,7 +862,7 @@ namespace wse::vm {
     }
     case WseOpcode::agent_has_multihit:
     case WseOpcode::agent_has_piercing: {
-        // 3354 / 3360 (0x1401e9565 / 0x1401e95de)
+        // 3354 / 3360 (0x1401e96e5 / 0x1401e975e)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -879,7 +879,7 @@ namespace wse::vm {
                        : WseDispatch::condition_false;
     }
     case WseOpcode::agent_set_crush_through: {
-        // 3355 (0x1401e9608)
+        // 3355 (0x1401e9788)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -891,7 +891,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_get_crush_through: {
-        // 3356 (0x1401e964c)
+        // 3356 (0x1401e97cc)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -904,7 +904,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::agent_set_trigger_disabled: {
-        // 3357 (0x1401e9678 -> 0x14002b860)
+        // 3357 (0x1401e97f8 -> 0x14002b8b0)
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -922,7 +922,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::agent_is_trigger_disabled: {
-        // 3358 (0x1401e96b2 -> 0x14002b8a0)
+        // 3358 (0x1401e9832 -> 0x14002b8f0)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }

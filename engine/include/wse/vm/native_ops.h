@@ -1,14 +1,14 @@
 // Extended native Warband opcode handlers (v1.1.5.5 mbStatement::execute).
 //
 // Grounded in official WSE2 v1.1.5.5 PDB/binary decompilation:
-//   entity_slots (500..510, 520..530, 540..550, 560..570)  0x1401c9799..0x1401ca66d
-//   positions_and_math (700..746)                          0x1401ca915..0x1401cbc3c
-//   display_message (1106)                                 0x1401cdb54
-//   troop_is_hero (1507), troop_set_health (1560)          0x1401d027e, 0x1401d132e
-//   agent_is_human (1704)                                  0x1401d37d3
-//   shuffle_range..store_troop_gold (2134..2149)           0x1401dd37c..0x1401dd5ea
-//   store_troop_faction (2173), store_faction_of_party     0x1401dd9d8, 0x1401ddd7f
-//   strings (2318..2355)                                   0x1401de882..0x1401df231
+//   entity_slots (500..510, 520..530, 540..550, 560..570)  0x1401c9919..0x1401ca7ed
+//   positions_and_math (700..746)                          0x1401caa95..0x1401cbdbc
+//   display_message (1106)                                 0x1401cdcd4
+//   troop_is_hero (1507), troop_set_health (1560)          0x1401d03fe, 0x1401d14ae
+//   agent_is_human (1704)                                  0x1401d3953
+//   shuffle_range..store_troop_gold (2134..2149)           0x1401dd4fc..0x1401dd76a
+//   store_troop_faction (2173), store_faction_of_party     0x1401ddb58, 0x1401ddeff
+//   strings (2318..2355)                                   0x1401dea02..0x1401df3b1
 
 #pragma once
 
@@ -201,7 +201,7 @@ enum class NativeAxis : std::uint8_t {
     return slot >= 0 && slot <= wse::game::kMaxSlotIndex;
 }
 
-// Mirrors rglRand (0x14032ffb0): MSVC-compatible LCG using g_randSeed.
+// Mirrors rglRand (0x140330d70): MSVC-compatible LCG using g_randSeed.
 [[nodiscard]] inline std::int32_t native_rgl_rand(VmContext& ctx,
                                                   std::int32_t max_val) noexcept {
     if (max_val <= 1) {
@@ -218,7 +218,7 @@ inline void native_store_trig_deg(std::uint64_t dst,
                                   float angle_rad,
                                   VmContext& ctx,
                                   std::span<std::int64_t> locals) {
-    constexpr float kRadToDeg = 57.29578F;  // mupRadToDeg (0x14006f9a0)
+    constexpr float kRadToDeg = 57.29578F;  // mupRadToDeg (0x14006fb00)
     const auto fpScale = static_cast<float>(ctx.fixedPointMultiplier);
     const float deg = angle_rad * kRadToDeg;
     store_lvalue(dst, wse_trunc64(static_cast<double>(deg * fpScale)), ctx, locals);
@@ -325,8 +325,8 @@ inline void native_store_name_link(std::int32_t reg_idx,
     VmContext& ctx,
     std::span<std::int64_t> locals) {
     const auto dst = static_cast<std::uint64_t>(statement.operands[0]);
-    constexpr float kDegToRad = 0.01745329238474369F;  // mupDegToRad (0x14006f990)
-    constexpr float kRadToDeg = 57.29578F;              // mupRadToDeg (0x14006f9a0)
+    constexpr float kDegToRad = 0.01745329238474369F;  // mupDegToRad (0x14006faf0)
+    constexpr float kRadToDeg = 57.29578F;              // mupRadToDeg (0x14006fb00)
 
     switch (opcode) {
     case core_op::kTroopSetSlot:
@@ -956,7 +956,7 @@ inline void native_store_name_link(std::int32_t reg_idx,
     }
 
     const auto dst = static_cast<std::uint64_t>(statement.operands[0]);
-    constexpr float kDegToRad = 0.01745329238474369F;  // DAT_1405761e8
+    constexpr float kDegToRad = 0.01745329238474369F;  // DAT_1405772c8
 
     switch (opcode) {
     case core_op::kGe:

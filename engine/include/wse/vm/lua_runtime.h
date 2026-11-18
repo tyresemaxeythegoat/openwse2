@@ -3,12 +3,12 @@
 // checks and Android/host targets compile without Lua C headers.
 //
 // Evidence (WSE2 v1.1.5.5 PE + PDB + Ghidra 12.1.4):
-//   WSELuaManager::WSELuaManager    0x14033c3d0  size 21504B (type 0xadaf)
-//   WSELuaManager::initialize       0x14033ca80  Lua state + stdlibs + LuaGlobals + main.lua
-//   WSELuaManager::OnOperationExecute    0x14033cdd0  statement-level Lua hook
-//   WSELuaManager::OnOperationMgrExecute 0x14033d090  block/script-level Lua hook
-//   WSELuaManager::doMainScript     0x140341f10  executes <module>/lua/main.lua
-//   g_luaManager                    0x14069a6c0
+//   WSELuaManager::WSELuaManager    0x14033d190  size 21504B (type 0xadaf)
+//   WSELuaManager::initialize       0x14033d840  Lua state + stdlibs + LuaGlobals + main.lua
+//   WSELuaManager::OnOperationExecute    0x14033db90  statement-level Lua hook
+//   WSELuaManager::OnOperationMgrExecute 0x14033de50  block/script-level Lua hook
+//   WSELuaManager::doMainScript     0x140342cd0  executes <module>/lua/main.lua
+//   g_luaManager                    0x14069b6f0
 #pragma once
 
 #include <cstdint>

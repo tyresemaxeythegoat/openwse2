@@ -985,7 +985,7 @@ void test_m5_review_regressions() {
         w.mission_objects.resize(2);  // placed by the scene, not through allocate_mission_object
         w.mission_objects[0].scene_prop_no = 1;
         w.mission_objects[1].scene_prop_no = 2;
-        // `multiplayer_clear_scene` (416, `0x140147a80`) deletes agents and prunable objects
+        // `multiplayer_clear_scene` (416, `0x140147c00`) deletes agents and prunable objects
         // (`+0x1d5` / `m5.enable_pruning`), resets active players' `agent_no = -1` /
         // `ready_to_spawn = false` (keeping `item_ids`), and leaves unpruned/scene props alone.
         expect(run_stmt(ctx, 1974U, {3, 0}) && ctx.registers[0] == 2, "416: spawn prop 2");
@@ -1053,7 +1053,7 @@ void test_m5_review_regressions() {
     }
     {
         // Regression: scene_prop_set_prune_time (1819) arms pruning like `setPruneTime`
-        // (0x140153d88), so 416 removes a spawned prop that was given a prune time.
+        // (0x140153f08), so 416 removes a spawned prop that was given a prune time.
         VmContext ctx;
         auto& w = ctx.world;
         w.lighting.has_scene = true;

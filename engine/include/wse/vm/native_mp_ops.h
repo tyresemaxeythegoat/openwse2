@@ -249,22 +249,22 @@ inline void native_m5_send_to_server(std::int32_t event_type,
     auto& world = ctx.world;
 
     switch (opcode) {
-    case 388: // multiplayer_send_message_to_server (0x1401c75cc)
+    case 388: // multiplayer_send_message_to_server (0x1401c774c)
         native_m5_send_to_server(narrow[0], {}, {}, false, ctx);
         return NativeDispatch::handled;
-    case 389: // multiplayer_send_int_to_server (0x1401c7659)
+    case 389: // multiplayer_send_int_to_server (0x1401c77d9)
         native_m5_send_to_server(narrow[0], wide.subspan(1, 1), {}, false, ctx);
         return NativeDispatch::handled;
-    case 390: // multiplayer_send_2_int_to_server (0x1401c76d1)
+    case 390: // multiplayer_send_2_int_to_server (0x1401c7851)
         native_m5_send_to_server(narrow[0], wide.subspan(1, 2), {}, false, ctx);
         return NativeDispatch::handled;
-    case 391: // multiplayer_send_3_int_to_server (0x1401c7754)
+    case 391: // multiplayer_send_3_int_to_server (0x1401c78d4)
         native_m5_send_to_server(narrow[0], wide.subspan(1, 3), {}, false, ctx);
         return NativeDispatch::handled;
-    case 392: // multiplayer_send_4_int_to_server (0x1401c77d2)
+    case 392: // multiplayer_send_4_int_to_server (0x1401c7952)
         native_m5_send_to_server(narrow[0], wide.subspan(1, 4), {}, false, ctx);
         return NativeDispatch::handled;
-    case 393: { // multiplayer_send_string_to_server (0x1401c785b)
+    case 393: { // multiplayer_send_string_to_server (0x1401c79db)
         const std::uint8_t tag1 = wse_tag_at(tags, 1);
         if (wse_string_register_ok(narrow[1], tag1, banks)) {
             const std::u16string parsed = native_resolve_and_parse(narrow[1], tag1, ctx);
@@ -272,7 +272,7 @@ inline void native_m5_send_to_server(std::int32_t event_type,
         }
         return NativeDispatch::handled;
     }
-    case 409: // player_spawn_new_agent (0x1401c8196)
+    case 409: // player_spawn_new_agent (0x1401c8316)
         if (world.is_valid_player(narrow[0]) && narrow[1] >= 0 &&
             narrow[1] < game::kMaxEntryPoints) {
             auto& pl = world.players[static_cast<std::size_t>(narrow[0])];
@@ -280,14 +280,14 @@ inline void native_m5_send_to_server(std::int32_t event_type,
             pl.m5.spawn_entry_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 410: // player_add_spawn_item (0x1401c81e5)
+    case 410: // player_add_spawn_item (0x1401c8365)
         if (world.is_valid_player(narrow[0]) && narrow[1] >= 0 &&
             narrow[1] < game::kNumTroopEquipmentSlots && world.is_valid_item(narrow[2])) {
             world.players[static_cast<std::size_t>(narrow[0])]
                 .item_ids[static_cast<std::size_t>(narrow[1])] = narrow[2];
         }
         return NativeDispatch::handled;
-    case 425: // multiplayer_find_spawn_point (0x1401c85d2)
+    case 425: // multiplayer_find_spawn_point (0x1401c8752)
         if (world.is_valid_team(narrow[1])) {
             store_lvalue(
                 dst,
@@ -296,14 +296,14 @@ inline void native_m5_send_to_server(std::int32_t event_type,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 429: // player_set_is_admin (0x1401c86a8)
+    case 429: // player_set_is_admin (0x1401c8828)
         if (world.is_valid_player(narrow[0])) {
             auto& pl = world.players[static_cast<std::size_t>(narrow[0])];
             pl.privilege = (wide[1] != 0) ? 3 : 1;
             pl.is_admin = (wide[1] != 0);
         }
         return NativeDispatch::handled;
-    case 431: // player_get_score (0x1401c8739)
+    case 431: // player_get_score (0x1401c88b9)
         if (world.is_valid_player(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -311,7 +311,7 @@ inline void native_m5_send_to_server(std::int32_t event_type,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 433: // player_get_kill_count (0x1401c87b2)
+    case 433: // player_get_kill_count (0x1401c8932)
         if (world.is_valid_player(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -319,13 +319,13 @@ inline void native_m5_send_to_server(std::int32_t event_type,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 434: // player_set_kill_count (0x1401c87fa)
+    case 434: // player_set_kill_count (0x1401c897a)
         if (world.is_valid_player(narrow[0])) {
             world.players[static_cast<std::size_t>(narrow[0])].kill_count =
                 static_cast<std::int16_t>(narrow[1]);
         }
         return NativeDispatch::handled;
-    case 435: // player_get_death_count (0x1401c882b)
+    case 435: // player_get_death_count (0x1401c89ab)
         if (world.is_valid_player(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -333,13 +333,13 @@ inline void native_m5_send_to_server(std::int32_t event_type,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 436: // player_set_death_count (0x1401c8873)
+    case 436: // player_set_death_count (0x1401c89f3)
         if (world.is_valid_player(narrow[0])) {
             world.players[static_cast<std::size_t>(narrow[0])].death_count =
                 static_cast<std::int16_t>(narrow[1]);
         }
         return NativeDispatch::handled;
-    case 437: // player_get_ping (0x1401c88a4)
+    case 437: // player_get_ping (0x1401c8a24)
         if (world.is_valid_player(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -347,19 +347,19 @@ inline void native_m5_send_to_server(std::int32_t event_type,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 438: // player_is_busy_with_menus (0x1401c88ec)
+    case 438: // player_is_busy_with_menus (0x1401c8a6c)
         return (world.is_valid_player(narrow[0]) &&
                 world.players[static_cast<std::size_t>(narrow[0])].m5.is_busy_with_menus)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 439: // player_get_is_muted (0x1401c891c)
+    case 439: // player_get_is_muted (0x1401c8a9c)
         if (world.is_valid_player(narrow[1])) {
             store_lvalue(dst,
                          world.players[static_cast<std::size_t>(narrow[1])].is_muted ? 1 : 0,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 440: // player_set_is_muted (0x1401c8967)
+    case 440: // player_set_is_muted (0x1401c8ae7)
         if (world.is_valid_player(narrow[0])) {
             auto& pl = world.players[static_cast<std::size_t>(narrow[0])];
             pl.is_muted = (wide[1] != 0);
@@ -368,7 +368,7 @@ inline void native_m5_send_to_server(std::int32_t event_type,
             }
         }
         return NativeDispatch::handled;
-    case 441: // player_get_unique_id (0x1401c89d6)
+    case 441: // player_get_unique_id (0x1401c8b56)
         if (world.is_valid_player(narrow[1])) {
             const std::uint32_t uid =
                 static_cast<std::uint32_t>(
@@ -377,7 +377,7 @@ inline void native_m5_send_to_server(std::int32_t event_type,
             store_lvalue(dst, static_cast<std::int64_t>(uid), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 442: // player_get_gender (0x1401c8a20)
+    case 442: // player_get_gender (0x1401c8ba0)
         if (world.is_valid_player(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -385,7 +385,7 @@ inline void native_m5_send_to_server(std::int32_t event_type,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 459: // player_save_picked_up_items_for_next_spawn (0x1401c8cc7)
+    case 459: // player_save_picked_up_items_for_next_spawn (0x1401c8e47)
         if (world.is_valid_player(narrow[0]) && world.is_server) {
             auto& pl = world.players[static_cast<std::size_t>(narrow[0])];
             pl.item_ids.fill(-1);
@@ -415,7 +415,7 @@ inline void native_m5_send_to_server(std::int32_t event_type,
             }
         }
         return NativeDispatch::handled;
-    case 460: // player_get_value_of_original_items (0x1401c8d08)
+    case 460: // player_get_value_of_original_items (0x1401c8e88)
         if (world.is_valid_player(narrow[1])) {
             const auto& pl = world.players[static_cast<std::size_t>(narrow[1])];
             if (world.is_valid_agent(pl.agent_no) && world.is_server) {
@@ -443,44 +443,44 @@ inline void native_m5_send_to_server(std::int32_t event_type,
             }
         }
         return NativeDispatch::handled;
-    case 475: // server_get_renaming_server_allowed (0x1401c909b)
+    case 475: // server_get_renaming_server_allowed (0x1401c921b)
         store_lvalue(dst, world.m5.allow_renaming_server ? 1 : 0, ctx, locals);
         return NativeDispatch::handled;
-    case 476: // server_get_changing_game_type_allowed (0x1401c90c2)
+    case 476: // server_get_changing_game_type_allowed (0x1401c9242)
         store_lvalue(dst, world.m5.allow_changing_game_type ? 1 : 0, ctx, locals);
         return NativeDispatch::handled;
-    case 478: // server_get_combat_speed (0x1401c90e9)
+    case 478: // server_get_combat_speed (0x1401c9269)
         if (world.is_multiplayer) {
             store_lvalue(dst, static_cast<std::int64_t>(world.m5.server_combat_speed), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 479: // server_set_combat_speed (0x1401c9124)
+    case 479: // server_set_combat_speed (0x1401c92a4)
         if (world.is_multiplayer && narrow[0] >= 0 && narrow[0] < 5) {
             world.m5.server_combat_speed = narrow[0];
         }
         return NativeDispatch::handled;
-    case 480: // server_get_friendly_fire (0x1401c9188)
+    case 480: // server_get_friendly_fire (0x1401c9308)
         if (world.is_multiplayer) {
             store_lvalue(dst, static_cast<std::int64_t>(world.m5.server_friendly_fire), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 481: // server_set_friendly_fire (0x1401c91c3)
+    case 481: // server_set_friendly_fire (0x1401c9343)
         if (world.is_multiplayer && narrow[0] >= 0 && narrow[0] < 2) {
             world.m5.server_friendly_fire = narrow[0];
         }
         return NativeDispatch::handled;
-    case 482: // server_get_control_block_dir (0x1401c91fd)
+    case 482: // server_get_control_block_dir (0x1401c937d)
         if (world.is_multiplayer) {
             store_lvalue(
                 dst, static_cast<std::int64_t>(world.m5.server_control_block_dir), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 483: // server_set_control_block_dir (0x1401c9238)
+    case 483: // server_set_control_block_dir (0x1401c93b8)
         if (world.is_multiplayer && narrow[0] >= 0 && narrow[0] < 2) {
             world.m5.server_control_block_dir = narrow[0];
         }
         return NativeDispatch::handled;
-    case 484: { // server_set_password (0x1401c929c)
+    case 484: { // server_set_password (0x1401c941c)
         const std::uint8_t tag0 = wse_tag_at(tags, 0);
         if (world.is_multiplayer && wse_string_register_ok(narrow[0], tag0, banks)) {
             const std::string utf8 =
@@ -491,28 +491,28 @@ inline void native_m5_send_to_server(std::int32_t event_type,
         }
         return NativeDispatch::handled;
     }
-    case 485: // server_get_add_to_game_servers_list (0x1401c933b)
+    case 485: // server_get_add_to_game_servers_list (0x1401c94bb)
         if (world.is_multiplayer) {
             store_lvalue(
                 dst, static_cast<std::int64_t>(world.m5.server_add_to_servers_list), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 486: // server_set_add_to_game_servers_list (0x1401c9376)
+    case 486: // server_set_add_to_game_servers_list (0x1401c94f6)
         if (world.is_multiplayer) {
             world.m5.server_add_to_servers_list = (wide[0] != 0) ? 1 : 0;
         }
         return NativeDispatch::handled;
-    case 487: // server_get_ghost_mode (0x1401c93a3)
+    case 487: // server_get_ghost_mode (0x1401c9523)
         if (world.is_multiplayer) {
             store_lvalue(dst, static_cast<std::int64_t>(world.m5.server_ghost_mode), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 488: // server_set_ghost_mode (0x1401c93de)
+    case 488: // server_set_ghost_mode (0x1401c955e)
         if (world.is_multiplayer && narrow[0] >= 0 && narrow[0] < 4) {
             world.m5.server_ghost_mode = narrow[0];
         }
         return NativeDispatch::handled;
-    case 489: { // server_set_name (0x1401c941a)
+    case 489: { // server_set_name (0x1401c959a)
         const std::uint8_t tag0 = wse_tag_at(tags, 0);
         if (world.is_multiplayer && wse_string_register_ok(narrow[0], tag0, banks) &&
             world.m5.allow_renaming_server) {
@@ -527,12 +527,12 @@ inline void native_m5_send_to_server(std::int32_t event_type,
         }
         return NativeDispatch::handled;
     }
-    case 490: // server_get_max_num_players (0x1401c94d4)
+    case 490: // server_get_max_num_players (0x1401c9654)
         if (world.is_multiplayer) {
             store_lvalue(dst, static_cast<std::int64_t>(world.max_players), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 491: // server_set_max_num_players (0x1401c950f)
+    case 491: // server_set_max_num_players (0x1401c968f)
         if (world.is_multiplayer) {
             const std::int32_t max_pub = narrow[0];
             const std::int32_t max_priv =
@@ -544,7 +544,7 @@ inline void native_m5_send_to_server(std::int32_t event_type,
             }
         }
         return NativeDispatch::handled;
-    case 492: { // server_set_welcome_message (0x1401c9586)
+    case 492: { // server_set_welcome_message (0x1401c9706)
         const std::uint8_t tag0 = wse_tag_at(tags, 0);
         if (world.is_multiplayer && wse_string_register_ok(narrow[0], tag0, banks)) {
             world.mp.welcome_message =
@@ -552,45 +552,45 @@ inline void native_m5_send_to_server(std::int32_t event_type,
         }
         return NativeDispatch::handled;
     }
-    case 493: // server_get_melee_friendly_fire (0x1401c9606)
+    case 493: // server_get_melee_friendly_fire (0x1401c9786)
         if (world.is_multiplayer) {
             store_lvalue(
                 dst, static_cast<std::int64_t>(world.m5.server_melee_friendly_fire), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 494: // server_set_melee_friendly_fire (0x1401c9641)
+    case 494: // server_set_melee_friendly_fire (0x1401c97c1)
         if (world.is_multiplayer && narrow[0] >= 0 && narrow[0] < 2) {
             world.m5.server_melee_friendly_fire = narrow[0];
         }
         return NativeDispatch::handled;
-    case 495: // server_get_friendly_fire_damage_self_ratio (0x1401c967b)
+    case 495: // server_get_friendly_fire_damage_self_ratio (0x1401c97fb)
         if (world.is_multiplayer) {
             store_lvalue(
                 dst, static_cast<std::int64_t>(world.m5.server_ff_self_ratio), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 496: // server_set_friendly_fire_damage_self_ratio (0x1401c96b6)
+    case 496: // server_set_friendly_fire_damage_self_ratio (0x1401c9836)
         if (world.is_multiplayer && narrow[0] >= 0 && narrow[0] <= 100) {
             world.m5.server_ff_self_ratio = narrow[0];
         }
         return NativeDispatch::handled;
-    case 497: // server_get_friendly_fire_damage_friend_ratio (0x1401c96f0)
+    case 497: // server_get_friendly_fire_damage_friend_ratio (0x1401c9870)
         if (world.is_multiplayer) {
             store_lvalue(
                 dst, static_cast<std::int64_t>(world.m5.server_ff_friend_ratio), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 498: // server_set_friendly_fire_damage_friend_ratio (0x1401c972b)
+    case 498: // server_set_friendly_fire_damage_friend_ratio (0x1401c98ab)
         if (world.is_multiplayer && narrow[0] >= 0 && narrow[0] <= 100) {
             world.m5.server_ff_friend_ratio = narrow[0];
         }
         return NativeDispatch::handled;
-    case 499: // server_get_anti_cheat (0x1401c9765)
+    case 499: // server_get_anti_cheat (0x1401c98e5)
         if (world.is_multiplayer) {
             store_lvalue(dst, 0, ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2748: { // player_set_face_keys (0x1401e12d4)
+    case 2748: { // player_set_face_keys (0x1401e1454)
         const std::uint8_t tag1 = wse_tag_at(tags, 1);
         if (world.is_valid_player(narrow[0]) && wse_string_register_ok(narrow[1], tag1, banks)) {
             const std::string utf8 =

@@ -3,7 +3,7 @@
 
 Combines:
 - mbStatementBlock control-flow dispatch (< 30) verified in mb_warband_wse2_x64.exe
-- mbStatement::execute native jump table at 0x1401e22f0 (opcodes 30..2767)
+- mbStatement::execute native jump table at 0x1401e2470 (opcodes 30..2767)
 - Public Warband SDK constants/comments from header_operations.py
 - Implemented opcode scan from engine/include/wse/vm/block_vm.h
 - Community names (COMMUNITY_NAMES) for live handlers the SDK header does not define
@@ -20,35 +20,35 @@ from pathlib import Path
 
 
 IMAGE_BASE = 0x140000000
-SWITCH_GUARD_VA = 0x1401C63E0
+SWITCH_GUARD_VA = 0x1401C6560
 SWITCH_GUARD_EXPECTED = bytes.fromhex("83c6e281feb10a00000f874fbe0100")
-JUMP_TABLE_VA = 0x1401E22F0
+JUMP_TABLE_VA = 0x1401E2470
 NATIVE_MIN = 30
 NATIVE_MAX = 2767
 NATIVE_SLOTS = NATIVE_MAX - NATIVE_MIN + 1  # 2738
-FALLBACK_WSE_VA = 0x1401E223E
-NOOP_TRUE_VA = 0x1401E226B
+FALLBACK_WSE_VA = 0x1401E23BE
+NOOP_TRUE_VA = 0x1401E23EB
 
 # Control-flow operations (< 30) dispatched inside mbStatementBlock
-# (analyze 0x1401f6740, execute 0x1401f69d0, startLoop 0x1401f7290,
-# endLoop 0x1401f7910, canLoop 0x1401f7f00).
+# (analyze 0x1401f68c0, execute 0x1401f6b50, startLoop 0x1401f7410,
+# endLoop 0x1401f7a90, canLoop 0x1401f8080).
 CONTROL_FLOW_VAS: dict[int, tuple[str, str]] = {
-    1: ("0x1401f6d4c", "mbStatementBlock::execute"),
-    3: ("0x1401f6e8c", "mbStatementBlock::execute"),
-    4: ("0x1401f6ebb", "mbStatementBlock::execute"),
-    5: ("0x1401f6efd", "mbStatementBlock::execute"),
-    6: ("0x1401f72f1", "mbStatementBlock::startLoop"),
-    7: ("0x1401f730f", "mbStatementBlock::startLoop"),
-    8: ("0x1401f6d5e", "mbStatementBlock::execute"),
-    9: ("0x1401f6e1b", "mbStatementBlock::execute"),
-    11: ("0x1401f7516", "mbStatementBlock::startLoop"),
-    12: ("0x1401f732e", "mbStatementBlock::startLoop"),
-    16: ("0x1401f759c", "mbStatementBlock::startLoop"),
-    17: ("0x1401f7531", "mbStatementBlock::startLoop"),
-    18: ("0x1401f7692", "mbStatementBlock::startLoop"),
-    21: ("0x1401f7176", "mbStatementBlock::execute"),
-    22: ("0x1401f71ba", "mbStatementBlock::execute"),
-    23: ("0x1401f71ee", "mbStatementBlock::execute"),
+    1: ("0x1401f6ecc", "mbStatementBlock::execute"),
+    3: ("0x1401f700c", "mbStatementBlock::execute"),
+    4: ("0x1401f703b", "mbStatementBlock::execute"),
+    5: ("0x1401f707d", "mbStatementBlock::execute"),
+    6: ("0x1401f7471", "mbStatementBlock::startLoop"),
+    7: ("0x1401f748f", "mbStatementBlock::startLoop"),
+    8: ("0x1401f6ede", "mbStatementBlock::execute"),
+    9: ("0x1401f6f9b", "mbStatementBlock::execute"),
+    11: ("0x1401f7696", "mbStatementBlock::startLoop"),
+    12: ("0x1401f74ae", "mbStatementBlock::startLoop"),
+    16: ("0x1401f771c", "mbStatementBlock::startLoop"),
+    17: ("0x1401f76b1", "mbStatementBlock::startLoop"),
+    18: ("0x1401f7812", "mbStatementBlock::startLoop"),
+    21: ("0x1401f72f6", "mbStatementBlock::execute"),
+    22: ("0x1401f733a", "mbStatementBlock::execute"),
+    23: ("0x1401f736e", "mbStatementBlock::execute"),
 }
 
 ENTITY_ITERATOR_STUBS: set[int] = set()
@@ -559,7 +559,7 @@ def render_markdown(doc: dict) -> str:
 
     lines.extend([
         "",
-        "### Shared `noop_true` slots (`0x1401e226b`)",
+        "### Shared `noop_true` slots (`0x1401e23eb`)",
         "",
         "| Opcode | Hex | SDK Name |",
         "| ---: | --- | --- |",
@@ -569,7 +569,7 @@ def render_markdown(doc: dict) -> str:
 
     lines.extend([
         "",
-        "### SDK-named slots routed to `executeWSE` fallback (`0x1401e223e`)",
+        "### SDK-named slots routed to `executeWSE` fallback (`0x1401e23be`)",
         "",
         "| Opcode | Hex | SDK Name(s) | Behavior in WSE2 |",
         "| ---: | --- | --- | --- |",

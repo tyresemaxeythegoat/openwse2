@@ -28,7 +28,7 @@ wse_troop_points_member(std::uint32_t opcode) noexcept {
     }
 }
 
-// Mirrors 3800..3803 (0x1401ebf9f..0x1401ec0cf): low byte vs bits 8..9.
+// Mirrors 3800..3803 (0x1401ec11f..0x1401ec24f): low byte vs bits 8..9.
 inline void wse_set_item_damage_part(wse::game::WseItemKind& item,
                                      std::uint32_t opcode,
                                      std::int32_t value) noexcept {
@@ -87,7 +87,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
 
     switch (static_cast<WseOpcode>(opcode)) {
     case WseOpcode::store_cur_mission_template_no: {
-        // 3600 (0x1401ea6b2): null g_currentMission (0x14061f078) yields -1,
+        // 3600 (0x1401ea832): null g_currentMission (0x140620078) yields -1,
         // otherwise the int32 at +0x9ae8 (cur_mission_template_no).
         effect.value = operands.state.current_mission_template_no
                            ? *operands.state.current_mission_template_no
@@ -96,7 +96,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
         return WseDispatch::handled;
     }
     case WseOpcode::get_campaign_time: {
-        // 3037 (0xbdd, 0x1401e63f0): reads DAT_14061f038.
+        // 3037 (0xbdd, 0x1401e6570): reads DAT_140620038.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -109,7 +109,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
         return WseDispatch::handled;
     }
     case WseOpcode::set_campaign_time: {
-        // 3038 (0xbde, 0x1401e63fc): writes DAT_14061f038 from wide[0].
+        // 3038 (0xbde, 0x1401e657c): writes DAT_140620038 from wide[0].
         if (wide.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -121,7 +121,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::show_hud: {
-        // 3045 (0xbe5, L1571): DAT_140657110 = (*param_3 == 0).
+        // 3045 (0xbe5, L1571): DAT_140658140 = (*param_3 == 0).
         if (wide.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -133,7 +133,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::set_show_use_tooltip: {
-        // 3601 (0xe11, 0x1401ea71d): 0 <= type < 11 writes mbMission +0x54a40.
+        // 3601 (0xe11, 0x1401ea89d): 0 <= type < 11 writes mbMission +0x54a40.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -147,7 +147,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::stop_time: {
-        // 3608 (0xe18, 0x1401ea9da): requires cheat_mode (0x14061ef50).
+        // 3608 (0xe18, 0x1401eab5a): requires cheat_mode (0x14061ff51).
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -161,7 +161,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::get_water_level: {
-        // 3610 (0xe1a, 0x1401eabd6): rglRound64(fixed_point * water_level).
+        // 3610 (0xe1a, 0x1401ead56): rglRound64(fixed_point * water_level).
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -226,7 +226,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
                    : WseDispatch::condition_false;
     }
     case WseOpcode::troop_set_skill: {
-        // 3707 (0xe7b, L4438 -> 0x1402460b0): clamps to skill m_maxLevel,
+        // 3707 (0xe7b, L4438 -> 0x140246230): clamps to skill m_maxLevel,
         // adjusts HP for Ironflesh increase, and applies shared HP cap.
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
@@ -244,7 +244,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::troop_set_attribute: {
-        // 3708 (0xe7c, L4451 -> 0x140246010): clamps [0, INT_MAX] and caps HP.
+        // 3708 (0xe7c, L4451 -> 0x140246190): clamps [0, INT_MAX] and caps HP.
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -260,7 +260,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::troop_set_proficiency: {
-        // 3709 (0xe7d, L4464 -> 0x1400a61c0): clamps [0, 999] into float.
+        // 3709 (0xe7d, L4464 -> 0x1400a6320): clamps [0, 999] into float.
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -334,7 +334,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::cur_item_mesh_set_color: {
-        // 3811 (0xee3, L4579): caller == -50, active rglMetaMesh (0x1401c5e40).
+        // 3811 (0xee3, L4579): caller == -50, active rglMetaMesh (0x1401c5fc0).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -349,7 +349,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
     }
     case WseOpcode::cur_item_add_mesh_with_material: {
         // 3812 (0xee4, L4602): parses mesh & material, converts spaces to
-        // underscores (0x14030f270), clones meshes per LOD [begin, end).
+        // underscores (0x140310030), clones meshes per LOD [begin, end).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -409,7 +409,7 @@ wse_item_int_member(std::uint32_t opcode) noexcept {
     }
     case WseOpcode::item_set_horse_skeleton_model: {
         // 3813 (0xee5, L4645): parses skeleton name and updates m_skeletonModel
-        // only when resolved in resource registry (0x1402f2150).
+        // only when resolved in resource registry (0x1402f27e0).
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }

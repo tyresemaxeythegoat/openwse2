@@ -122,9 +122,9 @@ struct WsePlayerM5Ext {
 struct WseMissionObjectM5Ext {
     bool is_spawned_item = false;
     float prune_time = 0.0f;
-    // Maps to `mbMissionObject +0x1d5` (zeroed in `initialize` `0x140152f75`, set when `prune_time
-    // > 0.0f` in `spawnMissionObject` `0x140139e98` / `setPruneTime` `0x140153d88`, and removed on
-    // `clearScene` `0x140147e9f` as well as frame prune expiration).
+    // Maps to `mbMissionObject +0x1d5` (zeroed in `initialize` `0x1401530f5`, set when `prune_time
+    // > 0.0f` in `spawnMissionObject` `0x14013a018` / `setPruneTime` `0x140153f08`, and removed on
+    // `clearScene` `0x14014801f` as well as frame prune expiration).
     bool enable_pruning = false;
     bool collision_enabled = true;
     bool fade_out = false;
@@ -189,7 +189,7 @@ struct WseOverlayM5Ext {
     // their box instead of their creation default (port bookkeeping, not a retail field).
     bool size_set = false;
     // `overlay_set_size` scale in force when the text was last set (creation or
-    // `overlay_set_text` 920): `rglWidget::setText` (`0x14031e330`) re-measures a
+    // `overlay_set_text` 920): `rglWidget::setText` (`0x14031f0f0`) re-measures a
     // `create_button_overlay` box at the text size current at that moment (0.02 x scale), so
     // the box follows the order of `overlay_set_size` and `overlay_set_text` (port bookkeeping).
     wse::core::WseVec2 text_measure_scale{1.0f, 1.0f};
@@ -206,7 +206,7 @@ struct WseOverlayM5Ext {
     std::u16string tooltip{};
     bool focused = false;
     // A text box lost the focus to `overlay_obtain_focus` (949): retail `obtainFocus`
-    // (`0x140317250`) calls the previous widget's `loseFocus` (`0x140317220`), which raises
+    // (`0x140318010`) calls the previous widget's `loseFocus` (`0x140317fe0`), which raises
     // `0x10000`; `UiSession::handle_input` reports it as `-62` (port bookkeeping).
     bool commit_pending = false;
     float additional_render_height = 0.0f;
@@ -223,9 +223,9 @@ struct WseOverlayM5Ext {
     float anim_size_duration = 0.0f;
     wse::core::WseVec2 anim_position{};
     float anim_position_duration = 0.0f;
-    // Running `overlay_animate_to_*` state (`rglWidget::animateTo*` `0x14031cbc0`..
-    // `0x14031cd00` capture the current value as the start and the time; `rglWidget::frameMove`
-    // `0x14031c110` interpolates). Bits of `anim_active`: `kOverlayAnim*`.
+    // Running `overlay_animate_to_*` state (`rglWidget::animateTo*` `0x14031d980`..
+    // `0x14031dac0` capture the current value as the start and the time; `rglWidget::frameMove`
+    // `0x14031ced0` interpolates). Bits of `anim_active`: `kOverlayAnim*`.
     std::uint8_t anim_active = 0;
     std::uint32_t anim_color_start = 0;
     float anim_alpha_start = 1.0f;

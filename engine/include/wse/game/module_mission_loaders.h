@@ -105,7 +105,7 @@ struct LoadedConversationSentence {
     std::string voiceover{};
 };
 
-// map_icons.txt (0x1400967e0 / mbMapIcon::readStream 0x140116c20): 3 header tokens.
+// map_icons.txt (0x140096940 / mbMapIcon::readStream 0x140116d80): 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_map_icons(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -161,7 +161,7 @@ struct LoadedConversationSentence {
         });
 }
 
-// scene_props.txt (0x140095360 / mbSceneProp::readStream 0x14020f1a0): 3 header tokens.
+// scene_props.txt (0x1400954c0 / mbSceneProp::readStream 0x14020f320): 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_scene_props(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -217,7 +217,7 @@ struct LoadedConversationSentence {
         });
 }
 
-// menus.txt (0x140095870 / mbMenu::readStream 0x14011ff30): 3 header tokens.
+// menus.txt (0x1400959d0 / mbMenu::readStream 0x140120090): 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_menus(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -309,7 +309,7 @@ struct LoadedConversationSentence {
         });
 }
 
-// presentations.txt (0x1400965c0 / mbPresentationManager::readStream 0x1401c3cd0 / mbPresentation::readStream 0x1401c3b80):
+// presentations.txt (0x140096720 / mbPresentationManager::readStream 0x1401c3e50 / mbPresentation::readStream 0x1401c3d00):
 // skips 2 strings + discarded version i32 = 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_presentations(
     io::TokenReader& reader,
@@ -357,7 +357,7 @@ struct LoadedConversationSentence {
         });
 }
 
-// mission_templates.txt (0x140097ac0 / mbMissionTemplate::readStream 0x140179e30):
+// mission_templates.txt (0x140097c20 / mbMissionTemplate::readStream 0x140179fb0):
 // 3 header tokens; underscores are converted on description, not name.
 [[nodiscard]] inline ModuleLoadError load_mission_templates(
     io::TokenReader& reader,
@@ -471,7 +471,7 @@ struct LoadedConversationSentence {
         });
 }
 
-// tableau_materials.txt (0x140096450 / mbTableauMaterial::readStream 0x14021a310):
+// tableau_materials.txt (0x1400965b0 / mbTableauMaterial::readStream 0x14021a490):
 // zero header tokens; min/max coordinates are floats (readFloat).
 [[nodiscard]] inline ModuleLoadError load_tableau_materials(
     io::TokenReader& reader,
@@ -525,7 +525,7 @@ struct LoadedConversationSentence {
         });
 }
 
-// conversation.txt (0x140097710 / mbConversationManager::readStream 0x1400845d0):
+// conversation.txt (0x140097870 / mbConversationManager::readStream 0x140084730):
 // skips 2 strings + `version`, reads `num_sentences`; `version > 1` adds `voiceover`.
 [[nodiscard]] inline ModuleLoadError load_conversations(
     io::TokenReader& reader,

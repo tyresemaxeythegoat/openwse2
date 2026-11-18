@@ -148,7 +148,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
                          : 1.0f;
 
     switch (opcode) {
-    case 1781: // entry_point_set_position (0x1401d5c4f)
+    case 1781: // entry_point_set_position (0x1401d5dcf)
         if (narrow[0] >= 0 && narrow[0] < game::kMaxEntryPoints &&
             wse_register_ok(narrow[1])) {
             auto& ep = world.entry_points[static_cast<std::size_t>(narrow[0])];
@@ -159,7 +159,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             }
         }
         return NativeDispatch::handled;
-    case 1782: // entry_point_is_auto_generated (0x1401d5daf)
+    case 1782: // entry_point_is_auto_generated (0x1401d5f2f)
         if (narrow[0] >= 0 && narrow[0] < game::kMaxEntryPoints) {
             return world.entry_points[static_cast<std::size_t>(narrow[0])]
                            .is_auto_generated
@@ -167,7 +167,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
                        : NativeDispatch::condition_false;
         }
         return NativeDispatch::condition_false;
-    case 1797: // set_rain (0x1401d6516)
+    case 1797: // set_rain (0x1401d6696)
         world.m5.rain_type = narrow[0];
         world.m5.rain_strength = static_cast<float>(wide[1]) / 100.0f;
         world.m5.rain_strength_percent = narrow[1];
@@ -175,7 +175,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             world.m5.precipitation_type = 3;
         }
         return NativeDispatch::handled;
-    case 1798: { // set_fog_distance (0x1401d6577)
+    case 1798: { // set_fog_distance (0x1401d66f7)
         world.m5.fog_distance = static_cast<float>(wide[0]);
         const std::uint32_t col =
             statement.numOperands > 1 ? static_cast<std::uint32_t>(narrow[1]) : 0U;
@@ -187,7 +187,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
         }
         return NativeDispatch::handled;
     }
-    case 1801: // scene_prop_has_agent_on_it (0x1401d67b6, callee 0x14013b8c0)
+    case 1801: // scene_prop_has_agent_on_it (0x1401d6936, callee 0x14013ba40)
         if (world.is_valid_mission_object(narrow[0]) &&
             world.is_valid_agent(narrow[1])) {
             const auto& ag = world.agents[static_cast<std::size_t>(narrow[1])];
@@ -196,7 +196,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
                        : NativeDispatch::condition_false;
         }
         return NativeDispatch::condition_false;
-    case 1816: // scene_prop_get_max_hit_points (0x1401d6ce2)
+    case 1816: // scene_prop_get_max_hit_points (0x1401d6e62)
         if (world.is_valid_mission_object(narrow[1])) {
             store_lvalue(
                 dst,
@@ -206,8 +206,8 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1819: // scene_prop_set_prune_time (0x1401d6da1, callee 0x140153d80)
-        // `mbMissionObject::setPruneTime` sets the prune flag (`+0x1d5`, 0x140153d88) when the
+    case 1819: // scene_prop_set_prune_time (0x1401d6f21, callee 0x140153f00)
+        // `mbMissionObject::setPruneTime` sets the prune flag (`+0x1d5`, 0x140153f08) when the
         // time is positive, so a prop given a prune time also expires and is removed by
         // `multiplayer_clear_scene` (416). A zero time leaves the flag as it was.
         if (world.is_valid_mission_object(narrow[0]) && wide[1] >= 0) {
@@ -218,27 +218,27 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             }
         }
         return NativeDispatch::handled;
-    case 1822: // scene_prop_fade_out (0x1401d6e46)
+    case 1822: // scene_prop_fade_out (0x1401d6fc6)
         if (world.is_valid_mission_object(narrow[0])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
             obj.m5.fade_out = true;
             obj.m5.fade_duration = static_cast<float>(wide[1]) / fp;
         }
         return NativeDispatch::handled;
-    case 1823: // scene_prop_fade_in (0x1401d6edd)
+    case 1823: // scene_prop_fade_in (0x1401d705d)
         if (world.is_valid_mission_object(narrow[0])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
             obj.m5.fade_out = false;
             obj.m5.fade_duration = static_cast<float>(wide[1]) / fp;
         }
         return NativeDispatch::handled;
-    case 1830: // scene_item_get_num_instances (0x1401d75c4, callee 0x140137070)
+    case 1830: // scene_item_get_num_instances (0x1401d7744, callee 0x1401371f0)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst, native_m5_count_item_instances(world, narrow[1], false),
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1831: // scene_item_get_instance (0x1401d7607, callee 0x140137160)
+    case 1831: // scene_item_get_instance (0x1401d7787, callee 0x1401372e0)
         if (world.is_valid_item(narrow[1])) {
             const std::int32_t idx =
                 native_m5_find_item_instance(world, narrow[1], narrow[2], false);
@@ -248,13 +248,13 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             store_lvalue(dst, static_cast<std::int64_t>(idx), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1832: // scene_spawned_item_get_num_instances (0x1401d765c, callee 0x140137240)
+    case 1832: // scene_spawned_item_get_num_instances (0x1401d77dc, callee 0x1401373c0)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst, native_m5_count_item_instances(world, narrow[1], true),
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1833: // scene_spawned_item_get_instance (0x1401d769f, callee 0x140137330)
+    case 1833: // scene_spawned_item_get_instance (0x1401d781f, callee 0x1401374b0)
         if (world.is_valid_item(narrow[1])) {
             const std::int32_t idx =
                 native_m5_find_item_instance(world, narrow[1], narrow[2], true);
@@ -264,18 +264,18 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             store_lvalue(dst, static_cast<std::int64_t>(idx), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1834: // scene_allows_mounted_units (0x1401d76f4)
+    case 1834: // scene_allows_mounted_units (0x1401d7874)
         if (world.is_valid_site(world.current_site_no) &&
             (world.sites[static_cast<std::size_t>(world.current_site_no)].flags &
              0x800U) != 0U) {
             return NativeDispatch::condition_false;
         }
         return NativeDispatch::handled;
-    case 1838: // prop_instance_is_valid (0x1401d77db, callee 0x14013c220)
+    case 1838: // prop_instance_is_valid (0x1401d795b, callee 0x14013c3a0)
         return world.is_valid_mission_object(narrow[0])
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 1840: // prop_instance_get_variation_id (0x1401d7805)
+    case 1840: // prop_instance_get_variation_id (0x1401d7985)
         if (world.is_valid_mission_object(narrow[1])) {
             store_lvalue(
                 dst,
@@ -285,7 +285,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1841: // prop_instance_get_variation_id_2 (0x1401d784c)
+    case 1841: // prop_instance_get_variation_id_2 (0x1401d79cc)
         if (world.is_valid_mission_object(narrow[1])) {
             store_lvalue(
                 dst,
@@ -295,7 +295,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1865: // prop_instance_rotate_to_position (0x1401d80cf, callee 0x140153db0)
+    case 1865: // prop_instance_rotate_to_position (0x1401d824f, callee 0x140153f30)
         if (world.is_valid_mission_object(narrow[0]) && wse_register_ok(narrow[1])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
             const float dur = static_cast<float>(wide[2]) / 100.0f;
@@ -316,7 +316,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             obj.animating = true;
         }
         return NativeDispatch::handled;
-    case 1866: // prop_instance_initialize_rotation_angles (0x1401d81eb)
+    case 1866: // prop_instance_initialize_rotation_angles (0x1401d836b)
         if (world.is_valid_mission_object(narrow[0])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
             obj.m5.total_rotation = 0.0f;
@@ -324,13 +324,13 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             obj.m5.rotation = 0.0f;
         }
         return NativeDispatch::handled;
-    case 1870: // prop_instance_refill_hit_points (0x1401d8225)
+    case 1870: // prop_instance_refill_hit_points (0x1401d83a5)
         if (world.is_valid_mission_object(narrow[0])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
             obj.hit_points = obj.max_hit_points;
         }
         return NativeDispatch::handled;
-    case 1871: // prop_instance_dynamics_set_properties (0x1401d8260)
+    case 1871: // prop_instance_dynamics_set_properties (0x1401d83e0)
         if (world.is_valid_mission_object(narrow[0]) && wse_register_ok(narrow[1])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
             const auto& o = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
@@ -338,28 +338,28 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             obj.m5.friction = o.y;
         }
         return NativeDispatch::handled;
-    case 1872: // prop_instance_dynamics_set_velocity (0x1401d834d)
+    case 1872: // prop_instance_dynamics_set_velocity (0x1401d84cd)
         if (world.is_valid_mission_object(narrow[0]) && wse_register_ok(narrow[1])) {
             world.mission_objects[static_cast<std::size_t>(narrow[0])]
                 .m5.linear_velocity =
                 ctx.positions[static_cast<std::size_t>(narrow[1])].o;
         }
         return NativeDispatch::handled;
-    case 1873: // prop_instance_dynamics_set_omega (0x1401d840f)
+    case 1873: // prop_instance_dynamics_set_omega (0x1401d858f)
         if (world.is_valid_mission_object(narrow[0]) && wse_register_ok(narrow[1])) {
             world.mission_objects[static_cast<std::size_t>(narrow[0])]
                 .m5.angular_velocity =
                 ctx.positions[static_cast<std::size_t>(narrow[1])].o;
         }
         return NativeDispatch::handled;
-    case 1874: // prop_instance_dynamics_apply_impulse (0x1401d84d1)
+    case 1874: // prop_instance_dynamics_apply_impulse (0x1401d8651)
         if (world.is_valid_mission_object(narrow[0]) && wse_register_ok(narrow[1])) {
             world.mission_objects[static_cast<std::size_t>(narrow[0])]
                 .m5.last_impulse =
                 ctx.positions[static_cast<std::size_t>(narrow[1])].o;
         }
         return NativeDispatch::handled;
-    case 1877: // prop_instance_receive_damage (0x1401d860a)
+    case 1877: // prop_instance_receive_damage (0x1401d878a)
         if (world.is_valid_mission_object(narrow[0]) &&
             (narrow[1] == -1 || world.is_valid_agent(narrow[1])) &&
             wide[2] >= 0) {
@@ -372,7 +372,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             }
         }
         return NativeDispatch::handled;
-    case 1880: { // prop_instance_intersects_with_prop_instance (0x1401d88a1)
+    case 1880: { // prop_instance_intersects_with_prop_instance (0x1401d8a21)
         if (!world.is_valid_mission_object(narrow[0])) {
             return NativeDispatch::handled;
         }
@@ -400,7 +400,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     }
-    case 1881: // prop_instance_play_sound (0x1401d8af6, callee 0x140154340)
+    case 1881: // prop_instance_play_sound (0x1401d8c76, callee 0x1401544c0)
         if (world.is_valid_mission_object(narrow[0]) && narrow[1] >= 0 &&
             (world.m5.num_sounds <= 0 || narrow[1] < world.m5.num_sounds)) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
@@ -429,7 +429,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             }
         }
         return NativeDispatch::handled;
-    case 1882: // prop_instance_stop_sound (0x1401d8b40)
+    case 1882: // prop_instance_stop_sound (0x1401d8cc0)
         if (world.is_valid_mission_object(narrow[0])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
             if (world.audio_runtime != nullptr && obj.m5.sound_channel >= 0) {
@@ -440,7 +440,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             obj.m5.sound_playing = false;
         }
         return NativeDispatch::handled;
-    case 1885: // prop_instance_clear_attached_missiles (0x1401d8b8c)
+    case 1885: // prop_instance_clear_attached_missiles (0x1401d8d0c)
         if (world.is_valid_mission_object(narrow[0])) {
             const auto& obj =
                 world.mission_objects[static_cast<std::size_t>(narrow[0])];
@@ -452,7 +452,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             }
         }
         return NativeDispatch::handled;
-    case 1886: // prop_instance_add_particle_system (0x1401d8e78)
+    case 1886: // prop_instance_add_particle_system (0x1401d8ff8)
         if (world.is_valid_mission_object(narrow[0]) &&
             world.is_valid_particle_system(narrow[1]) &&
             wse_register_ok(narrow[2])) {
@@ -460,13 +460,13 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
                 .m5.particle_system_nos.push_back(narrow[1]);
         }
         return NativeDispatch::handled;
-    case 1887: // prop_instance_stop_all_particle_systems (0x1401d8f09)
+    case 1887: // prop_instance_stop_all_particle_systems (0x1401d9089)
         if (world.is_valid_mission_object(narrow[0])) {
             world.mission_objects[static_cast<std::size_t>(narrow[0])]
                 .m5.particle_system_nos.clear();
         }
         return NativeDispatch::handled;
-    case 1889: // replace_prop_instance (0x1401d8f43)
+    case 1889: // replace_prop_instance (0x1401d90c3)
         if (world.is_valid_mission_object(narrow[0]) &&
             world.is_valid_scene_prop(narrow[1]) &&
             static_cast<std::uint32_t>(ctx.currentCaller + 20) < 2U) {
@@ -476,7 +476,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             }
         }
         return NativeDispatch::handled;
-    case 1974: // spawn_scene_prop (0x1401d9fe5, callee 0x14013a450)
+    case 1974: // spawn_scene_prop (0x1401da165, callee 0x14013a5d0)
         // Spawns at the set_spawn_position (1970) transform, like spawn_item
         // and spawn_horse. Safety deviation: capped at kMaxSpawnedMissionObjects.
         if (world.is_valid_scene_prop(narrow[0]) && world.lighting.has_scene) {
@@ -492,7 +492,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             }
         }
         return NativeDispatch::handled;
-    case 2001: { // mission_cam_set_mode (0x1401daca6)
+    case 2001: { // mission_cam_set_mode (0x1401dae26)
         auto& cam = world.m5.mission_camera;
         cam.mode = std::clamp(narrow[0], std::int32_t{0}, std::int32_t{1});
         if (cam.mode == 0 && narrow[1] > 0) {
@@ -504,29 +504,29 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
         }
         return NativeDispatch::handled;
     }
-    case 2008: // mission_cam_set_screen_color (0x1401db032)
+    case 2008: // mission_cam_set_screen_color (0x1401db1b2)
         world.m5.mission_camera.screen_color = static_cast<std::uint32_t>(narrow[0]);
         return NativeDispatch::handled;
-    case 2009: { // mission_cam_animate_to_screen_color (0x1401db045)
+    case 2009: { // mission_cam_animate_to_screen_color (0x1401db1c5)
         auto& cam = world.m5.mission_camera;
         cam.screen_color_target = static_cast<std::uint32_t>(narrow[0]);
         cam.screen_color_duration = static_cast<float>(wide[1]) * 0.001f;
         return NativeDispatch::handled;
     }
-    case 2010: // mission_cam_get_position (0x1401db096)
+    case 2010: // mission_cam_get_position (0x1401db216)
         if (wse_register_ok(narrow[0])) {
             ctx.positions[static_cast<std::size_t>(narrow[0])] =
                 world.m5.mission_camera.position;
         }
         return NativeDispatch::handled;
-    case 2011: // mission_cam_set_position (0x1401db257)
+    case 2011: // mission_cam_set_position (0x1401db3d7)
         if (wse_register_ok(narrow[0])) {
             auto& cam = world.m5.mission_camera;
             cam.position = ctx.positions[static_cast<std::size_t>(narrow[0])];
             cam.position_duration = 0.0f;
         }
         return NativeDispatch::handled;
-    case 2012: // mission_cam_animate_to_position (0x1401db35a)
+    case 2012: // mission_cam_animate_to_position (0x1401db4da)
         if (wse_register_ok(narrow[0]) && wide[1] > 0) {
             auto& cam = world.m5.mission_camera;
             cam.target_position = ctx.positions[static_cast<std::size_t>(narrow[0])];
@@ -535,16 +535,16 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             native_m5_start_cam_animation(cam, statement, wide, narrow, 1, 2);
         }
         return NativeDispatch::handled;
-    case 2013: // mission_cam_get_aperture (0x1401db684)
+    case 2013: // mission_cam_get_aperture (0x1401db804)
         store_lvalue(dst, static_cast<std::int64_t>(world.m5.mission_camera.aperture),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2014: // mission_cam_set_aperture (0x1401db6b7)
+    case 2014: // mission_cam_set_aperture (0x1401db837)
         world.m5.mission_camera.aperture = static_cast<float>(
             std::clamp(narrow[0], std::int32_t{10}, std::int32_t{149}));
         world.m5.mission_camera.position_duration = 0.0f;
         return NativeDispatch::handled;
-    case 2015: // mission_cam_animate_to_aperture (0x1401db6ec)
+    case 2015: // mission_cam_animate_to_aperture (0x1401db86c)
         if (wide[1] > 0) {
             auto& cam = world.m5.mission_camera;
             cam.target_position = cam.position;
@@ -554,7 +554,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             native_m5_start_cam_animation(cam, statement, wide, narrow, 1, 2);
         }
         return NativeDispatch::handled;
-    case 2016: // mission_cam_animate_to_position_and_aperture (0x1401db9a5)
+    case 2016: // mission_cam_animate_to_position_and_aperture (0x1401dbb25)
         if (wse_register_ok(narrow[0]) && wide[2] > 0) {
             auto& cam = world.m5.mission_camera;
             cam.target_position = ctx.positions[static_cast<std::size_t>(narrow[0])];
@@ -564,20 +564,20 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
             native_m5_start_cam_animation(cam, statement, wide, narrow, 2, 3);
         }
         return NativeDispatch::handled;
-    case 2017: // mission_cam_set_target_agent (0x1401dbce5)
+    case 2017: // mission_cam_set_target_agent (0x1401dbe65)
         if (world.is_valid_agent(narrow[0])) {
             world.m5.mission_camera.target_agent_no = narrow[0];
             world.m5.mission_camera.target_agent_use_rotation =
                 (statement.numOperands > 1 && narrow[1] != 0);
         }
         return NativeDispatch::handled;
-    case 2018: // mission_cam_clear_target_agent (0x1401dbd15)
+    case 2018: // mission_cam_clear_target_agent (0x1401dbe95)
         world.m5.mission_camera.target_agent_no = -1;
         return NativeDispatch::handled;
-    case 2019: // mission_cam_set_animation (0x1401dbd2b)
+    case 2019: // mission_cam_set_animation (0x1401dbeab)
         world.m5.mission_camera.animation_no = narrow[0];
         return NativeDispatch::handled;
-    case 2400: { // set_shader_param_int (0x1401dfbbc)
+    case 2400: { // set_shader_param_int (0x1401dfd3c)
         const std::uint8_t tag0 = wse_tag_at(tags, 0);
         if (wse_string_register_ok(narrow[0], tag0, banks)) {
             game::WseShaderParamValue v{};
@@ -590,7 +590,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
         }
         return NativeDispatch::handled;
     }
-    case 2401: { // set_shader_param_float (0x1401dfcbd)
+    case 2401: { // set_shader_param_float (0x1401dfe3d)
         const std::uint8_t tag0 = wse_tag_at(tags, 0);
         if (wse_string_register_ok(narrow[0], tag0, banks)) {
             game::WseShaderParamValue v{};
@@ -603,7 +603,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
         }
         return NativeDispatch::handled;
     }
-    case 2402: { // set_shader_param_float4 (0x1401dfde2)
+    case 2402: { // set_shader_param_float4 (0x1401dff62)
         const std::uint8_t tag0 = wse_tag_at(tags, 0);
         if (wse_string_register_ok(narrow[0], tag0, banks)) {
             game::WseShaderParamValue v{};
@@ -618,7 +618,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
         }
         return NativeDispatch::handled;
     }
-    case 2403: { // set_shader_param_float4x4 (0x1401dffaa)
+    case 2403: { // set_shader_param_float4x4 (0x1401e012a)
         const std::uint8_t tag0 = wse_tag_at(tags, 0);
         if (wse_string_register_ok(narrow[0], tag0, banks)) {
             game::WseShaderParamValue v{};
@@ -636,28 +636,28 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
         }
         return NativeDispatch::handled;
     }
-    case 2610: // prop_instance_deform_to_time (0x1401e026c)
+    case 2610: // prop_instance_deform_to_time (0x1401e03ec)
         if (world.is_valid_mission_object(narrow[0])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
             obj.m5.deform_time = static_cast<float>(wide[1]);
             obj.m5.deform_progress = 0.0f;
         }
         return NativeDispatch::handled;
-    case 2611: // prop_instance_deform_in_range (0x1401e035c)
+    case 2611: // prop_instance_deform_in_range (0x1401e04dc)
         if (world.is_valid_mission_object(narrow[0])) {
             native_m5_set_prop_deform_range(
                 world.mission_objects[static_cast<std::size_t>(narrow[0])], narrow[1],
                 narrow[2], wide[3], false);
         }
         return NativeDispatch::handled;
-    case 2612: // prop_instance_deform_in_cycle_loop (0x1401e046e)
+    case 2612: // prop_instance_deform_in_cycle_loop (0x1401e05ee)
         if (world.is_valid_mission_object(narrow[0])) {
             native_m5_set_prop_deform_range(
                 world.mission_objects[static_cast<std::size_t>(narrow[0])], narrow[1],
                 narrow[2], wide[3], true);
         }
         return NativeDispatch::handled;
-    case 2615: // prop_instance_get_current_deform_progress (0x1401e057a)
+    case 2615: // prop_instance_get_current_deform_progress (0x1401e06fa)
         if (world.is_valid_mission_object(narrow[1])) {
             store_lvalue(
                 dst,
@@ -668,7 +668,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2616: // prop_instance_get_current_deform_frame (0x1401e067a)
+    case 2616: // prop_instance_get_current_deform_frame (0x1401e07fa)
         if (world.is_valid_mission_object(narrow[1])) {
             store_lvalue(
                 dst,
@@ -678,7 +678,7 @@ inline void native_m5_start_cam_animation(game::WseMissionCameraState& cam,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2617: { // prop_instance_set_material (0x1401e0770)
+    case 2617: { // prop_instance_set_material (0x1401e08f0)
         const std::uint8_t tag2 = wse_tag_at(tags, 2);
         if (world.is_valid_mission_object(narrow[0]) &&
             wse_string_register_ok(narrow[2], tag2, banks)) {

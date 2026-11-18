@@ -3,34 +3,34 @@
 // Evidence (v1.1.5.5 REA / PDB):
 //   ev_8cc48986006b9c7e64b7e7b94e4b37bb06c9950ecba367a50b0b601381dab2e7
 //     rglBinaryStream writer/stream export (9 functions).
-//   readInt32 (0x1402aebe0), readByte (0x1402aec00), and readInt64 (0x1402aec20)
+//   readInt32 (0x1402aee50), readByte (0x1402aee70), and readInt64 (0x1402aee90)
 //   sit at 0x20-byte strides; slot aliases and readers verified in PDB + disasm.
-//   rglBinaryStream vftable 0x14055c780, 30 slots.
+//   rglBinaryStream vftable 0x14055d7b0, 30 slots.
 //   PDB public symbols at identical addresses prove the slot aliases:
-//     +0x20 writeInt64 / writeUInt64   0x1402ae9d0
-//     +0x30 writeInt32 / writeUInt32   0x1402ae980  (also writeFloat)
-//     +0x38 writeBool / writeByte      0x1402aea30
-//     +0x40 writeCString               0x1402aea80
-//     +0x48 writeString                0x1402aeb10
-//     +0x58 readFloat / readInt32      0x1402aebe0  (also +0x78/+0x80)
-//     +0x60 readBool / readByte        0x1402aec00  (also +0x88)
-//     +0x68 readUInt64 / readInt64     0x1402aec20  (also +0x70)
-//     +0x90 readString                 0x1402aec40
-//   rglOutputBinaryFileStreamWithChecksum vftable 0x140565b40:
-//     writeInt32/writeUInt32/writeFloat (0x1402c8a00), writeByte/writeBool
-//     (0x1402c8a60), writeInt64/writeUInt64 (0x1402c8a90), writeCString
-//     (0x1402c8b40), writeString (0x1402c8c00) accumulate every written
+//     +0x20 writeInt64 / writeUInt64   0x1402aec40
+//     +0x30 writeInt32 / writeUInt32   0x1402aebf0  (also writeFloat)
+//     +0x38 writeBool / writeByte      0x1402aeca0
+//     +0x40 writeCString               0x1402aecf0
+//     +0x48 writeString                0x1402aed80
+//     +0x58 readFloat / readInt32      0x1402aee50  (also +0x78/+0x80)
+//     +0x60 readBool / readByte        0x1402aee70  (also +0x88)
+//     +0x68 readUInt64 / readInt64     0x1402aee90  (also +0x70)
+//     +0x90 readString                 0x1402aeeb0
+//   rglOutputBinaryFileStreamWithChecksum vftable 0x140566990:
+//     writeInt32/writeUInt32/writeFloat (0x1402c8c70), writeByte/writeBool
+//     (0x1402c8cd0), writeInt64/writeUInt64 (0x1402c8d00), writeCString
+//     (0x1402c8db0), writeString (0x1402c8e70) accumulate every written
 //     unsigned byte modulo 2^64 into a 64-bit checksum verified after closing
-//     by mbGame::save (0x1400e1a8f..0x1400e1af0).
-//   writeFloat (0x1402ae980) appends the raw 4 bytes of its argument,
-//   writeInt64 (0x1402ae9d0) the raw 8 bytes, and writeBool (0x1402aea30) the
+//     by mbGame::save (0x1400e1bef..0x1400e1c50).
+//   writeFloat (0x1402aebf0) appends the raw 4 bytes of its argument,
+//   writeInt64 (0x1402aec40) the raw 8 bytes, and writeBool (0x1402aeca0) the
 //   raw byte, into the buffered rglString at stream+0x58. writeString
-//   (0x1402aeb10) and writeCString (0x1402aea80) first write an int32 byte
+//   (0x1402aed80) and writeCString (0x1402aecf0) first write an int32 byte
 //   count through slot +0x30, then the bytes with no terminator. readString
-//   (0x1402aec40) reads the same int32 count through slot +0x80.
-//   readInt32 (0x1402aebe0) loads 4 raw bytes from data+(+0x60) at the int32
-//   cursor (+0x58) and advances the cursor by 4; readByte (0x1402aec00) and
-//   readInt64 (0x1402aec20) are the same pattern with widths 1 and 8. The
+//   (0x1402aeeb0) reads the same int32 count through slot +0x80.
+//   readInt32 (0x1402aee50) loads 4 raw bytes from data+(+0x60) at the int32
+//   cursor (+0x58) and advances the cursor by 4; readByte (0x1402aee70) and
+//   readInt64 (0x1402aee90) are the same pattern with widths 1 and 8. The
 //   retail readers have no bounds check. There is no header, version, length,
 //   or checksum in this stream class.
 //
@@ -79,7 +79,7 @@ public:
         bytes_.insert(bytes_.end(), data.begin(), data.end());
     }
 
-    // Mirrors rglBinaryStream::writeString (0x1402aeb10): int32 byte count + raw bytes.
+    // Mirrors rglBinaryStream::writeString (0x1402aed80): int32 byte count + raw bytes.
     void write_string(std::string_view text) {
         const std::size_t max_len =
             static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max());
@@ -178,7 +178,7 @@ public:
         return true;
     }
 
-    // Mirrors rglBinaryStream::readString (0x1402aec40) with bounds checking.
+    // Mirrors rglBinaryStream::readString (0x1402aeeb0) with bounds checking.
     [[nodiscard]] bool read_string(std::string& out,
                                    std::size_t max_len = (1U << 20U)) {
         std::int32_t len = 0;
@@ -222,7 +222,7 @@ private:
     std::size_t cursor_ = 0;
 };
 
-// Mirrors mbGame::save (0x1400e1a8f..0x1400e1aee) byte-sum savegame checksum.
+// Mirrors mbGame::save (0x1400e1bef..0x1400e1c4e) byte-sum savegame checksum.
 [[nodiscard]] inline std::uint64_t compute_savegame_checksum(
     std::span<const std::byte> data) noexcept {
     std::uint64_t sum = 0U;
@@ -232,7 +232,7 @@ private:
     return sum;
 }
 
-// Mirrors rglOutputBinaryFileStreamWithChecksum (0x140565b40): forwards writes
+// Mirrors rglOutputBinaryFileStreamWithChecksum (0x140566990): forwards writes
 // to BinaryWriter while accumulating the running uint64 byte sum.
 class BinaryChecksumWriter {
 public:

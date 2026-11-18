@@ -28,8 +28,8 @@
 //   rglMesh            size 0x0368 (872), +0x0068 m_materialName, +0x00c0 m_materialColor.
 //   rglMetaMesh        size 0x0158 (344), +0x0048 m_lods[120], +0x00c0 m_numLods, +0x0110 m_meshName.
 //   mbGame             size 0x17160 (94560), +0x0420 m_mainPartyNo, +0x043c m_paused,
-//                      +0x16ed0..+0x16f50 m_editMode*. (DAT_14061f070 sits at +8.)
-//   mbMission          size 0x54a50 (346704), +0x98d8 m_teams (teams 0..7 validated by 0x1401e581e,
+//                      +0x16ed0..+0x16f50 m_editMode*. (DAT_140620070 sits at +8.)
+//   mbMission          size 0x54a50 (346704), +0x98d8 m_teams (teams 0..7 validated by 0x1401e599e,
 //                      slots at +0x9900 + team*0x40), +0xa4f4 m_waterLevel,
 //                      +0x54a40 m_useObjectsTooltipEnabled[11].
 
@@ -54,24 +54,24 @@
 
 namespace wse::game {
 
-inline constexpr std::int32_t kMaxSkills = 42;            // 0x2a (0x1401e63c7)
-inline constexpr std::int32_t kSkillInventoryManagement = 12; // 0x0c (0x140246690)
-inline constexpr std::int32_t kSkillIronflesh = 36;       // 0x24 (0x140246125)
-inline constexpr std::int32_t kMaxAttributes = 4;         // 0x04 (0x1401ebf06)
-inline constexpr std::int32_t kMaxProficiencies = 7;      // 0x07 (0x1401ebf6c)
-inline constexpr std::int32_t kMaxSlotIndex = 0xfffff;    // 0x1401e55e3..0x1401e58eb
-inline constexpr std::int32_t kNumTeams = 8;              // 0..7 (0x1401e581e)
-inline constexpr std::int32_t kNumUseTooltipTypes = 11;   // 0x0b (0x1401ea725)
-inline constexpr std::uint32_t kSkillPartyFlagBit = 0x10; // bit 4 (0x1401e63e5)
-inline constexpr std::int32_t kMaxPlayers = 250;          // 0xfa (0x1401c7e4c)
-inline constexpr std::int32_t kMaxEntryPoints = 128;      // 0x80 (0x1401d59f1)
-inline constexpr std::int32_t kNumTroopEquipmentSlots = 10;     // 0..9 (0x1401d0b64)
-inline constexpr std::int32_t kNumTroopInventorySlots = 96;     // 0x60 (0x140245250)
+inline constexpr std::int32_t kMaxSkills = 42;            // 0x2a (0x1401e6547)
+inline constexpr std::int32_t kSkillInventoryManagement = 12; // 0x0c (0x140246810)
+inline constexpr std::int32_t kSkillIronflesh = 36;       // 0x24 (0x1402462a5)
+inline constexpr std::int32_t kMaxAttributes = 4;         // 0x04 (0x1401ec086)
+inline constexpr std::int32_t kMaxProficiencies = 7;      // 0x07 (0x1401ec0ec)
+inline constexpr std::int32_t kMaxSlotIndex = 0xfffff;    // 0x1401e5763..0x1401e5a6b
+inline constexpr std::int32_t kNumTeams = 8;              // 0..7 (0x1401e599e)
+inline constexpr std::int32_t kNumUseTooltipTypes = 11;   // 0x0b (0x1401ea8a5)
+inline constexpr std::uint32_t kSkillPartyFlagBit = 0x10; // bit 4 (0x1401e6565)
+inline constexpr std::int32_t kMaxPlayers = 250;          // 0xfa (0x1401c7fcc)
+inline constexpr std::int32_t kMaxEntryPoints = 128;      // 0x80 (0x1401d5b71)
+inline constexpr std::int32_t kNumTroopEquipmentSlots = 10;     // 0..9 (0x1401d0ce4)
+inline constexpr std::int32_t kNumTroopInventorySlots = 96;     // 0x60 (0x1402453d0)
 inline constexpr std::int32_t kTotalTroopInventoryCapacity =
     kNumTroopEquipmentSlots + kNumTroopInventorySlots;
-inline constexpr std::int32_t kMaxAgentItems = 4;         // 0..3 (0x1401d6880)
-inline constexpr std::int32_t kNumQuestNotes = 16;        // 0..15 (0x1401cdde9)
-inline constexpr std::int32_t kNumDivisions = 9;          // 0..8 (0x1401d5ff8)
+inline constexpr std::int32_t kMaxAgentItems = 4;         // 0..3 (0x1401d6a00)
+inline constexpr std::int32_t kNumQuestNotes = 16;        // 0..15 (0x1401cdf69)
+inline constexpr std::int32_t kNumDivisions = 9;          // 0..8 (0x1401d6178)
 // Safety deviation (no retail limit): party script IDs index the dense `parties` vector, so a
 // removed party's key stays allocated as a tombstone and every key below `next_party_key` costs
 // one `WseParty`. Loaders reject, and `allocate_party` refuses, keys at or above this cap so a
@@ -196,7 +196,7 @@ struct WseEntryPoint {
     bool is_auto_generated = false;
 };
 
-// Mirrors rglTimer (0x1403189e0): elapsed seconds = (timersTotal[timer_no] - value) / 100000.0f.
+// Mirrors rglTimer (0x1403197a0): elapsed seconds = (timersTotal[timer_no] - value) / 100000.0f.
 struct WseMissionTimer {
     std::int32_t timer_no = 0;
     std::int64_t value = 0;
@@ -224,12 +224,12 @@ struct WseTroop {
     bool renamed = false;       // mbTroop +0x0 m_renamed
     std::string name{};
     std::string plural_name{};
-    std::int32_t faction_no = 0;  // mbTroop::m_factionNo (0x1401dd9d8)
-    std::int32_t gold = 0;        // mbTroop::m_gold (0x1401dd5b3)
-    std::int32_t skin_no = 0;     // mbTroop::m_skinNo (0x140245a20)
-    std::int32_t class_no = 0;    // mbTroop::m_classNo (0x1401d043d)
-    std::int32_t level = 1;       // mbTroop::m_level (0x1401dd92b)
-    bool auto_equip = false;      // mbTroop::m_flags bit / auto-equip (0x1401d02d0)
+    std::int32_t faction_no = 0;  // mbTroop::m_factionNo (0x1401ddb58)
+    std::int32_t gold = 0;        // mbTroop::m_gold (0x1401dd733)
+    std::int32_t skin_no = 0;     // mbTroop::m_skinNo (0x140245ba0)
+    std::int32_t class_no = 0;    // mbTroop::m_classNo (0x1401d05bd)
+    std::int32_t level = 1;       // mbTroop::m_level (0x1401ddaab)
+    bool auto_equip = false;      // mbTroop::m_flags bit / auto-equip (0x1401d0450)
     std::array<WseInventorySlot, kTotalTroopInventoryCapacity> inventory{};
     std::int32_t xp = 0;
     std::array<std::int32_t, 2> upgrade_troop_nos{-1, -1};
@@ -290,12 +290,12 @@ struct WseTroop {
         }
     }
 
-    // Mirrors mbTroop::isHero (0x140245f60): (m_flags >> 4) & 1.
+    // Mirrors mbTroop::isHero (0x1402460e0): (m_flags >> 4) & 1.
     [[nodiscard]] constexpr bool is_hero() const noexcept {
         return ((flags >> 4U) & 1U) != 0U;
     }
 
-    // Mirrors mbTroop::getMaxHitPoints (0x140245aa0):
+    // Mirrors mbTroop::getMaxHitPoints (0x140245c20):
     // m_attributes[0] + 35 + min(ironflesh, g_skills[36].m_maxLevel) * 2.
     [[nodiscard]] std::int32_t max_hit_points(
         std::int32_t ironflesh_max_level) const noexcept {
@@ -325,8 +325,8 @@ struct WseTroop {
             (skills[word] & ~mask) | ((static_cast<std::uint32_t>(value) & 0xfu) << shift);
     }
 
-    // Shared HP cap in 0x140246037..0x1402460a0 (troop_set_attribute) and
-    // 0x14024616d..0x1402461d7 (troop_set_skill):
+    // Shared HP cap in 0x1402461b7..0x140246220 (troop_set_attribute) and
+    // 0x1402462ed..0x140246357 (troop_set_skill):
     // cap = float(str + clamp(ironflesh, 0, skills[36].m_maxLevel) * 2 + 35).
     void cap_hit_points(std::int32_t ironflesh_max_level) noexcept {
         const std::int32_t upper = std::max<std::int32_t>(0, ironflesh_max_level);
@@ -338,7 +338,7 @@ struct WseTroop {
         }
     }
 
-    // Mirrors 0x140246010 (troop_set_attribute).
+    // Mirrors 0x140246190 (troop_set_attribute).
     void set_attribute(std::int32_t attr_no,
                        std::int32_t value,
                        std::int32_t ironflesh_max_level) noexcept {
@@ -351,7 +351,7 @@ struct WseTroop {
         cap_hit_points(ironflesh_max_level);
     }
 
-    // Mirrors 0x1402460b0 (troop_set_skill).
+    // Mirrors 0x140246230 (troop_set_skill).
     void set_skill(std::int32_t skill_no,
                    std::int32_t value,
                    std::int32_t skill_max_level,
@@ -369,7 +369,7 @@ struct WseTroop {
         cap_hit_points(ironflesh_max_level);
     }
 
-    // Mirrors 0x1401ebf45..0x1401ebf9a via 0x1400a61c0(value, 0, 1000) -> [0, 999].
+    // Mirrors 0x1401ec0c5..0x1401ec11a via 0x1400a6320(value, 0, 1000) -> [0, 999].
     void set_proficiency(std::int32_t prof_no, std::int32_t value) noexcept {
         if (prof_no < 0 || prof_no >= kMaxProficiencies) {
             return;
@@ -378,18 +378,18 @@ struct WseTroop {
             static_cast<float>(std::clamp(value, 0, 999));
     }
 
-    // Mirrors mbTroop::getSkinNo (0x140245a20).
+    // Mirrors mbTroop::getSkinNo (0x140245ba0).
     [[nodiscard]] constexpr std::int32_t get_skin_no() const noexcept {
         return skin_no;
     }
 
-    // Mirrors mbTroop::setSkinNo (0x140245f30): writes skin_no and low 4 bits of flags.
+    // Mirrors mbTroop::setSkinNo (0x1402460b0): writes skin_no and low 4 bits of flags.
     void set_skin_no(std::int32_t new_skin) noexcept {
         skin_no = new_skin;
         flags = (flags & ~std::uint64_t{0xf}) | (static_cast<std::uint64_t>(new_skin) & 0xfU);
     }
 
-    // Mirrors mbTroop::getNumInventorySlots (0x140246690):
+    // Mirrors mbTroop::getNumInventorySlots (0x140246810):
     // hero uses min(inv_mgmt, max_level) -> min(9, lvl)*6 + 30 or 96 for >= 10; non-hero -> 90.
     [[nodiscard]] std::int32_t get_num_inventory_slots(
         std::int32_t inv_mgmt_max_level) const noexcept {
@@ -405,7 +405,7 @@ struct WseTroop {
         return 30 + lvl * 6;
     }
 
-    // Mirrors mbTroop::getFirstFreeInventorySlot (0x140246750), offset by kNumTroopEquipmentSlots (10)
+    // Mirrors mbTroop::getFirstFreeInventorySlot (0x1402468d0), offset by kNumTroopEquipmentSlots (10)
     // to index the combined 10+96 array used by troop_get_inventory_slot.
     [[nodiscard]] std::int32_t get_first_free_inventory_slot(
         std::int32_t inv_mgmt_max_level) const noexcept {
@@ -419,7 +419,7 @@ struct WseTroop {
         return -1;
     }
 
-    // Mirrors mbTroop::setItem (0x1402467a0).
+    // Mirrors mbTroop::setItem (0x140246920).
     void set_item(std::int32_t slot_no,
                   std::int32_t item_no,
                   std::int32_t modifier = 0,
@@ -434,7 +434,7 @@ struct WseTroop {
         slot.hit_points = 0;
     }
 
-    // Mirrors mbTroopInventory::clear (0x140245250): clears bag slots 10..105.
+    // Mirrors mbTroopInventory::clear (0x1402453d0): clears bag slots 10..105.
     void clear_inventory() noexcept {
         for (std::size_t i = static_cast<std::size_t>(kNumTroopEquipmentSlots);
              i < inventory.size(); ++i) {
@@ -442,7 +442,7 @@ struct WseTroop {
         }
     }
 
-    // Mirrors mbTroop::raiseAttribute (0x1402461f0).
+    // Mirrors mbTroop::raiseAttribute (0x140246370).
     void raise_attribute(std::int32_t attr_no,
                          std::int32_t delta,
                          std::int32_t ironflesh_max_level,
@@ -466,7 +466,7 @@ struct WseTroop {
         }
     }
 
-    // Mirrors mbTroop::raiseSkill (0x1402462b0).
+    // Mirrors mbTroop::raiseSkill (0x140246430).
     void raise_skill(std::int32_t skill_no,
                      std::int32_t delta,
                      std::int32_t skill_max_level,
@@ -479,7 +479,7 @@ struct WseTroop {
         set_skill(skill_no, cur + delta, skill_max_level, ironflesh_max_level);
     }
 
-    // Mirrors mbTroop::raiseProficiencyLinear (0x140246450).
+    // Mirrors mbTroop::raiseProficiencyLinear (0x1402465d0).
     void raise_proficiency_linear(std::int32_t prof_no, std::int32_t delta) noexcept {
         if (prof_no < 0 || prof_no >= kMaxProficiencies) {
             return;
@@ -498,14 +498,14 @@ struct WseMesh {
     std::uint32_t vertex_color_override = 0;
     bool has_vertex_color_override = false;
 
-    // Mirrors 0x1402c1af0: rewrites per-vertex color (+0x38 of stride 0x44).
+    // Mirrors 0x1402c1d60: rewrites per-vertex color (+0x38 of stride 0x44).
     void set_color(std::uint32_t color) noexcept {
         std::fill(vertex_colors.begin(), vertex_colors.end(), color);
         vertex_color_override = color;
         has_vertex_color_override = true;
     }
 
-    // Mirrors 0x1402ba5c0: assigns mesh material.
+    // Mirrors 0x1402ba830: assigns mesh material.
     void set_material(std::string_view material) {
         material_name = std::string(material);
     }
@@ -517,7 +517,7 @@ struct WseMetaMesh {
     std::string mesh_name{};
     std::vector<std::vector<WseMesh>> lods{};
 
-    // Mirrors 3811 cur_item_mesh_set_color (0x1401ec2c0): applies color across
+    // Mirrors 3811 cur_item_mesh_set_color (0x1401ec440): applies color across
     // all active LODs at index mesh_no if within that LOD's mesh count.
     void set_mesh_color(std::int32_t mesh_no, std::uint32_t color) noexcept {
         if (mesh_no < 0) {
@@ -669,7 +669,7 @@ struct WseFaction {
 struct WseQuest {
     std::string id{};
     wse::vm::Slots slots{};
-    std::string title{};                 // mbQuest::m_title (0x1401dec93 / 0x1401defc4)
+    std::string title{};                 // mbQuest::m_title (0x1401dee13 / 0x1401df144)
     std::uint32_t progression_flags = 0; // bit8 active, bit9 completed, bit10 succeeded, bit11 failed, bit12 concluded
     std::uint32_t template_flags = 0;
     std::int32_t giver_troop_no = -1;
@@ -709,7 +709,7 @@ struct WseParty {
     bool active = true;
     bool renamed = false;       // mbParty +0x58 m_renamed
     wse::vm::Slots slots{};
-    std::int32_t faction_no = 0;  // mbParty::m_factionNo (0x1401ddd7f)
+    std::int32_t faction_no = 0;  // mbParty::m_factionNo (0x1401ddeff)
     std::uint64_t flags = 0;
     std::int32_t icon_no = 0;
     std::int32_t banner_icon_no = -1;
@@ -887,7 +887,7 @@ struct WseParty {
         return 0;
     }
 
-    // Mirrors mbParty::getSkill (0x1401bb0a0); falls back to skill_levels when stacks empty.
+    // Mirrors mbParty::getSkill (0x1401bb220); falls back to skill_levels when stacks empty.
     [[nodiscard]] std::int32_t get_skill(std::int32_t skill_no,
                                          const std::vector<WseTroop>& troops,
                                          const std::array<WseSkill, kMaxSkills>& skills) const noexcept {
@@ -939,7 +939,7 @@ struct WseParty {
 };
 
 struct WsePlayer {
-    std::int32_t status = 2; // mbnetPlayer::m_status == 2 checked by 0x1401c5530
+    std::int32_t status = 2; // mbnetPlayer::m_status == 2 checked by 0x1401c56b0
     std::string name{};
     wse::vm::Slots slots{};
     std::int32_t team_no = 0;
@@ -982,9 +982,9 @@ struct WseTeam {
 
 struct WseAgent {
     bool active = true;
-    std::int32_t status = 1; // mbAgent::m_status: 1 = alive (0x14002b8f0), 3 = wounded (0x14002b900)
+    std::int32_t status = 1; // mbAgent::m_status: 1 = alive (0x14002b940), 3 = wounded (0x14002b950)
     wse::vm::Slots slots{};
-    std::int32_t type = 0;  // mbAgent::m_type: 0 = human, 1 = horse (0x14002b910)
+    std::int32_t type = 0;  // mbAgent::m_type: 0 = human, 1 = horse (0x14002b960)
     std::int32_t horse_agent_no = -1;
     std::int32_t rider_agent_no = -1;
     std::int32_t party_no = -1;
@@ -1041,15 +1041,15 @@ struct WseAgent {
     bool camera_mode = false;
     WseFaceKeys face_keys{};
 
-    // Mirrors mbAgent::isHuman (0x14002b910): m_type == 0.
+    // Mirrors mbAgent::isHuman (0x14002b960): m_type == 0.
     [[nodiscard]] constexpr bool is_human() const noexcept {
         return type == 0;
     }
-    // Mirrors mbAgent::isAlive (0x14002b8f0): m_status == 1.
+    // Mirrors mbAgent::isAlive (0x14002b940): m_status == 1.
     [[nodiscard]] constexpr bool is_alive() const noexcept {
         return active && status == 1;
     }
-    // Mirrors mbAgent::isWounded (0x14002b900): m_status == 3.
+    // Mirrors mbAgent::isWounded (0x14002b950): m_status == 3.
     [[nodiscard]] constexpr bool is_wounded_state() const noexcept {
         return status == 3 || is_wounded;
     }
@@ -1097,7 +1097,7 @@ struct WseEditModeState {
 
 namespace container_detail {
 
-// Mirrors rglStableVector<T>::createItem (`0x14014b960` mbAgent / `0x14014c030` mbMissionObject):
+// Mirrors rglStableVector<T>::createItem (`0x14014bae0` mbAgent / `0x14014c1b0` mbMissionObject):
 // reuses freed interior slots LIFO while keeping active indices < max_entries stable.
 template <typename T>
 [[nodiscard]] inline std::int32_t allocate_stable_entry(
@@ -1124,7 +1124,7 @@ template <typename T>
     return new_id;
 }
 
-// Mirrors rglStableVector<T>::remove (`0x14014b810` mbAgent / `0x14014bdc0` mbMissionObject):
+// Mirrors rglStableVector<T>::remove (`0x14014b990` mbAgent / `0x14014bf40` mbMissionObject):
 // resets the deactivated slot, shrinks trailing inactive capacity to the new high-water
 // mark, and records interior holes on the LIFO free list. The free list is not scanned for
 // duplicates (that made mass removal O(n^2)): a slot is pushed only on an active->inactive
@@ -1181,11 +1181,11 @@ struct WseWorldState {
     std::int32_t player_agent_own_troop_wound_count = 0;
     std::int32_t main_party_side = 0;                     // mbMission::m_mainPartySide
     std::int32_t enemy_side = 1;                          // mbMission::m_enemySide
-    std::int64_t campaign_time = 0;                       // DAT_14061f038
-    std::int32_t current_hours = 0;                       // mbGame +hours (0x1401de26d)
-    std::int32_t game_year = 1257;                        // mbGame::m_year (0x1401cdde9)
+    std::int64_t campaign_time = 0;                       // DAT_140620038
+    std::int32_t current_hours = 0;                       // mbGame +hours (0x1401de3ed)
+    std::int32_t game_year = 1257;                        // mbGame::m_year (0x1401cdf69)
     bool paused = false;                                  // mbGame +0x043c
-    bool hide_hud = false;                                // DAT_140657110
+    bool hide_hud = false;                                // DAT_140658140
     bool show_messages = true;                            // g_windowManager.m_displayMessages
     float water_level = 0.0f;                             // mbMission +0xa4f4
     float ground_level_z = 0.0f;                          // default terrain Z for ground probe
@@ -1212,7 +1212,7 @@ struct WseWorldState {
     std::array<WseMissionTimer, 3> mission_timers{};
     WseEditModeState edit_mode{};
 
-    std::array<WseSkill, kMaxSkills> skills{};            // 0x14065f810
+    std::array<WseSkill, kMaxSkills> skills{};            // 0x140660840
     std::vector<WseItemKind> items{};
     std::vector<WsePartyTemplate> party_templates{};
     std::vector<WseTroop> troops{};
@@ -1231,14 +1231,14 @@ struct WseWorldState {
     std::vector<WsePresentationOverlay> overlays{};
     std::vector<WseMultiplayerMessage> multiplayer_messages{};
     std::vector<WseBattleEvent> played_sounds{};
-    std::int32_t num_particle_systems = 0;                // DAT_140623a10
+    std::int32_t num_particle_systems = 0;                // DAT_140624a40
 
-    WseMetaMesh* cur_item_meta_mesh = nullptr;            // 0x1401c5e40 (caller -50)
+    WseMetaMesh* cur_item_meta_mesh = nullptr;            // 0x1401c5fc0 (caller -50)
     std::unordered_map<std::string, std::vector<WseMesh>> resource_meshes{};
     std::unordered_map<std::string, bool> resource_materials{};
     std::unordered_map<std::string, bool> resource_skeleton_models{};
 
-    // Case-sensitive INI/variable/localization stores (0x1402a7da0, 0x1402aa400, 0x14065de80).
+    // Case-sensitive INI/variable/localization stores (0x1402a8010, 0x1402aa670, 0x14065eeb0).
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
         module_settings{};
     std::unordered_map<std::string, std::string> game_variables{};
@@ -1311,8 +1311,8 @@ struct WseWorldState {
     std::int32_t savegame_no = 0;                         // mbGame +0x0000
     std::int32_t seed = 0;                                // mbGame +0x0004
     std::string savegame_name{};                          // mbGame +0x0008
-    std::int32_t module_version = 0;                      // g_moduleVersion (0x14061f0c8)
-    std::int32_t compatible_savegame_module_version = 0;  // g_compatibleSavegameModuleVersion (0x14061f0c0)
+    std::int32_t module_version = 0;                      // g_moduleVersion (0x1406200c8)
+    std::int32_t compatible_savegame_module_version = 0;  // g_compatibleSavegameModuleVersion (0x1406200c0)
     std::uint32_t encounter_flags = 0;                    // mbGame +0x0454
     std::int32_t default_prisoner_price = 0;              // mbGame +0x13e58
     std::uint32_t tutorial_flags = 0;                     // mbGame +0x13f98
@@ -1422,7 +1422,7 @@ struct WseWorldState {
     }
 
     // Queues a window transition (`mbGame::enqueueWindow`, callee of `change_screen_*`,
-    // `jump_to_menu` `0x1401dc2b1`, and `start_presentation` `0x1401cbf02`).
+    // `jump_to_menu` `0x1401dc431`, and `start_presentation` `0x1401cc082`).
     // Safety deviation: retail has no cap; the oldest entry is dropped once
     // `kMaxQueuedWindows` are pending so a script that queues windows every frame while
     // nothing consumes them cannot grow the queue without bound.
@@ -1433,9 +1433,9 @@ struct WseWorldState {
         m5.enqueued_windows.emplace_back(win_type, param);
     }
 
-    // Consumes the back queued campaign window transition (`mbMapWindow::frameMove` `0x140117f90`,
-    // `0x140118987..0x140118a80`): 0x12 opens `mbMenuWindow` 0x12 and clears remaining entries per
-    // `mbMenuWindow::open` `0x140120240`, 0x0f pops back and opens presentation window `0x16`, and
+    // Consumes the back queued campaign window transition (`mbMapWindow::frameMove` `0x1401180f0`,
+    // `0x140118ae7..0x140118be0`): 0x12 opens `mbMenuWindow` 0x12 and clears remaining entries per
+    // `mbMenuWindow::open` `0x1401203a0`, 0x0f pops back and opens presentation window `0x16`, and
     // 0x10 pops back and opens notes window `0x15`. Syncs `m5.active_window` and
     // `m6.ui.active_window_id`.
     // Safety deviation: in retail every other type stays queued until the window it targets (menu,
@@ -1477,7 +1477,7 @@ struct WseWorldState {
     }
 
     // Allocates a fresh party with monotonic script ID (mirrors rglHashVector<mbParty>::getFreeItem
-    // `0x1400e8730` monotonic key `m_nextKey` `+0x138f0`). Removed parties stay as tombstones, and
+    // `0x1400e8890` monotonic key `m_nextKey` `+0x138f0`). Removed parties stay as tombstones, and
     // loaded saves whose `m_nextKey` exceeds `m_numSlots` resume allocating from `next_party_key`.
     // Returns -1 once `kMaxPartyKeys` keys have been handed out (safety deviation, see there).
     [[nodiscard]] std::int32_t allocate_party(WseParty party) {
@@ -1551,12 +1551,12 @@ struct WseWorldState {
         return true;
     }
 
-    // Party teardown matching `mbGame::removeParty` (`0x1400dd990`, also tail-called by
-    // `mbGame::addPartyToParty` `0x1400de230` at `0x1400de480` for `party_join*`): detaches
+    // Party teardown matching `mbGame::removeParty` (`0x1400ddaf0`, also tail-called by
+    // `mbGame::addPartyToParty` `0x1400de390` at `0x1400de5e0` for `party_join*`): detaches
     // parent/child links, increments template `num_destroyed`, clears AI behavior targets, unlinks
     // agent/player/world references, marks `pf_disabled` (`0x100`), frees buffers, and keeps
     // removed IDs as tombstones so script handles are never reused.
-    // Safety deviation: retail `0x1400dd990` does not reject `p_main_party` (the Warband SDK warns
+    // Safety deviation: retail `0x1400ddaf0` does not reject `p_main_party` (the Warband SDK warns
     // removing non-spawned/main parties corrupts the game), whereas `remove_party` returns false.
     bool remove_party(std::int32_t party_no) {
         if (party_no == main_party_no || !detach_party(party_no)) {
@@ -1614,7 +1614,7 @@ struct WseWorldState {
         return true;
     }
 
-    // Allocates an agent through `rglStableVector<mbAgent>` LIFO recycling (`0x14014b960`).
+    // Allocates an agent through `rglStableVector<mbAgent>` LIFO recycling (`0x14014bae0`).
     [[nodiscard]] std::int32_t allocate_agent(WseAgent agent) {
         const std::int32_t id = container_detail::allocate_stable_entry(
             agents, agent_free_slots, kMaxSpawnedAgents, std::move(agent));
@@ -1672,8 +1672,8 @@ struct WseWorldState {
         reset(dialog.pending_mission_agent_no);
     }
 
-    // Full container removal matching `mbMission::removeAgent` (`0x140138590`) +
-    // `rglStableVector<mbAgent>::remove` (`0x14014b810`): unlinks every world reference
+    // Full container removal matching `mbMission::removeAgent` (`0x140138710`) +
+    // `rglStableVector<mbAgent>::remove` (`0x14014b990`): unlinks every world reference
     // (`unlink_agent_references`), clears M6 ext state, and recycles/trims the backing slot.
     bool remove_agent(std::int32_t agent_no) {
         if (!is_valid_agent(agent_no)) {
@@ -1684,7 +1684,7 @@ struct WseWorldState {
         return container_detail::release_stable_entry(agents, agent_free_slots, agent_no);
     }
 
-    // Allocates a mission object via `rglStableVector<mbMissionObject>` recycling (`0x14014c030`).
+    // Allocates a mission object via `rglStableVector<mbMissionObject>` recycling (`0x14014c1b0`).
     [[nodiscard]] std::int32_t allocate_mission_object(WseMissionObject obj) {
         const std::int32_t id = container_detail::allocate_stable_entry(
             mission_objects, mission_object_free_slots, kMaxSpawnedMissionObjects,
@@ -1695,8 +1695,8 @@ struct WseWorldState {
         return id;
     }
 
-    // Removes a mission object matching `mbMission::removeMissionObject` (`0x140132ba0`) +
-    // `rglStableVector<mbMissionObject>::remove` (`0x14014bdc0`), first clearing every
+    // Removes a mission object matching `mbMission::removeMissionObject` (`0x140132d20`) +
+    // `rglStableVector<mbMissionObject>::remove` (`0x14014bf40`), first clearing every
     // world reference so a recycled slot does not inherit them.
     bool remove_mission_object(std::int32_t obj_no) {
         if (!is_valid_mission_object(obj_no)) {
@@ -1745,11 +1745,11 @@ struct WseWorldState {
         fx.spawn_effector_mission_object_nos.fill(-1);
     }
 
-    // `multiplayer_clear_scene` (416, `mbMission::clearScene` `0x140147a80`): removes every agent,
+    // `multiplayer_clear_scene` (416, `mbMission::clearScene` `0x140147c00`): removes every agent,
     // removes mission objects marked prunable (`+0x1d5` / `m5.enable_pruning`, loop at
-    // `0x140147e9f`) while leaving scene-placed and unpruned props (`spawn_scene_prop` `0x14013a450`,
+    // `0x14014801f`) while leaving scene-placed and unpruned props (`spawn_scene_prop` `0x14013a5d0`,
     // `spawn_item(..., 0)`) untouched in state, and resets active players' `agent_no = -1` /
-    // `ready_to_spawn = false` (`+0x1f4`/`+0x1f8` at `0x140148098`) without wiping `item_ids`.
+    // `ready_to_spawn = false` (`+0x1f4`/`+0x1f8` at `0x140148218`) without wiping `item_ids`.
     void clear_multiplayer_scene() {
         clear_agents();
         for (auto& pl : players) {
@@ -1768,7 +1768,7 @@ struct WseWorldState {
     }
 
     // Advances entity lifetimes: removes agents whose fade-out (`agent_fade_out`, 1749) is
-    // older than `30.0s` (`mbAgent::frameMove` `0x14002a220`, check at `0x14002a3a1`) and
+    // older than `30.0s` (`mbAgent::frameMove` `0x14002a270`, check at `0x14002a3f1`) and
     // spawned items whose prune timer ran out. A faded-out scene prop is NOT removed:
     // `scene_prop_fade_in` (1823) must be able to bring it back, and its id must stay valid.
     void advance_mission_lifetimes(const std::array<std::int64_t, 3>& timers_total,
@@ -1834,8 +1834,8 @@ struct WseWorldState {
         container_detail::rebuild_stable_free_list(mission_objects, mission_object_free_slots);
     }
 
-    // Resets one player slot matching `mbnetPlayer::initialize` (`0x1401b7220`) /
-    // `clear` (`0x1401b7580`): unlinks agent & party links and clears scores, items, and slots.
+    // Resets one player slot matching `mbnetPlayer::initialize` (`0x1401b73a0`) /
+    // `clear` (`0x1401b7700`): unlinks agent & party links and clears scores, items, and slots.
     void clear_player_slot(std::int32_t player_no, bool preserve_temp_ban = false) {
         if (player_no < 0 || static_cast<std::size_t>(player_no) >= players.size()) {
             return;
@@ -1869,7 +1869,7 @@ struct WseWorldState {
         pl.team_no = 2;
     }
 
-    // Initializes fixed-capacity `mbnetData` roster (`mbnetPlayer::initialize` `0x1401b7220`).
+    // Initializes fixed-capacity `mbnetData` roster (`mbnetPlayer::initialize` `0x1401b73a0`).
     void init_players(std::int32_t capacity = kMaxPlayers) {
         const std::int32_t capped =
             std::clamp(capacity, std::int32_t{0}, kMaxPlayers);
@@ -1880,7 +1880,7 @@ struct WseWorldState {
         }
     }
 
-    // Activates player slot `player_no` (`mbnetPlayer::create` `0x1401b8980`).
+    // Activates player slot `player_no` (`mbnetPlayer::create` `0x1401b8b00`).
     bool connect_player(std::int32_t player_no,
                         std::string name,
                         std::int32_t unique_id = 0,
@@ -1898,8 +1898,8 @@ struct WseWorldState {
         return true;
     }
 
-    // Disconnects player `player_no` (`mbnetNetworkServer::disconnectPlayer` `0x1401a8c20` ->
-    // `mbnetData::disconnectPlayer` `0x14017c650`). `mp.saved_ban` is deliberately kept:
+    // Disconnects player `player_no` (`mbnetNetworkServer::disconnectPlayer` `0x1401a8da0` ->
+    // `mbnetData::disconnectPlayer` `0x14017c7d0`). `mp.saved_ban` is deliberately kept:
     // `save_ban_info_of_player` (467) exists so `ban_player_using_saved_ban_info` (468) still
     // works after the player has left or been kicked while a ban poll runs.
     bool disconnect_player(std::int32_t player_no, bool preserve_temp_ban = false) {
@@ -1910,7 +1910,7 @@ struct WseWorldState {
         return true;
     }
 
-    // Resets per-mission player equipment/agent links (`startMission` `0x14017c7c0`).
+    // Resets per-mission player equipment/agent links (`startMission` `0x14017c940`).
     void reset_players_for_mission() noexcept {
         for (std::size_t i = 0; i < players.size(); ++i) {
             auto& pl = players[i];

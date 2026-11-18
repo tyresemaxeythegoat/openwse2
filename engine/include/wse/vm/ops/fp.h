@@ -43,7 +43,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::fld_str: {
-        // 4401 (0x1131, 0x1401f00c7): atof (0x1404989cc) of operand 1 stored as
+        // 4401 (0x1131, 0x1401f0247): atof (0x14049975c) of operand 1 stored as
         // float in fp[operand 0].
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -66,7 +66,7 @@ namespace wse::vm {
     case WseOpcode::fld_pos_x:
     case WseOpcode::fld_pos_y:
     case WseOpcode::fld_pos_z: {
-        // 4402..4404 (0x1132..0x1134, 0x1401f0157..0x1401f01ff):
+        // 4402..4404 (0x1132..0x1134, 0x1401f02d7..0x1401f037f):
         // copies pos[op1].o.{x,y,z} into fp[op0].
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
@@ -417,7 +417,7 @@ namespace wse::vm {
     }
 
     case WseOpcode::feval: {
-        // 4437 (0x1155, 0x1401e4dc0 L8353..8365): (expression_string).
+        // 4437 (0x1155, 0x1401e4f40 L8353..8365): (expression_string).
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }

@@ -1,7 +1,7 @@
 // Token reader over the in-memory contents of a module text file.
 //
 // Evidence:
-//   rglInputTextFileStream vftable 0x1405651e0  -> rglTextStream readers
+//   rglInputTextFileStream vftable 0x140566030  -> rglTextStream readers
 //     +0x50 readStream, +0x58 readFloat, +0x60 readBool
 //     +0x68 readUInt64, +0x70 readInt64
 //     +0x78 readUInt32 / +0x80 readInt32 (same 32-bit parser)
@@ -11,20 +11,20 @@
 //   rglStream layout (PDB type 0x1b18a): m_contents rglString at +0x58,
 //     m_cursor at +0x54; the whole file is buffered and readers advance the
 //     cursor.
-//   mbGame::readTriggers (0x1400ccf20): skips every byte <= 0x20 before
+//   mbGame::readTriggers (0x1400cd080): skips every byte <= 0x20 before
 //     rglString::getNextToken, which is the same whitespace rule used here.
 //
 // Module files are therefore whitespace-delimited decimal text, not binary
 // records. A "token" is a maximal run of bytes > 0x20.
 //
 // Retail parser behaviour (rglTextStream, evidence ev_1e3c25667502f1b1e6ce2e296ecc792c1cd592a4e85440bf9b7e535e8e0fdb0b):
-//   readFloat  0x1402afa80  strtod(token, nullptr), cast to float
-//   readBool   0x1402afb10  _stricmp "true"/"false", else strtol(token) != 0
-//   readInt32  0x1402afce0  manual 15-char decimal loop, leading '-'
-//   readUInt64 0x1402afbe0  rglString::toUInt64Stream 0x14030f7b0, unchecked
+//   readFloat  0x1402afcf0  strtod(token, nullptr), cast to float
+//   readBool   0x1402afd80  _stricmp "true"/"false", else strtol(token) != 0
+//   readInt32  0x1402aff50  manual 15-char decimal loop, leading '-'
+//   readUInt64 0x1402afe50  rglString::toUInt64Stream 0x140310570, unchecked
 //                           64-bit digit sum: oversized decimals wrap mod 2^64
-//   readInt64  0x1402afc60  rglString::toInt64Stream (same decimal grammar)
-//   readString 0x1402afe60  raw token, no quote stripping
+//   readInt64  0x1402afed0  rglString::toInt64Stream (same decimal grammar)
+//   readString 0x1402b00d0  raw token, no quote stripping
 // Writers emit the value, then a single 0x20 separator.
 //
 // The retail readers are deliberately lenient: strtod accepts a numeric
@@ -77,8 +77,8 @@ public:
     [[nodiscard]] bool read_i32(std::int32_t& out) noexcept { return read_signed(out); }
     [[nodiscard]] bool read_u32(std::uint32_t& out) noexcept { return read_unsigned(out); }
     [[nodiscard]] bool read_i64(std::int64_t& out) noexcept { return read_signed(out); }
-    // readUInt64 (0x1402afbe0) converts the token with rglString::toUInt64Stream
-    // (0x14030f7b0), which sums `(c - '0') * 10^k` from the last character in unchecked
+    // readUInt64 (0x1402afe50) converts the token with rglString::toUInt64Stream
+    // (0x140310570), which sums `(c - '0') * 10^k` from the last character in unchecked
     // 64-bit arithmetic: a decimal token above UINT64_MAX wraps modulo 2^64 instead of
     // failing. Module System flag fields written from Python integers can exceed 64 bits
     // (e.g. `Phantasy Calradia` `item_kinds1.txt` `itm_drow_c_dagger` properties, 43 digits),

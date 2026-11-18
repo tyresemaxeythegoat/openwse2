@@ -1,19 +1,19 @@
 // Clean-room v1.1.5.5 shader, technique, effect, material state, and SPIR-V cache module.
 //
 // Reconstructed from v1.1.5.5 PE + PDB evidence (`docs/PLATFORM_PLAN.md`, slice P5):
-// - rglEffectManager::initDeviceObjects (0x14028bce0),
-//   rglGraphicsContext::checkLoadingPostEffects (0x14029c930),
-//   rglRenderer::initPostFxShaders (0x1402db690), D3DXCreateEffectFromFileA (0x140501b70)
-// - rglResourceManager::loadOptionalShaderResource (0x1402eeec0),
-//   initShaderTechniques (0x1402ecd30), initShaderPairs (0x1402ed3c0),
-//   getSuitableShader (0x1402f3db0), getSuitableShaderImpl (0x1402f3eb0),
-//   initMaterialTextures (0x1402f5390)
-// - rglTechnique::initDeviceObjects (0x1402a5c30), initEarlyZHandle (0x1402a5fc0)
-// - rglShader (0x1fa6f, 504 B), rglShader::isSuitable (0x140301ab0),
-//   rglMesh::getVertexDeclarationType (0x1402baa30)
-// - rglMaterial (0x1dc61, 632 B), rglMaterial::readStream (0x1402b5970),
-//   rglGraphicsContext::setAlphaTestMode (0x1402a00b0),
-//   rglGraphicsContext::createBlendStates (0x14029f590), setFogEnabled (0x14029ffa0)
+// - rglEffectManager::initDeviceObjects (0x14028be40),
+//   rglGraphicsContext::checkLoadingPostEffects (0x14029ca90),
+//   rglRenderer::initPostFxShaders (0x1402db7a0), D3DXCreateEffectFromFileA (0x140502b70)
+// - rglResourceManager::loadOptionalShaderResource (0x1402ef550),
+//   initShaderTechniques (0x1402ed3c0), initShaderPairs (0x1402eda50),
+//   getSuitableShader (0x1402f4440), getSuitableShaderImpl (0x1402f4540),
+//   initMaterialTextures (0x1402f5a20)
+// - rglTechnique::initDeviceObjects (0x1402a5ea0), initEarlyZHandle (0x1402a6230)
+// - rglShader (0x1fa6f, 504 B), rglShader::isSuitable (0x1403028c0),
+//   rglMesh::getVertexDeclarationType (0x1402baca0)
+// - rglMaterial (0x1dc61, 632 B), rglMaterial::readStream (0x1402b5be0),
+//   rglGraphicsContext::setAlphaTestMode (0x1402a0260),
+//   rglGraphicsContext::createBlendStates (0x14029f740), setFogEnabled (0x1402a0150)
 //
 // Port infrastructure in this header that is NOT a reconstruction:
 // - `lower_warband_glsl_to_vulkan450` lowers legacy Warband GLSL 1.10/1.20 (`attribute`,
@@ -59,9 +59,9 @@ namespace wse::asset {
 // rglShader & rglMaterial flags from v1.1.5.5 PE reconstruction
 // -----------------------------------------------------------------------------
 
-// rglShader::m_flags (`+0x58`, rglShader::isSuitable 0x140301ab0,
-// rglMesh::getVertexDeclarationType 0x1402baa30, rglRenderer::renderMesh 0x1402e8454,
-// rglResourceManager::initShaderPairs 0x1402ed3c0).
+// rglShader::m_flags (`+0x58`, rglShader::isSuitable 0x1403028c0,
+// rglMesh::getVertexDeclarationType 0x1402baca0, rglRenderer::renderMesh 0x1402e8734,
+// rglResourceManager::initShaderPairs 0x1402eda50).
 inline constexpr std::uint32_t kShaderFlagHasSpecular = 0x00000020U;
 inline constexpr std::uint32_t kShaderFlagUsesInstancing = 0x00002000U;
 inline constexpr std::uint32_t kShaderFlagRuntimeDisabled = 0x00010000U;
@@ -71,12 +71,12 @@ inline constexpr std::uint32_t kShaderFlagUsesHlsl = 0x20000000U;
 inline constexpr std::uint32_t kShaderFlagUsesNormalMap = 0x40000000U;
 inline constexpr std::uint32_t kShaderFlagUsesSkinning = 0x80000000U;
 
-// rglShader::m_requirementFlags (`+0x64`, rglShader::isSuitable 0x140301ab0).
+// rglShader::m_requirementFlags (`+0x64`, rglShader::isSuitable 0x1403028c0).
 inline constexpr std::uint32_t kShaderReqLoQuality = 0x00001000U;
 inline constexpr std::uint32_t kShaderReqMidQuality = 0x00002000U;
 inline constexpr std::uint32_t kShaderReqHiQuality = 0x00004000U;
 
-// rglMaterial::m_flags (`+0x58`, rglRenderer::renderMesh 0x1402e7f50).
+// rglMaterial::m_flags (`+0x58`, rglRenderer::renderMesh 0x1402e8230).
 inline constexpr std::uint32_t kMaterialFlagNoFog = 0x00000001U;
 inline constexpr std::uint32_t kMaterialFlagNoZWrite = 0x00000008U;
 inline constexpr std::uint32_t kMaterialFlagNoDepthTest = 0x00000010U;
@@ -84,10 +84,10 @@ inline constexpr std::uint32_t kMaterialFlagBlendMask = 0x00000700U;
 inline constexpr std::uint32_t kMaterialFlagAlphaTestMask = 0x00003000U;
 inline constexpr std::uint32_t kMaterialFlagRenderOrderMask = 0x0F000000U;
 
-// rglResourceManager::getSuitableShader (0x1402f3db0) starts its best depth at 0x186a0.
+// rglResourceManager::getSuitableShader (0x1402f4440) starts its best depth at 0x186a0.
 inline constexpr int kSuitableShaderNoDepth = 100000;
 
-// rglMesh::getVertexDeclarationType (0x1402baa30) returns values 0..4.
+// rglMesh::getVertexDeclarationType (0x1402baca0) returns values 0..4.
 enum class VertexDeclType : std::uint8_t {
     Standard = 0,
     Bumped = 1,
@@ -96,7 +96,7 @@ enum class VertexDeclType : std::uint8_t {
     Special = 4,
 };
 
-// rglGraphicsContext::setAlphaTestMode (0x1402a00b0).
+// rglGraphicsContext::setAlphaTestMode (0x1402a0260).
 enum class AlphaTestMode : std::uint8_t {
     None = 0,
     GreaterEqual8 = 1,
@@ -104,7 +104,7 @@ enum class AlphaTestMode : std::uint8_t {
     GreaterEqual251 = 3,
 };
 
-// rglGraphicsContext::createBlendStates (0x14029f590): 5 D3D9 blend state slots.
+// rglGraphicsContext::createBlendStates (0x14029f740): 5 D3D9 blend state slots.
 enum class MaterialBlendMode : std::uint8_t {
     Opaque = 0,
     AlphaBlend = 1,
@@ -166,7 +166,7 @@ struct MaterialRenderState {
     AlphaTestMode alpha_test_mode = AlphaTestMode::None;
     std::uint8_t alpha_ref_u8 = 0;
     // Provisional: bits 24..27 decoded as a signed nibble (-8..7). The sign
-    // convention is not yet confirmed against rglRenderer::renderMesh (0x1402e7f50).
+    // convention is not yet confirmed against rglRenderer::renderMesh (0x1402e8230).
     int render_order = 0;
     std::string diffuse_a{};
     std::string diffuse_b{};
@@ -367,7 +367,7 @@ inline std::string normalize_material_slot(std::string_view raw) {
     if (trimmed.empty()) {
         return {};
     }
-    // rglResourceManager::initMaterialTextures (0x1402f5390) ignores "none".
+    // rglResourceManager::initMaterialTextures (0x1402f5a20) ignores "none".
     if (equals_ci(trimmed, "none")) {
         return {};
     }
@@ -499,7 +499,7 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
 // -----------------------------------------------------------------------------
 
 [[nodiscard]] inline constexpr std::uint8_t alpha_test_ref_u8(AlphaTestMode mode) noexcept {
-    // rglGraphicsContext::setAlphaTestMode (0x1402a00b0): modes 1..3 test >= 8, 136, 251.
+    // rglGraphicsContext::setAlphaTestMode (0x1402a0260): modes 1..3 test >= 8, 136, 251.
     switch (mode) {
         case AlphaTestMode::None:
             return 0U;
@@ -527,9 +527,9 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
     out.depth_write = (mat.flags & kMaterialFlagNoZWrite) == 0U;
     out.depth_test = (mat.flags & kMaterialFlagNoDepthTest) == 0U;
 
-    // `rglGraphicsContext::createBlendStates` (`0x14029f590`) allocates 5 slots (`0..4`).
+    // `rglGraphicsContext::createBlendStates` (`0x14029f740`) allocates 5 slots (`0..4`).
     // Values 5..6 have no slot; value 7 (`0x700`) is resolved dynamically per draw in
-    // `rglRenderer::renderMesh` (`0x1402e913f`) / `rglMesh::updateRenderOrder` (`0x1402b9ece`),
+    // `rglRenderer::renderMesh` (`0x1402e93b9`) / `rglMesh::updateRenderOrder` (`0x1402ba13e`),
     // selecting slot 1 (`AlphaBlend`) when mesh vertex-color alpha < 255, else slot 0 (`Opaque`).
     const std::uint32_t raw_blend = (mat.flags & kMaterialFlagBlendMask) >> 8U;
     switch (raw_blend) {
@@ -552,14 +552,14 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
 
     const std::uint32_t raw_alpha_test = (mat.flags & kMaterialFlagAlphaTestMask) >> 12U;
     out.alpha_test_mode = static_cast<AlphaTestMode>(std::min<std::uint32_t>(raw_alpha_test, 3U));
-    // `rglRenderer::renderMesh` (`0x1402e8439`) -> `rglGraphicsContext::setAlphaTestMode`
-    // (`0x1402a00b0`): `(mat.flags & 0x700) != 0` only zeroes the shader's `fAlphaTestVal`
-    // uniform; `D3DRS_ALPHATESTENABLE` and `D3DRS_ALPHAREF` (`8`/`136`/`251` at `0x1402a0165`)
+    // `rglRenderer::renderMesh` (`0x1402e8719`) -> `rglGraphicsContext::setAlphaTestMode`
+    // (`0x1402a0260`): `(mat.flags & 0x700) != 0` only zeroes the shader's `fAlphaTestVal`
+    // uniform; `D3DRS_ALPHATESTENABLE` and `D3DRS_ALPHAREF` (`8`/`136`/`251` at `0x1402a031a`)
     // stay active whenever `alpha_test_mode != None`, even on blended materials.
     out.alpha_ref_u8 = alpha_test_ref_u8(out.alpha_test_mode);
 
     const std::uint32_t raw_order = (mat.flags & kMaterialFlagRenderOrderMask) >> 24U;
-    // Signed 4-bit nibble `-8..+7`: `rglMesh::updateRenderOrder` (`0x1402b9ef5`) computes
+    // Signed 4-bit nibble `-8..+7`: `rglMesh::updateRenderOrder` (`0x1402ba165`) computes
     // `((flags >> 24) - 8) & 0xF` (which equals `render_order + 8` unsigned sort key).
     out.render_order = (raw_order >= 8U) ? static_cast<int>(raw_order) - 16 : static_cast<int>(raw_order);
 
@@ -582,7 +582,7 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
         out.uses_normal_map =
             out.uses_normal_map || (resolved_shader->flags & kShaderFlagUsesNormalMap) != 0U;
         out.uses_skinning = (resolved_shader->flags & kShaderFlagUsesSkinning) != 0U;
-        // `rglRenderer::renderMesh` (`0x1402e8454`) gates `fMaterialPower` / `vSpecularColor`
+        // `rglRenderer::renderMesh` (`0x1402e8734`) gates `fMaterialPower` / `vSpecularColor`
         // on `shader->m_flags & kShaderFlagHasSpecular` (`0x20`).
         out.uses_specular =
             material_wants_specular && ((resolved_shader->flags & kShaderFlagHasSpecular) != 0U);
@@ -609,7 +609,7 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
     return names;
 }
 
-// Matches rglEffectManager::initDeviceObjects (0x14028bce0):
+// Matches rglEffectManager::initDeviceObjects (0x14028be40):
 //   1. <module>/<wse2_fxo> (if bUseWSE2Effect)
 //   2. <module>/mb.fx
 //   3. <module>/mb_2a.fxo or mb_2b.fxo
@@ -653,7 +653,7 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
     return {};
 }
 
-// Matches rglRenderer::initPostFxShaders (0x1402db690):
+// Matches rglRenderer::initPostFxShaders (0x1402db7a0):
 //   <module>/earlyZ.fxo -> <module>/earlyz_wse2.fxo -> <root>/earlyz_wse2.fxo -> <root>/earlyZ.fxo
 [[nodiscard]] inline std::string resolve_earlyz_effect_path(wse::platform::Vfs& vfs,
                                                             std::string_view warband_root,
@@ -686,7 +686,7 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
 
 // True when effect source already carries a WSE2 conditional: a preprocessor
 // `#if WSE2`, `#ifdef WSE2`, `#elif WSE2`, or `#if defined(WSE2)` line with `WSE2`
-// as a whole token. Safety deviation: retail checkLoadingPostEffects (0x14029c930)
+// as a whole token. Safety deviation: retail checkLoadingPostEffects (0x14029ca90)
 // is treated as a substring check, which would duplicate the include for `#ifdef
 // WSE2` and skip it for `#if WSE2_LEGACY`.
 [[nodiscard]] inline bool effect_source_has_wse2_conditional(std::string_view src) noexcept {
@@ -741,7 +741,7 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
     return false;
 }
 
-// Matches rglGraphicsContext::checkLoadingPostEffects (0x14029c930):
+// Matches rglGraphicsContext::checkLoadingPostEffects (0x14029ca90):
 //   Checks <module>/PostFx.fx (or <module>/Shaders/postFX.fx, then root PostFx.fx),
 //   appends `#if WSE2\n#include "postFX_WSE2.fx"\n#endif\n` when `use_wse2_effect` is set
 //   and no WSE2 conditional is present, and flags if <module>/postFX_WSE2.fx shadows root.
@@ -787,7 +787,7 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
 // Optional `wse2_shaders.brf` and `wse2_shaders.ini` `[SkinFallback]`/`[NoSkinFallback]`
 // -----------------------------------------------------------------------------
 
-// Matches rglResourceManager::loadOptionalShaderResource (0x1402eeec0).
+// Matches rglResourceManager::loadOptionalShaderResource (0x1402ef550).
 [[nodiscard]] inline std::string resolve_optional_wse2_shaders_brf_path(
     wse::platform::Vfs& vfs,
     std::string_view warband_root,
@@ -832,7 +832,7 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
     return parse_brf(std::as_bytes(std::span<const std::uint8_t>(raw)), out_brf, error_out);
 }
 
-// Matches rglResourceManager::initShaderPairs (0x1402ed3c0).
+// Matches rglResourceManager::initShaderPairs (0x1402eda50).
 [[nodiscard]] inline std::string resolve_wse2_shaders_ini_path(
     wse::platform::Vfs& vfs,
     std::string_view warband_root,
@@ -930,7 +930,7 @@ inline void parse_wse2_shaders_ini(std::string_view ini_text, ShaderPairTable& o
 // Shader Suitability, Alternative Resolution & Vertex Decl Type
 // -----------------------------------------------------------------------------
 
-// Reconstructs rglShader::isSuitable (0x140301ab0).
+// Reconstructs rglShader::isSuitable (0x1403028c0).
 [[nodiscard]] inline bool is_shader_suitable(const BrfShader& shader,
                                              const ShaderQualityConfig& cfg = {},
                                              bool technique_available = true) noexcept {
@@ -1019,8 +1019,8 @@ inline void validate_shader_pairs(const ShaderPairTable& raw_table,
     }
 }
 
-// Reconstructs rglResourceManager::getSuitableShader (0x1402f3db0) ->
-// getSuitableShaderImpl (0x1402f3eb0) -> getDefaultShader ("def_shader", 0x1402f1ef0):
+// Reconstructs rglResourceManager::getSuitableShader (0x1402f4440) ->
+// getSuitableShaderImpl (0x1402f4540) -> getDefaultShader ("def_shader", 0x1402f2580):
 // the suitable shader reachable through the fewest alternative hops, else
 // `def_shader`. Implemented as a breadth-first search with one global visited set,
 // O(shaders + alternatives) even for cyclic or densely linked alternative graphs
@@ -1098,7 +1098,7 @@ private:
     std::unordered_map<std::string, ShaderResolutionResult> cache_{};
 };
 
-// Reconstructs rglMesh::getVertexDeclarationType (0x1402baa30):
+// Reconstructs rglMesh::getVertexDeclarationType (0x1402baca0):
 // Selects `paired_shader` when `uses_skinning != mesh_has_bones`, then maps shader flags to 0..4.
 [[nodiscard]] inline VertexDeclType get_mesh_vertex_declaration_type(
     const BrfShader& shader,

@@ -172,29 +172,29 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
 
     switch (opcode) {
     // Campaign Conditions & Map State (36..154)
-    case 36: // entering_town (0x1401c6448)
+    case 36: // entering_town (0x1401c65c8)
         return game::check_entering_town(narrow[0], world)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 37: // map_free (0x1401c64f0)
+    case 37: // map_free (0x1401c6670)
         return world.map_free_state ? NativeDispatch::handled
                                     : NativeDispatch::condition_false;
-    case 39: // encountered_party_is_attacker (0x1401c650e)
+    case 39: // encountered_party_is_attacker (0x1401c668e)
         return world.encountered_party_is_attacker ? NativeDispatch::handled
                                                    : NativeDispatch::condition_false;
-    case 42: // conversation_screen_is_active (0x1401c6526)
+    case 42: // conversation_screen_is_active (0x1401c66a6)
         return world.conversation_screen_active ? NativeDispatch::handled
                                                 : NativeDispatch::condition_false;
-    case 44: // in_meta_mission (0x1401c653c)
+    case 44: // in_meta_mission (0x1401c66bc)
         return world.in_meta_mission ? NativeDispatch::handled
                                      : NativeDispatch::condition_false;
-    case 60: { // set_result_string (0x1401c6660)
+    case 60: { // set_result_string (0x1401c67e0)
         const std::uint8_t tag0 = tags.empty() ? 0U : tags[0];
         world.result_string =
             wse_utf16_to_utf8(native_resolve_and_parse(narrow[0], tag0, ctx));
         return NativeDispatch::handled;
     }
-    case 101: { // hero_can_join (0x1401c6ad1)
+    case 101: { // hero_can_join (0x1401c6c51)
         const std::int32_t party_no =
             (statement.numOperands >= 1) ? narrow[0] : world.main_party_no;
         if (!world.is_valid_party(party_no)) {
@@ -208,7 +208,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     }
-    case 102: { // hero_can_join_as_prisoner (0x1401c6b24)
+    case 102: { // hero_can_join_as_prisoner (0x1401c6ca4)
         const std::int32_t party_no =
             (statement.numOperands >= 1) ? narrow[0] : world.main_party_no;
         if (!world.is_valid_party(party_no)) {
@@ -222,7 +222,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     }
-    case 103: // party_can_join (0x1401c6b77)
+    case 103: // party_can_join (0x1401c6cf7)
         return (world.is_valid_party(world.encountered_party_no) &&
                 world.is_valid_party(world.main_party_no) &&
                 game::party_can_join_party(world, world.encountered_party_no,
@@ -231,7 +231,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                                            party_max_prisoners(ctx, world.main_party_no)))
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 104: // party_can_join_as_prisoner (0x1401c6ba0)
+    case 104: // party_can_join_as_prisoner (0x1401c6d20)
         return (world.is_valid_party(world.encountered_party_no) &&
                 world.is_valid_party(world.main_party_no) &&
                 game::party_can_join_party(world, world.encountered_party_no,
@@ -240,7 +240,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                                            party_max_prisoners(ctx, world.main_party_no)))
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 105: { // troops_can_join (0x1401c6bb3)
+    case 105: { // troops_can_join (0x1401c6d33)
         if (narrow[0] <= 0 || !world.is_valid_party(world.main_party_no)) {
             return NativeDispatch::condition_false;
         }
@@ -249,7 +249,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     }
-    case 106: { // troops_can_join_as_prisoner (0x1401c6bed)
+    case 106: { // troops_can_join_as_prisoner (0x1401c6d6d)
         if (narrow[0] <= 0 || !world.is_valid_party(world.main_party_no)) {
             return NativeDispatch::condition_false;
         }
@@ -258,14 +258,14 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     }
-    case 107: // party_can_join_party (0x1401c6c27)
+    case 107: // party_can_join_party (0x1401c6da7)
         return game::party_can_join_party(
                    world, narrow[0], narrow[1],
                    (statement.numOperands >= 3 && narrow[2] != 0),
                    party_max_companions(ctx, narrow[1]), party_max_prisoners(ctx, narrow[1]))
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 108: // party_end_battle (0x1401c6c7c)
+    case 108: // party_end_battle (0x1401c6dfc)
         if (world.is_valid_party(narrow[0])) {
             auto& p = world.parties[static_cast<std::size_t>(narrow[0])];
             if (p.in_battle) {
@@ -274,30 +274,30 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 130: // party_is_in_town (0x1401c6d3b)
+    case 130: // party_is_in_town (0x1401c6ebb)
         return (world.is_valid_party(narrow[0]) && world.is_valid_party(narrow[1]) &&
                 world.parties[static_cast<std::size_t>(narrow[0])].behavior == 8 &&
                 world.parties[static_cast<std::size_t>(narrow[0])].behavior_object == narrow[1])
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 131: // party_is_in_any_town (0x1401c6d82)
+    case 131: // party_is_in_any_town (0x1401c6f02)
         return (world.is_valid_party(narrow[0]) &&
                 world.parties[static_cast<std::size_t>(narrow[0])].behavior == 8)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 132: // party_is_active (0x1401c6db3)
+    case 132: // party_is_active (0x1401c6f33)
         return (world.is_valid_party(narrow[0]) &&
                 (world.parties[static_cast<std::size_t>(narrow[0])].flags &
                  0x1080100ULL) == 0ULL)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 150: // player_has_item (0x1401c6df7)
+    case 150: // player_has_item (0x1401c6f77)
         return (world.is_valid_troop(world.player_troop_no) &&
                 world.is_valid_item(narrow[0]) &&
                 game::troop_count_items(world, world.player_troop_no, narrow[0], false) > 0)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 151: { // troop_has_item_equipped (0x1401c6e5d)
+    case 151: { // troop_has_item_equipped (0x1401c6fdd)
         if (!world.is_valid_troop(narrow[0]) || !world.is_valid_item(narrow[1])) {
             return NativeDispatch::condition_false;
         }
@@ -309,18 +309,18 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         }
         return NativeDispatch::condition_false;
     }
-    case 152: // troop_is_mounted (0x1401c6ecb)
+    case 152: // troop_is_mounted (0x1401c704b)
         return (world.is_valid_troop(narrow[0]) &&
                 world.troops[static_cast<std::size_t>(narrow[0])].inventory[8].item_no >= 0)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 153: // troop_is_guarantee_ranged (0x1401c6f16)
+    case 153: // troop_is_guarantee_ranged (0x1401c7096)
         return (world.is_valid_troop(narrow[0]) &&
                 (world.troops[static_cast<std::size_t>(narrow[0])].flags & (1ULL << 26U)) !=
                     0ULL)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 154: // troop_is_guarantee_horse (0x1401c6f51)
+    case 154: // troop_is_guarantee_horse (0x1401c70d1)
         return (world.is_valid_troop(narrow[0]) &&
                 (world.troops[static_cast<std::size_t>(narrow[0])].flags & (1ULL << 24U)) !=
                     0ULL)
@@ -328,29 +328,29 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                    : NativeDispatch::condition_false;
 
     // Platform / Achievements / Multiplayer / Teams (250..461)
-    case 250: // is_trial_version (0x1401d5496)
+    case 250: // is_trial_version (0x1401d5616)
         return world.is_trial_version ? NativeDispatch::handled
                                       : NativeDispatch::condition_false;
-    case 255: // is_edit_mode_enabled (0x1401c706d)
+    case 255: // is_edit_mode_enabled (0x1401c71ed)
         return world.edit_mode_enabled ? NativeDispatch::handled
                                        : NativeDispatch::condition_false;
-    case 370: { // get_achievement_stat (0x1401c746a)
+    case 370: { // get_achievement_stat (0x1401c75ea)
         const std::int32_t key = native_campaign_achievement_key(narrow[1], narrow[2]);
         const auto it = world.achievement_stats.find(key);
         store_lvalue(dst, (it != world.achievement_stats.end()) ? it->second : 0, ctx,
                      locals);
         return NativeDispatch::handled;
     }
-    case 371: // set_achievement_stat (0x1401c749f)
+    case 371: // set_achievement_stat (0x1401c761f)
         world.achievement_stats[native_campaign_achievement_key(narrow[0], narrow[1])] =
             narrow[2];
         return NativeDispatch::handled;
-    case 372: // unlock_achievement (0x1401c74b6)
+    case 372: // unlock_achievement (0x1401c7636)
         if (narrow[0] >= 0 && narrow[0] < 81) {
             world.unlocked_achievements[narrow[0]] = true;
         }
         return NativeDispatch::handled;
-    case 411: // multiplayer_get_my_team (0x1401c8243)
+    case 411: // multiplayer_get_my_team (0x1401c83c3)
         if (world.is_multiplayer && world.is_valid_player(world.my_player_no)) {
             store_lvalue(
                 dst,
@@ -358,7 +358,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                 locals);
         }
         return NativeDispatch::handled;
-    case 412: // multiplayer_get_my_troop (0x1401c8297)
+    case 412: // multiplayer_get_my_troop (0x1401c8417)
         if (world.is_multiplayer && world.is_valid_player(world.my_player_no)) {
             store_lvalue(
                 dst,
@@ -366,13 +366,13 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                 locals);
         }
         return NativeDispatch::handled;
-    case 413: // multiplayer_set_my_troop (0x1401c82eb)
+    case 413: // multiplayer_set_my_troop (0x1401c846b)
         if (world.is_multiplayer && world.is_valid_player(world.my_player_no) &&
             (narrow[0] == -1 || world.is_valid_troop(narrow[0]))) {
             world.players[static_cast<std::size_t>(world.my_player_no)].troop_no = narrow[0];
         }
         return NativeDispatch::handled;
-    case 414: // multiplayer_get_my_gold (0x1401c835c)
+    case 414: // multiplayer_get_my_gold (0x1401c84dc)
         if (world.is_multiplayer && world.is_valid_player(world.my_player_no)) {
             store_lvalue(
                 dst,
@@ -380,32 +380,32 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                 locals);
         }
         return NativeDispatch::handled;
-    case 415: // multiplayer_get_my_player (0x1401c83b0)
+    case 415: // multiplayer_get_my_player (0x1401c8530)
         if (world.is_multiplayer) {
             store_lvalue(dst, static_cast<std::int64_t>(world.my_player_no), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 416: // multiplayer_clear_scene (0x1401c840f)
+    case 416: // multiplayer_clear_scene (0x1401c858f)
         if (world.is_multiplayer) {
             world.clear_multiplayer_scene();
         }
         return NativeDispatch::handled;
-    case 417: // multiplayer_is_server (0x1401c8469)
+    case 417: // multiplayer_is_server (0x1401c85e9)
         return world.is_server ? NativeDispatch::handled : NativeDispatch::condition_false;
-    case 418: // multiplayer_is_dedicated_server (0x1401c847a)
+    case 418: // multiplayer_is_dedicated_server (0x1401c85fa)
         return world.is_dedicated_server ? NativeDispatch::handled
                                          : NativeDispatch::condition_false;
-    case 419: // game_in_multiplayer_mode (0x1401c848b)
+    case 419: // game_in_multiplayer_mode (0x1401c860b)
         return world.is_multiplayer ? NativeDispatch::handled
                                     : NativeDispatch::condition_false;
-    case 420: // multiplayer_make_everyone_enemy (0x1401c84a0)
+    case 420: // multiplayer_make_everyone_enemy (0x1401c8620)
         for (std::size_t i = 0; i < world.teams.size(); ++i) {
             for (std::size_t j = 0; j < world.teams[i].relations.size(); ++j) {
                 world.teams[i].relations[j] = (i == j) ? 1 : -1;
             }
         }
         return NativeDispatch::handled;
-    case 421: // player_control_agent (0x1401c84c5)
+    case 421: // player_control_agent (0x1401c8645)
         if (world.is_valid_player(narrow[0]) && world.is_valid_agent(narrow[1])) {
             auto& pl = world.players[static_cast<std::size_t>(narrow[0])];
             if (world.is_valid_agent(pl.agent_no)) {
@@ -419,7 +419,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             ag.is_non_player = false;
         }
         return NativeDispatch::handled;
-    case 422: // player_get_item_id (0x1401c8500)
+    case 422: // player_get_item_id (0x1401c8680)
         if (world.is_valid_player(narrow[1]) && narrow[2] >= 0 &&
             narrow[2] < game::kNumTroopEquipmentSlots) {
             store_lvalue(
@@ -429,72 +429,72 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 423: // player_get_banner_id (0x1401c8564)
+    case 423: // player_get_banner_id (0x1401c86e4)
         if (world.is_valid_player(narrow[1])) {
             store_lvalue(
                 dst, world.players[static_cast<std::size_t>(narrow[1])].banner_no, ctx,
                 locals);
         }
         return NativeDispatch::handled;
-    case 424: // game_get_reduce_campaign_ai (0x1401c85ab)
+    case 424: // game_get_reduce_campaign_ai (0x1401c872b)
         store_lvalue(dst, static_cast<std::int64_t>(world.reduce_campaign_ai), ctx, locals);
         return NativeDispatch::handled;
-    case 432: // player_set_score (0x1401c8781)
+    case 432: // player_set_score (0x1401c8901)
         if (world.is_valid_player(narrow[0])) {
             world.players[static_cast<std::size_t>(narrow[0])].score = narrow[1];
         }
         return NativeDispatch::handled;
-    case 450: // team_get_bot_kill_count (0x1401c8a67)
+    case 450: // team_get_bot_kill_count (0x1401c8be7)
         if (world.is_valid_team(narrow[1])) {
             store_lvalue(dst, world.teams[static_cast<std::size_t>(narrow[1])].bot_kill_count,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 451: // team_set_bot_kill_count (0x1401c8aab)
+    case 451: // team_set_bot_kill_count (0x1401c8c2b)
         if (world.is_valid_team(narrow[0])) {
             world.teams[static_cast<std::size_t>(narrow[0])].bot_kill_count = narrow[1];
         }
         return NativeDispatch::handled;
-    case 452: // team_get_bot_death_count (0x1401c8ad7)
+    case 452: // team_get_bot_death_count (0x1401c8c57)
         if (world.is_valid_team(narrow[1])) {
             store_lvalue(dst, world.teams[static_cast<std::size_t>(narrow[1])].bot_death_count,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 453: // team_set_bot_death_count (0x1401c8b1b)
+    case 453: // team_set_bot_death_count (0x1401c8c9b)
         if (world.is_valid_team(narrow[0])) {
             world.teams[static_cast<std::size_t>(narrow[0])].bot_death_count = narrow[1];
         }
         return NativeDispatch::handled;
-    case 454: // team_get_kill_count (0x1401c8b52)
+    case 454: // team_get_kill_count (0x1401c8cd2)
         if (world.is_valid_team(narrow[1])) {
             store_lvalue(dst, world.teams[static_cast<std::size_t>(narrow[1])].kill_count, ctx,
                          locals);
         }
         return NativeDispatch::handled;
-    case 455: // team_get_score (0x1401c8b95)
+    case 455: // team_get_score (0x1401c8d15)
         if (world.is_valid_team(narrow[1])) {
             store_lvalue(dst, world.teams[static_cast<std::size_t>(narrow[1])].score, ctx,
                          locals);
         }
         return NativeDispatch::handled;
-    case 456: // team_set_score (0x1401c8bd9)
+    case 456: // team_set_score (0x1401c8d59)
         if (world.is_valid_team(narrow[0])) {
             world.teams[static_cast<std::size_t>(narrow[0])].score = narrow[1];
         }
         return NativeDispatch::handled;
-    case 457: // team_set_faction (0x1401c8c05)
+    case 457: // team_set_faction (0x1401c8d85)
         if (narrow[0] >= 0 && narrow[0] < 2 && world.is_valid_faction(narrow[1])) {
             world.teams[static_cast<std::size_t>(narrow[0])].faction_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 458: // team_get_faction (0x1401c8c68)
+    case 458: // team_get_faction (0x1401c8de8)
         if (narrow[1] >= 0 && narrow[1] < 2) {
             store_lvalue(dst, world.teams[static_cast<std::size_t>(narrow[1])].faction_no, ctx,
                          locals);
         }
         return NativeDispatch::handled;
-    case 461: // player_item_slot_is_picked_up (0x1401c8d7d)
+    case 461: // player_item_slot_is_picked_up (0x1401c8efd)
         return (world.is_valid_player(narrow[0]) && narrow[1] >= 0 &&
                 narrow[1] < game::kNumTroopEquipmentSlots &&
                 world.players[static_cast<std::size_t>(narrow[0])]
@@ -503,7 +503,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                    : NativeDispatch::condition_false;
 
     // Position Distances (712..793)
-    case 712: { // get_sq_distance_between_positions (0x1401cadea)
+    case 712: { // get_sq_distance_between_positions (0x1401caf6a)
         std::int64_t out = 0;
         if (wse_register_ok(narrow[1]) && wse_register_ok(narrow[2])) {
             const auto& a = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
@@ -516,7 +516,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         store_lvalue(dst, out, ctx, locals);
         return NativeDispatch::handled;
     }
-    case 713: { // get_sq_distance_between_positions_in_meters (0x1401cae84)
+    case 713: { // get_sq_distance_between_positions_in_meters (0x1401cb004)
         std::int64_t out = 0;
         if (wse_register_ok(narrow[1]) && wse_register_ok(narrow[2])) {
             const auto& a = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
@@ -529,8 +529,8 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         store_lvalue(dst, out, ctx, locals);
         return NativeDispatch::handled;
     }
-    case 792: // position_get_distance_to_terrain (0x1401cbdf3)
-    case 793: // position_get_distance_to_ground_level (0x1401cbe85)
+    case 792: // position_get_distance_to_terrain (0x1401cbf73)
+    case 793: // position_get_distance_to_ground_level (0x1401cc005)
         if (wse_register_ok(narrow[1])) {
             const float z = ctx.positions[static_cast<std::size_t>(narrow[1])].o.z;
             const float fp = static_cast<float>(ctx.fixedPointMultiplier);
@@ -542,30 +542,30 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         return NativeDispatch::handled;
 
     // Mission State & World Campaign Ops (1003..1493)
-    case 1003: // all_enemies_defeated (0x1401cd37d)
+    case 1003: // all_enemies_defeated (0x1401cd4fd)
         return native_campaign_all_enemies_defeated(world) ? NativeDispatch::handled
                                                            : NativeDispatch::condition_false;
-    case 1005: // num_active_teams_le (0x1401cd391)
+    case 1005: // num_active_teams_le (0x1401cd511)
         return (native_campaign_num_active_teams(world) <= narrow[0])
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 1006: // main_hero_fallen (0x1401cd3ab)
+    case 1006: // main_hero_fallen (0x1401cd52b)
         return (world.is_valid_agent(world.player_agent_no) &&
                 !world.agents[static_cast<std::size_t>(world.player_agent_no)].is_alive())
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 1019: // finish_party_battle_mode (0x1401cd3eb)
+    case 1019: // finish_party_battle_mode (0x1401cd56b)
         world.party_battle_mode = false;
         return NativeDispatch::handled;
-    case 1020: // set_party_battle_mode (0x1401cd3f7)
+    case 1020: // set_party_battle_mode (0x1401cd577)
         world.party_battle_mode = true;
         return NativeDispatch::handled;
-    case 1021: // set_camera_follow_party (0x1401cd403)
+    case 1021: // set_camera_follow_party (0x1401cd583)
         if (world.is_valid_party(narrow[0])) {
             world.camera_follow_party_no = narrow[0];
         }
         return NativeDispatch::handled;
-    case 1062: { // add_xp_to_troop (0x1401cd5c2)
+    case 1062: { // add_xp_to_troop (0x1401cd742)
         const std::int32_t troop_no =
             (statement.numOperands >= 2) ? narrow[1] : world.player_troop_no;
         if (world.is_valid_troop(troop_no)) {
@@ -573,7 +573,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         }
         return NativeDispatch::handled;
     }
-    case 1063: { // add_gold_as_xp (0x1401cd5ec)
+    case 1063: { // add_gold_as_xp (0x1401cd76c)
         const std::int32_t troop_no =
             (statement.numOperands >= 2) ? narrow[1] : world.player_troop_no;
         if (world.is_valid_troop(troop_no) && narrow[0] > 0) {
@@ -587,10 +587,10 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         }
         return NativeDispatch::handled;
     }
-    case 1064: // add_xp_as_reward (0x1401cd600)
+    case 1064: // add_xp_as_reward (0x1401cd780)
         native_campaign_add_xp_reward(narrow[0], world);
         return NativeDispatch::handled;
-    case 1080: { // set_party_creation_random_limits (0x1401cd614)
+    case 1080: { // set_party_creation_random_limits (0x1401cd794)
         const std::int32_t lo = std::clamp(narrow[0], 0, 100);
         const std::int32_t hi = std::clamp(narrow[1], 0, 100);
         if (lo <= hi) {
@@ -599,29 +599,29 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         }
         return NativeDispatch::handled;
     }
-    case 1095: // troop_set_note_available (0x1401cd850)
+    case 1095: // troop_set_note_available (0x1401cd9d0)
         if (world.is_valid_troop(narrow[0])) {
             world.troops[static_cast<std::size_t>(narrow[0])].note_available = (narrow[1] != 0);
         }
         return NativeDispatch::handled;
-    case 1096: // faction_set_note_available (0x1401cd887)
+    case 1096: // faction_set_note_available (0x1401cda07)
         if (world.is_valid_faction(narrow[0])) {
             world.factions[static_cast<std::size_t>(narrow[0])].note_available =
                 (narrow[1] != 0);
         }
         return NativeDispatch::handled;
-    case 1097: // party_set_note_available (0x1401cd8be)
+    case 1097: // party_set_note_available (0x1401cda3e)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].note_available = (narrow[1] != 0);
         }
         return NativeDispatch::handled;
-    case 1100: // spawn_around_party (0x1401cd92c)
+    case 1100: // spawn_around_party (0x1401cdaac)
         ctx.registers[0] = native_campaign_spawn_around_party(narrow[0], narrow[1], ctx);
         return NativeDispatch::handled;
-    case 1103: // set_spawn_radius (0x1401cd9a5)
+    case 1103: // set_spawn_radius (0x1401cdb25)
         world.spawn_radius = static_cast<float>(wide[0]);
         return NativeDispatch::handled;
-    case 1105: { // display_log_message (0x1401cd9ba)
+    case 1105: { // display_log_message (0x1401cdb3a)
         const std::uint8_t tag0 = tags.empty() ? 0U : tags[0];
         const std::u16string msg = native_resolve_and_parse(narrow[0], tag0, ctx);
         const std::uint32_t col =
@@ -631,7 +631,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         world.displayed_messages.push_back({msg, col});
         return NativeDispatch::handled;
     }
-    case 1117: // add_troop_note_from_sreg (0x1401ce18b)
+    case 1117: // add_troop_note_from_sreg (0x1401ce30b)
         if (world.is_valid_troop(narrow[0]) && narrow[1] >= 0 &&
             narrow[1] < game::kNumQuestNotes) {
             const std::uint8_t tag2 = (tags.size() > 2) ? tags[2] : 0U;
@@ -642,18 +642,18 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             note.date = show ? world.current_day : -1;
         }
         return NativeDispatch::handled;
-    case 1170: // reset_price_rates (0x1401ce995)
+    case 1170: // reset_price_rates (0x1401ceb15)
         for (auto& item : world.items) {
             item.price_rate = 1.0f;
         }
         return NativeDispatch::handled;
-    case 1171: // set_price_rate_for_item (0x1401ce9a6)
+    case 1171: // set_price_rate_for_item (0x1401ceb26)
         if (world.is_valid_item(narrow[0])) {
             world.items[static_cast<std::size_t>(narrow[0])].price_rate =
                 static_cast<float>(narrow[1]) * 0.01f;
         }
         return NativeDispatch::handled;
-    case 1172: { // set_price_rate_for_item_type (0x1401ce9e8)
+    case 1172: { // set_price_rate_for_item_type (0x1401ceb68)
         const float rate = static_cast<float>(narrow[1]) * 0.01f;
         for (auto& item : world.items) {
             if (item.get_type() == narrow[0]) {
@@ -662,31 +662,31 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         }
         return NativeDispatch::handled;
     }
-    case 1201: // party_join (0x1401cea0c)
+    case 1201: // party_join (0x1401ceb8c)
         if (world.is_valid_party(world.main_party_no) &&
             world.is_valid_party(world.encountered_party_no)) {
             game::party_join_to_party(world, world.main_party_no,
                                       world.encountered_party_no, false);
         }
         return NativeDispatch::handled;
-    case 1202: // party_join_as_prisoner (0x1401ceabe)
+    case 1202: // party_join_as_prisoner (0x1401cec3e)
         if (world.is_valid_party(world.main_party_no) &&
             world.is_valid_party(world.encountered_party_no)) {
             game::party_join_to_party(world, world.main_party_no,
                                       world.encountered_party_no, true);
         }
         return NativeDispatch::handled;
-    case 1203: // troop_join (0x1401ceb70)
+    case 1203: // troop_join (0x1401cecf0)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_party(world.main_party_no)) {
             game::party_add_members(world, world.main_party_no, narrow[0], 1, false, 0);
         }
         return NativeDispatch::handled;
-    case 1204: // troop_join_as_prisoner (0x1401cec44)
+    case 1204: // troop_join_as_prisoner (0x1401cedc4)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_party(world.main_party_no)) {
             game::party_add_members(world, world.main_party_no, narrow[0], 1, true, 0);
         }
         return NativeDispatch::handled;
-    case 1210: { // remove_member_from_party (0x1401ced18)
+    case 1210: { // remove_member_from_party (0x1401cee98)
         const std::int32_t party_no =
             (statement.numOperands >= 2) ? narrow[1] : world.main_party_no;
         if (world.is_valid_troop(narrow[0]) && world.is_valid_party(party_no)) {
@@ -694,7 +694,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         }
         return NativeDispatch::handled;
     }
-    case 1211: // remove_regular_prisoners (0x1401cee3e)
+    case 1211: // remove_regular_prisoners (0x1401cefbe)
         if (world.is_valid_party(narrow[0])) {
             auto& stacks = world.parties[static_cast<std::size_t>(narrow[0])].stacks;
             stacks.erase(std::remove_if(stacks.begin(), stacks.end(),
@@ -708,21 +708,21 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                          stacks.end());
         }
         return NativeDispatch::handled;
-    case 1215: // remove_troops_from_companions (0x1401cef4e)
+    case 1215: // remove_troops_from_companions (0x1401cf0ce)
         ctx.registers[0] =
             (world.is_valid_troop(narrow[0]) && narrow[1] > 0)
                 ? game::party_remove_members(world, world.main_party_no, narrow[0],
                                              narrow[1], false, false)
                 : 0;
         return NativeDispatch::handled;
-    case 1216: // remove_troops_from_prisoners (0x1401cf0c5)
+    case 1216: // remove_troops_from_prisoners (0x1401cf245)
         ctx.registers[0] =
             (world.is_valid_troop(narrow[0]) && narrow[1] > 0)
                 ? game::party_remove_members(world, world.main_party_no, narrow[0],
                                              narrow[1], true, false)
                 : 0;
         return NativeDispatch::handled;
-    case 1225: // heal_party (0x1401cf23c)
+    case 1225: // heal_party (0x1401cf3bc)
         if (world.is_valid_party(narrow[0])) {
             auto& p = world.parties[static_cast<std::size_t>(narrow[0])];
             for (auto& st : p.stacks) {
@@ -736,19 +736,19 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1230: // disable_party (0x1401cf36f)
+    case 1230: // disable_party (0x1401cf4ef)
         if (narrow[0] >= 0 &&
             static_cast<std::size_t>(narrow[0]) < world.parties.size()) {
             world.parties[static_cast<std::size_t>(narrow[0])].flags |= 0x100ULL;
         }
         return NativeDispatch::handled;
-    case 1231: // enable_party (0x1401cf407)
+    case 1231: // enable_party (0x1401cf587)
         if (narrow[0] >= 0 &&
             static_cast<std::size_t>(narrow[0]) < world.parties.size()) {
             world.parties[static_cast<std::size_t>(narrow[0])].flags &= ~0x100ULL;
         }
         return NativeDispatch::handled;
-    case 1233: { // add_companion_party (0x1401cf4c4)
+    case 1233: { // add_companion_party (0x1401cf644)
         ctx.registers[0] = -1;
         if (world.is_valid_troop(narrow[0]) && world.is_valid_party(world.main_party_no)) {
             const auto& main_p = world.parties[static_cast<std::size_t>(world.main_party_no)];
@@ -764,7 +764,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         }
         return NativeDispatch::handled;
     }
-    case 1250: // add_troop_to_site (0x1401cf5f4)
+    case 1250: // add_troop_to_site (0x1401cf774)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_site(narrow[1])) {
             auto& visitors = world.sites[static_cast<std::size_t>(narrow[1])].visitors;
             visitors.erase(
@@ -776,7 +776,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             visitors.push_back(game::WseSiteVisitor{narrow[2], narrow[0], -0xd0cd});
         }
         return NativeDispatch::handled;
-    case 1251: // remove_troop_from_site (0x1401cf62a)
+    case 1251: // remove_troop_from_site (0x1401cf7aa)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_site(narrow[1])) {
             auto& visitors = world.sites[static_cast<std::size_t>(narrow[1])].visitors;
             visitors.erase(
@@ -787,7 +787,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                 visitors.end());
         }
         return NativeDispatch::handled;
-    case 1265: // add_visitors_to_current_scene (0x1401cf7d9)
+    case 1265: // add_visitors_to_current_scene (0x1401cf959)
         if (world.is_valid_site(world.current_site_no) && narrow[0] >= 0 &&
             narrow[0] < game::kMaxEntryPoints && world.is_valid_troop(narrow[1]) &&
             narrow[2] > 0) {
@@ -807,15 +807,15 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1266: // scene_set_day_time (0x1401cf8bc)
+    case 1266: // scene_set_day_time (0x1401cfa3c)
         world.scene_day_time = static_cast<float>(std::clamp(narrow[0], 0, 23));
         return NativeDispatch::handled;
-    case 1492: // reset_item_probabilities (0x1401cffe7)
+    case 1492: // reset_item_probabilities (0x1401d0167)
         for (auto& item : world.items) {
             item.probability = 100.0f;
         }
         return NativeDispatch::handled;
-    case 1493: // set_item_probability_in_merchandise (0x1401d0013)
+    case 1493: // set_item_probability_in_merchandise (0x1401d0193)
         if (world.is_valid_item(narrow[0])) {
             world.items[static_cast<std::size_t>(narrow[0])].probability =
                 static_cast<float>(std::max(0, narrow[1]));
@@ -823,21 +823,21 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         return NativeDispatch::handled;
 
     // Troop & Item Helpers (1501..1570)
-    case 1501: // troop_set_name (0x1401d0059)
+    case 1501: // troop_set_name (0x1401d01d9)
         if (world.is_valid_troop(narrow[0])) {
             const std::uint8_t tag1 = (tags.size() > 1) ? tags[1] : 0U;
             world.troops[static_cast<std::size_t>(narrow[0])].name =
                 wse_utf16_to_utf8(native_resolve_and_parse(narrow[1], tag1, ctx));
         }
         return NativeDispatch::handled;
-    case 1502: // troop_set_plural_name (0x1401d00e4)
+    case 1502: // troop_set_plural_name (0x1401d0264)
         if (world.is_valid_troop(narrow[0])) {
             const std::uint8_t tag1 = (tags.size() > 1) ? tags[1] : 0U;
             world.troops[static_cast<std::size_t>(narrow[0])].plural_name =
                 wse_utf16_to_utf8(native_resolve_and_parse(narrow[1], tag1, ctx));
         }
         return NativeDispatch::handled;
-    case 1508: // troop_is_wounded (0x1401d02ab)
+    case 1508: // troop_is_wounded (0x1401d042b)
         if (!world.is_valid_troop(narrow[0])) {
             return NativeDispatch::condition_false;
         }
@@ -847,52 +847,52 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                        ? NativeDispatch::handled
                        : NativeDispatch::condition_false;
         }
-    case 1510: // troop_ensure_inventory_space (0x1401d0320)
+    case 1510: // troop_ensure_inventory_space (0x1401d04a0)
         if (world.is_valid_troop(narrow[0])) {
             game::troop_ensure_inventory_space(
                 world, world.troops[static_cast<std::size_t>(narrow[0])], narrow[1]);
         }
         return NativeDispatch::handled;
-    case 1511: // troop_sort_inventory (0x1401d034a)
+    case 1511: // troop_sort_inventory (0x1401d04ca)
         if (world.is_valid_troop(narrow[0])) {
             game::troop_sort_inventory(world,
                                        world.troops[static_cast<std::size_t>(narrow[0])]);
         }
         return NativeDispatch::handled;
-    case 1512: // troop_add_merchandise (0x1401d0377)
+    case 1512: // troop_add_merchandise (0x1401d04f7)
         if (world.is_valid_troop(narrow[0])) {
             game::troop_add_merchandise(world, narrow[0], narrow[1], narrow[2], -1);
         }
         return NativeDispatch::handled;
-    case 1513: // troop_add_merchandise_with_faction (0x1401d03ae)
+    case 1513: // troop_add_merchandise_with_faction (0x1401d052e)
         if (world.is_valid_troop(narrow[0])) {
             game::troop_add_merchandise(world, narrow[0], narrow[2], narrow[3], narrow[1]);
         }
         return NativeDispatch::handled;
-    case 1515: // troop_get_xp (0x1401d03f6)
+    case 1515: // troop_get_xp (0x1401d0576)
         if (world.is_valid_troop(narrow[1])) {
             store_lvalue(dst, world.troops[static_cast<std::size_t>(narrow[1])].xp, ctx,
                          locals);
         }
         return NativeDispatch::handled;
-    case 1525: // troop_add_proficiency_points (0x1401d0622)
+    case 1525: // troop_add_proficiency_points (0x1401d07a2)
         if (world.is_valid_troop(narrow[0])) {
             world.troops[static_cast<std::size_t>(narrow[0])].proficiency_points +=
                 std::clamp(narrow[1], 0, 100);
         }
         return NativeDispatch::handled;
-    case 1531: // troop_remove_item (0x1401d0755)
+    case 1531: // troop_remove_item (0x1401d08d5)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_item(narrow[1])) {
             game::troop_remove_items(world, narrow[0], narrow[1], 1);
         }
         return NativeDispatch::handled;
-    case 1533: // troop_equip_items (0x1401d088c)
+    case 1533: // troop_equip_items (0x1401d0a0c)
         if (world.is_valid_troop(narrow[0])) {
             game::troop_equip_items(world, world.troops[static_cast<std::size_t>(narrow[0])],
                                     true);
         }
         return NativeDispatch::handled;
-    case 1534: // troop_inventory_slot_set_item_amount (0x1401d08c3)
+    case 1534: // troop_inventory_slot_set_item_amount (0x1401d0a43)
         if (world.is_valid_troop(narrow[0])) {
             auto* slot = native_troop_slot_ptr(
                 world.troops[static_cast<std::size_t>(narrow[0])], narrow[1], world);
@@ -905,7 +905,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1543: // troop_set_inventory_slot (0x1401d117e)
+    case 1543: // troop_set_inventory_slot (0x1401d12fe)
         if (world.is_valid_troop(narrow[0]) &&
             (narrow[2] == -1 || world.is_valid_item(narrow[2]))) {
             auto* slot = native_troop_slot_ptr(
@@ -923,7 +923,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1544: // troop_set_inventory_slot_modifier (0x1401d121c)
+    case 1544: // troop_set_inventory_slot_modifier (0x1401d139c)
         if (world.is_valid_troop(narrow[0]) && narrow[2] >= 0 && narrow[2] < 43) {
             auto* slot = native_troop_slot_ptr(
                 world.troops[static_cast<std::size_t>(narrow[0])], narrow[1], world);
@@ -932,12 +932,12 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1555: // troop_set_age (0x1401d12e0)
+    case 1555: // troop_set_age (0x1401d1460)
         if (world.is_valid_troop(narrow[0])) {
             world.troops[static_cast<std::size_t>(narrow[0])].set_age(narrow[1]);
         }
         return NativeDispatch::handled;
-    case 1561: // troop_get_upgrade_troop (0x1401d13cb)
+    case 1561: // troop_get_upgrade_troop (0x1401d154b)
         if (world.is_valid_troop(narrow[1]) && (narrow[2] == 0 || narrow[2] == 1)) {
             store_lvalue(
                 dst,
@@ -946,7 +946,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1570: // item_get_type (0x1401d145c)
+    case 1570: // item_get_type (0x1401d15dc)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst,
                          world.items[static_cast<std::size_t>(narrow[1])].get_type(),
@@ -955,69 +955,69 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         return NativeDispatch::handled;
 
     // Party Operations (1604..1694)
-    case 1604: // party_set_marshall (0x1401d1602)
+    case 1604: // party_set_marshall (0x1401d1782)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].is_marshall = (narrow[1] != 0);
         }
         return NativeDispatch::handled;
-    case 1605: // party_set_extra_text (0x1401d1631)
+    case 1605: // party_set_extra_text (0x1401d17b1)
         if (world.is_valid_party(narrow[0])) {
             const std::uint8_t tag1 = (tags.size() > 1) ? tags[1] : 0U;
             world.parties[static_cast<std::size_t>(narrow[0])].extra_text =
                 wse_utf16_to_utf8(native_resolve_and_parse(narrow[1], tag1, ctx));
         }
         return NativeDispatch::handled;
-    case 1606: // party_set_aggressiveness (0x1401d16bc)
+    case 1606: // party_set_aggressiveness (0x1401d183c)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].set_aggressiveness(narrow[1]);
         }
         return NativeDispatch::handled;
-    case 1607: // party_set_courage (0x1401d16ed)
+    case 1607: // party_set_courage (0x1401d186d)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].set_courage(narrow[1]);
         }
         return NativeDispatch::handled;
-    case 1609: // party_get_template_id (0x1401d1765)
+    case 1609: // party_get_template_id (0x1401d18e5)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst, world.parties[static_cast<std::size_t>(narrow[1])].template_no,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1611: // party_add_prisoners (0x1401d1804)
+    case 1611: // party_add_prisoners (0x1401d1984)
         ctx.registers[0] =
             (narrow[2] > 0)
                 ? game::party_add_members(world, narrow[0], narrow[1], narrow[2], true, 0)
                 : 0;
         return NativeDispatch::handled;
-    case 1612: // party_add_leader (0x1401d185c)
+    case 1612: // party_add_leader (0x1401d19dc)
         if (narrow[0] != world.main_party_no) {
             const std::int32_t cnt =
                 (statement.numOperands >= 3 && narrow[2] > 0) ? narrow[2] : 1;
             game::party_add_leader(world, narrow[0], narrow[1], cnt);
         }
         return NativeDispatch::handled;
-    case 1613: // party_force_add_members (0x1401d18cc)
+    case 1613: // party_force_add_members (0x1401d1a4c)
         if (world.is_valid_party(narrow[0]) && world.is_valid_troop(narrow[1]) &&
             narrow[2] > 0) {
             world.parties[static_cast<std::size_t>(narrow[0])].add_members(
                 narrow[1], narrow[2], false);
         }
         return NativeDispatch::handled;
-    case 1614: // party_force_add_prisoners (0x1401d1926)
+    case 1614: // party_force_add_prisoners (0x1401d1aa6)
         if (world.is_valid_party(narrow[0]) && world.is_valid_troop(narrow[1]) &&
             narrow[2] > 0) {
             world.parties[static_cast<std::size_t>(narrow[0])].add_members(
                 narrow[1], narrow[2], true);
         }
         return NativeDispatch::handled;
-    case 1616: // party_remove_prisoners (0x1401d19ea)
+    case 1616: // party_remove_prisoners (0x1401d1b6a)
         ctx.registers[0] =
             (narrow[2] > 0)
                 ? game::party_remove_members(world, narrow[0], narrow[1], narrow[2], true,
                                              false)
                 : 0;
         return NativeDispatch::handled;
-    case 1617: // party_clear (0x1401d1a4e)
+    case 1617: // party_clear (0x1401d1bce)
         if (world.is_valid_party(narrow[0])) {
             auto& p = world.parties[static_cast<std::size_t>(narrow[0])];
             if (narrow[0] != world.main_party_no && p.is_bot()) {
@@ -1027,7 +1027,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1618: // party_wound_members (0x1401d1b16)
+    case 1618: // party_wound_members (0x1401d1c96)
         if (world.is_valid_party(narrow[0]) && world.is_valid_troop(narrow[1]) &&
             narrow[2] > 0) {
             auto& p = world.parties[static_cast<std::size_t>(narrow[0])];
@@ -1042,14 +1042,14 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1619: // party_remove_members_wounded_first (0x1401d1c21)
+    case 1619: // party_remove_members_wounded_first (0x1401d1da1)
         ctx.registers[0] =
             (narrow[2] > 0)
                 ? game::party_remove_members(world, narrow[0], narrow[1], narrow[2], false,
                                              true)
                 : 0;
         return NativeDispatch::handled;
-    case 1623: // party_relocate_near_party (0x1401d1d34)
+    case 1623: // party_relocate_near_party (0x1401d1eb4)
         if (world.is_valid_party(narrow[0]) && world.is_valid_party(narrow[1])) {
             const float radius = static_cast<float>(std::max<std::int64_t>(0, wide[2]));
             const float angle = native_entity_randf(ctx) * 6.2831853f;
@@ -1060,7 +1060,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             world.parties[static_cast<std::size_t>(narrow[0])].position = pos;
         }
         return NativeDispatch::handled;
-    case 1627: // map_get_random_position_around_position (0x1401d1eec)
+    case 1627: // map_get_random_position_around_position (0x1401d206c)
         if (wse_register_ok(narrow[0]) && wse_register_ok(narrow[1]) && wide[2] >= 0) {
             const float radius = static_cast<float>(wide[2]);
             const float angle = native_entity_randf(ctx) * 6.2831853f;
@@ -1071,7 +1071,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             ctx.positions[static_cast<std::size_t>(narrow[0])] = pos;
         }
         return NativeDispatch::handled;
-    case 1630: { // party_count_members_of_type (0x1401d2089)
+    case 1630: { // party_count_members_of_type (0x1401d2209)
         if (world.is_valid_party(narrow[1]) && world.is_valid_troop(narrow[2])) {
             const auto& p = world.parties[static_cast<std::size_t>(narrow[1])];
             const std::int32_t total =
@@ -1081,7 +1081,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         }
         return NativeDispatch::handled;
     }
-    case 1631: // party_count_companions_of_type (0x1401d2100)
+    case 1631: // party_count_companions_of_type (0x1401d2280)
         if (world.is_valid_party(narrow[1]) && world.is_valid_troop(narrow[2])) {
             store_lvalue(dst,
                          game::party_count_troops(
@@ -1090,7 +1090,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1632: // party_count_prisoners_of_type (0x1401d215c)
+    case 1632: // party_count_prisoners_of_type (0x1401d22dc)
         if (world.is_valid_party(narrow[1]) && world.is_valid_troop(narrow[2])) {
             store_lvalue(dst,
                          game::party_count_troops(
@@ -1099,7 +1099,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1633: // party_get_free_companions_capacity (0x1401d21b8)
+    case 1633: // party_get_free_companions_capacity (0x1401d2338)
         if (world.is_valid_party(narrow[1])) {
             const auto& p = world.parties[static_cast<std::size_t>(narrow[1])];
             const std::int32_t free_cap =
@@ -1107,7 +1107,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             store_lvalue(dst, static_cast<std::int64_t>(free_cap), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1634: // party_get_free_prisoners_capacity (0x1401d221b)
+    case 1634: // party_get_free_prisoners_capacity (0x1401d239b)
         if (world.is_valid_party(narrow[1])) {
             const auto& p = world.parties[static_cast<std::size_t>(narrow[1])];
             const std::int32_t free_cap =
@@ -1115,7 +1115,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             store_lvalue(dst, static_cast<std::int64_t>(free_cap), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1638: // party_get_ai_initiative (0x1401d2274)
+    case 1638: // party_get_ai_initiative (0x1401d23f4)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          f2i_round(
@@ -1124,38 +1124,38 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1639: // party_set_ai_initiative (0x1401d22cc)
+    case 1639: // party_set_ai_initiative (0x1401d244c)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].ai_initiative =
                 static_cast<float>(std::clamp(narrow[1], 0, 100)) / 100.0f;
         }
         return NativeDispatch::handled;
-    case 1642: // party_set_ai_target_position (0x1401d23a7)
+    case 1642: // party_set_ai_target_position (0x1401d2527)
         if (world.is_valid_party(narrow[0]) && wse_register_ok(narrow[1])) {
             const auto& o = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
             world.parties[static_cast<std::size_t>(narrow[0])].default_behavior_position = {
                 o.x, o.y};
         }
         return NativeDispatch::handled;
-    case 1643: // party_set_ai_patrol_radius (0x1401d240a)
+    case 1643: // party_set_ai_patrol_radius (0x1401d258a)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].patrol_radius =
                 static_cast<float>(wide[1]);
         }
         return NativeDispatch::handled;
-    case 1644: // party_ignore_player (0x1401d2444)
+    case 1644: // party_ignore_player (0x1401d25c4)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].ignore_player_timer =
                 static_cast<float>(std::max<std::int64_t>(0, wide[1]));
         }
         return NativeDispatch::handled;
-    case 1645: // party_set_bandit_attraction (0x1401d248c)
+    case 1645: // party_set_bandit_attraction (0x1401d260c)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].bandit_attraction =
                 std::clamp(narrow[1], 0, 100);
         }
         return NativeDispatch::handled;
-    case 1646: // party_get_helpfulness (0x1401d24ce)
+    case 1646: // party_get_helpfulness (0x1401d264e)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          f2i_round(
@@ -1164,26 +1164,26 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1647: // party_set_helpfulness (0x1401d2526)
+    case 1647: // party_set_helpfulness (0x1401d26a6)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].helpfulness =
                 static_cast<float>(std::clamp(narrow[1], 0, 10000)) / 100.0f;
         }
         return NativeDispatch::handled;
-    case 1648: // party_set_ignore_with_player_party (0x1401d2573)
+    case 1648: // party_set_ignore_with_player_party (0x1401d26f3)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].ignore_with_player_party =
                 (narrow[1] != 0);
         }
         return NativeDispatch::handled;
-    case 1649: // party_get_ignore_with_player_party (0x1401d25a2)
+    case 1649: // party_get_ignore_with_player_party (0x1401d2722)
         if (world.is_valid_party(narrow[0])) {
             return world.parties[static_cast<std::size_t>(narrow[0])].ignore_with_player_party
                        ? NativeDispatch::handled
                        : NativeDispatch::condition_false;
         }
         return NativeDispatch::handled;
-    case 1654: // party_stack_get_num_wounded (0x1401d2758)
+    case 1654: // party_stack_get_num_wounded (0x1401d28d8)
         if (world.is_valid_party(narrow[1]) && narrow[2] >= 0) {
             const auto& stacks = world.parties[static_cast<std::size_t>(narrow[1])].stacks;
             if (static_cast<std::size_t>(narrow[2]) < stacks.size()) {
@@ -1192,7 +1192,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1655: // party_stack_get_troop_dna (0x1401d27c5)
+    case 1655: // party_stack_get_troop_dna (0x1401d2945)
         if (world.is_valid_party(narrow[1]) && narrow[2] >= 0) {
             const auto& stacks = world.parties[static_cast<std::size_t>(narrow[1])].stacks;
             if (static_cast<std::size_t>(narrow[2]) < stacks.size()) {
@@ -1200,7 +1200,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1656: // party_prisoner_stack_get_troop_id (0x1401d2865)
+    case 1656: // party_prisoner_stack_get_troop_id (0x1401d29e5)
         if (world.is_valid_party(narrow[1])) {
             if (const auto* st = native_campaign_prisoner_stack_at(
                     world.parties[static_cast<std::size_t>(narrow[1])], narrow[2])) {
@@ -1208,7 +1208,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1657: // party_prisoner_stack_get_size (0x1401d28dc)
+    case 1657: // party_prisoner_stack_get_size (0x1401d2a5c)
         if (world.is_valid_party(narrow[1])) {
             if (const auto* st = native_campaign_prisoner_stack_at(
                     world.parties[static_cast<std::size_t>(narrow[1])], narrow[2])) {
@@ -1216,7 +1216,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1658: // party_prisoner_stack_get_troop_dna (0x1401d2952)
+    case 1658: // party_prisoner_stack_get_troop_dna (0x1401d2ad2)
         if (world.is_valid_party(narrow[1])) {
             if (const auto* st = native_campaign_prisoner_stack_at(
                     world.parties[static_cast<std::size_t>(narrow[1])], narrow[2])) {
@@ -1224,13 +1224,13 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             }
         }
         return NativeDispatch::handled;
-    case 1662: // party_collect_attachments_to_party (0x1401d2a87)
+    case 1662: // party_collect_attachments_to_party (0x1401d2c07)
         game::party_collect_attachments(world, narrow[0], narrow[1]);
         return NativeDispatch::handled;
-    case 1670: // party_add_xp_to_stack (0x1401d2cd4)
+    case 1670: // party_add_xp_to_stack (0x1401d2e54)
         game::party_add_xp_to_stack(world, narrow[0], narrow[1], narrow[2]);
         return NativeDispatch::handled;
-    case 1671: // party_get_morale (0x1401d2d30)
+    case 1671: // party_get_morale (0x1401d2eb0)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(
                 dst,
@@ -1238,30 +1238,30 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1672: // party_set_morale (0x1401d2d88)
+    case 1672: // party_set_morale (0x1401d2f08)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].morale =
                 static_cast<float>(std::clamp(narrow[1], 0, 100)) / 100.0f;
         }
         return NativeDispatch::handled;
-    case 1673: // party_upgrade_with_xp (0x1401d2e86)
+    case 1673: // party_upgrade_with_xp (0x1401d3006)
         game::party_upgrade_with_xp(world, narrow[0], narrow[1], narrow[2]);
         return NativeDispatch::handled;
-    case 1674: // party_add_xp (0x1401d2edf)
+    case 1674: // party_add_xp (0x1401d305f)
         game::party_add_xp(world, narrow[0], narrow[1]);
         return NativeDispatch::handled;
-    case 1675: // party_add_template (0x1401d2f2c)
+    case 1675: // party_add_template (0x1401d30ac)
         game::party_add_template(
             world, narrow[0], narrow[1],
             (statement.numOperands >= 3 && narrow[2] != 0));
         return NativeDispatch::handled;
-    case 1690: // get_battle_advantage (0x1401d33d0)
+    case 1690: // get_battle_advantage (0x1401d3550)
         store_lvalue(dst, static_cast<std::int64_t>(world.battle_advantage), ctx, locals);
         return NativeDispatch::handled;
-    case 1691: // set_battle_advantage (0x1401d33f7)
+    case 1691: // set_battle_advantage (0x1401d3577)
         world.battle_advantage = narrow[0];
         return NativeDispatch::handled;
-    case 1694: // party_get_attached_to (0x1401d34a2)
+    case 1694: // party_get_attached_to (0x1401d3622)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(
                 dst,

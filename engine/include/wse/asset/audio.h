@@ -2,13 +2,13 @@
 // sound/music flag helpers (Slice P6, docs/PLATFORM_PLAN.md).
 //
 // Grounded in WSE2 v1.1.5.5 PDB/binary evidence:
-//   - mbSoundSample::readStream            0x1403317c0 (%sSounds\languages\%s\%s -> %sSounds\%s -> Sounds\languages\%s\%s -> Sounds\%s)
-//   - mbSoundSample::playSound             0x140331cb0 (priority & flags 0x01=2D, 0x02=looping)
-//   - mbSoundManager::readStream           0x1403322e0
-//   - mbSoundManager::playSoundAtPosition  0x140332ac0 (0x1000000 LOD fallback, culture variant filter)
-//   - mbSoundManager::setChannelPropertiesAndPlay 0x140332d80 (volume / 15.0f, bit 2 random start, bit 3 disable freq var)
-//   - mbMusicTrack::readStream             0x140290710 (%sMusic/%s -> Music/%s; continue_flags |= flags, culture fallback 0x3f)
-//   - mbAgent::playSound                   0x140057010 (human voice pitch hash)
+//   - mbSoundSample::readStream            0x140332580 (%sSounds\languages\%s\%s -> %sSounds\%s -> Sounds\languages\%s\%s -> Sounds\%s)
+//   - mbSoundSample::playSound             0x140332a70 (priority & flags 0x01=2D, 0x02=looping)
+//   - mbSoundManager::readStream           0x1403330a0
+//   - mbSoundManager::playSoundAtPosition  0x140333880 (0x1000000 LOD fallback, culture variant filter)
+//   - mbSoundManager::setChannelPropertiesAndPlay 0x140333b40 (volume / 15.0f, bit 2 random start, bit 3 disable freq var)
+//   - mbMusicTrack::readStream             0x140290870 (%sMusic/%s -> Music/%s; continue_flags |= flags, culture fallback 0x3f)
+//   - mbAgent::playSound                   0x140057170 (human voice pitch hash)
 //
 // Note: third-party compressed codec headers (stb_vorbis / dr_mp3) never appear
 // here; RIFF/WAVE PCM is self-contained and OGG/MP3 decode delegates through
@@ -50,17 +50,17 @@ inline constexpr std::uint32_t kMaxAudioSampleRate = 384000U;
 inline constexpr std::size_t kMaxDecodedAudioSamples = 48000ULL * 2ULL * 60ULL * 10ULL;
 inline constexpr std::uint16_t kMaxAudioSourceChannels = 8U;
 
-// mbSound / mbSoundSample flags (`mbSoundSample::playSound` `0x140331cb0`,
-// `mbSoundManager::playSoundAtPosition` `0x140332ac0`,
-// `mbSoundManager::setChannelPropertiesAndPlay` `0x140332d80`):
+// mbSound / mbSoundSample flags (`mbSoundSample::playSound` `0x140332a70`,
+// `mbSoundManager::playSoundAtPosition` `0x140333880`,
+// `mbSoundManager::setChannelPropertiesAndPlay` `0x140333b40`):
 inline constexpr std::uint32_t kSoundFlag2D = 0x00000001U;
 inline constexpr std::uint32_t kSoundFlagLooping = 0x00000002U;
 inline constexpr std::uint32_t kSoundFlagRandomStartPos = 0x00000004U;
 inline constexpr std::uint32_t kSoundFlagDisableFreqVariation = 0x00000008U;
 inline constexpr std::uint32_t kSoundFlagLodFallback = 0x01000000U;
 
-// mbMusicTrack flags (`mbMusicManager::startPlaying` `0x140290e60`,
-// `mbMusicManager::update` `0x140290f60`):
+// mbMusicTrack flags (`mbMusicManager::startPlaying` `0x140290fc0`,
+// `mbMusicManager::update` `0x1402910c0`):
 inline constexpr std::uint32_t kMusicFlagCultureMask = 0x0000003FU;
 inline constexpr std::uint32_t kMusicFlagLooping = 0x00000040U;
 inline constexpr std::uint32_t kMusicFlagImmediate = 0x00000080U;
@@ -687,7 +687,7 @@ private:
     return backend->open_stream(kind, std::move(owned_bytes), error_out);
 }
 
-// Reconstructs the `mbAgent::playSound` (`0x140057010`) human voice pitch hash.
+// Reconstructs the `mbAgent::playSound` (`0x140057170`) human voice pitch hash.
 // Reads `m_no` (`+0xc`), `m_troopNo` (`+0x2c8`), and `m_partyNo` (`+0x9f0`), scales
 // `(rem / 871.0f - 0.5f)` by `0.3f`, and returns `1.0f + delta` (`> 0.001f`),
 // `1.0f / (1.0f - delta)` (`< -0.001f`), or `1.0f`. Products form in `uint32_t`
@@ -713,7 +713,7 @@ private:
     return 1.0f;
 }
 
-// Retail `mbSoundSample::readStream` (0x1403317c0) 4-step file search order:
+// Retail `mbSoundSample::readStream` (0x140332580) 4-step file search order:
 //   1. `<module_dir>/Sounds/languages/<language>/<filename>` (when language non-empty)
 //   2. `<module_dir>/Sounds/<filename>`
 //   3. `Sounds/languages/<language>/<filename>` (when language non-empty)
@@ -766,7 +766,7 @@ private:
     return try_candidate(p);
 }
 
-// Retail `mbMusicTrack::readStream` (0x140290710): searches `<module_dir>/Music/<file>`
+// Retail `mbMusicTrack::readStream` (0x140290870): searches `<module_dir>/Music/<file>`
 // then base `Music/<file>` (`%smusic/%s` / `%sMusic/%s` / `music/%s` / `Music/%s`).
 [[nodiscard]] inline std::string resolve_music_track_path(wse::platform::Vfs& vfs,
                                                           std::string_view module_dir,
@@ -791,8 +791,8 @@ private:
     return {};
 }
 
-// Mirrors `mbSoundSample::playSound` (0x140331cb0) & `mbSoundManager::setChannelPropertiesAndPlay`
-// (0x140332d80, +0x116): priority nibble `[4..7]` defaults to 5 when 0; volume nibble `[8..11]`
+// Mirrors `mbSoundSample::playSound` (0x140332a70) & `mbSoundManager::setChannelPropertiesAndPlay`
+// (0x140333b40, +0x116): priority nibble `[4..7]` defaults to 5 when 0; volume nibble `[8..11]`
 // defaults to 10 when 0 and divides by `15.0f` (+0x131).
 [[nodiscard]] constexpr int decode_sound_priority_nibble(std::uint32_t flags) noexcept {
     const std::uint32_t nibble = (flags >> 4U) & 0xFU;
@@ -805,7 +805,7 @@ private:
     return static_cast<float>(eff) / 15.0f;
 }
 
-// Mirrors `mbMusicTrack::readStream` (`0x140290710`, +0x368): merges `flags` into `continue_flags`
+// Mirrors `mbMusicTrack::readStream` (`0x140290870`, +0x368): merges `flags` into `continue_flags`
 // and expands culture mask `0` to `0x3F` (all 6 native factions/cultures).
 struct NormalizedMusicFlags {
     std::uint32_t flags = 0;

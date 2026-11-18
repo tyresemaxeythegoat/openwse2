@@ -77,32 +77,32 @@ inline constexpr std::uint32_t kWseOpcodeMask = 0x0FFFFFFFu;
 // mbCheckRegister accepts unsigned indices 0..0x7f.
 inline constexpr std::size_t kFpRegisterCount = 128;
 
-// DAT_140662bb8, fixed-point values per unit (set to 100 at 0x140070ffa).
+// DAT_140663be8, fixed-point values per unit (set to 100 at 0x14007115a).
 inline constexpr float kWseFixedPointScale = 100.0f;
 
 // String banks addressed by the str_* handlers. The spans hold views into the
 // runtime's string registers; a missing entry resolves to the empty string,
-// matching the static empty rgl::string returned by 0x140219c70. Tag 0 is
+// matching the static empty rgl::string returned by 0x140219df0. Tag 0 is
 // writable because str_store_* and str_split/str_sort assign into it.
 struct WseStringBanks {
-    // Tag 0: the 128-entry string register table at 0x140665030 (stride 0x48).
+    // Tag 0: the 128-entry string register table at 0x140666060 (stride 0x48).
     // Script literals live here too; str_store_* overwrite entries.
     std::span<std::u16string> registers{};
-    // Tag 3 (and unknown tags): [0x140621770], count [0x140621780].
+    // Tag 3 (and unknown tags): [0x1406227a0], count [0x1406227b0].
     std::span<const std::u16string_view> global{};
-    // Tag 0x16: [0x140621778], count [0x140621784].
+    // Tag 0x16: [0x1406227a8], count [0x1406227b4].
     std::span<const std::u16string_view> local{};
 };
 
 // Runtime option values queried and mutated by native opcodes 260..271
 // and WSE opcodes 4300..4305, 3619, 3622, and 4606.
 struct WseOptionsState {
-    bool verbose_casualties = false;   // 0x1406173b7
-    bool cheat_mode = false;           // 0x14061ef50
-    bool realistic_headshots = false;  // 0x14061ef39
-    bool show_crosshair = true;        // 0x14061781a
-    bool horse_friendly_fire = false;  // 0x14061ef1a
-    bool edit_mode_enabled = false;    // 0x14061efb8
+    bool verbose_casualties = false;   // 0x1406183b7
+    bool cheat_mode = false;           // 0x14061ff51
+    bool realistic_headshots = false;  // 0x14061ff3a
+    bool show_crosshair = true;        // 0x14061881a
+    bool horse_friendly_fire = false;  // 0x14061ff1b
+    bool edit_mode_enabled = false;    // 0x14061ffb9
     float damage_to_player = 1.0f;     // rglConfig::Battle::fDamageToSelf
     float damage_to_friends = 1.0f;    // rglConfig::Battle::fDamageToFriends
     std::int32_t combat_ai = 1;        // rglConfig::BattleAi::iReduceBattleAi
@@ -111,8 +111,8 @@ struct WseOptionsState {
     float battle_size = 1.0f;          // rglConfig::Battle::fBattleSize
 };
 
-// 16-byte timer slot (0x140667b18 / 0x140667b20, stride 0x10).
-// Ticks run at 100,000 Hz (0x1401e5e2f divides delta by 100000.0f -> seconds).
+// 16-byte timer slot (0x140668b48 / 0x140668b50, stride 0x10).
+// Ticks run at 100,000 Hz (0x1401e5faf divides delta by 100000.0f -> seconds).
 struct WseAppTimer {
     std::int32_t kind = 0;
     std::int64_t start_ticks = 0;
@@ -500,7 +500,7 @@ struct WseObjectSlot {
 };
 
 // Unified handle allocator mirroring WSEObjectManager
-// (0x140698a90, 0x14034e340/3b0, 0x1400737a0/810) using LIFO free-ID reuse
+// (0x140699ac0, 0x14034f100/0x14034f170, 0x140073900/0x140073970) using LIFO free-ID reuse
 // shared by dictionaries (3200..3222) and dynamic arrays (5000..5022).
 struct WseObjectManager {
     std::vector<WseObjectSlot> slots{};
@@ -612,13 +612,13 @@ struct WseVmState {
     // negative value while inside a trigger (0 outside), so store_current_trigger
     // returns it only when it is <= 0.
     std::int32_t caller = 0;
-    // 0x140698af0: NUM_RETURN_VALUES (16) int64 slots written by return_values.
+    // 0x140699b20: NUM_RETURN_VALUES (16) int64 slots written by return_values.
     std::span<const std::int64_t> return_values{};
-    // 0x140698ae8: number of slots currently set by return_values.
+    // 0x140699b18: number of slots currently set by return_values.
     std::int32_t num_return_values = 0;
     // DXUtil_Timer(TIMER_GETAPPTIME) in seconds; 3035 scales it by 1000.
     double app_time_seconds = 0.0;
-    // [0x14061f078] + 0x9ae8: cur_mission->cur_mission_template_no. A null
+    // [0x140620078] + 0x9ae8: cur_mission->cur_mission_template_no. A null
     // pointer means there is no current mission, which yields -1.
     const std::int32_t* current_mission_template_no = nullptr;
     // String registers used by the string group (4200-4224, 4233-4244).
@@ -628,11 +628,11 @@ struct WseVmState {
     // Writable return-value buffer/count for 3015 return_values.
     std::span<std::int64_t> return_values_out{};
     std::int32_t* num_return_values_out = nullptr;
-    // DAT_140662bb8: script fixed-point scale (default 100).
+    // DAT_140663be8: script fixed-point scale (default 100).
     std::int32_t fixed_point_multiplier = 100;
-    // rglTransform[128] position registers (0x140663030, stride 0x40).
+    // rglTransform[128] position registers (0x140664060, stride 0x40).
     std::span<WseTransform> positions{};
-    // App timers (0x140667b18, 128 slots) and global tick clocks (0x14061f030).
+    // App timers (0x140668b48, 128 slots) and global tick clocks (0x140620030).
     std::span<WseAppTimer> timers{};
     std::span<const std::int64_t> timers_total{};
     // PRNG and rand_seed state for 3020/3021/3034.
@@ -668,8 +668,8 @@ struct WseOperands {
     std::span<const std::int64_t> wide{};     // param_3, full int64 values
     std::span<const std::int32_t> narrow{};   // param_4, int32 truncations
     std::span<const std::uint8_t> tags{};     // param_5, parseOperand tags
-    std::span<float> fp{};                    // DAT_140698718, 128 floats
-    // g_basicGame+0x270 (0x140662c30): the 128 int64 registers shared with
+    std::span<float> fp{};                    // DAT_140699748, 128 floats
+    // g_basicGame+0x270 (0x140663c60): the 128 int64 registers shared with
     // operand tag 1 and used by register_get/register_set (3000/3001).
     std::span<std::int64_t> registers{};
     // Script-context state for the global query handlers (3014-3600).
@@ -677,7 +677,7 @@ struct WseOperands {
 };
 
 // Result of a successful handler. Value-writing handlers (mbStatement's
-// common LAB_1401e0e0e tail) write effect.value through operand 0; the
+// common LAB_1401e0f8e tail) write effect.value through operand 0; the
 // floating-point and comparison handlers write their own destinations.
 struct WseEffect {
     std::int64_t value = 0;
@@ -722,7 +722,7 @@ enum class WseDispatch : std::uint8_t {
     return static_cast<std::uint32_t>(index) <= 0x7Fu;
 }
 
-// mbCheckStringRegister (0x1401c51f0): tags 3 and 0x16 are bounded by the
+// mbCheckStringRegister (0x1401c5370): tags 3 and 0x16 are bounded by the
 // runtime register counts, tag 0 by the fixed 128-entry literal table, and
 // unknown tags are accepted.
 [[nodiscard]] inline bool wse_string_register_ok(
@@ -741,9 +741,9 @@ enum class WseDispatch : std::uint8_t {
     }
 }
 
-// 0x140219c70: tag 0 reads the string register table, tag 0x16 the local
+// 0x140219df0: tag 0 reads the string register table, tag 0x16 the local
 // bank, and tag 3 or an unknown tag the global bank. Out-of-range reads
-// resolve to the static empty rgl::string (0x140621818 / 0x140621788).
+// resolve to the static empty rgl::string (0x140622848 / 0x1406227b8).
 [[nodiscard]] inline std::u16string_view wse_resolve_string(
     std::int32_t index, std::uint8_t tag, const WseStringBanks& banks) noexcept {
     if (tag == 0) {
@@ -760,7 +760,7 @@ enum class WseDispatch : std::uint8_t {
     return {};
 }
 
-// 0x14030fd60 assigns a tag-0 string register. A missing table entry cannot
+// 0x140310b20 assigns a tag-0 string register. A missing table entry cannot
 // be written, so the handler reports the retail invalid-register no-op.
 [[nodiscard]] inline bool wse_store_string(WseStringBanks& banks,
                                            std::int32_t index,
@@ -774,7 +774,7 @@ enum class WseDispatch : std::uint8_t {
 }
 
 // Missing tags and operands read as zero: mbStatement::execute zeroes the
-// first five tag and operand slots before parsing (0x1401c6219-0x1401c626c).
+// first five tag and operand slots before parsing (0x1401c6399-0x1401c63ec).
 [[nodiscard]] constexpr std::uint8_t wse_tag_at(
     std::span<const std::uint8_t> tags, std::size_t index) noexcept {
     return index < tags.size() ? tags[index] : std::uint8_t{0};
@@ -847,7 +847,7 @@ enum class WseDispatch : std::uint8_t {
     bool url_encode_tokens = false);
 
 // Mirrors mbBasicGame::parseToken / parseTokenReg / parseTokenStr
-// (0x1400723a0..0x140072b73): strips "!" / "***" comments, expands "reg<N>"
+// (0x140072500..0x140072cd3): strips "!" / "***" comments, expands "reg<N>"
 // or "reg<N>?<then>:<else>" (backward ':' scan >= '?'), and returns raw s[N].
 [[nodiscard]] inline std::u16string wse_parse_token(
     std::u16string_view token,
@@ -906,7 +906,7 @@ enum class WseDispatch : std::uint8_t {
     return out;
 }
 
-// Mirrors mbBasicGame::parseString (0x1400720b0): turns '^' into '\n' and
+// Mirrors mbBasicGame::parseString (0x140072210): turns '^' into '\n' and
 // evaluates balanced {...} tokens; expanded s[N] text is NOT re-parsed.
 [[nodiscard]] inline std::u16string wse_parse_string(
     std::u16string_view input,

@@ -15,7 +15,7 @@
 
 namespace wse::vm {
 
-// `rglWidget::animateTo*` (`0x14031cbc0` / `0x14031cc00` / `0x14031ccc0` / `0x14031cd00`):
+// `rglWidget::animateTo*` (`0x14031d980` / `0x14031d9c0` / `0x14031da80` / `0x14031dac0`):
 // the caller stored the target, duration, and the current value as the start; this restarts
 // the clock and marks the channel running (`UiSession::step_presentation` interpolates it).
 inline void native_ui_start_anim(game::WseOverlayM5Ext& m5, std::uint8_t bit, std::size_t slot) {
@@ -163,7 +163,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
                          : 1.0f;
 
     switch (opcode) {
-    case 75: // mouse_get_position (0x1401c6949)
+    case 75: // mouse_get_position (0x1401c6ac9)
         if (wse_register_ok(narrow[0])) {
             auto& o = ctx.positions[static_cast<std::size_t>(narrow[0])].o;
             o.x = world.m5.cursor_pos.x;
@@ -172,7 +172,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             o.w = 1.0f;
         }
         return NativeDispatch::handled;
-    case 751: // mouse_get_world_projection (0x1401cbcc9)
+    case 751: // mouse_get_world_projection (0x1401cbe49)
         if (wse_register_ok(narrow[0]) && wse_register_ok(narrow[1])) {
             const auto& cam = world.misc.camera_transform;
             const game::CameraProjectionScales proj = game::camera_projection_scales(
@@ -197,7 +197,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
                 cam.o + dir * 1000.0f;
         }
         return NativeDispatch::handled;
-    case 911: // create_mesh_overlay (0x1401cc231)
+    case 911: // create_mesh_overlay (0x1401cc3b1)
         if (world.active_presentation_no >= 0 && world.is_valid_mesh(narrow[1])) {
             game::WsePresentationOverlay ov{};
             ov.type = 0;
@@ -205,7 +205,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
         }
         return NativeDispatch::handled;
-    case 912: { // create_button_overlay (0x1401cc282, callee 0x14020abe0)
+    case 912: { // create_button_overlay (0x1401cc402, callee 0x14020ad60)
         const std::uint32_t flags =
             statement.numOperands > 2
                 ? ((static_cast<std::uint32_t>(narrow[2]) & 0x181cU) | 0x200U)
@@ -214,7 +214,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
                                              locals);
         return NativeDispatch::handled;
     }
-    case 913: // create_image_button_overlay (0x1401cc31f)
+    case 913: // create_image_button_overlay (0x1401cc49f)
         if (world.active_presentation_no >= 0 && world.is_valid_mesh(narrow[1]) &&
             world.is_valid_mesh(narrow[2])) {
             game::WsePresentationOverlay ov{};
@@ -224,19 +224,19 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
         }
         return NativeDispatch::handled;
-    case 914: // create_slider_overlay (0x1401cc386)
+    case 914: // create_slider_overlay (0x1401cc506)
         native_ui_create_range_overlay(opcode, 2, wide[1], wide[2], ctx, dst, locals);
         return NativeDispatch::handled;
-    case 915: // create_progress_overlay (0x1401cc3c4)
+    case 915: // create_progress_overlay (0x1401cc544)
         native_ui_create_range_overlay(opcode, 3, wide[1], wide[2], ctx, dst, locals);
         return NativeDispatch::handled;
-    case 916: // create_combo_button_overlay (0x1401cc402)
+    case 916: // create_combo_button_overlay (0x1401cc582)
         native_ui_create_simple_overlay(opcode, 5, ctx, dst, locals);
         return NativeDispatch::handled;
-    case 917: // create_text_box_overlay (0x1401cc43a)
+    case 917: // create_text_box_overlay (0x1401cc5ba)
         native_ui_create_simple_overlay(opcode, 6, ctx, dst, locals);
         return NativeDispatch::handled;
-    case 918: // create_check_box_overlay (0x1401cc472)
+    case 918: // create_check_box_overlay (0x1401cc5f2)
         if (world.active_presentation_no >= 0 &&
             (statement.numOperands < 3 ||
              (world.is_valid_mesh(narrow[1]) && world.is_valid_mesh(narrow[2])))) {
@@ -250,22 +250,22 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
         }
         return NativeDispatch::handled;
-    case 919: // create_simple_text_box_overlay (0x1401cc4d9)
+    case 919: // create_simple_text_box_overlay (0x1401cc659)
         native_ui_create_simple_overlay(opcode, 7, ctx, dst, locals);
         return NativeDispatch::handled;
-    case 923: // overlay_set_hilight_color (0x1401cc5e6)
+    case 923: // overlay_set_hilight_color (0x1401cc766)
         if (world.is_valid_overlay(narrow[0])) {
             world.overlays[static_cast<std::size_t>(narrow[0])]
                 .m5.highlight_color = static_cast<std::uint32_t>(narrow[1]);
         }
         return NativeDispatch::handled;
-    case 924: // overlay_set_hilight_alpha (0x1401cc610)
+    case 924: // overlay_set_hilight_alpha (0x1401cc790)
         if (world.is_valid_overlay(narrow[0])) {
             world.overlays[static_cast<std::size_t>(narrow[0])]
                 .m5.highlight_alpha = static_cast<float>(narrow[1]) / 255.0f;
         }
         return NativeDispatch::handled;
-    case 928: // overlay_set_boundaries (0x1401cc720)
+    case 928: // overlay_set_boundaries (0x1401cc8a0)
         if (world.is_valid_overlay(narrow[0])) {
             auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
             const float lo = static_cast<float>(wide[1]) / fp;
@@ -292,14 +292,14 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             }
         }
         return NativeDispatch::handled;
-    case 929: // overlay_set_area_size (0x1401cc74f)
+    case 929: // overlay_set_area_size (0x1401cc8cf)
         if (world.is_valid_overlay(narrow[0]) && wse_register_ok(narrow[1])) {
             const auto& o = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
             world.overlays[static_cast<std::size_t>(narrow[0])].m5.area_size = {
                 o.x, o.y};
         }
         return NativeDispatch::handled;
-    case 930: // overlay_set_mesh_rotation (0x1401cc7ad, callee 0x14020e400)
+    case 930: // overlay_set_mesh_rotation (0x1401cc92d, callee 0x14020e580)
         if (world.is_valid_overlay(narrow[0]) && wse_register_ok(narrow[1])) {
             const auto& src = ctx.positions[static_cast<std::size_t>(narrow[1])];
             auto& rot = world.overlays[static_cast<std::size_t>(narrow[0])]
@@ -310,14 +310,14 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             rot.o = {0.0f, 0.0f, 0.0f, 1.0f};
         }
         return NativeDispatch::handled;
-    case 931: // overlay_add_item (0x1401cc806)
+    case 931: // overlay_add_item (0x1401cc986)
         if (world.is_valid_overlay(narrow[0]) &&
             wse_string_register_ok(narrow[1], tag1, banks)) {
             world.overlays[static_cast<std::size_t>(narrow[0])].m5.items.push_back(
                 native_resolve_and_parse(narrow[1], tag1, ctx));
         }
         return NativeDispatch::handled;
-    case 932: // overlay_animate_to_color (0x1401cc887)
+    case 932: // overlay_animate_to_color (0x1401cca07)
         if (world.is_valid_overlay(narrow[0])) {
             auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
             auto& m5 = ov.m5;
@@ -327,7 +327,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             native_ui_start_anim(m5, game::kOverlayAnimColor, 0);
         }
         return NativeDispatch::handled;
-    case 933: // overlay_animate_to_alpha (0x1401cc8c6)
+    case 933: // overlay_animate_to_alpha (0x1401cca46)
         if (world.is_valid_overlay(narrow[0])) {
             auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
             auto& m5 = ov.m5;
@@ -337,7 +337,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             native_ui_start_anim(m5, game::kOverlayAnimAlpha, 1);
         }
         return NativeDispatch::handled;
-    case 934: // overlay_animate_to_highlight_color (0x1401cc905)
+    case 934: // overlay_animate_to_highlight_color (0x1401cca85)
         if (world.is_valid_overlay(narrow[0])) {
             auto& m5 = world.overlays[static_cast<std::size_t>(narrow[0])].m5;
             m5.anim_highlight_color = static_cast<std::uint32_t>(narrow[2]);
@@ -346,7 +346,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             native_ui_start_anim(m5, game::kOverlayAnimHighlightColor, 2);
         }
         return NativeDispatch::handled;
-    case 935: // overlay_animate_to_highlight_alpha (0x1401cc944)
+    case 935: // overlay_animate_to_highlight_alpha (0x1401ccac4)
         if (world.is_valid_overlay(narrow[0])) {
             auto& m5 = world.overlays[static_cast<std::size_t>(narrow[0])].m5;
             m5.anim_highlight_alpha = static_cast<float>(narrow[2]) / 255.0f;
@@ -355,7 +355,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             native_ui_start_anim(m5, game::kOverlayAnimHighlightAlpha, 3);
         }
         return NativeDispatch::handled;
-    case 936: // overlay_animate_to_size (0x1401cc983)
+    case 936: // overlay_animate_to_size (0x1401ccb03)
         if (world.is_valid_overlay(narrow[0]) && wse_register_ok(narrow[2])) {
             auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
             auto& m5 = ov.m5;
@@ -366,7 +366,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             native_ui_start_anim(m5, game::kOverlayAnimSize, 4);
         }
         return NativeDispatch::handled;
-    case 937: // overlay_animate_to_position (0x1401cc9f6)
+    case 937: // overlay_animate_to_position (0x1401ccb76)
         if (world.is_valid_overlay(narrow[0]) && wse_register_ok(narrow[2])) {
             auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
             auto& m5 = ov.m5;
@@ -377,32 +377,32 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             native_ui_start_anim(m5, game::kOverlayAnimPosition, 5);
         }
         return NativeDispatch::handled;
-    case 938: // create_image_button_overlay_with_tableau_material (0x1401cca69)
+    case 938: // create_image_button_overlay_with_tableau_material (0x1401ccbe9)
         native_ui_create_tableau_overlay(opcode, 4, narrow[1], narrow[2], narrow[3], ctx,
                                          dst, locals);
         return NativeDispatch::handled;
-    case 939: // create_mesh_overlay_with_tableau_material (0x1401ccadf)
+    case 939: // create_mesh_overlay_with_tableau_material (0x1401ccc5f)
         native_ui_create_tableau_overlay(opcode, 0, narrow[1], narrow[2], narrow[3], ctx,
                                          dst, locals);
         return NativeDispatch::handled;
     // Both build an `rglGameButtonWidget` whose text flags are fixed to 0x10 (centre) by
-    // `createGameButtonOverlay` (0x14020c3e0) / `createIngameButtonOverlay` (0x14020c7d0).
+    // `createGameButtonOverlay` (0x14020c560) / `createIngameButtonOverlay` (0x14020c950).
     // Their highlight text colours are `0xff007700` / `0xff00ff00` (`setTextHighlightColor`).
-    case 940: // create_game_button_overlay (0x1401ccb55)
+    case 940: // create_game_button_overlay (0x1401cccd5)
         native_ui_create_text_button_overlay(narrow[1], tag1, 0x10U, 940, ctx, dst, locals,
                                              0x007700U);
         return NativeDispatch::handled;
-    case 941: // create_in_game_button_overlay (0x1401ccbed)
+    case 941: // create_in_game_button_overlay (0x1401ccd6d)
         native_ui_create_text_button_overlay(narrow[1], tag1, 0x10U, 941, ctx, dst, locals,
                                              0x00FF00U);
         return NativeDispatch::handled;
-    case 942: // create_number_box_overlay (0x1401ccc85)
+    case 942: // create_number_box_overlay (0x1401cce05)
         native_ui_create_range_overlay(opcode, 2, wide[1], wide[2], ctx, dst, locals);
         return NativeDispatch::handled;
-    case 943: // create_listbox_overlay (0x1401cccc3)
+    case 943: // create_listbox_overlay (0x1401cce43)
         native_ui_create_simple_overlay(opcode, 8, ctx, dst, locals);
         return NativeDispatch::handled;
-    case 944: // create_mesh_overlay_with_item_id (0x1401cccfb)
+    case 944: // create_mesh_overlay_with_item_id (0x1401cce7b)
         if (world.active_presentation_no >= 0 && world.is_valid_item(narrow[1])) {
             game::WsePresentationOverlay ov{};
             ov.type = 0;
@@ -410,12 +410,12 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             (void)native_ui_push_overlay(std::move(ov), opcode, ctx, dst, locals);
         }
         return NativeDispatch::handled;
-    case 945: // set_container_overlay (0x1401ccd4c)
+    case 945: // set_container_overlay (0x1401ccecc)
         if (narrow[0] == -1 || world.is_valid_overlay(narrow[0])) {
             world.m5.current_container_overlay_no = narrow[0];
         }
         return NativeDispatch::handled;
-    case 946: // overlay_get_position (0x1401ccd77, callee 0x14020e7f0)
+    case 946: // overlay_get_position (0x1401ccef7, callee 0x14020e970)
         if (wse_register_ok(narrow[0]) && world.is_valid_overlay(narrow[1])) {
             const auto& pos =
                 world.overlays[static_cast<std::size_t>(narrow[1])].position;
@@ -425,10 +425,10 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             o.z = 0.0f;
         }
         return NativeDispatch::handled;
-    case 948: // create_combo_label_overlay (0x1401ccde4)
+    case 948: // create_combo_label_overlay (0x1401ccf64)
         native_ui_create_simple_overlay(opcode, 5, ctx, dst, locals);
         return NativeDispatch::handled;
-    case 949: // overlay_obtain_focus (0x1401cce1c)
+    case 949: // overlay_obtain_focus (0x1401ccf9c)
         if (world.is_valid_overlay(narrow[0])) {
             auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
             if (ov.type == 6 || ov.type == 7) {
@@ -443,35 +443,35 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             }
         }
         return NativeDispatch::handled;
-    case 950: // overlay_set_tooltip (0x1401cce41, callee 0x14020e8a0)
+    case 950: // overlay_set_tooltip (0x1401ccfc1, callee 0x14020ea20)
         if (world.is_valid_overlay(narrow[0]) &&
             wse_string_register_ok(narrow[1], tag1, banks)) {
             world.overlays[static_cast<std::size_t>(narrow[0])].m5.tooltip =
                 native_resolve_and_parse(narrow[1], tag1, ctx);
         }
         return NativeDispatch::handled;
-    case 951: // overlay_set_container_overlay (0x1401ccec2)
+    case 951: // overlay_set_container_overlay (0x1401cd042)
         if (world.is_valid_overlay(narrow[0]) &&
             (narrow[1] == -1 || world.is_valid_overlay(narrow[1]))) {
             world.overlays[static_cast<std::size_t>(narrow[0])]
                 .m5.container_overlay_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 952: // overlay_set_additional_render_height (0x1401ccf07)
+    case 952: // overlay_set_additional_render_height (0x1401cd087)
         if (world.is_valid_overlay(narrow[0]) && narrow[1] >= -99 &&
             narrow[1] < 999) {
             world.overlays[static_cast<std::size_t>(narrow[0])]
                 .m5.additional_render_height = static_cast<float>(wide[1]);
         }
         return NativeDispatch::handled;
-    case 956: // overlay_set_material (0x1401ccf5d)
+    case 956: // overlay_set_material (0x1401cd0dd)
         if (world.is_valid_overlay(narrow[0]) &&
             wse_string_register_ok(narrow[1], tag1, banks)) {
             world.overlays[static_cast<std::size_t>(narrow[0])].m5.material_name =
                 native_m5_resolve_underscore_utf8(narrow[1], tag1, ctx);
         }
         return NativeDispatch::handled;
-    case 1120: // tutorial_box (0x1401ce3e6)
+    case 1120: // tutorial_box (0x1401ce566)
         if (wse_string_register_ok(narrow[0], tag0, banks) &&
             !world.m5.yes_no_window_open) {
             world.m5.dialog_title =
@@ -484,7 +484,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             world.m5.yes_no_window_open = true;
         }
         return NativeDispatch::handled;
-    case 1121: // question_box (0x1401ce52b)
+    case 1121: // question_box (0x1401ce6ab)
         if (wse_string_register_ok(narrow[0], tag0, banks) &&
             !world.m5.yes_no_window_open) {
             world.m5.dialog_yes_text = native_ui_resolve_label_or_default(
@@ -498,7 +498,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
             world.m5.yes_no_window_open = true;
         }
         return NativeDispatch::handled;
-    case 1122: // tutorial_message (0x1401ce783)
+    case 1122: // tutorial_message (0x1401ce903)
         if (narrow[0] == -1) {
             world.m5.message_box_text.clear();
             world.m5.message_box_color =
@@ -515,33 +515,33 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
                 statement.numOperands > 2 ? static_cast<std::uint32_t>(narrow[2]) : 0U;
         }
         return NativeDispatch::handled;
-    case 1123: // tutorial_message_set_position (0x1401ce84d)
+    case 1123: // tutorial_message_set_position (0x1401ce9cd)
         world.m5.message_box_position = {
             static_cast<float>(wide[0]) / 1000.0f,
             static_cast<float>(wide[1]) / 1000.0f};
         return NativeDispatch::handled;
-    case 1124: // tutorial_message_set_size (0x1401ce882)
+    case 1124: // tutorial_message_set_size (0x1401cea02)
         world.m5.message_box_size = {
             static_cast<float>(wide[0]) / 1000.0f,
             static_cast<float>(wide[1]) / 1000.0f};
         return NativeDispatch::handled;
-    case 1125: // tutorial_message_set_center_justify (0x1401ce8b7)
+    case 1125: // tutorial_message_set_center_justify (0x1401cea37)
         world.m5.message_box_center_justify = (wide[0] != 0);
         return NativeDispatch::handled;
-    case 1126: // tutorial_message_set_background (0x1401ce8c6)
+    case 1126: // tutorial_message_set_background (0x1401cea46)
         world.m5.message_box_bg_mesh =
             (wide[0] == 0) ? std::string{} : std::string("white_plane");
         return NativeDispatch::handled;
-    case 2040: // change_screen_return (0x1401dbefe, callee 0x1400dbd30)
+    case 2040: // change_screen_return (0x1401dc07e, callee 0x1400dbe90)
         world.enqueue_window(1);
         return NativeDispatch::handled;
-    case 2041: // change_screen_loot (0x1401dbf1c)
+    case 2041: // change_screen_loot (0x1401dc09c)
         native_ui_enqueue_troop_screen(world, narrow[0], 2);
         return NativeDispatch::handled;
-    case 2042: // change_screen_trade (0x1401dbf4f)
+    case 2042: // change_screen_trade (0x1401dc0cf)
         native_ui_enqueue_troop_screen(world, narrow[0], 4);
         return NativeDispatch::handled;
-    case 2043: { // change_screen_exchange_members (0x1401dbf82)
+    case 2043: { // change_screen_exchange_members (0x1401dc102)
         const std::int32_t party_no =
             statement.numOperands > 1 ? narrow[1] : world.main_party_no;
         if (world.is_valid_party(party_no)) {
@@ -552,32 +552,32 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         }
         return NativeDispatch::handled;
     }
-    case 2044: // change_screen_trade_prisoners (0x1401dbfd2)
+    case 2044: // change_screen_trade_prisoners (0x1401dc152)
         world.enqueue_window(9);
         return NativeDispatch::handled;
-    case 2045: // change_screen_buy_mercenaries (0x1401dbfeb)
+    case 2045: // change_screen_buy_mercenaries (0x1401dc16b)
         world.enqueue_window(10);
         return NativeDispatch::handled;
-    case 2046: // change_screen_view_character (0x1401dc004)
+    case 2046: // change_screen_view_character (0x1401dc184)
         world.m5.screen_entry_point_no = narrow[0];
         world.enqueue_window(0xb);
         return NativeDispatch::handled;
-    case 2047: // change_screen_training (0x1401dc024)
+    case 2047: // change_screen_training (0x1401dc1a4)
         world.enqueue_window(0xc);
         return NativeDispatch::handled;
-    case 2048: // change_screen_mission (0x1401dc03d)
+    case 2048: // change_screen_mission (0x1401dc1bd)
         world.enqueue_window(0xd);
         return NativeDispatch::handled;
-    case 2049: // change_screen_map_conversation (0x1401dc056)
+    case 2049: // change_screen_map_conversation (0x1401dc1d6)
         native_ui_enqueue_troop_screen(world, narrow[0], 0xe);
         return NativeDispatch::handled;
-    case 2051: // change_screen_equip_other (0x1401dc0bc)
+    case 2051: // change_screen_equip_other (0x1401dc23c)
         native_ui_enqueue_troop_screen(world, narrow[0], 3);
         return NativeDispatch::handled;
-    case 2052: // change_screen_map (0x1401dc0ef)
+    case 2052: // change_screen_map (0x1401dc26f)
         world.enqueue_window(0x11);
         return NativeDispatch::handled;
-    case 2053: { // change_screen_notes (0x1401dc108)
+    case 2053: { // change_screen_notes (0x1401dc288)
         bool ok = false;
         switch (narrow[0]) {
         case 1:
@@ -605,7 +605,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         }
         return NativeDispatch::handled;
     }
-    case 2055: // change_screen_quit (0x1401dc1b4)
+    case 2055: // change_screen_quit (0x1401dc334)
         world.m5.enqueued_windows.clear();
         world.m5.quit_requested = true;
         world.m5.loading_mode = 5;
@@ -613,7 +613,7 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         world.m5.active_window = game::kScreenWindowLoading;
         world.m6.ui.active_window_id = game::kScreenWindowLoading;
         return NativeDispatch::handled;
-    case 2056: { // change_screen_give_members (0x1401dc23c)
+    case 2056: { // change_screen_give_members (0x1401dc3bc)
         const std::int32_t party_no =
             statement.numOperands > 0 ? narrow[0] : world.main_party_no;
         if (world.is_valid_party(party_no)) {
@@ -624,10 +624,10 @@ inline void native_ui_enqueue_troop_screen(game::WseWorldState& world,
         }
         return NativeDispatch::handled;
     }
-    case 2057: // change_screen_controls (0x1401dc27f)
+    case 2057: // change_screen_controls (0x1401dc3ff)
         world.enqueue_window(0x13);
         return NativeDispatch::handled;
-    case 2058: // change_screen_options (0x1401dc298)
+    case 2058: // change_screen_options (0x1401dc418)
         world.enqueue_window(0x14);
         return NativeDispatch::handled;
     default:

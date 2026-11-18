@@ -140,7 +140,7 @@ namespace wse::vm {
     case WseOpcode::scene_prop_slot_gt:
         return wse_entity_slot_gt(operands, opcode);
     case WseOpcode::store_current_trigger: {
-        // 3014 (0x1401e5917): return the context flags while inside a trigger
+        // 3014 (0x1401e5a97): return the context flags while inside a trigger
         // (negative), otherwise 0. WSEOperationContext::GetCurrentTrigger uses
         // exactly this `m_context_flags < 0 ? m_context_flags : 0` rule.
         effect.value = operands.state.caller <= 0 ? operands.state.caller : 0;
@@ -148,14 +148,14 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::store_num_return_values: {
-        // 3016 (0x1401e5979): g_numReturnValues at 0x140698ae8.
+        // 3016 (0x1401e5af9): g_numReturnValues at 0x140699b18.
         effect.value = operands.state.num_return_values;
         effect.store_value = true;
         return WseDispatch::handled;
     }
     case WseOpcode::store_return_value: {
-        // 3017 (0x1401e5985): operand 1 is a 1-based index into the 16-slot
-        // return-value bank at 0x140698af0. Out-of-range or unset indices log
+        // 3017 (0x1401e5b05): operand 1 is a 1-based index into the 16-slot
+        // return-value bank at 0x140699b20. Out-of-range or unset indices log
         // ("invalid script result index %d" / "unset result value %d") and
         // return true without storing.
         if (narrow.size() < 2) {
@@ -177,15 +177,15 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::store_application_time: {
-        // 3035 (0x1401e63a4): rglRound64((float)DXUtil_Timer(5) * 1000.0f).
-        // FUN_1400b9690(5) returns QPC seconds since the app-time baseline.
+        // 3035 (0x1401e6524): rglRound64((float)DXUtil_Timer(5) * 1000.0f).
+        // FUN_1400b97f0(5) returns QPC seconds since the app-time baseline.
         effect.value = wse_round64(
             static_cast<float>(operands.state.app_time_seconds) * 1000.0f);
         effect.store_value = true;
         return WseDispatch::handled;
     }
     case WseOpcode::sleep_ms: {
-        // 3026 (0xbd2, 0x1401e62a0 / L1188): negative skips Sleep(); invoke the
+        // 3026 (0xbd2, 0x1401e6420 / L1188): negative skips Sleep(); invoke the
         // host sleep hook when provided so UI/render threads do not block.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
@@ -201,7 +201,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::set_main_party: {
-        // 3030 (0xbd6, L1284): validates party via 0x1401c4ed0.
+        // 3030 (0xbd6, L1284): validates party via 0x1401c5050.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -226,8 +226,8 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::is_party_skill: {
-        // 3036 (0xbdc, 0x1401e63c4): skill > 41 logs and returns true; else
-        // tests bit 4 of mbSkill::m_flags (0x14065f8ec).
+        // 3036 (0xbdc, 0x1401e6544): skill > 41 logs and returns true; else
+        // tests bit 4 of mbSkill::m_flags (0x14066091c).
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -242,7 +242,7 @@ namespace wse::vm {
                    ? WseDispatch::handled_no_store
                    : WseDispatch::condition_false;
     }
-    // Options flags (0x10cc..0x10d1, 0x1401efff9..0x1401f003b) and bool
+    // Options flags (0x10cc..0x10d1, 0x1401f0179..0x1401f01bb) and bool
     // config setters (3619/3622/4606).
     case WseOpcode::options_get_verbose_casualties:
     case WseOpcode::options_get_cheat_mode:
@@ -270,7 +270,7 @@ namespace wse::vm {
     }
     // VM return values / PRNG / time / timers / profiler (0xbc7..0xbe3).
     case WseOpcode::return_values: {
-        // 3015 (0xbc7, 0x1401e5a50): writes up to 16 int64 return slots.
+        // 3015 (0xbc7, 0x1401e5bd0): writes up to 16 int64 return slots.
         const std::size_t max_slots =
             std::min<std::size_t>(operands.state.return_values_out.size(), 16U);
         const std::size_t count = std::min<std::size_t>(wide.size(), max_slots);
@@ -284,7 +284,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::mtsrand: {
-        // 3020 (0xbcc, 0x1401e5b78): seeds rglMersenneTwister.
+        // 3020 (0xbcc, 0x1401e5cf8): seeds rglMersenneTwister.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -295,7 +295,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::mtrand: {
-        // 3021 (0xbcd, 0x1401e5b85): rglMersenneTwister::getInt(min, max).
+        // 3021 (0xbcd, 0x1401e5d05): rglMersenneTwister::getInt(min, max).
         if (narrow.size() < 3) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -308,7 +308,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::get_time: {
-        // 3022 (0xbce, 0x1401e5ba2): UTC Unix epoch seconds (or local-adjusted
+        // 3022 (0xbce, 0x1401e5d22): UTC Unix epoch seconds (or local-adjusted
         // wall-clock seconds when operand 1 != 0), 32-bit int truncated.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
@@ -330,7 +330,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::timer_reset: {
-        // 3027 (0xbd3, 0x1401e5dab): op1 != 0 -> app clock (0), else game (2).
+        // 3027 (0xbd3, 0x1401e5f2b): op1 != 0 -> app clock (0), else game (2).
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -346,7 +346,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::timer_get_elapsed_time: {
-        // 3028 (0xbd4, 0x1401e5df5): rounded elapsed seconds from 100kHz clock.
+        // 3028 (0xbd4, 0x1401e5f75): rounded elapsed seconds from 100kHz clock.
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -370,7 +370,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::set_random_seed: {
-        // 3034 (0xbda, 0x1401e62bb): stores script rand_seed (DAT_140617d54).
+        // 3034 (0xbda, 0x1401e643b): stores script rand_seed (DAT_140618d54).
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -381,7 +381,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::profiler_start: {
-        // 3040 (0xbe0, 0x14034f7d0): sets g_profiling flag.
+        // 3040 (0xbe0, 0x140350590): sets g_profiling flag.
         if (operands.state.profiler_recording == nullptr) {
             return WseDispatch::ignored;
         }
@@ -389,7 +389,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::profiler_stop: {
-        // 3041 (0xbe1, 0x14034ff40): clears g_profiling flag.
+        // 3041 (0xbe1, 0x140350d00): clears g_profiling flag.
         if (operands.state.profiler_recording == nullptr) {
             return WseDispatch::ignored;
         }
@@ -404,7 +404,7 @@ namespace wse::vm {
                          : WseDispatch::condition_false;
     }
     case WseOpcode::profiler_mark: {
-        // 3043 (0xbe3, 0x1403508a0): appends marker when profiling is active.
+        // 3043 (0xbe3, 0x140351660): appends marker when profiling is active.
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }

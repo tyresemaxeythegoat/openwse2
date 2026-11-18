@@ -8,7 +8,7 @@
 
 namespace wse::core {
 
-// 2D vector matching rglVector2 (0x1403188a0 length, 0x140318930 getAngle).
+// 2D vector matching rglVector2 (0x140319660 length, 0x1403196f0 getAngle).
 struct WseVec2 {
     float x = 0.0f;
     float y = 0.0f;
@@ -17,14 +17,14 @@ struct WseVec2 {
         return std::sqrt(x * x + y * y);
     }
 
-    // Mirrors rglVector2::getAngle (0x140318930): atan2f(-x, y).
+    // Mirrors rglVector2::getAngle (0x1403196f0): atan2f(-x, y).
     [[nodiscard]] float get_angle() const noexcept {
         return std::atan2(-x, y);
     }
 };
 
-// 64-byte position frame (rglTransform at 0x140663030, stride 0x40;
-// Identity at 0x140621730): side s, forward f, up u, origin o.
+// 64-byte position frame (rglTransform at 0x140664060, stride 0x40;
+// Identity at 0x140622730): side s, forward f, up u, origin o.
 struct WseVec4 {
     float x = 0.0f;
     float y = 0.0f;
@@ -58,7 +58,7 @@ struct WseVec4 {
                 0.0f};
     }
 
-    // Mirrors rglVector3::normalize (0x140318a10): threshold 1e-10f (0x1405760f4),
+    // Mirrors rglVector3::normalize (0x1403197d0): threshold 1e-10f (0x1405771d4),
     // fallback (0, 1, 0) while preserving w, returning pre-normalization length.
     [[nodiscard]] float normalize_with_length() noexcept {
         const float len = length();
@@ -90,7 +90,7 @@ struct WseTransform {
         return {};
     }
 
-    // 0x1402b5be0: rotates forward f and up u around local side axis s.
+    // 0x1402b5e50: rotates forward f and up u around local side axis s.
     void rotate_x(float angle) noexcept {
         const float c = std::cos(angle);
         const float s_val = std::sin(angle);
@@ -106,7 +106,7 @@ struct WseTransform {
         u = nu;
     }
 
-    // 0x1402b5d40: rotates side s and up u around local forward axis f.
+    // 0x1402b5fb0: rotates side s and up u around local forward axis f.
     void rotate_y(float angle) noexcept {
         const float c = std::cos(angle);
         const float s_val = std::sin(angle);
@@ -122,7 +122,7 @@ struct WseTransform {
         u = nu;
     }
 
-    // 0x1402b5ea0: rotates side s and forward f around local up axis u.
+    // 0x1402b6110: rotates side s and forward f around local up axis u.
     void rotate_z(float angle) noexcept {
         const float c = std::cos(angle);
         const float s_val = std::sin(angle);
@@ -138,7 +138,7 @@ struct WseTransform {
         f = nf;
     }
 
-    // 0x1402b6000: rotates basis vectors around global X axis.
+    // 0x1402b6270: rotates basis vectors around global X axis.
     void rotate_global_x(float angle) noexcept {
         const float c = std::cos(angle);
         const float sn = std::sin(angle);
@@ -156,7 +156,7 @@ struct WseTransform {
         u.z = uy * sn + uz * c;
     }
 
-    // 0x1402b60e0: rotates basis vectors around global Y axis.
+    // 0x1402b6350: rotates basis vectors around global Y axis.
     void rotate_global_y(float angle) noexcept {
         const float c = std::cos(angle);
         const float sn = std::sin(angle);
@@ -174,7 +174,7 @@ struct WseTransform {
         u.z = uz * c - ux * sn;
     }
 
-    // 0x1402b61b0: rotates basis vectors around global Z axis.
+    // 0x1402b6420: rotates basis vectors around global Z axis.
     void rotate_global_z(float angle) noexcept {
         const float c = std::cos(angle);
         const float sn = std::sin(angle);
@@ -192,14 +192,14 @@ struct WseTransform {
         u.y = ux * sn + uy * c;
     }
 
-    // 0x1402b6750: copies orthonormal basis without changing origin o.
+    // 0x1402b69c0: copies orthonormal basis without changing origin o.
     void set_rotation(const WseTransform& other) noexcept {
         s = other.s;
         f = other.f;
         u = other.u;
     }
 
-    // 0x1402b6da0: transforms `other` from parent space into `this` local frame.
+    // 0x1402b7010: transforms `other` from parent space into `this` local frame.
     [[nodiscard]] WseTransform transform_to_local(
         const WseTransform& other) const noexcept {
         WseTransform out{};
@@ -221,7 +221,7 @@ struct WseTransform {
         return out;
     }
 
-    // 0x1402b70c0: transforms `local` from `this` frame into parent/world space.
+    // 0x1402b7330: transforms `local` from `this` frame into parent/world space.
     [[nodiscard]] WseTransform transform_to_parent(
         const WseTransform& local) const noexcept {
         WseTransform out{};
@@ -240,7 +240,7 @@ struct WseTransform {
         return out;
     }
 
-    // 0x1402b64b0: normalize f, s = normalize(f x u), u = s x f.
+    // 0x1402b6720: normalize f, s = normalize(f x u), u = s x f.
     void orthonormalize() noexcept {
         f.normalize();
         s = f.cross(u);
@@ -257,7 +257,7 @@ struct WseTransform {
             {0.0f, 0.0f, 0.0f, 0.0f}};
 }
 
-// Mirrors rglTransform compare in FUN_1401f58a0 (0x1401f601d): orthonormalizes
+// Mirrors rglTransform compare in FUN_1401f5a20 (0x1401f619d): orthonormalizes
 // copies of both transforms, then compares the 12 basis + origin floats.
 [[nodiscard]] inline bool wse_transforms_equal(const WseTransform& lhs,
                                                const WseTransform& rhs) noexcept {
@@ -272,7 +272,7 @@ struct WseTransform {
 }
 
 
-// Standard MT19937 PRNG mirroring rglMersenneTwister (0x1402a24f0/5e0/6b0/780).
+// Standard MT19937 PRNG mirroring rglMersenneTwister (0x1402a2760/0x1402a2850/0x1402a2920/0x1402a29f0).
 struct WseMersenneTwister {
     std::array<std::uint32_t, 624> state{};
     std::size_t index = 624;
@@ -303,7 +303,7 @@ struct WseMersenneTwister {
         return y;
     }
 
-    // Exact match for 0x1402a25e0: uniform [min, max) using 32-bit unsigned span.
+    // Exact match for 0x1402a2850: uniform [min, max) using 32-bit unsigned span.
     [[nodiscard]] std::int32_t get_int(std::int32_t min,
                                        std::int32_t max) noexcept {
         const std::uint32_t b = static_cast<std::uint32_t>(max) - 1U;
@@ -344,7 +344,7 @@ private:
     }
 };
 
-// rglRound64 (0x1402a1910): floorf(x), plus one when the fraction is > 0.5.
+// rglRound64 (0x1402a1b80): floorf(x), plus one when the fraction is > 0.5.
 // Out-of-range values become INT64_MIN because the retail conversion is
 // cvttss2si; this avoids undefined behaviour on the host.
 [[nodiscard]] inline std::int64_t wse_round64(float value) noexcept {

@@ -6,17 +6,17 @@
 //
 // Opcode VAs verified in `docs/SYMBOL_MAP.json` (`mbStatement::execute` and
 // `mbStatement::executeWSE`):
-//   - 65   game_key_get_mapped_key_name 0x1401c6752
-//   - 70   key_is_down                  0x1401c67e5
-//   - 71   key_clicked                  0x1401c683f
-//   - 72   game_key_is_down             0x1401c6899
-//   - 73   game_key_clicked             0x1401c68f1
-//   - 75   mouse_get_position           0x1401c6949
-//   - 77   omit_key_once                0x1401c69b5
-//   - 78   clear_omitted_keys           0x1401c69e2
-//   - 3100 game_key_get_key             0x1401e6a42
-//   - 3101 key_released                 0x1401e6a94
-//   - 3102 game_key_released            0x1401e6ae5
+//   - 65   game_key_get_mapped_key_name 0x1401c68d2
+//   - 70   key_is_down                  0x1401c6965
+//   - 71   key_clicked                  0x1401c69bf
+//   - 72   game_key_is_down             0x1401c6a19
+//   - 73   game_key_clicked             0x1401c6a71
+//   - 75   mouse_get_position           0x1401c6ac9
+//   - 77   omit_key_once                0x1401c6b35
+//   - 78   clear_omitted_keys           0x1401c6b62
+//   - 3100 game_key_get_key             0x1401e6bc2
+//   - 3101 key_released                 0x1401e6c14
+//   - 3102 game_key_released            0x1401e6c65
 
 #pragma once
 
@@ -122,8 +122,8 @@ public:
         // Consumed `omit_key_once` requests expire for scripts too.
         world.input.omitted_keys = mgr.omitted_keys();
 
-        // Warband UI space (`mouse_get_position` `0x1401c6949`, `mouse_get_world_projection`
-        // `0x1401cbcc9`): x in [0, 1], y in [0, 0.75] growing upwards; the manager's cursor
+        // Warband UI space (`mouse_get_position` `0x1401c6ac9`, `mouse_get_world_projection`
+        // `0x1401cbe49`): x in [0, 1], y in [0, 0.75] growing upwards; the manager's cursor
         // is screen-normalized with y growing downwards.
         const auto& fs = mgr.frame_state();
         world.m5.cursor_pos = wse::core::WseVec2{fs.cursor_x, (1.0f - fs.cursor_y) * 0.75f};

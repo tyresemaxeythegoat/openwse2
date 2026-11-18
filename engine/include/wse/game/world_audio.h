@@ -38,7 +38,7 @@ public:
     WorldAudioBridge() = default;
 
     // Binds the bridge to `world`, resolves module sound/music paths in `vfs`
-    // (`0x1403317c0` / `0x140290710`), and configures `WseAudioMixer`. When
+    // (`0x140332580` / `0x140290870`), and configures `WseAudioMixer`. When
     // `preload_samples` is true, every sample whose file resolved is decoded
     // eagerly; otherwise samples decode lazily on first playback (synchronously,
     // on the calling thread). A sample that fails to read or decode is remembered

@@ -5,18 +5,18 @@
 // keeps `<SDL3/SDL.h>` out of engine headers; `WseAudioMixer` reconstructs
 // WSE2 v1.1.5.5 `mbSoundManager` / `mbMusicManager` semantics from PDB/binary
 // evidence:
-//   - mbSoundSample::playSound            0x140331cb0 (priority calc, 2D/looping -> 0)
-//   - mbSoundSample::readStream           0x1403317c0 (3D min=2.0f, max=80.0f)
-//   - mbSoundManager::playSoundAtPosition 0x140332ac0 (0x1000000 LOD fallback, culture filter)
-//   - mbSoundManager::setChannelPropertiesAndPlay 0x140332d80 (vol / 15, random start, freq)
-//   - mbSoundManager::setTransform        0x140332970 (listener attributes: forward=-u, up=f)
-//   - mbSoundManager::updateOcclusionDistances 0x140333260 (0.9 / 1.1 hysteresis around 80m)
-//   - mbSoundManager::update              0x140333490 (virtual channels + channel-end callback)
-//   - mbSoundManager::stopSound           0x140332690
-//   - mbSoundManager::getSoundProgress    0x1403326d0 (0..100 or -1)
-//   - mbSoundManager::stopAllSounds       0x140332770 (include non-looping bool)
-//   - mbMusicManager::frameMove / update  0x140290c40 / 0x140290f60 (0.5s tick, 5.0s fade, 500.0 recency)
-//   - mbMusicManager::startPlaying / stopPlaying 0x140290e60 / 0x140290f20
+//   - mbSoundSample::playSound            0x140332a70 (priority calc, 2D/looping -> 0)
+//   - mbSoundSample::readStream           0x140332580 (3D min=2.0f, max=80.0f)
+//   - mbSoundManager::playSoundAtPosition 0x140333880 (0x1000000 LOD fallback, culture filter)
+//   - mbSoundManager::setChannelPropertiesAndPlay 0x140333b40 (vol / 15, random start, freq)
+//   - mbSoundManager::setTransform        0x140333730 (listener attributes: forward=-u, up=f)
+//   - mbSoundManager::updateOcclusionDistances 0x140334020 (0.9 / 1.1 hysteresis around 80m)
+//   - mbSoundManager::update              0x140334250 (virtual channels + channel-end callback)
+//   - mbSoundManager::stopSound           0x140333450
+//   - mbSoundManager::getSoundProgress    0x140333490 (0..100 or -1)
+//   - mbSoundManager::stopAllSounds       0x140333530 (include non-looping bool)
+//   - mbMusicManager::frameMove / update  0x140290da0 / 0x1402910c0 (0.5s tick, 5.0s fade, 500.0 recency)
+//   - mbMusicManager::startPlaying / stopPlaying 0x140290fc0 / 0x140291080
 //
 // Port behaviour that is not a retail reconstruction (engine/README.md, "P6 audio"):
 //   - channel-end callbacks are queued and delivered after each public call
@@ -171,15 +171,15 @@ private:
 };
 
 // Defaults match `rglConfig::Sound` globals verified across v1.1.5.5
-// `rglConfig::load` (`0x140264580`), `mbSoundManager::initializeFmod` (`0x140332f80`),
-// `mbSoundSample::readStream` (`0x1403317c0`), and `mbSoundManager::updateOcclusionDistances`
-// (`0x140333260`): `bSound=1`, `bMusic=1`, `fSoundVolume=1.0f`, `fMusicVolume=0.4f`,
+// `rglConfig::load` (`0x140264700`), `mbSoundManager::initializeFmod` (`0x140333d40`),
+// `mbSoundSample::readStream` (`0x140332580`), and `mbSoundManager::updateOcclusionDistances`
+// (`0x140334020`): `bSound=1`, `bMusic=1`, `fSoundVolume=1.0f`, `fMusicVolume=0.4f`,
 // `iMaxNumChannels=64`, `iMaxNumVirtualChannels=100`, `fDistancePriorityFactor=0.47f`,
 // `fOcclusionMaxDistance=80.0f`, 3D min=2.0f / max=80.0f, `bUseSoundOcclusion=1`,
 // `bDistanceFilter=1`, `bHrtfFilter=1`, `bDisableFrequencyVariation=0`.
 //
-// Mirrors `rglConfig` audio fields loaded in `0x140264580` / `0x140332f80`.
-// `mbSoundManager::initializeFmod` (`0x140332f80`) maps `bDistanceFilter` to
+// Mirrors `rglConfig` audio fields loaded in `0x140264700` / `0x140333d40`.
+// `mbSoundManager::initializeFmod` (`0x140333d40`) maps `bDistanceFilter` to
 // `FMOD_INIT_DISTANCE_FILTERING` (`0x200`) and `bHrtfFilter` to `FMOD_INIT_HRTF_LOWPASS`
 // (`0x10`) while 3D inverse rolloff (`min=2.0f, max=80.0f`) is always active; here
 // `distance_filter` gates distance rolloff and `hrtf_filter` is accepted for parity.
@@ -233,7 +233,7 @@ struct AudioListener {
     wse::core::WseVec4 up{0.0f, 0.0f, 1.0f, 0.0f};
 };
 
-// Reconstructs `mbSoundManager::setTransform` (`0x140332970`): Warband passes a camera
+// Reconstructs `mbSoundManager::setTransform` (`0x140333730`): Warband passes a camera
 // frame where `-u` maps to FMOD listener forward, `+f` to up, and `+s` to right.
 [[nodiscard]] inline AudioListener listener_from_camera_transform(
     const wse::core::WseTransform& cam,
@@ -256,7 +256,7 @@ struct AudioListener {
 struct MixerSoundVariant {
     std::int32_t sample_index = -1;
     // Low byte holds optional culture filter
-    // (`mbSoundManager::playSoundAtPosition` `0x140332ac0`, +0x1be).
+    // (`mbSoundManager::playSoundAtPosition` `0x140333880`, +0x1be).
     std::uint32_t flags = 0;
 };
 
@@ -276,7 +276,7 @@ struct MixerMusicTrack {
     std::shared_ptr<const wse::asset::AudioPcmBuffer> pcm{};
 };
 
-// Mirrors `mbSoundSample::playSound` (`0x140331cb0`) priority calculation:
+// Mirrors `mbSoundSample::playSound` (`0x140332a70`) priority calculation:
 // 0 for 2D or looping sounds (`flags & 3`), else `[2, 255]` from priority nibble and distance.
 [[nodiscard]] inline std::int32_t compute_sound_priority(
     std::uint32_t flags, float distance_sq, float distance_priority_factor) noexcept {
@@ -296,8 +296,8 @@ struct MixerMusicTrack {
 }
 
 // Reconstructs deterministic MSVCRT `rand()` sequence (`mbSoundManager::playSoundAtPosition`
-// `0x140332ac0` +0x1ee, `mbSoundManager::setChannelPropertiesAndPlay` `0x140332d80` +0x155,
-// `mbMusicManager::update` `0x140290f60` +0x480: `seed = seed * 0x343fd + 0x269ec3`,
+// `0x140333880` +0x1ee, `mbSoundManager::setChannelPropertiesAndPlay` `0x140333b40` +0x155,
+// `mbMusicManager::update` `0x1402910c0` +0x480: `seed = seed * 0x343fd + 0x269ec3`,
 // `(seed >> 16) & 0x7fff`).
 struct AudioPrng {
     std::uint32_t state = 1U;
@@ -399,7 +399,7 @@ public:
         last_played_time_.assign(music_tracks_.size(), 0.0);
     }
 
-    // Plays a sound event mirroring `mbSoundManager::playSoundAtPosition` (`0x140332ac0`).
+    // Plays a sound event mirroring `mbSoundManager::playSoundAtPosition` (`0x140333880`).
     // Returns channel index `[0, max_virtual_channels)` or `-1` when suppressed/missing;
     // `last_sound_channel()` reports the same value, including `-1`.
     // `velocity` is accepted for API parity; Doppler is not implemented.
@@ -417,7 +417,7 @@ public:
         return slot;
     }
 
-    // Plays 2D sound at listener origin (`mbGame::playSound` `0x1400e3900`).
+    // Plays 2D sound at listener origin (`mbGame::playSound` `0x1400e3a60`).
     std::int32_t play_sound_2d(std::int32_t sound_no, std::uint32_t extra_flags = 0U) {
         return play_sound_at_position(sound_no, listener_.position, {},
                                       extra_flags | wse::asset::kSoundFlag2D);
@@ -431,7 +431,7 @@ public:
         flush_channel_ends();
     }
 
-    // Mirrors `mbSoundManager::stopAllSounds` (`0x140332770`):
+    // Mirrors `mbSoundManager::stopAllSounds` (`0x140333530`):
     // `include_non_looping == false` stops looping channels only; `true` stops all sound channels.
     void stop_all_sounds(bool include_non_looping) {
         for (std::size_t i = 0; i < channels_.size(); ++i) {
@@ -447,7 +447,7 @@ public:
         flush_channel_ends();
     }
 
-    // Mirrors `mbSoundManager::getSoundProgress` (`0x1403326d0`): returns `0..100` or `-1`.
+    // Mirrors `mbSoundManager::getSoundProgress` (`0x140333490`): returns `0..100` or `-1`.
     [[nodiscard]] std::int32_t get_sound_progress(std::int32_t channel_no) const noexcept {
         if (channel_no < 0 || static_cast<std::size_t>(channel_no) >= channels_.size()) {
             return -1;
@@ -493,7 +493,7 @@ public:
         return channels_[static_cast<std::size_t>(channel_no)].ignore_geometry;
     }
 
-    // Mirrors `mbSoundManager::updateOcclusionDistances` (`0x140333260`):
+    // Mirrors `mbSoundManager::updateOcclusionDistances` (`0x140334020`):
     // hysteresis around `occlusion_max_distance * 0.9` / `* 1.1`.
     void update_occlusion_distances() noexcept {
         if (!config_.occlusion_filter || config_.occlusion_max_distance <= 0.0f) {
@@ -532,7 +532,7 @@ public:
         return n;
     }
 
-    // Music control (`0x140290c40`, `0x140290e60`, `0x140290f60`).
+    // Music control (`0x140290da0`, `0x140290fc0`, `0x1402910c0`).
     void play_track(std::int32_t track_no, std::int32_t option = 0) {
         if (track_no < 0 || static_cast<std::size_t>(track_no) >= music_tracks_.size()) {
             return;
@@ -572,7 +572,7 @@ public:
     }
     [[nodiscard]] bool is_music_fading() const noexcept { return fading_out_; }
 
-    // Runs `mbMusicManager::frameMove` (`0x140290c40`): `0.5s` update tick and `5.0s` fade.
+    // Runs `mbMusicManager::frameMove` (`0x140290da0`): `0.5s` update tick and `5.0s` fade.
     // `now_seconds` becomes the mixer clock, which `mix_frames` then advances by the
     // audio it renders. A clock that jumps backwards (a new mission or session
     // timer) re-bases every stored timestamp instead of stalling the scheduler.
@@ -720,7 +720,7 @@ private:
             return -1;
         }
 
-        // `0x140332ac0` +0x120: follow up to 4 LOD fallback sounds when `distance > 15.0f`
+        // `0x140333880` +0x120: follow up to 4 LOD fallback sounds when `distance > 15.0f`
         // and `kSoundFlagLodFallback` (`0x1000000`) is set.
         std::size_t snd_idx = static_cast<std::size_t>(sound_no);
         const wse::core::WseVec4 delta0 = position - listener_.position;
@@ -1141,7 +1141,7 @@ private:
             }
         }
 
-        // Recency weight `(now + 1 - last_played) + 500.0` (`0x140290f60`).
+        // Recency weight `(now + 1 - last_played) + 500.0` (`0x1402910c0`).
         const double time_plus_one = now_s + 1.0;
         double total_weight = 0.0;
         for (std::size_t i = 0; i < music_tracks_.size(); ++i) {
@@ -1180,7 +1180,7 @@ private:
         return -1;
     }
 
-    // Mirrors `mbMusicManager::update` (`0x140290f60`).
+    // Mirrors `mbMusicManager::update` (`0x1402910c0`).
     void update_music_scheduler(double now_s) {
         if (music_slots_[0].active) {
             const auto cur_idx = static_cast<std::size_t>(music_slots_[0].track_no);

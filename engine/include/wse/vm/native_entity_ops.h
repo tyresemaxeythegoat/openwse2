@@ -92,28 +92,28 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
 
     switch (opcode) {
     // Player & Multiplayer
-    case 47: // set_player_troop (0x1401c6548)
+    case 47: // set_player_troop (0x1401c66c8)
         if (world.is_valid_troop(narrow[0])) {
             world.player_troop_no = narrow[0];
         }
         return NativeDispatch::handled;
 
-    case 394: // multiplayer_send_message_to_player (0x1401c7958)
+    case 394: // multiplayer_send_message_to_player (0x1401c7ad8)
         native_record_mp_message(narrow[0], narrow[1], {}, {}, ctx);
         return NativeDispatch::handled;
-    case 395: // multiplayer_send_int_to_player (0x1401c7a0d)
+    case 395: // multiplayer_send_int_to_player (0x1401c7b8d)
         native_record_mp_message(narrow[0], narrow[1], wide.subspan(2, 1), {}, ctx);
         return NativeDispatch::handled;
-    case 396: // multiplayer_send_2_int_to_player (0x1401c7aca)
+    case 396: // multiplayer_send_2_int_to_player (0x1401c7c4a)
         native_record_mp_message(narrow[0], narrow[1], wide.subspan(2, 2), {}, ctx);
         return NativeDispatch::handled;
-    case 397: // multiplayer_send_3_int_to_player (0x1401c7b92)
+    case 397: // multiplayer_send_3_int_to_player (0x1401c7d12)
         native_record_mp_message(narrow[0], narrow[1], wide.subspan(2, 3), {}, ctx);
         return NativeDispatch::handled;
-    case 398: // multiplayer_send_4_int_to_player (0x1401c7c50)
+    case 398: // multiplayer_send_4_int_to_player (0x1401c7dd0)
         native_record_mp_message(narrow[0], narrow[1], wide.subspan(2, 4), {}, ctx);
         return NativeDispatch::handled;
-    case 399: { // multiplayer_send_string_to_player (0x1401c7d19)
+    case 399: { // multiplayer_send_string_to_player (0x1401c7e99)
         const std::uint8_t tag2 = wse_tag_at(tags, 2);
         if (world.is_valid_player(narrow[0]) && wse_string_register_ok(narrow[2], tag2, banks)) {
             const std::u16string parsed = native_resolve_and_parse(narrow[2], tag2, ctx);
@@ -125,15 +125,15 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         return NativeDispatch::handled;
     }
 
-    case 400: // get_max_players (0x1401c7e4c)
+    case 400: // get_max_players (0x1401c7fcc)
         store_lvalue(dst, static_cast<std::int64_t>(world.max_players), ctx, locals);
         return NativeDispatch::handled;
-    case 401: // player_is_active (0x1401c7e73)
+    case 401: // player_is_active (0x1401c7ff3)
         return (narrow[0] >= 0 && narrow[0] < world.max_players &&
                 world.is_valid_player(narrow[0]))
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 402: // player_get_team_no (0x1401c7ec6)
+    case 402: // player_get_team_no (0x1401c8046)
         if (world.is_valid_player(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -141,12 +141,12 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 403: // player_set_team_no (0x1401c7f0d)
+    case 403: // player_set_team_no (0x1401c808d)
         if (world.is_valid_player(narrow[0]) && narrow[1] >= 0 && narrow[1] < 4) {
             world.players[static_cast<std::size_t>(narrow[0])].team_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 404: // player_get_troop_id (0x1401c7f6a)
+    case 404: // player_get_troop_id (0x1401c80ea)
         if (world.is_valid_player(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -154,13 +154,13 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 405: // player_set_troop_id (0x1401c7fb1)
+    case 405: // player_set_troop_id (0x1401c8131)
         if (world.is_valid_player(narrow[0]) &&
             (narrow[1] == -1 || world.is_valid_troop(narrow[1]))) {
             world.players[static_cast<std::size_t>(narrow[0])].troop_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 406: // player_get_agent_id (0x1401c8013)
+    case 406: // player_get_agent_id (0x1401c8193)
         if (world.is_valid_player(narrow[1])) {
             auto& player = world.players[static_cast<std::size_t>(narrow[1])];
             if (!world.is_valid_agent(player.agent_no)) {
@@ -169,7 +169,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             store_lvalue(dst, static_cast<std::int64_t>(player.agent_no), ctx, locals);
         }
         return NativeDispatch::handled;
-    case 407: // player_get_gold (0x1401c809e)
+    case 407: // player_get_gold (0x1401c821e)
         if (world.is_valid_player(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -177,46 +177,46 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 408: // player_set_gold (0x1401c80e5)
+    case 408: // player_set_gold (0x1401c8265)
         if (world.is_valid_player(narrow[0]) && narrow[1] >= 0) {
             const std::int32_t cap = narrow[2] > 0 ? narrow[2] : 1000000000;
             world.players[static_cast<std::size_t>(narrow[0])].gold =
                 std::min(narrow[1], cap);
         }
         return NativeDispatch::handled;
-    case 430: // player_is_admin (0x1401c86ed)
+    case 430: // player_is_admin (0x1401c886d)
         return (world.is_valid_player(narrow[0]) &&
                 world.players[static_cast<std::size_t>(narrow[0])].is_admin)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
 
     // Quests
-    case 200: // check_quest_active (0x1401c6f8c)
+    case 200: // check_quest_active (0x1401c710c)
         return (world.is_valid_quest(narrow[0]) &&
                 world.quests[static_cast<std::size_t>(narrow[0])].is_active())
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 201: // check_quest_finished (0x1401c6fb9)
+    case 201: // check_quest_finished (0x1401c7139)
         return (world.is_valid_quest(narrow[0]) &&
                 world.quests[static_cast<std::size_t>(narrow[0])].is_completed())
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 202: // check_quest_succeeded (0x1401c6fe6)
+    case 202: // check_quest_succeeded (0x1401c7166)
         return (world.is_valid_quest(narrow[0]) &&
                 world.quests[static_cast<std::size_t>(narrow[0])].is_succeeded())
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 203: // check_quest_failed (0x1401c7013)
+    case 203: // check_quest_failed (0x1401c7193)
         return (world.is_valid_quest(narrow[0]) &&
                 world.quests[static_cast<std::size_t>(narrow[0])].is_failed())
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 204: // check_quest_concluded (0x1401c7040)
+    case 204: // check_quest_concluded (0x1401c71c0)
         return (world.is_valid_quest(narrow[0]) &&
                 world.quests[static_cast<std::size_t>(narrow[0])].is_concluded())
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 1113: { // add_quest_note_from_sreg (0x1401cdde9)
+    case 1113: { // add_quest_note_from_sreg (0x1401cdf69)
         const std::uint8_t tag2 = wse_tag_at(tags, 2);
         if (wse_string_register_ok(narrow[2], tag2, banks) &&
             world.is_valid_quest(narrow[0]) &&
@@ -229,7 +229,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         }
         return NativeDispatch::handled;
     }
-    case 1280: // start_quest (0x1401cfc8b)
+    case 1280: // start_quest (0x1401cfe0b)
         if (world.is_valid_quest(narrow[0])) {
             auto& q = world.quests[static_cast<std::size_t>(narrow[0])];
             q.giver_troop_no =
@@ -241,7 +241,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1281: // complete_quest (0x1401cfccd)
+    case 1281: // complete_quest (0x1401cfe4d)
         if (world.is_valid_quest(narrow[0])) {
             auto& q = world.quests[static_cast<std::size_t>(narrow[0])];
             if ((q.template_flags & 2U) != 0U) {
@@ -251,29 +251,29 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1282: // succeed_quest (0x1401cfcf2)
+    case 1282: // succeed_quest (0x1401cfe72)
         if (world.is_valid_quest(narrow[0])) {
             world.quests[static_cast<std::size_t>(narrow[0])].progression_flags |= 0x1400U;
         }
         return NativeDispatch::handled;
-    case 1283: // fail_quest (0x1401cfd17)
+    case 1283: // fail_quest (0x1401cfe97)
         if (world.is_valid_quest(narrow[0])) {
             world.quests[static_cast<std::size_t>(narrow[0])].progression_flags |= 0x1800U;
         }
         return NativeDispatch::handled;
-    case 1284: // cancel_quest (0x1401cfd3c)
+    case 1284: // cancel_quest (0x1401cfebc)
         if (world.is_valid_quest(narrow[0])) {
             world.quests[static_cast<std::size_t>(narrow[0])].progression_flags = 0U;
         }
         return NativeDispatch::handled;
-    case 1286: // conclude_quest (0x1401cfd92)
+    case 1286: // conclude_quest (0x1401cff12)
         if (world.is_valid_quest(narrow[0])) {
             world.quests[static_cast<std::size_t>(narrow[0])].progression_flags |= 0x1000U;
         }
         return NativeDispatch::handled;
 
     // Audio, Terrain, Presentation, UI
-    case 599: // play_sound_at_position (0x1401ca66e)
+    case 599: // play_sound_at_position (0x1401ca7ee)
         if (narrow[0] >= 0 && wse_register_ok(narrow[1])) {
             const wse::core::WseVec4 pos =
                 ctx.positions[static_cast<std::size_t>(narrow[1])].o;
@@ -285,7 +285,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 600: // play_sound (0x1401ca75d)
+    case 600: // play_sound (0x1401ca8dd)
         if (narrow[0] >= 0) {
             world.played_sounds.push_back(
                 game::WseBattleEvent{0, narrow[0], -1, narrow[1], {}});
@@ -295,13 +295,13 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 791: // position_set_z_to_ground_level (0x1401cbd9b)
+    case 791: // position_set_z_to_ground_level (0x1401cbf1b)
         if (wse_register_ok(narrow[0])) {
             ctx.positions[static_cast<std::size_t>(narrow[0])].o.z = world.ground_level_z;
         }
         return NativeDispatch::handled;
-    case 900: // start_presentation (0x1401cbf02)
-        // The queued 0x0f entry is consumed only by `mbMapWindow::frameMove` (0x140117f90), which
+    case 900: // start_presentation (0x1401cc082)
+        // The queued 0x0f entry is consumed only by `mbMapWindow::frameMove` (0x1401180f0), which
         // `step_world_frame` runs on campaign frames alone. During a mission (safety deviation:
         // retail's mission-side path is not reconstructed) only `active_presentation_no` is set,
         // since a queued entry would never drain there and would reopen a stale presentation
@@ -315,36 +315,36 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 901: // start_background_presentation (0x1401cbf2d)
+    case 901: // start_background_presentation (0x1401cc0ad)
         if (ctx.currentCaller == 8 && narrow[0] >= 0) {
             world.active_presentation_no = narrow[0];
             world.presentation_background = true;
         }
         return NativeDispatch::handled;
-    case 902: // presentation_set_duration (0x1401cbf60)
+    case 902: // presentation_set_duration (0x1401cc0e0)
         if (statement.numOperands < 2 ||
             (narrow[1] >= 0 && narrow[1] == world.active_presentation_no)) {
             world.presentation_duration = static_cast<std::int32_t>(wide[0]);
         } else if (world.lighting.has_scene && narrow[1] >= 0) {
-            // Mission branch (`0x1401cc016`): the conversation window's container for that
-            // presentation (`getPresentationContainer` `0x140088f00`) gets the duration.
+            // Mission branch (`0x1401cc196`): the conversation window's container for that
+            // presentation (`getPresentationContainer` `0x140089060`) gets the duration.
             world.m6.ui.mission_duration_requests.emplace_back(
                 narrow[1], static_cast<std::int32_t>(std::clamp<std::int64_t>(
                                wide[0], 0, std::numeric_limits<std::int32_t>::max())));
         }
         return NativeDispatch::handled;
-    case 903: { // is_presentation_active (0x1401cc09d)
+    case 903: { // is_presentation_active (0x1401cc21d)
         if (narrow[0] >= 0 && world.active_presentation_no == narrow[0]) {
             return NativeDispatch::handled;
         }
-        // Mission branch (`0x1401cc135`): any open conversation-window container for it.
+        // Mission branch (`0x1401cc2b5`): any open conversation-window container for it.
         const auto& open = world.m6.ui.active_presentations;
         const bool open_in_mission =
             world.lighting.has_scene && narrow[0] >= 0 &&
             std::find(open.begin(), open.end(), narrow[0]) != open.end();
         return open_in_mission ? NativeDispatch::handled : NativeDispatch::condition_false;
     }
-    case 910: { // create_text_overlay (0x1401cc194)
+    case 910: { // create_text_overlay (0x1401cc314)
         const std::uint8_t tag1 = wse_tag_at(tags, 1);
         if (world.active_presentation_no >= 0 && wse_string_register_ok(narrow[1], tag1, banks)) {
             game::WsePresentationOverlay ov{};
@@ -352,7 +352,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             ov.text = native_resolve_and_parse(narrow[1], tag1, ctx);
             ov.val = narrow[2];
             // Like every create opcode, the overlay joins the `set_container_overlay` (945)
-            // container (`createTextOverlay` `0x140209a90` adds it to that overlay's widget).
+            // container (`createTextOverlay` `0x140209c10` adds it to that overlay's widget).
             ov.m5.container_overlay_no = world.m5.current_container_overlay_no;
             ov.m5.create_opcode = 910;
             const auto id = static_cast<std::int64_t>(world.overlays.size());
@@ -361,72 +361,72 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         }
         return NativeDispatch::handled;
     }
-    case 920: { // overlay_set_text (0x1401cc511)
+    case 920: { // overlay_set_text (0x1401cc691)
         const std::uint8_t tag1 = wse_tag_at(tags, 1);
         if (world.is_valid_overlay(narrow[0]) && wse_string_register_ok(narrow[1], tag1, banks)) {
             auto& ov = world.overlays[static_cast<std::size_t>(narrow[0])];
             ov.text = native_resolve_and_parse(narrow[1], tag1, ctx);
-            // `setOverlayText` (`0x14020df90`) -> `rglWidget::setText` (`0x14031e330`), which
+            // `setOverlayText` (`0x14020e110`) -> `rglWidget::setText` (`0x14031f0f0`), which
             // re-measures a 912 button box at the current text size.
             ov.m5.text_measure_scale = ov.size;
         }
         return NativeDispatch::handled;
     }
-    case 921: // overlay_set_color (0x1401cc592)
+    case 921: // overlay_set_color (0x1401cc712)
         if (world.is_valid_overlay(narrow[0])) {
             world.overlays[static_cast<std::size_t>(narrow[0])].color =
                 static_cast<std::uint32_t>(narrow[1]);
         }
         return NativeDispatch::handled;
-    case 922: // overlay_set_alpha (0x1401cc5bc)
+    case 922: // overlay_set_alpha (0x1401cc73c)
         if (world.is_valid_overlay(narrow[0])) {
             world.overlays[static_cast<std::size_t>(narrow[0])].alpha =
                 static_cast<float>(narrow[1]) / 255.0f;
         }
         return NativeDispatch::handled;
-    case 925: // overlay_set_size (0x1401cc63a)
+    case 925: // overlay_set_size (0x1401cc7ba)
         if (world.is_valid_overlay(narrow[0]) && wse_register_ok(narrow[1])) {
             const auto& o = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
             world.overlays[static_cast<std::size_t>(narrow[0])].size = {o.x, o.y};
             world.overlays[static_cast<std::size_t>(narrow[0])].m5.size_set = true;
         }
         return NativeDispatch::handled;
-    case 926: // overlay_set_position (0x1401cc698)
+    case 926: // overlay_set_position (0x1401cc818)
         if (world.is_valid_overlay(narrow[0]) && wse_register_ok(narrow[1])) {
             const auto& o = ctx.positions[static_cast<std::size_t>(narrow[1])].o;
             world.overlays[static_cast<std::size_t>(narrow[0])].position = {o.x, o.y};
         }
         return NativeDispatch::handled;
-    case 927: // overlay_set_val (0x1401cc6f6)
+    case 927: // overlay_set_val (0x1401cc876)
         if (world.is_valid_overlay(narrow[0])) {
             world.overlays[static_cast<std::size_t>(narrow[0])].val = narrow[1];
         }
         return NativeDispatch::handled;
-    case 947: // overlay_set_display (0x1401ccdb6)
+    case 947: // overlay_set_display (0x1401ccf36)
         if (world.is_valid_overlay(narrow[0])) {
             world.overlays[static_cast<std::size_t>(narrow[0])].visible = (narrow[1] != 0);
         }
         return NativeDispatch::handled;
-    case 1107: // set_show_messages (0x1401cdbef)
+    case 1107: // set_show_messages (0x1401cdd6f)
         world.show_messages = (wide[0] != 0);
         return NativeDispatch::handled;
 
     // Sites, Visitors, Factions
-    case 1232: // remove_party (0x1401cf49f)
+    case 1232: // remove_party (0x1401cf61f)
         (void)world.remove_party(narrow[0]);
         return NativeDispatch::handled;
-    case 1261: // modify_visitors_at_site (0x1401cf657)
+    case 1261: // modify_visitors_at_site (0x1401cf7d7)
         if (world.is_valid_site(narrow[0])) {
             world.site_no_being_modified = narrow[0];
         }
         return NativeDispatch::handled;
-    case 1262: // reset_visitors (0x1401cf676)
+    case 1262: // reset_visitors (0x1401cf7f6)
         if (world.is_valid_site(world.site_no_being_modified)) {
             world.sites[static_cast<std::size_t>(world.site_no_being_modified)]
                 .visitors.clear();
         }
         return NativeDispatch::handled;
-    case 1263: // set_visitor (0x1401cf6a8)
+    case 1263: // set_visitor (0x1401cf828)
         if (world.is_valid_site(world.site_no_being_modified) &&
             narrow[0] >= 0 && narrow[0] < game::kMaxEntryPoints) {
             auto& visitors =
@@ -441,7 +441,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1264: // set_visitors (0x1401cf746)
+    case 1264: // set_visitors (0x1401cf8c6)
         if (world.is_valid_site(world.site_no_being_modified) &&
             narrow[0] >= 0 && narrow[0] < game::kMaxEntryPoints &&
             world.is_valid_troop(narrow[1]) && narrow[2] > 0) {
@@ -452,7 +452,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1270: // set_relation (0x1401cf910)
+    case 1270: // set_relation (0x1401cfa90)
         if (world.is_valid_faction(narrow[0]) && world.is_valid_faction(narrow[1])) {
             const float rel = std::clamp(static_cast<float>(narrow[2]) / 100.0f, -1.0f, 1.0f);
             world.factions[static_cast<std::size_t>(narrow[0])].set_relation(
@@ -463,14 +463,14 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         return NativeDispatch::handled;
 
     // Troops
-    case 1505: // troop_set_type (0x1401d01f0)
+    case 1505: // troop_set_type (0x1401d0370)
         if (world.is_valid_troop(narrow[0])) {
             const std::int32_t hi = std::max<std::int32_t>(0, world.num_skins - 1);
             world.troops[static_cast<std::size_t>(narrow[0])].set_skin_no(
                 std::clamp(narrow[1], 0, hi));
         }
         return NativeDispatch::handled;
-    case 1506: // troop_get_type (0x1401d0233)
+    case 1506: // troop_get_type (0x1401d03b3)
         if (world.is_valid_troop(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -478,7 +478,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1509: // troop_set_auto_equip (0x1401d02d0)
+    case 1509: // troop_set_auto_equip (0x1401d0450)
         if (world.is_valid_troop(narrow[0])) {
             auto& tr = world.troops[static_cast<std::size_t>(narrow[0])];
             if (wide[1] == 0) {
@@ -490,7 +490,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1516: // troop_get_class (0x1401d043d)
+    case 1516: // troop_get_class (0x1401d05bd)
         if (world.is_valid_troop(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -498,12 +498,12 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1517: // troop_set_class (0x1401d0484)
+    case 1517: // troop_set_class (0x1401d0604)
         if (world.is_valid_troop(narrow[0])) {
             world.troops[static_cast<std::size_t>(narrow[0])].class_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1520: // troop_raise_attribute (0x1401d04b3)
+    case 1520: // troop_raise_attribute (0x1401d0633)
         if (world.is_valid_troop(narrow[0]) && narrow[2] != 0 &&
             narrow[1] >= 0 && narrow[1] < game::kMaxAttributes) {
             world.troops[static_cast<std::size_t>(narrow[0])].raise_attribute(
@@ -512,7 +512,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                 world.attribute_limit);
         }
         return NativeDispatch::handled;
-    case 1521: // troop_raise_skill (0x1401d050b)
+    case 1521: // troop_raise_skill (0x1401d068b)
         if (world.is_valid_troop(narrow[0]) && narrow[2] != 0 &&
             narrow[1] >= 0 && narrow[1] < game::kMaxSkills) {
             world.troops[static_cast<std::size_t>(narrow[0])].raise_skill(
@@ -521,7 +521,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                 world.skills[static_cast<std::size_t>(game::kSkillIronflesh)].max_level);
         }
         return NativeDispatch::handled;
-    case 1522: // troop_raise_proficiency (0x1401d0563)
+    case 1522: // troop_raise_proficiency (0x1401d06e3)
         if (world.is_valid_troop(narrow[0]) && wide[2] >= 0 &&
             narrow[1] >= 0 && narrow[1] < game::kMaxProficiencies) {
             auto& prof = world.troops[static_cast<std::size_t>(narrow[0])]
@@ -530,26 +530,26 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             prof = std::clamp(prof + gain, 0.0f, 1000.0f);
         }
         return NativeDispatch::handled;
-    case 1523: // troop_raise_proficiency_linear (0x1401d05ca)
+    case 1523: // troop_raise_proficiency_linear (0x1401d074a)
         if (world.is_valid_troop(narrow[0]) && narrow[2] != 0 &&
             narrow[1] >= 0 && narrow[1] < game::kMaxProficiencies) {
             world.troops[static_cast<std::size_t>(narrow[0])]
                 .raise_proficiency_linear(narrow[1], narrow[2]);
         }
         return NativeDispatch::handled;
-    case 1528: // troop_add_gold (0x1401d066a)
+    case 1528: // troop_add_gold (0x1401d07ea)
         if (world.is_valid_troop(narrow[0]) && narrow[1] != 0) {
             auto& g = world.troops[static_cast<std::size_t>(narrow[0])].gold;
             g = std::max<std::int32_t>(0, g + narrow[1]);
         }
         return NativeDispatch::handled;
-    case 1529: // troop_remove_gold (0x1401d069c)
+    case 1529: // troop_remove_gold (0x1401d081c)
         if (world.is_valid_troop(narrow[0]) && narrow[1] > 0) {
             auto& g = world.troops[static_cast<std::size_t>(narrow[0])].gold;
             g = std::max<std::int32_t>(0, g - narrow[1]);
         }
         return NativeDispatch::handled;
-    case 1530: // troop_add_item (0x1401d06ce)
+    case 1530: // troop_add_item (0x1401d084e)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_item(narrow[1])) {
             auto& tr = world.troops[static_cast<std::size_t>(narrow[0])];
             const std::int32_t free_slot = tr.get_first_free_inventory_slot(
@@ -561,12 +561,12 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1532: // troop_clear_inventory (0x1401d0859)
+    case 1532: // troop_clear_inventory (0x1401d09d9)
         if (world.is_valid_troop(narrow[0])) {
             world.troops[static_cast<std::size_t>(narrow[0])].clear_inventory();
         }
         return NativeDispatch::handled;
-    case 1535: // troop_add_items (0x1401d094b)
+    case 1535: // troop_add_items (0x1401d0acb)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_item(narrow[1]) &&
             narrow[2] > 0) {
             auto& tr = world.troops[static_cast<std::size_t>(narrow[0])];
@@ -584,7 +584,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1536: // troop_remove_items (0x1401d0a47)
+    case 1536: // troop_remove_items (0x1401d0bc7)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_item(narrow[1]) &&
             narrow[2] > 0) {
             auto& tr = world.troops[static_cast<std::size_t>(narrow[0])];
@@ -611,7 +611,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             ctx.registers[0] = value_sum;
         }
         return NativeDispatch::handled;
-    case 1537: // troop_inventory_slot_get_item_amount (0x1401d0b64)
+    case 1537: // troop_inventory_slot_get_item_amount (0x1401d0ce4)
         if (world.is_valid_troop(narrow[1])) {
             const auto* slot = native_troop_slot_ptr(
                 world.troops[static_cast<std::size_t>(narrow[1])], narrow[2], world);
@@ -620,7 +620,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1538: // troop_inventory_slot_get_item_max_amount (0x1401d0c20)
+    case 1538: // troop_inventory_slot_get_item_max_amount (0x1401d0da0)
         if (world.is_valid_troop(narrow[1])) {
             const auto* slot = native_troop_slot_ptr(
                 world.troops[static_cast<std::size_t>(narrow[1])], narrow[2], world);
@@ -633,7 +633,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1539: // troop_loot_troop (0x1401d0cdc)
+    case 1539: // troop_loot_troop (0x1401d0e5c)
         if (narrow[2] > 0 && world.is_valid_troop(narrow[0]) &&
             world.is_valid_troop(narrow[1])) {
             auto& dst_tr = world.troops[static_cast<std::size_t>(narrow[0])];
@@ -677,7 +677,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1540: // troop_get_inventory_capacity (0x1401d0f25)
+    case 1540: // troop_get_inventory_capacity (0x1401d10a5)
         if (world.is_valid_troop(narrow[1])) {
             const std::int32_t cap =
                 world.troops[static_cast<std::size_t>(narrow[1])].get_num_inventory_slots(
@@ -689,7 +689,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             store_lvalue(dst, 0, ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1541: { // troop_get_inventory_slot (0x1401d0f8e)
+    case 1541: { // troop_get_inventory_slot (0x1401d110e)
         std::int64_t out = -1;
         if (world.is_valid_troop(narrow[1])) {
             const auto* slot = native_troop_slot_ptr(
@@ -701,7 +701,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         store_lvalue(dst, out, ctx, locals);
         return NativeDispatch::handled;
     }
-    case 1542: { // troop_get_inventory_slot_modifier (0x1401d107e)
+    case 1542: { // troop_get_inventory_slot_modifier (0x1401d11fe)
         std::int64_t out = -1;
         if (world.is_valid_troop(narrow[1])) {
             const auto* slot = native_troop_slot_ptr(
@@ -714,13 +714,13 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         store_lvalue(dst, out, ctx, locals);
         return NativeDispatch::handled;
     }
-    case 1550: // troop_set_faction (0x1401d12a0)
+    case 1550: // troop_set_faction (0x1401d1420)
         if (world.is_valid_troop(narrow[0]) && world.is_valid_faction(narrow[1])) {
             world.troops[static_cast<std::size_t>(narrow[0])].faction_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 2170: // store_skill_level (0x1401dd8e0)
-        // `getTroopSkill(troop, skill, true)` (`0x1400dcbf0`): includes
+    case 2170: // store_skill_level (0x1401dda60)
+        // `getTroopSkill(troop, skill, true)` (`0x1400dcd50`): includes
         // `game_get_skill_modifier_for_troop`.
         if (world.is_valid_troop(narrow[2]) &&
             narrow[1] >= 0 && narrow[1] < game::kMaxSkills) {
@@ -728,7 +728,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2171: // store_character_level (0x1401dd92b)
+    case 2171: // store_character_level (0x1401ddaab)
         if (world.is_valid_troop(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -736,7 +736,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2172: // store_attribute_level (0x1401dd972)
+    case 2172: // store_attribute_level (0x1401ddaf2)
         if (world.is_valid_troop(narrow[1]) &&
             narrow[2] >= 0 && narrow[2] < game::kMaxAttributes) {
             store_lvalue(dst,
@@ -746,7 +746,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2175: // store_troop_health (0x1401dda1f)
+    case 2175: // store_troop_health (0x1401ddb9f)
         if (world.is_valid_troop(narrow[1])) {
             const auto& tr = world.troops[static_cast<std::size_t>(narrow[1])];
             if (wide[2] == 0) {
@@ -763,7 +763,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 2176: // store_proficiency_level (0x1401ddabf)
+    case 2176: // store_proficiency_level (0x1401ddc3f)
         if (world.is_valid_troop(narrow[1]) &&
             narrow[2] >= 0 && narrow[2] < game::kMaxProficiencies) {
             store_lvalue(dst,
@@ -775,7 +775,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         return NativeDispatch::handled;
 
     // Parties & Campaign
-    case 1601: // party_get_num_companions (0x1401d14a7)
+    case 1601: // party_get_num_companions (0x1401d1627)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -784,7 +784,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1602: // party_get_num_prisoners (0x1401d14f2)
+    case 1602: // party_get_num_prisoners (0x1401d1672)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -793,14 +793,14 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1603: // party_set_flags (0x1401d153d)
+    case 1603: // party_set_flags (0x1401d16bd)
         if (world.is_valid_party(narrow[0])) {
             auto& fl = world.parties[static_cast<std::size_t>(narrow[0])].flags;
             const auto mask = static_cast<std::uint64_t>(wide[1]);
             fl = (wide[2] == 0) ? (fl & ~mask) : (fl | mask);
         }
         return NativeDispatch::handled;
-    case 1608: // party_get_current_terrain (0x1401d171e)
+    case 1608: // party_get_current_terrain (0x1401d189e)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -809,7 +809,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1610: // party_add_members (0x1401d17ac)
+    case 1610: // party_add_members (0x1401d192c)
         if (world.is_valid_party(narrow[0]) && world.is_valid_troop(narrow[1]) &&
             narrow[2] > 0) {
             ctx.registers[0] = static_cast<std::int64_t>(
@@ -817,7 +817,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                     .add_members(narrow[1], narrow[2], false));
         }
         return NativeDispatch::handled;
-    case 1615: // party_remove_members (0x1401d1986)
+    case 1615: // party_remove_members (0x1401d1b06)
         ctx.registers[0] = 0;
         if (world.is_valid_party(narrow[0]) && world.is_valid_troop(narrow[1]) &&
             narrow[2] > 0) {
@@ -826,35 +826,35 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                     .remove_members(narrow[1], narrow[2], false));
         }
         return NativeDispatch::handled;
-    case 1620: // party_set_faction (0x1401d1c85)
+    case 1620: // party_set_faction (0x1401d1e05)
         if (world.is_valid_party(narrow[0]) && world.is_valid_faction(narrow[1])) {
             world.parties[static_cast<std::size_t>(narrow[0])].faction_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1625: // party_get_position (0x1401d1da8)
+    case 1625: // party_get_position (0x1401d1f28)
         if (wse_register_ok(narrow[0]) && world.is_valid_party(narrow[1])) {
             ctx.positions[static_cast<std::size_t>(narrow[0])] =
                 world.parties[static_cast<std::size_t>(narrow[1])].position;
         }
         return NativeDispatch::handled;
-    case 1626: // party_set_position (0x1401d1e51)
+    case 1626: // party_set_position (0x1401d1fd1)
         if (world.is_valid_party(narrow[0]) && wse_register_ok(narrow[1])) {
             world.parties[static_cast<std::size_t>(narrow[0])].position =
                 ctx.positions[static_cast<std::size_t>(narrow[1])];
         }
         return NativeDispatch::handled;
-    case 1640: // party_set_ai_behavior (0x1401d2317)
+    case 1640: // party_set_ai_behavior (0x1401d2497)
         if (world.is_valid_party(narrow[0])) {
             world.parties[static_cast<std::size_t>(narrow[0])].behavior = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1641: // party_set_ai_object (0x1401d2362)
+    case 1641: // party_set_ai_object (0x1401d24e2)
         if (world.is_valid_party(narrow[0]) &&
             (narrow[1] == -1 || world.is_valid_party(narrow[1]))) {
             world.parties[static_cast<std::size_t>(narrow[0])].behavior_object = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1650: // party_get_num_companion_stacks (0x1401d25e9)
+    case 1650: // party_get_num_companion_stacks (0x1401d2769)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -863,7 +863,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1651: // party_get_num_prisoner_stacks (0x1401d2634)
+    case 1651: // party_get_num_prisoner_stacks (0x1401d27b4)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -872,7 +872,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1652: // party_stack_get_troop_id (0x1401d267f)
+    case 1652: // party_stack_get_troop_id (0x1401d27ff)
         if (world.is_valid_party(narrow[1])) {
             const auto& st = world.parties[static_cast<std::size_t>(narrow[1])].stacks;
             if (narrow[2] >= 0 && static_cast<std::size_t>(narrow[2]) < st.size()) {
@@ -883,7 +883,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1653: // party_stack_get_size (0x1401d26ec)
+    case 1653: // party_stack_get_size (0x1401d286c)
         if (world.is_valid_party(narrow[1])) {
             const auto& st = world.parties[static_cast<std::size_t>(narrow[1])].stacks;
             if (narrow[2] >= 0 && static_cast<std::size_t>(narrow[2]) < st.size()) {
@@ -894,13 +894,13 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
             }
         }
         return NativeDispatch::handled;
-    case 1660: // party_attach_to_party (0x1401d2a10)
+    case 1660: // party_attach_to_party (0x1401d2b90)
         (void)world.attach_party(narrow[0], narrow[1]);
         return NativeDispatch::handled;
-    case 1661: // party_detach (0x1401d2a62)
+    case 1661: // party_detach (0x1401d2be2)
         (void)world.detach_party(narrow[0]);
         return NativeDispatch::handled;
-    case 1665: // party_get_cur_town (0x1401d2afa)
+    case 1665: // party_get_cur_town (0x1401d2c7a)
         if (world.is_valid_party(narrow[1])) {
             const auto& p = world.parties[static_cast<std::size_t>(narrow[1])];
             store_lvalue(dst,
@@ -908,7 +908,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1669: { // party_set_name (0x1401d2be7)
+    case 1669: { // party_set_name (0x1401d2d67)
         const std::uint8_t tag1 = wse_tag_at(tags, 1);
         if (world.is_valid_party(narrow[0]) && wse_string_register_ok(narrow[1], tag1, banks)) {
             world.parties[static_cast<std::size_t>(narrow[0])].name =
@@ -916,17 +916,17 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         }
         return NativeDispatch::handled;
     }
-    case 1676: // party_set_icon (0x1401d2f70)
+    case 1676: // party_set_icon (0x1401d30f0)
         if (world.is_valid_party(narrow[0]) && narrow[1] >= 0) {
             world.parties[static_cast<std::size_t>(narrow[0])].icon_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1677: // party_set_banner_icon (0x1401d3022)
+    case 1677: // party_set_banner_icon (0x1401d31a2)
         if (world.is_valid_party(narrow[0]) && narrow[1] >= 0) {
             world.parties[static_cast<std::size_t>(narrow[0])].banner_icon_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1680: // party_get_battle_opponent (0x1401d30de)
+    case 1680: // party_get_battle_opponent (0x1401d325e)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -935,7 +935,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1681: // party_get_icon (0x1401d31d6)
+    case 1681: // party_get_icon (0x1401d3356)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -943,7 +943,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1685: // party_get_skill_level (0x1401d3305)
+    case 1685: // party_get_skill_level (0x1401d3485)
         if (world.is_valid_party(narrow[1]) && narrow[2] >= 0 &&
             narrow[2] < game::kMaxSkills) {
             store_lvalue(dst,
@@ -956,7 +956,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         }
         return NativeDispatch::handled;
 
-    case 2156: // store_party_size (0x1401dd642)
+    case 2156: // store_party_size (0x1401dd7c2)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -964,7 +964,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2157: // store_party_size_wo_prisoners (0x1401dd68d)
+    case 2157: // store_party_size_wo_prisoners (0x1401dd80d)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -973,7 +973,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2158: { // store_troop_kind_count (0x1401dd6d8)
+    case 2158: { // store_troop_kind_count (0x1401dd858)
         std::int32_t count = 0;
         if (world.is_valid_party(world.main_party_no)) {
             count = world.parties[static_cast<std::size_t>(world.main_party_no)]
@@ -982,7 +982,7 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         store_lvalue(dst, static_cast<std::int64_t>(count), ctx, locals);
         return NativeDispatch::handled;
     }
-    case 2201: { // store_partner_faction (0x1401ddcea)
+    case 2201: { // store_partner_faction (0x1401dde6a)
         std::int32_t fac = world.partner_faction_no;
         if (world.is_valid_troop(world.conversation_partner_troop_no)) {
             fac = world.troops[static_cast<std::size_t>(world.conversation_partner_troop_no)]
@@ -991,10 +991,10 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         store_lvalue(dst, static_cast<std::int64_t>(fac), ctx, locals);
         return NativeDispatch::handled;
     }
-    case 2270: // store_current_hours (0x1401de26d)
+    case 2270: // store_current_hours (0x1401de3ed)
         store_lvalue(dst, static_cast<std::int64_t>(world.current_hours), ctx, locals);
         return NativeDispatch::handled;
-    case 2281: // store_distance_to_party_from_party (0x1401de32d)
+    case 2281: // store_distance_to_party_from_party (0x1401de4ad)
         if (world.is_valid_party(narrow[1]) && world.is_valid_party(narrow[2])) {
             const auto& p1 = world.parties[static_cast<std::size_t>(narrow[1])].position.o;
             const auto& p2 = world.parties[static_cast<std::size_t>(narrow[2])].position.o;

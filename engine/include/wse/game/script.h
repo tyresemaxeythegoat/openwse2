@@ -1,18 +1,18 @@
 // Module-system script records and the `scripts.txt` reader.
 //
 // Evidence (Ghidra 12.1.4 pseudocode plus PDB TPI):
-//   mbScript::readStream         0x14020f6a0  (?readStream@mbScript@@QEAAXAEAVrglStream@@H@Z)
-//   mbScriptManager::readStream  0x14020f7c0
-//   mbScriptManager::mapScripts  0x14020f9a0
+//   mbScript::readStream         0x14020f820  (?readStream@mbScript@@QEAAXAEAVrglStream@@H@Z)
+//   mbScriptManager::readStream  0x14020f940
+//   mbScriptManager::mapScripts  0x14020fb20
 //   mbScript layout              176 bytes, PDB type 0x1f7b8
 //     +0x00 m_id rglString, +0x48 m_interval float, +0x50 m_statementBlock
 //   mbScriptManager layout       272 bytes, PDB type 0xaeea
 //     +0x00 m_scripts mbScript*, +0x08 m_numScripts int32,
 //     +0x0c m_mappedScripts int32[65]
-//   Globals: g_scriptManager 0x14069fac0, count 0x14069fac8,
-//     mapped table 0x14069facc, name table 0x140615ad0.
-//   Format strings: "Script [%d] %s" 0x14055c680,
-//     "Unable to map script %s" 0x14055c690.
+//   Globals: g_scriptManager 0x1406a0af0, count 0x1406a0af8,
+//     mapped table 0x1406a0afc, name table 0x140616ad0.
+//   Format strings: "Script [%d] %s" 0x14055d6b0,
+//     "Unable to map script %s" 0x14055d6c0.
 //
 // `mbScriptManager::readStream` discards two strings (the retail header is
 // `scriptsfile version`), discards one int32 version, reads the int32 script
@@ -52,7 +52,7 @@ namespace wse::game {
 inline constexpr std::size_t kMaxScripts = 1u << 20;
 inline constexpr std::size_t kMappedScriptCount = 65;
 
-// Static 65-entry name table at 0x140615ad0, in retail order.
+// Static 65-entry name table at 0x140616ad0, in retail order.
 inline constexpr std::array<std::string_view, kMappedScriptCount> kMappedScriptNames = {
     "game_start",
     "game_quick_start",

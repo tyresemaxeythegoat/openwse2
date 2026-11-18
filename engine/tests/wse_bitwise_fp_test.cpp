@@ -471,7 +471,7 @@ void test_feval() {
     };
 
     // Constants, unary precedence (-2^2 == -4), right-assoc ^, and assignment.
-    // Retail mbBasicGame::parseString (0x140072338) turns literal '^' into
+    // Retail mbBasicGame::parseString (0x140072498) turns literal '^' into
     // '\n', so caret power expressions arrive via un-reparsed {sN} tokens.
     str_regs[3] = u"-2^2";
     str_regs[4] = u"(-2)^2";

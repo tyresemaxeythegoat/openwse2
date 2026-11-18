@@ -2,7 +2,7 @@
 // then `UiSession::handle_input` + `UiSession::drive_frame` + `UiRhiRenderer::render_tree`.
 //
 // Port infrastructure (no single retail counterpart): retail feeds the same states through
-// `rglWindowManager::frameMove` (`0x14032a0d0`); see `game::kUiStateEnter`.
+// `rglWindowManager::frameMove` (`0x14032ae90`); see `game::kUiStateEnter`.
 
 #pragma once
 

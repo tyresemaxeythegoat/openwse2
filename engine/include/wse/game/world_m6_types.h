@@ -162,7 +162,7 @@ struct WseNetBuffer {
         return static_cast<std::uint32_t>(static_cast<std::int64_t>(q));
     }
 
-    // Exact match for rglTransform::setRotation (0x1402b65d0) and inverse.
+    // Exact match for rglTransform::setRotation (0x1402b6840) and inverse.
     static void quat_to_transform(float w,
                                   float x,
                                   float y,
@@ -238,7 +238,7 @@ struct WseNetBuffer {
         }
     }
 
-    // 0x1401b5520 / 0x1401b63a0: vector4 pack/unpack (10 or 17 bits/axis).
+    // 0x1401b56a0 / 0x1401b6520: vector4 pack/unpack (10 or 17 bits/axis).
     void put_vector4(const wse::core::WseVec4& v, bool compressed) {
         const int bits = compressed ? 10 : 17;
         const float min_v = compressed ? -10.0f : -50.0f;
@@ -261,7 +261,7 @@ struct WseNetBuffer {
         return {rx, ry, rz, 0.0f};
     }
 
-    // 0x1401b5720 / 0x1401b6630: transform pack/unpack (origin + 4x12-bit quat).
+    // 0x1401b58a0 / 0x1401b67b0: transform pack/unpack (origin + 4x12-bit quat).
     void put_transform(const wse::core::WseTransform& t, bool compressed) {
         const int bits = compressed ? 10 : 17;
         const float min_v = compressed ? -10.0f : -50.0f;
@@ -629,7 +629,7 @@ struct WseM6AgentExt {
     bool can_multihit = false;
     std::int32_t multihit_limit = 0;
     std::int32_t crush_through_mode = 0;
-    std::uint32_t disabled_triggers = 0U; // bits 0..3 per 0x14002b860/0x14002b8a0
+    std::uint32_t disabled_triggers = 0U; // bits 0..3 per 0x14002b8b0/0x14002b8f0
     bool can_piercing = false;
     std::int32_t piercing_limit = 0;
 };
@@ -643,7 +643,7 @@ struct WseM6SiteExt {
     std::array<std::uint32_t, 6> terrain_keys{};
     std::string terrain_code{};
 
-    // Mirrors mbTerrainGenerator::getTerrainCode (0x140231430): keys[5..0].
+    // Mirrors mbTerrainGenerator::getTerrainCode (0x1402315b0): keys[5..0].
     void sync_terrain_code() {
         char buf[64]{};
         std::snprintf(buf, sizeof(buf), "0x%.8x%.8x%.8x%.8x%.8x%.8x",
@@ -652,7 +652,7 @@ struct WseM6SiteExt {
         terrain_code = buf;
     }
 
-    // Mirrors mbTerrainGenerator bitfield setters (from 0x1402315f0).
+    // Mirrors mbTerrainGenerator bitfield setters (from 0x140231770).
     void set_seed(int idx, std::int32_t val) {
         if (idx < 0 || idx > 2) {
             return;
@@ -838,12 +838,12 @@ struct WseM6UiExt {
     std::vector<std::int32_t> active_presentations{};
     // Mission (conversation window `0xc`) presentations requested by
     // `start_conversation_presentation` (4907) and not yet started:
-    // `mbConversationWindow::startPresentation` (`0x1400888a0`) pushes onto `+0x2298`, and
-    // `mbConversationWindow::updatePresentations` (`0x1400888c0`) starts them next frame.
+    // `mbConversationWindow::startPresentation` (`0x140088a00`) pushes onto `+0x2298`, and
+    // `mbConversationWindow::updatePresentations` (`0x140088a20`) starts them next frame.
     std::vector<std::int32_t> pending_conversation_presentations{};
     // `presentation_set_duration` (902) naming a mission presentation other than the one whose
     // trigger is running: (presentation, centiseconds), applied by `game::UiSession` (the retail
-    // mission branch writes the container found by `getPresentationContainer` `0x140088f00`).
+    // mission branch writes the container found by `getPresentationContainer` `0x140089060`).
     std::vector<std::pair<std::int32_t, std::int32_t>> mission_duration_requests{};
     std::unordered_map<std::int32_t, WseM6OverlayExt> overlay_ext{};
     std::unordered_map<std::int32_t, WseM6DynamicMenu> menus{};

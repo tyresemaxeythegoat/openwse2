@@ -2,11 +2,11 @@
 // and Warband Vfs texture path resolver.
 //
 // Reconstructed from v1.1.5.5 PE + PDB evidence:
-// - rglTexture (0x1aadd, 288 B), rglTexture::initDeviceObjects (0x140317710)
-// - rglResourceManager::tryGetTexture (0x1402f2f10)
-// - Search templates: "Textures\\%s" (0x14056b3f8), "TexturesHD\\%s" (0x14056b408),
-//   "%sTextures\\%s" (0x14056b418), "Textures\\languages\\%s\\%s" (0x14056b428),
-//   "%sTextures\\languages\\%s\\%s.dds" (0x14056b448)
+// - rglTexture (0x1aadd, 288 B), rglTexture::initDeviceObjects (0x1403184d0)
+// - rglResourceManager::tryGetTexture (0x1402f35a0)
+// - Search templates: "Textures\\%s" (0x14056c4a8), "TexturesHD\\%s" (0x14056c4b8),
+//   "%sTextures\\%s" (0x14056c4c8), "Textures\\languages\\%s\\%s" (0x14056c4d8),
+//   "%sTextures\\languages\\%s\\%s.dds" (0x14056c4f8)
 #pragma once
 
 #include <algorithm>
@@ -857,7 +857,7 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
 }
 
 // Animated/indexed frame count formula from rglTexture::initDeviceObjects
-// (0x1403177b7..0x1403177ce): 1 when (flags & 0x0F000000) == 0, else
+// (0x140318577..0x14031858e): 1 when (flags & 0x0F000000) == 0, else
 // ((flags >> 24) & 0xF) * 4 (4..60 frames).
 inline constexpr std::uint32_t texture_frame_count(std::uint32_t texture_flags) noexcept {
     return ((texture_flags & 0x0F000000U) != 0U)
@@ -866,21 +866,21 @@ inline constexpr std::uint32_t texture_frame_count(std::uint32_t texture_flags) 
 }
 
 // Resolves a texture identifier through the Warband search chain matching
-// rglResourceManager::tryGetTexture (0x1402f2f10..0x1402f335e) and
-// rglTexture::initDeviceObjects (0x140317710..0x14031813b).
+// rglResourceManager::tryGetTexture (0x1402f35a0..0x1402f39ee) and
+// rglTexture::initDeviceObjects (0x1403184d0..0x140318efb).
 // - Single-frame lookup (frame_index < 0): when the normalized name does not end with
-//   .dds/.jpg/.tga, tries "<name>.dds" (0x1402f2f41), "<name>" (0x1402f3081),
-//   "<name>.jpg" (0x1402f30ec), "<name>.tga" (0x1402f3203). Callers must check the
+//   .dds/.jpg/.tga, tries "<name>.dds" (0x1402f35d1), "<name>" (0x1402f3711),
+//   "<name>.jpg" (0x1402f377c), "<name>.tga" (0x1402f3893). Callers must check the
 //   returned extension before passing the file to parse_dds.
 // - Indexed multi-frame lookup (frame_index >= 0, (m_flags & 0x0F000000) != 0):
-//   formats "<stem>_<frame_index>.dds" (0x1403178b8..0x140317b3b, templates
-//   0x14056b380..0x14056b3d0) and skips TexturesHD (0x140317f45).
-// - Verified directory probe order (0x140317e77..0x140317ff4):
-//   1. module Textures/languages/<lang> (0x140317e77)
-//   2. module Textures (0x140317ee4)
-//   3. base TexturesHD (0x140317f45, before base language; skipped when frame_index >= 0)
-//   4. base Textures/languages/<lang> (0x140317fa2)
-//   5. base Textures (0x140317ff4)
+//   formats "<stem>_<frame_index>.dds" (0x140318678..0x1403188fb, templates
+//   0x14056c430..0x14056c480) and skips TexturesHD (0x140318d05).
+// - Verified directory probe order (0x140318c37..0x140318db4):
+//   1. module Textures/languages/<lang> (0x140318c37)
+//   2. module Textures (0x140318ca4)
+//   3. base TexturesHD (0x140318d05, before base language; skipped when frame_index >= 0)
+//   4. base Textures/languages/<lang> (0x140318d62)
+//   5. base Textures (0x140318db4)
 inline std::string resolve_texture_path(wse::platform::Vfs& vfs,
                                         std::string_view texture_name,
                                         std::string_view warband_root,
@@ -953,7 +953,7 @@ inline std::string resolve_texture_path(wse::platform::Vfs& vfs,
                 wse::game::vfs_join_path(module_root, "Textures/languages"), language);
             if (vfs.is_dir(mod_lang)) {
                 if (probe_dir(mod_lang)) return probe;
-                // Covers retail literal "%sTextures\languages\%s\%s.dds" (0x14056b448)
+                // Covers retail literal "%sTextures\languages\%s\%s.dds" (0x14056c4f8)
                 // when m_name already carries an extension.
                 if (frame_index < 0 && probe_file(mod_lang, clean + ".dds")) return probe;
             }

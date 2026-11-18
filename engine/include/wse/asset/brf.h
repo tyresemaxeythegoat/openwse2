@@ -2,12 +2,12 @@
 // grouper, and module.ini resource catalog loader.
 //
 // Reconstructed from v1.1.5.5 PE + PDB evidence:
-// - rglResourceManager (0xae1e, 1880 B), g_resourceManager (0x140623a40)
-// - rglResourceManager::readStream (0x1402efe10), registerResource (0x1402ef460)
-// - rglResourceManager::loadCoreResources (0x1402eedf0),
-//   loadOptionalShaderResource (0x1402eeec0), loadResourceFile (0x1402ef030)
-// - rglResourceManager::createMetaMesh (0x1402f29a0)
-// - mbCoreGame::readModuleCommands (0x14008cb40)
+// - rglResourceManager (0xae1e, 1880 B), g_resourceManager (0x140624a70)
+// - rglResourceManager::readStream (0x1402f04a0), registerResource (0x1402efaf0)
+// - rglResourceManager::loadCoreResources (0x1402ef480),
+//   loadOptionalShaderResource (0x1402ef550), loadResourceFile (0x1402ef6c0)
+// - rglResourceManager::createMetaMesh (0x1402f3030)
+// - mbCoreGame::readModuleCommands (0x14008cca0)
 #pragma once
 
 #include <array>
@@ -58,15 +58,15 @@ struct BrfVertexGroup {
     std::vector<BrfVertexWeight> pairs{};
 };
 
-// rglMeshVertexKey (0x19d6a, 48 B), read via rglMeshVertexKey::readStream (0x1402b7ce0)
-// and rglIpo<rglMeshVertexKey>::readStream (0x1402c3e00).
+// rglMeshVertexKey (0x19d6a, 48 B), read via rglMeshVertexKey::readStream (0x1402b7f50)
+// and rglIpo<rglMeshVertexKey>::readStream (0x1402c4070).
 struct BrfVertexKeyFrame {
     std::int32_t time_frame = 0;
     std::vector<Vec3f> positions{};
     std::vector<Vec3f> normals{};
 };
 
-// rglMeshFaceCorner (0x75b6, 68 B), read via rglMeshFaceCorner::readStream (0x1402b7a20).
+// rglMeshFaceCorner (0x75b6, 68 B), read via rglMeshFaceCorner::readStream (0x1402b7c90).
 struct BrfFaceCorner {
     std::int32_t vertex_index = 0;
     std::uint32_t color = 0;
@@ -82,7 +82,7 @@ struct BrfMeshFace {
     std::array<std::uint16_t, 3> corners{};
 };
 
-// rglMesh (0x1c4a5, 872 B), read via rglMesh::readStream (0x1402b84b0).
+// rglMesh (0x1c4a5, 872 B), read via rglMesh::readStream (0x1402b8720).
 struct BrfMesh {
     std::string name{};
     std::uint32_t flags = 0;
@@ -96,7 +96,7 @@ struct BrfMesh {
     std::vector<BrfMeshFace> faces{};
 };
 
-// rglTexture (0x1aadd, 288 B), decoded inline in rglResourceManager::readStream (0x1402efe10).
+// rglTexture (0x1aadd, 288 B), decoded inline in rglResourceManager::readStream (0x1402f04a0).
 struct BrfTexture {
     std::string name{};
     std::uint32_t flags = 0;  // raw_flags & 0xEFFFFFFFU
@@ -109,7 +109,7 @@ struct BrfShaderTechnique {
     std::uint32_t flags = 0;
 };
 
-// rglShader (0x1fa6f, 504 B), read via rglShader::readStream (0x140301940).
+// rglShader (0x1fa6f, 504 B), read via rglShader::readStream (0x140302750).
 struct BrfShader {
     std::string name{};
     std::uint32_t flags = 0;
@@ -119,7 +119,7 @@ struct BrfShader {
     std::vector<BrfShaderTechnique> techniques{};
 };
 
-// rglMaterial (0x1dc61, 632 B), read via rglMaterial::readStream (0x1402b5970).
+// rglMaterial (0x1dc61, 632 B), read via rglMaterial::readStream (0x1402b5be0).
 struct BrfMaterial {
     std::string name{};
     std::uint32_t flags = 0;
@@ -130,11 +130,11 @@ struct BrfMaterial {
 };
 
 enum class BrfBodyPartKind : std::uint8_t {
-    Sphere = 0,    // "sphere" (0x14055e028), rglSphere (0x3516, 128 B)
-    Capsule = 1,   // "capsule" (0x14055e030), rglCapsule (0x1f07c, 160 B)
-    Face = 2,      // "face" (0x14055e038), rglQuad (0x1d157, 304 B)
-    Manifold = 3,  // "manifold" (0x14055e050), rglManifoldBody (0x1c79f, 160 B)
-    Composite = 4  // "composite" (0x14055e040), rglCompositeBody (0x1d3c4, 104 B)
+    Sphere = 0,    // "sphere" (0x14055edfc), rglSphere (0x3516, 128 B)
+    Capsule = 1,   // "capsule" (0x14055ee08), rglCapsule (0x1f07c, 160 B)
+    Face = 2,      // "face" (0x14055ee10), rglQuad (0x1d157, 304 B)
+    Manifold = 3,  // "manifold" (0x14055ee28), rglManifoldBody (0x1c79f, 160 B)
+    Composite = 4  // "composite" (0x14055ee18), rglCompositeBody (0x1d3c4, 104 B)
 };
 
 // rglManifoldBodyFace (0x17e42, 40 B).
@@ -156,7 +156,7 @@ struct BrfBodyPart {
     std::vector<BrfBodyPart> children{};
 };
 
-// rglBody (0x19f4b, 104 B), read via rglBody::readStream (0x1402581a0).
+// rglBody (0x19f4b, 104 B), read via rglBody::readStream (0x140258320).
 struct BrfBody {
     std::string name{};
     BrfBodyPart root{};
@@ -173,7 +173,7 @@ struct BrfSkeletonBone {
     Vec3f origin{};
 };
 
-// rglSkeletonModel (0x1ef4b, 152 B), read via rglSkeletonModel::readStream (0x14030d230).
+// rglSkeletonModel (0x1ef4b, 152 B), read via rglSkeletonModel::readStream (0x14030dff0).
 struct BrfSkeleton {
     std::string name{};
     std::vector<BrfSkeletonBone> bones{};
@@ -190,16 +190,16 @@ struct BrfPosKey {
 };
 
 // rglSkeletonAnimation (0x19f91, 144 B) + rglSkeletonAnimationBone (0x17ac9, 24 B),
-// read via rglSkeletonAnimation::readStream (0x14030c130),
-// rglSkeletonAnimationBone::readStream (0x14030c060),
-// rglIpo<rglQuaternion>::readStream (0x14030c320), rglIpo<rglVector3>::readStream (0x14030c420).
+// read via rglSkeletonAnimation::readStream (0x14030cef0),
+// rglSkeletonAnimationBone::readStream (0x14030ce20),
+// rglIpo<rglQuaternion>::readStream (0x14030d0e0), rglIpo<rglVector3>::readStream (0x14030d1e0).
 struct BrfSkeletonAnimation {
     std::string name{};
     std::vector<std::vector<BrfQuatKey>> bone_rotations{};
     std::vector<BrfPosKey> root_positions{};
 };
 
-// rglPhysicsMaterial (0x184e3, 104 B, vftable 0x1405639a8).
+// rglPhysicsMaterial (0x184e3, 104 B, vftable 0x1405647f8).
 // Note: +0x60 is m_soundOcclusion (default 0.5f), not friction.
 struct BrfPhysicsMaterial {
     std::string name{};
@@ -349,8 +349,8 @@ inline bool read_mesh(wse::io::BinaryReader& r,
         if (!r.read_i32(bone_no) || !r.read_u32(num_pairs)) {
             return set_error(error_out, "truncated vertex group header in " + out.name);
         }
-        // rglMesh::readStream (0x1402b84b0) stores byte m_boneNo and asserts bone_no + 1 <= 64
-        // ("Too many bones in mesh %s" at 0x140565810).
+        // rglMesh::readStream (0x1402b8720) stores byte m_boneNo and asserts bone_no + 1 <= 64
+        // ("Too many bones in mesh %s" at 0x140566660).
         if (bone_no < 0 || bone_no >= 64) {
             return set_error(error_out, "bone index out of range [0, 64) in mesh " + out.name);
         }
@@ -369,7 +369,7 @@ inline bool read_mesh(wse::io::BinaryReader& r,
         out.vertex_groups.push_back(std::move(grp));
     }
 
-    // rglIpo<rglMeshVertexKey>::readStream (0x1402c3e00) -> rglMeshVertexKey::readStream (0x1402b7ce0)
+    // rglIpo<rglMeshVertexKey>::readStream (0x1402c4070) -> rglMeshVertexKey::readStream (0x1402b7f50)
     std::int32_t num_keys = 0;
     if (!read_count_i32(r, out.vertex_keys, 12, num_keys, error_out, "vertex keys", out.name)) {
         return false;
@@ -413,7 +413,7 @@ inline bool read_mesh(wse::io::BinaryReader& r,
         if (!r.read_i32(corner.vertex_index) || !r.read_u32(corner.color) || !read_vec3(r, corner.normal)) {
             return set_error(error_out, "truncated face corner in " + out.name);
         }
-        // "Invalid vertex index %d in mesh %s" (0x1405657e8) checked in rglMesh::readStream (0x1402b84b0).
+        // "Invalid vertex index %d in mesh %s" (0x140566638) checked in rglMesh::readStream (0x1402b8720).
         // Safety deviation: rglMeshFaceCorner::m_vertexNo (+0x40, PDB 0x75b6) is an unsigned short,
         // so an index above 65535 cannot be represented and is rejected instead of truncated.
         if (corner.vertex_index < 0 || static_cast<std::size_t>(corner.vertex_index) >= out.positions.size() ||
@@ -473,7 +473,7 @@ inline bool read_shader(wse::io::BinaryReader& r, BrfShader& out, std::string* e
         !r.read_string(out.technique_name) || !r.read_i32(num_alternatives)) {
         return set_error(error_out, "truncated shader header");
     }
-    // rglShader::readStream (0x140301940): "Number of alternatives exceeds %d for shader %s" (0x1405693a8).
+    // rglShader::readStream (0x140302750): "Number of alternatives exceeds %d for shader %s" (0x14056a1f8).
     if (num_alternatives < 0 || num_alternatives > 3) {
         return set_error(error_out, "Number of alternatives exceeds 3 for shader " + out.name);
     }
@@ -546,7 +546,7 @@ inline bool read_body_part(wse::io::BinaryReader& r,
         return true;
     }
     if (part_type == "face") {
-        // rglQuad::readStream (0x1402d5070): int32 num_verts * Vec3f, then uint32 flags.
+        // rglQuad::readStream (0x1402d52e0): int32 num_verts * Vec3f, then uint32 flags.
         out.kind = BrfBodyPartKind::Face;
         std::int32_t num_verts = 0;
         if (!read_count_i32(r, out.vertices, 12, num_verts, error_out, "face body vertices")) {
@@ -561,7 +561,7 @@ inline bool read_body_part(wse::io::BinaryReader& r,
         return true;
     }
     if (part_type == "manifold") {
-        // rglManifoldBody::readStream (0x1402b4710)
+        // rglManifoldBody::readStream (0x1402b4980)
         out.kind = BrfBodyPartKind::Manifold;
         std::int32_t num_positions = 0;
         if (!read_count_i32(r, out.vertices, 12, num_positions, error_out, "manifold positions")) {
@@ -595,7 +595,7 @@ inline bool read_body_part(wse::io::BinaryReader& r,
         return true;
     }
     if (part_type == "composite") {
-        // rglCompositeBody::readStream (0x140263c30)
+        // rglCompositeBody::readStream (0x140263db0)
         out.kind = BrfBodyPartKind::Composite;
         std::int32_t num_parts = 0;
         if (!read_count_i32(r, out.children, 4, num_parts, error_out, "composite children")) {
@@ -650,8 +650,8 @@ inline bool read_skeleton_anim(wse::io::BinaryReader& r, BrfSkeletonAnimation& o
         if (!read_count_i32(r, keys, 20, num_keys, error_out, "rotation keys", out.name)) {
             return false;
         }
-        // rglIpo<rglQuaternion>::readStream (0x14030c320) reads stream order:
-        // qx (+0x4), qy (+0x8), qz (+0xc), qw (+0x0 in rglQuaternion{w,x,y,z}; 0x1402b65d0).
+        // rglIpo<rglQuaternion>::readStream (0x14030d0e0) reads stream order:
+        // qx (+0x4), qy (+0x8), qz (+0xc), qw (+0x0 in rglQuaternion{w,x,y,z}; 0x1402b6840).
         for (std::int32_t k = 0; k < num_keys; ++k) {
             BrfQuatKey key{};
             if (!r.read_i32(key.time_frame) ||
@@ -704,9 +704,9 @@ bool read_section(wse::io::BinaryReader& r,
 }
 
 inline int parse_lod_suffix(std::string_view suffix) noexcept {
-    // Matches rglResourceManager::createMetaMesh (0x1402f29a0) suffix rule:
-    // 0x1402f2bed: suffix[0] == '.'; 0x1402f2bfa: suffix.size() <= 4 stays LOD 0;
-    // 0x1402f2bfe..0x1402f2c49: suffix[1..3] == "lod" (ASCII CI) and suffix[4] in '1'..'4'
+    // Matches rglResourceManager::createMetaMesh (0x1402f3030) suffix rule:
+    // 0x1402f327d: suffix[0] == '.'; 0x1402f328a: suffix.size() <= 4 stays LOD 0;
+    // 0x1402f328e..0x1402f32d9: suffix[1..3] == "lod" (ASCII CI) and suffix[4] in '1'..'4'
     // (without requiring end-of-string after suffix[4]) gives LOD 1..4.
     if (suffix.size() >= 5 && suffix[0] == '.') {
         using wse::platform::ascii_lower;
@@ -722,7 +722,7 @@ inline int parse_lod_suffix(std::string_view suffix) noexcept {
 
 }  // namespace detail
 
-// Parses a .brf resource stream following rglResourceManager::readStream (0x1402efe10).
+// Parses a .brf resource stream following rglResourceManager::readStream (0x1402f04a0).
 inline bool parse_brf(std::span<const std::byte> data,
                       BrfFile& out,
                       std::string* error_out = nullptr) {
@@ -733,7 +733,7 @@ inline bool parse_brf(std::span<const std::byte> data,
         return detail::set_error(error_out, "empty or truncated brf stream");
     }
 
-    // Optional version header ("rfver ", 0x14056839c).
+    // Optional version header ("rfver ", 0x1405691ec).
     if (token == "rfver ") {
         if (!r.read_i32(out.rfver)) {
             return detail::set_error(error_out, "truncated rfver value");
@@ -743,42 +743,42 @@ inline bool parse_brf(std::span<const std::byte> data,
         }
     }
 
-    while (token != "end") {  // "end" (0x1405683a4)
+    while (token != "end") {  // "end" (0x1405691f4)
         bool ok = false;
-        if (token == "mesh") {  // "mesh" (0x1405683a8)
+        if (token == "mesh") {  // "mesh" (0x1405691f8)
             ok = detail::read_section(r, out.meshes,
                 [&](BrfMesh& m) { return detail::read_mesh(r, out.rfver, m, error_out); },
                 error_out, "mesh");
-        } else if (token == "texture") {  // "texture" (0x1405683b0)
+        } else if (token == "texture") {  // "texture" (0x140569200)
             ok = detail::read_section(r, out.textures,
                 [&](BrfTexture& t) { return detail::read_texture(r, t, error_out); },
                 error_out, "texture");
-        } else if (token == "shader") {  // "shader" (0x1405683b8)
+        } else if (token == "shader") {  // "shader" (0x140569208)
             ok = detail::read_section(r, out.shaders,
                 [&](BrfShader& s) { return detail::read_shader(r, s, error_out); },
                 error_out, "shader");
-        } else if (token == "material") {  // "material" (0x1405683c0)
+        } else if (token == "material") {  // "material" (0x140569210)
             ok = detail::read_section(r, out.materials,
                 [&](BrfMaterial& m) { return detail::read_material(r, m, error_out); },
                 error_out, "material");
-        } else if (token == "body") {  // "body" (0x14055c984)
+        } else if (token == "body") {  // "body" (0x14055d9b4)
             ok = detail::read_section(r, out.bodies,
                 [&](BrfBody& b) { return detail::read_body(r, b, error_out); },
                 error_out, "body");
-        } else if (token == "skeleton") {  // "skeleton" (0x1405683d0)
+        } else if (token == "skeleton") {  // "skeleton" (0x140569220)
             ok = detail::read_section(r, out.skeletons,
                 [&](BrfSkeleton& s) { return detail::read_skeleton(r, s, error_out); },
                 error_out, "skeleton");
-        } else if (token == "skeleton_anim") {  // "skeleton_anim" (0x1405683e0)
+        } else if (token == "skeleton_anim") {  // "skeleton_anim" (0x140569230)
             ok = detail::read_section(r, out.animations,
                 [&](BrfSkeletonAnimation& a) { return detail::read_skeleton_anim(r, a, error_out); },
                 error_out, "skeleton_anim");
-        } else if (token == "physics_material") {  // "physics_material" (0x1405683f0)
+        } else if (token == "physics_material") {  // "physics_material" (0x140569240)
             ok = detail::read_section(r, out.physics_materials,
                 [&](BrfPhysicsMaterial& p) { return detail::read_physics_material(r, p, error_out); },
                 error_out, "physics_material");
         } else {
-            // "Unrecognized resource type %s" (0x140568408)
+            // "Unrecognized resource type %s" (0x140569258)
             return detail::set_error(error_out, "Unrecognized resource type " + token);
         }
         if (!ok) return false;
@@ -802,11 +802,11 @@ inline bool load_brf(wse::platform::Vfs& vfs,
 }
 
 // Groups mesh records into MetaMesh LOD buckets [0..4] matching
-// rglResourceManager::createMetaMesh (0x1402f29a0..0x1402f2cd0):
-// - 0x1402f2b23: prefix length must be >= 2 (shorter prefixes before '.' are not split).
-// - 0x1402f2be2..0x1402f2bed: exact prefix match -> LOD 0; longer names must have '.' at
+// rglResourceManager::createMetaMesh (0x1402f3030..0x1402f3360):
+// - 0x1402f31b3: prefix length must be >= 2 (shorter prefixes before '.' are not split).
+// - 0x1402f3272..0x1402f327d: exact prefix match -> LOD 0; longer names must have '.' at
 //   prefix length (first '.').
-// - 0x1402f2bfa..0x1402f2c49: dotted suffixes with size <= 4 (such as "tree.1") or not
+// - 0x1402f328a..0x1402f32d9: dotted suffixes with size <= 4 (such as "tree.1") or not
 //   beginning with case-insensitive ".lod[1-4]" (so ".lod1x" is LOD 1) land in LOD 0.
 inline std::vector<BrfMetaMeshGroup> group_meta_meshes(std::span<const BrfMesh> meshes) {
     std::vector<BrfMetaMeshGroup> groups;
@@ -836,11 +836,11 @@ inline std::vector<BrfMetaMeshGroup> group_meta_meshes(std::span<const BrfMesh> 
 }
 
 // Resolves and parses core + module .brf resources for a Warband installation:
-// - loadCoreResources (0x1402eedf0): "core_shaders,core_textures,core_materials,core_ui_meshes,core_pictures,core_physics_materials" (0x14055eb10)
-// - loadOptionalShaderResource (0x1402eeec0): "wse2_shaders" (0x1405681d8)
-// - mbCoreGame::readModuleCommands (0x14008cb40): load_resource (0x14054c3b0),
-//   load_resource_nofast (0x14054c3c0), load_mod_resource (0x14054c3f0),
-//   load_module_resource (0x14054c408).
+// - loadCoreResources (0x1402ef480): "core_shaders,core_textures,core_materials,core_ui_meshes,core_pictures,core_physics_materials" (0x14055f8f0)
+// - loadOptionalShaderResource (0x1402ef550): "wse2_shaders" (0x140569028)
+// - mbCoreGame::readModuleCommands (0x14008cca0): load_resource (0x14054d3d0),
+//   load_resource_nofast (0x14054d3e0), load_mod_resource (0x14054d410),
+//   load_module_resource (0x14054d428).
 inline bool load_module_brf_catalog(wse::platform::Vfs& vfs,
                                     std::string_view warband_root,
                                     std::string_view module_root,

@@ -298,7 +298,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
     const float fp = static_cast<float>(ctx.fixedPointMultiplier);
 
     switch (opcode) {
-    case 1695: { // party_get_num_attached_parties (0x1401d3509)
+    case 1695: { // party_get_num_attached_parties (0x1401d3689)
         if (world.is_valid_party(narrow[1])) {
             std::int32_t count = 0;
             for (const std::int32_t pid :
@@ -311,7 +311,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
         }
         return NativeDispatch::handled;
     }
-    case 1696: { // party_get_attached_party_with_rank (0x1401d3571)
+    case 1696: { // party_get_attached_party_with_rank (0x1401d36f1)
         if (world.is_valid_party(narrow[1])) {
             std::int32_t found = -1;
             std::int32_t rank = 0;
@@ -332,52 +332,52 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
         }
         return NativeDispatch::handled;
     }
-    case 1699: // agent_is_routed (0x1401d36be)
+    case 1699: // agent_is_routed (0x1401d383e)
         return (world.is_valid_agent(narrow[0]) &&
                 world.agents[static_cast<std::size_t>(narrow[0])].is_routed)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 1701: { // get_player_agent_kill_count (0x1401d371c)
+    case 1701: { // get_player_agent_kill_count (0x1401d389c)
         const bool get_wounded = (statement.numOperands >= 2 && narrow[1] != 0);
         const std::int32_t count = get_wounded ? world.player_agent_own_troop_wound_count
                                                : world.player_agent_own_troop_kill_count;
         store_lvalue(dst, static_cast<std::int64_t>(count), ctx, locals);
         return NativeDispatch::handled;
     }
-    case 1709: // agent_get_look_position (0x1401d396b)
+    case 1709: // agent_get_look_position (0x1401d3aeb)
         if (wse_register_ok(narrow[0]) && world.is_valid_agent(narrow[1])) {
             ctx.positions[static_cast<std::size_t>(narrow[0])] =
                 world.agents[static_cast<std::size_t>(narrow[1])].look_position;
         }
         return NativeDispatch::handled;
-    case 1719: // agent_get_item_id (0x1401d3da0)
+    case 1719: // agent_get_item_id (0x1401d3f20)
         if (world.is_valid_agent(narrow[1])) {
             const auto& ag = world.agents[static_cast<std::size_t>(narrow[1])];
             store_lvalue(dst, static_cast<std::int64_t>(ag.is_human() ? -1 : ag.horse_item_no),
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1722: // agent_deliver_damage_to_agent (0x1401d3edf)
+    case 1722: // agent_deliver_damage_to_agent (0x1401d405f)
         native_campaign_deliver_damage(
             narrow[0], narrow[1],
             (statement.numOperands >= 3) ? narrow[2] : 0,
             (statement.numOperands >= 4) ? narrow[3] : -1,
             statement.numOperands >= 4, world);
         return NativeDispatch::handled;
-    case 1724: // agent_get_player_id (0x1401d4138)
+    case 1724: // agent_get_player_id (0x1401d42b8)
         if (world.is_valid_agent(narrow[1])) {
             const auto& ag = world.agents[static_cast<std::size_t>(narrow[1])];
             store_lvalue(dst, static_cast<std::int64_t>(ag.is_non_player ? -1 : ag.player_no),
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1737: // agent_ai_set_always_attack_in_melee (0x1401d46f6)
+    case 1737: // agent_ai_set_always_attack_in_melee (0x1401d4876)
         if (world.is_valid_agent(narrow[0])) {
             world.agents[static_cast<std::size_t>(narrow[0])].always_attack_in_melee =
                 (narrow[1] != 0);
         }
         return NativeDispatch::handled;
-    case 1751: // agent_start_running_away (0x1401d4d6f)
+    case 1751: // agent_start_running_away (0x1401d4eef)
         if (world.is_valid_agent(narrow[0])) {
             auto& ag = world.agents[static_cast<std::size_t>(narrow[0])];
             ag.running_away = true;
@@ -387,12 +387,12 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
             }
         }
         return NativeDispatch::handled;
-    case 1771: // agent_set_team (0x1401d54eb)
+    case 1771: // agent_set_team (0x1401d566b)
         if (world.is_valid_agent(narrow[0]) && world.is_valid_team(narrow[1])) {
             world.agents[static_cast<std::size_t>(narrow[0])].team_no = narrow[1];
         }
         return NativeDispatch::handled;
-    case 1774: // agent_unequip_item (0x1401d55ec)
+    case 1774: // agent_unequip_item (0x1401d576c)
         if (world.is_valid_agent(narrow[0]) && world.is_valid_item(narrow[1])) {
             native_campaign_unequip_item(
                 world.agents[static_cast<std::size_t>(narrow[0])], narrow[1],
@@ -400,7 +400,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 statement.numOperands >= 3);
         }
         return NativeDispatch::handled;
-    case 1775: { // class_is_listening_order (0x1401d568e)
+    case 1775: { // class_is_listening_order (0x1401d580e)
         if (!world.is_valid_team(narrow[0]) || narrow[1] < 0 ||
             narrow[1] >= game::kNumDivisions) {
             return NativeDispatch::condition_false;
@@ -411,7 +411,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     }
-    case 1779: // agent_equip_item (0x1401d584f)
+    case 1779: // agent_equip_item (0x1401d59cf)
         if (world.is_valid_agent(narrow[0]) && world.is_valid_item(narrow[1])) {
             if (statement.numOperands >= 4 && (narrow[3] < 0 || narrow[3] >= 43)) {
                 return NativeDispatch::handled;
@@ -423,7 +423,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 statement.numOperands >= 3);
         }
         return NativeDispatch::handled;
-    case 1785: { // team_get_movement_order (0x1401d5e64)
+    case 1785: { // team_get_movement_order (0x1401d5fe4)
         if (world.is_valid_team(narrow[1])) {
             const std::int32_t div = std::clamp(narrow[2], 0, 8);
             const std::int32_t raw = world.teams[static_cast<std::size_t>(narrow[1])]
@@ -441,13 +441,13 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
         }
         return NativeDispatch::handled;
     }
-    case 1788: // teams_are_enemies (0x1401d5f3c)
+    case 1788: // teams_are_enemies (0x1401d60bc)
         return (world.is_valid_team(narrow[0]) && world.is_valid_team(narrow[1]) &&
                 world.teams[static_cast<std::size_t>(narrow[0])]
                         .relations[static_cast<std::size_t>(narrow[1])] < 0)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 1799: // get_scene_boundaries (0x1401d669b)
+    case 1799: // get_scene_boundaries (0x1401d681b)
         if (wse_register_ok(narrow[0]) && wse_register_ok(narrow[1])) {
             auto& pmin = ctx.positions[static_cast<std::size_t>(narrow[0])];
             auto& pmax = ctx.positions[static_cast<std::size_t>(narrow[1])];
@@ -457,20 +457,20 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
             pmax.o = {world.scene_bound_max.x, world.scene_bound_max.y, 0.0f, 1.0f};
         }
         return NativeDispatch::handled;
-    case 1800: // scene_prop_enable_after_time (0x1401d676b)
+    case 1800: // scene_prop_enable_after_time (0x1401d68eb)
         if (world.is_valid_mission_object(narrow[0])) {
             world.mission_objects[static_cast<std::size_t>(narrow[0])].enable_timer =
                 static_cast<float>(wide[1]) / 100.0f;
         }
         return NativeDispatch::handled;
-    case 1802: // agent_clear_relations_with_agents (0x1401d67f1)
+    case 1802: // agent_clear_relations_with_agents (0x1401d6971)
         if (world.is_valid_agent(narrow[0])) {
             auto& ag = world.agents[static_cast<std::size_t>(narrow[0])];
             ag.has_relations = false;
             ag.relations.clear();
         }
         return NativeDispatch::handled;
-    case 1814: // scene_prop_set_hit_points (0x1401d6c4a)
+    case 1814: // scene_prop_set_hit_points (0x1401d6dca)
         if (world.is_valid_mission_object(narrow[0])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
             const float hp = static_cast<float>(wide[1]);
@@ -478,26 +478,26 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
             obj.hit_points = hp;
         }
         return NativeDispatch::handled;
-    case 1850: // prop_instance_get_position (0x1401d7893)
+    case 1850: // prop_instance_get_position (0x1401d7a13)
         if (wse_register_ok(narrow[0]) && world.is_valid_mission_object(narrow[1])) {
             ctx.positions[static_cast<std::size_t>(narrow[0])] =
                 world.mission_objects[static_cast<std::size_t>(narrow[1])].position;
         }
         return NativeDispatch::handled;
-    case 1851: // prop_instance_get_starting_position (0x1401d7a77)
+    case 1851: // prop_instance_get_starting_position (0x1401d7bf7)
         if (wse_register_ok(narrow[0]) && world.is_valid_mission_object(narrow[1])) {
             ctx.positions[static_cast<std::size_t>(narrow[0])] =
                 world.mission_objects[static_cast<std::size_t>(narrow[1])]
                     .starting_position;
         }
         return NativeDispatch::handled;
-    case 1852: // prop_instance_get_scale (0x1401d7b7c)
+    case 1852: // prop_instance_get_scale (0x1401d7cfc)
         if (wse_register_ok(narrow[0]) && world.is_valid_mission_object(narrow[1])) {
             ctx.positions[static_cast<std::size_t>(narrow[0])].o =
                 world.mission_objects[static_cast<std::size_t>(narrow[1])].scale;
         }
         return NativeDispatch::handled;
-    case 1853: // prop_instance_get_scene_prop_kind (0x1401d7c0d)
+    case 1853: // prop_instance_get_scene_prop_kind (0x1401d7d8d)
         if (world.is_valid_mission_object(narrow[1])) {
             store_lvalue(
                 dst,
@@ -507,7 +507,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1854: // prop_instance_set_scale (0x1401d7c54)
+    case 1854: // prop_instance_set_scale (0x1401d7dd4)
         if (world.is_valid_mission_object(narrow[0])) {
             world.mission_objects[static_cast<std::size_t>(narrow[0])].scale = {
                 static_cast<float>(wide[1]) / fp,
@@ -516,13 +516,13 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 1.0f};
         }
         return NativeDispatch::handled;
-    case 1855: // prop_instance_set_position (0x1401d7cec)
+    case 1855: // prop_instance_set_position (0x1401d7e6c)
         if (world.is_valid_mission_object(narrow[0]) && wse_register_ok(narrow[1])) {
             world.mission_objects[static_cast<std::size_t>(narrow[0])].position =
                 ctx.positions[static_cast<std::size_t>(narrow[1])];
         }
         return NativeDispatch::handled;
-    case 1860: // prop_instance_animate_to_position (0x1401d7da9)
+    case 1860: // prop_instance_animate_to_position (0x1401d7f29)
         if (world.is_valid_mission_object(narrow[0]) && wse_register_ok(narrow[1])) {
             auto& obj = world.mission_objects[static_cast<std::size_t>(narrow[0])];
             obj.target_position = ctx.positions[static_cast<std::size_t>(narrow[1])];
@@ -530,12 +530,12 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
             obj.animating = true;
         }
         return NativeDispatch::handled;
-    case 1861: // prop_instance_stop_animating (0x1401d7ea4)
+    case 1861: // prop_instance_stop_animating (0x1401d8024)
         if (world.is_valid_mission_object(narrow[0])) {
             world.mission_objects[static_cast<std::size_t>(narrow[0])].animating = false;
         }
         return NativeDispatch::handled;
-    case 1862: // prop_instance_is_animating (0x1401d7f1f)
+    case 1862: // prop_instance_is_animating (0x1401d809f)
         if (world.is_valid_mission_object(narrow[1])) {
             store_lvalue(
                 dst,
@@ -544,38 +544,38 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 1863: // prop_instance_get_animation_target_position (0x1401d7f6a)
+    case 1863: // prop_instance_get_animation_target_position (0x1401d80ea)
         if (wse_register_ok(narrow[0]) && world.is_valid_mission_object(narrow[1])) {
             ctx.positions[static_cast<std::size_t>(narrow[0])] =
                 world.mission_objects[static_cast<std::size_t>(narrow[1])]
                     .target_position;
         }
         return NativeDispatch::handled;
-    case 1864: // prop_instance_enable_physics (0x1401d8093)
+    case 1864: // prop_instance_enable_physics (0x1401d8213)
         if (world.is_valid_mission_object(narrow[0])) {
             world.mission_objects[static_cast<std::size_t>(narrow[0])].physics_enabled =
                 (narrow[1] != 0);
         }
         return NativeDispatch::handled;
-    case 1910: // jump_to_scene (0x1401d93e9)
+    case 1910: // jump_to_scene (0x1401d9569)
         if (world.is_valid_site(narrow[0])) {
             world.jump_scene_no = narrow[0];
             world.jump_entry_no = (statement.numOperands >= 2) ? narrow[1] : 0;
         }
         return NativeDispatch::handled;
-    case 1912: // set_jump_entry (0x1401d944d)
+    case 1912: // set_jump_entry (0x1401d95cd)
         world.jump_entry_no = narrow[0];
         return NativeDispatch::handled;
-    case 1930: // add_reinforcements_to_entry (0x1401d949c)
+    case 1930: // add_reinforcements_to_entry (0x1401d961c)
         game::mission_add_reinforcements(world, narrow[0], narrow[1]);
         return NativeDispatch::handled;
-    case 1935: // mission_enable_talk (0x1401d94b3)
+    case 1935: // mission_enable_talk (0x1401d9633)
         world.talk_enabled = true;
         return NativeDispatch::handled;
-    case 1936: // mission_disable_talk (0x1401d94cd)
+    case 1936: // mission_disable_talk (0x1401d964d)
         world.talk_enabled = false;
         return NativeDispatch::handled;
-    case 1940: // mission_tpl_entry_set_override_flags (0x1401d94e7)
+    case 1940: // mission_tpl_entry_set_override_flags (0x1401d9667)
         if (world.is_valid_mission_template(narrow[0]) && narrow[1] >= 0 &&
             narrow[1] < game::kMaxEntryPoints) {
             world.mission_templates[static_cast<std::size_t>(narrow[0])]
@@ -583,7 +583,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 .flags = static_cast<std::uint32_t>(narrow[2]);
         }
         return NativeDispatch::handled;
-    case 1941: // mission_tpl_entry_clear_override_items (0x1401d9541)
+    case 1941: // mission_tpl_entry_clear_override_items (0x1401d96c1)
         if (world.is_valid_mission_template(narrow[0]) && narrow[1] >= 0 &&
             narrow[1] < game::kMaxEntryPoints) {
             world.mission_templates[static_cast<std::size_t>(narrow[0])]
@@ -591,7 +591,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 .override_items.clear();
         }
         return NativeDispatch::handled;
-    case 1942: // mission_tpl_entry_add_override_item (0x1401d9598)
+    case 1942: // mission_tpl_entry_add_override_item (0x1401d9718)
         if (world.is_valid_mission_template(narrow[0]) && narrow[1] >= 0 &&
             narrow[1] < game::kMaxEntryPoints && world.is_valid_item(narrow[2])) {
             world.mission_templates[static_cast<std::size_t>(narrow[0])]
@@ -599,7 +599,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 .override_items.push_back(narrow[2]);
         }
         return NativeDispatch::handled;
-    case 1943: // mission_tpl_are_all_agents_spawned (0x1401d9616)
+    case 1943: // mission_tpl_are_all_agents_spawned (0x1401d9796)
         if (world.is_valid_mission_template(world.current_mission_template_no)) {
             return world
                        .mission_templates[static_cast<std::size_t>(
@@ -609,7 +609,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                        : NativeDispatch::condition_false;
         }
         return NativeDispatch::handled;
-    case 1969: // particle_system_burst (0x1401d9cf8)
+    case 1969: // particle_system_burst (0x1401d9e78)
         if (world.is_valid_particle_system(narrow[0]) && wse_register_ok(narrow[1])) {
             const std::int32_t strength = (narrow[2] != 0) ? narrow[2] : 100;
             game::mission_burst_particle_system(
@@ -617,15 +617,15 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 true);
         }
         return NativeDispatch::handled;
-    case 1970: // set_spawn_position (0x1401d9ddd)
+    case 1970: // set_spawn_position (0x1401d9f5d)
         if (wse_register_ok(narrow[0])) {
             world.spawn_position = ctx.positions[static_cast<std::size_t>(narrow[0])];
         }
         return NativeDispatch::handled;
-    case 1972: // spawn_agent (0x1401d9f6c)
+    case 1972: // spawn_agent (0x1401da0ec)
         ctx.registers[0] = native_campaign_spawn_agent(narrow[0], world);
         return NativeDispatch::handled;
-    case 1977: // agent_get_item_cur_ammo (0x1401da10d)
+    case 1977: // agent_get_item_cur_ammo (0x1401da28d)
         if (world.is_valid_agent(narrow[1]) && narrow[2] >= 0 && narrow[2] < 4) {
             store_lvalue(
                 dst,
@@ -635,26 +635,26 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2002: // mission_get_time_speed (0x1401daec8)
+    case 2002: // mission_get_time_speed (0x1401db048)
         store_lvalue(dst, static_cast<std::int64_t>(f2i_round(world.mission_time_speed * fp)),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2003: // mission_set_time_speed (0x1401daf0a)
+    case 2003: // mission_set_time_speed (0x1401db08a)
         if (wide[0] > 0) {
             world.mission_time_speed = static_cast<float>(wide[0]) / fp;
             world.mission_time_speed_duration = 0.0f;
         }
         return NativeDispatch::handled;
-    case 2004: // mission_time_speed_move_to_value (0x1401daf61)
+    case 2004: // mission_time_speed_move_to_value (0x1401db0e1)
         if (wide[0] > 0 && wide[1] > 0) {
             world.mission_time_speed_target = static_cast<float>(wide[0]) / fp;
             world.mission_time_speed_duration = static_cast<float>(wide[1]) / 1000.0f;
         }
         return NativeDispatch::handled;
-    case 2006: // mission_set_duel_mode (0x1401db000)
+    case 2006: // mission_set_duel_mode (0x1401db180)
         world.mission_duel_mode = (narrow[0] != 0);
         return NativeDispatch::handled;
-    case 2065: // agent_get_damage_modifier (0x1401dc307)
+    case 2065: // agent_get_damage_modifier (0x1401dc487)
         if (world.is_valid_agent(narrow[1])) {
             store_lvalue(dst,
                          f2i_round(world.agents[static_cast<std::size_t>(narrow[1])]
@@ -663,7 +663,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2066: // agent_get_accuracy_modifier (0x1401dc35f)
+    case 2066: // agent_get_accuracy_modifier (0x1401dc4df)
         if (world.is_valid_agent(narrow[1])) {
             store_lvalue(dst,
                          f2i_round(world.agents[static_cast<std::size_t>(narrow[1])]
@@ -672,7 +672,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2067: // agent_get_speed_modifier (0x1401dc3b7)
+    case 2067: // agent_get_speed_modifier (0x1401dc537)
         if (world.is_valid_agent(narrow[1])) {
             store_lvalue(dst,
                          f2i_round(world.agents[static_cast<std::size_t>(narrow[1])]
@@ -681,7 +681,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2068: // agent_get_reload_speed_modifier (0x1401dc40f)
+    case 2068: // agent_get_reload_speed_modifier (0x1401dc58f)
         if (world.is_valid_agent(narrow[1])) {
             store_lvalue(dst,
                          f2i_round(world.agents[static_cast<std::size_t>(narrow[1])]
@@ -690,7 +690,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2069: // agent_get_use_speed_modifier (0x1401dc467)
+    case 2069: // agent_get_use_speed_modifier (0x1401dc5e7)
         if (world.is_valid_agent(narrow[1])) {
             store_lvalue(dst,
                          f2i_round(world.agents[static_cast<std::size_t>(narrow[1])]
@@ -699,7 +699,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2090: // agent_set_max_hit_points (0x1401dc8c6)
+    case 2090: // agent_set_max_hit_points (0x1401dca46)
         if (world.is_valid_agent(narrow[0])) {
             auto& ag = world.agents[static_cast<std::size_t>(narrow[0])];
             float new_max = static_cast<float>(wide[1]);
@@ -710,32 +710,32 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
             ag.hit_points = std::min(ag.hit_points, ag.max_hit_points);
         }
         return NativeDispatch::handled;
-    case 2091: // agent_set_damage_modifier (0x1401dc923)
+    case 2091: // agent_set_damage_modifier (0x1401dcaa3)
         native_campaign_set_agent_mod(narrow[0], wide[1], false,
                                       &game::WseAgent::damage_modifier, world);
         return NativeDispatch::handled;
-    case 2092: // agent_set_accuracy_modifier (0x1401dc971)
+    case 2092: // agent_set_accuracy_modifier (0x1401dcaf1)
         native_campaign_set_agent_mod(narrow[0], wide[1], true,
                                       &game::WseAgent::accuracy_modifier, world);
         return NativeDispatch::handled;
-    case 2093: // agent_set_speed_modifier (0x1401dca2e)
+    case 2093: // agent_set_speed_modifier (0x1401dcbae)
         native_campaign_set_agent_mod(narrow[0], wide[1], true,
                                       &game::WseAgent::speed_modifier, world);
         return NativeDispatch::handled;
-    case 2094: // agent_set_reload_speed_modifier (0x1401dcb06)
+    case 2094: // agent_set_reload_speed_modifier (0x1401dcc86)
         native_campaign_set_agent_mod(narrow[0], wide[1], true,
                                       &game::WseAgent::reload_speed_modifier, world);
         return NativeDispatch::handled;
-    case 2095: // agent_set_use_speed_modifier (0x1401dcbdb)
+    case 2095: // agent_set_use_speed_modifier (0x1401dcd5b)
         native_campaign_set_agent_mod(narrow[0], wide[1], true,
                                       &game::WseAgent::use_speed_modifier, world);
         return NativeDispatch::handled;
-    case 2096: // agent_set_visibility (0x1401dccb0)
+    case 2096: // agent_set_visibility (0x1401dce30)
         if (world.is_valid_agent(narrow[0])) {
             world.agents[static_cast<std::size_t>(narrow[0])].visible = (narrow[1] != 0);
         }
         return NativeDispatch::handled;
-    case 2097: // agent_get_crouch_mode (0x1401dccdc)
+    case 2097: // agent_get_crouch_mode (0x1401dce5c)
         if (world.is_valid_agent(narrow[1])) {
             store_lvalue(
                 dst,
@@ -744,20 +744,20 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2098: // agent_set_crouch_mode (0x1401dcd23)
+    case 2098: // agent_set_crouch_mode (0x1401dcea3)
         if (world.is_valid_agent(narrow[0])) {
             world.agents[static_cast<std::size_t>(narrow[0])].crouch_mode =
                 std::clamp(narrow[1], 0, 1);
         }
         return NativeDispatch::handled;
-    case 2099: // agent_set_ranged_damage_modifier (0x1401dcd84)
+    case 2099: // agent_set_ranged_damage_modifier (0x1401dcf04)
         native_campaign_set_agent_mod(narrow[0], wide[1], false,
                                       &game::WseAgent::ranged_damage_modifier, world);
         return NativeDispatch::handled;
-    case 2154: // store_num_free_stacks (0x1401dd5fa)
+    case 2154: // store_num_free_stacks (0x1401dd77a)
         store_lvalue(dst, 10, ctx, locals);
         return NativeDispatch::handled;
-    case 2165: { // store_item_kind_count (0x1401dd84b)
+    case 2165: { // store_item_kind_count (0x1401dd9cb)
         const std::int32_t troop_no =
             (statement.numOperands >= 3) ? narrow[2] : world.player_troop_no;
         if (world.is_valid_troop(troop_no)) {
@@ -769,7 +769,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
         }
         return NativeDispatch::handled;
     }
-    case 2190: // store_relation (0x1401ddbe1)
+    case 2190: // store_relation (0x1401ddd61)
         if (world.is_valid_faction(narrow[1]) && world.is_valid_faction(narrow[2])) {
             const float rel = world.factions[static_cast<std::size_t>(narrow[1])]
                                   .get_relation(static_cast<std::size_t>(narrow[2]));
@@ -777,25 +777,25 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                          locals);
         }
         return NativeDispatch::handled;
-    case 2202: // store_encountered_party (0x1401ddd23)
+    case 2202: // store_encountered_party (0x1401ddea3)
         store_lvalue(dst, static_cast<std::int64_t>(world.encountered_party_no), ctx, locals);
         return NativeDispatch::handled;
-    case 2203: // store_encountered_party2 (0x1401ddd51)
+    case 2203: // store_encountered_party2 (0x1401dded1)
         store_lvalue(dst, static_cast<std::int64_t>(world.encountered_party_2_no), ctx,
                      locals);
         return NativeDispatch::handled;
-    case 2205: // set_encountered_party (0x1401dddc6)
+    case 2205: // set_encountered_party (0x1401ddf46)
         if (narrow[0] == -1 || world.is_valid_party(narrow[0])) {
             world.encountered_party_no = narrow[0];
         }
         return NativeDispatch::handled;
-    case 2221: // set_zoom_amount (0x1401dde5b)
+    case 2221: // set_zoom_amount (0x1401ddfdb)
         world.zoom_amount = static_cast<float>(wide[0]) / fp;
         return NativeDispatch::handled;
-    case 2222: // is_zoom_disabled (0x1401dde86)
+    case 2222: // is_zoom_disabled (0x1401de006)
         return world.zoom_disabled ? NativeDispatch::handled
                                    : NativeDispatch::condition_false;
-    case 2230: // store_item_value (0x1401dde92)
+    case 2230: // store_item_value (0x1401de012)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst,
@@ -804,23 +804,23 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2250: // store_random_quest_in_range (0x1401ddfa0)
+    case 2250: // store_random_quest_in_range (0x1401de120)
         store_lvalue(dst, static_cast<std::int64_t>(native_campaign_random_quest(narrow[1], narrow[2], ctx)),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2251: // store_random_troop_to_raise (0x1401ddfd5)
+    case 2251: // store_random_troop_to_raise (0x1401de155)
         store_lvalue(dst, static_cast<std::int64_t>(native_campaign_random_troop_in_chain(narrow[1], false, ctx)),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2252: // store_random_troop_to_capture (0x1401de00a)
+    case 2252: // store_random_troop_to_capture (0x1401de18a)
         store_lvalue(dst, static_cast<std::int64_t>(native_campaign_random_troop_in_chain(narrow[1], true, ctx)),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2254: // store_random_party_in_range (0x1401de03f)
+    case 2254: // store_random_party_in_range (0x1401de1bf)
         store_lvalue(dst, static_cast<std::int64_t>(native_campaign_random_party(narrow[1], narrow[2], ctx)),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2255: { // store01_random_parties_in_range (0x1401de074)
+    case 2255: { // store01_random_parties_in_range (0x1401de1f4)
         const std::int32_t first = native_campaign_random_party(narrow[0], narrow[1], ctx);
         std::int32_t second = first;
         for (std::int32_t i = 0; i < 64 && second == first; ++i) {
@@ -830,19 +830,19 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
         ctx.registers[1] = second;
         return NativeDispatch::handled;
     }
-    case 2257: // store_random_horse (0x1401de0cc)
+    case 2257: // store_random_horse (0x1401de24c)
         store_lvalue(dst, static_cast<std::int64_t>(native_campaign_random_item({1}, ctx)),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2258: // store_random_equipment (0x1401de112)
+    case 2258: // store_random_equipment (0x1401de292)
         store_lvalue(dst, static_cast<std::int64_t>(native_campaign_random_item({2, 3, 4}, ctx)),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2259: // store_random_armor (0x1401de154)
+    case 2259: // store_random_armor (0x1401de2d4)
         store_lvalue(dst, static_cast<std::int64_t>(native_campaign_random_item({12, 13, 14, 15}, ctx)),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2261: // store_quest_number (0x1401de198)
+    case 2261: // store_quest_number (0x1401de318)
         if (world.is_valid_quest(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -850,7 +850,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2262: // store_quest_item (0x1401de1df)
+    case 2262: // store_quest_item (0x1401de35f)
         if (world.is_valid_quest(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -858,7 +858,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2263: // store_quest_troop (0x1401de226)
+    case 2263: // store_quest_troop (0x1401de3a6)
         if (world.is_valid_quest(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -866,13 +866,13 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2272: // store_current_day (0x1401de2ee)
+    case 2272: // store_current_day (0x1401de46e)
         store_lvalue(dst, static_cast<std::int64_t>(world.current_day), ctx, locals);
         return NativeDispatch::handled;
-    case 2273: // is_currently_night (0x1401de31c)
+    case 2273: // is_currently_night (0x1401de49c)
         return world.currently_night ? NativeDispatch::handled
                                      : NativeDispatch::condition_false;
-    case 2290: // get_party_ai_behavior (0x1401de3c4)
+    case 2290: // get_party_ai_behavior (0x1401de544)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(
                 dst,
@@ -881,7 +881,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2291: // get_party_ai_object (0x1401de40b)
+    case 2291: // get_party_ai_object (0x1401de58b)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(
                 dst,
@@ -891,7 +891,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2292: // party_get_ai_target_position (0x1401de452)
+    case 2292: // party_get_ai_target_position (0x1401de5d2)
         if (wse_register_ok(narrow[0]) && world.is_valid_party(narrow[1])) {
             auto& pos = ctx.positions[static_cast<std::size_t>(narrow[0])];
             pos = core::WseTransform::identity();
@@ -900,7 +900,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
             pos.o = {p.x, p.y, 0.0f, 1.0f};
         }
         return NativeDispatch::handled;
-    case 2293: // get_party_ai_current_behavior (0x1401de4e1)
+    case 2293: // get_party_ai_current_behavior (0x1401de661)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(
                 dst,
@@ -909,7 +909,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2294: // get_party_ai_current_object (0x1401de528)
+    case 2294: // get_party_ai_current_object (0x1401de6a8)
         if (world.is_valid_party(narrow[1])) {
             store_lvalue(
                 dst,
@@ -918,7 +918,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2310: { // store_num_parties_of_template (0x1401de650)
+    case 2310: { // store_num_parties_of_template (0x1401de7d0)
         std::int32_t count = 0;
         if (world.is_valid_party_template(narrow[1])) {
             for (const auto& party : world.parties) {
@@ -930,7 +930,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
         store_lvalue(dst, static_cast<std::int64_t>(count), ctx, locals);
         return NativeDispatch::handled;
     }
-    case 2311: { // store_random_party_of_template (0x1401de709)
+    case 2311: { // store_random_party_of_template (0x1401de889)
         if (!world.is_valid_party_template(narrow[1])) {
             return NativeDispatch::condition_false;
         }
@@ -956,7 +956,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
         }
         return NativeDispatch::condition_false;
     }
-    case 2332: // str_store_agent_name (0x1401debe2)
+    case 2332: // str_store_agent_name (0x1401ded62)
         if (wse_register_ok(narrow[0]) && world.is_valid_agent(narrow[1])) {
             const std::int32_t tno =
                 world.agents[static_cast<std::size_t>(narrow[1])].troop_no;
@@ -966,49 +966,49 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
             }
         }
         return NativeDispatch::handled;
-    case 2346: // str_store_class_name (0x1401df0e8)
+    case 2346: // str_store_class_name (0x1401df268)
         if (wse_register_ok(narrow[0]) && narrow[1] >= 0 &&
             narrow[1] < game::kNumDivisions) {
             ctx.stringRegisters[static_cast<std::size_t>(narrow[0])] =
                 wse_utf8_to_utf16(world.class_names[static_cast<std::size_t>(narrow[1])]);
         }
         return NativeDispatch::handled;
-    case 2365: // store_mission_timer_a_msec (0x1401df260)
+    case 2365: // store_mission_timer_a_msec (0x1401df3e0)
         store_lvalue(dst,
                      static_cast<std::int64_t>(
                          world.mission_timers[0].elapsed_seconds(ctx.timersTotal) *
                          1000.0f),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2366: // store_mission_timer_b_msec (0x1401df2a0)
+    case 2366: // store_mission_timer_b_msec (0x1401df420)
         store_lvalue(dst,
                      static_cast<std::int64_t>(
                          world.mission_timers[1].elapsed_seconds(ctx.timersTotal) *
                          1000.0f),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2367: // store_mission_timer_c_msec (0x1401df2e0)
+    case 2367: // store_mission_timer_c_msec (0x1401df460)
         store_lvalue(dst,
                      static_cast<std::int64_t>(
                          world.mission_timers[2].elapsed_seconds(ctx.timersTotal) *
                          1000.0f),
                      ctx, locals);
         return NativeDispatch::handled;
-    case 2375: // reset_mission_timer_a (0x1401df3c8)
+    case 2375: // reset_mission_timer_a (0x1401df548)
         native_campaign_reset_timer(0, ctx);
         return NativeDispatch::handled;
-    case 2376: // reset_mission_timer_b (0x1401df3e0)
+    case 2376: // reset_mission_timer_b (0x1401df560)
         native_campaign_reset_timer(1, ctx);
         return NativeDispatch::handled;
-    case 2377: // reset_mission_timer_c (0x1401df3f8)
+    case 2377: // reset_mission_timer_c (0x1401df578)
         native_campaign_reset_timer(2, ctx);
         return NativeDispatch::handled;
-    case 2379: // set_cheer_at_no_enemy (0x1401df410)
+    case 2379: // set_cheer_at_no_enemy (0x1401df590)
         world.cheer_at_no_enemy = (narrow[0] != 0);
         return NativeDispatch::handled;
 
     // Item Kind Getters (2700..2724)
-    case 2700: // item_get_weight (0x1401e0a63)
+    case 2700: // item_get_weight (0x1401e0be3)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst,
                          static_cast<std::int64_t>(
@@ -1016,77 +1016,77 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2701: // item_get_value (0x1401e0ac1)
+    case 2701: // item_get_value (0x1401e0c41)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst, world.items[static_cast<std::size_t>(narrow[1])].value, ctx,
                          locals);
         }
         return NativeDispatch::handled;
-    case 2702: // item_get_difficulty (0x1401e0b0c)
+    case 2702: // item_get_difficulty (0x1401e0c8c)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst, world.items[static_cast<std::size_t>(narrow[1])].difficulty,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2703: // item_get_head_armor (0x1401e0b57)
+    case 2703: // item_get_head_armor (0x1401e0cd7)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst, world.items[static_cast<std::size_t>(narrow[1])].head_armor,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2704: // item_get_body_armor (0x1401e0ba2)
+    case 2704: // item_get_body_armor (0x1401e0d22)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst, world.items[static_cast<std::size_t>(narrow[1])].body_armor,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2705: // item_get_leg_armor (0x1401e0bed)
+    case 2705: // item_get_leg_armor (0x1401e0d6d)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst, world.items[static_cast<std::size_t>(narrow[1])].leg_armor,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2706: // item_get_hit_points (0x1401e0c38)
+    case 2706: // item_get_hit_points (0x1401e0db8)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst, world.items[static_cast<std::size_t>(narrow[1])].hit_points,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2707: // item_get_weapon_length (0x1401e0c83)
+    case 2707: // item_get_weapon_length (0x1401e0e03)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst,
                          world.items[static_cast<std::size_t>(narrow[1])].weapon_length,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2708: // item_get_speed_rating (0x1401e0cce)
+    case 2708: // item_get_speed_rating (0x1401e0e4e)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst,
                          world.items[static_cast<std::size_t>(narrow[1])].speed_rating,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2709: // item_get_missile_speed (0x1401e0d19)
+    case 2709: // item_get_missile_speed (0x1401e0e99)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst,
                          world.items[static_cast<std::size_t>(narrow[1])].missile_speed,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2710: // item_get_max_ammo (0x1401e0d64)
+    case 2710: // item_get_max_ammo (0x1401e0ee4)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst, world.items[static_cast<std::size_t>(narrow[1])].max_ammo,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2711: // item_get_accuracy (0x1401e0daf)
+    case 2711: // item_get_accuracy (0x1401e0f2f)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst,
                          world.items[static_cast<std::size_t>(narrow[1])].get_accuracy(),
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2712: // item_get_shield_height (0x1401e0dfa)
+    case 2712: // item_get_shield_height (0x1401e0f7a)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst,
@@ -1096,7 +1096,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2713: // item_get_horse_scale (0x1401e0e56)
+    case 2713: // item_get_horse_scale (0x1401e0fd6)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst,
@@ -1106,34 +1106,34 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2714: // item_get_horse_speed (0x1401e0eb2)
+    case 2714: // item_get_horse_speed (0x1401e1032)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst, world.items[static_cast<std::size_t>(narrow[1])].get_horse_speed(),
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2715: // item_get_horse_maneuver (0x1401e0efd)
+    case 2715: // item_get_horse_maneuver (0x1401e107d)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst, world.items[static_cast<std::size_t>(narrow[1])].get_horse_maneuver(),
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2716: // item_get_food_quality (0x1401e0f48)
+    case 2716: // item_get_food_quality (0x1401e10c8)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst, world.items[static_cast<std::size_t>(narrow[1])].get_food_quality(),
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2717: // item_get_abundance (0x1401e0f93)
+    case 2717: // item_get_abundance (0x1401e1113)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(dst, world.items[static_cast<std::size_t>(narrow[1])].abundance,
                          ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2718: // item_get_thrust_damage (0x1401e0fde)
+    case 2718: // item_get_thrust_damage (0x1401e115e)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst,
@@ -1141,7 +1141,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2719: // item_get_thrust_damage_type (0x1401e102b)
+    case 2719: // item_get_thrust_damage_type (0x1401e11ab)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst,
@@ -1149,14 +1149,14 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2720: // item_get_swing_damage (0x1401e1078)
+    case 2720: // item_get_swing_damage (0x1401e11f8)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst, world.items[static_cast<std::size_t>(narrow[1])].get_swing_damage(),
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2721: // item_get_swing_damage_type (0x1401e10c5)
+    case 2721: // item_get_swing_damage_type (0x1401e1245)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst,
@@ -1164,26 +1164,26 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2722: // item_get_horse_charge_damage (0x1401e1112)
+    case 2722: // item_get_horse_charge_damage (0x1401e1292)
         if (world.is_valid_item(narrow[1])) {
             store_lvalue(
                 dst, world.items[static_cast<std::size_t>(narrow[1])].get_horse_charge(),
                 ctx, locals);
         }
         return NativeDispatch::handled;
-    case 2723: // item_has_property (0x1401e115d)
+    case 2723: // item_has_property (0x1401e12dd)
         return (world.is_valid_item(narrow[0]) &&
                 (world.items[static_cast<std::size_t>(narrow[0])].properties &
                  static_cast<std::uint64_t>(wide[1])) != 0ULL)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 2724: // item_has_capability (0x1401e119a)
+    case 2724: // item_has_capability (0x1401e131a)
         return (world.is_valid_item(narrow[0]) &&
                 (world.items[static_cast<std::size_t>(narrow[0])].capabilities &
                  static_cast<std::uint64_t>(wide[1])) != 0ULL)
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
-    case 2750: // str_store_troop_face_keys (0x1401e1438)
+    case 2750: // str_store_troop_face_keys (0x1401e15b8)
         if (wse_register_ok(narrow[0]) && world.is_valid_troop(narrow[1])) {
             const std::int32_t slot =
                 (statement.numOperands >= 3 && narrow[2] != 0) ? 1 : 0;
@@ -1193,7 +1193,7 @@ inline void native_campaign_set_agent_mod(std::int32_t agent_id,
                         .face_keys_to_string(slot));
         }
         return NativeDispatch::handled;
-    case 2751: { // troop_set_face_keys (0x1401e1517)
+    case 2751: { // troop_set_face_keys (0x1401e1697)
         if (world.is_valid_troop(narrow[0])) {
             const std::uint8_t tag1 = (tags.size() > 1) ? tags[1] : 0U;
             const std::string hex =

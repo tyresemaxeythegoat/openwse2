@@ -80,7 +80,7 @@ namespace wse::core {
                              needle, case_insensitive);
 }
 
-// _wtof (0x140498878): the CRT parses the longest decimal/inf/nan prefix and
+// _wtof (0x140499608): the CRT parses the longest decimal/inf/nan prefix and
 // returns 0.0 when there is none. strtod gives the same correctly-rounded
 // result; the numeric grammar is ASCII.
 [[nodiscard]] inline double wse_wtof(std::u16string_view text) noexcept {
@@ -95,7 +95,7 @@ namespace wse::core {
     return std::strtod(narrow.c_str(), nullptr);
 }
 
-// towupper counterpart of wse_fold_case for str_store_upper (0x1401f8ac0),
+// towupper counterpart of wse_fold_case for str_store_upper (0x1401f8c40),
 // kept locale-independent ("C" locale ASCII rules) across platforms.
 [[nodiscard]] constexpr char16_t wse_upper_case(char16_t value) noexcept {
     if (value >= u'a' && value <= u'z') {
@@ -105,8 +105,8 @@ namespace wse::core {
 }
 
 // mbString comparison behind str_compare (0x1074). The case-sensitive wrapper
-// 0x1401f86b0 normalises to -1/0/1; the case-insensitive path tail-jumps to
-// _wcsicmp (0x1404989d4), which returns the folded code-unit difference.
+// 0x1401f8830 normalises to -1/0/1; the case-insensitive path tail-jumps to
+// _wcsicmp (0x140499764), which returns the folded code-unit difference.
 [[nodiscard]] inline int wse_string_compare(std::u16string_view lhs,
                                             std::u16string_view rhs,
                                             bool case_insensitive) noexcept {
@@ -136,7 +136,7 @@ namespace wse::core {
     return static_cast<int>(left) - static_cast<int>(right);
 }
 
-// 0x1401f8710: replace every non-overlapping occurrence of `needle`, resuming
+// 0x1401f8890: replace every non-overlapping occurrence of `needle`, resuming
 // after the inserted replacement. A null/empty needle returns the input
 // unchanged (the retail function returns before touching the string).
 [[nodiscard]] inline std::u16string wse_replace_all(
@@ -171,7 +171,7 @@ namespace wse::core {
     return value == u' ' || (value >= u'\t' && value <= u'\r');
 }
 
-// 0x1401f8d00 removes leading whitespace.
+// 0x1401f8e80 removes leading whitespace.
 inline void wse_trim_left(std::u16string& text) {
     std::size_t first = 0;
     while (first < text.size() && wse_is_space(text[first])) {
@@ -180,7 +180,7 @@ inline void wse_trim_left(std::u16string& text) {
     text.erase(0, first);
 }
 
-// 0x1401f8c40 removes trailing whitespace.
+// 0x1401f8dc0 removes trailing whitespace.
 inline void wse_trim_right(std::u16string& text) {
     std::size_t last = text.size();
     while (last > 0 && wse_is_space(text[last - 1])) {
@@ -189,13 +189,13 @@ inline void wse_trim_right(std::u16string& text) {
     text.erase(last);
 }
 
-// 0x1401f8e20 trims both ends (right first, then left).
+// 0x1401f8fa0 trims both ends (right first, then left).
 inline void wse_trim(std::u16string& text) {
     wse_trim_right(text);
     wse_trim_left(text);
 }
 
-// Encodes UTF-16 into UTF-8 (matching 0x14030fd60 / CP_UTF8 0xfde9), replacing
+// Encodes UTF-16 into UTF-8 (matching 0x140310b20 / CP_UTF8 0xfde9), replacing
 // lone surrogates with U+FFFD.
 [[nodiscard]] inline std::string wse_utf16_to_utf8(std::u16string_view text) {
     std::string out;
@@ -238,7 +238,7 @@ inline void wse_trim(std::u16string& text) {
 }
 
 // Decodes UTF-8 into UTF-16 (matching MultiByteToWideChar CP_UTF8 0xfde9 in
-// 0x140310970 / 0x1403100d0), replacing malformed sequences with U+FFFD.
+// 0x140311730 / 0x140310e90), replacing malformed sequences with U+FFFD.
 [[nodiscard]] inline std::u16string wse_utf8_to_utf16(std::string_view text) {
     std::u16string out;
     out.reserve(text.size());
@@ -308,7 +308,7 @@ inline void wse_trim(std::u16string& text) {
     return out;
 }
 
-// RFC 1321 MD5 returning 32 lowercase hex digits ("%.2x" / 0x14056bca8).
+// RFC 1321 MD5 returning 32 lowercase hex digits ("%.2x" / 0x14056cd58).
 [[nodiscard]] inline std::u16string wse_md5_hex(std::string_view input) {
     static constexpr std::array<std::uint32_t, 64> kShifts = {
         7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
@@ -416,7 +416,7 @@ inline void wse_trim(std::u16string& text) {
     return hex;
 }
 
-// 0x1401ef436: strips "{", "}", "<", ">" from a tag-0 string register.
+// 0x1401ef5b6: strips "{", "}", "<", ">" from a tag-0 string register.
 [[nodiscard]] inline std::u16string wse_sanitize_string(std::u16string_view text) {
     std::u16string cleaned;
     cleaned.reserve(text.size());
@@ -441,7 +441,7 @@ inline void wse_trim(std::u16string& text) {
     return -1;
 }
 
-// Models SHLWAPI.dll!UrlUnescapeA(..., dwFlags=0) in 0x1403108b0: decodes %XX
+// Models SHLWAPI.dll!UrlUnescapeA(..., dwFlags=0) in 0x140311670: decodes %XX
 // hex bytes, preserves '+' and malformed '%' sequences, and terminates on NUL.
 [[nodiscard]] inline std::string wse_url_unescape(std::string_view input) {
     std::string out;
@@ -469,7 +469,7 @@ inline void wse_trim(std::u16string& text) {
     return out;
 }
 
-// 0x140200c40: formats (double)value with "%.*f" (0x14055b3e4).
+// 0x140200dc0: formats (double)value with "%.*f" (0x14055c414).
 [[nodiscard]] inline std::u16string wse_format_float(
     float value, std::int32_t precision) {
     const int prec = precision < 0 ? 5 : static_cast<int>(precision);
@@ -517,7 +517,7 @@ inline void wse_trim(std::u16string& text) {
     return sv;
 }
 
-// Mirrors mbCheckPath (0x1401c5640): rejects "<>:\"/\\|?*" (0x14055ac20),
+// Mirrors mbCheckPath (0x1401c57c0): rejects "<>:\"/\\|?*" (0x14055bc50),
 // trims whitespace, strips leading '.', trims again, and rejects empty names.
 [[nodiscard]] inline bool wse_check_path(std::string& name) {
     constexpr std::string_view kBadChars = "<>:\"/\\|?*";
@@ -610,6 +610,6 @@ inline void wse_spaces_to_underscores(std::string& text) noexcept {
     std::replace(text.begin(), text.end(), ' ', '_');
 }
 
-// Shared entity slot lookup for opcodes 3003..3013 (0x1401e55c5..0x1401e5912).
+// Shared entity slot lookup for opcodes 3003..3013 (0x1401e5745..0x1401e5a92).
 
 }  // namespace wse::core

@@ -260,7 +260,7 @@ def write_markdown(document, path):
     lines.append('')
     lines.append('`executeWSE` receives the statement, the result destination, three decoded operand')
     lines.append('arrays (`int64`, `int32`, and tags), and the caller operand. It masks the opcode with')
-    lines.append('`0x0FFFFFFF`. Unmatched values reach `"Unrecognized opcode %d"` (`0x14055b890`).')
+    lines.append('`0x0FFFFFFF`. Unmatched values reach `"Unrecognized opcode %d"` (`0x14055c8c0`).')
     lines.append('')
     lines.append('## Coverage')
     lines.append('')

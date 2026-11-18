@@ -53,7 +53,7 @@ struct HeadlessRunOptions {
     bool start_on_campaign_map = true;
     // Drive module audio: a `WorldAudioBridge` is attached before `game_start` (so sound and
     // music opcodes reach the mixer), and every frame moves the listener to the camera
-    // (`listener_from_camera_transform`, `mbSoundManager::setTransform` `0x140332970`), runs
+    // (`listener_from_camera_transform`, `mbSoundManager::setTransform` `0x140333730`), runs
     // `WorldAudioBridge::update`, and pumps the mix into a `CaptureAudioDevice`.
     // `audio_codecs` decodes OGG / MP3 (`wse::asset::create_audio_codec_backend`, in the
     // `wse_audio` library); without it only WAV samples decode. `preload_audio` decodes every
@@ -267,7 +267,7 @@ public:
         return true;
     }
 
-    // Runs mapped script slot 0 (`game_start`, `mbGame::executeMappedScript` `0x1400dbe70`).
+    // Runs mapped script slot 0 (`game_start`, `mbGame::executeMappedScript` `0x1400dbfd0`).
     // `start` calls it when `options.run_game_start` is set; a host that shows a main menu
     // first (`platform::UiGameShell`) leaves that off and calls this on "Start a New Game".
     // Returns whether frames may follow.

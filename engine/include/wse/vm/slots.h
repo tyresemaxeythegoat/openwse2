@@ -3,9 +3,9 @@
 // Evidence:
 //   mbSlots layout (PDB type 0x1b004, 24 bytes)
 //     +0x0000 m_values rglVector<__int64>   (std::vector<int64_t>, 24 bytes)
-//   mbStatement::parseOperand  (0x1401c6070) reads tag 2 with a bounds check
+//   mbStatement::parseOperand  (0x1401c61f0) reads tag 2 with a bounds check
 //     against the vector size and yields 0 outside it.
-//   mbStatement::returnValue   (0x1401c6100) writes tag 2 through mbSlots::set.
+//   mbStatement::returnValue   (0x1401c6280) writes tag 2 through mbSlots::set.
 
 #pragma once
 

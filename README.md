@@ -107,7 +107,7 @@ The proofs deliberately cover the hardest "easy" features:
 
 `mb_warband_wse2_x64.exe`
 
-- PE32+ x86-64, image base `0x140000000`, entry `0x140481CE0`
+- PE32+ x86-64, image base `0x140000000`, entry `0x140482A70`
 - 6,735,360 bytes
 - `.text`: 5,125,605 bytes
 - `.pdata`: 14,461 usable extents = 9,202 primary functions + 5,259

@@ -781,7 +781,7 @@ void test_vm_and_world_audio_bridge_integration() {
     expect(run_stmt(ctx, 603U, {0x01}) && run_stmt(ctx, 604U, {0x01}) &&
                run_stmt(ctx, 601U, {0, 2}) && run_stmt(ctx, 602U, {0}),
            "music opcodes 601..604 execute cleanly");
-    bridge.mixer().update(0.6f);  // Advance past 0.5s music manager frameMove cadence (`0x140290c40`).
+    bridge.mixer().update(0.6f);  // Advance past 0.5s music manager frameMove cadence (`0x140290da0`).
     bridge.mixer().pump(cap, 2400U);
     expect(bridge.mixer().active_music_track() == 0 && bridge.mixer().active_cue_track() == 0 &&
                cap.rms_left() > 0.005,
@@ -1036,7 +1036,7 @@ void test_review_regressions() {
                "shrinking max_virtual_channels ends dropped channels via callback");
     }
 
-    // 4. Voice pitch hash (`0x140057010`): wrapping arithmetic on extreme inputs,
+    // 4. Voice pitch hash (`0x140057170`): wrapping arithmetic on extreme inputs,
     //    exact `0.3f` scale and asymmetric `1/(1-delta)` negative branch, and deadband.
     {
         const float hi = compute_agent_voice_pitch(std::numeric_limits<std::int32_t>::max(),
@@ -1047,7 +1047,7 @@ void test_review_regressions() {
         const float typical = compute_agent_voice_pitch(5, 100, 12345);
         const float negative_branch = compute_agent_voice_pitch(0, 1, -1);
         // Negative signed sum produces negative `%` remainder (acc = -31, delta ~= -0.1607);
-        // retail 0x140057010 has no +-0.15f clamp, giving ~0.8615659 rather than 1/1.15.
+        // retail 0x140057170 has no +-0.15f clamp, giving ~0.8615659 rather than 1/1.15.
         const float negative_unclamped = compute_agent_voice_pitch(-29, 0, -1);
         expect(close(hi, 1.0f, 1e-6f) && close(lo, 0.9795872f, 1e-5f) &&
                    close(typical, 1.1093571f, 1e-5f) &&

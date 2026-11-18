@@ -12,7 +12,7 @@
 // through the starting / loading windows before the first menu; that sequence is not traced.
 //
 // Port infrastructure (no single retail counterpart): retail runs the same order inside
-// `rglWindowManager::frameMove` (`0x14032a0d0`). The world model is the headless one (campaign
+// `rglWindowManager::frameMove` (`0x14032ae90`). The world model is the headless one (campaign
 // map, no mission scene), so what the shell shows is the module's menus, presentations and
 // notes windows; the frame itself goes through `SoftwareRhiDevice` until the Vulkan device
 // draws (`STATUS.md` §5, P4 item 1).

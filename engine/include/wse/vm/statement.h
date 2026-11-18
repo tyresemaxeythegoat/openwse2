@@ -1,9 +1,9 @@
 // Decoded script-VM statement record and module-file reader.
 //
 // Evidence:
-//   mbStatementBlock::readStream (0x1401f6600)  Ghidra 12.1.4 pseudocode
+//   mbStatementBlock::readStream (0x1401f6780)  Ghidra 12.1.4 pseudocode
 //   mbStatement layout            PDB TPI type 0xb91e, size 272
-//   rglTextStream reader slots    rglInputTextFileStream vtable 0x1405651e0
+//   rglTextStream reader slots    rglInputTextFileStream vtable 0x140566030
 //
 // Module text form per statement:
 //   <opcode> <operandCount> <operand>...
@@ -13,7 +13,7 @@
 //
 // In memory the record stays 272 bytes: uint32 opcode, int32 operandCount,
 // 32 int64 operands, int32 endStatement initialized to -1 by the constructor
-// (0x1401c6060) and filled by analyze() (0x1401f6740).
+// (0x1401c61e0) and filled by analyze() (0x1401f68c0).
 //
 // Safety deviation: the original passes the count straight to the allocator
 // and reads that many operands into the fixed 32-element array. This reader

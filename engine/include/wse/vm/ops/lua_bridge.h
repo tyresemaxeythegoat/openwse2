@@ -46,7 +46,7 @@ namespace wse::vm {
 
     switch (static_cast<WseOpcode>(opcode)) {
     case WseOpcode::lua_get_top: {
-        // 5100 (0x1401f409c)
+        // 5100 (0x1401f421c)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -63,7 +63,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::lua_set_top: {
-        // 5101 (0x1401f40ae)
+        // 5101 (0x1401f422e)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -86,7 +86,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::lua_insert: {
-        // 5102 (0x1401f40c3)
+        // 5102 (0x1401f4243)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -104,7 +104,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::lua_remove: {
-        // 5103 (0x1401f40e7)
+        // 5103 (0x1401f4267)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -122,7 +122,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::lua_pop: {
-        // 5104 (0x1401f410b)
+        // 5104 (0x1401f428b)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -137,7 +137,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::lua_to_int: {
-        // 5105 (0x1401f4124)
+        // 5105 (0x1401f42a4)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -157,7 +157,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::lua_to_str: {
-        // 5106 (0x1401f414a)
+        // 5106 (0x1401f42ca)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -193,7 +193,7 @@ namespace wse::vm {
                    : WseDispatch::ignored;
     }
     case WseOpcode::lua_to_pos: {
-        // 5107 (0x1401f41b7)
+        // 5107 (0x1401f4337)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -228,7 +228,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::lua_push_int: {
-        // 5108 (0x1401f42da)
+        // 5108 (0x1401f445a)
         if (wide.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -243,7 +243,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::lua_push_str: {
-        // 5109 (0x1401f42ef)
+        // 5109 (0x1401f446f)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -262,7 +262,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::lua_push_pos: {
-        // 5110 (0x1401f4357)
+        // 5110 (0x1401f44d7)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -282,7 +282,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::lua_get_type: {
-        // 5111 (0x1401f4389)
+        // 5111 (0x1401f4509)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -303,7 +303,7 @@ namespace wse::vm {
         return WseDispatch::handled;
     }
     case WseOpcode::lua_call: {
-        // 5112 (0x1401f43af)
+        // 5112 (0x1401f452f)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -359,7 +359,7 @@ namespace wse::vm {
         return WseDispatch::handled_no_store;
     }
     case WseOpcode::lua_triggerCallback: {
-        // 5113 (0x1401f4686)
+        // 5113 (0x1401f4806)
         if (narrow.size() < 2) {
             return WseDispatch::operand_count_out_of_range;
         }
@@ -398,7 +398,7 @@ namespace wse::vm {
                        : WseDispatch::condition_false;
     }
     case WseOpcode::lua_test: {
-        // 5114 (0x1401f4757)
+        // 5114 (0x1401f48d7)
         if (narrow.size() < 1) {
             return WseDispatch::operand_count_out_of_range;
         }

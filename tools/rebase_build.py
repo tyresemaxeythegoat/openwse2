@@ -46,8 +46,16 @@ import pefile
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS = ROOT / "tools"
-# `0x14…` citations and Ghidra labels (`FUN_14…`, `DAT_14…`, `LAB_14…`, `PTR_14…`).
-VA_RE = re.compile(r"\b(0x|FUN_|DAT_|LAB_|PTR_)(14[0-9a-fA-F]{7})\b")
+# `0x14…` citations and Ghidra labels (`FUN_14…`, `DAT_14…`, `LAB_14…`, `PTR_14…`), with an
+# optional shorthand tail (`0x1402a24f0/5e0/6b0`: each suffix replaces the last digits).
+VA_RE = re.compile(r"\b(0x|FUN_|DAT_|LAB_|PTR_)(14[0-9a-fA-F]{7})((?:/[0-9a-fA-F]{2,7})*)\b")
+
+
+def expand(digits: str, tail: str) -> list[int]:
+    out = [int(digits, 16)]
+    for part in [p for p in tail.split("/") if p]:
+        out.append(int(digits[:len(digits) - len(part)] + part, 16))
+    return out
 MASK_RE = re.compile(r"0x[0-9a-f]+")
 # Generated from Ghidra pseudocode: regenerate, never rewrite.
 GENERATED = {"docs/wse_opcodes.json", "docs/WSE_OPCODES.md", "engine/include/wse/vm/wse_opcodes.h",
@@ -399,8 +407,9 @@ def cited_vas(files: list[str]) -> dict[int, list[str]]:
         for n, line in enumerate(lines, 1):
             if SKIP_LINE_RE.search(line):
                 continue
-            for _prefix, digits in VA_RE.findall(line):
-                seen.setdefault(int(digits, 16), []).append(f"{f}:{n}")
+            for _prefix, digits, tail in VA_RE.findall(line):
+                for va in expand(digits, tail):
+                    seen.setdefault(va, []).append(f"{f}:{n}")
     return seen
 
 
@@ -408,13 +417,17 @@ def rewrite(files: list[str], mapping: dict[int, int]) -> int:
     changed = 0
 
     def sub(m: re.Match) -> str:
-        prefix, digits = m.group(1), m.group(2)
-        v = int(digits, 16)
-        if v not in mapping:
-            return m.group(0)
-        text = "%x" % mapping[v]
+        prefix, digits, tail = m.group(1), m.group(2), m.group(3)
         upper = digits.upper() == digits and any(c in "ABCDEF" for c in digits)
-        return prefix + (text.upper() if upper else text)
+        vas = expand(digits, tail)
+        if not any(v in mapping for v in vas):
+            return m.group(0)
+        out = []
+        for v in vas:
+            text = "%x" % mapping.get(v, v)
+            out.append(prefix + (text.upper() if upper else text))
+        # A shorthand group is written out in full: the moved addresses rarely share a prefix.
+        return "/".join(out)
 
     for f in files:
         p = ROOT / f
@@ -437,8 +450,10 @@ def codeview(pe: pefile.PE):
     for d in getattr(pe, "DIRECTORY_ENTRY_DEBUG", []):
         e = d.entry
         if e is not None and hasattr(e, "Signature_Data1"):
-            guid = "%08x-%04x-%04x-%s-%s" % (e.Signature_Data1, e.Signature_Data2, e.Signature_Data3,
-                                            bytes(e.Signature_Data4[:2]).hex(), bytes(e.Signature_Data4[2:]).hex())
+            # pefile exposes Data4 differently across versions; Signature_String is the GUID in
+            # display order followed by the age, which is what SYMBOL_MAP records.
+            s = e.Signature_String.lower()
+            guid = f"{s[0:8]}-{s[8:12]}-{s[12:16]}-{s[16:20]}-{s[20:32]}"
             return guid, e.Age
     return None, None
 

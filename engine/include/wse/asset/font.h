@@ -9,8 +9,8 @@
 //                    +0x48 m_unicodeGlyphs, +0x88 m_glyphs[512], +0x3888 m_tabSize.
 // - rglFontGlyph     size 0x1c (28 B), +0x00 m_uv (x, y), +0x08 m_size (u2, v2),
 //                    +0x10 m_preShift, +0x14 m_yAdjust, +0x18 m_postShift.
-// - rglFont::readFile      (0x1402978c0), rglFont::measureText (0x14029b4f0),
-//   rglFont::drawGlyph     (0x14029b670), rglFont::drawText    (0x140297fa0).
+// - rglFont::readFile      (0x140297a20), rglFont::measureText (0x14029b650),
+//   rglFont::drawGlyph     (0x14029b7d0), rglFont::drawText    (0x140298100).
 #pragma once
 
 #include <algorithm>
@@ -31,7 +31,7 @@
 
 namespace wse::asset {
 
-// Text alignment and layout flags decoded in `rglFont::drawText` (`0x140297fa0`).
+// Text alignment and layout flags decoded in `rglFont::drawText` (`0x140298100`).
 inline constexpr std::uint32_t kTextFlagRightAlign = 0x00000008U;
 inline constexpr std::uint32_t kTextFlagCenterAlign = 0x00000010U;
 inline constexpr std::uint32_t kTextFlagBoxWrap = 0x00000100U;
@@ -120,7 +120,7 @@ inline void decode_utf8(std::string_view utf8, std::vector<std::int32_t>& out_cp
 
 // Parses `<c=...>` starting at index `i` (which points at '<'). On success
 // advances `i` past '>' and sets `out_color_argb` (with alpha forced to 0xFF per
-// `0x1402984cd`).
+// `0x14029862d`).
 inline bool try_parse_color_tag(const std::vector<std::int32_t>& cps,
                                 std::size_t end_idx,
                                 std::size_t& i,
@@ -190,7 +190,7 @@ public:
         return (it != unicode_glyphs.end()) ? it->second : default_glyph;
     }
 
-    // Loads and parses `Data/font_data.xml` mirroring `rglFont::readFile` (`0x1402978c0`).
+    // Loads and parses `Data/font_data.xml` mirroring `rglFont::readFile` (`0x140297a20`).
     [[nodiscard]] bool parse_xml(std::string_view xml, std::string* error_out = nullptr) {
         *this = FontData{};
         io::XmlElementNode root{};
@@ -277,7 +277,7 @@ public:
         return true;
     }
 
-    // Computes unscaled glyph advance width (see `rglFont::measureText` `0x14029b4f0`)
+    // Computes unscaled glyph advance width (see `rglFont::measureText` `0x14029b650`)
     // over codepoint slice `[start, end)`, skipping `<c=...>` and `</c>` tags.
     [[nodiscard]] float measure_span_raw(const std::vector<std::int32_t>& cps,
                                          std::size_t start,
@@ -307,7 +307,7 @@ public:
     }
 
     // Lays out `utf8_text` inside horizontal `[min_x, max_x]` starting from baseline
-    // `top_y` (`rglFont::drawText` `0x140297fa0` + `rglFont::drawGlyph` `0x14029b670`).
+    // `top_y` (`rglFont::drawText` `0x140298100` + `rglFont::drawGlyph` `0x14029b7d0`).
     [[nodiscard]] TextLayoutResult layout_text(std::string_view utf8_text,
                                                float min_x,
                                                float max_x,
@@ -455,7 +455,7 @@ public:
         return out;
     }
 
-    // Computes layout bounding size without emitting quads (`rglFont::measureText` `0x14029b4f0`).
+    // Computes layout bounding size without emitting quads (`rglFont::measureText` `0x14029b650`).
     [[nodiscard]] std::pair<float, float> measure_text(std::string_view utf8_text,
                                                        float max_width,
                                                        float size_x,

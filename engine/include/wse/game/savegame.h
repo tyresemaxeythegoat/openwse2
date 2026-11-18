@@ -3,37 +3,37 @@
 //
 // Evidence (WSE2 v1.1.5.5 PE + PDB):
 //   Container save flow & checksum verification:
-//     mbGame::save                           0x1400e16c0
+//     mbGame::save                           0x1400e1820
 //       writes magic 0x52445257 ("WRDR"), format version 0x496 (1174),
 //       g_moduleVersion, mbSavegame header fields, then calls mbGame::writeStream,
 //       closes rglOutputBinaryFileStreamWithChecksum, verifies the 64-bit byte-sum
 //       checksum on read-back, backs up the previous save to last_savegame_backup.sav,
 //       and renames new_game.sav into the target slot.
 //     mbSavegame (168 B, type 0x51f8):
-//       mbSavegame::readStream               0x1400c73b0
-//       mbGame::fillSavegameHeader           0x1400e1e30
-//       mbLoadSaveWindow::updatePanels       0x140113c10 (checks at 0x140113f5e..0x140113f9a:
+//       mbSavegame::readStream               0x1400c7510
+//       mbGame::fillSavegameHeader           0x1400e1f90
+//       mbLoadSaveWindow::updatePanels       0x140113d70 (checks at 0x1401140be..0x1401140fa:
 //         magic == 0x52445257, savegame_version in [0x322..0x496] = [802..1174],
 //         module_version >= g_compatibleSavegameModuleVersion)
 //   World body & section codecs:
-//     mbGame::writeStream / readStream       0x1400c9a90 / 0x1400c8520
-//     mbGame::saveGame / loadGame            0x1400c9d50 / 0x1400c8930
-//     saveQuests / loadQuests                0x1400ca0d0 / 0x1400c8c70
-//     saveInfoPages / loadInfoPages          0x1400ca1e0 / 0x1400c8df0
-//     saveSites / loadSites                  0x1400ca270 / 0x1400c8e80
-//     saveFactions / loadFactions            0x1400ca300 / 0x1400c8f60
-//     saveTracks / loadTracks                0x1400ca420 / 0x1400c90e0
-//     savePartyTemplates / loadPartyTemplates 0x1400ca550 / 0x1400c91a0
-//     saveParties / loadParties              0x1400ca5f0 / 0x1400c92c0
-//     saveTroops / loadTroops                0x1400ca780 / 0x1400c9650
-//     loadItemKinds                          0x1400c99b0
-//     mbSlots::writeStream                   0x140218310
-//     mbNotes::writeStream / readStream      0x1401b9f30 / 0x1401b9e90
-//     rglHashVector<mbParty>::write/read     0x1400e7de0 / 0x1400e7b80
-//     mbParty::writeStream / readStream      0x1401bac00 / 0x1401ba5e0
-//     rglStableVector<mbEvent>::write/read   0x1400e7920 / 0x1400e7640
-//     mbEvent::writeStream / readStream      0x1400baf90 / 0x1400bae70
-//     mbTroop::setItem (mbItem packing)      0x1402467a0
+//     mbGame::writeStream / readStream       0x1400c9bf0 / 0x1400c8680
+//     mbGame::saveGame / loadGame            0x1400c9eb0 / 0x1400c8a90
+//     saveQuests / loadQuests                0x1400ca230 / 0x1400c8dd0
+//     saveInfoPages / loadInfoPages          0x1400ca340 / 0x1400c8f50
+//     saveSites / loadSites                  0x1400ca3d0 / 0x1400c8fe0
+//     saveFactions / loadFactions            0x1400ca460 / 0x1400c90c0
+//     saveTracks / loadTracks                0x1400ca580 / 0x1400c9240
+//     savePartyTemplates / loadPartyTemplates 0x1400ca6b0 / 0x1400c9300
+//     saveParties / loadParties              0x1400ca750 / 0x1400c9420
+//     saveTroops / loadTroops                0x1400ca8e0 / 0x1400c97b0
+//     loadItemKinds                          0x1400c9b10
+//     mbSlots::writeStream                   0x140218490
+//     mbNotes::writeStream / readStream      0x1401ba0b0 / 0x1401ba010
+//     rglHashVector<mbParty>::write/read     0x1400e7f40 / 0x1400e7ce0
+//     mbParty::writeStream / readStream      0x1401bad80 / 0x1401ba760
+//     rglStableVector<mbEvent>::write/read   0x1400e7a80 / 0x1400e77a0
+//     mbEvent::writeStream / readStream      0x1400bb0f0 / 0x1400bafd0
+//     mbTroop::setItem (mbItem packing)      0x140246920
 //
 // Safety deviations:
 //   - Retail readers perform no bounds checks on file counts or string lengths;
@@ -50,10 +50,10 @@
 //     rejected as `corrupt_record` instead of being read as empty (which desynchronizes
 //     every following field).
 //   - Version-gated savegame bodies `[802..1174]` match all four `g_compatibleSavegameVersion`
-//     branches in retail v1155 `.text`: `mbGame::readStream` (`0x1400c856d`, `> 1136` combat options),
-//     `mbParty::readStream` (`0x1401ba9d1`, `(900..999) || >= 1020` `is_marshall`; `0x1401baa20`,
-//     `> 1136` `extra_icon_*`; `0x1401baa7f`, `> 1160` `ignore_with_player_party`). `mbNotes::readStream`
-//     (`0x1401b9e90`), `loadQuests`..`loadItemKinds`, `mbEvent::readStream`, and trigger streams are
+//     branches in retail v1155 `.text`: `mbGame::readStream` (`0x1400c86cd`, `> 1136` combat options),
+//     `mbParty::readStream` (`0x1401bab51`, `(900..999) || >= 1020` `is_marshall`; `0x1401baba0`,
+//     `> 1136` `extra_icon_*`; `0x1401babff`, `> 1160` `ignore_with_player_party`). `mbNotes::readStream`
+//     (`0x1401ba010`), `loadQuests`..`loadItemKinds`, `mbEvent::readStream`, and trigger streams are
 //     version-invariant across `[802..1174]`.
 
 #pragma once
@@ -83,12 +83,12 @@ inline constexpr std::uint32_t kSavegameMagic = 0x52445257U;  // "WRDR" LE
 inline constexpr std::int32_t kSavegameMinVersion = 802;      // 0x322
 inline constexpr std::int32_t kSavegameFormatVersion = 1174;  // 0x496
 // Bodies written by versions strictly above 0x470 (1136) carry the five combat-option
-// int32 fields after the scalar preamble (`mbGame::readStream` 0x1400c8520).
+// int32 fields after the scalar preamble (`mbGame::readStream` 0x1400c8680).
 // Version gates matching retail savegame stream readers (v1155 .text):
-// - mbParty::readStream (`0x1401ba9d1`): `(900..999) || >= 1020` -> `is_marshall` (`+0x17c`).
-// - mbParty::readStream (`0x1401baa20`) & mbGame::readStream (`0x1400c856d`): `> 1136` (`0x470`)
+// - mbParty::readStream (`0x1401bab51`): `(900..999) || >= 1020` -> `is_marshall` (`+0x17c`).
+// - mbParty::readStream (`0x1401baba0`) & mbGame::readStream (`0x1400c86cd`): `> 1136` (`0x470`)
 //   -> `extra_icon_no` + 4 `extra_icon_*` floats, and 5 combat options.
-// - mbParty::readStream (`0x1401baa7f`): `> 1160` (`0x488`) -> `ignore_with_player_party` (`+0x124`).
+// - mbParty::readStream (`0x1401babff`): `> 1160` (`0x488`) -> `ignore_with_player_party` (`+0x124`).
 // Across `[802..1174]`, all other world/container/event/trigger readers are version-invariant.
 inline constexpr std::int32_t kSavegamePartyMarshallRangeMin = 900;
 inline constexpr std::int32_t kSavegamePartyMarshallRangeMax = 999;
@@ -204,7 +204,7 @@ struct SavegameConstContext {
     bool dont_load_regular_troop_inventories = false;
 };
 
-// Mirrors mbGame::fillSavegameHeader (0x1400e1e30) + override check in mbGame::save (0x1400e1832).
+// Mirrors mbGame::fillSavegameHeader (0x1400e1f90) + override check in mbGame::save (0x1400e1992).
 [[nodiscard]] inline SavegameHeader fill_savegame_header(
     const WseWorldState& world,
     std::span<const std::int64_t> timers_total,
@@ -267,7 +267,7 @@ inline void write_savegame_header(io::BinaryWriter& w, const SavegameHeader& hea
     return SavegameContainerResult::ok;
 }
 
-// Mirrors mbSavegame::readStream (0x1400c73b0) + slot compatibility check (0x140113f70..0x140113f9a).
+// Mirrors mbSavegame::readStream (0x1400c7510) + slot compatibility check (0x1401140d0..0x1401140fa).
 [[nodiscard]] inline SavegameContainerResult read_savegame_header(
     io::BinaryReader& r,
     SavegameHeader& out_header,
@@ -340,7 +340,7 @@ inline void write_slots(io::BinaryWriter& w, const wse::vm::Slots& slots) {
     return SavegameContainerResult::ok;
 }
 
-// Retail `mbNotes::writeStream` (`0x1401b9f30`) / `mbNotes::readStream` (`0x1401b9e90`) loop
+// Retail `mbNotes::writeStream` (`0x1401ba0b0`) / `mbNotes::readStream` (`0x1401ba010`) loop
 // 16 times over `m_texts[i]` (`+0x40`, stride `0x48`) and `m_dates[i]` (`+0`, stride `4`),
 // reading/writing the single scalar `m_tableauMaterialNo` (`+0x4c0`) and `m_available`
 // (`+0x4c4`) on each iteration.
@@ -387,7 +387,7 @@ template <typename NoteT>
 }
 
 // Retail `mbItem` keeps one item amount (`troop_inventory_slot_{get,set}_item_amount`
-// 0x1401d0b64 / 0x1401d08c3, i.e. `WseInventorySlot::ammo`) next to the modifier. The
+// 0x1401d0ce4 / 0x1401d0a43, i.e. `WseInventorySlot::ammo`) next to the modifier. The
 // portable `hit_points` field has no retail counterpart in the slot, so it is never
 // written; folding it into the amount turned shield hit points into ammo on reload.
 [[nodiscard]] inline std::uint32_t pack_inventory_flags(const WseInventorySlot& slot) noexcept {
@@ -399,7 +399,7 @@ template <typename NoteT>
 }
 
 // `hit_points` is not persisted (no retail slot field); it reloads as 0, matching
-// `WseTroop::set_item` (`mbTroop::setItem` 0x1402467a0).
+// `WseTroop::set_item` (`mbTroop::setItem` 0x140246920).
 inline void unpack_inventory_flags(std::int32_t item_no,
                                    std::uint32_t packed,
                                    WseInventorySlot& out) noexcept {
@@ -442,7 +442,7 @@ inline void unpack_inventory_flags(std::int32_t item_no,
 }
 
 inline void write_save_game_section(io::BinaryWriter& w, const WseWorldState& world) {
-    // mbGame::saveGame (0x1400c9d50)
+    // mbGame::saveGame (0x1400c9eb0)
     w.write_i64(world.date_timer_value);
     w.write_i32(world.current_hours);
     w.write_i32(world.game_day);
@@ -532,7 +532,7 @@ inline void write_save_game_section(io::BinaryWriter& w, const WseWorldState& wo
 inline void write_party_record(io::BinaryWriter& w,
                                const WseParty& p,
                                std::int32_t savegame_version = kSavegameFormatVersion) {
-    // mbParty::writeStream (0x1401bac00)
+    // mbParty::writeStream (0x1401bad80)
     w.write_string(p.id);
     w.write_string(p.name);
     w.write_u64(party_flags_with_icon(p));
@@ -564,7 +564,7 @@ inline void write_party_record(io::BinaryWriter& w,
     w.write_bool(p.renamed);
     w.write_string(p.extra_text);
     w.write_f32(p.morale);
-    w.write_f32(0.0f);  // spare zero fields at 0x1401baded..0x1401badfc
+    w.write_f32(0.0f);  // spare zero fields at 0x1401baf6d..0x1401baf7c
     w.write_f32(0.0f);
     w.write_f32(p.patrol_radius);
     w.write_f32(p.ai_initiative);
@@ -737,7 +737,7 @@ inline void write_world_body_sections(
     const TriggerManager empty_triggers{};
     const SimpleTriggerManager empty_simple{};
 
-    // mbGame::writeStream scalar preamble (0x1400c9a90)
+    // mbGame::writeStream scalar preamble (0x1400c9bf0)
     w.write_i64(world.campaign_time);
     w.write_i32(world.seed);
     w.write_u32(world.encounter_flags);
@@ -755,7 +755,7 @@ inline void write_world_body_sections(
     write_simple_trigger_savegame(
         ctx.simple_triggers != nullptr ? *ctx.simple_triggers : empty_simple, w);
 
-    // saveQuests (0x1400ca0d0)
+    // saveQuests (0x1400ca230)
     w.write_i32(static_cast<std::int32_t>(world.quests.size()));
     for (std::size_t qi = 0; qi < world.quests.size(); ++qi) {
         const WseQuest& q = world.quests[qi];
@@ -779,19 +779,19 @@ inline void write_world_body_sections(
         write_slots(w, q.slots);
     }
 
-    // saveInfoPages (0x1400ca1e0)
+    // saveInfoPages (0x1400ca340)
     w.write_i32(static_cast<std::int32_t>(world.info_pages.size()));
     for (const WseInfoPage& ip : world.info_pages) {
         write_notes(w, ip.notes, ip.note_tableau_material_no, ip.note_available);
     }
 
-    // saveSites (0x1400ca270)
+    // saveSites (0x1400ca3d0)
     w.write_i32(static_cast<std::int32_t>(world.sites.size()));
     for (const WseSite& site : world.sites) {
         write_slots(w, site.slots);
     }
 
-    // saveFactions (0x1400ca300)
+    // saveFactions (0x1400ca460)
     const std::int32_t num_factions = static_cast<std::int32_t>(world.factions.size());
     w.write_i32(num_factions);
     for (const WseFaction& fac : world.factions) {
@@ -806,7 +806,7 @@ inline void write_world_body_sections(
         write_notes(w, fac.notes, fac.note_tableau_material_no, fac.note_available);
     }
 
-    // saveTracks (0x1400ca420)
+    // saveTracks (0x1400ca580)
     w.write_i32(static_cast<std::int32_t>(world.tracks.size()));
     for (const WseSavegameTrack& trk : world.tracks) {
         w.write_f32(trk.position.x);
@@ -817,7 +817,7 @@ inline void write_world_body_sections(
         w.write_u32(trk.flags);
     }
 
-    // savePartyTemplates (0x1400ca550)
+    // savePartyTemplates (0x1400ca6b0)
     w.write_i32(static_cast<std::int32_t>(world.party_templates.size()));
     for (const WsePartyTemplate& pt : world.party_templates) {
         w.write_i32(pt.num_created);
@@ -826,7 +826,7 @@ inline void write_world_body_sections(
         write_slots(w, pt.slots);
     }
 
-    // saveParties (0x1400ca5f0 + rglHashVector 0x1400e7de0: m_numSlots +0x138bc, m_nextKey +0x138f0)
+    // saveParties (0x1400ca750 + rglHashVector 0x1400e7f40: m_numSlots +0x138bc, m_nextKey +0x138f0)
     const std::int32_t num_parties = static_cast<std::int32_t>(world.parties.size());
     const std::int32_t next_party_key = std::max(num_parties, world.next_party_key);
     w.write_i32(num_parties);
@@ -860,7 +860,7 @@ inline void write_world_body_sections(
         }
     }
 
-    // m_events (rglStableVector<mbEvent> 0x1400e7920 + mbEvent 0x1400baf90)
+    // m_events (rglStableVector<mbEvent> 0x1400e7a80 + mbEvent 0x1400bb0f0)
     const std::int32_t num_events = static_cast<std::int32_t>(world.events.size());
     w.write_i32(num_events);
     w.write_i32(0);
@@ -885,7 +885,7 @@ inline void write_world_body_sections(
         }
     }
 
-    // saveTroops (0x1400ca780)
+    // saveTroops (0x1400ca8e0)
     w.write_i32(static_cast<std::int32_t>(world.troops.size()));
     for (const WseTroop& tr : world.troops) {
         write_slots(w, tr.slots);
@@ -929,7 +929,7 @@ inline void write_world_body_sections(
         w.write_i32(world.skills[static_cast<std::size_t>(s)].max_level);
     }
 
-    // Item-kind slots + player tail (0x1400c9c51..0x1400c9d3d)
+    // Item-kind slots + player tail (0x1400c9db1..0x1400c9e9d)
     w.write_i32(static_cast<std::int32_t>(world.items.size()));
     for (const WseItemKind& item : world.items) {
         write_slots(w, item.slots);
@@ -1159,7 +1159,7 @@ inline void write_world_body_sections(
         }
     }
 
-    // parties (rglHashVector<mbParty>::readStream 0x1400e7b80 + main party extra XP/DNAs)
+    // parties (rglHashVector<mbParty>::readStream 0x1400e7ce0 + main party extra XP/DNAs)
     {
         std::int32_t num_slots = 0;
         std::int32_t next_key = 0;
@@ -1455,10 +1455,10 @@ inline void write_world_body_sections(
 // Parses the container header + world sections from `bytes`. Optionally verifies
 // `expected_checksum` (if provided) and `compatible_module_version`. Note:
 // `ctx.world->troops` must already hold the module's troop definitions (via
-// `mbGame::readSettingsData` before `mbGame::readStream`, `0x140112890..0x140112978`) so
-// `loadParties` (`0x1400c92c0`) distinguishes hero vs regular stacks (`tf_hero` `0x10` is
-// never toggled at runtime by `troop_set_type` `0x1401d01f0`) and un-renamed troops retain
-// their `troops.txt` names in `loadTroops` (`0x1400c9650`).
+// `mbGame::readSettingsData` before `mbGame::readStream`, `0x1401129f0..0x140112ad8`) so
+// `loadParties` (`0x1400c9420`) distinguishes hero vs regular stacks (`tf_hero` `0x10` is
+// never toggled at runtime by `troop_set_type` `0x1401d0370`) and un-renamed troops retain
+// their `troops.txt` names in `loadTroops` (`0x1400c97b0`).
 // The body is parsed into staged copies of every target and committed only on
 // success; on any failure the world, globals, and trigger managers are unchanged.
 [[nodiscard]] inline SavegameLoadReport read_savegame_container(
@@ -1521,7 +1521,7 @@ inline void write_world_body_sections(
 
 // Writes a savegame through `vfs` via staging (`new_game.sav`) + byte-sum
 // checksum read-back verification + optional backup rename matching mbGame::save
-// (`0x1400e16c0`). Returns the finalized byte count & checksum.
+// (`0x1400e1820`). Returns the finalized byte count & checksum.
 [[nodiscard]] inline SavegameWriteResult save_world_to_vfs(
     platform::Vfs& vfs,
     std::string_view dir_path,

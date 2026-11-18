@@ -64,7 +64,7 @@ struct LoadedSkinVoice {
     std::string sound_name{};
 };
 
-// mbFaceConstraint::readStream (0x140213d60): value, type, count of (weight, key_index) pairs.
+// mbFaceConstraint::readStream (0x140213ee0): value, type, count of (weight, key_index) pairs.
 struct LoadedSkinConstraintPair {
     float weight = 0.0f;
     std::int32_t key_index = 0;
@@ -196,7 +196,7 @@ namespace detail {
 
 } // namespace detail
 
-// meshes.txt (0x140095d90 / mbMeshManager::readStream 0x140121e30 / mbMesh::readStream 0x140121d50): zero header tokens.
+// meshes.txt (0x140095ef0 / mbMeshManager::readStream 0x140121fb0 / mbMesh::readStream 0x140121ed0): zero header tokens.
 [[nodiscard]] inline ModuleLoadError load_meshes(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -246,7 +246,7 @@ namespace detail {
         });
 }
 
-// actions.txt (0x140098520 / mbActionSet::readStream 0x140028dd0 / mbAction::readStream 0x140028cb0): zero header tokens.
+// actions.txt (0x140098680 / mbActionSet::readStream 0x140028dd0 / mbAction::readStream 0x140028cb0): zero header tokens.
 [[nodiscard]] inline ModuleLoadError load_actions(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -313,7 +313,7 @@ namespace detail {
         });
 }
 
-// skins.txt (0x140094fc0 / mbSkin::readStream 0x140214040): 3 header tokens.
+// skins.txt (0x140095120 / mbSkin::readStream 0x1402141c0): 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_skins(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -486,7 +486,7 @@ namespace detail {
         });
 }
 
-// sounds.txt (0x140094870 / mbSoundManager::readStream 0x1403322e0): skips 2 strings + `version`.
+// sounds.txt (0x1400949d0 / mbSoundManager::readStream 0x1403330a0): skips 2 strings + `version`.
 [[nodiscard]] inline ModuleLoadError load_sounds(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -577,7 +577,7 @@ namespace detail {
         });
 }
 
-// music.txt (mbMusicManager::readStream 0x140290ad0 / mbMusicTrack::readStream 0x140290710): zero header tokens.
+// music.txt (mbMusicManager::readStream 0x140290c30 / mbMusicTrack::readStream 0x140290870): zero header tokens.
 [[nodiscard]] inline ModuleLoadError load_music(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -621,7 +621,7 @@ namespace detail {
         });
 }
 
-// particle_systems.txt (0x140094c20 / mbParticleSystemManager::readStream 0x140208010 / mbParticleSystem::readStream 0x140207d50):
+// particle_systems.txt (0x140094d80 / mbParticleSystemManager::readStream 0x140208190 / mbParticleSystem::readStream 0x140207ed0):
 // 3 header tokens + 30 floats per entry.
 [[nodiscard]] inline ModuleLoadError load_particle_systems(
     io::TokenReader& reader,
@@ -675,7 +675,7 @@ namespace detail {
         });
 }
 
-// postfx.txt (0x140095ea0 / mbPostEffect::readStream 0x140208bf0): 3 header tokens.
+// postfx.txt (0x140096000 / mbPostEffect::readStream 0x140208d70): 3 header tokens.
 [[nodiscard]] inline ModuleLoadError load_post_effects(
     io::TokenReader& reader,
     WseWorldState& world,
@@ -727,7 +727,7 @@ namespace detail {
         });
 }
 
-// Optional Data/flora_kinds.txt (0x140094000 / mbFloraKind::readStream): 0 header tokens.
+// Optional Data/flora_kinds.txt (0x140094160 / mbFloraKind::readStream): 0 header tokens.
 [[nodiscard]] inline ModuleLoadError load_flora_kinds(
     io::TokenReader& reader,
     std::vector<LoadedFloraKind>& out,
@@ -790,7 +790,7 @@ namespace detail {
         });
 }
 
-// Optional Data/ground_specs.txt (0x1400942b0): fixed 11 entries.
+// Optional Data/ground_specs.txt (0x140094410): fixed 11 entries.
 [[nodiscard]] inline ModuleLoadError load_ground_specs(
     io::TokenReader& reader,
     std::vector<LoadedGroundSpec>& out,
@@ -825,7 +825,7 @@ namespace detail {
         });
 }
 
-// Optional Data/skyboxes.txt (0x140094400 / mbSkybox::readStream 0x1402180c0): zero header tokens.
+// Optional Data/skyboxes.txt (0x140094560 / mbSkybox::readStream 0x140218240): zero header tokens.
 [[nodiscard]] inline ModuleLoadError load_skyboxes(
     io::TokenReader& reader,
     WseWorldState& world,

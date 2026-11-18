@@ -16,12 +16,12 @@
 
 namespace wse::game {
 
-inline constexpr std::int32_t kMaxRawKeys = 256;               // 0x100 (0x1401c6801)
-inline constexpr std::int32_t kMaxGameKeys = 95;               // 0x5f (0x1401c676c)
-inline constexpr std::int32_t kNumFaceMorphKeys = 42;          // 0x2a (0x1401e140e)
-inline constexpr std::int32_t kMaxSpawnEffectorSlots = 20;     // 0x14 (0x1401cb8ac)
-inline constexpr std::int32_t kMaxTalkInfoLines = 5;           // 5 (0x1401dbd75)
-inline constexpr std::size_t kMaxContextMenuItems = 100;       // 100 (0x1401db857)
+inline constexpr std::int32_t kMaxRawKeys = 256;               // 0x100 (0x1401c6981)
+inline constexpr std::int32_t kMaxGameKeys = 95;               // 0x5f (0x1401c68ec)
+inline constexpr std::int32_t kNumFaceMorphKeys = 42;          // 0x2a (0x1401e158e)
+inline constexpr std::int32_t kMaxSpawnEffectorSlots = 20;     // 0x14 (0x1401cba2c)
+inline constexpr std::int32_t kMaxTalkInfoLines = 5;           // 5 (0x1401dbef5)
+inline constexpr std::size_t kMaxContextMenuItems = 100;       // 100 (0x1401db9d7)
 inline constexpr std::size_t kMaxPointLights = 256;
 inline constexpr std::size_t kMaxParticleEvents = 1024;
 inline constexpr std::size_t kMaxPartyParticleSystems = 64;
@@ -91,7 +91,7 @@ inline void push_bounded(std::vector<T>& vec, T value, std::size_t cap) {
     vec.push_back(std::move(value));
 }
 
-// 256-bit Warband face key bitfield (mbFaceKeys::toString / fromString, 0x1400c5d10 / 0x1400c5dc0).
+// 256-bit Warband face key bitfield (mbFaceKeys::toString / fromString, 0x1400c5e70 / 0x1400c5f20).
 struct WseFaceKeys {
     std::array<std::uint64_t, 4> keys{};
 
@@ -108,7 +108,7 @@ struct WseFaceKeys {
         return out;
     }
 
-    // Mirrors 0x1400c5dc0 gated on exact 64-character strings.
+    // Mirrors 0x1400c5f20 gated on exact 64-character strings.
     [[nodiscard]] bool from_string(std::string_view hex) noexcept {
         if (hex.size() != 64U) {
             keys.fill(0ULL);
@@ -196,9 +196,9 @@ struct WseInputState {
     std::uint64_t bindings_revision = 0U;
     // Slice P8: two-finger campaign map pinch zoom impulse (>0 zoom in, <0 zoom out).
     float map_zoom_delta = 0.0f;
-    // mbMapWindow constructor (`0x140116d70`) initializes +0x2d0 (`m_cameraDistance`) to 5.0f;
-    // rglConfig::Campaign bounds `fMapCameraMinZoom` (`0x1406173c0`) = 3.5f and
-    // `fMapCameraMaxZoom` (`0x1406173c4`) = 175.0f; `WorldInputBridge` scales by
+    // mbMapWindow constructor (`0x140116ed0`) initializes +0x2d0 (`m_cameraDistance`) to 5.0f;
+    // rglConfig::Campaign bounds `fMapCameraMinZoom` (`0x1406183c0`) = 3.5f and
+    // `fMapCameraMaxZoom` (`0x1406183c4`) = 175.0f; `WorldInputBridge` scales by
     // `exp(-map_zoom_delta)` and clamps to `[kMinMapCameraZoom, kMaxMapCameraZoom]`.
     static constexpr float kDefaultMapCameraDistance = 5.0f;
     static constexpr float kMinMapCameraZoom = 3.5f;
@@ -490,11 +490,11 @@ struct WseMiscRuntimeState {
     std::unordered_map<std::int32_t, WseQuestStrings> quest_strings{};
 };
 
-// mbQueuedWindow (8 B) entry types popped by `mbMapWindow::frameMove` (`0x140117f90`, pop at
-// `0x140118987`): 0x12 opens `mbMenuWindow` (`0x12`, whose `open` `0x140120240` clears the rest of
-// the queue, and which halts odd simple-trigger passes at `0x1402101d2..0x1402101f7`); 0x0f opens
-// presentation window `0x16` (`start_presentation` `0x1401cbf02`); 0x10 opens notes window `0x15`
-// (`change_screen_notes` `0x1401dc108`). Other queued types stay unpopped on map frames.
+// mbQueuedWindow (8 B) entry types popped by `mbMapWindow::frameMove` (`0x1401180f0`, pop at
+// `0x140118ae7`): 0x12 opens `mbMenuWindow` (`0x12`, whose `open` `0x1401203a0` clears the rest of
+// the queue, and which halts odd simple-trigger passes at `0x140210352..0x140210377`); 0x0f opens
+// presentation window `0x16` (`start_presentation` `0x1401cc082`); 0x10 opens notes window `0x15`
+// (`change_screen_notes` `0x1401dc288`). Other queued types stay unpopped on map frames.
 inline constexpr std::int32_t kQueuedWindowPresentationType = 0x0f;
 inline constexpr std::int32_t kQueuedWindowNotesType = 0x10;
 inline constexpr std::int32_t kQueuedWindowMenuType = 0x12;
@@ -502,7 +502,7 @@ inline constexpr std::int32_t kQueuedWindowMenuType = 0x12;
 // beyond this many pending transitions.
 inline constexpr std::size_t kMaxQueuedWindows = 64;
 
-// Window IDs allocated by `mbGameScreen::createWindows` (`0x1400ef710`) / checked by UI opcodes.
+// Window IDs allocated by `mbGameScreen::createWindows` (`0x1400ef870`) / checked by UI opcodes.
 inline constexpr std::int32_t kScreenWindowLoading = 3;
 inline constexpr std::int32_t kScreenWindowMap = 6;
 inline constexpr std::int32_t kScreenWindowTactical = 10;
@@ -511,7 +511,7 @@ inline constexpr std::int32_t kScreenWindowMenu = 0x12;
 inline constexpr std::int32_t kScreenWindowNotes = 0x15;
 inline constexpr std::int32_t kScreenWindowPresentation = 0x16;
 
-// mbTrack (0x5c B) savegame fields serialized by saveTracks (0x1400ca420) / loadTracks (0x1400c90e0).
+// mbTrack (0x5c B) savegame fields serialized by saveTracks (0x1400ca580) / loadTracks (0x1400c9240).
 struct WseSavegameTrack {
     wse::core::WseVec4 position{};
     float rotation_z = 0.0f;
@@ -519,7 +519,7 @@ struct WseSavegameTrack {
     std::uint32_t flags = 0;
 };
 
-// mbEvent (152 B) fields serialized by mbEvent::writeStream (0x1400baf90) / readStream (0x1400bae70).
+// mbEvent (152 B) fields serialized by mbEvent::writeStream (0x1400bb0f0) / readStream (0x1400bafd0).
 struct WseSavegameEvent {
     std::string extra{};
     std::int32_t active = 0;

@@ -140,11 +140,11 @@ SYMBOL_TOKENS = [
     "mbAction",
     "mbActionSet",
     "mbConversationManager",
-    # mbConversationWindow::updatePresentations (0x1400888c0) keeps prsntf_manual_end_only
+    # mbConversationWindow::updatePresentations (0x140088a20) keeps prsntf_manual_end_only
     # presentations when closing the others; its methods own the mission-side presentations.
     "@mbConversationWindow@@",
     # Overlay widget behaviour behind overlay_set_size / create_*_button_overlay
-    # (rglWidget::setScale 0x14031e7e0, rglImageWidget / rglGameButtonWidget::setScale).
+    # (rglWidget::setScale 0x14031f5a0, rglImageWidget / rglGameButtonWidget::setScale).
     "@rglWidget@@",
     "@rglImageWidget@@",
     "@rglGameButtonWidget@@",
@@ -343,83 +343,83 @@ ARRAY_OBJECT_SIZES = {
 
 # .rdata string literals located with tools/pe_evidence.py-style scans.
 STRINGS = [
-    ("scripts.txt", 0x14054E8D8),
-    ("triggers.txt", 0x1405529B8),
-    ("simple_triggers.txt", 0x1405529D0),
-    ("module.ini", 0x14054C2C8),
-    ("module.ini", 0x14055DA09),
-    ("Unrecognized opcode %d", 0x14055B890),
-    ("opcode %d out of range", 0x14056D2A0),
-    ("Script [%d] %s", 0x14055C680),
-    ("Unable to map script %s", 0x14055C690),
-    ("<>:\"/\\|?*", 0x14055AC20),
-    (r'u"_"', 0x14055B3DC),
-    (r'u" "', 0x14055B3E0),
-    ("%.*f", 0x14055B3E4),
-    (r'u"{"', 0x14055B3EC),
-    (r'u">"', 0x14055B3F8),
-    (r'u""', 0x14055BA68),
-    ("%02x", 0x14056BCA8),
-    ("load_resource", 0x14054C3B0),
-    ("load_resource_nofast", 0x14054C3C0),
-    ("load_mod_resource", 0x14054C3F0),
-    ("load_module_resource", 0x14054C408),
-    ("body", 0x14055C984),
-    ("sphere", 0x14055E028),
-    ("capsule", 0x14055E030),
-    ("face", 0x14055E038),
-    ("composite", 0x14055E040),
-    ("manifold", 0x14055E050),
-    ("core_shaders,core_textures,core_materials,core_ui_meshes,core_pictures,core_physics_materials", 0x14055EB10),
-    ("Invalid vertex index %d in mesh %s", 0x1405657E8),
-    ("Too many bones in mesh %s", 0x140565810),
-    ("wse2_shaders", 0x1405681D8),
-    ("rfver ", 0x14056839C),
-    ("end", 0x1405683A4),
-    ("mesh", 0x1405683A8),
-    ("texture", 0x1405683B0),
-    ("shader", 0x1405683B8),
-    ("material", 0x1405683C0),
-    ("skeleton", 0x1405683D0),
-    ("skeleton_anim", 0x1405683E0),
-    ("physics_material", 0x1405683F0),
-    ("Unrecognized resource type %s", 0x140568408),
-    ("Number of alternatives exceeds %d for shader %s", 0x1405693A8),
-    (r"Textures\%s_%d.dds", 0x14056B380),
-    (r"%sTextures\%s_%d.dds", 0x14056B398),
-    (r"Textures\languages\%s\%s_%d.dds", 0x14056B3B0),
-    (r"%sTextures\languages\%s\%s_%d.dds", 0x14056B3D0),
-    (r"Textures\%s", 0x14056B3F8),
-    (r"TexturesHD\%s", 0x14056B408),
-    (r"%sTextures\%s", 0x14056B418),
-    (r"Textures\languages\%s\%s", 0x14056B428),
-    (r"%sTextures\languages\%s\%s.dds", 0x14056B448),
+    ("scripts.txt", 0x14054F8F8),
+    ("triggers.txt", 0x1405539E8),
+    ("simple_triggers.txt", 0x140553A00),
+    ("module.ini", 0x14054D2E8),
+    ("module.ini", 0x14055EA39),
+    ("Unrecognized opcode %d", 0x14055C8C0),
+    ("opcode %d out of range", 0x14056E350),
+    ("Script [%d] %s", 0x14055D6B0),
+    ("Unable to map script %s", 0x14055D6C0),
+    ("<>:\"/\\|?*", 0x14055BC50),
+    (r'u"_"', 0x14055C40C),
+    (r'u" "', 0x14055C410),
+    ("%.*f", 0x14055C414),
+    (r'u"{"', 0x14055C41C),
+    (r'u">"', 0x14055C428),
+    (r'u""', 0x14055CA98),
+    ("%02x", 0x14056CD58),
+    ("load_resource", 0x14054D3D0),
+    ("load_resource_nofast", 0x14054D3E0),
+    ("load_mod_resource", 0x14054D410),
+    ("load_module_resource", 0x14054D428),
+    ("body", 0x14055D9B4),
+    ("sphere", 0x14055EDFC),
+    ("capsule", 0x14055EE08),
+    ("face", 0x14055EE10),
+    ("composite", 0x14055EE18),
+    ("manifold", 0x14055EE28),
+    ("core_shaders,core_textures,core_materials,core_ui_meshes,core_pictures,core_physics_materials", 0x14055F8F0),
+    ("Invalid vertex index %d in mesh %s", 0x140566638),
+    ("Too many bones in mesh %s", 0x140566660),
+    ("wse2_shaders", 0x140569028),
+    ("rfver ", 0x1405691EC),
+    ("end", 0x1405691F4),
+    ("mesh", 0x1405691F8),
+    ("texture", 0x140569200),
+    ("shader", 0x140569208),
+    ("material", 0x140569210),
+    ("skeleton", 0x140569220),
+    ("skeleton_anim", 0x140569230),
+    ("physics_material", 0x140569240),
+    ("Unrecognized resource type %s", 0x140569258),
+    ("Number of alternatives exceeds %d for shader %s", 0x14056A1F8),
+    (r"Textures\%s_%d.dds", 0x14056C430),
+    (r"%sTextures\%s_%d.dds", 0x14056C448),
+    (r"Textures\languages\%s\%s_%d.dds", 0x14056C460),
+    (r"%sTextures\languages\%s\%s_%d.dds", 0x14056C480),
+    (r"Textures\%s", 0x14056C4A8),
+    (r"TexturesHD\%s", 0x14056C4B8),
+    (r"%sTextures\%s", 0x14056C4C8),
+    (r"Textures\languages\%s\%s", 0x14056C4D8),
+    (r"%sTextures\languages\%s\%s.dds", 0x14056C4F8),
     # Slice P5 shader / effect loader strings (restored after 9cc4431 regenerated the map
     # from a list that lacked them).
-    ("mb_2b.fxo", 0x140562058),
-    ("mb_2a.fxo", 0x140562068),
-    ("mb_wse2_3_0.fxo", 0x140562078),
-    ("mb_wse2_2b.fxo", 0x140562088),
-    ("mb_wse2_2a.fxo", 0x140562098),
-    ("mb.fx", 0x1405620A8),
-    ("EFFECT file=%s", 0x1405620B0),
-    ("PostFx.fx", 0x140562C48),
-    ("#if WSE2", 0x140562C58),
-    ('#include "postFX_WSE2.fx"', 0x140562C70),
-    ("postFX_WSE2.fx", 0x140562C90),
-    ("earlyZ.fxo", 0x140566610),
-    ("earlyz_wse2.fxo", 0x140566620),
-    ("EARLYZ file=%s", 0x140566630),
-    ("wse2_shaders.ini", 0x140567D70),
-    (r"Resource\wse2_shaders.brf", 0x140568168),
-    (r"CommonRes\wse2_shaders.brf", 0x140568188),
-    ("Loading optional shader resource wse2_shaders", 0x1405681A8),
+    ("mb_2b.fxo", 0x140562e38),
+    ("mb_2a.fxo", 0x140562e48),
+    ("mb_wse2_3_0.fxo", 0x140562e58),
+    ("mb_wse2_2b.fxo", 0x140562e68),
+    ("mb_wse2_2a.fxo", 0x140562e78),
+    ("mb.fx", 0x140562E88),
+    ("EFFECT file=%s", 0x140562E90),
+    ("PostFx.fx", 0x140563A28),
+    ("#if WSE2", 0x140563A38),
+    ('#include "postFX_WSE2.fx"', 0x140563A50),
+    ("postFX_WSE2.fx", 0x140563A70),
+    ("earlyZ.fxo", 0x140567460),
+    ("earlyz_wse2.fxo", 0x140567470),
+    ("EARLYZ file=%s", 0x140567480),
+    ("wse2_shaders.ini", 0x140568BC0),
+    (r"Resource\wse2_shaders.brf", 0x140568fb8),
+    (r"CommonRes\wse2_shaders.brf", 0x140568fd8),
+    ("Loading optional shader resource wse2_shaders", 0x140568FF8),
 ]
 
 TABLES = [
     {
         "name": "mapped_script_names",
-        "va": "0x140615ad0",
+        "va": "0x140616ad0",
         "entries": 65,
         "element": "const char*",
         "first_entries": [
@@ -441,14 +441,14 @@ TABLES = [
 
 TARGET = {
     "binary": "mb_warband_wse2_x64.exe",
-    "release": "v1.1.5.5",
-    "file_version": "1.1.5.5",
-    "sha256": "d4e97d56981a6dab3de0348e3a0513ae200e7b5701b86732a4654b0aa4e29709",
+    "release": "v1.1.5.6",
+    "file_version": "1.1.5.6",
+    "sha256": "fbe9808c7644414da86713d21900f520063e4ae308d71a5ab18ceb1f4e164898",
     "format": "PE32+",
     "architecture": "x86_64",
     "image_base": "0x140000000",
     "pdb_guid": "fccf5e8d-4952-4a53-aa13-ac8b7ad38cfc",
-    "pdb_age": 449,
+    "pdb_age": 456,
 }
 
 
@@ -704,6 +704,19 @@ def main():
         if args.old_globals
         else []
     )
+    # An old-build address that is also a valid address in this build (inside a curated function
+    # range or global object) is not stale: a correct new citation can equal it by coincidence.
+    valid_ranges = sorted(
+        [(int(r["start"], 16), int(r["end"], 16)) for r in function_ranges]
+        + [(int(g["va"], 16), int(g["end"], 16)) for g in global_objects]
+    )
+    range_starts = [s for s, _e in valid_ranges]
+
+    def inside_valid(va: int) -> bool:
+        i = bisect.bisect_right(range_starts, va) - 1
+        return any(s <= va <= e for s, e in valid_ranges[max(0, i - 32):i + 1])
+
+    superseded_vas = [v for v in superseded_vas if not inside_valid(int(v, 16))]
 
     payload = {
         "schema": "wse2-symbol-map/1",
