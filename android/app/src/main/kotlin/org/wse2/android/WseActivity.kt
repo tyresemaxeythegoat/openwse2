@@ -15,6 +15,23 @@ class WseActivity : SDLActivity() {
     // ship: the engine and its SDL_main live in libwse2.so.
     override fun getLibraries(): Array<String> = arrayOf("SDL3", "wse2")
 
+    // `adb shell am start -n org.wse2.android/.WseActivity -e wse.module_root <dir>
+    // [-e wse.module Modules/<name>]` runs that module's UI (`run_module_shell` in
+    // sdl_selftest_main.cpp) instead of the self-test. `<dir>` is a plain directory the app can
+    // read (e.g. under getExternalFilesDir); SAF-picked installs are not wired to it yet.
+    override fun getArguments(): Array<String> {
+        val root = intent?.getStringExtra(EXTRA_MODULE_ROOT)
+        if (root.isNullOrEmpty()) {
+            return emptyArray()
+        }
+        val module = intent?.getStringExtra(EXTRA_MODULE)
+        return if (module.isNullOrEmpty()) {
+            arrayOf("--module", root)
+        } else {
+            arrayOf("--module", root, module)
+        }
+    }
+
     private var powerManager: PowerManager? = null
     private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
     private val thermalHandler = Handler(Looper.getMainLooper())
@@ -93,6 +110,8 @@ class WseActivity : SDLActivity() {
     }
 
     companion object {
+        private const val EXTRA_MODULE_ROOT = "wse.module_root"
+        private const val EXTRA_MODULE = "wse.module"
         private const val HEADROOM_FORECAST_SECONDS = 30
         private const val HEADROOM_POLL_INTERVAL_MS = 10_000L
         private const val HEADROOM_MIN_GAP_MS = 5_000L

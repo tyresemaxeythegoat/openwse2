@@ -2,6 +2,7 @@
 //
 // Build/run: powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -12,6 +13,7 @@
 #include <system_error>
 
 #include "wse/game/headless_runner.h"
+#include "wse/platform/ui_game_shell.h"
 #include "wse/platform/log.h"
 #include "wse/platform/vfs.h"
 #include "wse/vm/block_vm.h"
@@ -309,6 +311,157 @@ void test_headless_host_vfs_roundtrip() {
     fs::remove_all(root, ec);
 }
 
+// `HeadlessModuleRunner` stepped by hand gives the same state as `run_headless_module`'s loop,
+// and refuses to step before `start` or after a load failure.
+void test_headless_module_runner_steps() {
+    wse::platform::MemoryVfs vfs;
+    seed_minimal_module(vfs, "Modules/TestMod", build_minimal_scripts());
+    wse::game::HeadlessRunOptions opts{};
+    opts.module_dir = "Modules/TestMod";
+    opts.load_options.require_core_files = false;
+    opts.trigger_frames = 3;
+    opts.frame_ticks = 100000;
+    const auto looped = wse::game::run_headless_session(vfs, opts);
+
+    auto ctx = std::make_unique<wse::vm::VmContext>();
+    auto bundle = std::make_unique<wse::game::ModuleBundle>();
+    wse::game::HeadlessModuleRunner runner(vfs, *ctx, *bundle, opts);
+    expect(!runner.step(100000) && !runner.running(), "runner does not step before start");
+    expect(runner.start() && runner.running() && ctx->globalVariables.get(1) == 7,
+           "runner start loads the module and runs game_start");
+    // Uneven steps that add up to the same 3.0 s.
+    expect(runner.step(50000) && runner.step(150000) && runner.step(100000),
+           "runner steps three frames");
+    const auto& rep = runner.finalize();
+    expect(rep.ok && rep.frames_executed == 3U && runner.ui() != nullptr,
+           "stepped runner reports 3 clean frames with a runner-owned UiSession");
+    expect(ctx->globalVariables.get(2) == looped.ctx->globalVariables.get(2) &&
+               ctx->globalVariables.get(3) == looped.ctx->globalVariables.get(3) &&
+               ctx->registers[0] == looped.ctx->registers[0],
+           "stepped runner ends in the same state as run_headless_module's loop");
+
+    // An empty module directory loads no files, so the required game_start is missing.
+    wse::game::HeadlessRunOptions missing = opts;
+    missing.module_dir = "Modules/Nope";
+    auto ctx2 = std::make_unique<wse::vm::VmContext>();
+    auto bundle2 = std::make_unique<wse::game::ModuleBundle>();
+    wse::game::HeadlessModuleRunner bad(vfs, *ctx2, *bundle2, missing);
+    expect(!bad.start() && !bad.running() && !bad.report().ok && !bad.step(100000),
+           "runner without game_start fails start and never steps");
+}
+
+// `UiGameShell`: loads the font and module, opens the presentation `game_start` queues, routes
+// pointer events into `UiSession::handle_input`, clamps long frames, and renders at the
+// window's aspect ratio capped at `max_render_height`.
+void test_ui_game_shell() {
+    constexpr std::uint32_t kStartPresentation = 900U;
+    wse::platform::MemoryVfs vfs;
+    std::ostringstream scripts;
+    scripts << "scriptsfile version 1\n1\n"
+            << "game_start -1\n1\n"
+            << kStartPresentation << " 1 0\n";
+    seed_minimal_module(vfs, "Modules/ShellMod", scripts.str());
+    expect(vfs.write_text("Modules/ShellMod/presentations.txt",
+                          "presentationsfile version 1\n 1\nprsnt_shell 0 0 0\n"),
+           "write synthetic presentations.txt");
+
+    wse::platform::UiGameShellOptions opts{};
+    opts.run.module_dir = "Modules/ShellMod";
+    opts.run.load_options.require_core_files = false;
+    opts.render.clear_r = 1;
+    opts.render.clear_g = 2;
+    opts.render.clear_b = 3;
+    opts.start_at_initial_window = false;  // game_start in start(); the main menu is below
+
+    wse::platform::UiGameShell shell;
+    std::string err;
+    expect(!shell.start(vfs, opts, &err) && err.find("UI assets") == 0U && !shell.running(),
+           "shell start without Data/font_data.xml fails with a UI-asset error");
+
+    expect(vfs.write_text(
+               "Data/font_data.xml",
+               "<FontData width=\"64\" height=\"64\" padding=\"0\" font_size=\"32\" "
+               "font_scale=\"100\" line_spacing=\"100\"><FontDetails>"
+               "<character code=\"65\" u=\"0\" v=\"0\" w=\"16\" h=\"16\" postshift=\"16\"/>"
+               "</FontDetails></FontData>\n"),
+           "write synthetic font_data.xml");
+    err.clear();
+    expect(shell.start(vfs, opts, &err) && shell.running(), "shell starts the synthetic module");
+    if (!err.empty()) {
+        std::printf("      shell start error: %s\n", err.c_str());
+    }
+    if (!shell.running()) {
+        return;
+    }
+
+    wse::platform::RawInputEvent move{};
+    move.type = wse::platform::RawInputEvent::Type::MouseMotion;
+    move.x = 0.25f;
+    move.y = 0.5f;  // window y down -> UI y = 0.5 * 0.75
+    shell.feed(move);
+    expect(shell.frame(0.1f, 1600U, 1200U), "first shell frame runs");
+    const auto* vm = shell.vm();
+    expect(shell.report().presentations_opened == 1U &&
+               vm->world.m5.active_window == wse::game::kScreenWindowPresentation,
+           "first shell frame opens the presentation game_start queued");
+    expect(std::abs(vm->world.m5.cursor_pos.x - 0.25f) < 1e-5f &&
+               std::abs(vm->world.m5.cursor_pos.y - 0.375f) < 1e-5f,
+           "shell routes the pointer into UiSession::handle_input in UI space");
+    expect(shell.width() == 960U && shell.height() == 720U &&
+               shell.pixels().size() == 960U * 720U * 4U,
+           "1600x1200 window renders at 960x720 (max_render_height)");
+    expect(!shell.pixels().empty() && shell.pixels()[0] == 1U && shell.pixels()[1] == 2U &&
+               shell.pixels()[2] == 3U,
+           "empty presentation renders the configured clear colour");
+
+    const double before = vm->appTimeSeconds;
+    expect(shell.frame(5.0f, 640U, 360U), "long shell frame runs");
+    expect(std::abs(vm->appTimeSeconds - before - 0.25) < 1e-9,
+           "a 5 s display frame advances the world by max_frame_seconds only");
+    expect(shell.width() == 640U && shell.height() == 360U,
+           "a window under max_render_height renders at native size");
+
+    shell.stop();
+    expect(!shell.running() && !shell.frame(0.1f, 640U, 360U) && shell.pixels().empty(),
+           "a stopped shell does not step");
+
+    // Main menu first: no module frames until "Start a New Game"; a game_start that queues
+    // no window gets game menu 0.
+    seed_minimal_module(vfs, "Modules/MenuMod", build_minimal_scripts());
+    wse::platform::UiGameShellOptions menu_opts{};
+    menu_opts.run.module_dir = "Modules/MenuMod/";
+    menu_opts.run.load_options.require_core_files = false;
+    wse::platform::UiGameShell menu_shell;
+    expect(menu_shell.start(vfs, menu_opts, &err) && !menu_shell.in_game() &&
+               menu_shell.session()->root.id == "initial" &&
+               menu_shell.session()->module_name == "MenuMod" &&
+               menu_shell.vm()->globalVariables.get(1) == 0,
+           "shell opens on the main menu, labelled with the module name, before game_start");
+    expect(menu_shell.frame(1.0f / 60.0f, 800U, 600U) && !menu_shell.in_game() &&
+               menu_shell.report().frames_executed == 0U && menu_shell.vm()->appTimeSeconds == 0.0,
+           "main-menu frames run no module frames");
+    const auto tap = [&](float ui_x, float ui_y) {
+        wse::platform::RawInputEvent e{};
+        e.raw_key = wse::platform::RawKey::kLeftMouse;
+        e.x = ui_x / wse::game::kUiScreenWidth;
+        e.y = 1.0f - ui_y / wse::game::kUiScreenHeight;
+        e.type = wse::platform::RawInputEvent::Type::MouseButtonDown;
+        menu_shell.feed(e);
+        e.type = wse::platform::RawInputEvent::Type::MouseButtonUp;
+        menu_shell.feed(e);
+    };
+    tap(0.05f + 0.0925f, 0.44f + 0.0155f);  // start_new_game_button
+    expect(menu_shell.frame(1.0f / 60.0f, 800U, 600U) && menu_shell.in_game() &&
+               menu_shell.vm()->globalVariables.get(1) == 7,
+           "Start a New Game runs game_start");
+    const auto& queued = menu_shell.vm()->world.m5.enqueued_windows;
+    expect(menu_shell.vm()->world.jump_menu_no == 0 && !queued.empty() &&
+               queued.back().first == wse::game::kQueuedWindowMenuType,
+           "a game_start that queues no window opens game menu 0");
+    expect(menu_shell.frame(1.0f / 60.0f, 800U, 600U) && menu_shell.report().frames_executed == 1U,
+           "module frames run after the new game starts");
+}
+
 } // namespace
 
 namespace wse::selftest {
@@ -323,6 +476,8 @@ int run_headless_suite(const char* fixture_path) {
     test_headless_allow_unimplemented_continues_and_reports();
     test_headless_missing_game_start_and_load_failure();
     test_headless_host_vfs_roundtrip();
+    test_headless_module_runner_steps();
+    test_ui_game_shell();
 
     if (failures == 0) {
         std::printf("headless tests: PASS\n");

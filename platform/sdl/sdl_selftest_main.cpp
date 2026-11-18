@@ -1,7 +1,8 @@
 // P1-P7 on-device SDL3 self-test shell.
 //
 // Runs all 21 portable engine test suites in-process behind an SDL3 window and
-// exercises the SDL3 audio stream & input backends (docs/PLATFORM_PLAN.md).
+// exercises the SDL3 audio stream & input backends (docs/PLATFORM_PLAN.md). With
+// `--module <warband_root> [module_rel_dir]` it runs a module's UI instead (`run_module_shell`).
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -11,6 +12,8 @@
 #include "wse/platform/audio_worker.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/performance.h"
+#include "wse/platform/ui_game_shell.h"
+#include "wse/platform/vfs.h"
 
 #ifdef __ANDROID__
 #include <android/native_window.h>
@@ -27,6 +30,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -218,6 +222,135 @@ void apply_display_frame_rate(SDL_Window* window,
 #endif
 }
 
+// Module mode (`--module <warband_root> [module_rel_dir]`; on Android the `wse.module_root` /
+// `wse.module` intent extras, `WseActivity.getArguments`): instead of the self-test, load the
+// module from a plain directory (`HostVfs`) and run it through `UiGameShell` every display
+// frame: SDL events -> `SdlInputBackend` -> `UiInputAccumulator`, one module frame, then the
+// RGBA8 UI frame is streamed into an SDL texture stretched over the window (Warband's UI
+// space is stretched the same way, so pointer positions map 1:1). When the module stops
+// (a VM error with `stop_on_error`), the last frame stays up with the error on top.
+// SAF-picked installs are not reachable here yet: the SAF backend needs a JNI binding on
+// this thread (STATUS.md §5, P9 Part 2 open item 1).
+int run_module_shell(SDL_Window* window,
+                     SDL_Renderer* renderer,
+                     wse::platform::SdlInputBackend* sdl_input,
+                     AppLifecycle& app,
+                     wse::platform::FramePacer& frame_pacer,
+                     const std::string& warband_root,
+                     const std::string& module_dir) {
+    wse::platform::HostVfs vfs{fs::path(warband_root)};
+    wse::platform::UiGameShellOptions opts{};
+    opts.run.module_dir = module_dir;
+    opts.run.load_options.native_dir = "Modules/Native";
+    opts.run.load_options.root_data_dir = "Data";
+    opts.run.load_options.require_core_files = true;
+    opts.run.enable_lua = false;  // the app links no `wse_lua` runtime yet
+
+    wse::platform::UiGameShell shell;
+    std::string error;
+    const std::uint64_t load_start_ns = SDL_GetTicksNS();
+    bool running = shell.start(vfs, opts, &error);
+    SDL_Log("[WSE2] module shell: %s %s (%s, %llu ms)", warband_root.c_str(), module_dir.c_str(),
+            running ? "started" : error.c_str(),
+            static_cast<unsigned long long>((SDL_GetTicksNS() - load_start_ns) / 1000000ULL));
+#ifndef __ANDROID__
+    SDL_StartTextInput(window);  // desktop keyboards; Android IME is an open item
+#endif
+    frame_pacer.set_target_fps(60);
+
+    SDL_Texture* tex = nullptr;
+    std::uint32_t tex_w = 0U;
+    std::uint32_t tex_h = 0U;
+    std::vector<wse::platform::RawInputEvent> events;
+    std::uint64_t last_ns = SDL_GetTicksNS();
+    bool quit = false;
+    while (!quit && !app.terminating.load()) {
+        frame_pacer.begin_frame();
+        SDL_Event ev;
+        while (SDL_PollEvent(&ev)) {
+            if (ev.type == SDL_EVENT_QUIT || ev.type == SDL_EVENT_TERMINATING) {
+                quit = true;
+            } else if (ev.type == SDL_EVENT_TEXT_INPUT && ev.text.text != nullptr) {
+                shell.feed_text(ev.text.text);
+            }
+            if (sdl_input) {
+                sdl_input->push_sdl_event(&ev);
+            }
+        }
+        int win_w = 1;
+        int win_h = 1;
+        SDL_GetWindowSize(window, &win_w, &win_h);
+        int out_w = win_w;
+        int out_h = win_h;
+        SDL_GetRenderOutputSize(renderer, &out_w, &out_h);
+        if (sdl_input) {
+            sdl_input->set_viewport_size(std::max(win_w, 1), std::max(win_h, 1));
+            sdl_input->poll_events(events);
+            for (const auto& e : events) {
+                shell.feed(e);
+            }
+        }
+        const std::uint64_t now_ns = SDL_GetTicksNS();
+        const float dt = static_cast<float>(now_ns - last_ns) * 1e-9f;
+        last_ns = now_ns;
+        if (running) {
+            running = shell.frame(dt, static_cast<std::uint32_t>(std::max(out_w, 1)),
+                                  static_cast<std::uint32_t>(std::max(out_h, 1)));
+            if (!running) {
+                error = shell.report().last_error;
+                SDL_Log("[WSE2] module shell stopped: %s", error.c_str());
+            }
+        }
+
+        SDL_SetRenderScale(renderer, 1.0f, 1.0f);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        if (shell.width() != 0U && shell.pixels().size() ==
+                                       static_cast<std::size_t>(shell.width()) * shell.height() * 4U) {
+            if (tex == nullptr || tex_w != shell.width() || tex_h != shell.height()) {
+                if (tex != nullptr) {
+                    SDL_DestroyTexture(tex);
+                }
+                tex_w = shell.width();
+                tex_h = shell.height();
+                tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32,
+                                        SDL_TEXTUREACCESS_STREAMING, static_cast<int>(tex_w),
+                                        static_cast<int>(tex_h));
+                if (tex != nullptr) {
+                    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
+                }
+            }
+            if (tex != nullptr) {
+                SDL_UpdateTexture(tex, nullptr, shell.pixels().data(),
+                                  static_cast<int>(tex_w * 4U));
+                SDL_RenderTexture(renderer, tex, nullptr, nullptr);
+            }
+        }
+        if (!running) {
+            const float scale = std::clamp(std::floor(static_cast<float>(out_w) / 340.0f), 1.0f, 6.0f);
+            SDL_SetRenderScale(renderer, scale, scale);
+            draw_filled_rect(renderer, 0.0f, 0.0f, static_cast<float>(out_w) / scale, 30.0f, 150,
+                             34, 34);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderDebugText(renderer, 6.0f, 6.0f, "WSE2 module stopped");
+            const std::string line = error.size() > 80U ? error.substr(0U, 77U) + "..." : error;
+            SDL_RenderDebugText(renderer, 6.0f, 18.0f, line.c_str());
+        }
+        SDL_RenderPresent(renderer);
+        const std::uint64_t wait_ticks =
+            static_cast<std::uint64_t>(frame_pacer.remaining_wait_ticks());
+        if (wait_ticks > 0U) {
+            SDL_DelayNS(wait_ticks *
+                        static_cast<std::uint64_t>(wse::platform::FramePacer::kNsPerTick));
+        }
+    }
+    if (tex != nullptr) {
+        SDL_DestroyTexture(tex);
+    }
+    shell.stop();
+    return running || error.empty() ? 0 : 2;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -287,8 +420,18 @@ int main(int argc, char* argv[]) {
         apply_launch_cfg(launch_cfg);
     }
 
+    // `--module <warband_root> [module_rel_dir]` runs a module (`run_module_shell`);
+    // otherwise an optional first argument overrides the self-test fixture path.
     std::string cli_fixture;
-    if (argc > 1 && argv[1] && argv[1][0] != '\0') {
+    std::string module_root;
+    std::string module_rel = "Modules/Native";
+    if (argc > 2 && argv[1] && std::string_view(argv[1]) == "--module" && argv[2] &&
+        argv[2][0] != '\0') {
+        module_root = argv[2];
+        if (argc > 3 && argv[3] && argv[3][0] != '\0') {
+            module_rel = argv[3];
+        }
+    } else if (argc > 1 && argv[1] && argv[1][0] != '\0') {
         cli_fixture = argv[1];
     }
 
@@ -317,6 +460,22 @@ int main(int argc, char* argv[]) {
     app.audio = audio_worker.get();
     std::atomic<bool>& terminating = app.terminating;
     SDL_AddEventWatch(on_app_event, &app);
+
+    if (!module_root.empty()) {
+        const int rc = run_module_shell(window, renderer, sdl_input.get(), app, frame_pacer,
+                                        module_root, module_rel);
+        SDL_RemoveEventWatch(on_app_event, &app);
+        if (audio_worker) {
+            audio_worker->stop();
+        }
+        if (audio_dev) {
+            audio_dev->close();
+        }
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return rc;
+    }
 
     std::thread worker([&]() {
         while (!stop_requested.load()) {

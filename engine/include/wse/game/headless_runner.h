@@ -179,6 +179,216 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
 
 } // namespace detail
 
+// One module run, stepped a frame at a time: `start` loads `options.module_dir` and runs
+// `game_start`; each `step` advances the trigger timers, runs the trigger managers and the
+// world frame, then (with `drive_ui`) the UI session. `run_headless_module` loops `step` for
+// `trigger_frames`; an interactive host (`platform::UiGameShell`) calls it once per display
+// frame with the elapsed time and that frame's pointer input. Not copyable or movable: the
+// error forwarder and audio bridge point into it.
+class HeadlessModuleRunner {
+public:
+    HeadlessModuleRunner(platform::Vfs& vfs,
+                         vm::VmContext& ctx,
+                         ModuleBundle& bundle,
+                         HeadlessRunOptions options,
+                         UiSession* ui = nullptr)
+        : vfs_(vfs),
+          ctx_(ctx),
+          bundle_(bundle),
+          options_(std::move(options)),
+          err_scope_(ctx, options_.log) {
+        // Without a caller-owned session, `drive_ui` uses one that lives with the runner.
+        if (ui == nullptr && options_.drive_ui) {
+            owned_ui_ = std::make_unique<UiSession>();
+            ui = owned_ui_.get();
+        }
+        ui_ = ui;
+    }
+
+    HeadlessModuleRunner(const HeadlessModuleRunner&) = delete;
+    HeadlessModuleRunner& operator=(const HeadlessModuleRunner&) = delete;
+
+    // Loads the module, attaches audio and Lua, and runs `game_start`. Returns whether frames
+    // may follow (false after a load failure, or a failed `game_start` with `stop_on_error`).
+    [[nodiscard]] bool start() {
+        ctx_.failOnUnimplemented = options_.fail_on_unimplemented;
+
+        // Close any Lua state left by a previous run before the bundle it holds
+        // callbacks into is reset; otherwise a failed reload or `enable_lua ==
+        // false` would leave the old module's hooks active.
+        if (ctx_.luaRuntime != nullptr) {
+            ctx_.luaRuntime->shutdown();
+        }
+
+        report_.load_error = load_module(vfs_, options_.module_dir, ctx_, bundle_,
+                                         options_.load_options);
+        report_.loaded_files = bundle_.loaded_files.size();
+        report_.skipped_files = bundle_.skipped_files.size();
+        if (!report_.load_error.ok) {
+            if (options_.log != nullptr) {
+                options_.log->error(report_.load_error.format());
+            }
+            finalize();
+            report_.ok = false;
+            stopped_ = true;
+            return false;
+        }
+
+        if (options_.start_on_campaign_map) {
+            ctx_.world.lighting.has_scene = false;
+        }
+
+        if (options_.drive_audio) {
+            report_.audio_stats =
+                audio_.initialize(vfs_, ctx_.world, bundle_.sound_bank, bundle_.music_tracks,
+                                  options_.module_dir, {}, options_.audio_codecs,
+                                  options_.preload_audio);
+            (void)audio_device_.open(platform::AudioDeviceSpec{});
+        }
+
+        if (options_.enable_lua && ctx_.luaRuntime != nullptr) {
+            vm::WseLuaInitConfig lua_cfg{};
+            lua_cfg.module_dir = options_.module_dir;
+            lua_cfg.storage_dir = options_.lua_storage_dir;
+            lua_cfg.savegames_dir = options_.lua_savegames_dir;
+            lua_cfg.vfs = &vfs_;
+            lua_cfg.bundle = &bundle_;
+            lua_cfg.log = options_.log;
+            if (ctx_.luaRuntime->initialize(ctx_, lua_cfg) && ctx_.luaRuntime->is_ready()) {
+                ctx_.luaRuntime->on_game_load();
+            }
+        }
+
+        report_.game_start_script_index = bundle_.scripts.mappedScripts[0];
+        started_ = true;
+        if (options_.run_game_start) {
+            return run_game_start();
+        }
+        return true;
+    }
+
+    // Runs mapped script slot 0 (`game_start`, `mbGame::executeMappedScript` `0x1400dbe70`).
+    // `start` calls it when `options.run_game_start` is set; a host that shows a main menu
+    // first (`platform::UiGameShell`) leaves that off and calls this on "Start a New Game".
+    // Returns whether frames may follow.
+    bool run_game_start() {
+        if (!started_ || stopped_) {
+            return false;
+        }
+        report_.game_start_script_index = bundle_.scripts.mappedScripts[0];
+        if (report_.game_start_script_index >= 0) {
+            report_.game_start_executed = true;
+            report_.game_start_ok = vm::execute_mapped_script(bundle_.scripts, 0U, ctx_);
+        } else {
+            report_.game_start_executed = false;
+            report_.game_start_ok = !options_.require_game_start;
+            if (options_.require_game_start) {
+                ctx_.report_error("Missing mapped script 'game_start'");
+            }
+        }
+        if (options_.stop_on_error &&
+            (!report_.game_start_ok || ctx_.errorCount > 0U || unimplemented_hit())) {
+            finalize();
+            stopped_ = true;
+            return false;
+        }
+        return true;
+    }
+
+    // One frame of `frame_ticks` engine ticks (`kTimerTicksPerSecond` per second). `input`
+    // (optional) is handed to `UiSession::handle_input` after the world frame and before
+    // `drive_frame`, as `platform::run_ui_frame` orders them; its events are appended to
+    // `ui_events`. Returns whether more frames may follow (false once `stop_on_error` trips).
+    bool step(std::int64_t frame_ticks,
+              const UiPointerInput* input = nullptr,
+              std::vector<UiEvent>* ui_events = nullptr) {
+        if (!started_ || stopped_) {
+            return false;
+        }
+        const double frame_seconds = static_cast<double>(frame_ticks) / kTimerTicksPerSecond;
+        for (auto& tick : ctx_.timersTotal) {
+            tick = detail::saturating_add_ticks(tick, frame_ticks);
+        }
+        ctx_.appTimeSeconds += frame_seconds;
+
+        const bool trig_ok = vm::execute_trigger_manager(
+            bundle_.game_triggers, options_.event_key, ctx_.timersTotal, ctx_);
+        const bool strig_ok = vm::execute_simple_trigger_manager(
+            bundle_.simple_triggers, options_.event_key, ctx_.timersTotal, ctx_);
+        if (options_.enable_lua && ctx_.luaRuntime != nullptr && ctx_.luaRuntime->is_ready()) {
+            ctx_.luaRuntime->on_world_trigger(static_cast<float>(ctx_.appTimeSeconds / 3600.0));
+        }
+        const std::int32_t window_before = ctx_.world.m5.active_window;
+        ctx_.world.step_world_frame(ctx_.timersTotal, static_cast<float>(frame_seconds));
+        if (options_.drive_audio) {
+            audio_.mixer().set_listener(
+                platform::listener_from_camera_transform(ctx_.world.misc.camera_transform));
+            audio_.update(ctx_.appTimeSeconds);
+            // Mix one frame's worth of audio (the device is a capture sink, never drained).
+            const auto frames = static_cast<std::size_t>(
+                frame_seconds * static_cast<double>(audio_device_.spec().sample_rate));
+            report_.audio_frames_mixed += audio_.mixer().pump_to_latency(
+                audio_device_, audio_device_.queued_frames() + frames);
+        }
+        if (ui_ != nullptr && options_.drive_ui) {
+            if (input != nullptr) {
+                std::vector<UiEvent> ev =
+                    ui_->handle_input(ctx_.world, *input, &ctx_, bundle_.presentations);
+                if (ui_events != nullptr) {
+                    ui_events->insert(ui_events->end(), ev.begin(), ev.end());
+                }
+            }
+            const UiSession::FrameReport ui_rep =
+                ui_->drive_frame(ctx_.world, ctx_, static_cast<float>(frame_seconds),
+                                 bundle_.presentations, window_before, bundle_.menus);
+            report_.presentations_opened += ui_rep.opened_presentation ? 1U : 0U;
+            report_.notes_opened += ui_rep.opened_notes ? 1U : 0U;
+            report_.menus_opened += ui_rep.opened_menu ? 1U : 0U;
+        }
+        report_.triggers_ok = report_.triggers_ok && trig_ok;
+        report_.simple_triggers_ok = report_.simple_triggers_ok && strig_ok;
+        ++report_.frames_executed;
+
+        if (options_.stop_on_error &&
+            (!trig_ok || !strig_ok || ctx_.errorCount > 0U || unimplemented_hit())) {
+            stopped_ = true;
+            return false;
+        }
+        return true;
+    }
+
+    // Refreshes the error / opcode / window fields and `ok` from the VM state.
+    const HeadlessRunReport& finalize() {
+        detail::finalize_headless_report(ctx_, report_, options_);
+        return report_;
+    }
+
+    [[nodiscard]] const HeadlessRunReport& report() const noexcept { return report_; }
+    [[nodiscard]] const HeadlessRunOptions& options() const noexcept { return options_; }
+    [[nodiscard]] UiSession* ui() const noexcept { return ui_; }
+    [[nodiscard]] bool running() const noexcept { return started_ && !stopped_; }
+
+private:
+    [[nodiscard]] bool unimplemented_hit() const noexcept {
+        // Unimplemented opcodes only stop or fail the run in strict mode; with
+        // `fail_on_unimplemented == false` they are counted and reported.
+        return options_.fail_on_unimplemented && ctx_.unimplementedCount > 0U;
+    }
+
+    platform::Vfs& vfs_;
+    vm::VmContext& ctx_;
+    ModuleBundle& bundle_;
+    HeadlessRunOptions options_;
+    detail::ScopedErrorForwarder err_scope_;
+    std::unique_ptr<UiSession> owned_ui_{};
+    UiSession* ui_ = nullptr;
+    WorldAudioBridge audio_{};
+    platform::CaptureAudioDevice audio_device_{};
+    HeadlessRunReport report_{};
+    bool started_ = false;
+    bool stopped_ = false;
+};
+
 // Loads `options.module_dir` via `vfs`, runs mapped script slot 0 (`game_start`)
 // when requested, steps `options.trigger_frames` trigger ticks, and returns a
 // diagnostic report enforcing zero VM errors and, unless
@@ -190,138 +400,16 @@ inline void finalize_headless_report(const vm::VmContext& ctx,
     ModuleBundle& bundle,
     const HeadlessRunOptions& options = {},
     UiSession* ui = nullptr) {
-    HeadlessRunReport report{};
-    detail::ScopedErrorForwarder err_scope(ctx, options.log);
-    // Without a caller-owned session, `drive_ui` uses one that lives for this run.
-    std::unique_ptr<UiSession> owned_ui{};
-    if (ui == nullptr && options.drive_ui) {
-        owned_ui = std::make_unique<UiSession>();
-        ui = owned_ui.get();
+    HeadlessModuleRunner runner(vfs, ctx, bundle, options, ui);
+    if (!runner.start()) {
+        return runner.report();
     }
-    ctx.failOnUnimplemented = options.fail_on_unimplemented;
-    // Unimplemented opcodes only stop or fail the run in strict mode; with
-    // `fail_on_unimplemented == false` they are counted and reported.
-    const auto unimplemented_hit = [&]() noexcept {
-        return options.fail_on_unimplemented && ctx.unimplementedCount > 0U;
-    };
-
-    // Close any Lua state left by a previous run before the bundle it holds
-    // callbacks into is reset; otherwise a failed reload or `enable_lua ==
-    // false` would leave the old module's hooks active.
-    if (ctx.luaRuntime != nullptr) {
-        ctx.luaRuntime->shutdown();
-    }
-
-    report.load_error = load_module(vfs, options.module_dir, ctx, bundle,
-                                    options.load_options);
-    report.loaded_files = bundle.loaded_files.size();
-    report.skipped_files = bundle.skipped_files.size();
-    if (!report.load_error.ok) {
-        if (options.log != nullptr) {
-            options.log->error(report.load_error.format());
-        }
-        detail::finalize_headless_report(ctx, report, options);
-        report.ok = false;
-        return report;
-    }
-
-    if (options.start_on_campaign_map) {
-        ctx.world.lighting.has_scene = false;
-    }
-
-    WorldAudioBridge audio{};
-    platform::CaptureAudioDevice audio_device{};
-    if (options.drive_audio) {
-        report.audio_stats =
-            audio.initialize(vfs, ctx.world, bundle.sound_bank, bundle.music_tracks,
-                             options.module_dir, {}, options.audio_codecs, options.preload_audio);
-        (void)audio_device.open(platform::AudioDeviceSpec{});
-    }
-
-    if (options.enable_lua && ctx.luaRuntime != nullptr) {
-        vm::WseLuaInitConfig lua_cfg{};
-        lua_cfg.module_dir = options.module_dir;
-        lua_cfg.storage_dir = options.lua_storage_dir;
-        lua_cfg.savegames_dir = options.lua_savegames_dir;
-        lua_cfg.vfs = &vfs;
-        lua_cfg.bundle = &bundle;
-        lua_cfg.log = options.log;
-        if (ctx.luaRuntime->initialize(ctx, lua_cfg) && ctx.luaRuntime->is_ready()) {
-            ctx.luaRuntime->on_game_load();
-        }
-    }
-
-    report.game_start_script_index = bundle.scripts.mappedScripts[0];
-    if (options.run_game_start) {
-        if (report.game_start_script_index >= 0) {
-            report.game_start_executed = true;
-            report.game_start_ok =
-                vm::execute_mapped_script(bundle.scripts, 0U, ctx);
-        } else {
-            report.game_start_executed = false;
-            report.game_start_ok = !options.require_game_start;
-            if (options.require_game_start) {
-                ctx.report_error("Missing mapped script 'game_start'");
-            }
-        }
-        if (options.stop_on_error &&
-            (!report.game_start_ok || ctx.errorCount > 0U ||
-             unimplemented_hit())) {
-            detail::finalize_headless_report(ctx, report, options);
-            return report;
-        }
-    }
-
-    const double frame_seconds =
-        static_cast<double>(options.frame_ticks) / kTimerTicksPerSecond;
     for (std::size_t frame = 0; frame < options.trigger_frames; ++frame) {
-        for (auto& tick : ctx.timersTotal) {
-            tick = detail::saturating_add_ticks(tick, options.frame_ticks);
-        }
-        ctx.appTimeSeconds += frame_seconds;
-
-        const bool trig_ok = vm::execute_trigger_manager(
-            bundle.game_triggers, options.event_key, ctx.timersTotal, ctx);
-        const bool strig_ok = vm::execute_simple_trigger_manager(
-            bundle.simple_triggers, options.event_key, ctx.timersTotal, ctx);
-        if (options.enable_lua && ctx.luaRuntime != nullptr &&
-            ctx.luaRuntime->is_ready()) {
-            ctx.luaRuntime->on_world_trigger(
-                static_cast<float>(ctx.appTimeSeconds / 3600.0));
-        }
-        const std::int32_t window_before = ctx.world.m5.active_window;
-        ctx.world.step_world_frame(ctx.timersTotal, static_cast<float>(frame_seconds));
-        if (options.drive_audio) {
-            audio.mixer().set_listener(
-                platform::listener_from_camera_transform(ctx.world.misc.camera_transform));
-            audio.update(ctx.appTimeSeconds);
-            // Mix one frame's worth of audio (the device is a capture sink, never drained).
-            const auto frames = static_cast<std::size_t>(
-                frame_seconds * static_cast<double>(audio_device.spec().sample_rate));
-            report.audio_frames_mixed +=
-                audio.mixer().pump_to_latency(audio_device, audio_device.queued_frames() + frames);
-        }
-        if (ui != nullptr && options.drive_ui) {
-            const UiSession::FrameReport ui_rep =
-                ui->drive_frame(ctx.world, ctx, static_cast<float>(frame_seconds),
-                                bundle.presentations, window_before, bundle.menus);
-            report.presentations_opened += ui_rep.opened_presentation ? 1U : 0U;
-            report.notes_opened += ui_rep.opened_notes ? 1U : 0U;
-            report.menus_opened += ui_rep.opened_menu ? 1U : 0U;
-        }
-        report.triggers_ok = report.triggers_ok && trig_ok;
-        report.simple_triggers_ok = report.simple_triggers_ok && strig_ok;
-        ++report.frames_executed;
-
-        if (options.stop_on_error &&
-            (!trig_ok || !strig_ok || ctx.errorCount > 0U ||
-             unimplemented_hit())) {
+        if (!runner.step(options.frame_ticks)) {
             break;
         }
     }
-
-    detail::finalize_headless_report(ctx, report, options);
-    return report;
+    return runner.finalize();
 }
 
 // Convenience wrapper that heap-allocates VmContext and ModuleBundle so
