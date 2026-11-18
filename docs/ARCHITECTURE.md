@@ -1225,9 +1225,9 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     | `mbGame::getTroopSkill` | `0x1400dcbf0` | level nibble capped by the skill's maximum; with the flag set, adds `game_get_skill_modifier_for_troop` (slot `0x1b`, trigger result zeroed first) and clamps to `[0, max level]` |
     | `mbGame::executeMappedScript` | `0x1400dbe70` | `(slot, param1, param2)`; returns whether the module defines the script |
 
-    Port gap: `store_skill_level` (2170, `0x1401dd8e0`) also passes the flag in retail, but the port
-    keeps the raw capped level there until the interpreter is fast enough for modules that call it
-    thousands of times a frame (`STATUS.md` §5).
+    `store_skill_level` (2170, `0x1401dd8e0`) passes the flag too. A script started by a handler runs
+    in a fresh frame, as `mbStatementBlock::execute` (`0x1401f69d0`) takes locals and loop frames
+    from a per-call pool; the port's `VmContext::activeBlocks` puts such calls at `currentDepth + 1`.
 
 ## 9. Evidence index
 

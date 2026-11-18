@@ -876,12 +876,19 @@ placeholders until each is checked against the v1.1.5.5 disassembly:
   (`block_vm.h`) now back `hero_can_join` (101), `hero_can_join_as_prisoner` (102),
   `party_can_join` (103), `party_can_join_as_prisoner` (104), `troops_can_join` (105),
   `troops_can_join_as_prisoner` (106), `party_can_join_party` (107),
-  `party_get_free_companions_capacity` (1633) and `party_get_free_prisoners_capacity` (1634).
-  **Known gap:** retail `store_skill_level` (2170, `0x1401dd8e0`) also goes through
-  `getTroopSkill(..., true)` and so runs the skill-modifier script; the port keeps the capped raw
-  level, because Phantasy Calradia's modifier script scans the inventory three times and the mod
-  calls `store_skill_level` thousands of times a frame, which took a 15-frame headless run from
-  about 13 s to minutes. It needs a faster interpreter first. **Safety deviation:** a party with no stacks has no leader, so the
+  `party_get_free_companions_capacity` (1633), `party_get_free_prisoners_capacity` (1634) and
+  `store_skill_level` (2170, `0x1401dd8e0`).
+- **Scripts run from inside a handler get their own frame (fixed):** retail
+  `mbStatementBlock::execute` (`0x1401f69d0`) takes its locals and loop stack from a per-call pool,
+  so a mapped script a handler starts (`store_skill_level`, the party limits, opcodes that run
+  mapped slots `13`, `19`, `0x27`) never touches its caller's. The port ran every
+  `execute_script` at depth 0, so a script called from a depth-0 block overwrote that block's
+  locals and loop frames; outer `try_for_range` loops restarted, which is what stalled Phantasy
+  Calradia when 2170 first ran the modifier (it looked like a slow interpreter; a microbenchmark
+  measures 35–61 ns per statement). `VmContext::activeBlocks` now sends a nested call to
+  `currentDepth + 1` and keeps the caller's `this_or_next` state, and the frame vectors reserve
+  every allowed depth on first growth so a handler's `locals` span cannot dangle after a nested
+  call. **Safety deviation:** a party with no stacks has no leader, so the
   formula uses skill 0 and charisma 0 (retail reads stack 0 unchecked).
 
 ## Build and test

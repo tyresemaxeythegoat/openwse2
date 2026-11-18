@@ -2350,7 +2350,7 @@ void test_party_limits_and_skill_modifier() {
         block.statements = {
             make_stmt(1633, {reg(40), 0}),  // party_get_free_companions_capacity
             make_stmt(1634, {reg(41), 0}),  // party_get_free_prisoners_capacity
-            make_stmt(2170, {reg(42), 1, 0}),  // store_skill_level leadership (raw, see below)
+            make_stmt(2170, {reg(42), 1, 0}),  // store_skill_level leadership
         };
         return execute_statement_block(block, ctx);
     };
@@ -2366,9 +2366,9 @@ void test_party_limits_and_skill_modifier() {
     scripts.scripts[2].block.statements = {make_stmt(2075, {9})};    // prisoner limit
     scripts.mappedScripts[0x1b] = 0;
     ctx.scripts = &scripts;
-    expect(run() && ctx.registers[42] == 4 && ctx.registers[40] == 20 + 6 * 3 + 7 - 1 &&
+    expect(run() && ctx.registers[42] == 6 && ctx.registers[40] == 20 + 6 * 3 + 7 - 1 &&
                ctx.registers[41] == 5 * 5,
-           "game_get_skill_modifier_for_troop feeds the built-in limits (store_skill_level stays raw)");
+           "game_get_skill_modifier_for_troop feeds store_skill_level and the built-in limits");
 
     scripts.scripts[0].block.statements = {make_stmt(2075, {20})};
     expect(troop_skill_level(ctx, 0, 1) == 10, "a skill modifier is clamped to the skill's maximum");
@@ -2383,6 +2383,29 @@ void test_party_limits_and_skill_modifier() {
     join.statements = {make_stmt(105, {100})};
     expect(can99 && !execute_statement_block(join, ctx),
            "troops_can_join uses the module's companion limit");
+
+    // A mapped script run from inside a depth-0 block gets its own frame: the modifier script
+    // below loops over local 0 and writes local 1, which the outer block also uses.
+    scripts.scripts[0].block = StatementBlock{};
+    scripts.scripts[0].block.statements = {
+        make_stmt(6, {loc(0), 0, 3}),  // try_for_range
+        make_stmt(2133, {loc(1), 5}),  // assign
+        make_stmt(3, {}),              // try_end
+        make_stmt(2075, {1}),          // set_trigger_result
+    };
+    StatementBlock outer;
+    outer.statements = {
+        make_stmt(2133, {loc(1), 77}),
+        make_stmt(2133, {reg(44), 0}),
+        make_stmt(6, {loc(0), 0, 5}),
+        make_stmt(2170, {reg(43), 1, 0}),
+        make_stmt(2105, {reg(44), 1}),  // val_add
+        make_stmt(3, {}),
+        make_stmt(2133, {reg(45), loc(1)}),
+    };
+    expect(execute_statement_block(outer, ctx) && ctx.registers[44] == 5 &&
+               ctx.registers[45] == 77 && ctx.registers[43] == 5 && ctx.activeBlocks == 0,
+           "a mapped script called mid-block keeps the caller's locals and loop counter");
 }
 
 void test_native_campaign_ops() {

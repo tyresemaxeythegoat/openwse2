@@ -720,15 +720,11 @@ inline void native_loot_copy_slot(game::WseTroop& dst_troop,
         }
         return NativeDispatch::handled;
     case 2170: // store_skill_level (0x1401dd8e0)
-        // Retail calls `getTroopSkill(troop, skill, true)` (`0x1400dcbf0`), which also runs
-        // `game_get_skill_modifier_for_troop` (`troop_skill_level`). Known gap: the port keeps the
-        // capped raw level here, because modules that scan inventories in that script and call
-        // `store_skill_level` thousands of times a frame (Phantasy Calradia) stall the
-        // interpreter (`STATUS.md` §5).
+        // `getTroopSkill(troop, skill, true)` (`0x1400dcbf0`): includes
+        // `game_get_skill_modifier_for_troop`.
         if (world.is_valid_troop(narrow[2]) &&
             narrow[1] >= 0 && narrow[1] < game::kMaxSkills) {
-            store_lvalue(dst, static_cast<std::int64_t>(
-                                  game::troop_skill_capped(world, narrow[2], narrow[1])),
+            store_lvalue(dst, static_cast<std::int64_t>(troop_skill_level(ctx, narrow[2], narrow[1])),
                          ctx, locals);
         }
         return NativeDispatch::handled;

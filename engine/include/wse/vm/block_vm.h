@@ -203,6 +203,10 @@ struct VmContext {
     bool clearLocalsBetweenCalls = true;
     std::int32_t maxCallDepth = kMaxCallDepth;
     std::int32_t currentDepth = 0;
+    // Statement blocks currently on the C++ stack. A script started while one is running (a
+    // native handler calling `execute_mapped_script`) gets its own frame at `currentDepth + 1`;
+    // retail allocates locals per call, so it never shares the caller's.
+    std::int32_t activeBlocks = 0;
     std::int32_t currentCaller = 0;
     bool skipStatement = false;
     game::ScriptManager* scripts = nullptr;
@@ -941,16 +945,19 @@ inline bool execute_statement_block(StatementBlock& block,
 
     struct DepthGuard {
         std::int32_t& slot;
+        std::int32_t& active;
         std::int32_t previous;
-        explicit DepthGuard(std::int32_t& target, std::int32_t next) noexcept
-            : slot(target), previous(target) {
+        explicit DepthGuard(std::int32_t& target, std::int32_t& blocks, std::int32_t next) noexcept
+            : slot(target), active(blocks), previous(target) {
             slot = next;
+            ++active;
         }
         ~DepthGuard() noexcept {
             slot = previous;
+            --active;
         }
     };
-    const DepthGuard depthGuard(ctx.currentDepth, depth);
+    const DepthGuard depthGuard(ctx.currentDepth, ctx.activeBlocks, depth);
 
     std::vector<std::int64_t> hookedParamsStorage;
     if (block.luaHookRef != kNoLuaHook && ctx.luaRuntime != nullptr && ctx.luaRuntime->is_ready()) {
@@ -970,11 +977,18 @@ inline bool execute_statement_block(StatementBlock& block,
     }
 
     const auto depthIdx = static_cast<std::size_t>(depth);
-    if (ctx.localFrames.size() <= depthIdx) {
-        ctx.localFrames.resize(depthIdx + 1);
-    }
-    if (ctx.loopFrames.size() <= depthIdx) {
-        ctx.loopFrames.resize(depthIdx + 1);
+    // Callers further up hold `locals` spans into these vectors across nested calls, so the
+    // storage must never move: reserve every depth the entry check above allows on first growth.
+    if (ctx.localFrames.size() <= depthIdx || ctx.loopFrames.size() <= depthIdx) {
+        const auto capacity = static_cast<std::size_t>(std::max(ctx.maxCallDepth, 0)) + 2U;
+        ctx.localFrames.reserve(std::max(capacity, depthIdx + 1));
+        ctx.loopFrames.reserve(std::max(capacity, depthIdx + 1));
+        if (ctx.localFrames.size() <= depthIdx) {
+            ctx.localFrames.resize(depthIdx + 1);
+        }
+        if (ctx.loopFrames.size() <= depthIdx) {
+            ctx.loopFrames.resize(depthIdx + 1);
+        }
     }
 
     if (ctx.clearLocalsBetweenCalls) {
@@ -1156,8 +1170,16 @@ inline bool execute_script(game::ScriptManager& manager,
     if (ctx.scripts == nullptr) {
         ctx.scripts = &manager;
     }
+    // Called from inside a running block (a native handler running a mapped script): use the
+    // next frame and keep the caller's this_or_next state, as `wse_invoke_script_callback` does.
+    const bool nested = ctx.activeBlocks > 0;
+    const bool previousSkip = ctx.skipStatement;
     const bool result = execute_statement_block(
-        manager.scripts[static_cast<std::size_t>(scriptIndex)].block, caller, 0, params, ctx);
+        manager.scripts[static_cast<std::size_t>(scriptIndex)].block, caller,
+        nested ? ctx.currentDepth + 1 : 0, params, ctx);
+    if (nested) {
+        ctx.skipStatement = previousSkip;
+    }
     ctx.scripts = previousScripts;
     return result;
 }
