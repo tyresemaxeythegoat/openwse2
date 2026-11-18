@@ -204,7 +204,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             return NativeDispatch::handled;
         }
         const auto& p = world.parties[static_cast<std::size_t>(party_no)];
-        return (game::party_max_companions(world, p) > p.get_num_companions())
+        return (party_max_companions(ctx, party_no) > p.get_num_companions())
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     }
@@ -218,7 +218,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             return NativeDispatch::handled;
         }
         const auto& p = world.parties[static_cast<std::size_t>(party_no)];
-        return (game::party_max_prisoners(world, p) > p.get_num_prisoners())
+        return (party_max_prisoners(ctx, party_no) > p.get_num_prisoners())
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     }
@@ -226,14 +226,18 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         return (world.is_valid_party(world.encountered_party_no) &&
                 world.is_valid_party(world.main_party_no) &&
                 game::party_can_join_party(world, world.encountered_party_no,
-                                           world.main_party_no, false))
+                                           world.main_party_no, false,
+                                           party_max_companions(ctx, world.main_party_no),
+                                           party_max_prisoners(ctx, world.main_party_no)))
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     case 104: // party_can_join_as_prisoner (0x1401c6ba0)
         return (world.is_valid_party(world.encountered_party_no) &&
                 world.is_valid_party(world.main_party_no) &&
                 game::party_can_join_party(world, world.encountered_party_no,
-                                           world.main_party_no, true))
+                                           world.main_party_no, true,
+                                           party_max_companions(ctx, world.main_party_no),
+                                           party_max_prisoners(ctx, world.main_party_no)))
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     case 105: { // troops_can_join (0x1401c6bb3)
@@ -241,7 +245,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             return NativeDispatch::condition_false;
         }
         const auto& p = world.parties[static_cast<std::size_t>(world.main_party_no)];
-        return (p.get_num_companions() + narrow[0] <= game::party_max_companions(world, p))
+        return (p.get_num_companions() + narrow[0] <= party_max_companions(ctx, world.main_party_no))
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     }
@@ -250,14 +254,15 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
             return NativeDispatch::condition_false;
         }
         const auto& p = world.parties[static_cast<std::size_t>(world.main_party_no)];
-        return (p.get_num_prisoners() + narrow[0] <= game::party_max_prisoners(world, p))
+        return (p.get_num_prisoners() + narrow[0] <= party_max_prisoners(ctx, world.main_party_no))
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     }
     case 107: // party_can_join_party (0x1401c6c27)
         return game::party_can_join_party(
                    world, narrow[0], narrow[1],
-                   (statement.numOperands >= 3 && narrow[2] != 0))
+                   (statement.numOperands >= 3 && narrow[2] != 0),
+                   party_max_companions(ctx, narrow[1]), party_max_prisoners(ctx, narrow[1]))
                    ? NativeDispatch::handled
                    : NativeDispatch::condition_false;
     case 108: // party_end_battle (0x1401c6c7c)
@@ -1098,7 +1103,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         if (world.is_valid_party(narrow[1])) {
             const auto& p = world.parties[static_cast<std::size_t>(narrow[1])];
             const std::int32_t free_cap =
-                std::max(0, game::party_max_companions(world, p) - p.get_num_companions());
+                std::max(0, party_max_companions(ctx, narrow[1]) - p.get_num_companions());
             store_lvalue(dst, static_cast<std::int64_t>(free_cap), ctx, locals);
         }
         return NativeDispatch::handled;
@@ -1106,7 +1111,7 @@ inline void native_campaign_add_xp_reward(std::int32_t xp_amount,
         if (world.is_valid_party(narrow[1])) {
             const auto& p = world.parties[static_cast<std::size_t>(narrow[1])];
             const std::int32_t free_cap =
-                std::max(0, game::party_max_prisoners(world, p) - p.get_num_prisoners());
+                std::max(0, party_max_prisoners(ctx, narrow[1]) - p.get_num_prisoners());
             store_lvalue(dst, static_cast<std::int64_t>(free_cap), ctx, locals);
         }
         return NativeDispatch::handled;

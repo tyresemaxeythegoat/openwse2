@@ -297,27 +297,67 @@ inline void troop_add_xp(WseTroop& troop, std::int32_t amount) noexcept {
     }
 }
 
-[[nodiscard]] inline std::int32_t party_max_companions(
-    const WseWorldState& world,
-    const WseParty& party) noexcept {
-    std::int32_t charisma = 0;
-    if (!party.stacks.empty() && world.is_valid_troop(party.stacks[0].troop_no)) {
-        charisma = world.troops[static_cast<std::size_t>(party.stacks[0].troop_no)].attributes[3];
+// `rglConfig::Campaign` defaults read by `mbParty::getMaxNumCompanions` (`0x1401c1720`) and
+// `mbParty::getMaxNumPrisoners` (`0x1401c17a0`): `iBaseCompanionLimit` 20,
+// `iLeadershipSkillBonus` 3, `iPrisonerManagementSkillBonus` 5.
+inline constexpr std::int32_t kBaseCompanionLimit = 20;
+inline constexpr std::int32_t kLeadershipSkillBonus = 3;
+inline constexpr std::int32_t kPrisonerManagementSkillBonus = 5;
+
+// A troop's skill level capped by the skill's maximum (`getTroopSkill` `0x1400dcbf0` without
+// the modifier script).
+[[nodiscard]] inline std::int32_t troop_skill_capped(const WseWorldState& world,
+                                                     std::int32_t troop_no,
+                                                     std::int32_t skill_no) noexcept {
+    if (!world.is_valid_troop(troop_no) || skill_no < 0 ||
+        static_cast<std::size_t>(skill_no) >= world.skills.size()) {
+        return 0;
     }
-    const std::int32_t leadership = party.get_skill(1, world.troops, world.skills);
-    return 30 + charisma + leadership * 5;
+    const std::int32_t cap =
+        std::max<std::int32_t>(0, world.skills[static_cast<std::size_t>(skill_no)].max_level);
+    return std::clamp(world.troops[static_cast<std::size_t>(troop_no)].get_skill_raw(skill_no), 0,
+                      cap);
 }
 
-[[nodiscard]] inline std::int32_t party_max_prisoners(
-    const WseWorldState& world,
-    const WseParty& party) noexcept {
-    std::int32_t prisoner_mgmt = 0;
-    if (!party.stacks.empty() && world.is_valid_troop(party.stacks[0].troop_no)) {
-        const auto& leader = world.troops[static_cast<std::size_t>(party.stacks[0].troop_no)];
-        const std::int32_t max_lvl = std::max<std::int32_t>(0, world.skills[2].max_level);
-        prisoner_mgmt = std::min(leader.get_skill_raw(2), max_lvl);
+// The leader (stack 0) troop, or -1 (safety deviation: retail reads stack 0 unchecked).
+[[nodiscard]] inline std::int32_t party_leader_troop(const WseWorldState& world,
+                                                     const WseParty& party) noexcept {
+    return (!party.stacks.empty() && world.is_valid_troop(party.stacks[0].troop_no))
+               ? party.stacks[0].troop_no
+               : -1;
+}
+
+// The built-in limits `getMaxNumCompanions` / `getMaxNumPrisoners` fall back to when the module
+// has no `game_get_party_companion_limit` / `game_get_party_prisoner_limit` script:
+// `20 + leadership * 3 + charisma` and `prisoner_management * 5`, with the leader's skills as
+// `getTroopSkill` (`0x1400dcbf0`) returns them. `leadership` / `prisoner_management` are those
+// levels (the VM passes them with the module's skill modifier applied); -1 means "the raw level,
+// capped by the skill's maximum".
+[[nodiscard]] inline std::int32_t party_max_companions(const WseWorldState& world,
+                                                       const WseParty& party,
+                                                       std::int32_t leadership = -1) noexcept {
+    const std::int32_t leader = party_leader_troop(world, party);
+    if (leader < 0) {
+        return kBaseCompanionLimit;
     }
-    return prisoner_mgmt * 5;
+    if (leadership < 0) {
+        leadership = troop_skill_capped(world, leader, 1);
+    }
+    return kBaseCompanionLimit + leadership * kLeadershipSkillBonus +
+           world.troops[static_cast<std::size_t>(leader)].attributes[3];
+}
+
+[[nodiscard]] inline std::int32_t party_max_prisoners(const WseWorldState& world,
+                                                      const WseParty& party,
+                                                      std::int32_t prisoner_management = -1) noexcept {
+    const std::int32_t leader = party_leader_troop(world, party);
+    if (leader < 0) {
+        return 0;
+    }
+    if (prisoner_management < 0) {
+        prisoner_management = troop_skill_capped(world, leader, 2);
+    }
+    return prisoner_management * kPrisonerManagementSkillBonus;
 }
 
 [[nodiscard]] inline std::int32_t party_count_troops(
@@ -673,21 +713,31 @@ inline void party_add_template(WseWorldState& world,
     }
 }
 
+// `max_companions` / `max_prisoners` are the destination's limits (the VM passes the module
+// script's values); -1 uses the built-in fallback.
 [[nodiscard]] inline bool party_can_join_party(const WseWorldState& world,
                                                std::int32_t src_party_no,
                                                std::int32_t dst_party_no,
-                                               bool as_prisoners = false) noexcept {
+                                               bool as_prisoners = false,
+                                               std::int32_t max_companions = -1,
+                                               std::int32_t max_prisoners = -1) noexcept {
     if (!world.is_valid_party(src_party_no) || !world.is_valid_party(dst_party_no)) {
         return false;
     }
     const auto& src = world.parties[static_cast<std::size_t>(src_party_no)];
     const auto& dst = world.parties[static_cast<std::size_t>(dst_party_no)];
+    if (max_companions < 0) {
+        max_companions = party_max_companions(world, dst);
+    }
+    if (max_prisoners < 0) {
+        max_prisoners = party_max_prisoners(world, dst);
+    }
     if (as_prisoners) {
         const std::int32_t incoming = src.get_num_companions() + src.get_num_prisoners();
-        return dst.get_num_prisoners() + incoming <= party_max_prisoners(world, dst);
+        return dst.get_num_prisoners() + incoming <= max_prisoners;
     }
-    const std::int32_t free_comp = party_max_companions(world, dst) - dst.get_num_companions();
-    const std::int32_t free_pris = party_max_prisoners(world, dst) - dst.get_num_prisoners();
+    const std::int32_t free_comp = max_companions - dst.get_num_companions();
+    const std::int32_t free_pris = max_prisoners - dst.get_num_prisoners();
     return src.get_num_companions() <= free_comp && src.get_num_prisoners() <= free_pris;
 }
 

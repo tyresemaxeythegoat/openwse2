@@ -1212,6 +1212,23 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     would wrap before the clamp; popups that would leave the screen are not moved or made
     scrollable (retail builds a scrollable popup there).
 
+21. Placeholder audit: party size limits, troop skill levels, and four confirmed handlers.
+    **Resolved:** v1.1.5.5 entry VAs below. Implemented in [block_vm.h](../engine/include/wse/vm/block_vm.h)
+    (`troop_skill_level`, `party_max_companions`, `party_max_prisoners`) and
+    [world_campaign_helpers.h](../engine/include/wse/game/world_campaign_helpers.h) (the
+    script-less fallback). Details in [engine/README.md](../engine/README.md).
+
+    | Function | VA | Finding |
+    | --- | --- | --- |
+    | `mbParty::getMaxNumCompanions` | `0x1401c1720` | mapped script `0x15` (party, 0) wins via the trigger result; else `iBaseCompanionLimit` (20) + leader leadership × `iLeadershipSkillBonus` (3) + leader charisma (`mbTroop` `+0x14c`, `m_attributes[3]`) |
+    | `mbParty::getMaxNumPrisoners` | `0x1401c17a0` | mapped script `0x16` (party, 0) wins; else leader prisoner management × `iPrisonerManagementSkillBonus` (5) |
+    | `mbGame::getTroopSkill` | `0x1400dcbf0` | level nibble capped by the skill's maximum; with the flag set, adds `game_get_skill_modifier_for_troop` (slot `0x1b`, trigger result zeroed first) and clamps to `[0, max level]` |
+    | `mbGame::executeMappedScript` | `0x1400dbe70` | `(slot, param1, param2)`; returns whether the module defines the script |
+
+    Port gap: `store_skill_level` (2170, `0x1401dd8e0`) also passes the flag in retail, but the port
+    keeps the raw capped level there until the interpreter is fast enough for modules that call it
+    thousands of times a frame (`STATUS.md` §5).
+
 ## 9. Evidence index
 
 REA evidence records. The first table is the current WSE2 v1.1.5.5 baseline; the second is the

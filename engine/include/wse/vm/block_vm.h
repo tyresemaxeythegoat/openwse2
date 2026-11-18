@@ -1187,6 +1187,76 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
     return execute_script(manager, manager.mappedScripts[mappedSlot], ctx, params, caller);
 }
 
+// Mapped script slots used below (`game::kMappedScriptNames`).
+inline constexpr std::size_t kMappedGetPartyCompanionLimit = 0x15U;
+inline constexpr std::size_t kMappedGetPartyPrisonerLimit = 0x16U;
+inline constexpr std::size_t kMappedGetSkillModifierForTroop = 0x1bU;
+
+// `mbGame::getTroopSkill(troop, skill, true)` (`0x1400dcbf0`): the troop's level capped by the
+// skill's maximum, plus whatever `game_get_skill_modifier_for_troop` (troop, skill) leaves in
+// the trigger result (reset to 0 first), clamped to `[0, max level]`.
+[[nodiscard]] inline std::int32_t troop_skill_level(VmContext& ctx,
+                                                    std::int32_t troop_no,
+                                                    std::int32_t skill_no) {
+    game::WseWorldState& world = ctx.world;
+    if (!world.is_valid_troop(troop_no) || skill_no < 0 ||
+        static_cast<std::size_t>(skill_no) >= world.skills.size()) {
+        return 0;
+    }
+    const std::int32_t cap =
+        std::max<std::int32_t>(0, world.skills[static_cast<std::size_t>(skill_no)].max_level);
+    std::int64_t level = game::troop_skill_capped(world, troop_no, skill_no);
+    if (ctx.scripts != nullptr) {
+        world.trigger_result = 0;
+        const std::array<std::int64_t, 2> params{troop_no, skill_no};
+        (void)execute_mapped_script(*ctx.scripts, kMappedGetSkillModifierForTroop, ctx, params);
+        level += world.trigger_result;
+    }
+    return static_cast<std::int32_t>(std::clamp<std::int64_t>(level, 0, cap));
+}
+
+// `mbParty::getMaxNumCompanions` (`0x1401c1720`) / `getMaxNumPrisoners` (`0x1401c17a0`): the
+// module's `game_get_party_companion_limit` / `game_get_party_prisoner_limit` (party, 0) wins
+// when it exists (its trigger result is the limit); otherwise the built-in formula with the
+// leader's skill from `getTroopSkill(..., true)`.
+[[nodiscard]] inline std::int32_t party_max_companions(VmContext& ctx, std::int32_t party_no) {
+    game::WseWorldState& world = ctx.world;
+    if (!world.is_valid_party(party_no)) {
+        return 0;
+    }
+    if (ctx.scripts != nullptr) {
+        const std::array<std::int64_t, 2> params{party_no, 0};
+        if (execute_mapped_script(*ctx.scripts, kMappedGetPartyCompanionLimit, ctx, params)) {
+            return static_cast<std::int32_t>(std::clamp<std::int64_t>(
+                world.trigger_result, std::numeric_limits<std::int32_t>::min(),
+                std::numeric_limits<std::int32_t>::max()));
+        }
+    }
+    const game::WseParty& party = world.parties[static_cast<std::size_t>(party_no)];
+    const std::int32_t leader = game::party_leader_troop(world, party);
+    return game::party_max_companions(world, party,
+                                      leader >= 0 ? troop_skill_level(ctx, leader, 1) : -1);
+}
+
+[[nodiscard]] inline std::int32_t party_max_prisoners(VmContext& ctx, std::int32_t party_no) {
+    game::WseWorldState& world = ctx.world;
+    if (!world.is_valid_party(party_no)) {
+        return 0;
+    }
+    if (ctx.scripts != nullptr) {
+        const std::array<std::int64_t, 2> params{party_no, 0};
+        if (execute_mapped_script(*ctx.scripts, kMappedGetPartyPrisonerLimit, ctx, params)) {
+            return static_cast<std::int32_t>(std::clamp<std::int64_t>(
+                world.trigger_result, std::numeric_limits<std::int32_t>::min(),
+                std::numeric_limits<std::int32_t>::max()));
+        }
+    }
+    const game::WseParty& party = world.parties[static_cast<std::size_t>(party_no)];
+    const std::int32_t leader = game::party_leader_troop(world, party);
+    return game::party_max_prisoners(world, party,
+                                     leader >= 0 ? troop_skill_level(ctx, leader, 2) : -1);
+}
+
 // Marks a trigger (or trigger-manager) execution in progress. Lua callbacks
 // reached from inside it must not resize the trigger vectors being walked, so
 // the Lua runtime queues those edits and this scope applies them once the

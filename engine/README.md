@@ -849,19 +849,40 @@ These are counted as implemented because they consume their operands and keep sc
 they are **not** verified reconstructions of the cited handlers. Treat their results as
 placeholders until each is checked against the v1.1.5.5 disassembly:
 
-- **Constant-value placeholder:** `store_num_free_stacks` (2154) still always stores `10` (the other M3 stubs `1802`/`1930`/`1969` were upgraded in Milestone 4).
 - **Simplified helpers in `world_campaign_helpers.h` (no VA evidence yet):** `party_add_template`
   adds the midpoint of each stack's min/max instead of a random count and ignores
   `set_party_creation_random_limits` (1080); `troop_add_merchandise` fills free slots round-robin
   and ignores faction, abundance weighting, and item probability; `troop_equip_items`,
-  `troop_sort_inventory`, `troop_ensure_inventory_space`, `party_max_companions`,
-  `party_max_prisoners`, and the XP/upgrade helpers use simple local rules.
+  `troop_sort_inventory`, `troop_ensure_inventory_space`, and the XP/upgrade helpers use simple
+  local rules.
 - **Simplified combat:** `agent_deliver_damage_to_agent` (1722) applies weapon damage times the
   deliverer's damage modifier with no armor, skill, or hit-location model.
-- **Semantics still to confirm:** `troop_is_mounted` (152) tests the horse equipment slot (the
-  module-system documentation describes a troop-flag test), `entering_town` (36) succeeds when the
-  main party is *farther* than `2.3 × radius` from the town, and
-  `get_sq_distance_between_positions` (712) scales square metres by `100`.
+- **Checked against v1.1.5.5 and correct as written:** `store_num_free_stacks` (2154,
+  `0x1401dd5fa`) stores the constant `10` in retail too; `troop_is_mounted` (152, `0x1401c6ecb`)
+  tests equipment slot 8 (`mbTroopEquipment[8].isValid`), not a troop flag; `entering_town` (36,
+  `0x1401c6448`) needs main-party behaviour 4 toward the town, a readable town, and a distance
+  *greater* than `2.3 × main-party radius`; `get_sq_distance_between_positions` (712,
+  `0x1401cadea`) is `lengthSquared × 100`, truncated.
+- **Party limits and skill levels (fixed):** `mbParty::getMaxNumCompanions` (`0x1401c1720`) and
+  `getMaxNumPrisoners` (`0x1401c17a0`) run the module's `game_get_party_companion_limit` /
+  `game_get_party_prisoner_limit` (mapped slots `0x15` / `0x16`, params party and 0) and use its
+  trigger result; only without the script do they use `20 + leadership × 3 + charisma` and
+  `prisoner_management × 5` (`rglConfig::Campaign` `iBaseCompanionLimit` / `iLeadershipSkillBonus`
+  / `iPrisonerManagementSkillBonus`), with the leader's (stack 0) skills from
+  `mbGame::getTroopSkill(..., true)` (`0x1400dcbf0`), which adds the module's
+  `game_get_skill_modifier_for_troop` (slot `0x1b`, trigger result reset first) and clamps to
+  `[0, max level]`. The port used `30 + charisma + 5 × party leadership` and ignored all three
+  scripts. `vm::party_max_companions` / `party_max_prisoners` / `troop_skill_level`
+  (`block_vm.h`) now back `hero_can_join` (101), `hero_can_join_as_prisoner` (102),
+  `party_can_join` (103), `party_can_join_as_prisoner` (104), `troops_can_join` (105),
+  `troops_can_join_as_prisoner` (106), `party_can_join_party` (107),
+  `party_get_free_companions_capacity` (1633) and `party_get_free_prisoners_capacity` (1634).
+  **Known gap:** retail `store_skill_level` (2170, `0x1401dd8e0`) also goes through
+  `getTroopSkill(..., true)` and so runs the skill-modifier script; the port keeps the capped raw
+  level, because Phantasy Calradia's modifier script scans the inventory three times and the mod
+  calls `store_skill_level` thousands of times a frame, which took a 15-frame headless run from
+  about 13 s to minutes. It needs a faster interpreter first. **Safety deviation:** a party with no stacks has no leader, so the
+  formula uses skill 0 and charisma 0 (retail reads stack 0 unchecked).
 
 ## Build and test
 

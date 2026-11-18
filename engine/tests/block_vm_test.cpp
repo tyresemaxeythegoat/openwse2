@@ -2328,6 +2328,63 @@ void test_native_campaign_safety_deviations() {
            "party_stack_upgrade with path 2 upgrades along the second path");
 }
 
+// mbParty::getMaxNumCompanions (0x1401c1720) / getMaxNumPrisoners (0x1401c17a0) run the
+// module's limit scripts first; getTroopSkill (0x1400dcbf0) adds the skill-modifier script.
+void test_party_limits_and_skill_modifier() {
+    using namespace wse::vm;
+    VmContext ctx;
+    auto& world = ctx.world;
+    world.troops.resize(1);
+    world.troops[0].flags = 0x10ULL;
+    world.troops[0].attributes = {10, 10, 10, 7};  // charisma 7
+    world.troops[0].set_skill_raw(1, 4);           // leadership
+    world.troops[0].set_skill_raw(2, 3);           // prisoner management
+    world.skills[1].max_level = 10;
+    world.skills[2].max_level = 10;
+    world.parties.resize(1);
+    world.parties[0].stacks.push_back({0, 1, 0, 0});
+    world.main_party_no = 0;
+
+    const auto run = [&]() {
+        StatementBlock block;
+        block.statements = {
+            make_stmt(1633, {reg(40), 0}),  // party_get_free_companions_capacity
+            make_stmt(1634, {reg(41), 0}),  // party_get_free_prisoners_capacity
+            make_stmt(2170, {reg(42), 1, 0}),  // store_skill_level leadership (raw, see below)
+        };
+        return execute_statement_block(block, ctx);
+    };
+
+    expect(run() && ctx.registers[40] == 20 + 4 * 3 + 7 - 1 && ctx.registers[41] == 3 * 5 &&
+               ctx.registers[42] == 4,
+           "without module scripts: 20 + leadership*3 + charisma, prisoner management*5");
+
+    wse::game::ScriptManager scripts;
+    scripts.scripts.resize(3);
+    scripts.scripts[0].block.statements = {make_stmt(2075, {2})};    // skill modifier +2
+    scripts.scripts[1].block.statements = {make_stmt(2075, {100})};  // companion limit
+    scripts.scripts[2].block.statements = {make_stmt(2075, {9})};    // prisoner limit
+    scripts.mappedScripts[0x1b] = 0;
+    ctx.scripts = &scripts;
+    expect(run() && ctx.registers[42] == 4 && ctx.registers[40] == 20 + 6 * 3 + 7 - 1 &&
+               ctx.registers[41] == 5 * 5,
+           "game_get_skill_modifier_for_troop feeds the built-in limits (store_skill_level stays raw)");
+
+    scripts.scripts[0].block.statements = {make_stmt(2075, {20})};
+    expect(troop_skill_level(ctx, 0, 1) == 10, "a skill modifier is clamped to the skill's maximum");
+
+    scripts.mappedScripts[0x15] = 1;
+    scripts.mappedScripts[0x16] = 2;
+    expect(run() && ctx.registers[40] == 99 && ctx.registers[41] == 9,
+           "game_get_party_companion_limit / game_get_party_prisoner_limit override the formula");
+    StatementBlock join;
+    join.statements = {make_stmt(105, {99})};  // troops_can_join 99 with 1 companion, limit 100
+    const bool can99 = execute_statement_block(join, ctx);
+    join.statements = {make_stmt(105, {100})};
+    expect(can99 && !execute_statement_block(join, ctx),
+           "troops_can_join uses the module's companion limit");
+}
+
 void test_native_campaign_ops() {
     using namespace wse::vm;
 
@@ -2498,6 +2555,7 @@ int run_block_vm_suite(const char* fixture_path) {
     test_script_mutation_safety();
     test_locals_zeroing_default();
     test_native_campaign_ops();
+    test_party_limits_and_skill_modifier();
     test_native_campaign_safety_deviations();
 
     if (failures != 0) {
