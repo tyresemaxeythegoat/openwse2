@@ -35,9 +35,11 @@
 
 #include "wse/game/headless_runner.h"
 #include "wse/platform/input.h"
+#include "wse/platform/performance.h"
 #include "wse/platform/rhi.h"
 #include "wse/platform/rhi_geometry.h"
 #include "wse/platform/rhi_ui.h"
+#include "wse/platform/touch_overlay_render.h"
 #include "wse/platform/ui_frame.h"
 #include "wse/platform/vfs.h"
 
@@ -299,6 +301,8 @@ struct UiGameShellOptions {
     std::function<void()> worker_thread_exit{};
     // Texture side cap (from `config/performance.json` `max_texture_size`, 0 = no cap).
     std::uint32_t max_texture_size = 0U;
+    // UI canvas aspect ratio in the window (P11.1, from `config/performance.json` `ui_aspect`).
+    UiAspectMode ui_aspect = UiAspectMode::Ratio4x3;
 
     UiGameShellOptions() { run.fail_on_unimplemented = false; }
 };
@@ -426,9 +430,9 @@ public:
     }
 
     // Advances the module by `dt_s` (clamped to `[0, max_frame_seconds]`) with the input fed
-    // since the last frame, then renders at the window's aspect ratio (`window_w x window_h`,
-    // scaled down to `max_render_height`). Returns whether the module is still running; the
-    // last frame stays in `pixels()` either way.
+    // since the last frame, computes the aspect-fitted viewport, maps the pointer through it,
+    // and renders into that viewport. Returns whether the module is still running; the last
+    // frame stays in `pixels()` / `geometry()` either way.
     bool frame(float dt_s, std::uint32_t window_w, std::uint32_t window_h) {
         if (is_loading() || runner_ == nullptr) {
             return false;
@@ -437,6 +441,8 @@ public:
                                              : 0.0f;
         const auto ticks =
             static_cast<std::int64_t>(std::llround(static_cast<double>(dt) * game::kTimerTicksPerSecond));
+        const UiViewportRect vp = compute_ui_viewport(window_w, window_h, options_.ui_aspect);
+        input_.set_viewport(vp, window_w, window_h);
         const game::UiPointerInput in = input_.take(static_cast<float>(ctx_->appTimeSeconds + dt));
         last_events_.clear();
         bool running = true;
@@ -445,15 +451,30 @@ public:
         } else {
             running = main_menu_frame(in);
         }
-        render(window_w, window_h);
+        render(window_w, window_h, vp);
         return running;
+    }
+
+    // Non-owning touch overlay configuration for `Output::geometry`: `profile` and
+    // optional `input_state` must outlive `frame()`.
+    void set_touch_overlay(const TouchOverlayProfile* profile,
+                           InputContext context,
+                           SafeAreaInsets safe_area = {},
+                           const InputFrameState* input_state = nullptr) noexcept {
+        touch_overlay_profile_ = profile;
+        touch_overlay_context_ = context;
+        touch_overlay_safe_area_ = safe_area;
+        touch_overlay_state_ = input_state;
+    }
+    void set_input_context(InputContext context) noexcept {
+        touch_overlay_context_ = context;
     }
 
     [[nodiscard]] const std::vector<std::uint8_t>& pixels() const noexcept { return pixels_; }
     // `Output::geometry` only (else null): the last recorded frame, and the device that owns
     // its textures (`texture()` for pixel data, `take_destroyed_textures()` to free host copies).
     [[nodiscard]] const GeometryFrame* geometry() const noexcept {
-        return !is_loading() && geometry_ != nullptr && has_frame_ ? &geometry_->frame()
+        return !is_loading() && geometry_ != nullptr && has_frame_ ? &geometry_frame_
                                                                     : nullptr;
     }
     [[nodiscard]] GeometryCaptureRhiDevice* geometry_device() const noexcept {
@@ -461,6 +482,10 @@ public:
     }
     [[nodiscard]] std::uint32_t width() const noexcept { return width_; }
     [[nodiscard]] std::uint32_t height() const noexcept { return height_; }
+    // Viewport rectangle in window pixels that the last frame rendered into.
+    [[nodiscard]] UiViewportRect viewport() const noexcept {
+        return is_loading() ? UiViewportRect{} : viewport_;
+    }
     // Bumped each time `pixels()` is redrawn; a host re-uploads its texture only on a change.
     [[nodiscard]] std::uint64_t frame_serial() const noexcept { return frame_serial_; }
     // Frames whose widget tree hashed the same as the last drawn one (rasterizer skipped).
@@ -539,13 +564,16 @@ private:
         renderer_.reset();  // before the device that owns its handles
         rhi_.reset();
         geometry_ = nullptr;
+        geometry_frame_ = {};
         has_frame_ = false;
         assets_.reset();
         input_ = UiInputAccumulator{};
         last_events_.clear();
         pixels_.clear();
         width_ = height_ = 0U;
+        viewport_ = UiViewportRect{};
         last_tree_hash_ = 0U;
+        last_overlay_hash_ = 0U;
         frames_reused_ = 0U;
         ++frame_serial_;  // a host holding the old frame re-checks it
         in_game_ = false;
@@ -736,34 +764,112 @@ private:
         return true;
     }
 
-    void render(std::uint32_t window_w, std::uint32_t window_h) {
-        if (window_w == 0U || window_h == 0U) {
+    [[nodiscard]] std::uint64_t compute_overlay_hash() const noexcept {
+        if (geometry_ == nullptr || touch_overlay_profile_ == nullptr) {
+            return 0ULL;
+        }
+        std::uint64_t h = 0xcbf29ce484222325ULL;
+        const auto mix = [&](const void* data, std::size_t n) noexcept {
+            const auto* p = static_cast<const unsigned char*>(data);
+            for (std::size_t i = 0; i < n; ++i) {
+                h = (h ^ p[i]) * 0x100000001b3ULL;
+            }
+        };
+        const auto mix_pod = [&](const auto& v) noexcept { mix(&v, sizeof(v)); };
+        mix_pod(touch_overlay_context_);
+        mix_pod(touch_overlay_safe_area_.left);
+        mix_pod(touch_overlay_safe_area_.top);
+        mix_pod(touch_overlay_safe_area_.right);
+        mix_pod(touch_overlay_safe_area_.bottom);
+        mix_pod(touch_overlay_profile_->touch_overlay_enabled);
+        for (const TouchWidgetLayout& w : touch_overlay_profile_->widgets) {
+            mix_pod(w.cx);
+            mix_pod(w.cy);
+            mix_pod(w.half_w);
+            mix_pod(w.half_h);
+            mix_pod(w.scale);
+            mix_pod(w.opacity);
+            mix_pod(w.circular);
+            mix_pod(w.enabled);
+        }
+        const bool has_state = (touch_overlay_state_ != nullptr);
+        mix_pod(has_state);
+        if (has_state) {
+            mix_pod(touch_overlay_state_->touch_overlay_visible);
+            mix_pod(touch_overlay_state_->stick_knob_x);
+            mix_pod(touch_overlay_state_->stick_knob_y);
+            mix_pod(touch_overlay_state_->attack_dir);
+            mix_pod(touch_overlay_state_->attack_active);
+            mix_pod(touch_overlay_state_->block_dir);
+            mix_pod(touch_overlay_state_->block_active);
+            mix_pod(touch_overlay_state_->radial_open);
+            mix_pod(touch_overlay_state_->radial_level);
+            mix_pod(touch_overlay_state_->radial_group);
+            mix_pod(touch_overlay_state_->radial_sector);
+            mix_pod(touch_overlay_state_->map_follow);
+            mix_pod(touch_overlay_state_->map_pan_mode);
+            mix_pod(touch_overlay_state_->map_paused);
+            mix_pod(touch_overlay_state_->widget_pressed);
+        }
+        return (h == 0ULL) ? 1ULL : h;
+    }
+
+    void render(std::uint32_t window_w, std::uint32_t window_h, UiViewportRect vp) {
+        if (window_w == 0U || window_h == 0U || vp.width == 0U || vp.height == 0U) {
             return;
         }
         std::uint32_t w = window_w;
         std::uint32_t h = window_h;
-        // The GPU path draws at native size; only the CPU rasterizer is capped.
-        if (geometry_ == nullptr && options_.max_render_height != 0U &&
-            h > options_.max_render_height) {
-            w = std::max<std::uint32_t>(
-                1U, static_cast<std::uint32_t>(static_cast<std::uint64_t>(w) *
-                                               options_.max_render_height / h));
-            h = options_.max_render_height;
+        if (geometry_ != nullptr) {
+            geometry_->set_viewport(vp.x, vp.y, vp.width, vp.height);
+        } else {
+            w = vp.width;
+            h = vp.height;
+            // The GPU path draws at the full window size into `vp`; only the CPU rasterizer
+            // scales the viewport down to `max_render_height`.
+            if (options_.max_render_height != 0U && h > options_.max_render_height) {
+                w = std::max<std::uint32_t>(
+                    1U, static_cast<std::uint32_t>(static_cast<std::uint64_t>(w) *
+                                                   options_.max_render_height / h));
+                h = options_.max_render_height;
+            }
         }
         UiRenderConfig cfg = options_.render;
         cfg.viewport_width = w;
         cfg.viewport_height = h;
         // Menus and most presentations sit still for many frames: keep the last frame when the
-        // tree and the frame size are unchanged.
+        // tree, the overlay state, the frame size and the viewport are unchanged.
         const std::uint64_t tree_hash = UiTreeHasher::hash(ui_->root);
-        if (has_frame_ && tree_hash == last_tree_hash_ && w == width_ && h == height_) {
+        const std::uint64_t overlay_hash = compute_overlay_hash();
+        if (has_frame_ && tree_hash == last_tree_hash_ && overlay_hash == last_overlay_hash_ &&
+            w == width_ && h == height_ && vp == viewport_) {
             ++frames_reused_;
             return;
         }
         if (renderer_->render_tree(ui_->root, assets_->font, cfg, pixels_)) {
+            if (geometry_ != nullptr) {
+                geometry_frame_ = geometry_->frame();
+                if (touch_overlay_profile_ != nullptr &&
+                    touch_overlay_profile_->touch_overlay_enabled &&
+                    context_allows_touch_overlay(touch_overlay_context_)) {
+                    TouchOverlayRenderParams overlay_params{};
+                    overlay_params.viewport_width = w;
+                    overlay_params.viewport_height = h;
+                    overlay_params.context = touch_overlay_context_;
+                    overlay_params.safe_area = touch_overlay_safe_area_;
+                    overlay_params.frame_state = touch_overlay_state_;
+                    overlay_params.gamepad_hidden =
+                        (touch_overlay_state_ != nullptr &&
+                         !touch_overlay_state_->touch_overlay_visible);
+                    (void)append_touch_overlay_geometry(
+                        *touch_overlay_profile_, overlay_params, geometry_frame_);
+                }
+            }
             width_ = w;
             height_ = h;
+            viewport_ = vp;
             last_tree_hash_ = tree_hash;
+            last_overlay_hash_ = overlay_hash;
             has_frame_ = true;
             ++frame_serial_;
         }
@@ -773,6 +879,7 @@ private:
     std::unique_ptr<LoadedUiAssets> assets_{};
     std::unique_ptr<RhiDevice> rhi_{};
     GeometryCaptureRhiDevice* geometry_ = nullptr;  // `rhi_` in `Output::geometry`
+    GeometryFrame geometry_frame_{};
     bool has_frame_ = false;
     std::unique_ptr<UiRhiRenderer> renderer_{};
     std::unique_ptr<vm::VmContext> ctx_{};
@@ -780,11 +887,17 @@ private:
     std::unique_ptr<game::UiSession> ui_{};
     std::unique_ptr<game::HeadlessModuleRunner> runner_{};
     UiInputAccumulator input_{};
+    const TouchOverlayProfile* touch_overlay_profile_ = nullptr;
+    InputContext touch_overlay_context_ = InputContext::Mission;
+    SafeAreaInsets touch_overlay_safe_area_{};
+    const InputFrameState* touch_overlay_state_ = nullptr;
     std::vector<game::UiEvent> last_events_{};
     std::vector<std::uint8_t> pixels_{};
     std::uint32_t width_ = 0U;
     std::uint32_t height_ = 0U;
+    UiViewportRect viewport_{};
     std::uint64_t last_tree_hash_ = 0U;
+    std::uint64_t last_overlay_hash_ = 0U;
     std::uint64_t frame_serial_ = 0U;
     std::uint64_t frames_reused_ = 0U;
     std::vector<std::string> missing_files_{};

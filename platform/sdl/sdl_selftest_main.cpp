@@ -492,8 +492,17 @@ public:
             }
         }
         SDL_SetRenderScale(renderer_, 1.0f, 1.0f);
-        SDL_SetRenderDrawColor(renderer_, frame.clear_r, frame.clear_g, frame.clear_b, 255);
+        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
         SDL_RenderClear(renderer_);
+        if (frame.viewport_width > 0U && frame.viewport_height > 0U &&
+            (frame.clear_r != 0U || frame.clear_g != 0U || frame.clear_b != 0U)) {
+            SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_NONE);
+            draw_filled_rect(renderer_, static_cast<float>(frame.viewport_x),
+                             static_cast<float>(frame.viewport_y),
+                             static_cast<float>(frame.viewport_width),
+                             static_cast<float>(frame.viewport_height), frame.clear_r,
+                             frame.clear_g, frame.clear_b);
+        }
         bool ok = true;
         const auto* verts = reinterpret_cast<const SDL_Vertex*>(frame.vertices.data());
         for (const wse::platform::GeometryBatch& b : frame.batches) {
@@ -682,8 +691,8 @@ struct ScopedJniThread {
 // module from a plain directory (`HostVfs`) and run it through `UiGameShell` every display
 // frame: SDL events -> `SdlInputBackend` -> `UiInputAccumulator`, one module frame, then the
 // UI is drawn on the GPU (`UiGameShellOptions::Output::geometry` + `SdlGeometryPresenter`) at
-// the window's pixel size; Warband's UI space is stretched over the window, so pointer
-// positions map 1:1. The window is only redrawn and presented when the frame changed (or
+// the window's pixel size into the `ui_aspect` viewport (black bars outside it), with pointer
+// positions mapped through the same rectangle. The window is only redrawn and presented when the frame changed (or
 // after a resize, a render reset or a return to the foreground). When the module stops (a VM
 // error with `stop_on_error`), the last frame stays up with the error on top.
 // With `from_saf` (Android `--saf-module`, launched from `WseLauncherActivity`) the install
@@ -856,6 +865,7 @@ int run_module_shell(SDL_Window* window,
     opts.language =
         resolve_install_language(*vfs, module_dir, perf.launch_cfg.settings.language);
     opts.max_texture_size = perf.launch_cfg.settings.max_texture_size;
+    opts.ui_aspect = perf.launch_cfg.settings.ui_aspect;
     opts.output = wse::platform::UiGameShellOptions::Output::geometry;
 #ifdef __ANDROID__
     if (from_saf) {

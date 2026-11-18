@@ -1020,11 +1020,18 @@ void test_rhi_and_driver_loader() {
         std::uint64_t panvk_smoke_hash = 0;
         const DriverMode third_mode =
             system_vulkan_tests_enabled() ? DriverMode::system : DriverMode::custom_icd;
-        expect(run_vulkan_mesh_smoke_test(third_mode, "", "", true, sys_smoke_hash).ok &&
-                   run_vulkan_mesh_smoke_test(DriverMode::turnip, "", "", true, turnip_smoke_hash).ok &&
-                   run_vulkan_mesh_smoke_test(DriverMode::panvk, "", "", true, panvk_smoke_hash).ok &&
-                   sys_smoke_hash != 0ULL && sys_smoke_hash == turnip_smoke_hash &&
-                   turnip_smoke_hash == panvk_smoke_hash,
+        const VulkanDriverProbeResult smoke_sys_probe =
+            run_vulkan_mesh_smoke_test(third_mode, "", "", true, sys_smoke_hash);
+        const VulkanDriverProbeResult smoke_turnip_probe =
+            run_vulkan_mesh_smoke_test(DriverMode::turnip, "", "", true, turnip_smoke_hash);
+        const VulkanDriverProbeResult smoke_panvk_probe =
+            run_vulkan_mesh_smoke_test(DriverMode::panvk, "", "", true, panvk_smoke_hash);
+        const bool mock_hashes_match =
+            smoke_turnip_probe.is_mock && smoke_panvk_probe.is_mock && turnip_smoke_hash == panvk_smoke_hash &&
+            (!smoke_sys_probe.is_mock || sys_smoke_hash == turnip_smoke_hash);
+        expect(smoke_sys_probe.ok && smoke_turnip_probe.ok && smoke_panvk_probe.ok &&
+                   sys_smoke_hash != 0ULL && turnip_smoke_hash != 0ULL &&
+                   panvk_smoke_hash != 0ULL && mock_hashes_match,
                "Vulkan mesh smoke test passes consistently across System, Turnip, and PanVK");
 
         // Depth buffer occlusion test (near green z=0.3 occludes far red z=0.7 in either order).
@@ -2363,6 +2370,142 @@ void test_p4_review_fixes() {
 // P10.4: launcher settings page keys in `config/performance.json` (quality preset, render scale,
 // texture size cap, UI aspect, UI scale, language), the presets, the first-launch defaults, and
 // the partial-JSON save the launcher's settings page uses.
+// P4 item 1: `VulkanRhiDevice` renders on the GPU (device memory, uploads, a pipeline from the
+// RHI's own SPIR-V shaders, a render pass, readback) whenever the device can execute work.
+// The mock ICD cannot, so it keeps the CPU reference path. With the host GPU
+// (WSE_TEST_SYSTEM_VULKAN=1) the GPU frame must match the software rasterizer.
+void test_p4_vulkan_gpu_rendering() {
+    using namespace wse::platform;
+
+    std::vector<std::byte> dds_bytes(136U, std::byte{0});
+    const auto w16 = [&](std::size_t off, std::uint16_t v) {
+        dds_bytes[off] = static_cast<std::byte>(v & 0xFFU);
+        dds_bytes[off + 1U] = static_cast<std::byte>((v >> 8U) & 0xFFU);
+    };
+    const auto w32 = [&](std::size_t off, std::uint32_t v) {
+        for (unsigned i = 0; i < 4U; ++i) {
+            dds_bytes[off + i] = static_cast<std::byte>((v >> (8U * i)) & 0xFFU);
+        }
+    };
+    dds_bytes[0] = std::byte{'D'};
+    dds_bytes[1] = std::byte{'D'};
+    dds_bytes[2] = std::byte{'S'};
+    dds_bytes[3] = std::byte{' '};
+    w32(4U, 124U);
+    w32(8U, 0x1007U);
+    w32(12U, 4U);
+    w32(16U, 4U);
+    w32(20U, 8U);
+    w32(76U, 32U);
+    w32(80U, 0x4U);
+    dds_bytes[84] = std::byte{'D'};
+    dds_bytes[85] = std::byte{'X'};
+    dds_bytes[86] = std::byte{'T'};
+    dds_bytes[87] = std::byte{'1'};
+    w32(108U, 0x1000U);
+    w16(128U, 0xF800U);  // red
+    w16(130U, 0x07E0U);  // green
+    w32(132U, 0x55005500U);  // alternating rows: a pattern the sampler must reproduce
+    wse::asset::DdsImageView dds{};
+    std::string err;
+    expect(wse::asset::parse_dds(dds_bytes, dds, &err), "P4 GPU: parse the BC1 test texture");
+
+    wse::asset::BrfMesh mesh{};
+    mesh.name = "p4_gpu_quad";
+    mesh.positions = {{-0.6f, -0.6f, 0.0f}, {0.6f, -0.6f, 0.0f}, {0.6f, 0.6f, 0.0f},
+                      {-0.6f, 0.6f, 0.0f}};
+    const std::array<wse::asset::Vec2f, 4> uvs{
+        wse::asset::Vec2f{0.0f, 1.0f}, wse::asset::Vec2f{1.0f, 1.0f},
+        wse::asset::Vec2f{1.0f, 0.0f}, wse::asset::Vec2f{0.0f, 0.0f}};
+    const std::array<std::uint32_t, 4> colors{0xFFFFFFFFU, 0xFFFFE0C0U, 0xFFC0FFE0U,
+                                              0xFFC0E0FFU};
+    for (std::size_t i = 0; i < 4U; ++i) {
+        wse::asset::BrfFaceCorner c{};
+        c.vertex_index = static_cast<std::int32_t>(i);
+        c.color = colors[i];
+        c.normal = {0.0f, 0.0f, 1.0f};
+        c.uv = uvs[i];
+        c.uv2 = uvs[i];
+        mesh.face_corners.push_back(c);
+    }
+    mesh.faces.push_back(wse::asset::BrfMeshFace{{0, 1, 2}});
+    mesh.faces.push_back(wse::asset::BrfMeshFace{{0, 2, 3}});
+    float mvp[16]{};
+    make_orbit_mvp_matrix(1.0f, 1.8f, 0.0f, 0.0f, mvp);
+
+    SoftwareRhiDevice sw;
+    std::vector<std::uint8_t> sw_frame;
+    expect(render_textured_brf_mesh_frame(sw, mesh, dds, 128U, 96U, mvp, sw_frame, &err,
+                                          CullMode::none),
+           "P4 GPU: software reference frame");
+
+    {
+        auto loader = std::make_shared<VulkanDriverLoader>();
+        VulkanMockConfig cfg{};
+        cfg.mode = DriverMode::panvk;
+        cfg.device_name = "Mali-G610 PanVK v3.7.0 (Mock ICD)";
+        VulkanDriverProbeResult probe{};
+        expect(loader->load_mock_icd(cfg) && loader->probe_and_create_device(probe),
+               "P4 GPU: mock ICD opens");
+        VulkanRhiDevice vk(loader);
+        std::vector<std::uint8_t> frame;
+        expect(render_textured_brf_mesh_frame(vk, mesh, dds, 128U, 96U, mvp, frame, &err,
+                                              CullMode::none) &&
+                   !vk.last_frame_used_gpu() && frame == sw_frame,
+               "P4 GPU: the mock ICD cannot execute work, so it keeps the CPU reference frame");
+    }
+
+    if (!system_vulkan_tests_enabled()) {
+        return;
+    }
+    auto loader = std::make_shared<VulkanDriverLoader>();
+    VulkanDriverProbeResult probe{};
+    if (!loader->load_system(&err) || !loader->probe_and_create_device(probe)) {
+        std::printf("      P4 GPU: no system Vulkan device (%s); GPU checks skipped\n",
+                    err.c_str());
+        return;
+    }
+    VulkanRhiDevice vk(loader);
+    std::vector<std::uint8_t> frame;
+    expect(render_textured_brf_mesh_frame(vk, mesh, dds, 128U, 96U, mvp, frame, &err,
+                                          CullMode::none),
+           "P4 GPU: render the quad on the host GPU");
+    if (!err.empty()) {
+        std::printf("      P4 GPU error: %s\n", err.c_str());
+    }
+    expect(vk.last_frame_used_gpu(), "P4 GPU: the frame really came from the GPU");
+    expect(frame.size() == sw_frame.size(), "P4 GPU: same frame size as the reference");
+    if (frame.size() == sw_frame.size() && !frame.empty()) {
+        std::size_t close = 0;
+        const std::size_t pixels = frame.size() / 4U;
+        for (std::size_t p = 0; p < pixels; ++p) {
+            bool ok = true;
+            for (std::size_t c = 0; c < 4U; ++c) {
+                const int d = static_cast<int>(frame[p * 4U + c]) -
+                              static_cast<int>(sw_frame[p * 4U + c]);
+                ok = ok && d >= -8 && d <= 8;
+            }
+            close += ok ? 1U : 0U;
+        }
+        std::printf("      P4 GPU: %zu / %zu pixels within 8/255 of the reference\n", close,
+                    pixels);
+        expect(close * 100U >= pixels * 99U,
+               "P4 GPU: at least 99% of pixels match the software reference within 8/255");
+        expect(frame[0] == sw_frame[0] && frame[1] == sw_frame[1] && frame[2] == sw_frame[2] &&
+                   frame[3] == sw_frame[3],
+               "P4 GPU: the corner keeps the exact clear colour");
+    }
+    // Resources survive many frames without growth (no per-frame allocation leak).
+    const std::size_t buffers = vk.live_vk_buffers();
+    const std::size_t images = vk.live_vk_images();
+    for (int i = 0; i < 20; ++i) {
+        (void)render_textured_brf_mesh_frame(vk, mesh, dds, 128U, 96U, mvp, frame, &err,
+                                             CullMode::none);
+    }
+    expect(vk.live_vk_buffers() <= buffers + 8U && vk.live_vk_images() <= images + 8U,
+           "P4 GPU: repeated frames do not keep allocating buffers and images");
+}
+
 void test_p10_launcher_settings() {
     using namespace wse::platform;
 
@@ -2864,6 +3007,7 @@ int run_platform_suite(const char* fixture_path) {
     test_p5_rhi_review_fixes();
     test_p8_performance_and_frame_pacing();
     test_p10_launcher_settings();
+    test_p4_vulkan_gpu_rendering();
     if (failures != 0) {
         std::printf("platform tests: FAIL (%d)\n", failures);
         return 1;

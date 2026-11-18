@@ -32,6 +32,31 @@ namespace wse::game {
 
 class WorldInputBridge {
 public:
+    // Maps verified `kScreenWindow*` IDs (`world_subsystem_types.h`) onto `InputContext`.
+    [[nodiscard]] static constexpr wse::platform::InputContext context_for_screen_window(
+        std::int32_t active_window) noexcept {
+        switch (active_window) {
+        case kScreenWindowTactical:
+            return wse::platform::InputContext::Mission;
+        case kScreenWindowMap:
+            return wse::platform::InputContext::CampaignMap;
+        case kScreenWindowConversation:
+            return wse::platform::InputContext::Dialog;
+        case kScreenWindowPresentation:
+            return wse::platform::InputContext::Presentation;
+        case kScreenWindowMenu:
+        case kScreenWindowNotes:
+        case kScreenWindowLoading:
+        default:
+            return wse::platform::InputContext::Menu;
+        }
+    }
+
+    static void sync_context_from_world(wse::platform::WseInputManager& mgr,
+                                        const WseWorldState& world) noexcept {
+        mgr.set_context(context_for_screen_window(world.m5.active_window));
+    }
+
     // Copies the binding tables unconditionally (names for `65`, chords for `3100`).
     static void sync_bindings_to_world(const wse::platform::WseInputManager& mgr,
                                        WseWorldState& world) {

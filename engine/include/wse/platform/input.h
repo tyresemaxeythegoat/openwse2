@@ -391,6 +391,25 @@ enum class GameKeyId : std::int32_t {
     MapWait = 73,
     TakeScreenshot = 74,
     Custom1 = 75,
+    Custom2 = 76,
+    Custom3 = 77,
+    Custom4 = 78,
+    Custom5 = 79,
+    Custom6 = 80,
+    Custom7 = 81,
+    Custom8 = 82,
+    Custom9 = 83,
+    Custom10 = 84,
+    Custom11 = 85,
+    Custom12 = 86,
+    Custom13 = 87,
+    Custom14 = 88,
+    Custom15 = 89,
+    Custom16 = 90,
+    Custom17 = 91,
+    Custom18 = 92,
+    Custom19 = 93,
+    Custom20 = 94,
 };
 
 // One 16-byte binding record inside a `g_gameKeyManager` (`0x14069fbd0`) 32-byte slot:
@@ -745,10 +764,14 @@ enum class InputContext : std::uint8_t {
     Inventory = 3,
     Presentation = 4,
     Dialog = 5,
+    Party = 6,
+    Trade = 7,
 };
 
 [[nodiscard]] constexpr bool context_allows_touch_overlay(InputContext ctx) noexcept {
-    return ctx == InputContext::Mission || ctx == InputContext::CampaignMap;
+    return ctx == InputContext::Mission || ctx == InputContext::CampaignMap ||
+           ctx == InputContext::Dialog || ctx == InputContext::Party ||
+           ctx == InputContext::Trade;
 }
 
 enum class TouchCombatDirection : std::uint8_t {
@@ -759,13 +782,27 @@ enum class TouchCombatDirection : std::uint8_t {
     Right = 4,
 };
 
+// Appended after the P7 widgets (`0..4`) so saved v1 profiles preserve existing IDs.
 enum class TouchWidgetId : std::uint8_t {
     MoveStick = 0,
     LookArea = 1,
     AttackZone = 2,
     BlockZone = 3,
     CommandRadial = 4,
-    Count = 5,
+    MapCenter = 5,
+    MapFollow = 6,
+    MapPanMode = 7,
+    MapWait = 8,
+    DialogUp = 9,
+    DialogSelect = 10,
+    DialogDown = 11,
+    MoveAll = 12,
+    MoveOne = 13,
+    Spare1 = 14,
+    Spare2 = 15,
+    Spare3 = 16,
+    Spare4 = 17,
+    Count = 18,
 };
 
 inline constexpr std::size_t kNumTouchWidgets =
@@ -778,9 +815,87 @@ inline constexpr std::size_t kNumTouchWidgets =
     case TouchWidgetId::AttackZone: return "attack_zone";
     case TouchWidgetId::BlockZone: return "block_zone";
     case TouchWidgetId::CommandRadial: return "command_radial";
+    case TouchWidgetId::MapCenter: return "map_center";
+    case TouchWidgetId::MapFollow: return "map_follow";
+    case TouchWidgetId::MapPanMode: return "map_pan_mode";
+    case TouchWidgetId::MapWait: return "map_wait";
+    case TouchWidgetId::DialogUp: return "dialog_up";
+    case TouchWidgetId::DialogSelect: return "dialog_select";
+    case TouchWidgetId::DialogDown: return "dialog_down";
+    case TouchWidgetId::MoveAll: return "move_all";
+    case TouchWidgetId::MoveOne: return "move_one";
+    case TouchWidgetId::Spare1: return "spare_1";
+    case TouchWidgetId::Spare2: return "spare_2";
+    case TouchWidgetId::Spare3: return "spare_3";
+    case TouchWidgetId::Spare4: return "spare_4";
     default: return "unknown";
     }
 }
+
+// Warband `GameKeyId` driven by each touch widget (`std::nullopt` for analog stick,
+// look area, and multi-sector command radial).
+// - `MapWait` uses retail `GameKeyId::MapWait` (73, `Space`).
+// - `Spare1..4` bind to `GameKeyId::Custom1..4` (75..78).
+// - Campaign map center/follow/pan, conversation up/select/down, and party/trade
+//   bulk-move buttons have no built-in retail `GameKeyId` in `0..74`, so they use
+//   spare slots `Custom5..12` (79..86).
+[[nodiscard]] constexpr std::optional<GameKeyId> touch_widget_game_key(
+    TouchWidgetId id) noexcept {
+    switch (id) {
+    case TouchWidgetId::AttackZone: return GameKeyId::Attack;
+    case TouchWidgetId::BlockZone: return GameKeyId::Defend;
+    case TouchWidgetId::MapCenter: return GameKeyId::Custom5;
+    case TouchWidgetId::MapFollow: return GameKeyId::Custom6;
+    case TouchWidgetId::MapPanMode: return GameKeyId::Custom7;
+    case TouchWidgetId::MapWait: return GameKeyId::MapWait;
+    case TouchWidgetId::DialogUp: return GameKeyId::Custom8;
+    case TouchWidgetId::DialogSelect: return GameKeyId::Custom9;
+    case TouchWidgetId::DialogDown: return GameKeyId::Custom10;
+    case TouchWidgetId::MoveAll: return GameKeyId::Custom11;
+    case TouchWidgetId::MoveOne: return GameKeyId::Custom12;
+    case TouchWidgetId::Spare1: return GameKeyId::Custom1;
+    case TouchWidgetId::Spare2: return GameKeyId::Custom2;
+    case TouchWidgetId::Spare3: return GameKeyId::Custom3;
+    case TouchWidgetId::Spare4: return GameKeyId::Custom4;
+    default: return std::nullopt;
+    }
+}
+
+[[nodiscard]] constexpr bool widget_visible_in_context(TouchWidgetId id,
+                                                       InputContext ctx) noexcept {
+    switch (ctx) {
+    case InputContext::Mission:
+        return id == TouchWidgetId::MoveStick || id == TouchWidgetId::LookArea ||
+               id == TouchWidgetId::AttackZone || id == TouchWidgetId::BlockZone ||
+               id == TouchWidgetId::CommandRadial || id == TouchWidgetId::Spare1 ||
+               id == TouchWidgetId::Spare2 || id == TouchWidgetId::Spare3 ||
+               id == TouchWidgetId::Spare4;
+    case InputContext::CampaignMap:
+        return id == TouchWidgetId::MoveStick || id == TouchWidgetId::LookArea ||
+               id == TouchWidgetId::MapCenter || id == TouchWidgetId::MapFollow ||
+               id == TouchWidgetId::MapPanMode || id == TouchWidgetId::MapWait;
+    case InputContext::Dialog:
+        return id == TouchWidgetId::DialogUp || id == TouchWidgetId::DialogSelect ||
+               id == TouchWidgetId::DialogDown;
+    case InputContext::Party:
+    case InputContext::Trade:
+        return id == TouchWidgetId::MoveAll || id == TouchWidgetId::MoveOne;
+    case InputContext::Menu:
+    case InputContext::Inventory:
+    case InputContext::Presentation:
+    default:
+        return false;
+    }
+}
+
+inline constexpr std::array<TouchWidgetId, kNumTouchWidgets> kTouchWidgetHitOrder = {
+    TouchWidgetId::MoveStick,    TouchWidgetId::CommandRadial, TouchWidgetId::AttackZone,
+    TouchWidgetId::BlockZone,    TouchWidgetId::MapCenter,     TouchWidgetId::MapFollow,
+    TouchWidgetId::MapPanMode,   TouchWidgetId::MapWait,       TouchWidgetId::DialogUp,
+    TouchWidgetId::DialogSelect, TouchWidgetId::DialogDown,    TouchWidgetId::MoveAll,
+    TouchWidgetId::MoveOne,      TouchWidgetId::Spare1,        TouchWidgetId::Spare2,
+    TouchWidgetId::Spare3,       TouchWidgetId::Spare4,        TouchWidgetId::LookArea,
+};
 
 // Viewport width / height. Touch coordinates are normalized per axis, so every
 // distance or angle is converted to screen-height units (`dx * aspect`) first;
@@ -789,6 +904,20 @@ inline constexpr std::size_t kNumTouchWidgets =
     return (std::isfinite(aspect) && aspect >= 0.25f && aspect <= 4.0f) ? aspect : 1.0f;
 }
 
+// Normalized display safe-area insets in [0, 1] of viewport width / height.
+struct SafeAreaInsets {
+    float left = 0.0f;
+    float top = 0.0f;
+    float right = 0.0f;
+    float bottom = 0.0f;
+
+    [[nodiscard]] bool operator==(const SafeAreaInsets&) const noexcept = default;
+};
+
+// Widget center (`cx`, `cy`) is in normalized viewport width / height `[0, 1]`;
+// half-extents (`half_w`, `half_h`) are fractions of the screen's short side
+// (`min(width, height)`), so circles stay circular and button proportions stay
+// invariant across 20:9, 4:3, and portrait viewports.
 struct TouchWidgetLayout {
     float cx = 0.5f;
     float cy = 0.5f;
@@ -799,27 +928,45 @@ struct TouchWidgetLayout {
     bool circular = false;
     bool enabled = true;
 
-    // Radius of a circular widget in screen-height units: the largest circle that
-    // fits the `half_w` x `half_h` box on a viewport of the given aspect.
+    // Radius of a circular widget in screen-height units: short-side radius scaled
+    // by `min(aspect, 1.0f)` so pixel radius equals `min(half_w, half_h) * scale * min(W, H)`.
     [[nodiscard]] float circle_radius(float aspect) const noexcept {
         const float a = sanitize_viewport_aspect(aspect);
-        return std::max(0.01f, std::min(half_w * scale * a, half_h * scale));
+        return std::max(0.01f, std::min(half_w, half_h) * scale) * std::min(a, 1.0f);
+    }
+
+    // Half-width in normalized viewport X `[0, 1]`.
+    [[nodiscard]] float norm_half_width(float aspect) const noexcept {
+        const float a = sanitize_viewport_aspect(aspect);
+        if (circular) {
+            return circle_radius(a) / a;
+        }
+        return std::max(0.01f, half_w * scale) * std::min(1.0f, 1.0f / a);
+    }
+
+    // Half-height in normalized viewport Y `[0, 1]`.
+    [[nodiscard]] float norm_half_height(float aspect) const noexcept {
+        const float a = sanitize_viewport_aspect(aspect);
+        if (circular) {
+            return circle_radius(a);
+        }
+        return std::max(0.01f, half_h * scale) * std::min(1.0f, a);
     }
 
     [[nodiscard]] bool contains(float x, float y, float aspect = 1.0f) const noexcept {
         if (!enabled || !std::isfinite(x) || !std::isfinite(y)) {
             return false;
         }
+        const float a = sanitize_viewport_aspect(aspect);
         const float dx = x - cx;
         const float dy = y - cy;
         if (circular) {
-            const float a = sanitize_viewport_aspect(aspect);
             const float r = circle_radius(a);
             const float px = dx * a;
             return (px * px + dy * dy) <= r * r;
         }
-        const float eff_w = std::max(0.01f, half_w * scale);
-        const float eff_h = std::max(0.01f, half_h * scale);
+        const float eff_w = norm_half_width(a);
+        const float eff_h = norm_half_height(a);
         return std::fabs(dx) <= eff_w && std::fabs(dy) <= eff_h;
     }
 
@@ -829,11 +976,24 @@ struct TouchWidgetLayout {
 [[nodiscard]] constexpr std::array<TouchWidgetLayout, kNumTouchWidgets>
 default_touch_widgets() noexcept {
     return {{
-        TouchWidgetLayout{0.15f, 0.72f, 0.11f, 0.14f, 1.0f, 0.70f, true, true},   // MoveStick
-        TouchWidgetLayout{0.68f, 0.48f, 0.31f, 0.44f, 1.0f, 0.25f, false, true},  // LookArea
-        TouchWidgetLayout{0.75f, 0.68f, 0.08f, 0.12f, 1.0f, 0.75f, false, true},  // AttackZone
-        TouchWidgetLayout{0.90f, 0.68f, 0.06f, 0.12f, 1.0f, 0.75f, false, true},  // BlockZone
-        TouchWidgetLayout{0.15f, 0.28f, 0.08f, 0.10f, 1.0f, 0.70f, true, true},   // CommandRadial
+        TouchWidgetLayout{0.15f, 0.72f, 0.14f, 0.14f, 1.0f, 0.70f, true, true},   // MoveStick
+        TouchWidgetLayout{0.68f, 0.50f, 0.31f, 0.42f, 1.0f, 0.25f, false, true},  // LookArea
+        TouchWidgetLayout{0.76f, 0.68f, 0.10f, 0.11f, 1.0f, 0.75f, false, true},  // AttackZone
+        TouchWidgetLayout{0.91f, 0.68f, 0.07f, 0.11f, 1.0f, 0.75f, false, true},  // BlockZone
+        TouchWidgetLayout{0.15f, 0.28f, 0.09f, 0.09f, 1.0f, 0.70f, true, true},   // CommandRadial
+        TouchWidgetLayout{0.54f, 0.12f, 0.055f, 0.055f, 1.0f, 0.75f, false, true},  // MapCenter
+        TouchWidgetLayout{0.65f, 0.12f, 0.055f, 0.055f, 1.0f, 0.75f, false, true},  // MapFollow
+        TouchWidgetLayout{0.76f, 0.12f, 0.055f, 0.055f, 1.0f, 0.75f, false, true},  // MapPanMode
+        TouchWidgetLayout{0.87f, 0.12f, 0.055f, 0.055f, 1.0f, 0.75f, false, true},  // MapWait
+        TouchWidgetLayout{0.90f, 0.36f, 0.06f, 0.06f, 1.0f, 0.75f, false, true},   // DialogUp
+        TouchWidgetLayout{0.90f, 0.52f, 0.06f, 0.06f, 1.0f, 0.80f, false, true},   // DialogSelect
+        TouchWidgetLayout{0.90f, 0.68f, 0.06f, 0.06f, 1.0f, 0.75f, false, true},   // DialogDown
+        TouchWidgetLayout{0.90f, 0.42f, 0.065f, 0.06f, 1.0f, 0.75f, false, true},  // MoveAll
+        TouchWidgetLayout{0.90f, 0.58f, 0.065f, 0.06f, 1.0f, 0.75f, false, true},  // MoveOne
+        TouchWidgetLayout{0.48f, 0.11f, 0.05f, 0.05f, 1.0f, 0.65f, false, true},   // Spare1
+        TouchWidgetLayout{0.59f, 0.11f, 0.05f, 0.05f, 1.0f, 0.65f, false, true},   // Spare2
+        TouchWidgetLayout{0.70f, 0.11f, 0.05f, 0.05f, 1.0f, 0.65f, false, true},   // Spare3
+        TouchWidgetLayout{0.81f, 0.11f, 0.05f, 0.05f, 1.0f, 0.65f, false, true},   // Spare4
     }};
 }
 
@@ -844,10 +1004,7 @@ default_touch_widgets() noexcept {
     if (!overlay_visible || !layout.enabled) {
         return false;
     }
-    if (ctx == InputContext::CampaignMap) {
-        return id == TouchWidgetId::MoveStick || id == TouchWidgetId::LookArea;
-    }
-    return ctx == InputContext::Mission;
+    return widget_visible_in_context(id, ctx);
 }
 
 struct TouchOverlayProfile {
@@ -868,6 +1025,8 @@ struct TouchOverlayProfile {
     bool invert_gyro_y = false;
     bool pinch_zoom_enabled = true;
     float pinch_zoom_sensitivity = 1.0f;
+    TouchCombatDirection default_attack_dir = TouchCombatDirection::Right;
+    TouchCombatDirection default_block_dir = TouchCombatDirection::Up;
     std::array<TouchWidgetLayout, kNumTouchWidgets> widgets = default_touch_widgets();
 
     [[nodiscard]] bool operator==(const TouchOverlayProfile&) const noexcept = default;
@@ -910,8 +1069,98 @@ inline void sanitize_input_profile(TouchOverlayProfile& p) noexcept {
         std::clamp(finite_or(p.gyro_deadzone, def.gyro_deadzone), 0.0f, 0.5f);
     p.pinch_zoom_sensitivity =
         std::clamp(finite_or(p.pinch_zoom_sensitivity, def.pinch_zoom_sensitivity), 0.1f, 5.0f);
+    const auto valid_dir = [](TouchCombatDirection d, TouchCombatDirection fallback) noexcept {
+        const auto v = static_cast<std::uint8_t>(d);
+        return (v >= 1U && v <= 4U) ? d : fallback;
+    };
+    p.default_attack_dir = valid_dir(p.default_attack_dir, def.default_attack_dir);
+    p.default_block_dir = valid_dir(p.default_block_dir, def.default_block_dir);
     for (auto& w : p.widgets) {
         sanitize_touch_widget(w);
+    }
+}
+
+// Clamps every widget rectangle inside the normalized safe-area inset rectangle
+// `[insets.left, 1 - insets.right] x [insets.top, 1 - insets.bottom]`.
+// With default `aspect = 1.0f` the clamped coordinates stay inside the safe area
+// for any aspect ratio (since `norm_half_*` only shrinks away from `aspect = 1.0f`).
+inline void apply_safe_area(TouchOverlayProfile& profile,
+                            const SafeAreaInsets& insets,
+                            float aspect = 1.0f) noexcept {
+    const float a = sanitize_viewport_aspect(aspect);
+    const auto finite_nonneg = [](float v) noexcept {
+        return (std::isfinite(v) && v > 0.0f) ? v : 0.0f;
+    };
+    float l = std::min(finite_nonneg(insets.left), 0.98f);
+    float r = std::min(finite_nonneg(insets.right), 0.98f);
+    if (l + r > 0.98f) {
+        const float k = 0.98f / (l + r);
+        l *= k;
+        r *= k;
+    }
+    float t = std::min(finite_nonneg(insets.top), 0.98f);
+    float b = std::min(finite_nonneg(insets.bottom), 0.98f);
+    if (t + b > 0.98f) {
+        const float k = 0.98f / (t + b);
+        t *= k;
+        b *= k;
+    }
+    const float min_x = l;
+    const float max_x = 1.0f - r;
+    const float min_y = t;
+    const float max_y = 1.0f - b;
+    const float safe_w = max_x - min_x;
+    const float safe_h = max_y - min_y;
+    const float scale_x_to_short = std::min(1.0f, 1.0f / a);
+    const float scale_y_to_short = std::min(1.0f, a);
+
+    for (TouchWidgetLayout& w : profile.widgets) {
+        sanitize_touch_widget(w);
+        float hw = w.norm_half_width(a);
+        float hh = w.norm_half_height(a);
+        if (w.circular) {
+            const float max_rx = safe_w * 0.5f;
+            const float max_ry = safe_h * 0.5f;
+            if (hw > max_rx || hh > max_ry) {
+                const float factor = std::min(max_rx / hw, max_ry / hh);
+                const float new_r_short = std::min(w.half_w, w.half_h) * w.scale * factor;
+                const float s = std::max(w.scale, 0.5f);
+                const float unclamped = new_r_short / s;
+                w.half_w = std::max(0.005f, unclamped);
+                w.half_h = std::max(0.005f, unclamped);
+                hw = std::min(w.norm_half_width(a), max_rx);
+                hh = std::min(w.norm_half_height(a), max_ry);
+            }
+        } else {
+            if (2.0f * hw > safe_w) {
+                const float max_hw_short = (safe_w * 0.5f) / scale_x_to_short;
+                w.half_w = std::max(0.005f, max_hw_short / std::max(w.scale, 0.5f));
+                hw = std::min(w.norm_half_width(a), safe_w * 0.5f);
+            }
+            if (2.0f * hh > safe_h) {
+                const float max_hh_short = (safe_h * 0.5f) / scale_y_to_short;
+                w.half_h = std::max(0.005f, max_hh_short / std::max(w.scale, 0.5f));
+                hh = std::min(w.norm_half_height(a), safe_h * 0.5f);
+            }
+        }
+        const float lo_x = min_x + hw;
+        const float hi_x = max_x - hw;
+        const float lo_y = min_y + hh;
+        const float hi_y = max_y - hh;
+        w.cx = (lo_x <= hi_x) ? std::clamp(w.cx, lo_x, hi_x) : 0.5f * (min_x + max_x);
+        w.cy = (lo_y <= hi_y) ? std::clamp(w.cy, lo_y, hi_y) : 0.5f * (min_y + max_y);
+        if (w.cx - hw < min_x && w.cx + hw < max_x) {
+            w.cx = std::nextafter(w.cx, max_x);
+        }
+        if (w.cx + hw > max_x && w.cx - hw > min_x) {
+            w.cx = std::nextafter(w.cx, min_x);
+        }
+        if (w.cy - hh < min_y && w.cy + hh < max_y) {
+            w.cy = std::nextafter(w.cy, max_y);
+        }
+        if (w.cy + hh > max_y && w.cy - hh > min_y) {
+            w.cy = std::nextafter(w.cy, min_y);
+        }
     }
 }
 
@@ -933,11 +1182,22 @@ public:
                                          float x,
                                          float y,
                                          float aspect = 1.0f) const noexcept {
-        static constexpr std::array<TouchWidgetId, kNumTouchWidgets> kOrder = {
-            TouchWidgetId::MoveStick, TouchWidgetId::CommandRadial, TouchWidgetId::AttackZone,
-            TouchWidgetId::BlockZone, TouchWidgetId::LookArea};
-        for (const TouchWidgetId id : kOrder) {
+        for (const TouchWidgetId id : kTouchWidgetHitOrder) {
             if (profile.widgets[static_cast<std::size_t>(id)].contains(x, y, aspect)) {
+                return id;
+            }
+        }
+        return TouchWidgetId::Count;
+    }
+
+    [[nodiscard]] TouchWidgetId hit_test(const TouchOverlayProfile& profile,
+                                         InputContext ctx,
+                                         float x,
+                                         float y,
+                                         float aspect = 1.0f) const noexcept {
+        for (const TouchWidgetId id : kTouchWidgetHitOrder) {
+            if (widget_visible_in_context(id, ctx) &&
+                profile.widgets[static_cast<std::size_t>(id)].contains(x, y, aspect)) {
                 return id;
             }
         }
@@ -1117,6 +1377,10 @@ inline std::string fmt_float(float v) {
     kv["invert_gyro_y"] = profile.invert_gyro_y ? "true" : "false";
     kv["pinch_zoom_enabled"] = profile.pinch_zoom_enabled ? "true" : "false";
     kv["pinch_zoom_sensitivity"] = input_detail::fmt_float(profile.pinch_zoom_sensitivity);
+    kv["default_attack_dir"] =
+        std::to_string(static_cast<std::int32_t>(profile.default_attack_dir));
+    kv["default_block_dir"] =
+        std::to_string(static_cast<std::int32_t>(profile.default_block_dir));
 
     for (std::size_t i = 0; i < kNumTouchWidgets; ++i) {
         const auto id = static_cast<TouchWidgetId>(i);
@@ -1182,6 +1446,18 @@ inline std::string fmt_float(float v) {
         const auto it = kv.find(key);
         return (it == kv.end()) || input_detail::parse_bool_exact(it->second, dst);
     };
+    auto read_dir = [&](const char* key, TouchCombatDirection& dst) -> bool {
+        const auto it = kv.find(key);
+        if (it == kv.end()) {
+            return true;
+        }
+        std::int32_t val = 0;
+        if (!input_detail::parse_int_exact(it->second, val) || val < 1 || val > 4) {
+            return false;
+        }
+        dst = static_cast<TouchCombatDirection>(val);
+        return true;
+    };
 
     if (!read_f("stick_deadzone", parsed.stick_deadzone) ||
         !read_f("stick_key_threshold", parsed.stick_key_threshold) ||
@@ -1197,7 +1473,9 @@ inline std::string fmt_float(float v) {
         !read_f("gyro_deadzone", parsed.gyro_deadzone) ||
         !read_b("invert_gyro_y", parsed.invert_gyro_y) ||
         !read_b("pinch_zoom_enabled", parsed.pinch_zoom_enabled) ||
-        !read_f("pinch_zoom_sensitivity", parsed.pinch_zoom_sensitivity)) {
+        !read_f("pinch_zoom_sensitivity", parsed.pinch_zoom_sensitivity) ||
+        !read_dir("default_attack_dir", parsed.default_attack_dir) ||
+        !read_dir("default_block_dir", parsed.default_block_dir)) {
         return fail("invalid scalar in input profile JSON");
     }
 
@@ -1471,12 +1749,18 @@ struct InputFrameState {
     TouchCombatDirection block_dir = TouchCombatDirection::None;
     bool block_active = false;
     bool radial_open = false;
-    std::int32_t radial_sector = -1;  // 0..7 when hovered, else -1
+    std::int32_t radial_level = 0;    // 0 = closed, 1 = group ring, 2 = order ring
+    std::int32_t radial_group = -1;   // 0..3 (All/Infantry/Archers/Cavalry), else -1
+    std::int32_t radial_sector = -1;  // 0..7 when hovered in level 2, else -1
     float stick_knob_x = 0.0f;
     float stick_knob_y = 0.0f;
     // CampaignMap 2-finger pinch zoom delta (>0 zooms in, <0 zooms out).
     float map_zoom_delta = 0.0f;
     bool pinch_active = false;
+    bool map_follow = true;
+    bool map_pan_mode = false;
+    bool map_paused = false;
+    std::array<bool, kNumTouchWidgets> widget_pressed{};
 };
 
 // Maps physical devices (`RawInputEvent`) + virtual touch overlay + `InputContext`
@@ -1506,6 +1790,9 @@ public:
     static constexpr float kMinPinchDistance = 0.02f;
     // A frame with no gyro sample reuses the last rate for this long.
     static constexpr float kGyroSampleHoldSeconds = 0.05f;
+    // Attack / block swipe classification waits until displacement exceeds
+    // `swipe_threshold` or this hold duration elapses (whichever comes first).
+    static constexpr float kSwipeClassifyDelaySeconds = 0.120f;
     // Gamepad raw keys occupy `0xf0..0xff` in `rglInputManager::getKeyName` (`0x1402ad360`).
     static constexpr std::int32_t kFirstGamepadRawKey = RawKey::kGamepadA;
     static constexpr std::size_t kNumGamepadRawKeys = 16U;
@@ -1538,12 +1825,19 @@ public:
         stick_y_ = 0.0f;
         attack_dir_ = TouchCombatDirection::None;
         block_dir_ = TouchCombatDirection::None;
-        radial_sector_ = -1;
+        attack_pulse_dir_ = false;
+        block_pulse_dir_ = false;
         radial_open_ = false;
+        radial_level_ = 0;
+        radial_group_ = -1;
+        radial_sector_ = -1;
         pinch_active_ = false;
         pinch_prev_dist_ = 0.0f;
         pinch_id0_ = -1;
         pinch_id1_ = -1;
+        map_follow_ = true;
+        map_pan_mode_ = false;
+        map_paused_ = false;
         gyro_filt_yaw_ = 0.0f;
         gyro_filt_pitch_ = 0.0f;
         cursor_x_ = 0.5f;
@@ -1576,6 +1870,7 @@ public:
             if (!is_touch_overlay_visible()) {
                 clear_touch_state();
             } else {
+                prune_inactive_touch_state();
                 update_pinch_state();
             }
         }
@@ -1655,6 +1950,17 @@ public:
         release_raw(RawKey::kScrollDown);
 
         ++frame_counter_;
+        attack_pulse_dir_ = false;
+        block_pulse_dir_ = false;
+        if (!has_finger_for(TouchWidgetId::AttackZone)) {
+            attack_dir_ = TouchCombatDirection::None;
+        }
+        if (!has_finger_for(TouchWidgetId::BlockZone)) {
+            block_dir_ = TouchCombatDirection::None;
+        }
+        for (auto& f : fingers_) {
+            f.elapsed_seconds += safe_dt;
+        }
         float look_dx = 0.0f;  // screen-height units
         float look_dy = 0.0f;
         float map_zoom_delta = 0.0f;
@@ -1788,6 +2094,8 @@ public:
 
         if (!is_touch_overlay_visible()) {
             clear_touch_state();
+        } else {
+            resolve_delayed_swipes(aspect);
         }
 
         // `omit_key_once`: a fresh press of an omitted key is swallowed (until release).
@@ -1933,18 +2241,26 @@ public:
 
         frame_.attack_dir = attack_dir_;
         frame_.attack_active =
-            has_finger_for(TouchWidgetId::AttackZone) ||
+            has_classified_finger_for(TouchWidgetId::AttackZone) ||
             game_down_[static_cast<std::size_t>(GameKeyId::Attack)];
         frame_.block_dir = block_dir_;
         frame_.block_active =
-            has_finger_for(TouchWidgetId::BlockZone) ||
+            has_classified_finger_for(TouchWidgetId::BlockZone) ||
             game_down_[static_cast<std::size_t>(GameKeyId::Defend)];
         frame_.radial_open = radial_open_;
+        frame_.radial_level = radial_level_;
+        frame_.radial_group = radial_group_;
         frame_.radial_sector = radial_sector_;
         frame_.stick_knob_x = stick_x_;
         frame_.stick_knob_y = stick_y_;
         frame_.map_zoom_delta = map_zoom_delta;
         frame_.pinch_active = pinch_active_;
+        frame_.map_follow = map_follow_;
+        frame_.map_pan_mode = map_pan_mode_;
+        frame_.map_paused = map_paused_;
+        for (std::size_t i = 0; i < kNumTouchWidgets; ++i) {
+            frame_.widget_pressed[i] = has_finger_for(static_cast<TouchWidgetId>(i));
+        }
     }
 
     [[nodiscard]] const InputFrameState& frame_state() const noexcept { return frame_; }
@@ -1988,8 +2304,13 @@ private:
         float anchor_y = 0.0f;
         float last_x = 0.0f;
         float last_y = 0.0f;
+        float radial_origin_x = 0.0f;
+        float radial_origin_y = 0.0f;
         std::uint64_t down_frame = 0U;
+        float elapsed_seconds = 0.0f;
         bool look_enabled = true;
+        bool swipe_classified = false;
+        TouchCombatDirection swipe_dir = TouchCombatDirection::None;
     };
 
     struct GamepadState {
@@ -2142,18 +2463,62 @@ private:
         return false;
     }
 
+    [[nodiscard]] bool has_classified_finger_for(TouchWidgetId w) const noexcept {
+        for (const auto& f : fingers_) {
+            if (f.widget == w && f.swipe_classified) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void close_radial() noexcept {
+        radial_open_ = false;
+        radial_level_ = 0;
+        radial_group_ = -1;
+        radial_sector_ = -1;
+    }
+
     void clear_touch_state() noexcept {
         fingers_.clear();
         stick_x_ = 0.0f;
         stick_y_ = 0.0f;
         attack_dir_ = TouchCombatDirection::None;
         block_dir_ = TouchCombatDirection::None;
-        radial_open_ = false;
-        radial_sector_ = -1;
+        attack_pulse_dir_ = false;
+        block_pulse_dir_ = false;
+        close_radial();
         pinch_active_ = false;
         pinch_prev_dist_ = 0.0f;
         pinch_id0_ = -1;
         pinch_id1_ = -1;
+    }
+
+    void prune_inactive_touch_state() noexcept {
+        for (std::size_t i = fingers_.size(); i > 0U; --i) {
+            const TouchWidgetId w = fingers_[i - 1U].widget;
+            if (!widget_visible_in_context(w, context_)) {
+                fingers_.erase(fingers_.begin() + static_cast<std::ptrdiff_t>(i - 1U));
+            }
+        }
+        if (!widget_visible_in_context(TouchWidgetId::MoveStick, context_) ||
+            !has_finger_for(TouchWidgetId::MoveStick)) {
+            stick_x_ = 0.0f;
+            stick_y_ = 0.0f;
+        }
+        if (!widget_visible_in_context(TouchWidgetId::AttackZone, context_) ||
+            !has_finger_for(TouchWidgetId::AttackZone)) {
+            attack_dir_ = TouchCombatDirection::None;
+            attack_pulse_dir_ = false;
+        }
+        if (!widget_visible_in_context(TouchWidgetId::BlockZone, context_) ||
+            !has_finger_for(TouchWidgetId::BlockZone)) {
+            block_dir_ = TouchCombatDirection::None;
+            block_pulse_dir_ = false;
+        }
+        if (!widget_visible_in_context(TouchWidgetId::CommandRadial, context_)) {
+            close_radial();
+        }
     }
 
     void update_pinch_state() noexcept {
@@ -2226,6 +2591,27 @@ private:
     }
 
     // `dx` / `dy` in screen-height units.
+    // Returns `0..3` clockwise from North: 0=North(All), 1=East(Infantry),
+    // 2=South(Archers), 3=West(Cavalry).
+    [[nodiscard]] static std::int32_t classify_radial_quadrant(float dx,
+                                                               float dy,
+                                                               float deadzone) noexcept {
+        const float dist = std::sqrt(dx * dx + dy * dy);
+        if (dist < deadzone) {
+            return -1;
+        }
+        constexpr float kPi = 3.14159265358979323846f;
+        constexpr float kTwoPi = 2.0f * kPi;
+        float angle = std::atan2(dx, -dy);
+        if (angle < 0.0f) {
+            angle += kTwoPi;
+        }
+        const float shifted = angle + (kPi / 4.0f);
+        const int idx = static_cast<int>(std::floor(shifted / (kPi / 2.0f))) % 4;
+        return static_cast<std::int32_t>(idx);
+    }
+
+    // `dx` / `dy` in screen-height units.
     [[nodiscard]] static std::int32_t classify_radial_sector(float dx,
                                                              float dy,
                                                              float deadzone) noexcept {
@@ -2245,11 +2631,43 @@ private:
         return static_cast<std::int32_t>(idx);
     }
 
+    [[nodiscard]] float radial_ring1_outer_radius(const TouchWidgetLayout& rad,
+                                                  float aspect) const noexcept {
+        return std::max(profile_.radial_deadzone * 2.5f, rad.circle_radius(aspect) * 0.85f);
+    }
+
+    [[nodiscard]] float radial_outer_hit_radius(const TouchWidgetLayout& rad,
+                                                float aspect) const noexcept {
+        return std::max(rad.circle_radius(aspect) * 2.2f,
+                        radial_ring1_outer_radius(rad, aspect) + 0.08f);
+    }
+
+    static constexpr std::array<GameKeyId, 4> kRadialGroupKeys = {
+        GameKeyId::ControlEveryone,
+        GameKeyId::ControlGroup1,
+        GameKeyId::ControlGroup2,
+        GameKeyId::ControlGroup3,
+    };
+
+    static constexpr std::array<GameKeyId, 8> kRadialOrderKeys = {
+        GameKeyId::Order1, GameKeyId::Order2, GameKeyId::Order3, GameKeyId::Order4,
+        GameKeyId::Order5, GameKeyId::Order6, GameKeyId::Order7, GameKeyId::Order8,
+    };
+
     [[nodiscard]] TouchWidgetId pick_widget_for_touch(float x, float y) const noexcept {
-        static constexpr std::array<TouchWidgetId, kNumTouchWidgets> kPriority = {
-            TouchWidgetId::MoveStick, TouchWidgetId::CommandRadial, TouchWidgetId::AttackZone,
-            TouchWidgetId::BlockZone, TouchWidgetId::LookArea};
-        for (const TouchWidgetId id : kPriority) {
+        if (radial_open_ && radial_level_ == 2 && !has_finger_for(TouchWidgetId::CommandRadial)) {
+            const TouchWidgetLayout& rad =
+                profile_.widgets[static_cast<std::size_t>(TouchWidgetId::CommandRadial)];
+            if (is_touch_widget_active(TouchWidgetId::CommandRadial, context_, rad, true)) {
+                const float r_hit = radial_outer_hit_radius(rad, viewport_aspect_);
+                const float px = (x - rad.cx) * viewport_aspect_;
+                const float py = y - rad.cy;
+                if ((px * px + py * py) <= r_hit * r_hit) {
+                    return TouchWidgetId::CommandRadial;
+                }
+            }
+        }
+        for (const TouchWidgetId id : kTouchWidgetHitOrder) {
             const TouchWidgetLayout& w = profile_.widgets[static_cast<std::size_t>(id)];
             if (is_touch_widget_active(id, context_, w, true) &&
                 w.contains(x, y, viewport_aspect_)) {
@@ -2268,6 +2686,32 @@ private:
         apply_radial_deadzone(raw_x, raw_y, profile_.stick_deadzone, stick_x_, stick_y_);
     }
 
+    void resolve_delayed_swipes(float aspect) noexcept {
+        for (auto& f : fingers_) {
+            if ((f.widget != TouchWidgetId::AttackZone && f.widget != TouchWidgetId::BlockZone) ||
+                f.swipe_classified || f.elapsed_seconds < (kSwipeClassifyDelaySeconds - 1e-5f)) {
+                continue;
+            }
+            const float dx = (f.last_x - f.anchor_x) * aspect;
+            const float dy = f.last_y - f.anchor_y;
+            TouchCombatDirection dir = TouchCombatDirection::None;
+            if (std::max(std::fabs(dx), std::fabs(dy)) > 1e-4f) {
+                dir = classify_swipe(dx, dy, 0.0f);
+            }
+            if (dir == TouchCombatDirection::None) {
+                dir = (f.widget == TouchWidgetId::AttackZone) ? profile_.default_attack_dir
+                                                            : profile_.default_block_dir;
+            }
+            f.swipe_classified = true;
+            f.swipe_dir = dir;
+            if (f.widget == TouchWidgetId::AttackZone) {
+                attack_dir_ = dir;
+            } else {
+                block_dir_ = dir;
+            }
+        }
+    }
+
     void handle_touch_down(std::int64_t finger_id, float x, float y) {
         // A repeated DOWN for a tracked finger (missed UP) restarts that finger.
         handle_touch_up(finger_id, false);
@@ -2275,6 +2719,10 @@ private:
             return;
         }
         TouchWidgetId target = pick_widget_for_touch(x, y);
+        if (radial_open_ && radial_level_ == 2 && !has_finger_for(TouchWidgetId::CommandRadial) &&
+            (target == TouchWidgetId::LookArea || target == TouchWidgetId::Count)) {
+            close_radial();
+        }
         bool look_enabled = (target == TouchWidgetId::LookArea);
         if (target == TouchWidgetId::Count) {
             if (context_ == InputContext::CampaignMap && profile_.pinch_zoom_enabled) {
@@ -2284,14 +2732,36 @@ private:
                 return;
             }
         }
-        fingers_.push_back(
-            ActiveFinger{finger_id, target, x, y, x, y, frame_counter_, look_enabled});
+        ActiveFinger af{};
+        af.finger_id = finger_id;
+        af.widget = target;
+        af.anchor_x = x;
+        af.anchor_y = y;
+        af.last_x = x;
+        af.last_y = y;
+        af.radial_origin_x = x;
+        af.radial_origin_y = y;
+        af.down_frame = frame_counter_;
+        af.look_enabled = look_enabled;
+        if (target == TouchWidgetId::CommandRadial) {
+            if (!radial_open_ || radial_level_ == 0) {
+                radial_open_ = true;
+                radial_level_ = 1;
+                radial_group_ = -1;
+                radial_sector_ = -1;
+                virtual_pulse_gk_[static_cast<std::size_t>(GameKeyId::ViewOrders)] = true;
+            } else if (radial_level_ == 2) {
+                const auto& rad =
+                    profile_.widgets[static_cast<std::size_t>(TouchWidgetId::CommandRadial)];
+                af.radial_origin_x = rad.cx;
+                af.radial_origin_y = rad.cy;
+                radial_sector_ = classify_radial_sector(
+                    (x - rad.cx) * viewport_aspect_, y - rad.cy, profile_.radial_deadzone);
+            }
+        }
+        fingers_.push_back(af);
         if (target == TouchWidgetId::MoveStick) {
             update_stick_from_point(x, y);
-        } else if (target == TouchWidgetId::CommandRadial) {
-            radial_open_ = true;
-            radial_sector_ = -1;
-            virtual_pulse_gk_[static_cast<std::size_t>(GameKeyId::ViewOrders)] = true;
         } else if (target == TouchWidgetId::LookArea) {
             update_pinch_state();
         }
@@ -2341,21 +2811,44 @@ private:
                     look_dx += (x - f.last_x) * a;
                     look_dy += (y - f.last_y);
                 }
-            } else if (f.widget == TouchWidgetId::AttackZone) {
+            } else if (f.widget == TouchWidgetId::AttackZone ||
+                       f.widget == TouchWidgetId::BlockZone) {
                 const auto dir = classify_swipe((x - f.anchor_x) * a, y - f.anchor_y,
                                                 profile_.swipe_threshold);
                 if (dir != TouchCombatDirection::None) {
-                    attack_dir_ = dir;
-                }
-            } else if (f.widget == TouchWidgetId::BlockZone) {
-                const auto dir = classify_swipe((x - f.anchor_x) * a, y - f.anchor_y,
-                                                profile_.swipe_threshold);
-                if (dir != TouchCombatDirection::None) {
-                    block_dir_ = dir;
+                    f.swipe_classified = true;
+                    f.swipe_dir = dir;
+                    if (f.widget == TouchWidgetId::AttackZone) {
+                        attack_dir_ = dir;
+                    } else {
+                        block_dir_ = dir;
+                    }
                 }
             } else if (f.widget == TouchWidgetId::CommandRadial) {
-                radial_sector_ = classify_radial_sector((x - f.anchor_x) * a, y - f.anchor_y,
-                                                        profile_.radial_deadzone);
+                const float dx = (x - f.radial_origin_x) * a;
+                const float dy = y - f.radial_origin_y;
+                if (radial_level_ == 1) {
+                    const std::int32_t q =
+                        classify_radial_quadrant(dx, dy, profile_.radial_deadzone);
+                    const auto& rad =
+                        profile_.widgets[static_cast<std::size_t>(TouchWidgetId::CommandRadial)];
+                    if (std::hypot(dx, dy) < radial_ring1_outer_radius(rad, a)) {
+                        radial_group_ = q;
+                    } else {
+                        // Leaving ring 1 commits the group last hovered inside it (the finger
+                        // may cross into another quadrant on the way out); else the exit one.
+                        if (radial_group_ < 0 || radial_group_ >= 4) {
+                            radial_group_ = (q >= 0 && q < 4) ? q : 0;
+                        }
+                        const auto gk = kRadialGroupKeys[static_cast<std::size_t>(radial_group_)];
+                        virtual_pulse_gk_[static_cast<std::size_t>(gk)] = true;
+                        radial_level_ = 2;
+                        radial_sector_ =
+                            classify_radial_sector(dx, dy, profile_.radial_deadzone);
+                    }
+                } else if (radial_level_ == 2) {
+                    radial_sector_ = classify_radial_sector(dx, dy, profile_.radial_deadzone);
+                }
             }
             f.last_x = x;
             f.last_y = y;
@@ -2364,20 +2857,46 @@ private:
     }
 
     // `commit == false` (cancelled touch) releases the finger without issuing the
-    // highlighted radial order.
+    // highlighted radial order or button tap.
     void handle_touch_up(std::int64_t finger_id, bool commit) noexcept {
         for (std::size_t i = 0; i < fingers_.size(); ++i) {
             if (fingers_[i].finger_id != finger_id) {
                 continue;
             }
-            const TouchWidgetId w = fingers_[i].widget;
-            // A tap that starts and ends inside one frame never shows up as "held";
-            // pulse the game key so it still attacks / blocks for one frame.
-            if (commit && fingers_[i].down_frame == frame_counter_) {
-                if (w == TouchWidgetId::AttackZone) {
-                    virtual_pulse_gk_[static_cast<std::size_t>(GameKeyId::Attack)] = true;
-                } else if (w == TouchWidgetId::BlockZone) {
-                    virtual_pulse_gk_[static_cast<std::size_t>(GameKeyId::Defend)] = true;
+            const ActiveFinger released = fingers_[i];
+            const TouchWidgetId w = released.widget;
+            const bool same_frame = (released.down_frame == frame_counter_);
+            if (w == TouchWidgetId::AttackZone || w == TouchWidgetId::BlockZone) {
+                const bool was_classified = released.swipe_classified;
+                if (commit && (!was_classified || same_frame)) {
+                    const GameKeyId gk = (w == TouchWidgetId::AttackZone) ? GameKeyId::Attack
+                                                                         : GameKeyId::Defend;
+                    virtual_pulse_gk_[static_cast<std::size_t>(gk)] = true;
+                    if (!was_classified) {
+                        if (w == TouchWidgetId::AttackZone) {
+                            attack_dir_ = profile_.default_attack_dir;
+                            attack_pulse_dir_ = true;
+                        } else {
+                            block_dir_ = profile_.default_block_dir;
+                            block_pulse_dir_ = true;
+                        }
+                    }
+                }
+            } else if (w != TouchWidgetId::MoveStick && w != TouchWidgetId::LookArea &&
+                       w != TouchWidgetId::CommandRadial) {
+                if (commit) {
+                    if (same_frame) {
+                        if (const auto gk = touch_widget_game_key(w); gk.has_value()) {
+                            virtual_pulse_gk_[static_cast<std::size_t>(*gk)] = true;
+                        }
+                    }
+                    if (w == TouchWidgetId::MapFollow) {
+                        map_follow_ = !map_follow_;
+                    } else if (w == TouchWidgetId::MapPanMode) {
+                        map_pan_mode_ = !map_pan_mode_;
+                    } else if (w == TouchWidgetId::MapWait) {
+                        map_paused_ = !map_paused_;
+                    }
                 }
             }
             fingers_.erase(fingers_.begin() + static_cast<std::ptrdiff_t>(i));
@@ -2388,22 +2907,38 @@ private:
                 update_pinch_state();
             } else if (w == TouchWidgetId::AttackZone &&
                        !has_finger_for(TouchWidgetId::AttackZone)) {
-                attack_dir_ = TouchCombatDirection::None;
+                if (!attack_pulse_dir_) {
+                    attack_dir_ = TouchCombatDirection::None;
+                }
             } else if (w == TouchWidgetId::BlockZone &&
                        !has_finger_for(TouchWidgetId::BlockZone)) {
-                block_dir_ = TouchCombatDirection::None;
+                if (!block_pulse_dir_) {
+                    block_dir_ = TouchCombatDirection::None;
+                }
             } else if (w == TouchWidgetId::CommandRadial &&
                        !has_finger_for(TouchWidgetId::CommandRadial)) {
-                if (commit && radial_sector_ >= 0 && radial_sector_ < 8) {
-                    static constexpr std::array<GameKeyId, 8> kOrderKeys = {
-                        GameKeyId::Order1, GameKeyId::Order2, GameKeyId::Order3, GameKeyId::Order4,
-                        GameKeyId::Order5, GameKeyId::Order6, GameKeyId::Order7, GameKeyId::Order8};
-                    const auto gk_idx =
-                        static_cast<std::size_t>(kOrderKeys[static_cast<std::size_t>(radial_sector_)]);
-                    virtual_pulse_gk_[gk_idx] = true;
+                if (!commit) {
+                    close_radial();
+                } else if (radial_level_ == 1) {
+                    if (radial_group_ >= 0 && radial_group_ < 4) {
+                        const auto gk = kRadialGroupKeys[static_cast<std::size_t>(radial_group_)];
+                        virtual_pulse_gk_[static_cast<std::size_t>(gk)] = true;
+                        radial_open_ = true;
+                        radial_level_ = 2;
+                        radial_sector_ = -1;
+                    } else {
+                        close_radial();
+                    }
+                } else if (radial_level_ == 2) {
+                    if (radial_sector_ >= 0 && radial_sector_ < 8) {
+                        const auto gk =
+                            kRadialOrderKeys[static_cast<std::size_t>(radial_sector_)];
+                        virtual_pulse_gk_[static_cast<std::size_t>(gk)] = true;
+                    }
+                    close_radial();
+                } else {
+                    close_radial();
                 }
-                radial_open_ = false;
-                radial_sector_ = -1;
             }
             return;
         }
@@ -2441,11 +2976,19 @@ private:
         gamepad_sticks(glx, gly, grx, gry);
         emit_stick(glx, gly);
 
-        if (has_finger_for(TouchWidgetId::AttackZone)) {
-            out[static_cast<std::size_t>(GameKeyId::Attack)] = true;
-        }
-        if (has_finger_for(TouchWidgetId::BlockZone)) {
-            out[static_cast<std::size_t>(GameKeyId::Defend)] = true;
+        for (std::size_t i = 0; i < kNumTouchWidgets; ++i) {
+            const auto wid = static_cast<TouchWidgetId>(i);
+            const auto gk = touch_widget_game_key(wid);
+            if (!gk.has_value()) {
+                continue;
+            }
+            if (wid == TouchWidgetId::AttackZone || wid == TouchWidgetId::BlockZone) {
+                if (has_classified_finger_for(wid)) {
+                    out[static_cast<std::size_t>(*gk)] = true;
+                }
+            } else if (has_finger_for(wid)) {
+                out[static_cast<std::size_t>(*gk)] = true;
+            }
         }
     }
 
@@ -2481,12 +3024,19 @@ private:
     float stick_y_ = 0.0f;
     TouchCombatDirection attack_dir_ = TouchCombatDirection::None;
     TouchCombatDirection block_dir_ = TouchCombatDirection::None;
+    bool attack_pulse_dir_ = false;
+    bool block_pulse_dir_ = false;
+    std::int32_t radial_level_ = 0;
+    std::int32_t radial_group_ = -1;
     std::int32_t radial_sector_ = -1;
     bool radial_open_ = false;
     bool pinch_active_ = false;
     float pinch_prev_dist_ = 0.0f;
     std::int64_t pinch_id0_ = -1;
     std::int64_t pinch_id1_ = -1;
+    bool map_follow_ = true;
+    bool map_pan_mode_ = false;
+    bool map_paused_ = false;
     float gyro_filt_yaw_ = 0.0f;
     float gyro_filt_pitch_ = 0.0f;
     float gyro_hold_yaw_ = 0.0f;  // last frame-average rate, held between sensor samples

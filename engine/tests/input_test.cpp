@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <initializer_list>
+#include <limits>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -20,6 +22,9 @@
 #include "wse/platform/input.h"
 #include "wse/platform/rhi.h"
 #include "wse/platform/rhi_brf.h"
+#include "wse/platform/rhi_geometry.h"
+#include "wse/platform/touch_overlay_render.h"
+#include "wse/platform/ui_game_shell.h"
 #include "wse/platform/vfs.h"
 #include "wse/vm/block_vm.h"
 
@@ -212,12 +217,18 @@ void test_contexts_gamepad_and_touch_visibility() {
                !mgr.is_widget_visible(TouchWidgetId::CommandRadial),
            "CampaignMap shows movement stick/look while hiding mission combat zones");
 
-    for (const auto ctx : {InputContext::Menu, InputContext::Inventory,
-                           InputContext::Presentation, InputContext::Dialog}) {
+    for (const auto ctx :
+         {InputContext::Menu, InputContext::Inventory, InputContext::Presentation}) {
         mgr.set_context(ctx);
         expect(!mgr.is_touch_overlay_visible() &&
                    !mgr.is_widget_visible(TouchWidgetId::MoveStick),
-               "non-gameplay contexts hide the touch overlay");
+               "Menu/Inventory/Presentation contexts hide the touch overlay");
+    }
+    for (const auto ctx : {InputContext::Dialog, InputContext::Party, InputContext::Trade}) {
+        mgr.set_context(ctx);
+        expect(mgr.is_touch_overlay_visible() &&
+                   !mgr.is_widget_visible(TouchWidgetId::MoveStick),
+               "Dialog/Party/Trade contexts show overlay buttons while hiding MoveStick");
     }
 
     // Active touch held while entering Menu gets cleared and touches in Menu do nothing.
@@ -336,20 +347,37 @@ void test_touch_overlay_controls() {
         RawInputEvent{RawInputEvent::Type::TouchUp, -1, 0, 12},
     }});
 
-    // Command radial: press opens ViewOrders (22), drag East (sector 2 = Order3 = gk 25), release pulses Order3
+    // Two-level Command radial: press opens ViewOrders (22) at level 1, East selects Infantry
+    // (ControlGroup1 = gk 30) on release -> opens level 2, second touch East selects Order3 (gk 25).
     mgr.process_frame(std::array<RawInputEvent, 2>{{
         RawInputEvent{RawInputEvent::Type::TouchDown, -1, 0, 30, rad.cx, rad.cy},
         RawInputEvent{RawInputEvent::Type::TouchMove, -1, 0, 30, rad.cx + 0.05f, rad.cy},
     }});
-    expect(mgr.frame_state().radial_open && mgr.frame_state().radial_sector == 2 &&
-               mgr.game_key_clicked()[22],
-           "CommandRadial opens ViewOrders and highlights sector 2 (East)");
+    expect(mgr.frame_state().radial_open && mgr.frame_state().radial_level == 1 &&
+               mgr.frame_state().radial_group == 1 && mgr.game_key_clicked()[22],
+           "CommandRadial opens ViewOrders at level 1 and highlights group 1 (East)");
 
     mgr.process_frame(std::array<RawInputEvent, 1>{{
         RawInputEvent{RawInputEvent::Type::TouchUp, -1, 0, 30},
     }});
-    expect(!mgr.frame_state().radial_open && mgr.game_key_clicked()[25],
-           "releasing CommandRadial sector 2 clicks Order3 (gk 25)");
+    expect(mgr.frame_state().radial_open && mgr.frame_state().radial_level == 2 &&
+               mgr.game_key_clicked()[30] && !mgr.game_key_clicked()[22],
+           "releasing CommandRadial level 1 clicks ControlGroup1 (gk 30) and enters level 2");
+
+    mgr.process_frame(std::array<RawInputEvent, 2>{{
+        RawInputEvent{RawInputEvent::Type::TouchDown, -1, 0, 31, rad.cx, rad.cy},
+        RawInputEvent{RawInputEvent::Type::TouchMove, -1, 0, 31, rad.cx + 0.05f, rad.cy},
+    }});
+    expect(mgr.frame_state().radial_open && mgr.frame_state().radial_level == 2 &&
+               mgr.frame_state().radial_sector == 2,
+           "CommandRadial level 2 highlights order sector 2 (East)");
+
+    mgr.process_frame(std::array<RawInputEvent, 1>{{
+        RawInputEvent{RawInputEvent::Type::TouchUp, -1, 0, 31},
+    }});
+    expect(!mgr.frame_state().radial_open && mgr.frame_state().radial_level == 0 &&
+               mgr.game_key_clicked()[25],
+           "releasing CommandRadial level 2 sector 2 clicks Order3 (gk 25) and closes");
 }
 
 void test_layout_editor_and_module_profiles() {
@@ -1164,6 +1192,559 @@ void test_p8_sensors_and_pinch_zoom() {
     }
 }
 
+void test_p11_touch_overlay_render_and_context_buttons() {
+    using namespace wse::platform;
+    using T = RawInputEvent::Type;
+    const auto touch = [](T type, std::int64_t id, float x, float y) {
+        RawInputEvent ev{};
+        ev.type = type;
+        ev.finger_id = id;
+        ev.x = x;
+        ev.y = y;
+        return ev;
+    };
+    constexpr auto gk = [](GameKeyId id) { return static_cast<std::size_t>(id); };
+
+    // 1. Short-side sizing keeps a circle round on 20:9, 4:3, and portrait 9:20.
+    {
+        TouchOverlayProfile prof{};
+        // Isolate MoveStick so its rendered triangles belong exclusively to the circle widget.
+        for (std::size_t i = 0; i < kNumTouchWidgets; ++i) {
+            prof.widgets[i].enabled = (i == static_cast<std::size_t>(TouchWidgetId::MoveStick));
+        }
+        const auto& stick = prof.widgets[static_cast<std::size_t>(TouchWidgetId::MoveStick)];
+        const auto measure_bbox = [&](std::uint32_t vw, std::uint32_t vh, float& out_w,
+                                      float& out_h) {
+            TouchOverlayRenderParams params{};
+            params.viewport_width = vw;
+            params.viewport_height = vh;
+            params.context = InputContext::Mission;
+            const GeometryFrame f = build_touch_overlay_frame(prof, params);
+            float min_x = std::numeric_limits<float>::max();
+            float max_x = std::numeric_limits<float>::lowest();
+            float min_y = std::numeric_limits<float>::max();
+            float max_y = std::numeric_limits<float>::lowest();
+            for (const GeometryVertex& v : f.vertices) {
+                min_x = std::min(min_x, v.x);
+                max_x = std::max(max_x, v.x);
+                min_y = std::min(min_y, v.y);
+                max_y = std::max(max_y, v.y);
+            }
+            out_w = max_x - min_x;
+            out_h = max_y - min_y;
+            return !f.vertices.empty();
+        };
+        float w20 = 0.0f, h20 = 0.0f, w43 = 0.0f, h43 = 0.0f, w920 = 0.0f, h920 = 0.0f;
+        const bool ok_20 = measure_bbox(2400U, 1080U, w20, h20);
+        const bool ok_43 = measure_bbox(1600U, 1200U, w43, h43);
+        const bool ok_920 = measure_bbox(1080U, 2400U, w920, h920);
+        // Hit test also accepts exact equal pixel radii horizontally and vertically on 20:9 and 4:3.
+        const float a20 = 2400.0f / 1080.0f;
+        const float r20 = stick.circle_radius(a20);
+        const bool hit20 =
+            stick.contains(stick.cx + 0.99f * r20 / a20, stick.cy, a20) &&
+            !stick.contains(stick.cx + 1.01f * r20 / a20, stick.cy, a20) &&
+            stick.contains(stick.cx, stick.cy + 0.99f * r20, a20) &&
+            !stick.contains(stick.cx, stick.cy + 1.01f * r20, a20);
+        const float a43 = 1600.0f / 1200.0f;
+        const float r43 = stick.circle_radius(a43);
+        const bool hit43 =
+            stick.contains(stick.cx + 0.99f * r43 / a43, stick.cy, a43) &&
+            !stick.contains(stick.cx + 1.01f * r43 / a43, stick.cy, a43) &&
+            stick.contains(stick.cx, stick.cy + 0.99f * r43, a43) &&
+            !stick.contains(stick.cx, stick.cy + 1.01f * r43, a43);
+        expect(ok_20 && ok_43 && ok_920 && close(w20, h20, 0.5f) && close(w43, h43, 0.5f) &&
+                   close(w920, h920, 0.5f) && close(w20, w920, 0.5f) && hit20 && hit43,
+               "P11.3 short-side sizing keeps circular widgets round on 20:9, 4:3, and portrait");
+    }
+
+    // 2. Safe-area clamp keeps every widget rect inside normalized insets.
+    {
+        TouchOverlayProfile prof{};
+        // Force edge-touching widgets across all four sides plus an oversized LookArea.
+        prof.widgets[static_cast<std::size_t>(TouchWidgetId::MoveStick)].cx = 0.04f;
+        prof.widgets[static_cast<std::size_t>(TouchWidgetId::MoveStick)].cy = 0.96f;
+        prof.widgets[static_cast<std::size_t>(TouchWidgetId::BlockZone)].cx = 0.96f;
+        prof.widgets[static_cast<std::size_t>(TouchWidgetId::BlockZone)].cy = 0.04f;
+        prof.widgets[static_cast<std::size_t>(TouchWidgetId::LookArea)].half_w = 0.48f;
+        prof.widgets[static_cast<std::size_t>(TouchWidgetId::LookArea)].half_h = 0.48f;
+
+        const SafeAreaInsets insets{0.09f, 0.07f, 0.11f, 0.06f};
+        apply_safe_area(prof, insets);
+        bool all_inside = true;
+        for (const float a : {1.0f, 1600.0f / 1200.0f, 2400.0f / 1080.0f, 1080.0f / 2400.0f}) {
+            for (const TouchWidgetLayout& w : prof.widgets) {
+                const float hw = w.norm_half_width(a);
+                const float hh = w.norm_half_height(a);
+                if (w.cx - hw < insets.left - 1e-6f || w.cx + hw > 1.0f - insets.right + 1e-6f ||
+                    w.cy - hh < insets.top - 1e-6f || w.cy + hh > 1.0f - insets.bottom + 1e-6f) {
+                    all_inside = false;
+                }
+            }
+        }
+        expect(all_inside, "P11.3 apply_safe_area keeps every widget rect inside insets across aspects");
+    }
+
+    // 3. Each context shows exactly its widgets (and hides inactive ones on context switch).
+    {
+        struct ContextSpec {
+            InputContext ctx;
+            std::vector<TouchWidgetId> expected;
+        };
+        const std::vector<ContextSpec> specs = {
+            {InputContext::Mission,
+             {TouchWidgetId::MoveStick, TouchWidgetId::LookArea, TouchWidgetId::AttackZone,
+              TouchWidgetId::BlockZone, TouchWidgetId::CommandRadial, TouchWidgetId::Spare1,
+              TouchWidgetId::Spare2, TouchWidgetId::Spare3, TouchWidgetId::Spare4}},
+            {InputContext::CampaignMap,
+             {TouchWidgetId::MoveStick, TouchWidgetId::LookArea, TouchWidgetId::MapCenter,
+              TouchWidgetId::MapFollow, TouchWidgetId::MapPanMode, TouchWidgetId::MapWait}},
+            {InputContext::Dialog,
+             {TouchWidgetId::DialogUp, TouchWidgetId::DialogSelect, TouchWidgetId::DialogDown}},
+            {InputContext::Party, {TouchWidgetId::MoveAll, TouchWidgetId::MoveOne}},
+            {InputContext::Trade, {TouchWidgetId::MoveAll, TouchWidgetId::MoveOne}},
+            {InputContext::Menu, {}},
+            {InputContext::Inventory, {}},
+            {InputContext::Presentation, {}},
+        };
+        WseInputManager mgr;
+        bool exact = true;
+        for (const auto& sp : specs) {
+            mgr.set_context(sp.ctx);
+            for (std::size_t i = 0; i < kNumTouchWidgets; ++i) {
+                const auto id = static_cast<TouchWidgetId>(i);
+                const bool want =
+                    std::find(sp.expected.begin(), sp.expected.end(), id) != sp.expected.end();
+                if (widget_visible_in_context(id, sp.ctx) != want ||
+                    mgr.is_widget_visible(id) != want) {
+                    exact = false;
+                }
+            }
+        }
+        // Switching from Mission to CampaignMap drops any held Mission-only finger.
+        mgr.set_context(InputContext::Mission);
+        const auto atk = mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::AttackZone)];
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchDown, 1, atk.cx, atk.cy),
+             touch(T::TouchMove, 1, atk.cx + 0.05f, atk.cy)}});
+        const bool held_in_mission = mgr.game_key_down()[gk(GameKeyId::Attack)];
+        mgr.set_context(InputContext::CampaignMap);
+        mgr.process_frame({});
+        expect(exact && held_in_mission && !mgr.game_key_down()[gk(GameKeyId::Attack)] &&
+                   !mgr.frame_state().attack_active,
+               "P11.4 each context shows exactly its widgets and clears inactive holds on switch");
+    }
+
+    // 4. Every new context/spare button maps to its GameKeyId and raises / clears it.
+    {
+        struct ButtonCase {
+            InputContext ctx;
+            TouchWidgetId widget;
+            GameKeyId expected_key;
+        };
+        const std::array<ButtonCase, 13> cases = {{
+            {InputContext::CampaignMap, TouchWidgetId::MapCenter, GameKeyId::Custom5},
+            {InputContext::CampaignMap, TouchWidgetId::MapFollow, GameKeyId::Custom6},
+            {InputContext::CampaignMap, TouchWidgetId::MapPanMode, GameKeyId::Custom7},
+            {InputContext::CampaignMap, TouchWidgetId::MapWait, GameKeyId::MapWait},
+            {InputContext::Dialog, TouchWidgetId::DialogUp, GameKeyId::Custom8},
+            {InputContext::Dialog, TouchWidgetId::DialogSelect, GameKeyId::Custom9},
+            {InputContext::Dialog, TouchWidgetId::DialogDown, GameKeyId::Custom10},
+            {InputContext::Party, TouchWidgetId::MoveAll, GameKeyId::Custom11},
+            {InputContext::Party, TouchWidgetId::MoveOne, GameKeyId::Custom12},
+            {InputContext::Mission, TouchWidgetId::Spare1, GameKeyId::Custom1},
+            {InputContext::Mission, TouchWidgetId::Spare2, GameKeyId::Custom2},
+            {InputContext::Mission, TouchWidgetId::Spare3, GameKeyId::Custom3},
+            {InputContext::Mission, TouchWidgetId::Spare4, GameKeyId::Custom4},
+        }};
+        WseInputManager mgr;
+        wse::game::WseWorldState world{};
+        wse::platform::SyntheticInputBackend backend;
+        bool all_ok = true;
+        for (const auto& c : cases) {
+            const auto mapped = touch_widget_game_key(c.widget);
+            if (!mapped.has_value() || *mapped != c.expected_key) {
+                all_ok = false;
+                continue;
+            }
+            mgr.set_context(c.ctx);
+            const auto& lay = mgr.profile().widgets[static_cast<std::size_t>(c.widget)];
+            const auto key_idx = static_cast<std::size_t>(c.expected_key);
+
+            // Hold -> raise; release -> clear.
+            backend.push(touch(T::TouchDown, 50, lay.cx, lay.cy));
+            wse::game::WorldInputBridge::step_and_sync(mgr, backend, world);
+            const bool raised = mgr.game_key_clicked()[key_idx] && mgr.game_key_down()[key_idx] &&
+                                world.input.game_key_down[key_idx] &&
+                                mgr.frame_state().widget_pressed[static_cast<std::size_t>(c.widget)];
+            backend.push(touch(T::TouchUp, 50, lay.cx, lay.cy));
+            wse::game::WorldInputBridge::step_and_sync(mgr, backend, world);
+            const bool cleared = !mgr.game_key_down()[key_idx] && mgr.game_key_released()[key_idx] &&
+                                 !world.input.game_key_down[key_idx];
+
+            // Same-frame tap also pulses and clears on the next frame.
+            backend.push_batch(std::array<RawInputEvent, 2>{
+                {touch(T::TouchDown, 51, lay.cx, lay.cy), touch(T::TouchUp, 51, lay.cx, lay.cy)}});
+            wse::game::WorldInputBridge::step_and_sync(mgr, backend, world);
+            const bool tap_down = mgr.game_key_clicked()[key_idx] && mgr.game_key_down()[key_idx];
+            wse::game::WorldInputBridge::step_and_sync(mgr, backend, world);
+            const bool tap_up = !mgr.game_key_down()[key_idx] && mgr.game_key_released()[key_idx];
+            if (!(raised && cleared && tap_down && tap_up)) {
+                all_ok = false;
+            }
+        }
+        // Trade screen shares MoveAll / MoveOne and raises/clears Custom11 / Custom12.
+        mgr.set_context(InputContext::Trade);
+        const auto& move_all = mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::MoveAll)];
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchDown, 60, move_all.cx, move_all.cy)}});
+        const bool trade_down = mgr.game_key_down()[gk(GameKeyId::Custom11)];
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchUp, 60, move_all.cx, move_all.cy)}});
+        const bool trade_up =
+            !mgr.game_key_down()[gk(GameKeyId::Custom11)] && mgr.game_key_released()[gk(GameKeyId::Custom11)];
+        // CampaignMap toggle buttons flipped twice above (hold+release and tap), so a single tap toggles state.
+        mgr.set_context(InputContext::CampaignMap);
+        const auto& pan = mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::MapPanMode)];
+        const bool pan_before = mgr.frame_state().map_pan_mode;
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchDown, 61, pan.cx, pan.cy), touch(T::TouchUp, 61, pan.cx, pan.cy)}});
+        const bool pan_toggled = (mgr.frame_state().map_pan_mode == !pan_before);
+        expect(all_ok && trade_down && trade_up && pan_toggled &&
+                   wse::game::WorldInputBridge::context_for_screen_window(
+                       wse::game::kScreenWindowConversation) == InputContext::Dialog &&
+                   wse::game::WorldInputBridge::context_for_screen_window(
+                       wse::game::kScreenWindowMap) == InputContext::CampaignMap,
+               "P11.4 every new button maps to its GameKeyId and raises/clears cleanly");
+    }
+
+    // 5. Delayed swipe classification for AttackZone and BlockZone.
+    {
+        WseInputManager mgr;
+        const auto atk = mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::AttackZone)];
+        const auto blk = mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::BlockZone)];
+
+        // 5a. Short tap (< 120 ms, below swipe_threshold even with tiny jitter) -> default direction.
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchDown, 1, atk.cx, atk.cy)}},
+                          0.016f);
+        const bool down_waits = !mgr.game_key_down()[gk(GameKeyId::Attack)] &&
+                                !mgr.frame_state().attack_active &&
+                                mgr.frame_state().attack_dir == TouchCombatDirection::None &&
+                                mgr.frame_state().widget_pressed[static_cast<std::size_t>(TouchWidgetId::AttackZone)];
+        // First small move event (< swipe_threshold = 0.025) must NOT classify prematurely.
+        mgr.process_frame(
+            std::array<RawInputEvent, 1>{{touch(T::TouchMove, 1, atk.cx - 0.005f, atk.cy)}},
+            0.016f);
+        const bool jitter_waits = !mgr.game_key_down()[gk(GameKeyId::Attack)] &&
+                                  !mgr.frame_state().attack_active &&
+                                  mgr.frame_state().attack_dir == TouchCombatDirection::None;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchUp, 1, atk.cx, atk.cy)}},
+                          0.016f);
+        const bool tap_default = mgr.game_key_clicked()[gk(GameKeyId::Attack)] &&
+                                 mgr.frame_state().attack_active &&
+                                 mgr.frame_state().attack_dir == mgr.profile().default_attack_dir;
+        mgr.process_frame({}, 0.016f);
+        const bool tap_cleared = !mgr.game_key_down()[gk(GameKeyId::Attack)] &&
+                                 mgr.game_key_released()[gk(GameKeyId::Attack)] &&
+                                 mgr.frame_state().attack_dir == TouchCombatDirection::None;
+        expect(down_waits && jitter_waits && tap_default && tap_cleared,
+               "P11.4 delayed swipe: tap (< 120 ms) ignores small move and attacks in default direction");
+
+        // 5b. Slow drag past 120 ms (< swipe_threshold) -> classifies drag direction at 120 ms.
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchDown, 2, blk.cx, blk.cy)}},
+                          0.016f);
+        mgr.process_frame(
+            std::array<RawInputEvent, 1>{{touch(T::TouchMove, 2, blk.cx - 0.010f, blk.cy)}},
+            0.050f);  // 50 ms elapsed
+        const bool slow_before_120 = !mgr.game_key_down()[gk(GameKeyId::Defend)] &&
+                                     !mgr.frame_state().block_active &&
+                                     mgr.frame_state().block_dir == TouchCombatDirection::None;
+        mgr.process_frame({}, 0.070f);  // 50 + 70 = 120 ms elapsed
+        const bool slow_at_120 = mgr.game_key_clicked()[gk(GameKeyId::Defend)] &&
+                                 mgr.game_key_down()[gk(GameKeyId::Defend)] &&
+                                 mgr.frame_state().block_active &&
+                                 mgr.frame_state().block_dir == TouchCombatDirection::Left;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchUp, 2, blk.cx - 0.010f, blk.cy)}},
+                          0.016f);
+        const bool slow_released = !mgr.game_key_down()[gk(GameKeyId::Defend)] &&
+                                   mgr.game_key_released()[gk(GameKeyId::Defend)];
+        expect(slow_before_120 && slow_at_120 && slow_released,
+               "P11.4 delayed swipe: slow drag (< threshold) classifies direction once 120 ms elapses");
+
+        // 5c. Fast swipe (>= swipe_threshold before 120 ms) -> classifies immediately.
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchDown, 3, atk.cx, atk.cy)}},
+                          0.016f);
+        mgr.process_frame(
+            std::array<RawInputEvent, 1>{{touch(T::TouchMove, 3, atk.cx, atk.cy - 0.045f)}},
+            0.016f);
+        const bool fast_immediate = mgr.game_key_clicked()[gk(GameKeyId::Attack)] &&
+                                    mgr.frame_state().attack_active &&
+                                    mgr.frame_state().attack_dir == TouchCombatDirection::Up;
+        mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchUp, 3, atk.cx, atk.cy - 0.045f)}},
+                          0.016f);
+        expect(fast_immediate && mgr.game_key_released()[gk(GameKeyId::Attack)],
+               "P11.4 delayed swipe: fast swipe past swipe_threshold triggers before 120 ms");
+    }
+
+    // 6. Two-level CommandRadial selection (both two-step and continuous single-drag).
+    {
+        WseInputManager mgr;
+        const auto rad = mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::CommandRadial)];
+
+        // 6a. Two-step across all 4 groups (North=All, East=Infantry, South=Archers, West=Cavalry).
+        struct GroupVec {
+            float dx;
+            float dy;
+            std::int32_t expected_group;
+            GameKeyId expected_key;
+        };
+        const std::array<GroupVec, 4> groups = {{
+            {0.0f, -0.05f, 0, GameKeyId::ControlEveryone},
+            {0.05f, 0.0f, 1, GameKeyId::ControlGroup1},
+            {0.0f, 0.05f, 2, GameKeyId::ControlGroup2},
+            {-0.05f, 0.0f, 3, GameKeyId::ControlGroup3},
+        }};
+        bool two_step_ok = true;
+        for (const auto& gv : groups) {
+            mgr.process_frame(std::array<RawInputEvent, 2>{
+                {touch(T::TouchDown, 10, rad.cx, rad.cy),
+                 touch(T::TouchMove, 10, rad.cx + gv.dx, rad.cy + gv.dy)}});
+            if (!mgr.frame_state().radial_open || mgr.frame_state().radial_level != 1 ||
+                mgr.frame_state().radial_group != gv.expected_group ||
+                !mgr.game_key_clicked()[gk(GameKeyId::ViewOrders)]) {
+                two_step_ok = false;
+            }
+            mgr.process_frame(std::array<RawInputEvent, 1>{{touch(T::TouchUp, 10, rad.cx + gv.dx, rad.cy + gv.dy)}});
+            if (!mgr.frame_state().radial_open || mgr.frame_state().radial_level != 2 ||
+                !mgr.game_key_clicked()[gk(gv.expected_key)]) {
+                two_step_ok = false;
+            }
+            // Pick South (sector 4 = Order5) in level 2.
+            mgr.process_frame(std::array<RawInputEvent, 2>{
+                {touch(T::TouchDown, 11, rad.cx, rad.cy + 0.06f),
+                 touch(T::TouchUp, 11, rad.cx, rad.cy + 0.06f)}});
+            if (mgr.frame_state().radial_open || mgr.frame_state().radial_level != 0 ||
+                !mgr.game_key_clicked()[gk(GameKeyId::Order5)]) {
+                two_step_ok = false;
+            }
+        }
+
+        // 6b. Continuous single-drag: Ring 1 (West = Cavalry) -> Ring 2 (North = Order1) -> release.
+        mgr.process_frame(std::array<RawInputEvent, 2>{
+            {touch(T::TouchDown, 20, rad.cx, rad.cy),
+             touch(T::TouchMove, 20, rad.cx - 0.05f, rad.cy)}});
+        const bool ring1 = mgr.frame_state().radial_open && mgr.frame_state().radial_level == 1 &&
+                           mgr.frame_state().radial_group == 3;
+        mgr.process_frame(std::array<RawInputEvent, 1>{
+            {touch(T::TouchMove, 20, rad.cx, rad.cy - 0.11f)}});
+        const bool ring2 = mgr.frame_state().radial_open && mgr.frame_state().radial_level == 2 &&
+                           mgr.frame_state().radial_group == 3 && mgr.frame_state().radial_sector == 0 &&
+                           mgr.game_key_clicked()[gk(GameKeyId::ControlGroup3)];
+        mgr.process_frame(std::array<RawInputEvent, 1>{
+            {touch(T::TouchUp, 20, rad.cx, rad.cy - 0.11f)}});
+        const bool committed = !mgr.frame_state().radial_open &&
+                               mgr.game_key_clicked()[gk(GameKeyId::Order1)];
+        expect(two_step_ok && ring1 && ring2 && committed,
+               "P11.4 two-level CommandRadial selects group then order in two-step and single-drag");
+    }
+
+    // 7. Overlay rendering: visible widgets only, safe area, opacity, pressed brightness, shell hook.
+    {
+        TouchOverlayProfile prof{};
+        const SafeAreaInsets insets{0.08f, 0.06f, 0.09f, 0.07f};
+        const std::uint32_t vw = 2400U;
+        const std::uint32_t vh = 1080U;
+        const float safe_x0 = insets.left * static_cast<float>(vw) - 1e-3f;
+        const float safe_x1 = (1.0f - insets.right) * static_cast<float>(vw) + 1e-3f;
+        const float safe_y0 = insets.top * static_cast<float>(vh) - 1e-3f;
+        const float safe_y1 = (1.0f - insets.bottom) * static_cast<float>(vh) + 1e-3f;
+
+        // 7a. Hidden contexts / disabled overlay / gamepad_hidden emit zero triangles.
+        for (const auto hidden_ctx :
+             {InputContext::Menu, InputContext::Inventory, InputContext::Presentation}) {
+            const GeometryFrame hf =
+                build_touch_overlay_frame(prof, {vw, vh, hidden_ctx, insets, nullptr, false});
+            expect(hf.batches.empty() && hf.vertices.empty() && hf.indices.empty(),
+                   "P11.3 overlay render emits nothing in Menu/Inventory/Presentation");
+        }
+        const GeometryFrame gp =
+            build_touch_overlay_frame(prof, {vw, vh, InputContext::Mission, insets, nullptr, true});
+        TouchOverlayProfile disabled_prof = prof;
+        disabled_prof.touch_overlay_enabled = false;
+        const GeometryFrame dis = build_touch_overlay_frame(
+            disabled_prof, {vw, vh, InputContext::Mission, insets, nullptr, false});
+        expect(gp.batches.empty() && dis.batches.empty(),
+               "P11.3 overlay render emits nothing when gamepad_hidden or touch_overlay_enabled=false");
+
+        // 7b. Visible contexts emit untextured batches strictly inside the safe area (even with radial open).
+        InputFrameState open_rad{};
+        open_rad.touch_overlay_visible = true;
+        open_rad.radial_open = true;
+        open_rad.radial_level = 2;
+        open_rad.radial_group = 1;
+        open_rad.radial_sector = 3;
+        bool render_bounds_ok = true;
+        for (const auto ctx : {InputContext::Mission, InputContext::CampaignMap,
+                               InputContext::Dialog, InputContext::Party, InputContext::Trade}) {
+            const GeometryFrame f =
+                build_touch_overlay_frame(prof, {vw, vh, ctx, insets, &open_rad, false});
+            if (f.batches.empty() || f.indices.empty() || (f.indices.size() % 3U) != 0U) {
+                render_bounds_ok = false;
+                break;
+            }
+            for (const GeometryBatch& b : f.batches) {
+                if (b.texture != 0U || b.blend != BlendMode::alpha ||
+                    (b.index_count % 3U) != 0U) {
+                    render_bounds_ok = false;
+                }
+                for (std::uint32_t idx_i = 0U; idx_i < b.index_count; ++idx_i) {
+                    const std::int32_t ix = f.indices[b.first_index + idx_i];
+                    if (ix < 0 || static_cast<std::uint32_t>(ix) >= b.vertex_count) {
+                        render_bounds_ok = false;
+                    }
+                }
+            }
+            for (const GeometryVertex& v : f.vertices) {
+                if (v.x < safe_x0 || v.x > safe_x1 || v.y < safe_y0 || v.y > safe_y1) {
+                    render_bounds_ok = false;
+                    break;
+                }
+            }
+        }
+        expect(render_bounds_ok,
+               "P11.3 overlay render emits valid untextured batches strictly inside safe area");
+
+        // 7c. Disabled widget emits zero triangles; pressed widget is brighter; opacity scales alpha.
+        TouchOverlayProfile single{};
+        for (auto& w : single.widgets) {
+            w.enabled = false;
+        }
+        const GeometryFrame none_enabled =
+            build_touch_overlay_frame(single, {vw, vh, InputContext::Dialog, insets, nullptr, false});
+        single.widgets[static_cast<std::size_t>(TouchWidgetId::DialogUp)].enabled = true;
+        single.widgets[static_cast<std::size_t>(TouchWidgetId::DialogUp)].opacity = 0.25f;
+        const GeometryFrame dim =
+            build_touch_overlay_frame(single, {vw, vh, InputContext::Dialog, insets, nullptr, false});
+        single.widgets[static_cast<std::size_t>(TouchWidgetId::DialogUp)].opacity = 0.90f;
+        const GeometryFrame bright_alpha =
+            build_touch_overlay_frame(single, {vw, vh, InputContext::Dialog, insets, nullptr, false});
+        InputFrameState pressed_st{};
+        pressed_st.widget_pressed[static_cast<std::size_t>(TouchWidgetId::DialogUp)] = true;
+        const GeometryFrame pressed_f = build_touch_overlay_frame(
+            single, {vw, vh, InputContext::Dialog, insets, &pressed_st, false});
+        const auto mean_luma = [](const GeometryFrame& f) {
+            double s = 0.0;
+            for (const auto& v : f.vertices) {
+                s += static_cast<double>(v.r + v.g + v.b);
+            }
+            return f.vertices.empty() ? 0.0 : s / static_cast<double>(f.vertices.size());
+        };
+        const auto mean_alpha = [](const GeometryFrame& f) {
+            double s = 0.0;
+            for (const auto& v : f.vertices) {
+                s += static_cast<double>(v.a);
+            }
+            return f.vertices.empty() ? 0.0 : s / static_cast<double>(f.vertices.size());
+        };
+        expect(none_enabled.vertices.empty() && !dim.vertices.empty() &&
+                   mean_alpha(bright_alpha) > mean_alpha(dim) * 2.0 &&
+                   mean_luma(pressed_f) > mean_luma(bright_alpha) + 0.3,
+               "P11.3 overlay render respects widget visibility, opacity, and pressed brightness");
+
+        // 7d. UiGameShell hook appends overlay batches after UI batches only when active.
+        MemoryVfs shell_vfs;
+        (void)shell_vfs.write_text(
+            "Modules/TouchShellMod/scripts.txt",
+            "scriptsfile version 1\n1\ngame_start -1\n0\n");
+        (void)shell_vfs.write_text(
+            "Data/font_data.xml",
+            "<FontData width=\"64\" height=\"64\" padding=\"0\" font_size=\"32\" "
+            "font_scale=\"100\" line_spacing=\"100\"><FontDetails>"
+            "<character code=\"65\" u=\"0\" v=\"0\" w=\"16\" h=\"16\" postshift=\"16\"/>"
+            "</FontDetails></FontData>\n");
+        UiGameShellOptions opts{};
+        opts.run.module_dir = "Modules/TouchShellMod";
+        opts.run.load_options.require_core_files = false;
+        opts.check_install = false;
+        opts.output = UiGameShellOptions::Output::geometry;
+        UiGameShell shell;
+        std::string err;
+        const bool started = shell.start(shell_vfs, opts, &err);
+        bool shell_ok = started && shell.frame(1.0f / 60.0f, 1600U, 1200U);
+        const std::size_t ui_only_batches =
+            shell.geometry() != nullptr ? shell.geometry()->batches.size() : 0U;
+
+        shell.set_touch_overlay(&prof, InputContext::Menu, insets);
+        shell_ok = shell_ok && shell.frame(1.0f / 60.0f, 1600U, 1200U);
+        const std::size_t menu_batches =
+            shell.geometry() != nullptr ? shell.geometry()->batches.size() : 0U;
+
+        const std::uint64_t serial_before = shell.frame_serial();
+        shell.set_touch_overlay(&prof, InputContext::Mission, insets, &pressed_st);
+        shell_ok = shell_ok && shell.frame(1.0f / 60.0f, 1600U, 1200U);
+        const GeometryFrame* with_overlay = shell.geometry();
+        const bool appended = with_overlay != nullptr &&
+                              shell.frame_serial() > serial_before &&
+                              with_overlay->batches.size() == ui_only_batches + 1U &&
+                              with_overlay->batches.back().texture == 0U &&
+                              with_overlay->batches.back().index_count > 0U;
+        bool shell_safe = true;
+        if (with_overlay != nullptr && !with_overlay->batches.empty()) {
+            const auto& ob = with_overlay->batches.back();
+            const float sx0 = insets.left * 1600.0f - 1e-3f;
+            const float sx1 = (1.0f - insets.right) * 1600.0f + 1e-3f;
+            const float sy0 = insets.top * 1200.0f - 1e-3f;
+            const float sy1 = (1.0f - insets.bottom) * 1200.0f + 1e-3f;
+            for (std::uint32_t v = 0U; v < ob.vertex_count; ++v) {
+                const auto& gv = with_overlay->vertices[ob.first_vertex + v];
+                if (gv.x < sx0 || gv.x > sx1 || gv.y < sy0 || gv.y > sy1) {
+                    shell_safe = false;
+                }
+            }
+        }
+        // The seeded module may draw no UI at all (0 batches); the overlay still goes last.
+        expect(shell_ok && menu_batches == ui_only_batches && appended &&
+                   shell_safe,
+               "P11.3 UiGameShell appends overlay batch after UI batches inside safe area");
+    }
+
+    // 8. A saved profile from before this change still loads (new widgets get defaults).
+    {
+        const std::string legacy_json =
+            "{\n"
+            "  \"version\": \"1\",\n"
+            "  \"look_sensitivity\": \"3.25\",\n"
+            "  \"w_move_stick_cx\": \"0.20\",\n"
+            "  \"w_move_stick_cy\": \"0.75\",\n"
+            "  \"w_move_stick_hw\": \"0.12\",\n"
+            "  \"w_move_stick_hh\": \"0.12\",\n"
+            "  \"w_move_stick_scale\": \"1.25\",\n"
+            "  \"w_move_stick_opacity\": \"0.85\",\n"
+            "  \"w_move_stick_enabled\": \"true\",\n"
+            "  \"w_attack_zone_cx\": \"0.78\",\n"
+            "  \"w_command_radial_enabled\": \"false\"\n"
+            "}\n";
+        TouchOverlayProfile loaded{};
+        std::string err;
+        const bool ok = deserialize_input_profile_json(legacy_json, loaded, nullptr, &err);
+        const auto defaults = default_touch_widgets();
+        bool new_widgets_default = true;
+        for (std::size_t i = static_cast<std::size_t>(TouchWidgetId::MapCenter);
+             i < kNumTouchWidgets; ++i) {
+            if (!(loaded.widgets[i] == defaults[i])) {
+                new_widgets_default = false;
+            }
+        }
+        expect(ok && close(loaded.look_sensitivity, 3.25f) &&
+                   close(loaded.widgets[static_cast<std::size_t>(TouchWidgetId::MoveStick)].cx, 0.20f) &&
+                   close(loaded.widgets[static_cast<std::size_t>(TouchWidgetId::MoveStick)].scale, 1.25f) &&
+                   close(loaded.widgets[static_cast<std::size_t>(TouchWidgetId::AttackZone)].cx, 0.78f) &&
+                   !loaded.widgets[static_cast<std::size_t>(TouchWidgetId::CommandRadial)].enabled &&
+                   new_widgets_default &&
+                   loaded.default_attack_dir == TouchCombatDirection::Right &&
+                   loaded.default_block_dir == TouchCombatDirection::Up,
+               "P11.4 pre-change v1 profile loads and fills all new widgets with defaults");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -1179,6 +1760,7 @@ int run_input_suite(const char* fixture_path) {
     test_vm_and_world_input_bridge();
     test_review_regressions();
     test_p8_sensors_and_pinch_zoom();
+    test_p11_touch_overlay_render_and_context_buttons();
 
     if (g_failures == 0) {
         std::printf("input tests: PASS\n");

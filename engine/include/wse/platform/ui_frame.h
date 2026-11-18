@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <span>
 #include <string_view>
@@ -14,9 +16,51 @@
 #include "wse/core/encoding.h"
 #include "wse/game/ui_runtime.h"
 #include "wse/platform/input.h"
+#include "wse/platform/performance.h"
 #include "wse/platform/rhi_ui.h"
 
 namespace wse::platform {
+
+struct UiViewportRect {
+    std::uint32_t x = 0;
+    std::uint32_t y = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+
+    [[nodiscard]] friend bool operator==(const UiViewportRect&, const UiViewportRect&) = default;
+};
+
+// Largest centred rectangle inside `win_w x win_h` matching `mode` (`Stretch` fills the
+// window; an empty window returns all zeros).
+[[nodiscard]] inline UiViewportRect compute_ui_viewport(std::uint32_t win_w,
+                                                        std::uint32_t win_h,
+                                                        UiAspectMode mode) noexcept {
+    if (win_w == 0U || win_h == 0U) {
+        return UiViewportRect{};
+    }
+    if (mode == UiAspectMode::Stretch) {
+        return UiViewportRect{0U, 0U, win_w, win_h};
+    }
+    const std::uint64_t num = (mode == UiAspectMode::Ratio16x9) ? 16ULL : 4ULL;
+    const std::uint64_t den = (mode == UiAspectMode::Ratio16x9) ? 9ULL : 3ULL;
+    UiViewportRect vp{};
+    if (static_cast<std::uint64_t>(win_w) * den > static_cast<std::uint64_t>(win_h) * num) {
+        const auto scaled_w = static_cast<std::uint32_t>(
+            std::llround(static_cast<double>(win_h) * static_cast<double>(num) /
+                         static_cast<double>(den)));
+        vp.width = std::clamp<std::uint32_t>(scaled_w, 1U, win_w);
+        vp.height = win_h;
+    } else {
+        const auto scaled_h = static_cast<std::uint32_t>(
+            std::llround(static_cast<double>(win_w) * static_cast<double>(den) /
+                         static_cast<double>(num)));
+        vp.width = win_w;
+        vp.height = std::clamp<std::uint32_t>(scaled_h, 1U, win_h);
+    }
+    vp.x = (win_w - vp.width) / 2U;
+    vp.y = (win_h - vp.height) / 2U;
+    return vp;
+}
 
 // Collects one frame of `RawInputEvent`s (window-normalised, `y` down, as `sdl_input.cpp`
 // produces them) into a `game::UiPointerInput` in Warband UI space (`x` in `[0, 1]`, `y` up in
@@ -26,6 +70,18 @@ namespace wse::platform {
 // from the host's text events through `feed_text` (`SDL_EVENT_TEXT_INPUT`).
 class UiInputAccumulator {
 public:
+    // Maps subsequent (and already-buffered) window-normalised coordinates through `vp` inside
+    // `win_w x win_h` without clamping, so points on letterbox bars land outside the UI canvas.
+    void set_viewport(UiViewportRect vp, std::uint32_t win_w, std::uint32_t win_h) noexcept {
+        viewport_ = vp;
+        win_w_ = win_w;
+        win_h_ = win_h;
+        has_viewport_ = true;
+        if (has_raw_pos_) {
+            apply_raw_position();
+        }
+    }
+
     void feed(const RawInputEvent& ev) {
         switch (ev.type) {
         case RawInputEvent::Type::MouseMotion:
@@ -77,6 +133,7 @@ public:
             if (ev.finger_id == touch_finger_) {
                 touch_finger_ = -1;
                 left_down_ = false;
+                has_raw_pos_ = false;
                 // Move off-screen so the armed button sees a leave instead of a release.
                 frame_.x = -1.0f;
                 frame_.y = -1.0f;
@@ -117,13 +174,40 @@ public:
 
 private:
     void set_position(float nx, float ny) noexcept {
-        frame_.x = nx * game::kUiScreenWidth;
-        frame_.y = (1.0f - ny) * game::kUiScreenHeight;
+        raw_nx_ = nx;
+        raw_ny_ = ny;
+        has_raw_pos_ = true;
+        apply_raw_position();
+    }
+
+    void apply_raw_position() noexcept {
+        float vx = raw_nx_;
+        float vy = raw_ny_;
+        if (has_viewport_) {
+            if (win_w_ == 0U || win_h_ == 0U || viewport_.width == 0U || viewport_.height == 0U) {
+                frame_.x = -1.0f;
+                frame_.y = -1.0f;
+                return;
+            }
+            const float px = raw_nx_ * static_cast<float>(win_w_);
+            const float py = raw_ny_ * static_cast<float>(win_h_);
+            vx = (px - static_cast<float>(viewport_.x)) / static_cast<float>(viewport_.width);
+            vy = (py - static_cast<float>(viewport_.y)) / static_cast<float>(viewport_.height);
+        }
+        frame_.x = vx * game::kUiScreenWidth;
+        frame_.y = (1.0f - vy) * game::kUiScreenHeight;
     }
 
     game::UiPointerInput frame_{};
     bool left_down_ = false;
     std::int64_t touch_finger_ = -1;
+    UiViewportRect viewport_{};
+    std::uint32_t win_w_ = 0;
+    std::uint32_t win_h_ = 0;
+    bool has_viewport_ = false;
+    bool has_raw_pos_ = false;
+    float raw_nx_ = 0.0f;
+    float raw_ny_ = 0.0f;
 };
 
 struct UiFrameResult {

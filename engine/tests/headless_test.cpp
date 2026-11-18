@@ -612,6 +612,125 @@ void test_ui_game_shell_start_async() {
     }
 }
 
+// P11.1: Warband's 2D UI is a 4:3 canvas. `compute_ui_viewport` fits it (or 16:9) centred in
+// the window with bars; stretch fills the window. The shell renders into that rectangle and
+// maps the pointer through it, so a tap on a bar lands outside the UI.
+void test_ui_aspect_modes() {
+    using wse::platform::UiAspectMode;
+    using wse::platform::UiViewportRect;
+    using wse::platform::compute_ui_viewport;
+    const auto eq = [](UiViewportRect r, std::uint32_t x, std::uint32_t y, std::uint32_t w,
+                       std::uint32_t h) {
+        return r.x == x && r.y == y && r.width == w && r.height == h;
+    };
+    expect(eq(compute_ui_viewport(2400U, 1080U, UiAspectMode::Ratio4x3), 480U, 0U, 1440U, 1080U),
+           "4:3 on a 20:9 phone is a centred 1440x1080 picture");
+    expect(eq(compute_ui_viewport(2400U, 1080U, UiAspectMode::Ratio16x9), 240U, 0U, 1920U, 1080U),
+           "16:9 on a 20:9 phone is a centred 1920x1080 picture");
+    expect(eq(compute_ui_viewport(2400U, 1080U, UiAspectMode::Stretch), 0U, 0U, 2400U, 1080U),
+           "stretch fills the window");
+    expect(eq(compute_ui_viewport(800U, 1000U, UiAspectMode::Ratio4x3), 0U, 200U, 800U, 600U),
+           "a window taller than 4:3 gets bars above and below");
+    expect(eq(compute_ui_viewport(800U, 600U, UiAspectMode::Ratio4x3), 0U, 0U, 800U, 600U),
+           "a 4:3 window has no bars");
+    expect(eq(compute_ui_viewport(0U, 600U, UiAspectMode::Ratio4x3), 0U, 0U, 0U, 0U),
+           "an empty window gives an empty viewport");
+
+    {
+        wse::platform::UiInputAccumulator acc;
+        acc.set_viewport(compute_ui_viewport(2400U, 1080U, UiAspectMode::Ratio4x3), 2400U, 1080U);
+        wse::platform::RawInputEvent ev{};
+        ev.type = wse::platform::RawInputEvent::Type::MouseMotion;
+        ev.x = 0.5f;
+        ev.y = 0.5f;
+        acc.feed(ev);
+        wse::game::UiPointerInput in = acc.take(0.0f);
+        expect(std::abs(in.x - 0.5f * wse::game::kUiScreenWidth) < 1e-4f &&
+                   std::abs(in.y - 0.5f * wse::game::kUiScreenHeight) < 1e-4f,
+               "the window centre maps to the UI centre");
+        ev.x = (480.0f + 1440.0f * 0.25f) / 2400.0f;  // a quarter into the picture
+        ev.y = 0.0f;                                  // top edge
+        acc.feed(ev);
+        in = acc.take(0.0f);
+        expect(std::abs(in.x - 0.25f * wse::game::kUiScreenWidth) < 1e-4f &&
+                   std::abs(in.y - wse::game::kUiScreenHeight) < 1e-4f,
+               "a point inside the picture maps through the viewport");
+        ev.x = 0.1f;  // 240 px: inside the left bar
+        acc.feed(ev);
+        in = acc.take(0.0f);
+        expect(in.x < 0.0f, "a point on the left bar lands left of the UI");
+        ev.x = 0.95f;  // 2280 px: inside the right bar
+        acc.feed(ev);
+        in = acc.take(0.0f);
+        expect(in.x > wse::game::kUiScreenWidth, "a point on the right bar lands right of the UI");
+    }
+
+    wse::platform::MemoryVfs mem;
+    seed_async_shell_module(mem);
+    {
+        wse::platform::UiGameShellOptions opts = async_shell_options();
+        expect(opts.ui_aspect == UiAspectMode::Ratio4x3, "the shell defaults to the 4:3 UI");
+        opts.output = wse::platform::UiGameShellOptions::Output::geometry;
+        wse::platform::UiGameShell shell;
+        std::string err;
+        expect(shell.start(mem, opts, &err), "start the shell for the aspect test");
+        expect(shell.frame(1.0f / 60.0f, 2400U, 1080U) && shell.geometry() != nullptr,
+               "the shell records a frame at 2400x1080");
+        expect(eq(shell.viewport(), 480U, 0U, 1440U, 1080U),
+               "the shell reports the 4:3 viewport it drew into");
+        const wse::platform::GeometryFrame* g = shell.geometry();
+        bool inside = true;  // the seeded module may draw nothing; ui_test checks placement
+        for (const auto& v : g->vertices) {
+            inside = inside && v.x >= 480.0f - 0.5f && v.x <= 1920.0f + 0.5f && v.y >= -0.5f &&
+                     v.y <= 1080.5f;
+        }
+        expect(g->width == 2400U && g->height == 1080U && inside,
+               "geometry keeps the window size and every vertex lies inside the viewport");
+        expect(g->viewport_x == 480U && g->viewport_y == 0U && g->viewport_width == 1440U &&
+                   g->viewport_height == 1080U,
+               "the geometry frame carries the viewport for the presenter");
+    }
+    {
+        // Module frames (game_start already run) route the pointer into the world's cursor.
+        wse::platform::UiGameShellOptions opts = async_shell_options();
+        opts.start_at_initial_window = false;
+        wse::platform::UiGameShell shell;
+        std::string err;
+        expect(shell.start(mem, opts, &err), "start the shell in module frames");
+        wse::platform::RawInputEvent ev{};
+        ev.type = wse::platform::RawInputEvent::Type::MouseMotion;
+        ev.x = 0.1f;
+        ev.y = 0.5f;
+        shell.feed(ev);
+        expect(shell.frame(1.0f / 60.0f, 2400U, 1080U) && shell.vm() != nullptr &&
+                   shell.vm()->world.m5.cursor_pos.x < 0.0f,
+               "a pointer on the bar reaches the UI outside its canvas");
+    }
+    {
+        wse::platform::UiGameShellOptions opts = async_shell_options();
+        opts.ui_aspect = UiAspectMode::Stretch;
+        opts.output = wse::platform::UiGameShellOptions::Output::geometry;
+        wse::platform::UiGameShell shell;
+        std::string err;
+        expect(shell.start(mem, opts, &err) && shell.frame(1.0f / 60.0f, 2400U, 1080U) &&
+                   eq(shell.viewport(), 0U, 0U, 2400U, 1080U),
+               "stretch draws over the whole window");
+        const std::uint64_t serial = shell.frame_serial();
+        expect(shell.frame(1.0f / 60.0f, 2400U, 1080U) && shell.frame_serial() == serial,
+               "an unchanged frame is still reused with a viewport");
+    }
+    {
+        wse::platform::UiGameShellOptions opts = async_shell_options();  // software output
+        wse::platform::UiGameShell shell;
+        std::string err;
+        expect(shell.start(mem, opts, &err) && shell.frame(1.0f / 60.0f, 2400U, 1080U) &&
+                   shell.width() == 960U && shell.height() == 720U &&
+                   eq(shell.viewport(), 480U, 0U, 1440U, 1080U),
+               "the CPU frame is the viewport scaled to max_render_height; the viewport is in "
+               "window pixels");
+    }
+}
+
 // `UiGameShell`: loads the font and module, opens the presentation `game_start` queues, routes
 // pointer events into `UiSession::handle_input`, clamps long frames, and renders at the
 // window's aspect ratio capped at `max_render_height`.
@@ -701,8 +820,8 @@ void test_ui_game_shell() {
     expect(shell.frame(5.0f, 640U, 360U), "long shell frame runs");
     expect(std::abs(vm->appTimeSeconds - before - 0.25) < 1e-9,
            "a 5 s display frame advances the world by max_frame_seconds only");
-    expect(shell.width() == 640U && shell.height() == 360U,
-           "a window under max_render_height renders at native size");
+    expect(shell.width() == 480U && shell.height() == 360U,
+           "a window under max_render_height renders its 4:3 viewport at native size");
 
     shell.stop();
     expect(!shell.running() && !shell.frame(0.1f, 640U, 360U) && shell.pixels().empty(),
@@ -799,6 +918,7 @@ int run_headless_suite(const char* fixture_path) {
     test_launcher_install_check_json();
     test_list_warband_languages();
     test_ui_game_shell_start_async();
+    test_ui_aspect_modes();
 
     if (failures == 0) {
         std::printf("headless tests: PASS\n");

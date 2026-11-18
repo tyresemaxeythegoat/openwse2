@@ -59,6 +59,10 @@ struct GeometryBatch {
 struct GeometryFrame {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
+    std::uint32_t viewport_x = 0;
+    std::uint32_t viewport_y = 0;
+    std::uint32_t viewport_width = 0;
+    std::uint32_t viewport_height = 0;
     std::uint8_t clear_r = 0;
     std::uint8_t clear_g = 0;
     std::uint8_t clear_b = 0;
@@ -139,14 +143,32 @@ public:
     }
     void destroy_pipeline(PipelineHandle handle) override { pipelines_.erase(handle); }
 
+    // Places subsequent frames' vertices inside `(x, y, width, height)` in window pixels while
+    // keeping `GeometryFrame::width` / `height` at the full pass size; zero width or height
+    // resets to the full pass.
+    void set_viewport(std::uint32_t x,
+                      std::uint32_t y,
+                      std::uint32_t width,
+                      std::uint32_t height) noexcept {
+        viewport_x_ = x;
+        viewport_y_ = y;
+        viewport_width_ = width;
+        viewport_height_ = height;
+    }
+
     // Records `draws` into `frame()` and leaves `out_rgba8` empty: there is no readback.
     [[nodiscard]] bool render_pass_and_readback(const RenderPassDesc& pass,
                                                 std::span<const MeshDrawCall> draws,
                                                 std::vector<std::uint8_t>& out_rgba8,
                                                 std::string* error_out = nullptr) override {
         out_rgba8.clear();
+        const bool custom_vp = (viewport_width_ > 0U && viewport_height_ > 0U);
         frame_.width = pass.width;
         frame_.height = pass.height;
+        frame_.viewport_x = custom_vp ? viewport_x_ : 0U;
+        frame_.viewport_y = custom_vp ? viewport_y_ : 0U;
+        frame_.viewport_width = custom_vp ? viewport_width_ : pass.width;
+        frame_.viewport_height = custom_vp ? viewport_height_ : pass.height;
         frame_.clear_r = pass.clear_r;
         frame_.clear_g = pass.clear_g;
         frame_.clear_b = pass.clear_b;
@@ -158,7 +180,7 @@ public:
             return rhi_detail::set_error(error_out, "invalid render pass dimensions");
         }
         for (const MeshDrawCall& draw : draws) {
-            if (!record_draw(pass, draw, error_out)) {
+            if (!record_draw(draw, error_out)) {
                 return false;
             }
         }
@@ -191,7 +213,7 @@ private:
         return handle_counter_;
     }
 
-    bool record_draw(const RenderPassDesc& pass, const MeshDrawCall& draw, std::string* error_out) {
+    bool record_draw(const MeshDrawCall& draw, std::string* error_out) {
         const auto pip_it = pipelines_.find(draw.pipeline);
         const auto vb_it = buffers_.find(draw.vertex_buffer);
         const auto ib_it = buffers_.find(draw.index_buffer);
@@ -237,8 +259,10 @@ private:
                                static_cast<float>((draw.tint_rgba >> 16U) & 0xFFU) / 255.0f,
                                static_cast<float>((draw.tint_rgba >> 24U) & 0xFFU) / 255.0f};
         const float* m = draw.mvp;
-        const float fw = static_cast<float>(pass.width);
-        const float fh = static_cast<float>(pass.height);
+        const float vx = static_cast<float>(frame_.viewport_x);
+        const float vy = static_cast<float>(frame_.viewport_y);
+        const float fw = static_cast<float>(frame_.viewport_width);
+        const float fh = static_cast<float>(frame_.viewport_height);
 
         // A draw usually reads a small index range of a shared buffer: transform only the
         // vertices it references, once each (`remap_` holds the batch-relative slot; only the
@@ -266,8 +290,8 @@ private:
             }
             GeometryVertex gv{};
             const float inv_w = 1.0f / cw;
-            gv.x = (cx * inv_w * 0.5f + 0.5f) * fw;
-            gv.y = (cy * inv_w * 0.5f + 0.5f) * fh;
+            gv.x = vx + (cx * inv_w * 0.5f + 0.5f) * fw;
+            gv.y = vy + (cy * inv_w * 0.5f + 0.5f) * fh;
             if (pip.compensate_d3d9_half_pixel) {
                 apply_d3d9_half_pixel_offset_px(gv.x, gv.y, gv.x, gv.y);
             }
@@ -338,6 +362,10 @@ private:
     std::vector<std::int32_t> remap_{};
     std::vector<std::uint16_t> touched_{};
     GeometryFrame frame_{};
+    std::uint32_t viewport_x_ = 0U;
+    std::uint32_t viewport_y_ = 0U;
+    std::uint32_t viewport_width_ = 0U;
+    std::uint32_t viewport_height_ = 0U;
     std::uint64_t unsupported_draws_ = 0U;
     std::uint32_t handle_counter_ = 0U;
 };

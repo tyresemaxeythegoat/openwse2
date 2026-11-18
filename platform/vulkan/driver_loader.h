@@ -155,6 +155,7 @@ public:
 
     [[nodiscard]] bool is_loaded() const noexcept;
     [[nodiscard]] bool has_device() const noexcept;
+    [[nodiscard]] bool can_execute_gpu() const noexcept;
     [[nodiscard]] const VulkanDriverProbeResult& probe_result() const noexcept;
 
     // Process-unique id of the current `VkDevice`; 0 without one. Changes every
@@ -188,15 +189,19 @@ public:
     [[nodiscard]] std::size_t live_vk_images() const noexcept;
     [[nodiscard]] std::size_t live_vk_shader_modules() const noexcept;
 
-private:
+    // Opaque state; public only so `driver_loader.cpp`'s GPU helpers can name it.
     struct Impl;
+
+private:
+    friend class VulkanRhiDevice;
     std::unique_ptr<Impl> impl_;
 };
 
 // Minimal RHI implementation backed by `VulkanDriverLoader`.
 // Creates and tracks genuine Vulkan `VkBuffer`, `VkImage`, and `VkShaderModule`
-// objects on the active `VkDevice`, and executes deterministic offscreen readback
-// through the reference rasterizer for host/CI verification.
+// objects on the active `VkDevice`. Devices that support queue submission and
+// fence completion render on the GPU and read back the offscreen RGBA8 target;
+// mock or non-executing devices fall back to `SoftwareRhiDevice`.
 class VulkanRhiDevice final : public RhiDevice {
 public:
     explicit VulkanRhiDevice(std::shared_ptr<VulkanDriverLoader> loader);
@@ -210,6 +215,7 @@ public:
     [[nodiscard]] DriverMode driver_mode() const noexcept override;
     [[nodiscard]] std::uint32_t api_version() const noexcept override;
     [[nodiscard]] const VulkanDriverProbeResult& probe_result() const noexcept;
+    [[nodiscard]] bool last_frame_used_gpu() const noexcept;
 
     [[nodiscard]] BufferHandle create_buffer(BufferUsage usage,
                                              std::span<const std::uint8_t> data,
@@ -257,14 +263,18 @@ private:
     std::unordered_map<BufferHandle, VkRef> vk_buffers_{};
     std::unordered_map<TextureHandle, VkRef> vk_textures_{};
     std::unordered_map<ShaderModuleHandle, VkRef> vk_shader_modules_{};
+    struct GpuState;
+    std::unique_ptr<GpuState> gpu_{};
+    bool last_frame_used_gpu_ = false;
+    void detach_and_release_gpu_resources() noexcept;
+    friend struct VulkanDriverLoader::Impl;  // detaches attached devices on teardown
 };
 
 // Convenience helper: initializes a `VulkanDriverLoader` for the requested `mode`
 // (or the mock ICD when `allow_mock_fallback == true` and the system/custom binary
 // is unavailable, reported through `fell_back_to_mock` / `fallback_reason`),
 // creates `VulkanRhiDevice`, and renders the synthetic textured static mesh test
-// frame. The frame comes from the P4 CPU reference rasterizer, so its hash is
-// identical for every driver: it proves the device opened, not that it renders.
+// frame (on the GPU when supported, or via the CPU reference rasterizer on mock).
 [[nodiscard]] VulkanDriverProbeResult run_vulkan_mesh_smoke_test(
     DriverMode mode,
     const std::string& custom_icd_path,

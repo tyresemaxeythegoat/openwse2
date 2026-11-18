@@ -177,6 +177,19 @@ aspect and UI scale that the P10.4 settings page stores. Same workflow as P10.
 
 **Batches.** A: P11.1, P11.2, P11.5, P11.6 (menus). B: P11.3, P11.4 (controls).
 
+**Status (2026-11-18).** P11.1, P11.3 and P11.4 landed (host-verified; device run pending),
+built as Antigravity units on worktrees and reviewed by Claude. P11.1: `compute_ui_viewport`,
+`UiInputAccumulator::set_viewport`, `GeometryFrame::viewport_*`, `UiGameShellOptions::ui_aspect`
+(default 4:3) from `ui_aspect`; the presenter clears the window black and draws the batches at
+their offset. P11.3/P11.4: widget sizes in short-side units, `apply_safe_area`, context buttons
+(`MapCenter`, `MapFollow`, `MapPanMode`, `DialogUp/Select/Down`, `MoveAll`, `MoveOne`,
+`Spare1..4`) with `widget_visible_in_context`, delayed swipe classification (120 ms or
+`swipe_threshold`), the two-level order radial, `touch_overlay_render.h`, and
+`UiGameShell::set_touch_overlay`. Not wired in the app yet: nothing calls `set_touch_overlay`
+or passes `SDL_GetWindowSafeArea`. Map, dialog and bulk-move buttons send `Custom5..12`,
+because Warband has no game key for them; a module that binds those custom keys itself will
+also see them. Left: P11.2, P11.5, P11.6.
+
 **Device acceptance.** Text readable at 1080p without zooming; 2D windows undistorted on a 20:9
 phone; every touch control reachable with a thumb in landscape.
 
@@ -222,6 +235,14 @@ the module's own image up front, one bold Play action, soft tonal surfaces, real
 
 **Batches.** One batch: P12.1 first (others build on it), then P12.2–P12.5 in parallel
 worktrees. One gate, one push, one APK, plus the screenshot artifact for review.
+
+**Status (2026-11-18).** P12.1 landed: Compose BOM `2024.10.01` + Material 3, Kotlin Compose
+plugin `2.0.21`, `android.useAndroidX=true`; `LauncherViewModel` owns the P10 launcher state
+and JNI calls; `Wse2Theme` (dynamic colour on Android 12+, `schemeFromSeed` fallback);
+interim Compose screens (`LauncherApp`, `InterimScreens`) on a `NavigationBar` /
+`NavigationRail`. The view-based pages stay compiled because the ViewModel reuses
+`InstallCheckState` and `PerformanceUiState`; P12.4 removes them. Only CI compiles it (no SDK on
+the host). Left: P12.2–P12.5.
 
 ## Risks decided up front
 

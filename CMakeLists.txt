@@ -391,7 +391,7 @@ target_include_directories(wse_vulkan
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/runtime/android/third_party"
 )
-target_link_libraries(wse_vulkan PUBLIC wse_engine)
+target_link_libraries(wse_vulkan PUBLIC wse_engine wse_shader)  # P4: built-in GLSL via glslang
 if(NOT WIN32)
     target_link_libraries(wse_vulkan PUBLIC ${CMAKE_DL_LIBS})
 endif()

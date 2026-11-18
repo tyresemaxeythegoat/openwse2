@@ -2437,6 +2437,27 @@ void test_geometry_capture_matches_software() {
     }
     expect(indices_ok, "batch indices stay inside their batch's vertex range");
     expect(geo.unsupported_draws() == 0U, "UI draws use only features the capture device supports");
+    {
+        // P11.1: a viewport places the same picture at its offset and size, pass size unchanged.
+        const std::vector<wse::platform::GeometryVertex> full = f.vertices;
+        geo.set_viewport(40U, 10U, 80U, 60U);
+        std::vector<std::uint8_t> none2;
+        expect(geo_renderer.render_tree(root, font, cfg, none2), "geometry capture into a viewport");
+        const wse::platform::GeometryFrame& fv = geo.frame();
+        bool placed = !full.empty() && fv.vertices.size() == full.size();
+        for (std::size_t i = 0; placed && i < full.size(); ++i) {
+            placed = std::abs(fv.vertices[i].x - (40.0f + full[i].x * 0.5f)) <= 1.0f &&
+                     std::abs(fv.vertices[i].y - (10.0f + full[i].y * 0.5f)) <= 1.0f;
+        }
+        expect(placed && fv.width == 160U && fv.height == 120U && fv.viewport_x == 40U &&
+                   fv.viewport_y == 10U && fv.viewport_width == 80U && fv.viewport_height == 60U,
+               "viewport geometry is the full picture offset and scaled into the viewport");
+        geo.set_viewport(0U, 0U, 0U, 0U);
+        expect(geo_renderer.render_tree(root, font, cfg, none2) && geo.frame().viewport_width == 160U &&
+                   geo.frame().vertices.size() == full.size(),
+               "a zero viewport resets to the full pass");
+        expect(geo_renderer.render_tree(root, font, cfg, none2), "re-render the full frame for the replay");
+    }
 
     // Replay: pixel coordinates -> NDC with an identity transform, same textures and blends.
     wse::platform::SoftwareRhiDevice replay{};
