@@ -71,6 +71,7 @@ Each slice is one milestone. "Done when" is the acceptance test, not a descripti
 | P7 *(host verified; device pending)* | Input + touch overlay *(Phase 4)* | PE/PDB evidence for v1.1.5.5 `rglInputManager::getKeyName` (`0x1402ad360`, 125 raw keys) & `mbGameKeyManager` (`0x14069fbd0`, `reset` `0x1400e96a0`: 75 built-ins + Custom1..20 + 13 gamepad alts); `wse/platform/input.h` (`WseGameKeyManager`, `InputContext`, touch overlay with movement stick/look area/4-direction attack & block swipes/command radial, `TouchLayoutEditor`, per-module `Vfs` JSON profiles, `FreeCameraController`), `wse/game/world_input.h` (`WorldInputBridge` opcodes `65`, `70..73`, `75`, `77..78`, `3100..3102`), and `platform/sdl/sdl_input.{h,cpp}`. | Host `input` suite (`input_test.cpp`) passes driving `FreeCameraController` in the P4 `BrfMeshRenderer` viewer, hiding in `Menu`/`Inventory`/`Presentation` contexts and on controller attach; SDL3 APK links `sdl_input.cpp`; on-device touch/gamepad test pending hardware |
 | P8 *(host verified; device pending)* | Sensors + performance *(Phase 4)* | `wse/platform/performance.h` (`FrameRateCap` 30/60/90/120 Hz + uncapped, `PresentModePreference`, `ThermalPerformanceController` hysteretic thermal status & headroom scaling -> resolution scale / LOD bias / thermal FPS step-down, with immediate escalation, one-tier-per-update recovery, and the last valid headroom held across headroom-less readings, `FramePacer`, `FrameTimeStats`, `RuntimePerformanceHub`, persistent `Vfs` JSON settings), opt-in filtered gyro aim (frame-rate-independent smoothing, sample-and-hold, axes remapped for the screen rotation; controller gyro preferred when present) + `CampaignMap` two-finger pinch-to-zoom as `ln` of the spread ratio (`wse/platform/input.h`, `wse/game/world_input.h`), `SDL_INIT_SENSOR` `SDL_SENSOR_GYRO` + `SDL_SetGamepadSensorEnabled` (`platform/sdl/sdl_input.{h,cpp}`), SDL3 pacing + `ANativeWindow_setFrameRate*` (`ALWAYS` for the player's choice, `ONLY_IF_SEAMLESS` for thermal step-downs) and a measured-FPS footer (`sdl_selftest_main.cpp`), Android `PowerManager` thermal listener + `getThermalHeadroom` (`WseActivity.kt`, `saf_vfs_jni.cpp`), and persisted launcher toggles with caps filtered to the display's refresh rates (`WseLauncherActivity.kt`). | Host `platform` + `input` suites pass across gyro/pinch/hysteresis/frame-pacer tests and Android APK builds cleanly; each toggle exists in JSON + UI; on-device frame-rate & gyro test pending hardware |
 | P9 *(parts 1 & 2 host verified)* | Convergence with Phase 2 | Part 1 landed: skeletal FK & CPU linear-blend skinning (`wse/asset/skeleton.h`, fixing `skeleton_anim` `(qx,qy,qz,qw)` read order in `wse/asset/brf.h`), `map.txt`/`.sco`/`skeleton_bodies.xml` loaders (`wse/game/scene_loaders.h`), and chunked terrain + multi-object/skinned `BrfSceneRenderer` over `RhiDevice` (`wse/platform/rhi_scene.h`, static IB + slot skin-data cache). Part 2 landed: shared XML DOM parser (`wse/io/xml.h`), `Data/font_data.xml` glyph loader & `<c=...>`/word-wrap text layout (`wse/asset/font.h`), `LanguageTable` / `GameVariablesTable` / `UiWidget` / `UiSession` initial+menu+notes+presentation controllers (`wse/game/ui_runtime.h`), and 2D UI RHI renderer (`wse/platform/rhi_ui.h`, Y-up `[0,1]x[0,0.75]` ortho & bottom-up V -> top-down DDS `1 - v` UV conversion) tested in `ui_test.cpp`. Lua 5.1 link (2F) and 2H headless runner integrated. Remaining: Bullet physics hookup and on-device `Native` run. | Scene/terrain/skeletal and `Native` main menu + menu/presentation RHI passes on host; `Native` main menu renders on device from a user-supplied install |
+| P10 *(planned; P10.0 done)* | UI/UX and performance on Android *(Phase 4)* | UI aspect modes and crisp text, asynchronous start with a loading screen, performance hub in module mode, drawn touch overlay with context buttons and gestures, touch-friendly menus, soft keyboard, texture budget, launcher settings, performance-core hints; details in "P10 — UI/UX and performance on Android" below | The device acceptance list in that section holds on the user's phone |
 
 **Order.** P0 → P1 → P2 are strict. P3 is host-only and can run beside P1/P2. P4 needs P1; P5
 needs P3 + P4. P6, P7, P8 need only P1 and can interleave. P9 needs Phase 2E and 2H progress.
@@ -78,6 +79,65 @@ needs P3 + P4. P6, P7, P8 need only P1 and can interleave. P9 needs Phase 2E and
 **Working beside the VM track.** Opcode and VM work owns `engine/include/wse/vm/**` and its
 tests. Platform slices add new directories and touch VM headers only in the P1 routing step, which
 should land as its own commit when no VM refactor is in flight.
+
+## P10 — UI/UX and performance on Android
+
+**Why.** The first device run (2026-11-18, APK `64250bd`) showed the module UI working, with
+three complaints: the UI looks ugly, module mode started in portrait, and a wrong folder gave no
+clear error. Portrait and the error dialog are fixed (P10.0 below); the rest is this slice.
+
+**Reference study (clean-room boundary).** The user supplied a third-party Android build of
+Warband (`mnb_noobb` v4.2) as the example of how the UI should look and how the controls should
+work. Antigravity (Gemini 4 Hydrogen XHigh, read-only) studied only its control and config text
+files and the strings in its Java code, which Claude extracted into the session scratchpad; no
+native library was opened, and no code, data, layout coordinates or assets were copied. What it
+showed, in our words:
+
+- *2D UI aspect.* Warband's UI is a 4:3 canvas. Stretching it over a 20:9 phone (what we do
+  today) distorts every mesh and glyph; the reference keeps menus, dialogs and pause screens at
+  4:3 or 16:9 (letterboxed) and lets only the 3D map and battles fill the screen, with an option
+  to keep touch buttons inside the picture.
+- *Touch controls* are a context-gated overlay sized as a fraction of the screen's short side and
+  placed in percent of width / height: a stick bottom-left, a large attack pad bottom-right
+  (slide to pick the direction), defend / kick / jump / use / zoom around it, small weapon,
+  camera and menu buttons in the top rows, map-mode buttons (home / follow, pan mode, fast travel,
+  pause), trade / party bulk-move buttons, dialog up / select / down, and user-assignable spare
+  buttons. Safe-area insets keep them off notches.
+- *Menus on touch* need the first tap to register, drag-to-scroll on long lists, and drag and
+  drop committed on finger lift.
+- *Settings* the reference exposes: render scale, FPS cap, quality presets, texture size cap,
+  UI aspect mode, message / font scale, control layout and sensitivity, language.
+- *Performance:* conservative mobile engine defaults on first launch (30 FPS cap, low texture
+  detail, small battles), on-demand texture loading, a texture size cap and cache, loading spread
+  over frames with a progress screen, and keeping the game threads on performance cores.
+
+**Work units.** Claude writes each unit's spec and its host tests first; Antigravity implements
+the unit (`agy-handoff --effort xhigh --dir . --tests <the new tests>`); Claude reviews the diff,
+runs the host gate, and the user checks each batch on the phone. Units marked *Claude* need
+judgement or retail evidence and are not delegated.
+
+| Unit | What | Files | Owner | Done when |
+| --- | --- | --- | --- | --- |
+| P10.0 | Landscape-only module mode; missing-file check with an error dialog | `sdl_selftest_main.cpp`, `WseActivity.kt`, `WseLauncherActivity.kt`, `ui_game_shell.h` | Claude | **Done** (`find_missing_warband_files`, `SDL_ShowSimpleMessageBox`, launcher `AlertDialog`); device check pending |
+| P10.1 | UI aspect modes: 4:3 (default for 2D windows), 16:9, stretch; letterbox bars; pointer mapped through the same rectangle | `ui_game_shell.h` (viewport rect in `UiRenderConfig`), `ui_frame.h` (`UiInputAccumulator` inverse map), `rhi_geometry.h` (offset batches), `performance.json` key | agy | A tap on a letterbox bar hits nothing; a 2400x1080 frame keeps a 1440x1080 4:3 picture centred; host tests |
+| P10.2 | Crisp UI: per-texture filter (nearest for pixel-exact UI art at 1:1, linear when scaled), font atlas never downscaled, optional UI text scale | `rhi_geometry.h` (filter hint per batch), `sdl_selftest_main.cpp`, `rhi_ui.h` | agy | Batch carries a filter hint; text scale applied in `measure_text` and layout; host tests |
+| P10.3 | Loading screen and asynchronous start: SAF indexing and `UiGameShell::start` on a worker thread, progress drawn by the SDL loop, no ANR | `ui_game_shell.h` (`start_async`, progress), `sdl_selftest_main.cpp`, `saf_game_tree.h` | Claude spec, agy | The SDL loop keeps presenting during a 10 s synthetic load; cancel on quit; host test with a slow VFS |
+| P10.4 | Performance hub in module mode: launcher FPS cap, thermal step-down, present mode (today fixed at 60 Hz); 30 FPS default for menus with idle presentation skipping already in place | `sdl_selftest_main.cpp` (`run_module_shell`), `performance.h` | Claude | Cap and thermal tier follow `RuntimePerformanceHub`; footer shows measured FPS in a debug overlay |
+| P10.5 | Draw the touch overlay (stick, attack pad, buttons, radial) as UI geometry, sized from the short side, clamped to `SDL_GetWindowSafeArea` | `input.h` (layout in short-side units), `rhi_ui.h` / new `touch_overlay_render.h`, `ui_game_shell.h` | agy | Overlay batches appear only in contexts that use them; safe-area clamp test |
+| P10.6 | Context buttons and gestures: delayed swipe classification for attack / block, two-level order radial, map buttons (home / follow / pan / fast travel / pause), dialog up / select / down, trade and party bulk buttons, spare assignable buttons | `input.h`, `world_input.h` | agy (P7 review item 6 spec) | Each button maps to a game key in `WseGameKeyManager`; host tests per context |
+| P10.7 | Touch-friendly menus: drag-to-scroll in scrollable containers, first tap counts, scissor clipping for `clip_children` | `ui_runtime.h`, `ui_frame.h`, `rhi_geometry.h` (clip rect per batch), presenter `SDL_SetRenderClipRect` | agy | Drag scrolls a 40-item list; clipped items never draw outside the box |
+| P10.8 | Soft keyboard: `SDL_StartTextInput` / `SDL_StopTextInput` when a text or number box gains / loses focus | `ui_game_shell.h` (focus query), `sdl_selftest_main.cpp` | agy | Focus change toggles text input in a host test of the shell flag |
+| P10.9 | Texture budget: mip clamp from a texture-detail setting and a max size; decode only the chosen mip | `dds.h` callers, `rhi_ui.h`, `rhi_scene.h`, `performance.h` | agy | A 2048 texture loads as 512 at detail 25%; memory counter in the shell |
+| P10.10 | Launcher settings: UI aspect, UI scale, FPS cap, quality preset (writes conservative first-launch defaults), language from `languages/*/`; restyled launcher (dark theme, grouped cards) | `WseLauncherActivity.kt`, `performance.h`, `saf_vfs_jni.cpp` | agy | Settings round-trip through `config/performance.json`; CI builds the APK |
+| P10.11 | Performance cores: Android `APerformanceHintManager` session for the game thread (API 33+), thread priority fallback | `sdl_selftest_main.cpp`, new `platform/android/perf_hint.cpp` | Claude | Hint session reports the frame target; no-op below API 33 |
+
+**Batches.** A: P10.1, P10.2, P10.4, P10.3 (fixes "ugly" and startup). B: P10.5, P10.6, P10.7,
+P10.8 (controls). C: P10.9, P10.10, P10.11. Each batch: one host gate, one push, one APK for the
+user's phone.
+
+**Device acceptance.** Launch to main menu under 5 s for Native from internal storage; menu and
+presentation frames under 4 ms CPU at 60 FPS; no ANR during load; text readable at 1080p without
+zooming; every touch control reachable with a thumb in landscape on a 20:9 phone.
 
 ## Risks decided up front
 

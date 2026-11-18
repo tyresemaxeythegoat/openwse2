@@ -108,6 +108,48 @@ private:
     std::uint64_t state_ = 0xcbf29ce484222325ULL;
 };
 
+// The files a module launch cannot do without, checked before anything loads so a wrong
+// folder (the user picked `Modules/`, a module folder, or an unrelated directory instead of
+// the Warband install) gets one message naming what is missing instead of the first loader
+// error. Paths are relative to the VFS root; empty when the install looks complete. Not a full
+// validation: a damaged file still fails later with the loader's own error.
+[[nodiscard]] inline std::vector<std::string> find_missing_warband_files(
+    Vfs& vfs, std::string_view warband_root, std::string_view module_dir) {
+    std::vector<std::string> missing;
+    const auto root_path = [&](std::string_view rel) {
+        return warband_root.empty() ? std::string(rel) : game::vfs_join_path(warband_root, rel);
+    };
+    if (!vfs.is_dir(module_dir)) {
+        missing.push_back(std::string(module_dir) + "/ (module folder)");
+        return missing;  // every file inside it would be listed too
+    }
+    for (const std::string_view file : {"module.ini", "scripts.txt", "troops.txt", "menus.txt"}) {
+        const std::string p = game::vfs_join_path(module_dir, file);
+        if (!vfs.is_file(p)) {
+            missing.push_back(p);
+        }
+    }
+    if (!vfs.is_file(game::vfs_join_path(module_dir, "Data/font_data.xml")) &&
+        !vfs.is_file(root_path("Data/font_data.xml"))) {
+        missing.push_back(root_path("Data/font_data.xml"));
+    }
+    if (!vfs.is_dir(root_path("CommonRes"))) {
+        missing.push_back(root_path("CommonRes") + "/ (core resources)");
+    }
+    return missing;
+}
+
+// One readable message for `find_missing_warband_files`' result.
+[[nodiscard]] inline std::string format_missing_warband_files(const std::vector<std::string>& missing) {
+    std::string msg = "These Warband files were not found:\n";
+    for (const std::string& m : missing) {
+        msg += "  - " + m + "\n";
+    }
+    msg += "\nPick the Mount & Blade: Warband folder itself (the one that contains Modules, Data "
+           "and CommonRes) in the launcher.";
+    return msg;
+}
+
 struct UiGameShellOptions {
     // Module run settings. `drive_ui` is forced on; `trigger_frames` is unused (the host
     // decides how many frames run). Unimplemented opcodes are counted, not fatal, by default:
@@ -126,6 +168,9 @@ struct UiGameShellOptions {
     // Open on the main menu and defer `game_start` to "Start a New Game". Off: `game_start`
     // runs in `start` (`run.run_game_start`) and module frames run from the first frame.
     bool start_at_initial_window = true;
+    // Run `find_missing_warband_files` before loading (off for synthetic test modules that
+    // lack a full install's files).
+    bool check_install = true;
     // `rgba8`: draw with `SoftwareRhiDevice` into `pixels()` (capped at `max_render_height`).
     // `geometry`: record screen-space triangle batches at the full window size into
     // `geometry()` (`GeometryCaptureRhiDevice`) for the host to draw on the GPU; `pixels()`
@@ -149,8 +194,19 @@ public:
     // `game_start` stops the run.
     [[nodiscard]] bool start(Vfs& vfs, UiGameShellOptions options, std::string* error_out = nullptr) {
         stop();
+        missing_files_.clear();
         options_ = std::move(options);
         options_.run.drive_ui = true;
+
+        // A wrong folder gets one message listing everything that is missing.
+        if (const auto missing = options_.check_install
+                                     ? find_missing_warband_files(vfs, options_.warband_root,
+                                                                  options_.run.module_dir)
+                                     : std::vector<std::string>{};
+            !missing.empty()) {
+            missing_files_ = missing;
+            return fail(format_missing_warband_files(missing), error_out);
+        }
 
         assets_ = std::make_unique<LoadedUiAssets>();
         std::string err;
@@ -259,6 +315,11 @@ public:
     [[nodiscard]] std::uint64_t frames_reused() const noexcept { return frames_reused_; }
     [[nodiscard]] const std::vector<game::UiEvent>& last_events() const noexcept { return last_events_; }
     [[nodiscard]] bool running() const noexcept { return runner_ != nullptr && runner_->running(); }
+    // Files the last failed `start` could not find (`find_missing_warband_files`); empty when
+    // `start` succeeded or failed for another reason.
+    [[nodiscard]] const std::vector<std::string>& missing_files() const noexcept {
+        return missing_files_;
+    }
     // The main menu's quit button was pressed; the host should close.
     [[nodiscard]] bool quit_requested() const noexcept { return quit_requested_; }
     // `game_start` has run and module frames are stepping.
@@ -366,6 +427,7 @@ private:
     std::uint64_t last_tree_hash_ = 0U;
     std::uint64_t frame_serial_ = 0U;
     std::uint64_t frames_reused_ = 0U;
+    std::vector<std::string> missing_files_{};
     bool in_game_ = false;
     bool quit_requested_ = false;
 };

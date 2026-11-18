@@ -350,6 +350,52 @@ void test_headless_module_runner_steps() {
            "runner without game_start fails start and never steps");
 }
 
+// `find_missing_warband_files`: a wrong folder gets every missing file listed at once, the
+// module font may come from the module or the install, and `UiGameShell::start` refuses with
+// that list before loading anything.
+void test_missing_warband_files() {
+    wse::platform::MemoryVfs vfs;
+    auto missing = wse::platform::find_missing_warband_files(vfs, "", "Modules/Native");
+    expect(missing.size() == 1U && missing[0].find("Modules/Native/") == 0U,
+           "an absent module folder is reported once, not file by file");
+
+    expect(vfs.write_text("Modules/Native/module.ini", "x") &&
+               vfs.write_text("Modules/Native/scripts.txt", "x"),
+           "seed a partial module");
+    missing = wse::platform::find_missing_warband_files(vfs, "", "Modules/Native");
+    const auto has = [&](std::string_view needle) {
+        for (const auto& m : missing) {
+            if (m.find(needle) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    };
+    expect(missing.size() == 4U && has("troops.txt") && has("menus.txt") &&
+               has("Data/font_data.xml") && has("CommonRes"),
+           "a partial install lists every missing file");
+
+    expect(vfs.write_text("Modules/Native/troops.txt", "x") &&
+               vfs.write_text("Modules/Native/menus.txt", "x") &&
+               vfs.write_text("Modules/Native/Data/font_data.xml", "x") &&
+               vfs.write_text("CommonRes/core_ui_meshes.brf", "x"),
+           "complete the install (module-local font)");
+    expect(wse::platform::find_missing_warband_files(vfs, "", "Modules/Native").empty(),
+           "a complete install reports nothing missing");
+    expect(!wse::platform::find_missing_warband_files(vfs, "Warband", "Warband/Modules/Native").empty(),
+           "a root prefix is honoured");
+
+    wse::platform::MemoryVfs empty;
+    wse::platform::UiGameShellOptions opts{};
+    opts.run.module_dir = "Modules/Native";
+    wse::platform::UiGameShell shell;
+    std::string err;
+    expect(!shell.start(empty, opts, &err) && shell.missing_files().size() == 1U &&
+               err.find("not found") != std::string::npos &&
+               err.find("Modules/Native/") != std::string::npos && !shell.running(),
+           "UiGameShell::start refuses a wrong folder with the missing-file message");
+}
+
 // `UiGameShell`: loads the font and module, opens the presentation `game_start` queues, routes
 // pointer events into `UiSession::handle_input`, clamps long frames, and renders at the
 // window's aspect ratio capped at `max_render_height`.
@@ -368,6 +414,7 @@ void test_ui_game_shell() {
     wse::platform::UiGameShellOptions opts{};
     opts.run.module_dir = "Modules/ShellMod";
     opts.run.load_options.require_core_files = false;
+    opts.check_install = false;  // synthetic module: no full install
     opts.render.clear_r = 1;
     opts.render.clear_g = 2;
     opts.render.clear_b = 3;
@@ -451,6 +498,7 @@ void test_ui_game_shell() {
     wse::platform::UiGameShellOptions menu_opts{};
     menu_opts.run.module_dir = "Modules/MenuMod/";
     menu_opts.run.load_options.require_core_files = false;
+    menu_opts.check_install = false;
     wse::platform::UiGameShell menu_shell;
     expect(menu_shell.start(vfs, menu_opts, &err) && !menu_shell.in_game() &&
                menu_shell.session()->root.id == "initial" &&
@@ -531,6 +579,7 @@ int run_headless_suite(const char* fixture_path) {
     test_headless_host_vfs_roundtrip();
     test_headless_module_runner_steps();
     test_ui_game_shell();
+    test_missing_warband_files();
 
     if (failures == 0) {
         std::printf("headless tests: PASS\n");

@@ -399,6 +399,18 @@ int run_module_shell(SDL_Window* window,
             from_saf ? "(SAF tree)" : warband_root.c_str(), module_dir.c_str(),
             running ? "started" : error.c_str(),
             static_cast<unsigned long long>((SDL_GetTicksNS() - load_start_ns) / 1000000ULL));
+    if (!running) {
+        // Missing Warband files (`find_missing_warband_files`), an unreadable SAF tree, or a
+        // loader / `game_start` error: say so in a dialog, then return to the launcher.
+        const std::string message =
+            error.empty() ? std::string("The module could not be started.") : error;
+        if (!SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "WSE2: cannot start the module",
+                                      message.c_str(), window)) {
+            SDL_Log("[WSE2] message box failed: %s", SDL_GetError());
+        }
+        shell.stop();
+        return 2;
+    }
 #ifndef __ANDROID__
     SDL_StartTextInput(window);  // desktop keyboards; Android IME is an open item
 #endif
@@ -603,8 +615,16 @@ int main(int argc, char* argv[]) {
     constexpr int kInitW = 800;
     constexpr int kInitH = 1000;
 #endif
-    if (!SDL_CreateWindowAndRenderer("WSE2 Engine Self-Test", kInitW, kInitH,
-                                      kWindowFlags, &window, &renderer)) {
+    // Warband is a landscape game: module mode locks the window to either landscape rotation
+    // (`WseActivity` also requests sensor-landscape before SDL starts, so the first frame is
+    // already landscape); the self-test list stays free to rotate.
+    if (module_mode) {
+        SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    }
+    const int init_w = module_mode && kInitW != 0 ? 1280 : kInitW;
+    const int init_h = module_mode && kInitH != 0 ? 720 : kInitH;
+    if (!SDL_CreateWindowAndRenderer(module_mode ? "WSE2" : "WSE2 Engine Self-Test", init_w,
+                                      init_h, kWindowFlags, &window, &renderer)) {
         SDL_Log("SDL_CreateWindowAndRenderer failed: %s", SDL_GetError());
         SDL_Quit();
         return 1;

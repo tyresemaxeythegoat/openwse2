@@ -1,6 +1,7 @@
 package org.wse2.android
 
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.os.Build
 import android.net.Uri
 import android.os.Bundle
@@ -61,6 +62,10 @@ class WseActivity : SDLActivity() {
         // The launcher saved its choices into config/performance.json under filesDir.
         WseSafBridge.nativeApplyPerformanceSettings(filesDir.absolutePath)
         registerGameTree()
+        // Module mode is landscape-only (either way up); the self-test may rotate freely.
+        if (isModuleLaunch()) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
 
         powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
         super.onCreate(savedInstanceState)
@@ -95,6 +100,12 @@ class WseActivity : SDLActivity() {
     // The launcher holds a persistable read/write grant on the tree it picked, so this activity
     // can open it by URI. Runs before super.onCreate, which later starts the SDL thread that
     // reads the registration.
+    private fun isModuleLaunch(): Boolean {
+        val launched = intent ?: return false
+        return launched.getBooleanExtra(WseLauncherActivity.EXTRA_RUN_MODULE, false) ||
+            !launched.getStringExtra(EXTRA_MODULE_ROOT).isNullOrEmpty()
+    }
+
     private fun registerGameTree() {
         val launched = intent ?: return
         if (!launched.getBooleanExtra(WseLauncherActivity.EXTRA_RUN_MODULE, false)) {

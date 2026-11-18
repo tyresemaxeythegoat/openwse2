@@ -1,6 +1,7 @@
 package org.wse2.android
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -885,7 +886,19 @@ class WseLauncherActivity : Activity() {
         val selectedPos = moduleSpinner.selectedItemPosition
         val selectedMod = if (selectedPos in modules.indices) modules[selectedPos].folderName else "Native"
         if (runModule && (selectedTreeUri == null || selectedPos !in modules.indices)) {
-            outputStatusText.text = "Pick a Warband folder and a module first."
+            val why = if (selectedTreeUri == null) {
+                "No Warband folder is selected."
+            } else {
+                "No Warband modules were found in the selected folder."
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Warband files not found")
+                .setMessage(
+                    "$why\n\nTap \"Select Warband Folder\" and pick the Mount & Blade: Warband " +
+                        "folder itself (the one that contains Modules, Data and CommonRes)."
+                )
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
             return
         }
         val intent = Intent(this, WseActivity::class.java).apply {
