@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <limits>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -461,7 +462,6 @@ inline constexpr float kUiNumberBoxWidth = 0.12f;
 inline constexpr float kUiComboWidth = 0.25f;
 inline constexpr float kUiInputBoxHeight = 0.04f;
 inline constexpr float kUiArrowFraction = 0.25f;
-inline constexpr float kUiComboItemHeight = 0.035f;
 // `create_text_overlay` (910, `createTextOverlay` `0x140209a90`) builds an
 // `rglScrollableWidget` (`rglScrollableWidget::getType` `0x140300270` = 8) when text flag bit
 // 17, 18 or 19 is set; `set_container_overlay` children then live inside it. The wheel scrolls
@@ -1390,7 +1390,8 @@ public:
                     break;
                 }
                 case UiOverlayInput::NumberBox:
-                    w.text = std::to_string(ov.val);
+                    // While its text box has the focus it shows the text being typed.
+                    w.text = ov.m5.focused ? u16_to_utf8(ov.text) : std::to_string(ov.val);
                     if (!has_area) {
                         w.size = {kUiNumberBoxWidth, kUiInputBoxHeight};
                     }
@@ -1595,11 +1596,24 @@ public:
             // `0x140316bd0`). Enter / Escape, or a left press outside the box, commit the text
             // (`rglTextBoxWidget::loseFocus` `0x140317220` raises `0x10000`).
             WsePresentationOverlay& tb = world.overlays[static_cast<std::size_t>(text_focus)];
+            const bool numeric = overlay_input_kind(tb) == UiOverlayInput::NumberBox;
             bool commit = false;
             for (const char16_t c : in.text_input) {
                 if (c == u'\r' || c == 0x1BU) {
                     commit = true;
                     break;
+                }
+                if (numeric) {
+                    // Numeric mode (`0x140316ce7`): a digit makes the value
+                    // `strtol(text) * 10 + digit`, clamped with a minimum of 0; backspace
+                    // erases the last character; anything else is ignored.
+                    if (c >= u'0' && c <= u'9') {
+                        set_number_box_value(tb, number_box_text_value(tb.text) * 10 + (c - u'0'),
+                                             std::int64_t{0});
+                    } else if (c == u'\b' && !tb.text.empty()) {
+                        tb.text.pop_back();
+                    }
+                    continue;
                 }
                 if (c == u'\b') {
                     if (!tb.text.empty()) {
@@ -1619,7 +1633,10 @@ public:
             if (in.left_pressed) {
                 press_consumed_ = true;
                 raise(text_focus, kUiStateLeftPress);
-                if (e == nullptr || !e->contains(in.x, in.y)) {
+                // A number box's text box sits between its arrows, so a press on an arrow is
+                // outside the focused widget too.
+                if (e == nullptr || !e->contains(in.x, in.y) ||
+                    (numeric && (e->on_left_arrow(in.x) || e->on_right_arrow(in.x)))) {
                     commit = true;
                 }
             }
@@ -1630,6 +1647,10 @@ public:
                 raise(text_focus, kUiStateMiddlePress);
             }
             if (commit) {
+                if (numeric) {
+                    // `0x1403170db`: the text is read back through `setIntValue`.
+                    set_number_box_value(tb, number_box_text_value(tb.text));
+                }
                 tb.m5.focused = false;
                 world.m5.focused_overlay_no = -1;
                 raise(text_focus, kUiStateChanged);
@@ -2082,7 +2103,11 @@ private:
             return -1;
         }
         const WsePresentationOverlay& ov = world.overlays[static_cast<std::size_t>(id)];
-        return (ov.visible && ov.m5.focused && overlay_input_kind(ov) == UiOverlayInput::TextBox) ? id : -1;
+        const UiOverlayInput kind = overlay_input_kind(ov);
+        return (ov.visible && ov.m5.focused &&
+                (kind == UiOverlayInput::TextBox || kind == UiOverlayInput::NumberBox))
+                   ? id
+                   : -1;
     }
 
     void reset_input_state() noexcept {
@@ -2153,17 +2178,54 @@ private:
         ov.val = static_cast<std::int32_t>(std::trunc(v));
     }
 
+    // `rglTextBoxWidget::setIntValue` (`0x140316a10`) in numeric mode, which a number box's inner
+    // text box always is (`rglNumberBoxWidget::updateWidgets` `0x1402c8670` sets `+0x298` and
+    // copies the range): with `max > min` the value clamps to `[min, max - 1]` (the module
+    // header's "max value is excluded"); with an empty range it becomes -1 and the text clears.
+    // `min_override` replaces `min` (typing clamps with a minimum of 0). The text mirrors the
+    // value (`rglString::parse`).
+    static void set_number_box_value(WsePresentationOverlay& ov,
+                                     std::int64_t v,
+                                     std::optional<std::int64_t> min_override = std::nullopt) {
+        const std::int64_t lo = min_override.value_or(static_cast<std::int64_t>(ov.m5.min_value));
+        const std::int64_t hi = static_cast<std::int64_t>(ov.m5.max_value);
+        if (hi - lo > 0) {
+            ov.val = static_cast<std::int32_t>(std::clamp<std::int64_t>(v, lo, hi - 1));
+            const std::string digits = std::to_string(ov.val);
+            ov.text.assign(digits.begin(), digits.end());
+        } else {
+            ov.val = -1;
+            ov.text.clear();
+        }
+    }
+
+    // `strtol(text, nullptr, 10)` as the numeric text box reads its text (0 when empty),
+    // saturating where retail's 32-bit result would wrap.
+    [[nodiscard]] static std::int64_t number_box_text_value(std::u16string_view t) noexcept {
+        std::size_t i = 0;
+        while (i < t.size() && (t[i] == u' ' || t[i] == u'\t')) {
+            ++i;
+        }
+        bool neg = false;
+        if (i < t.size() && (t[i] == u'-' || t[i] == u'+')) {
+            neg = t[i] == u'-';
+            ++i;
+        }
+        std::int64_t v = 0;
+        for (; i < t.size() && t[i] >= u'0' && t[i] <= u'9'; ++i) {
+            v = std::min<std::int64_t>(v * 10 + (t[i] - u'0'), std::int64_t{1} << 40);
+        }
+        return neg ? -v : v;
+    }
+
+    // `rglNumberBoxWidget::triggerState` (`0x1402c8310`): an arrow moves the value by `step`,
+    // bounded by `max` going up and `min` going down, then `setIntValue` clamps it.
     static void step_number_box(WsePresentationOverlay& ov, std::int32_t step) {
         const std::int64_t lo = static_cast<std::int64_t>(ov.m5.min_value);
         const std::int64_t hi = static_cast<std::int64_t>(ov.m5.max_value);
         std::int64_t v = static_cast<std::int64_t>(ov.val) + step;
-        if (step > 0) {
-            v = std::min(v, hi);
-        } else {
-            v = std::max(v, lo);
-        }
-        ov.val = static_cast<std::int32_t>(std::clamp<std::int64_t>(
-            v, std::numeric_limits<std::int32_t>::min(), std::numeric_limits<std::int32_t>::max()));
+        v = step > 0 ? std::min(v, hi) : std::max(v, lo);
+        set_number_box_value(ov, v);
     }
 
     // A left press on overlay `e`; returns whether the widget consumes it (the press then
@@ -2204,7 +2266,21 @@ private:
         case UiOverlayInput::NumberBox:
             // `rglNumberBoxWidget::triggerState` (`0x1402c8310`): step 1 at once, then repeat.
             if (!e.on_left_arrow(in.x) && !e.on_right_arrow(in.x)) {
-                return false;
+                // Between the arrows sits the numeric text box: a press focuses it
+                // (`rglTextBoxWidget::triggerState` `0x140316bd0` -> `obtainFocus`).
+                for (WsePresentationOverlay& other : world.overlays) {
+                    other.m5.focused = false;
+                }
+                ov.m5.focused = true;
+                world.m5.focused_overlay_no = e.overlay_id;
+                if (ov.val == -1 && static_cast<std::int64_t>(ov.m5.max_value) -
+                                            static_cast<std::int64_t>(ov.m5.min_value) <= 0) {
+                    ov.text.clear();
+                } else {
+                    const std::string digits = std::to_string(ov.val);
+                    ov.text.assign(digits.begin(), digits.end());
+                }
+                return true;
             }
             step_number_box(ov, e.on_right_arrow(in.x) ? 1 : -1);
             raise(e.overlay_id, kUiStateChanged);
@@ -2248,10 +2324,13 @@ private:
             if (!ov.m5.items.empty()) {
                 popup_overlay_ = e.overlay_id;
                 popup_items_.clear();
+                // `rglComboButtonWidget::openPopup` (`0x140261d10`): the list starts at the
+                // box's bottom edge and grows downwards, one item per combo-box height
+                // (`size.y * scale.y`).
+                const float item_h = e.box.y1 - e.box.y0;
                 for (std::size_t k = 0; k < ov.m5.items.size(); ++k) {
-                    const float top = e.box.y0 - static_cast<float>(k) * kUiComboItemHeight;
-                    popup_items_.push_back(
-                        UiRect{e.box.x0, top - kUiComboItemHeight, e.box.x1, top});
+                    const float top = e.box.y0 - static_cast<float>(k) * item_h;
+                    popup_items_.push_back(UiRect{e.box.x0, top - item_h, e.box.x1, top});
                 }
             }
             return true;

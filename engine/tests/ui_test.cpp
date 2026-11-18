@@ -864,12 +864,41 @@ void test_overlay_value_widgets() {
         rig.release(0.31f, 0.52f);
         rig.reset_regs();
         rig.press(0.36f, 0.52f);
-        expect(rig.ov(id).val == 5 && rig.n62() == 0 && rig.n64() == 2,
-               "a press in the middle changes nothing and is not consumed");
+        expect(rig.ov(id).val == 5 && rig.n62() == 0 && rig.n64() == 1 &&
+                   rig.ctx.world.m5.focused_overlay_no == id && rig.ov(id).text == u"5",
+               "a press in the middle focuses the numeric text box and is consumed");
         rig.release(0.36f, 0.52f);
+        const auto type = [&](std::u16string_view chars) {
+            wse::game::UiPointerInput in{};
+            in.x = 0.36f;
+            in.y = 0.52f;
+            in.text_input = std::u16string(chars);
+            return rig.send(in);
+        };
+        rig.reset_regs();
+        type(u"3");
+        expect(rig.ov(id).val == 9 && rig.ov(id).text == u"9" && rig.n62() == 0,
+               "typing a digit makes value*10+digit, clamped below the excluded maximum");
+        type(u"\bx7");
+        expect(rig.ov(id).val == 7 && rig.ov(id).text == u"7",
+               "backspace erases a character; non-digits are ignored");
+        const auto* nw = find_widget(rig.session.root, "overlay_1");
+        expect(nw != nullptr && nw->text == "7", "the focused number box shows the typed text");
+        type(u"\r");
+        expect(rig.ov(id).val == 7 && rig.n62() == 1 && rig.ctx.registers[14] == 7 &&
+                   rig.ctx.world.m5.focused_overlay_no == -1 && !rig.ov(id).m5.focused,
+               "Enter commits the typed value and fires -62 with it");
+        rig.press(0.36f, 0.52f);
+        rig.release(0.36f, 0.52f);
+        type(u"\b");
+        rig.reset_regs();
+        rig.press(0.40f, 0.52f);
+        expect(rig.ov(id).val == 0 && rig.n62() == 1 && rig.ctx.world.m5.focused_overlay_no == -1,
+               "a press on an arrow while typing only commits (empty text reads as 0)");
+        rig.release(0.40f, 0.52f);
         rig.ov(id).val = 10;
         rig.press(0.40f, 0.52f);
-        expect(rig.ov(id).val == 10, "number box clamps at the maximum");
+        expect(rig.ov(id).val == 9, "number box clamps below the excluded maximum (max - 1)");
         rig.release(0.40f, 0.52f);
         rig.ov(id).val = 0;
         rig.press(0.31f, 0.52f);
@@ -892,6 +921,24 @@ void test_overlay_value_widgets() {
         rig.move(0.40f, 0.52f, true, 2.0f);
         rig.move(0.40f, 0.52f, true, 2.5f);
         expect(rig.ov(id).val == 5, "releasing stops the auto-repeat");
+
+        // Empty range (max <= min): setIntValue gives -1 and clears the text.
+        rig.ov(id).m5.min_value = 5.0;
+        rig.ov(id).m5.max_value = 5.0;
+        rig.ov(id).val = 5;
+        rig.press(0.36f, 0.52f);
+        rig.release(0.36f, 0.52f);
+        wse::game::UiPointerInput in{};
+        in.x = 0.36f;
+        in.y = 0.52f;
+        in.text_input = u"3";
+        rig.send(in);
+        // Text "5" + "3" = 53, clamped to [0, max - 1] = [0, 4].
+        const bool typed_ok = rig.ov(id).val == 4 && rig.ov(id).text == u"4";
+        in.text_input = u"\r";
+        rig.send(in);
+        expect(typed_ok && rig.ov(id).val == -1 && rig.ov(id).text.empty(),
+               "an empty range types against a minimum of 0, then commits to -1");
     }
 
     // 7. Combo label.
@@ -935,7 +982,7 @@ void test_overlay_value_widgets() {
                    find_widget(rig.session.root, "combo_popup") != nullptr,
                "combo button press opens the popup and draws it");
         rig.release(0.4f, 0.62f);
-        const float item2_y = 0.6f - 2.5f * wse::game::kUiComboItemHeight;
+        const float item2_y = 0.6f - 2.5f * wse::game::kUiInputBoxHeight;  // item = box height
         rig.press(0.4f, item2_y);
         expect(rig.ov(id).val == 2 && rig.n62() == 1 && rig.ctx.registers[14] == 2 &&
                    rig.session.combo_popup_overlay() == -1 &&

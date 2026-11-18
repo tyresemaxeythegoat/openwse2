@@ -1373,6 +1373,59 @@ void test_p5_shader_review_regressions() {
                "cached module whose decl_type differs is recompiled");
     }
 
+    // Parallel warm-up (P5 lowering review 11): misses compile on several threads, the
+    // calling thread stores them, duplicates compile once, failures are reported per request.
+    {
+        const auto compiler = create_glslang_shader_compiler();
+        wse::platform::MemoryVfs v;
+        const std::string vs = "attribute vec4 inPosition; void main() { gl_Position = inPosition; }";
+        const std::string fs = "void main() { gl_FragColor = vec4(0.5); }";
+        const std::string fs2 = "uniform vec4 tint; void main() { gl_FragColor = tint; }";
+        const std::string bad = "void main() { this is not glsl }";
+        using Req = SpirvShaderCache::WarmupRequest;
+        const std::vector<Req> reqs{
+            Req{"t_a", SpirvStage::Vertex, VertexDeclType::Standard, vs, fs},
+            Req{"t_a", SpirvStage::Fragment, VertexDeclType::Standard, fs, vs},
+            Req{"t_b", SpirvStage::Fragment, VertexDeclType::Standard, fs2, vs},
+            Req{"t_a", SpirvStage::Fragment, VertexDeclType::Standard, fs, vs},  // duplicate
+            Req{"t_bad", SpirvStage::Fragment, VertexDeclType::Standard, bad, vs},
+        };
+        SpirvShaderCache warm(compiler);
+        const SpirvShaderCache::WarmupReport rep = warm.warm_up(v, "w", reqs, 4U);
+        expect(rep.compiled == 3U && rep.failed == 1U && rep.hits == 0U &&
+                   warm.compile_count == 3U && rep.errors.size() == 1U &&
+                   rep.errors[0].first == 4U && !rep.errors[0].second.empty() &&
+                   !warm.last_error.empty(),
+               "warm_up compiles each distinct miss once and reports the failing request");
+
+        SpirvShaderCache later{};  // no backend: everything warmed must hit
+        std::vector<std::uint32_t> words;
+        bool hit = false;
+        ShaderStageReflection refl{};
+        expect(later.get_or_compile(v, "w", "t_b", SpirvStage::Fragment, VertexDeclType::Standard,
+                                    fs2, words, &hit, nullptr, &refl, vs) &&
+                   hit && inspect_spirv_module(words).has_value(),
+               "a warmed module (with its reflection sidecar) hits without a compiler");
+
+        SpirvShaderCache again(compiler);
+        const SpirvShaderCache::WarmupReport rep2 = again.warm_up(v, "w", reqs, 2U);
+        expect(rep2.hits == 4U && rep2.compiled == 0U && rep2.failed == 1U &&
+                   again.compile_count == 0U && again.cache_hits == 4U,
+               "a second warm_up hits every warmed request and retries only the failure");
+
+        SpirvShaderCache serial(compiler);
+        wse::platform::MemoryVfs v2;
+        const SpirvShaderCache::WarmupReport rep3 =
+            serial.warm_up(v2, "w", std::span<const Req>(reqs.data(), 3U), 1U);
+        std::vector<std::uint8_t> a;
+        std::vector<std::uint8_t> b;
+        const std::string name = SpirvShaderCache::compute_cache_filename(
+            SpirvStage::Fragment, VertexDeclType::Standard, fs2, vs);
+        expect(rep3.compiled == 3U && v.read_file("w/" + name, a) && v2.read_file("w/" + name, b) &&
+                   a == b,
+               "one thread and four threads write identical modules");
+    }
+
     // ensure_vfs_dir_tree tolerates an uncreatable intermediate component.
     {
         wse::platform::MemoryVfs v;

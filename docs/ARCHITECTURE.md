@@ -1134,8 +1134,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     | `mbPresentationContainer::setOverlayValue` | `0x14020e180` | per-type value setter (reference) |
 
     Port approximations (not traced): number-box / combo-label arrows are the outer quarters of a
-    fixed box; the combo popup lists items downwards (`rglComboButtonWidget::openPopup`
-    `0x140261d10` not traced); list boxes act like combo buttons; the middle-press (`0x100`)
+    fixed box; list boxes act like combo buttons (the combo popup is item 20); the middle-press (`0x100`)
     sender is untraced. Details in [engine/README.md](../engine/README.md).
 
 18. Overlay animation, text box entry, and game-button mesh scale (P9 Part 2 review items 2, 4, 5).
@@ -1158,8 +1157,8 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     | `createIngameButtonOverlay` | `0x14020c7d0` | `mp_inventory_button` kept at native size; stores scale (5.3075, 1.0) (`0x40a9d70a`); highlight text `0xff00ff00` (941) |
     | `rglGameButtonWidget::setScale` | `0x14029bfb0` | multiplies the meshes by new / stored scale per axis; the box stays the hit area |
 
-    Port approximations (not traced): text boxes have no numeric mode (`+0x298`), placeholder
-    clearing (`+0x292`) or IME composition (the 28-character cap and the focus commit are item 19).
+    Port approximations (not traced): no IME composition (the 28-character cap and the focus
+    commit are item 19; numeric mode and placeholders are item 20).
     Details in [engine/README.md](../engine/README.md).
 
 19. Mission presentations, text box cap and focus commit, slider track, headless audio, and SAF rename (P9 Part 2 review items 1, 3, 5; P4 review item 6; P6 review items 1, 2).
@@ -1192,6 +1191,26 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     port worker thread behind one mutex (`AudioMixerWorker`) instead of FMOD's; `wse_headless`
     links no audio codec. Details in
     [engine/README.md](../engine/README.md).
+
+20. Number-box text entry, number-box range, combo popup item height, and shader warm-up (P9 Part 2 review item 5; P5 lowering review item 11).
+    **Resolved:** v1.1.5.5 entry VAs below. Implemented in [ui_runtime.h](../engine/include/wse/game/ui_runtime.h)
+    (`set_number_box_value`, `step_number_box`, numeric typing in `handle_input`, the combo popup)
+    and [shader.h](../engine/include/wse/asset/shader.h) (`SpirvShaderCache::warm_up`, port
+    infrastructure). Details in [engine/README.md](../engine/README.md).
+
+    | Function | VA | Finding |
+    | --- | --- | --- |
+    | `rglNumberBoxWidget::updateWidgets` | `0x1402c8670` | the number box holds a `rglSimpleTextBoxWidget` (`+0x2e0`) with numeric mode `+0x298 = 1` and the box's range (`+0x25c` min, `+0x260` max) |
+    | `rglTextBoxWidget::setIntValue` | `0x140316a10` | numeric mode: with `max > min` the value clamps to `[min, max - 1]` (max excluded, as the module header says) and the text becomes the decimal value; with `max <= min` the value is -1 and the text empty |
+    | `rglTextBoxWidget::triggerState` | `0x140316bd0` | numeric typing: a digit sets `strtol(text) * 10 + digit` through `setIntValue` with the minimum forced to 0; backspace erases the last character; other characters are ignored; Enter / Escape / losing focus read the text back through `setIntValue`. A placeholder (`+0x292`) is cleared on the focusing press (empty text, colour `0xff000000`) |
+    | `rglTextBoxWidget::rglTextBoxWidget` | `0x140316900` | `+0x292` / `+0x298` start cleared; only the character and terrain-generator windows and the number box set them, so module overlays never have a placeholder |
+    | `rglNumberBoxWidget::triggerState` | `0x1402c8310` | arrows: `min(v + step, max)` / `max(v - step, min)` through `setIntValue`, then raise `0x10000` on the text box; `checkState` / `getIntValue` forward to the text box, so a committed typed value reaches `-62` |
+    | `rglComboButtonWidget::openPopup` | `0x140261d10` | the popup starts at the box's bottom edge and grows downwards; each item is `size.y * scale.y` high (the combo box height) |
+
+    Port approximations (not traced): the number box's text box is the middle half of the box
+    (between the arrow quarters); typed values saturate where retail's 32-bit `value * 10 + digit`
+    would wrap before the clamp; popups that would leave the screen are not moved or made
+    scrollable (retail builds a scrollable popup there).
 
 ## 9. Evidence index
 

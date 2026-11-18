@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -42,6 +43,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -3630,47 +3632,13 @@ public:
         if (out_cache_hit != nullptr) {
             *out_cache_hit = false;
         }
-        const std::uint64_t key = spirv_source_key(glsl_source, partner_glsl);
-        const std::string fname = compute_cache_filename(stage, decl_type, glsl_source, partner_glsl);
-        const std::string path = wse::game::vfs_join_path(cache_dir, fname);
-        const std::string refl_path = path.substr(0, path.size() - 4U) + ".refl";
-
-        std::vector<std::uint8_t> raw;
-        if (cache_vfs.read_file(path, raw) && raw.size() >= 24U && (raw.size() % 4U) == 0U) {
-            std::vector<std::uint32_t> cached(raw.size() / 4U);
-            std::memcpy(cached.data(), raw.data(), raw.size());
-            const std::optional<SpirvModuleInfo> info = inspect_spirv_module(cached);
-            const bool backend_matches =
-                compiler_backend == nullptr ||
-                (info && info->backend_identity ==
-                             sanitize_spirv_tag_field(compiler_backend->cache_identity()));
-            std::optional<ShaderStageReflection> refl;
-            bool refl_ok = (out_reflection == nullptr);
-            if (!refl_ok) {
-                std::vector<std::uint8_t> refl_raw;
-                if (cache_vfs.read_file(refl_path, refl_raw)) {
-                    refl = deserialize_shader_reflection(refl_raw, key);
-                    refl_ok = refl.has_value();
-                }
+        if (load_cached(cache_vfs, cache_dir, stage, decl_type, glsl_source, partner_glsl,
+                        out_words, out_feature_flags, out_reflection)) {
+            ++cache_hits;
+            if (out_cache_hit != nullptr) {
+                *out_cache_hit = true;
             }
-            if (info && backend_matches && refl_ok &&
-                info->generator_version == kWseSpirvGeneratorVersion &&
-                info->execution_model == static_cast<std::uint32_t>(stage) &&
-                info->decl_type == static_cast<std::uint32_t>(decl_type) &&
-                info->source_hash == key) {
-                out_words = std::move(cached);
-                if (out_feature_flags != nullptr) {
-                    *out_feature_flags = info->feature_flags;
-                }
-                if (out_reflection != nullptr) {
-                    *out_reflection = std::move(*refl);
-                }
-                ++cache_hits;
-                if (out_cache_hit != nullptr) {
-                    *out_cache_hit = true;
-                }
-                return true;
-            }
+            return true;
         }
 
         if (compiler_backend == nullptr) {
@@ -3685,7 +3653,184 @@ public:
             return false;
         }
         ++compile_count;
+        store_compiled(cache_vfs, cache_dir, stage, decl_type, glsl_source, partner_glsl, compiled);
 
+        if (out_feature_flags != nullptr) {
+            *out_feature_flags = compiled.feature_flags;
+        }
+        if (out_reflection != nullptr) {
+            *out_reflection = std::move(compiled.reflection);
+        }
+        out_words = std::move(compiled.spirv_words);
+        return true;
+    }
+
+    // One stage to warm (`warm_up`); the views must outlive the call.
+    struct WarmupRequest {
+        std::string_view technique_name;
+        SpirvStage stage = SpirvStage::Vertex;
+        VertexDeclType decl_type = VertexDeclType::Standard;
+        std::string_view glsl_source;
+        std::string_view partner_glsl;
+    };
+    struct WarmupReport {
+        std::size_t hits = 0;
+        std::size_t compiled = 0;
+        std::size_t failed = 0;
+        std::vector<std::pair<std::size_t, std::string>> errors;  // request index, info log
+    };
+
+    // Fills the cache for `requests` before first use (`STATUS.md` §5 P5 lowering review 11):
+    // the calling thread probes the cache (as `get_or_compile` does), the misses compile on up
+    // to `jobs` threads sharing `compiler_backend` (glslang compiles are thread-safe, as
+    // `wse_brf --compile-shaders --jobs N` relies on), and the calling thread then writes every
+    // module and updates the counters, so the VFS and this object are only touched from one
+    // thread. Duplicate requests compile once. Port infrastructure.
+    WarmupReport warm_up(wse::platform::Vfs& cache_vfs,
+                         std::string_view cache_dir,
+                         std::span<const WarmupRequest> requests,
+                         unsigned jobs = 0U) {
+        WarmupReport rep{};
+        last_error.clear();
+        std::vector<std::size_t> misses;
+        std::unordered_set<std::string> queued;
+        std::vector<std::uint32_t> scratch;
+        for (std::size_t i = 0; i < requests.size(); ++i) {
+            const WarmupRequest& r = requests[i];
+            if (load_cached(cache_vfs, cache_dir, r.stage, r.decl_type, r.glsl_source,
+                            r.partner_glsl, scratch, nullptr, nullptr)) {
+                ++cache_hits;
+                ++rep.hits;
+                continue;
+            }
+            if (queued.insert(compute_cache_filename(r.stage, r.decl_type, r.glsl_source,
+                                                     r.partner_glsl))
+                    .second) {
+                misses.push_back(i);
+            }
+        }
+        if (misses.empty()) {
+            return rep;
+        }
+        if (compiler_backend == nullptr) {
+            last_error = "SpirvShaderCache has no SpirvCompilerBackend configured";
+            rep.failed = misses.size();
+            for (const std::size_t i : misses) {
+                rep.errors.emplace_back(i, last_error);
+            }
+            return rep;
+        }
+
+        std::vector<SpirvCompileOutput> outputs(misses.size());
+        std::vector<char> ok(misses.size(), 0);
+        std::atomic<std::size_t> next{0};
+        SpirvCompilerBackend& backend = *compiler_backend;
+        const auto worker = [&]() {
+            for (std::size_t k = next.fetch_add(1); k < misses.size(); k = next.fetch_add(1)) {
+                const WarmupRequest& r = requests[misses[k]];
+                ok[k] = compile_warband_glsl_to_spirv(backend, r.glsl_source, r.stage,
+                                                      r.technique_name, r.decl_type, outputs[k],
+                                                      r.partner_glsl)
+                            ? 1
+                            : 0;
+            }
+        };
+        const unsigned want = jobs != 0U ? jobs : std::max(1U, std::thread::hardware_concurrency());
+        const unsigned threads =
+            std::max(1U, std::min<unsigned>(want, static_cast<unsigned>(misses.size())));
+        std::vector<std::thread> pool;
+        pool.reserve(threads - 1U);
+        for (unsigned t = 1; t < threads; ++t) {
+            pool.emplace_back(worker);
+        }
+        worker();
+        for (std::thread& th : pool) {
+            th.join();
+        }
+
+        for (std::size_t k = 0; k < misses.size(); ++k) {
+            const WarmupRequest& r = requests[misses[k]];
+            if (ok[k] == 0) {
+                ++rep.failed;
+                rep.errors.emplace_back(misses[k], std::move(outputs[k].info_log));
+                continue;
+            }
+            ++compile_count;
+            ++rep.compiled;
+            store_compiled(cache_vfs, cache_dir, r.stage, r.decl_type, r.glsl_source,
+                           r.partner_glsl, outputs[k]);
+        }
+        if (!rep.errors.empty()) {
+            last_error = rep.errors.front().second;
+        }
+        return rep;
+    }
+
+private:
+    // The cache-hit half of `get_or_compile` (counters untouched).
+    [[nodiscard]] bool load_cached(wse::platform::Vfs& cache_vfs,
+                                   std::string_view cache_dir,
+                                   SpirvStage stage,
+                                   VertexDeclType decl_type,
+                                   std::string_view glsl_source,
+                                   std::string_view partner_glsl,
+                                   std::vector<std::uint32_t>& out_words,
+                                   std::uint32_t* out_feature_flags,
+                                   ShaderStageReflection* out_reflection) const {
+        const std::uint64_t key = spirv_source_key(glsl_source, partner_glsl);
+        const std::string fname = compute_cache_filename(stage, decl_type, glsl_source, partner_glsl);
+        const std::string path = wse::game::vfs_join_path(cache_dir, fname);
+        const std::string refl_path = path.substr(0, path.size() - 4U) + ".refl";
+
+        std::vector<std::uint8_t> raw;
+        if (!cache_vfs.read_file(path, raw) || raw.size() < 24U || (raw.size() % 4U) != 0U) {
+            return false;
+        }
+        std::vector<std::uint32_t> cached(raw.size() / 4U);
+        std::memcpy(cached.data(), raw.data(), raw.size());
+        const std::optional<SpirvModuleInfo> info = inspect_spirv_module(cached);
+        const bool backend_matches =
+            compiler_backend == nullptr ||
+            (info && info->backend_identity ==
+                         sanitize_spirv_tag_field(compiler_backend->cache_identity()));
+        std::optional<ShaderStageReflection> refl;
+        bool refl_ok = (out_reflection == nullptr);
+        if (!refl_ok) {
+            std::vector<std::uint8_t> refl_raw;
+            if (cache_vfs.read_file(refl_path, refl_raw)) {
+                refl = deserialize_shader_reflection(refl_raw, key);
+                refl_ok = refl.has_value();
+            }
+        }
+        if (!(info && backend_matches && refl_ok &&
+              info->generator_version == kWseSpirvGeneratorVersion &&
+              info->execution_model == static_cast<std::uint32_t>(stage) &&
+              info->decl_type == static_cast<std::uint32_t>(decl_type) &&
+              info->source_hash == key)) {
+            return false;
+        }
+        out_words = std::move(cached);
+        if (out_feature_flags != nullptr) {
+            *out_feature_flags = info->feature_flags;
+        }
+        if (out_reflection != nullptr) {
+            *out_reflection = std::move(*refl);
+        }
+        return true;
+    }
+
+    // Persists `<hash>.refl` then `<hash>.spv` (each through `.partial` + `rename_file`).
+    static void store_compiled(wse::platform::Vfs& cache_vfs,
+                               std::string_view cache_dir,
+                               SpirvStage stage,
+                               VertexDeclType decl_type,
+                               std::string_view glsl_source,
+                               std::string_view partner_glsl,
+                               const SpirvCompileOutput& compiled) {
+        const std::uint64_t key = spirv_source_key(glsl_source, partner_glsl);
+        const std::string fname = compute_cache_filename(stage, decl_type, glsl_source, partner_glsl);
+        const std::string path = wse::game::vfs_join_path(cache_dir, fname);
+        const std::string refl_path = path.substr(0, path.size() - 4U) + ".refl";
         (void)shader_detail::ensure_vfs_dir_tree(cache_vfs, cache_dir);
         const auto write_atomic = [&cache_vfs](const std::string& dst,
                                                std::span<const std::uint8_t> bytes) {
@@ -3701,15 +3846,6 @@ public:
         write_atomic(path, std::span<const std::uint8_t>(
                                reinterpret_cast<const std::uint8_t*>(compiled.spirv_words.data()),
                                compiled.spirv_words.size() * sizeof(std::uint32_t)));
-
-        if (out_feature_flags != nullptr) {
-            *out_feature_flags = compiled.feature_flags;
-        }
-        if (out_reflection != nullptr) {
-            *out_reflection = std::move(compiled.reflection);
-        }
-        out_words = std::move(compiled.spirv_words);
-        return true;
     }
 };
 
