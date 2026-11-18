@@ -233,7 +233,13 @@ llvm::Value* Ctx::read(const DInsn& d, int i) {
     case ZYDIS_OPERAND_TYPE_MEMORY:
         return load(address(d, o), o.size);
     case ZYDIS_OPERAND_TYPE_IMMEDIATE: {
-        const unsigned n = o.size == 0 ? 64 : o.size;
+        unsigned n = o.size == 0 ? 64 : o.size;
+        // A signed immediate narrower than the destination (`mov r64, imm32`, `add r64, imm8`)
+        // is sign-extended to it; Zydis already sign-extends `imm.value` to 64 bits.
+        if (i > 0 && o.imm.is_signed && d.ops[0].type != ZYDIS_OPERAND_TYPE_IMMEDIATE &&
+            d.ops[0].size > n) {
+            n = d.ops[0].size;
+        }
         const std::uint64_t mask = n >= 64 ? ~0ULL : ((1ULL << n) - 1ULL);
         return llvm::ConstantInt::get(ity(n), o.imm.value.u & mask);
     }

@@ -219,11 +219,13 @@ EXPORT u64 call_recursive(u64 a, u64 b, u64 c, u64 d) {
     return fact_rec(a % 21) ^ fib_rec(b % 16);
 }
 
-NOINLINE u64 op_add(u64 x, u64 y) { return x + y; }
-NOINLINE u64 op_sub(u64 x, u64 y) { return x - y; }
-NOINLINE u64 op_mul(u64 x, u64 y) { return x * y; }
-NOINLINE u64 op_xor(u64 x, u64 y) { return x ^ y; }
+EXPORT NOINLINE u64 op_add(u64 x, u64 y) { return x + y; }
+EXPORT NOINLINE u64 op_sub(u64 x, u64 y) { return x - y; }
+EXPORT NOINLINE u64 op_mul(u64 x, u64 y) { return x * y; }
+EXPORT NOINLINE u64 op_xor(u64 x, u64 y) { return x ^ y; }
 
+/* Reached only through this table: exported, as retail code reaches such functions through
+ * PDB publics (discovery follows direct calls only). */
 typedef u64 (*binop)(u64, u64);
 static binop const k_ops[4] = {op_add, op_sub, op_mul, op_xor};
 
