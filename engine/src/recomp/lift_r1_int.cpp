@@ -12,7 +12,7 @@ using llvm::Value;
 
 bool is_lock(const DInsn& d) { return (d.ins.attributes & ZYDIS_ATTRIB_HAS_LOCK) != 0; }
 
-Value* cint(Ctx& c, Value* like, std::uint64_t v) { return llvm::ConstantInt::get(like->getType(), v); }
+Value* cint(Ctx&, Value* like, std::uint64_t v) { return llvm::ConstantInt::get(like->getType(), v); }
 
 // Shift count masked to 5 bits (6 for 64-bit operands), as an iN of the destination width.
 Value* shift_count(Ctx& c, const DInsn& d, Value* dst) {
@@ -103,7 +103,31 @@ Lifted shift(Ctx& c, const DInsn& d) {
     Value* cf = nullptr;
     Value* of = nullptr;
     Value* one = cint(c, a, 1);
-    switch (mn) {
+    if (n < 32 && (mn == ZYDIS_MNEMONIC_SHL || mn == ZYDIS_MNEMONIC_SHR || mn == ZYDIS_MNEMONIC_SAR)) {
+        // 8/16-bit operands: the count (masked to 5 bits) may reach or pass the width, where
+        // x86 shifts everything out and LLVM would be poison; work in 64 bits instead.
+        llvm::Type* w = c.B.getInt64Ty();
+        Value* cw = c.B.CreateZExt(cnt, w);
+        Value* aw = mn == ZYDIS_MNEMONIC_SAR ? c.B.CreateSExt(a, w) : c.B.CreateZExt(a, w);
+        Value* cm1 = c.B.CreateSub(cw, c.B.getInt64(1));  // only used when cnt != 0
+        if (mn == ZYDIS_MNEMONIC_SHL) {
+            Value* rw = c.B.CreateShl(aw, cw);
+            r = c.B.CreateTrunc(rw, t);
+            cf = c.B.CreateTrunc(c.B.CreateAnd(c.B.CreateLShr(rw, n), c.B.getInt64(1)), t);
+            of = c.B.CreateXor(c.B.CreateLShr(r, n - 1), cf);
+        } else if (mn == ZYDIS_MNEMONIC_SHR) {
+            r = c.B.CreateTrunc(c.B.CreateLShr(aw, cw), t);
+            cf = c.B.CreateTrunc(c.B.CreateAnd(c.B.CreateLShr(aw, cm1), c.B.getInt64(1)), t);
+            of = c.B.CreateLShr(a, n - 1);
+        } else {
+            r = c.B.CreateTrunc(c.B.CreateAShr(aw, cw), t);
+            cf = c.B.CreateTrunc(c.B.CreateAnd(c.B.CreateAShr(aw, cm1), c.B.getInt64(1)), t);
+            of = cint(c, a, 0);
+        }
+        // `cm1` wraps for a zero count; the select below never picks that result, and a
+        // freeze keeps the unpicked poison from spreading.
+        cf = c.B.CreateFreeze(cf);
+    } else switch (mn) {
     case ZYDIS_MNEMONIC_SHL: {
         r = c.B.CreateShl(a, cnt);
         // CF = last bit shifted out = bit (n - cnt) of a (cnt in 1..n-1; cnt >= n leaves 0).
@@ -431,17 +455,11 @@ Lifted lift_int(Ctx& c, const DInsn& d) {
     case ZYDIS_MNEMONIC_NOT:
         c.write(d, 0, B.CreateNot(c.read(d, 0)));
         return Lifted::yes;
-    case ZYDIS_MNEMONIC_SHL:
-    case ZYDIS_MNEMONIC_SAL:
+    case ZYDIS_MNEMONIC_SHL:  // Zydis decodes SAL (same opcode) as SHL
     case ZYDIS_MNEMONIC_SHR:
     case ZYDIS_MNEMONIC_SAR:
     case ZYDIS_MNEMONIC_ROL:
     case ZYDIS_MNEMONIC_ROR:
-        if (mn == ZYDIS_MNEMONIC_SAL) {
-            DInsn copy = d;
-            copy.ins.mnemonic = ZYDIS_MNEMONIC_SHL;
-            return shift(c, copy);
-        }
         return shift(c, d);
     case ZYDIS_MNEMONIC_SHLD:
     case ZYDIS_MNEMONIC_SHRD:
