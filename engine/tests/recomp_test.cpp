@@ -5,9 +5,11 @@
 //
 // Build/run: powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -338,6 +340,1381 @@ void test_r0_vectors() {
            "fnv1a_results");
 }
 
+bool is_reg_eq(const Operand& o, std::uint8_t size, Reg reg) noexcept {
+    return o.kind == Operand::Kind::Reg && o.size == size && o.reg == reg;
+}
+
+bool is_mem_eq(const Operand& o, std::uint8_t size, Reg base, Reg index, std::uint8_t scale,
+               std::int32_t disp) noexcept {
+    return o.kind == Operand::Kind::Mem && o.size == size && o.base == base &&
+           o.index == index && o.scale == scale && o.disp == disp;
+}
+
+bool is_imm_eq(const Operand& o, std::uint8_t size, std::int64_t imm) noexcept {
+    return o.kind == Operand::Kind::Imm && o.size == size && o.imm == imm;
+}
+
+bool decode_vec(const std::vector<std::uint8_t>& bytes, Insn& out, std::uint64_t va = kBase,
+                std::string* err = nullptr) {
+    return decode_insn(bytes.data(), bytes.size(), va, out, err);
+}
+
+void test_decode_alu_forms() {
+    struct AluSpec {
+        std::uint8_t base;
+        Op op;
+    };
+    static constexpr std::array<AluSpec, 6> kAlus = {{
+        {0x00, Op::Add},
+        {0x08, Op::Or},
+        {0x20, Op::And},
+        {0x28, Op::Sub},
+        {0x30, Op::Xor},
+        {0x38, Op::Cmp},
+    }};
+
+    Insn insn{};
+    for (const AluSpec& s : kAlus) {
+        const std::uint8_t b0 = s.base;
+        const std::uint8_t b1 = static_cast<std::uint8_t>(s.base + 1U);
+        const std::uint8_t b2 = static_cast<std::uint8_t>(s.base + 2U);
+        const std::uint8_t b3 = static_cast<std::uint8_t>(s.base + 3U);
+        const std::uint8_t b4 = static_cast<std::uint8_t>(s.base + 4U);
+        const std::uint8_t b5 = static_cast<std::uint8_t>(s.base + 5U);
+
+        // Form 0: r/m8, r8 (ModRM 0xCA: reg=rcx, rm=rdx; 0x0B: reg=rcx, rm=[rbx]).
+        expect(decode_vec({b0, 0xCA}, insn) && insn.op == s.op && insn.length == 2 &&
+                   is_reg_eq(insn.dst, 1, Reg::rdx) && is_reg_eq(insn.src, 1, Reg::rcx),
+               "ALU form 0 (r/m8, r8) without REX");
+        expect(decode_vec({0x48, b0, 0xCA}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 1, Reg::rdx) && is_reg_eq(insn.src, 1, Reg::rcx),
+               "ALU form 0 keeps 8-bit size with REX.W");
+        expect(decode_vec({0x45, b0, 0xCA}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 1, Reg::r10) && is_reg_eq(insn.src, 1, Reg::r9),
+               "ALU form 0 with REX.R/REX.B reaches r8..r15");
+        expect(decode_vec({0x45, b0, 0x0B}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_mem_eq(insn.dst, 1, Reg::r11, Reg::none, 1, 0) &&
+                   is_reg_eq(insn.src, 1, Reg::r9),
+               "ALU form 0 memory destination with REX.R/REX.B");
+
+        // Form 1: r/m, r.
+        expect(decode_vec({b1, 0xCA}, insn) && insn.op == s.op && insn.length == 2 &&
+                   is_reg_eq(insn.dst, 4, Reg::rdx) && is_reg_eq(insn.src, 4, Reg::rcx),
+               "ALU form 1 (r/m32, r32) without REX.W");
+        expect(decode_vec({0x48, b1, 0xCA}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 8, Reg::rdx) && is_reg_eq(insn.src, 8, Reg::rcx),
+               "ALU form 1 (r/m64, r64) with REX.W");
+        expect(decode_vec({0x45, b1, 0xCA}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 4, Reg::r10) && is_reg_eq(insn.src, 4, Reg::r9),
+               "ALU form 1 32-bit with REX.R/REX.B");
+        expect(decode_vec({0x4D, b1, 0x0B}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_mem_eq(insn.dst, 8, Reg::r11, Reg::none, 1, 0) &&
+                   is_reg_eq(insn.src, 8, Reg::r9),
+               "ALU form 1 64-bit memory destination with REX.W/R/B");
+
+        // Form 2: r8, r/m8.
+        expect(decode_vec({b2, 0xCA}, insn) && insn.op == s.op && insn.length == 2 &&
+                   is_reg_eq(insn.dst, 1, Reg::rcx) && is_reg_eq(insn.src, 1, Reg::rdx),
+               "ALU form 2 (r8, r/m8) without REX");
+        expect(decode_vec({0x48, b2, 0xCA}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 1, Reg::rcx) && is_reg_eq(insn.src, 1, Reg::rdx),
+               "ALU form 2 keeps 8-bit size with REX.W");
+        expect(decode_vec({0x45, b2, 0xCA}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 1, Reg::r9) && is_reg_eq(insn.src, 1, Reg::r10),
+               "ALU form 2 with REX.R/REX.B reaches r8..r15");
+        expect(decode_vec({0x45, b2, 0x0B}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 1, Reg::r9) &&
+                   is_mem_eq(insn.src, 1, Reg::r11, Reg::none, 1, 0),
+               "ALU form 2 memory source with REX.R/REX.B");
+
+        // Form 3: r, r/m.
+        expect(decode_vec({b3, 0xCA}, insn) && insn.op == s.op && insn.length == 2 &&
+                   is_reg_eq(insn.dst, 4, Reg::rcx) && is_reg_eq(insn.src, 4, Reg::rdx),
+               "ALU form 3 (r32, r/m32) without REX.W");
+        expect(decode_vec({0x48, b3, 0xCA}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 8, Reg::rcx) && is_reg_eq(insn.src, 8, Reg::rdx),
+               "ALU form 3 (r64, r/m64) with REX.W");
+        expect(decode_vec({0x45, b3, 0xCA}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 4, Reg::r9) && is_reg_eq(insn.src, 4, Reg::r10),
+               "ALU form 3 32-bit with REX.R/REX.B");
+        expect(decode_vec({0x4D, b3, 0x0B}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 8, Reg::r9) &&
+                   is_mem_eq(insn.src, 8, Reg::r11, Reg::none, 1, 0),
+               "ALU form 3 64-bit memory source with REX.W/R/B");
+
+        // Form 4: AL, imm8.
+        expect(decode_vec({b4, 0x80}, insn) && insn.op == s.op && insn.length == 2 &&
+                   is_reg_eq(insn.dst, 1, Reg::rax) && is_imm_eq(insn.src, 1, -128),
+               "ALU form 4 (AL, imm8)");
+        expect(decode_vec({0x48, b4, 0x7F}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 1, Reg::rax) && is_imm_eq(insn.src, 1, 127),
+               "ALU form 4 keeps AL/imm8 with REX.W");
+        expect(decode_vec({0x41, b4, 0xFE}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 1, Reg::rax) && is_imm_eq(insn.src, 1, -2),
+               "ALU form 4 ignores REX.B on fixed AL");
+
+        // Form 5: eAX/rAX, imm32.
+        const std::int32_t imm32_neg = static_cast<std::int32_t>(0x82345678U);
+        expect(decode_vec({b5, 0x78, 0x56, 0x34, 0x82}, insn) && insn.op == s.op &&
+                   insn.length == 5 && is_reg_eq(insn.dst, 4, Reg::rax) &&
+                   is_imm_eq(insn.src, 4, imm32_neg),
+               "ALU form 5 (EAX, imm32) without REX.W");
+        expect(decode_vec({0x48, b5, 0x78, 0x56, 0x34, 0x82}, insn) && insn.op == s.op &&
+                   insn.length == 6 && is_reg_eq(insn.dst, 8, Reg::rax) &&
+                   is_imm_eq(insn.src, 8, static_cast<std::int64_t>(imm32_neg)),
+               "ALU form 5 (RAX, sign-extended imm32) with REX.W");
+        expect(decode_vec({0x41, b5, 0x01, 0x00, 0x00, 0x00}, insn) && insn.op == s.op &&
+                   insn.length == 6 && is_reg_eq(insn.dst, 4, Reg::rax) &&
+                   is_imm_eq(insn.src, 4, 1),
+               "ALU form 5 ignores REX.B on fixed EAX");
+    }
+
+    // adc (10..15) and sbb (18..1D), plus invalid gaps 16/17/1E/1F, must be rejected.
+    static constexpr std::uint8_t kAdcSbb[] = {
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D,
+    };
+    for (const std::uint8_t op : kAdcSbb) {
+        std::string err;
+        expect(!decode_vec({op, 0xC0, 0, 0, 0, 0}, insn, kBase, &err) &&
+                   err.find("adc/sbb") != std::string::npos,
+               "adc/sbb rejected without REX");
+        err.clear();
+        expect(!decode_vec({0x48, op, 0xC0, 0, 0, 0, 0}, insn, kBase, &err) &&
+                   err.find("adc/sbb") != std::string::npos,
+               "adc/sbb rejected with REX.W");
+    }
+    static constexpr std::uint8_t kBadGaps[] = {0x16, 0x17, 0x1E, 0x1F};
+    for (const std::uint8_t op : kBadGaps) {
+        expect(!decode_vec({op, 0xC0, 0, 0, 0, 0}, insn), "unsupported 16/17/1E/1F rejected");
+    }
+}
+
+void test_decode_group1() {
+    struct Grp1Spec {
+        std::uint8_t ext;
+        Op op;
+    };
+    static constexpr std::array<Grp1Spec, 6> kGrp1 = {{
+        {0, Op::Add},
+        {1, Op::Or},
+        {4, Op::And},
+        {5, Op::Sub},
+        {6, Op::Xor},
+        {7, Op::Cmp},
+    }};
+
+    Insn insn{};
+    const std::int32_t imm32_neg = static_cast<std::int32_t>(0x84332211U);
+    for (const Grp1Spec& s : kGrp1) {
+        const std::uint8_t modrm_reg = static_cast<std::uint8_t>(0xC3U | (s.ext << 3U));
+        const std::uint8_t modrm_mem = static_cast<std::uint8_t>(0x01U | (s.ext << 3U));
+
+        // 80 /n: 8-bit imm8.
+        expect(decode_vec({0x80, modrm_reg, 0xFE}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 1, Reg::rbx) && is_imm_eq(insn.src, 1, -2),
+               "Group 1 80 /n reg, imm8");
+        expect(decode_vec({0x49, 0x80, modrm_reg, 0x7F}, insn) && insn.op == s.op &&
+                   insn.length == 4 && is_reg_eq(insn.dst, 1, Reg::r11) &&
+                   is_imm_eq(insn.src, 1, 127),
+               "Group 1 80 /n REX.W|B r11b, imm8");
+        expect(decode_vec({0x80, modrm_mem, 0x80}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_mem_eq(insn.dst, 1, Reg::rcx, Reg::none, 1, 0) &&
+                   is_imm_eq(insn.src, 1, -128),
+               "Group 1 80 /n mem8, imm8");
+
+        // 81 /n: 32/64-bit imm32.
+        expect(decode_vec({0x81, modrm_reg, 0x11, 0x22, 0x33, 0x84}, insn) && insn.op == s.op &&
+                   insn.length == 6 && is_reg_eq(insn.dst, 4, Reg::rbx) &&
+                   is_imm_eq(insn.src, 4, imm32_neg),
+               "Group 1 81 /n r32, imm32");
+        expect(decode_vec({0x48, 0x81, modrm_reg, 0x11, 0x22, 0x33, 0x84}, insn) &&
+                   insn.op == s.op && insn.length == 7 && is_reg_eq(insn.dst, 8, Reg::rbx) &&
+                   is_imm_eq(insn.src, 8, static_cast<std::int64_t>(imm32_neg)),
+               "Group 1 81 /n r64, sign-extended imm32");
+        expect(decode_vec({0x4D, 0x81, modrm_mem, 0x04, 0x03, 0x02, 0x01}, insn) &&
+                   insn.op == s.op && insn.length == 7 &&
+                   is_mem_eq(insn.dst, 8, Reg::r9, Reg::none, 1, 0) &&
+                   is_imm_eq(insn.src, 8, 0x01020304),
+               "Group 1 81 /n ignores REX.R for /ext and decodes [r9]");
+
+        // 83 /n: 32/64-bit sign-extended imm8.
+        expect(decode_vec({0x83, modrm_reg, 0x80}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 4, Reg::rbx) && is_imm_eq(insn.src, 4, -128),
+               "Group 1 83 /n r32, negative imm8 sign-extended");
+        expect(decode_vec({0x83, modrm_reg, 0x7F}, insn) && insn.op == s.op && insn.length == 3 &&
+                   is_reg_eq(insn.dst, 4, Reg::rbx) && is_imm_eq(insn.src, 4, 127),
+               "Group 1 83 /n r32, positive imm8");
+        expect(decode_vec({0x48, 0x83, modrm_reg, 0xFC}, insn) && insn.op == s.op &&
+                   insn.length == 4 && is_reg_eq(insn.dst, 8, Reg::rbx) &&
+                   is_imm_eq(insn.src, 8, -4),
+               "Group 1 83 /n r64, negative imm8 sign-extended");
+        expect(decode_vec({0x49, 0x83, modrm_mem, 0xF8}, insn) && insn.op == s.op &&
+                   insn.length == 4 && is_mem_eq(insn.dst, 8, Reg::r9, Reg::none, 1, 0) &&
+                   is_imm_eq(insn.src, 8, -8),
+               "Group 1 83 /n qword [r9], -8");
+    }
+
+    // /2 (adc) and /3 (sbb) rejected across 80, 81, 83; opcode 82 invalid in 64-bit mode.
+    static constexpr std::uint8_t kGrp1Ops[] = {0x80, 0x81, 0x83};
+    static constexpr std::uint8_t kBadExts[] = {2, 3};
+    for (const std::uint8_t op : kGrp1Ops) {
+        for (const std::uint8_t ext : kBadExts) {
+            const std::uint8_t modrm = static_cast<std::uint8_t>(0xC0U | (ext << 3U));
+            expect(!decode_vec({op, modrm, 0, 0, 0, 0}, insn),
+                   "Group 1 /2 and /3 rejected without REX");
+            expect(!decode_vec({0x48, op, modrm, 0, 0, 0, 0}, insn),
+                   "Group 1 /2 and /3 rejected with REX.W");
+        }
+    }
+    expect(!decode_vec({0x82, 0xC0, 0}, insn), "opcode 0x82 rejected in 64-bit mode");
+}
+
+void test_decode_modrm_sib() {
+    Insn insn{};
+
+    // [rsp] and [r12] require a SIB byte (rm=4).
+    expect(decode_vec({0x48, 0x8B, 0x04, 0x24}, insn) && insn.length == 4 &&
+               is_mem_eq(insn.src, 8, Reg::rsp, Reg::none, 1, 0),
+           "ModRM/SIB [rsp]");
+    expect(decode_vec({0x49, 0x8B, 0x04, 0x24}, insn) && insn.length == 4 &&
+               is_mem_eq(insn.src, 8, Reg::r12, Reg::none, 1, 0),
+           "ModRM/SIB [r12] with REX.B");
+    expect(!decode_vec({0x48, 0x8B, 0x04}, insn), "ModRM rm=4 without SIB byte is rejected");
+
+    // mod=00 rm=101 is RIP-relative, even when REX.B=1; mod=01/10 rm=101 selects rbp/r13.
+    expect(decode_vec({0x48, 0x8B, 0x05, 0x78, 0x56, 0x34, 0x12}, insn) && insn.length == 7 &&
+               is_mem_eq(insn.src, 8, Reg::rip, Reg::none, 1, 0x12345678) &&
+               Interpreter::address(CpuState{}, insn, insn.src) == kBase + 7 + 0x12345678ULL,
+           "mod=00 rm=101 is RIP-relative (+disp32)");
+    expect(decode_vec({0x48, 0x8B, 0x05, 0xF0, 0xFF, 0xFF, 0xFF}, insn) && insn.length == 7 &&
+               is_mem_eq(insn.src, 8, Reg::rip, Reg::none, 1, -16) &&
+               Interpreter::address(CpuState{}, insn, insn.src) == kBase + 7 - 16,
+           "mod=00 rm=101 negative disp32");
+    expect(decode_vec({0x49, 0x8B, 0x05, 0x20, 0x00, 0x00, 0x00}, insn) && insn.length == 7 &&
+               is_mem_eq(insn.src, 8, Reg::rip, Reg::none, 1, 0x20),
+           "mod=00 rm=101 ignores REX.B (still RIP-relative, not r13)");
+    expect(decode_vec({0x48, 0x8B, 0x45, 0xF8}, insn) && insn.length == 4 &&
+               is_mem_eq(insn.src, 8, Reg::rbp, Reg::none, 1, -8),
+           "mod=01 rm=101 selects rbp + disp8");
+    expect(decode_vec({0x49, 0x8B, 0x45, 0xF8}, insn) && insn.length == 4 &&
+               is_mem_eq(insn.src, 8, Reg::r13, Reg::none, 1, -8),
+           "mod=01 rm=101 with REX.B selects r13 + disp8");
+    expect(decode_vec({0x49, 0x8B, 0x85, 0x00, 0x02, 0x00, 0x00}, insn) && insn.length == 7 &&
+               is_mem_eq(insn.src, 8, Reg::r13, Reg::none, 1, 0x200),
+           "mod=10 rm=101 with REX.B selects r13 + disp32");
+
+    // SIB base=101 with mod=00 means disp32 and no base (also with REX.B=1).
+    expect(decode_vec({0x48, 0x8B, 0x04, 0x25, 0x78, 0x56, 0x34, 0x12}, insn) && insn.length == 8 &&
+               is_mem_eq(insn.src, 8, Reg::none, Reg::none, 1, 0x12345678) &&
+               Interpreter::address(CpuState{}, insn, insn.src) == 0x12345678ULL,
+           "SIB base=101 mod=00 means disp32 with no base");
+    expect(decode_vec({0x49, 0x8B, 0x04, 0x25, 0x78, 0x56, 0x34, 0x12}, insn) && insn.length == 8 &&
+               is_mem_eq(insn.src, 8, Reg::none, Reg::none, 1, 0x12345678),
+           "SIB base=101 mod=00 with REX.B still means disp32 with no base");
+    expect(decode_vec({0x49, 0x8B, 0x04, 0x8D, 0xF0, 0xFF, 0xFF, 0xFF}, insn) && insn.length == 8 &&
+               is_mem_eq(insn.src, 8, Reg::none, Reg::rcx, 4, -16),
+           "SIB base=101 mod=00 REX.B with scaled index [rcx*4 - 16]");
+    expect(decode_vec({0x4B, 0x8B, 0x04, 0xA5, 0x00, 0x10, 0x00, 0x00}, insn) && insn.length == 8 &&
+               is_mem_eq(insn.src, 8, Reg::none, Reg::r12, 4, 0x1000),
+           "SIB base=101 mod=00 REX.X|B [r12*4 + 0x1000]");
+    expect(decode_vec({0x49, 0x8B, 0x44, 0x25, 0x00}, insn) && insn.length == 5 &&
+               is_mem_eq(insn.src, 8, Reg::r13, Reg::none, 1, 0),
+           "SIB base=101 mod=01 REX.B selects [r13 + 0]");
+    expect(decode_vec({0x49, 0x8B, 0x84, 0x25, 0x00, 0x01, 0x00, 0x00}, insn) && insn.length == 8 &&
+               is_mem_eq(insn.src, 8, Reg::r13, Reg::none, 1, 0x100),
+           "SIB base=101 mod=10 REX.B selects [r13 + 0x100]");
+
+    // SIB index=100 means no index, but with REX.X it is r12.
+    expect(decode_vec({0x48, 0x8B, 0x04, 0x23}, insn) && insn.length == 4 &&
+               is_mem_eq(insn.src, 8, Reg::rbx, Reg::none, 1, 0),
+           "SIB index=100 without REX.X means no index");
+    expect(decode_vec({0x4A, 0x8B, 0x04, 0x23}, insn) && insn.length == 4 &&
+               is_mem_eq(insn.src, 8, Reg::rbx, Reg::r12, 1, 0),
+           "SIB index=100 with REX.X selects r12");
+    expect(decode_vec({0x4B, 0x8B, 0x04, 0xE3}, insn) && insn.length == 4 &&
+               is_mem_eq(insn.src, 8, Reg::r11, Reg::r12, 8, 0),
+           "SIB index=100 REX.X|B selects [r11 + r12*8]");
+
+    // Scales 1/2/4/8.
+    CpuState addr_state{};
+    addr_state.gpr[static_cast<int>(Reg::rbx)] = 0x10000ULL;
+    addr_state.gpr[static_cast<int>(Reg::rcx)] = 5ULL;
+    for (std::uint8_t ss = 0; ss < 4; ++ss) {
+        const std::uint8_t sib = static_cast<std::uint8_t>((ss << 6U) | (1U << 3U) | 3U);
+        const std::uint8_t expected_scale = static_cast<std::uint8_t>(1U << ss);
+        expect(decode_vec({0x48, 0x8B, 0x04, sib}, insn) && insn.length == 4 &&
+                   is_mem_eq(insn.src, 8, Reg::rbx, Reg::rcx, expected_scale, 0) &&
+                   Interpreter::address(addr_state, insn, insn.src) ==
+                       0x10000ULL + 5ULL * expected_scale,
+               "SIB scale 1/2/4/8");
+    }
+
+    // disp8 negative and disp32 (positive and negative).
+    expect(decode_vec({0x48, 0x8B, 0x43, 0x80}, insn) && insn.length == 4 &&
+               is_mem_eq(insn.src, 8, Reg::rbx, Reg::none, 1, -128) &&
+               Interpreter::address(addr_state, insn, insn.src) == 0x10000ULL - 128ULL,
+           "disp8 minimum (-128)");
+    expect(decode_vec({0x48, 0x8B, 0x44, 0x8B, 0xF4}, insn) && insn.length == 5 &&
+               is_mem_eq(insn.src, 8, Reg::rbx, Reg::rcx, 4, -12) &&
+               Interpreter::address(addr_state, insn, insn.src) == 0x10000ULL + 20ULL - 12ULL,
+           "SIB + negative disp8 (-12)");
+    expect(decode_vec({0x48, 0x8B, 0x83, 0x78, 0x56, 0x34, 0x12}, insn) && insn.length == 7 &&
+               is_mem_eq(insn.src, 8, Reg::rbx, Reg::none, 1, 0x12345678),
+           "disp32 positive");
+    expect(decode_vec({0x48, 0x8B, 0x84, 0x8B, 0x00, 0xF0, 0xFF, 0xFF}, insn) && insn.length == 8 &&
+               is_mem_eq(insn.src, 8, Reg::rbx, Reg::rcx, 4, -4096) &&
+               Interpreter::address(addr_state, insn, insn.src) == 0x10000ULL + 20ULL - 4096ULL,
+           "SIB + negative disp32 (-4096)");
+}
+
+void test_decode_moves() {
+    Insn insn{};
+
+    // 88/89/8A/8B across 1, 4, 8 byte sizes.
+    expect(decode_vec({0x88, 0xC8}, insn) && insn.op == Op::Mov && insn.length == 2 &&
+               is_reg_eq(insn.dst, 1, Reg::rax) && is_reg_eq(insn.src, 1, Reg::rcx),
+           "mov 88 r/m8, r8");
+    expect(decode_vec({0x48, 0x88, 0xC8}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_reg_eq(insn.dst, 1, Reg::rax) && is_reg_eq(insn.src, 1, Reg::rcx),
+           "mov 88 keeps 8-bit size with REX.W");
+    expect(decode_vec({0x40, 0x88, 0xE7}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_reg_eq(insn.dst, 1, Reg::rdi) && is_reg_eq(insn.src, 1, Reg::rsp),
+           "mov 88 dil, spl with plain REX 0x40");
+    expect(decode_vec({0x45, 0x88, 0x0B}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_mem_eq(insn.dst, 1, Reg::r11, Reg::none, 1, 0) &&
+               is_reg_eq(insn.src, 1, Reg::r9),
+           "mov 88 byte [r11], r9b");
+
+    expect(decode_vec({0x89, 0xC8}, insn) && insn.op == Op::Mov && insn.length == 2 &&
+               is_reg_eq(insn.dst, 4, Reg::rax) && is_reg_eq(insn.src, 4, Reg::rcx),
+           "mov 89 eax, ecx");
+    expect(decode_vec({0x48, 0x89, 0xC8}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_reg_eq(insn.dst, 8, Reg::rax) && is_reg_eq(insn.src, 8, Reg::rcx),
+           "mov 89 rax, rcx");
+    expect(decode_vec({0x45, 0x89, 0x0B}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_mem_eq(insn.dst, 4, Reg::r11, Reg::none, 1, 0) &&
+               is_reg_eq(insn.src, 4, Reg::r9),
+           "mov 89 dword [r11], r9d");
+
+    expect(decode_vec({0x8A, 0xC8}, insn) && insn.op == Op::Mov && insn.length == 2 &&
+               is_reg_eq(insn.dst, 1, Reg::rcx) && is_reg_eq(insn.src, 1, Reg::rax),
+           "mov 8A cl, al");
+    expect(decode_vec({0x48, 0x8A, 0xC8}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_reg_eq(insn.dst, 1, Reg::rcx) && is_reg_eq(insn.src, 1, Reg::rax),
+           "mov 8A keeps 8-bit size with REX.W");
+    expect(decode_vec({0x45, 0x8A, 0x0B}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_reg_eq(insn.dst, 1, Reg::r9) &&
+               is_mem_eq(insn.src, 1, Reg::r11, Reg::none, 1, 0),
+           "mov 8A r9b, byte [r11]");
+
+    expect(decode_vec({0x8B, 0xC8}, insn) && insn.op == Op::Mov && insn.length == 2 &&
+               is_reg_eq(insn.dst, 4, Reg::rcx) && is_reg_eq(insn.src, 4, Reg::rax),
+           "mov 8B ecx, eax");
+    expect(decode_vec({0x48, 0x8B, 0xC8}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_reg_eq(insn.dst, 8, Reg::rcx) && is_reg_eq(insn.src, 8, Reg::rax),
+           "mov 8B rcx, rax");
+    expect(decode_vec({0x45, 0x8B, 0x0B}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_reg_eq(insn.dst, 4, Reg::r9) &&
+               is_mem_eq(insn.src, 4, Reg::r11, Reg::none, 1, 0),
+           "mov 8B r9d, dword [r11]");
+    expect(decode_vec({0x4D, 0x8B, 0x0B}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_reg_eq(insn.dst, 8, Reg::r9) &&
+               is_mem_eq(insn.src, 8, Reg::r11, Reg::none, 1, 0),
+           "mov 8B r9, qword [r11]");
+
+    // C6 /0 and C7 /0 (imm32 sign-extended with REX.W).
+    expect(decode_vec({0xC6, 0xC1, 0xFE}, insn) && insn.op == Op::Mov && insn.length == 3 &&
+               is_reg_eq(insn.dst, 1, Reg::rcx) && is_imm_eq(insn.src, 1, -2),
+           "mov C6 /0 cl, imm8");
+    expect(decode_vec({0x40, 0xC6, 0xC4, 0x07}, insn) && insn.op == Op::Mov && insn.length == 4 &&
+               is_reg_eq(insn.dst, 1, Reg::rsp) && is_imm_eq(insn.src, 1, 7),
+           "mov C6 /0 spl, imm8");
+    expect(decode_vec({0x48, 0xC6, 0xC0, 0x80}, insn) && insn.op == Op::Mov && insn.length == 4 &&
+               is_reg_eq(insn.dst, 1, Reg::rax) && is_imm_eq(insn.src, 1, -128),
+           "mov C6 /0 keeps 8-bit size with REX.W");
+
+    const std::int32_t min32 = static_cast<std::int32_t>(0x80000000U);
+    expect(decode_vec({0xC7, 0xC1, 0x00, 0x00, 0x00, 0x80}, insn) && insn.op == Op::Mov &&
+               insn.length == 6 && is_reg_eq(insn.dst, 4, Reg::rcx) &&
+               is_imm_eq(insn.src, 4, min32),
+           "mov C7 /0 ecx, 0x80000000");
+    CpuState st{};
+    st.gpr[static_cast<int>(Reg::rcx)] = 0x1122334455667788ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[static_cast<int>(Reg::rcx)] == 0x0000000080000000ULL,
+           "C7 /0 32-bit move zeroes upper half");
+
+    expect(decode_vec({0x48, 0xC7, 0xC1, 0x00, 0x00, 0x00, 0x80}, insn) && insn.op == Op::Mov &&
+               insn.length == 7 && is_reg_eq(insn.dst, 8, Reg::rcx) &&
+               is_imm_eq(insn.src, 8, static_cast<std::int64_t>(min32)),
+           "mov C7 /0 REX.W rcx, sign-extended imm32");
+    st.gpr[static_cast<int>(Reg::rcx)] = 0;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[static_cast<int>(Reg::rcx)] == 0xFFFFFFFF80000000ULL,
+           "REX.W C7 /0 sign-extends imm32 to 64 bits");
+
+    expect(decode_vec({0x49, 0xC7, 0x47, 0x08, 0xFF, 0xFF, 0xFF, 0xFF}, insn) &&
+               insn.op == Op::Mov && insn.length == 8 &&
+               is_mem_eq(insn.dst, 8, Reg::r15, Reg::none, 1, 8) && is_imm_eq(insn.src, 8, -1),
+           "mov C7 /0 REX.W|B qword [r15+8], -1");
+    expect(decode_vec({0x44, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00}, insn) && insn.op == Op::Mov &&
+               insn.length == 7 && is_reg_eq(insn.dst, 4, Reg::rax) && is_imm_eq(insn.src, 4, 1),
+           "mov C7 /0 ignores REX.R for /0");
+    for (std::uint8_t ext = 1; ext < 8; ++ext) {
+        const std::uint8_t modrm = static_cast<std::uint8_t>(0xC0U | (ext << 3U));
+        expect(!decode_vec({0xC6, modrm, 0}, insn), "C6 with /reg != 0 rejected");
+        expect(!decode_vec({0xC7, modrm, 0, 0, 0, 0}, insn), "C7 with /reg != 0 rejected");
+    }
+
+    // B8+r imm32 (zero-extended) and REX.W B8+r imm64; REX.B B8 = r8.
+    const std::uint64_t imm64 = 0xFEDCBA9876543210ULL;
+    for (std::uint8_t r = 0; r < 8; ++r) {
+        const std::uint8_t op = static_cast<std::uint8_t>(0xB8U + r);
+        const Reg lo = static_cast<Reg>(r);
+        const Reg hi = static_cast<Reg>(r + 8U);
+        expect(decode_vec({op, 0x01, 0x00, 0x00, 0x80}, insn) && insn.op == Op::Mov &&
+                   insn.length == 5 && is_reg_eq(insn.dst, 4, lo) &&
+                   is_imm_eq(insn.src, 4, 0x0000000080000001LL),
+               "B8+r imm32 zero-extended (not sign-extended)");
+        expect(decode_vec({0x41, op, 0xFF, 0xFF, 0xFF, 0xFF}, insn) && insn.op == Op::Mov &&
+                   insn.length == 6 && is_reg_eq(insn.dst, 4, hi) &&
+                   is_imm_eq(insn.src, 4, 0x00000000FFFFFFFFLL),
+               "REX.B B8+r selects r8d..r15d with zero-extended imm32");
+        expect(decode_vec({0x48, op, 0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE}, insn) &&
+                   insn.op == Op::Mov && insn.length == 10 && is_reg_eq(insn.dst, 8, lo) &&
+                   is_imm_eq(insn.src, 8, static_cast<std::int64_t>(imm64)),
+               "REX.W B8+r imm64");
+        expect(decode_vec({0x49, op, 0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE}, insn) &&
+                   insn.op == Op::Mov && insn.length == 10 && is_reg_eq(insn.dst, 8, hi) &&
+                   is_imm_eq(insn.src, 8, static_cast<std::int64_t>(imm64)),
+               "REX.W|B B8+r r8..r15 imm64");
+    }
+    expect(decode_vec({0x41, 0xB8, 0x05, 0x00, 0x00, 0x00}, insn) &&
+               is_reg_eq(insn.dst, 4, Reg::r8),
+           "REX.B B8 explicitly targets r8");
+}
+
+void test_decode_extensions() {
+    Insn insn{};
+    std::string err;
+
+    // 63 movsxd: rejected without REX.W.
+    expect(!decode_vec({0x63, 0xC1}, insn, kBase, &err) &&
+               err.find("REX.W") != std::string::npos,
+           "movsxd 63 rejected without REX.W");
+    expect(!decode_vec({0x41, 0x63, 0xC1}, insn), "movsxd 63 with only REX.B rejected");
+    expect(!decode_vec({0x44, 0x63, 0x01}, insn), "movsxd 63 with only REX.R rejected");
+
+    expect(decode_vec({0x48, 0x63, 0xC1}, insn) && insn.op == Op::Movsx && insn.length == 3 &&
+               is_reg_eq(insn.dst, 8, Reg::rax) && is_reg_eq(insn.src, 4, Reg::rcx),
+           "movsxd rax, ecx");
+    expect(decode_vec({0x4D, 0x63, 0xC1}, insn) && insn.op == Op::Movsx && insn.length == 3 &&
+               is_reg_eq(insn.dst, 8, Reg::r8) && is_reg_eq(insn.src, 4, Reg::r9),
+           "movsxd r8, r9d");
+    expect(decode_vec({0x48, 0x63, 0x41, 0x04}, insn) && insn.op == Op::Movsx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 8, Reg::rax) &&
+               is_mem_eq(insn.src, 4, Reg::rcx, Reg::none, 1, 4),
+           "movsxd rax, dword [rcx+4]");
+
+    // 0F B6 / 0F B7 movzx to 32- and 64-bit destinations.
+    expect(decode_vec({0x0F, 0xB6, 0xC1}, insn) && insn.op == Op::Movzx && insn.length == 3 &&
+               is_reg_eq(insn.dst, 4, Reg::rax) && is_reg_eq(insn.src, 1, Reg::rcx),
+           "movzx eax, cl");
+    expect(decode_vec({0x48, 0x0F, 0xB6, 0xC1}, insn) && insn.op == Op::Movzx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 8, Reg::rax) && is_reg_eq(insn.src, 1, Reg::rcx),
+           "movzx rax, cl");
+    expect(decode_vec({0x45, 0x0F, 0xB6, 0x01}, insn) && insn.op == Op::Movzx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 4, Reg::r8) &&
+               is_mem_eq(insn.src, 1, Reg::r9, Reg::none, 1, 0),
+           "movzx r8d, byte [r9]");
+    expect(decode_vec({0x4D, 0x0F, 0xB6, 0x01}, insn) && insn.op == Op::Movzx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 8, Reg::r8) &&
+               is_mem_eq(insn.src, 1, Reg::r9, Reg::none, 1, 0),
+           "movzx r8, byte [r9]");
+
+    expect(decode_vec({0x0F, 0xB7, 0xC4}, insn) && insn.op == Op::Movzx && insn.length == 3 &&
+               is_reg_eq(insn.dst, 4, Reg::rax) && is_reg_eq(insn.src, 2, Reg::rsp),
+           "movzx eax, sp (16-bit reg 4 valid without REX)");
+    expect(decode_vec({0x48, 0x0F, 0xB7, 0xC1}, insn) && insn.op == Op::Movzx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 8, Reg::rax) && is_reg_eq(insn.src, 2, Reg::rcx),
+           "movzx rax, cx");
+    expect(decode_vec({0x45, 0x0F, 0xB7, 0x01}, insn) && insn.op == Op::Movzx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 4, Reg::r8) &&
+               is_mem_eq(insn.src, 2, Reg::r9, Reg::none, 1, 0),
+           "movzx r8d, word [r9]");
+    expect(decode_vec({0x4D, 0x0F, 0xB7, 0x01}, insn) && insn.op == Op::Movzx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 8, Reg::r8) &&
+               is_mem_eq(insn.src, 2, Reg::r9, Reg::none, 1, 0),
+           "movzx r8, word [r9]");
+
+    // 0F BE / 0F BF movsx to 32- and 64-bit destinations.
+    expect(decode_vec({0x0F, 0xBE, 0xC1}, insn) && insn.op == Op::Movsx && insn.length == 3 &&
+               is_reg_eq(insn.dst, 4, Reg::rax) && is_reg_eq(insn.src, 1, Reg::rcx),
+           "movsx eax, cl");
+    expect(decode_vec({0x48, 0x0F, 0xBE, 0xC1}, insn) && insn.op == Op::Movsx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 8, Reg::rax) && is_reg_eq(insn.src, 1, Reg::rcx),
+           "movsx rax, cl");
+    expect(decode_vec({0x45, 0x0F, 0xBE, 0x01}, insn) && insn.op == Op::Movsx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 4, Reg::r8) &&
+               is_mem_eq(insn.src, 1, Reg::r9, Reg::none, 1, 0),
+           "movsx r8d, byte [r9]");
+    expect(decode_vec({0x4D, 0x0F, 0xBE, 0x01}, insn) && insn.op == Op::Movsx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 8, Reg::r8) &&
+               is_mem_eq(insn.src, 1, Reg::r9, Reg::none, 1, 0),
+           "movsx r8, byte [r9]");
+
+    expect(decode_vec({0x0F, 0xBF, 0xC4}, insn) && insn.op == Op::Movsx && insn.length == 3 &&
+               is_reg_eq(insn.dst, 4, Reg::rax) && is_reg_eq(insn.src, 2, Reg::rsp),
+           "movsx eax, sp");
+    expect(decode_vec({0x48, 0x0F, 0xBF, 0xC1}, insn) && insn.op == Op::Movsx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 8, Reg::rax) && is_reg_eq(insn.src, 2, Reg::rcx),
+           "movsx rax, cx");
+    expect(decode_vec({0x45, 0x0F, 0xBF, 0x01}, insn) && insn.op == Op::Movsx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 4, Reg::r8) &&
+               is_mem_eq(insn.src, 2, Reg::r9, Reg::none, 1, 0),
+           "movsx r8d, word [r9]");
+    expect(decode_vec({0x4D, 0x0F, 0xBF, 0x01}, insn) && insn.op == Op::Movsx && insn.length == 4 &&
+               is_reg_eq(insn.dst, 8, Reg::r8) &&
+               is_mem_eq(insn.src, 2, Reg::r9, Reg::none, 1, 0),
+           "movsx r8, word [r9]");
+
+    // Execute extension semantics in the interpreter.
+    CpuState st{};
+    st.gpr[1] = 0x11223344800080FFULL;
+
+    (void)decode_vec({0x48, 0x63, 0xC1}, insn);
+    st.gpr[0] = 0;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0xFFFFFFFF800080FFULL, "exec movsxd sign-extends bit 31");
+
+    (void)decode_vec({0x0F, 0xB6, 0xC1}, insn);
+    st.gpr[0] = ~0ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0x00000000000000FFULL, "exec movzx eax, cl");
+
+    (void)decode_vec({0x48, 0x0F, 0xB7, 0xC1}, insn);
+    st.gpr[0] = ~0ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0x00000000000080FFULL, "exec movzx rax, cx");
+
+    (void)decode_vec({0x0F, 0xBE, 0xC1}, insn);
+    st.gpr[0] = ~0ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0x00000000FFFFFFFFULL, "exec movsx eax, cl truncates to 32 bits");
+
+    (void)decode_vec({0x48, 0x0F, 0xBE, 0xC1}, insn);
+    st.gpr[0] = 0;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0xFFFFFFFFFFFFFFFFULL, "exec movsx rax, cl extends to 64 bits");
+
+    (void)decode_vec({0x0F, 0xBF, 0xC1}, insn);
+    st.gpr[0] = ~0ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0x00000000FFFF80FFULL, "exec movsx eax, cx truncates to 32 bits");
+
+    (void)decode_vec({0x48, 0x0F, 0xBF, 0xC1}, insn);
+    st.gpr[0] = 0;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0xFFFFFFFFFFFF80FFULL, "exec movsx rax, cx extends to 64 bits");
+}
+
+void test_decode_lea() {
+    Insn insn{};
+
+    // 64-bit base + index*scale + disp32: lea r9, [r10 + r11*8 + 0x12345678].
+    expect(decode_vec({0x4F, 0x8D, 0x8C, 0xDA, 0x78, 0x56, 0x34, 0x12}, insn) &&
+               insn.op == Op::Lea && insn.length == 8 && is_reg_eq(insn.dst, 8, Reg::r9) &&
+               is_mem_eq(insn.src, 8, Reg::r10, Reg::r11, 8, 0x12345678),
+           "lea r9, [r10 + r11*8 + 0x12345678]");
+    CpuState st{};
+    st.gpr[static_cast<int>(Reg::r10)] = 0x1000ULL;
+    st.gpr[static_cast<int>(Reg::r11)] = 2ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[static_cast<int>(Reg::r9)] == 0x12346688ULL,
+           "lea 64-bit computes base + index*scale + disp");
+
+    // 32-bit lea eax, [rbx + rcx*4 - 16] truncates and zero-extends upper half.
+    expect(decode_vec({0x8D, 0x44, 0x8B, 0xF0}, insn) && insn.op == Op::Lea &&
+               insn.length == 4 && is_reg_eq(insn.dst, 4, Reg::rax) &&
+               is_mem_eq(insn.src, 4, Reg::rbx, Reg::rcx, 4, -16),
+           "lea eax, [rbx + rcx*4 - 16]");
+    st.gpr[static_cast<int>(Reg::rax)] = 0xDEADBEEF11111111ULL;
+    st.gpr[static_cast<int>(Reg::rbx)] = 0x0000000200000020ULL;
+    st.gpr[static_cast<int>(Reg::rcx)] = 4ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[static_cast<int>(Reg::rax)] == 0x0000000000000020ULL,
+           "lea 32-bit truncates effective address and zeroes upper 32 bits");
+
+    // RIP-relative lea.
+    expect(decode_vec({0x48, 0x8D, 0x05, 0xF0, 0xFF, 0xFF, 0xFF}, insn) && insn.op == Op::Lea &&
+               insn.length == 7 && is_reg_eq(insn.dst, 8, Reg::rax) &&
+               is_mem_eq(insn.src, 8, Reg::rip, Reg::none, 1, -16) &&
+               Interpreter::address(CpuState{}, insn, insn.src) == kBase + 7 - 16,
+           "lea rax, [rip - 16]");
+    expect(decode_vec({0x4D, 0x8D, 0x05, 0x20, 0x00, 0x00, 0x00}, insn) && insn.op == Op::Lea &&
+               insn.length == 7 && is_reg_eq(insn.dst, 8, Reg::r8) &&
+               is_mem_eq(insn.src, 8, Reg::rip, Reg::none, 1, 0x20) &&
+               Interpreter::address(CpuState{}, insn, insn.src) == kBase + 7 + 0x20,
+           "lea r8, [rip + 0x20]");
+
+    // Register operand (mod=3) rejected.
+    expect(!decode_vec({0x8D, 0xC0}, insn), "lea with register operand 8D C0 rejected");
+    expect(!decode_vec({0x48, 0x8D, 0xC8}, insn), "lea with register operand 48 8D C8 rejected");
+    expect(!decode_vec({0x4F, 0x8D, 0xFF}, insn), "lea with register operand 4F 8D FF rejected");
+}
+
+void test_decode_stack_ret_nop() {
+    Insn insn{};
+
+    // push/pop 50..5F with and without REX.B.
+    for (std::uint8_t r = 0; r < 8; ++r) {
+        const std::uint8_t push_op = static_cast<std::uint8_t>(0x50U + r);
+        const std::uint8_t pop_op = static_cast<std::uint8_t>(0x58U + r);
+        const Reg lo = static_cast<Reg>(r);
+        const Reg hi = static_cast<Reg>(r + 8U);
+
+        expect(decode_vec({push_op}, insn) && insn.op == Op::Push && insn.length == 1 &&
+                   is_reg_eq(insn.dst, 8, lo),
+               "push 50+r");
+        expect(decode_vec({0x41, push_op}, insn) && insn.op == Op::Push && insn.length == 2 &&
+                   is_reg_eq(insn.dst, 8, hi),
+               "REX.B push 50+r");
+        expect(decode_vec({0x48, push_op}, insn) && insn.op == Op::Push && insn.length == 2 &&
+                   is_reg_eq(insn.dst, 8, lo),
+               "REX.W push 50+r");
+
+        expect(decode_vec({pop_op}, insn) && insn.op == Op::Pop && insn.length == 1 &&
+                   is_reg_eq(insn.dst, 8, lo),
+               "pop 58+r");
+        expect(decode_vec({0x41, pop_op}, insn) && insn.op == Op::Pop && insn.length == 2 &&
+                   is_reg_eq(insn.dst, 8, hi),
+               "REX.B pop 58+r");
+        expect(decode_vec({0x49, pop_op}, insn) && insn.op == Op::Pop && insn.length == 2 &&
+                   is_reg_eq(insn.dst, 8, hi),
+               "REX.W|B pop 58+r");
+    }
+
+    // ret C3.
+    expect(decode_vec({0xC3}, insn) && insn.op == Op::Ret && insn.length == 1 && insn.ends_block(),
+           "ret C3");
+
+    // nop 90 and 0F 1F /0.
+    expect(decode_vec({0x90}, insn) && insn.op == Op::Nop && insn.length == 1, "nop 90");
+    expect(decode_vec({0x40, 0x90}, insn) && insn.op == Op::Nop && insn.length == 2, "REX 90 nop");
+    expect(decode_vec({0x48, 0x90}, insn) && insn.op == Op::Nop && insn.length == 2,
+           "REX.W 90 nop");
+    expect(decode_vec({0x44, 0x90}, insn) && insn.op == Op::Nop && insn.length == 2,
+           "REX.R 90 nop");
+    expect(decode_vec({0x0F, 0x1F, 0x00}, insn) && insn.op == Op::Nop && insn.length == 3,
+           "3-byte 0F 1F /0 nop");
+    expect(decode_vec({0x0F, 0x1F, 0x40, 0x00}, insn) && insn.op == Op::Nop && insn.length == 4,
+           "4-byte 0F 1F /0 nop");
+    expect(decode_vec({0x0F, 0x1F, 0x44, 0x00, 0x00}, insn) && insn.op == Op::Nop &&
+               insn.length == 5,
+           "5-byte 0F 1F /0 nop");
+    expect(decode_vec({0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00}, insn) && insn.op == Op::Nop &&
+               insn.length == 7,
+           "7-byte 0F 1F /0 nop");
+    expect(decode_vec({0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00}, insn) &&
+               insn.op == Op::Nop && insn.length == 8,
+           "8-byte 0F 1F /0 nop");
+    expect(decode_vec({0x0F, 0x1F, 0xC0}, insn) && insn.op == Op::Nop && insn.length == 3,
+           "register-form 0F 1F C0 nop");
+
+    // REX.B 90 (xchg r8, rax / r8d, eax) must be rejected.
+    static constexpr std::uint8_t kRexB[] = {0x41, 0x43, 0x45, 0x49, 0x4F};
+    for (const std::uint8_t rex : kRexB) {
+        expect(!decode_vec({rex, 0x90}, insn), "REX.B 90 (xchg r8, rax) rejected");
+    }
+}
+
+void test_decode_branches() {
+    Insn insn{};
+
+    // All 16 70+cc rel8 and 0F 80+cc rel32, forward and backward targets.
+    for (std::uint8_t cc = 0; cc < 16; ++cc) {
+        const Cond cond = static_cast<Cond>(cc);
+        const std::uint8_t jcc8 = static_cast<std::uint8_t>(0x70U + cc);
+        const std::uint8_t jcc32 = static_cast<std::uint8_t>(0x80U + cc);
+
+        expect(decode_vec({jcc8, 0x2A}, insn) && insn.op == Op::Jcc && insn.cond == cond &&
+                   insn.length == 2 && insn.ends_block() && insn.target == kBase + 2 + 0x2A,
+               "70+cc rel8 forward");
+        expect(decode_vec({jcc8, 0x80}, insn) && insn.op == Op::Jcc && insn.cond == cond &&
+                   insn.length == 2 && insn.target == kBase + 2 - 128,
+               "70+cc rel8 backward (-128)");
+        expect(decode_vec({jcc8, 0xFE}, insn) && insn.op == Op::Jcc && insn.cond == cond &&
+                   insn.length == 2 && insn.target == kBase,
+               "70+cc rel8 self-loop (-2)");
+
+        expect(decode_vec({0x0F, jcc32, 0x78, 0x56, 0x34, 0x12}, insn) && insn.op == Op::Jcc &&
+                   insn.cond == cond && insn.length == 6 && insn.ends_block() &&
+                   insn.target == kBase + 6 + 0x12345678ULL,
+               "0F 80+cc rel32 forward");
+        expect(decode_vec({0x0F, jcc32, 0xCC, 0xED, 0xFF, 0xFF}, insn) && insn.op == Op::Jcc &&
+                   insn.cond == cond && insn.length == 6 && insn.target == kBase + 6 - 0x1234ULL,
+               "0F 80+cc rel32 backward (-0x1234)");
+    }
+
+    // Unconditional EB (rel8) and E9 (rel32).
+    expect(decode_vec({0xEB, 0x7F}, insn) && insn.op == Op::Jmp && insn.length == 2 &&
+               insn.ends_block() && insn.target == kBase + 2 + 127,
+           "EB rel8 forward (+127)");
+    expect(decode_vec({0xEB, 0x80}, insn) && insn.op == Op::Jmp && insn.length == 2 &&
+               insn.target == kBase + 2 - 128,
+           "EB rel8 backward (-128)");
+    expect(decode_vec({0xEB, 0xFE}, insn) && insn.op == Op::Jmp && insn.length == 2 &&
+               insn.target == kBase,
+           "EB rel8 self-loop (-2)");
+    expect(decode_vec({0xE9, 0x78, 0x56, 0x34, 0x12}, insn) && insn.op == Op::Jmp &&
+               insn.length == 5 && insn.ends_block() && insn.target == kBase + 5 + 0x12345678ULL,
+           "E9 rel32 forward");
+    expect(decode_vec({0xE9, 0xCC, 0xED, 0xFF, 0xFF}, insn) && insn.op == Op::Jmp &&
+               insn.length == 5 && insn.target == kBase + 5 - 0x1234ULL,
+           "E9 rel32 backward (-0x1234)");
+}
+
+void test_decode_test_insns() {
+    Insn insn{};
+
+    // 84: test r/m8, r8.
+    expect(decode_vec({0x84, 0xC1}, insn) && insn.op == Op::Test && insn.length == 2 &&
+               is_reg_eq(insn.dst, 1, Reg::rcx) && is_reg_eq(insn.src, 1, Reg::rax),
+           "test 84 cl, al");
+    expect(decode_vec({0x45, 0x84, 0xC1}, insn) && insn.op == Op::Test && insn.length == 3 &&
+               is_reg_eq(insn.dst, 1, Reg::r9) && is_reg_eq(insn.src, 1, Reg::r8),
+           "test 84 r9b, r8b");
+    expect(decode_vec({0x84, 0x11}, insn) && insn.op == Op::Test && insn.length == 2 &&
+               is_mem_eq(insn.dst, 1, Reg::rcx, Reg::none, 1, 0) &&
+               is_reg_eq(insn.src, 1, Reg::rdx),
+           "test 84 byte [rcx], dl");
+
+    // 85: test r/m, r.
+    expect(decode_vec({0x85, 0xD2}, insn) && insn.op == Op::Test && insn.length == 2 &&
+               is_reg_eq(insn.dst, 4, Reg::rdx) && is_reg_eq(insn.src, 4, Reg::rdx),
+           "test 85 edx, edx");
+    expect(decode_vec({0x48, 0x85, 0xD2}, insn) && insn.op == Op::Test && insn.length == 3 &&
+               is_reg_eq(insn.dst, 8, Reg::rdx) && is_reg_eq(insn.src, 8, Reg::rdx),
+           "test 85 rdx, rdx");
+    expect(decode_vec({0x4D, 0x85, 0x0B}, insn) && insn.op == Op::Test && insn.length == 3 &&
+               is_mem_eq(insn.dst, 8, Reg::r11, Reg::none, 1, 0) &&
+               is_reg_eq(insn.src, 8, Reg::r9),
+           "test 85 qword [r11], r9");
+
+    // F6 /0 and F7 /0.
+    expect(decode_vec({0xF6, 0xC1, 0x81}, insn) && insn.op == Op::Test && insn.length == 3 &&
+               is_reg_eq(insn.dst, 1, Reg::rcx) && is_imm_eq(insn.src, 1, -127),
+           "test F6 /0 cl, imm8");
+    expect(decode_vec({0x41, 0xF6, 0x41, 0x08, 0x0F}, insn) && insn.op == Op::Test &&
+               insn.length == 5 && is_mem_eq(insn.dst, 1, Reg::r9, Reg::none, 1, 8) &&
+               is_imm_eq(insn.src, 1, 15),
+           "test F6 /0 byte [r9+8], 0x0F");
+    expect(decode_vec({0x44, 0xF6, 0xC0, 0x01}, insn) && insn.op == Op::Test && insn.length == 4 &&
+               is_reg_eq(insn.dst, 1, Reg::rax) && is_imm_eq(insn.src, 1, 1),
+           "test F6 /0 ignores REX.R for /0");
+
+    const std::int32_t min32 = static_cast<std::int32_t>(0x80000000U);
+    expect(decode_vec({0xF7, 0xC1, 0x00, 0x00, 0x00, 0x80}, insn) && insn.op == Op::Test &&
+               insn.length == 6 && is_reg_eq(insn.dst, 4, Reg::rcx) &&
+               is_imm_eq(insn.src, 4, min32),
+           "test F7 /0 ecx, 0x80000000");
+    expect(decode_vec({0x48, 0xF7, 0xC1, 0x00, 0x00, 0x00, 0x80}, insn) && insn.op == Op::Test &&
+               insn.length == 7 && is_reg_eq(insn.dst, 8, Reg::rcx) &&
+               is_imm_eq(insn.src, 8, static_cast<std::int64_t>(min32)),
+           "test F7 /0 REX.W rcx, sign-extended imm32");
+    expect(decode_vec({0x49, 0xF7, 0x00, 0xFF, 0x00, 0x00, 0x00}, insn) && insn.op == Op::Test &&
+               insn.length == 7 && is_mem_eq(insn.dst, 8, Reg::r8, Reg::none, 1, 0) &&
+               is_imm_eq(insn.src, 8, 0xFF),
+           "test F7 /0 qword [r8], 0xFF");
+
+    // F6 /1..7 and F7 /1..7 must be rejected.
+    for (std::uint8_t ext = 1; ext < 8; ++ext) {
+        const std::uint8_t modrm = static_cast<std::uint8_t>(0xC0U | (ext << 3U));
+        expect(!decode_vec({0xF6, modrm, 0, 0, 0, 0}, insn), "F6 with /reg != 0 rejected");
+        expect(!decode_vec({0xF7, modrm, 0, 0, 0, 0}, insn), "F7 with /reg != 0 rejected");
+        expect(!decode_vec({0x48, 0xF7, modrm, 0, 0, 0, 0}, insn),
+               "REX.W F7 with /reg != 0 rejected");
+    }
+}
+
+void test_decode_inc_dec() {
+    Insn insn{};
+
+    // FE /0 /1 (8-bit).
+    expect(decode_vec({0xFE, 0xC1}, insn) && insn.op == Op::Inc && insn.length == 2 &&
+               is_reg_eq(insn.dst, 1, Reg::rcx) && insn.src.kind == Operand::Kind::None,
+           "inc FE /0 cl");
+    expect(decode_vec({0xFE, 0xC9}, insn) && insn.op == Op::Dec && insn.length == 2 &&
+               is_reg_eq(insn.dst, 1, Reg::rcx) && insn.src.kind == Operand::Kind::None,
+           "dec FE /1 cl");
+    expect(decode_vec({0x40, 0xFE, 0xC4}, insn) && insn.op == Op::Inc && insn.length == 3 &&
+               is_reg_eq(insn.dst, 1, Reg::rsp),
+           "inc FE /0 spl with REX");
+    expect(decode_vec({0x41, 0xFE, 0xC0}, insn) && insn.op == Op::Inc && insn.length == 3 &&
+               is_reg_eq(insn.dst, 1, Reg::r8),
+           "inc FE /0 r8b");
+    expect(decode_vec({0xFE, 0x00}, insn) && insn.op == Op::Inc && insn.length == 2 &&
+               is_mem_eq(insn.dst, 1, Reg::rax, Reg::none, 1, 0),
+           "inc FE /0 byte [rax]");
+    expect(decode_vec({0xFE, 0x08}, insn) && insn.op == Op::Dec && insn.length == 2 &&
+               is_mem_eq(insn.dst, 1, Reg::rax, Reg::none, 1, 0),
+           "dec FE /1 byte [rax]");
+
+    // FF /0 /1 (32-bit and 64-bit).
+    expect(decode_vec({0xFF, 0xC1}, insn) && insn.op == Op::Inc && insn.length == 2 &&
+               is_reg_eq(insn.dst, 4, Reg::rcx),
+           "inc FF /0 ecx");
+    expect(decode_vec({0xFF, 0xC9}, insn) && insn.op == Op::Dec && insn.length == 2 &&
+               is_reg_eq(insn.dst, 4, Reg::rcx),
+           "dec FF /1 ecx");
+    expect(decode_vec({0x41, 0xFF, 0xC1}, insn) && insn.op == Op::Inc && insn.length == 3 &&
+               is_reg_eq(insn.dst, 4, Reg::r9),
+           "inc FF /0 r9d");
+    expect(decode_vec({0x48, 0xFF, 0xC1}, insn) && insn.op == Op::Inc && insn.length == 3 &&
+               is_reg_eq(insn.dst, 8, Reg::rcx),
+           "inc FF /0 rcx");
+    expect(decode_vec({0x48, 0xFF, 0xC9}, insn) && insn.op == Op::Dec && insn.length == 3 &&
+               is_reg_eq(insn.dst, 8, Reg::rcx),
+           "dec FF /1 rcx");
+    expect(decode_vec({0x49, 0xFF, 0x09}, insn) && insn.op == Op::Dec && insn.length == 3 &&
+               is_mem_eq(insn.dst, 8, Reg::r9, Reg::none, 1, 0),
+           "dec FF /1 qword [r9]");
+    expect(decode_vec({0x44, 0xFF, 0xC0}, insn) && insn.op == Op::Inc && insn.length == 3 &&
+               is_reg_eq(insn.dst, 4, Reg::rax),
+           "inc FF /0 ignores REX.R for /0");
+
+    // FE /2..7 and FF /2..7 must be rejected.
+    for (std::uint8_t ext = 2; ext < 8; ++ext) {
+        const std::uint8_t modrm_reg = static_cast<std::uint8_t>(0xC0U | (ext << 3U));
+        const std::uint8_t modrm_mem = static_cast<std::uint8_t>(ext << 3U);
+        expect(!decode_vec({0xFE, modrm_reg}, insn), "FE /2..7 rejected");
+        expect(!decode_vec({0xFF, modrm_reg}, insn), "FF /2..7 reg rejected");
+        expect(!decode_vec({0x48, 0xFF, modrm_reg}, insn), "REX.W FF /2..7 reg rejected");
+        expect(!decode_vec({0xFF, modrm_mem}, insn), "FF /2..7 mem rejected");
+    }
+}
+
+void test_decode_rejections() {
+    Insn insn{};
+    std::string err;
+
+    // All 11 legacy prefixes must be rejected.
+    static constexpr std::uint8_t kLegacyPrefixes[] = {
+        0x66, 0x67, 0xF0, 0xF2, 0xF3, 0x2E, 0x26, 0x36, 0x3E, 0x64, 0x65,
+    };
+    for (const std::uint8_t p : kLegacyPrefixes) {
+        err.clear();
+        expect(!decode_vec({p, 0x90}, insn, kBase, &err) &&
+                   err.find("legacy prefix") != std::string::npos,
+               "legacy prefix before nop rejected");
+        err.clear();
+        expect(!decode_vec({p, 0x89, 0xC8}, insn, kBase, &err) &&
+                   err.find("legacy prefix") != std::string::npos,
+               "legacy prefix before mov rejected");
+    }
+
+    // AH/CH/DH/BH byte registers (reg 4..7, size=1, no REX) must be rejected; with REX they are SPL/BPL/SIL/DIL.
+    for (std::uint8_t r = 4; r < 8; ++r) {
+        const std::uint8_t modrm_reg = static_cast<std::uint8_t>(0xC0U | (r << 3U));
+        const std::uint8_t modrm_rm = static_cast<std::uint8_t>(0xC0U | r);
+        expect(!decode_vec({0x88, modrm_reg}, insn), "88 mov al, AH..BH rejected");
+        expect(!decode_vec({0x88, modrm_rm}, insn), "88 mov AH..BH, al rejected");
+        expect(!decode_vec({0x8A, modrm_reg}, insn), "8A mov AH..BH, al rejected");
+        expect(!decode_vec({0x80, modrm_rm, 1}, insn), "80 add AH..BH, 1 rejected");
+        expect(!decode_vec({0xC6, modrm_rm, 1}, insn), "C6 mov AH..BH, 1 rejected");
+        expect(!decode_vec({0xF6, modrm_rm, 1}, insn), "F6 test AH..BH, 1 rejected");
+        expect(!decode_vec({0xFE, modrm_rm}, insn), "FE inc AH..BH rejected");
+        expect(!decode_vec({0x0F, 0xB6, modrm_rm}, insn), "0F B6 movzx eax, AH..BH rejected");
+        expect(!decode_vec({0x0F, 0xBE, modrm_rm}, insn), "0F BE movsx eax, AH..BH rejected");
+
+        expect(decode_vec({0x40, 0x88, modrm_reg}, insn) &&
+                   is_reg_eq(insn.src, 1, static_cast<Reg>(r)),
+               "0x40 REX allows SPL/BPL/SIL/DIL");
+        expect(decode_vec({0x40, 0x0F, 0xB6, modrm_rm}, insn) &&
+                   is_reg_eq(insn.src, 1, static_cast<Reg>(r)),
+               "0x40 REX allows movzx eax, spl/bpl/sil/dil");
+    }
+    // Memory [rsp] in an 8-bit mov must not be misidentified as AH.
+    expect(decode_vec({0x88, 0x04, 0x24}, insn) && insn.length == 3 &&
+               is_mem_eq(insn.dst, 1, Reg::rsp, Reg::none, 1, 0) &&
+               is_reg_eq(insn.src, 1, Reg::rax),
+           "mov byte [rsp], al allowed (SIB base rsp is not AH)");
+    expect(!decode_vec({0x88, 0x24, 0x24}, insn), "mov byte [rsp], ah rejected");
+
+    // Truncated instructions at every byte boundary of long instructions.
+    const auto check_truncated = [&](const std::vector<std::uint8_t>& full, const char* label) {
+        for (std::size_t n = 0; n < full.size(); ++n) {
+            expect(!decode_insn(full.data(), n, kBase, insn, &err), label);
+        }
+        expect(decode_insn(full.data(), full.size(), kBase, insn, &err) &&
+                   insn.length == full.size(),
+               label);
+    };
+    check_truncated({0x48, 0xC7, 0x84, 0x24, 0x10, 0x20, 0x30, 0x40, 0x01, 0x02, 0x03, 0x04},
+                    "12-byte mov [rsp+disp32], imm32 truncation boundaries");
+    check_truncated({0x48, 0xB8, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+                    "10-byte movabs rax, imm64 truncation boundaries");
+    check_truncated({0x0F, 0x1F, 0x84, 0x00, 0x11, 0x22, 0x33, 0x44},
+                    "8-byte 0F 1F nop truncation boundaries");
+    check_truncated({0x48, 0x8B, 0x04, 0x25, 0x11, 0x22, 0x33, 0x44},
+                    "8-byte SIB base=101 mod=00 truncation boundaries");
+    check_truncated({0x48, 0x8D, 0x05, 0x11, 0x22, 0x33, 0x44},
+                    "7-byte RIP-relative lea truncation boundaries");
+    check_truncated({0x0F, 0x85, 0x11, 0x22, 0x33, 0x44},
+                    "6-byte jcc rel32 truncation boundaries");
+    expect(!decode_vec({0x0F}, insn), "lone 0F prefix rejected");
+    expect(!decode_vec({0x48}, insn), "lone REX prefix rejected");
+
+    // E8 call, 0F 05 syscall, and other unsupported opcodes.
+    err.clear();
+    expect(!decode_vec({0xE8, 0x00, 0x00, 0x00, 0x00}, insn, kBase, &err) &&
+               err.find("e8") != std::string::npos,
+           "E8 call rejected");
+    err.clear();
+    expect(!decode_vec({0x0F, 0x05}, insn, kBase, &err) &&
+               err.find("0f") != std::string::npos && err.find("05") != std::string::npos,
+           "0F 05 syscall rejected");
+    expect(!decode_vec({0xC2, 0x08, 0x00}, insn), "C2 ret imm16 rejected");
+    expect(!decode_vec({0xCC}, insn), "CC int3 rejected");
+    expect(!decode_vec({0x0F, 0xAF, 0xC1}, insn), "0F AF imul rejected");
+}
+
+template <typename U>
+bool indep_parity_even(U v) noexcept {
+    const std::uint8_t low = static_cast<std::uint8_t>(v & 0xFFU);
+    int ones = 0;
+    for (int bit = 0; bit < 8; ++bit) {
+        if (((low >> bit) & 1U) != 0U) {
+            ++ones;
+        }
+    }
+    return (ones % 2) == 0;
+}
+
+template <typename U, typename S>
+std::array<U, 14> make_flag_test_values() noexcept {
+    constexpr U smax = static_cast<U>(std::numeric_limits<S>::max());
+    constexpr U smin = static_cast<U>(std::numeric_limits<S>::min());
+    constexpr U umax = std::numeric_limits<U>::max();
+    constexpr U minus_one = static_cast<U>(static_cast<S>(-1));
+    return {{
+        U{0},
+        U{1},
+        U{2},
+        U{3},
+        U{7},
+        minus_one,
+        smax,
+        static_cast<U>(smax - U{1}),
+        smin,
+        static_cast<U>(smin + U{1}),
+        umax,
+        static_cast<U>(umax - U{1}),
+        static_cast<U>(0x55U),
+        static_cast<U>(0xAAU),
+    }};
+}
+
+template <typename U, typename S>
+void check_flags_for_size(std::uint8_t size) {
+    constexpr S kSmax = std::numeric_limits<S>::max();
+    constexpr S kSmin = std::numeric_limits<S>::min();
+    constexpr U kUmax = std::numeric_limits<U>::max();
+    const auto vals = make_flag_test_values<U, S>();
+
+    struct BinOpCase {
+        Op op;
+        std::uint8_t op8;
+        std::uint8_t op32;
+        bool writes_dst;
+    };
+    static constexpr std::array<BinOpCase, 7> kBinOps = {{
+        {Op::Add, 0x00, 0x01, true},
+        {Op::Sub, 0x28, 0x29, true},
+        {Op::Cmp, 0x38, 0x39, false},
+        {Op::And, 0x20, 0x21, true},
+        {Op::Or, 0x08, 0x09, true},
+        {Op::Xor, 0x30, 0x31, true},
+        {Op::Test, 0x84, 0x85, false},
+    }};
+
+    for (const BinOpCase& c : kBinOps) {
+        const std::uint8_t op_byte = (size == 1) ? c.op8 : c.op32;
+        const std::vector<std::uint8_t> bytes =
+            (size == 8) ? std::vector<std::uint8_t>{0x48, op_byte, 0xC8}
+                        : std::vector<std::uint8_t>{op_byte, 0xC8};
+        Insn insn{};
+        expect(decode_vec(bytes, insn) && insn.op == c.op && insn.dst.size == size,
+               "decode flag-test binary op");
+
+        for (const U ua : vals) {
+            for (const U ub : vals) {
+                const S sa = static_cast<S>(ua);
+                const S sb = static_cast<S>(ub);
+                U exp_res = 0;
+                bool exp_cf = false;
+                bool exp_of = false;
+
+                switch (c.op) {
+                case Op::Add:
+                    exp_res = static_cast<U>(ua + ub);
+                    exp_cf = ua > static_cast<U>(kUmax - ub);
+                    exp_of = (sb > 0 && sa > kSmax - sb) || (sb < 0 && sa < kSmin - sb);
+                    break;
+                case Op::Sub:
+                case Op::Cmp:
+                    exp_res = static_cast<U>(ua - ub);
+                    exp_cf = ua < ub;
+                    exp_of = (sb < 0 && sa > kSmax + sb) || (sb > 0 && sa < kSmin + sb);
+                    break;
+                case Op::And:
+                case Op::Test:
+                    exp_res = static_cast<U>(ua & ub);
+                    exp_cf = false;
+                    exp_of = false;
+                    break;
+                case Op::Or:
+                    exp_res = static_cast<U>(ua | ub);
+                    exp_cf = false;
+                    exp_of = false;
+                    break;
+                case Op::Xor:
+                    exp_res = static_cast<U>(ua ^ ub);
+                    exp_cf = false;
+                    exp_of = false;
+                    break;
+                default:
+                    break;
+                }
+
+                const bool exp_zf = (exp_res == 0);
+                const bool exp_sf = (static_cast<S>(exp_res) < 0);
+                const bool exp_pf = indep_parity_even(exp_res);
+
+                const std::uint64_t init_rax =
+                    (size == 1) ? (0x1122334455667700ULL | static_cast<std::uint64_t>(ua))
+                    : (size == 4) ? (0x1122334400000000ULL | static_cast<std::uint64_t>(ua))
+                                  : static_cast<std::uint64_t>(ua);
+                const std::uint64_t init_rcx =
+                    (size == 1) ? (0xAABBCCDDEEFF9900ULL | static_cast<std::uint64_t>(ub))
+                    : (size == 4) ? (0xAABBCCDD00000000ULL | static_cast<std::uint64_t>(ub))
+                                  : static_cast<std::uint64_t>(ub);
+
+                CpuState st{};
+                st.rip = kBase;
+                st.gpr[0] = init_rax;
+                st.gpr[1] = init_rcx;
+                // Pre-invert every flag to catch stale-flag bugs.
+                st.cf = !exp_cf;
+                st.zf = !exp_zf;
+                st.sf = !exp_sf;
+                st.of = !exp_of;
+                st.pf = !exp_pf;
+
+                Interpreter::execute(st, insn);
+
+                std::uint64_t exp_rax = init_rax;
+                if (c.writes_dst) {
+                    exp_rax = (size == 1) ? ((init_rax & ~0xFFULL) |
+                                             static_cast<std::uint64_t>(exp_res))
+                                          : static_cast<std::uint64_t>(exp_res);
+                }
+
+                expect(st.cf == exp_cf && st.zf == exp_zf && st.sf == exp_sf && st.of == exp_of &&
+                           st.pf == exp_pf && st.gpr[0] == exp_rax && st.gpr[1] == init_rcx &&
+                           st.rip == kBase + insn.length,
+                       "interpreter binary op flags and result match independent C++ oracle");
+            }
+        }
+    }
+
+    // inc and dec at sizes 1, 4, 8 (must preserve CF).
+    static constexpr bool kBoolPair[] = {true, false};
+    for (const bool is_inc : kBoolPair) {
+        const std::uint8_t modrm = is_inc ? 0xC0 : 0xC8;
+        const std::vector<std::uint8_t> bytes =
+            (size == 1)   ? std::vector<std::uint8_t>{0xFE, modrm}
+            : (size == 4) ? std::vector<std::uint8_t>{0xFF, modrm}
+                          : std::vector<std::uint8_t>{0x48, 0xFF, modrm};
+        Insn insn{};
+        expect(decode_vec(bytes, insn) && insn.op == (is_inc ? Op::Inc : Op::Dec) &&
+                   insn.dst.size == size,
+               "decode inc/dec for flag table");
+
+        for (const U ua : vals) {
+            const S sa = static_cast<S>(ua);
+            const U exp_res = is_inc ? static_cast<U>(ua + U{1}) : static_cast<U>(ua - U{1});
+            const bool exp_of = is_inc ? (sa == kSmax) : (sa == kSmin);
+            const bool exp_zf = (exp_res == 0);
+            const bool exp_sf = (static_cast<S>(exp_res) < 0);
+            const bool exp_pf = indep_parity_even(exp_res);
+
+            const std::uint64_t init_rax =
+                (size == 1) ? (0x1122334455667700ULL | static_cast<std::uint64_t>(ua))
+                : (size == 4) ? (0x1122334400000000ULL | static_cast<std::uint64_t>(ua))
+                              : static_cast<std::uint64_t>(ua);
+            const std::uint64_t exp_rax =
+                (size == 1) ? ((init_rax & ~0xFFULL) | static_cast<std::uint64_t>(exp_res))
+                            : static_cast<std::uint64_t>(exp_res);
+
+            for (const bool init_cf : kBoolPair) {
+                CpuState st{};
+                st.rip = kBase;
+                st.gpr[0] = init_rax;
+                st.cf = init_cf;
+                st.zf = !exp_zf;
+                st.sf = !exp_sf;
+                st.of = !exp_of;
+                st.pf = !exp_pf;
+
+                Interpreter::execute(st, insn);
+
+                expect(st.cf == init_cf && st.zf == exp_zf && st.sf == exp_sf && st.of == exp_of &&
+                           st.pf == exp_pf && st.gpr[0] == exp_rax && st.rip == kBase + insn.length,
+                       "interpreter inc/dec flags, CF preservation, and result match oracle");
+            }
+        }
+    }
+}
+
+void test_interp_flags_exhaustive() {
+    check_flags_for_size<std::uint8_t, std::int8_t>(1);
+    check_flags_for_size<std::uint32_t, std::int32_t>(4);
+    check_flags_for_size<std::uint64_t, std::int64_t>(8);
+}
+
+template <typename U, typename S>
+void check_eval_cond_for_size(std::uint8_t size) {
+    constexpr S kSmax = std::numeric_limits<S>::max();
+    constexpr S kSmin = std::numeric_limits<S>::min();
+    const auto vals = make_flag_test_values<U, S>();
+
+    const std::vector<std::uint8_t> bytes =
+        (size == 1)   ? std::vector<std::uint8_t>{0x38, 0xC8}
+        : (size == 4) ? std::vector<std::uint8_t>{0x39, 0xC8}
+                      : std::vector<std::uint8_t>{0x48, 0x39, 0xC8};
+    Insn cmp_insn{};
+    expect(decode_vec(bytes, cmp_insn) && cmp_insn.op == Op::Cmp && cmp_insn.dst.size == size,
+           "decode cmp for eval_cond table");
+
+    for (const U ua : vals) {
+        for (const U ub : vals) {
+            const S sa = static_cast<S>(ua);
+            const S sb = static_cast<S>(ub);
+            const U diff = static_cast<U>(ua - ub);
+            const bool exp_of = (sb < 0 && sa > kSmax + sb) || (sb > 0 && sa < kSmin + sb);
+            const bool exp_sf = (static_cast<S>(diff) < 0);
+            const bool exp_pf = indep_parity_even(diff);
+
+            CpuState st{};
+            st.gpr[0] = static_cast<std::uint64_t>(ua);
+            st.gpr[1] = static_cast<std::uint64_t>(ub);
+            Interpreter::execute(st, cmp_insn);
+
+            expect(eval_cond(st, Cond::O) == exp_of && eval_cond(st, Cond::NO) == !exp_of &&
+                       eval_cond(st, Cond::B) == (ua < ub) &&
+                       eval_cond(st, Cond::AE) == (ua >= ub) &&
+                       eval_cond(st, Cond::E) == (ua == ub) &&
+                       eval_cond(st, Cond::NE) == (ua != ub) &&
+                       eval_cond(st, Cond::BE) == (ua <= ub) &&
+                       eval_cond(st, Cond::A) == (ua > ub) &&
+                       eval_cond(st, Cond::S) == exp_sf && eval_cond(st, Cond::NS) == !exp_sf &&
+                       eval_cond(st, Cond::P) == exp_pf && eval_cond(st, Cond::NP) == !exp_pf &&
+                       eval_cond(st, Cond::L) == (sa < sb) && eval_cond(st, Cond::GE) == (sa >= sb) &&
+                       eval_cond(st, Cond::LE) == (sa <= sb) &&
+                       eval_cond(st, Cond::G) == (sa > sb),
+                   "eval_cond matches all 16 signed/unsigned comparisons after cmp");
+        }
+    }
+}
+
+void test_eval_cond_exhaustive() {
+    check_eval_cond_for_size<std::uint8_t, std::int8_t>(1);
+    check_eval_cond_for_size<std::uint32_t, std::int32_t>(4);
+    check_eval_cond_for_size<std::uint64_t, std::int64_t>(8);
+}
+
+void test_register_and_memory_writes() {
+    Insn insn{};
+    CpuState st{};
+    std::uint32_t mem32 = 0x80000001U;
+    std::uint8_t mem8 = 0x99U;
+
+    // 32-bit destinations zero the upper 32 bits.
+    (void)decode_vec({0x89, 0xC8}, insn);  // mov eax, ecx
+    st = CpuState{};
+    st.gpr[0] = 0xDEADBEEF12345678ULL;
+    st.gpr[1] = 0xCAFEBABE00000042ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0x0000000000000042ULL, "32-bit mov zeroes upper half");
+
+    (void)decode_vec({0x44, 0x8B, 0x01}, insn);  // mov r8d, dword [rcx]
+    st = CpuState{};
+    st.gpr[1] = reinterpret_cast<std::uintptr_t>(&mem32);
+    st.gpr[8] = 0xFFFFFFFFFFFFFFFFULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[8] == 0x0000000080000001ULL, "32-bit load into r8d zeroes upper half");
+
+    (void)decode_vec({0x41, 0xB9, 0x78, 0x56, 0x34, 0x82}, insn);  // mov r9d, 0x82345678
+    st = CpuState{};
+    st.gpr[9] = 0x1122334455667788ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[9] == 0x0000000082345678ULL, "32-bit B8+r into r9d zeroes upper half");
+
+    (void)decode_vec({0x0F, 0xB6, 0xC1}, insn);  // movzx eax, cl
+    st = CpuState{};
+    st.gpr[0] = 0xFFFFFFFFFFFFFFFFULL;
+    st.gpr[1] = 0xABCDULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0x00000000000000CDULL, "32-bit movzx zeroes upper half");
+
+    (void)decode_vec({0x0F, 0xBE, 0xC1}, insn);  // movsx eax, cl
+    st = CpuState{};
+    st.gpr[0] = 0xFFFFFFFF00000000ULL;
+    st.gpr[1] = 0x80ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0x00000000FFFFFF80ULL, "32-bit movsx zeroes upper half");
+
+    (void)decode_vec({0x8D, 0x44, 0x51, 0x10}, insn);  // lea eax, [rcx + rdx*2 + 0x10]
+    st = CpuState{};
+    st.gpr[0] = 0xFFFFFFFF00000000ULL;
+    st.gpr[1] = 0x100000000ULL;
+    st.gpr[2] = 0x20ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0x0000000000000050ULL, "32-bit lea zeroes upper half");
+
+    (void)decode_vec({0x41, 0xFF, 0xC7}, insn);  // inc r15d
+    st = CpuState{};
+    st.gpr[15] = 0xDEADBEEF00000000ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[15] == 0x0000000000000001ULL, "32-bit inc zeroes upper half");
+
+    (void)decode_vec({0xFF, 0xC8}, insn);  // dec eax
+    st = CpuState{};
+    st.gpr[0] = 0xDEADBEEF00000000ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0x00000000FFFFFFFFULL, "32-bit dec zeroes upper half");
+
+    (void)decode_vec({0x31, 0xC0}, insn);  // xor eax, eax
+    st = CpuState{};
+    st.gpr[0] = 0xDEADBEEF12345678ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0ULL, "32-bit xor eax, eax zeroes upper half");
+
+    // 8-bit writes preserve bits 8..63.
+    (void)decode_vec({0x40, 0x88, 0xCC}, insn);  // mov spl, cl
+    st = CpuState{};
+    st.gpr[4] = 0x1122334455667788ULL;
+    st.gpr[1] = 0xABCDULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[4] == 0x11223344556677CDULL, "8-bit mov spl, cl keeps bits 8..63");
+
+    (void)decode_vec({0x41, 0xC6, 0xC7, 0xEF}, insn);  // mov r15b, 0xEF
+    st = CpuState{};
+    st.gpr[15] = 0x123456789ABCDEF0ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[15] == 0x123456789ABCDEEFULL, "8-bit C6 into r15b keeps bits 8..63");
+
+    (void)decode_vec({0x8A, 0x01}, insn);  // mov al, byte [rcx]
+    st = CpuState{};
+    st.gpr[0] = 0xAABBCCDDEEFF0011ULL;
+    st.gpr[1] = reinterpret_cast<std::uintptr_t>(&mem8);
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0xAABBCCDDEEFF0099ULL, "8-bit memory load into al keeps bits 8..63");
+
+    (void)decode_vec({0x04, 0x10}, insn);  // add al, 0x10
+    st = CpuState{};
+    st.gpr[0] = 0x11223344556677F8ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[0] == 0x1122334455667708ULL && st.cf,
+           "8-bit add wrap does not carry into bits 8..63");
+
+    (void)decode_vec({0x41, 0xFE, 0xC1}, insn);  // inc r9b
+    st = CpuState{};
+    st.gpr[9] = 0x11223344556677FFULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[9] == 0x1122334455667700ULL, "8-bit inc wrap keeps bits 8..63");
+
+    (void)decode_vec({0x41, 0xFE, 0xC9}, insn);  // dec r9b
+    st = CpuState{};
+    st.gpr[9] = 0x1122334455667700ULL;
+    Interpreter::execute(st, insn);
+    expect(st.gpr[9] == 0x11223344556677FFULL, "8-bit dec borrow keeps bits 8..63");
+
+    // Memory stores write exactly `size` bytes; neighboring sentinel bytes must be untouched.
+    std::array<std::uint8_t, 24> baseline{};
+    for (std::size_t k = 0; k < baseline.size(); ++k) {
+        baseline[k] = static_cast<std::uint8_t>(0x10U + k);
+    }
+    const auto run_mem_store = [&](const std::vector<std::uint8_t>& code, std::uint64_t rdx,
+                                   std::size_t expected_size, const std::vector<std::uint8_t>& expected_bytes,
+                                   const char* label) {
+        std::array<std::uint8_t, 24> buf = baseline;
+        Insn store_insn{};
+        expect(decode_vec(code, store_insn) && store_insn.dst.size == expected_size, label);
+        CpuState ms{};
+        ms.gpr[static_cast<int>(Reg::rcx)] = reinterpret_cast<std::uintptr_t>(buf.data() + 8);
+        ms.gpr[static_cast<int>(Reg::rdx)] = rdx;
+        Interpreter::execute(ms, store_insn);
+        const bool prefix_ok = std::memcmp(buf.data(), baseline.data(), 8) == 0;
+        const bool payload_ok = std::memcmp(buf.data() + 8, expected_bytes.data(), expected_size) == 0;
+        const bool suffix_ok =
+            std::memcmp(buf.data() + 8 + expected_size, baseline.data() + 8 + expected_size,
+                        buf.size() - 8 - expected_size) == 0;
+        expect(prefix_ok && payload_ok && suffix_ok, label);
+    };
+
+    run_mem_store({0x88, 0x11}, 0xAABBCCDDEEFF0042ULL, 1, {0x42}, "mem store 1B mov [rcx], dl");
+    run_mem_store({0xC6, 0x01, 0x77}, 0, 1, {0x77}, "mem store 1B mov byte [rcx], imm8");
+    run_mem_store({0x80, 0x01, 0x05}, 0, 1, {0x1D}, "mem store 1B add byte [rcx], 5");
+    run_mem_store({0xFE, 0x01}, 0, 1, {0x19}, "mem store 1B inc byte [rcx]");
+    run_mem_store({0xFE, 0x09}, 0, 1, {0x17}, "mem store 1B dec byte [rcx]");
+
+    run_mem_store({0x89, 0x11}, 0x1122334455667788ULL, 4, {0x88, 0x77, 0x66, 0x55},
+                  "mem store 4B mov [rcx], edx");
+    run_mem_store({0xC7, 0x01, 0xAA, 0xBB, 0xCC, 0xDD}, 0, 4, {0xAA, 0xBB, 0xCC, 0xDD},
+                  "mem store 4B mov dword [rcx], imm32");
+    run_mem_store({0x29, 0x11}, 0x01010101ULL, 4, {0x17, 0x18, 0x19, 0x1A},
+                  "mem store 4B sub [rcx], edx");
+    run_mem_store({0xFF, 0x01}, 0, 4, {0x19, 0x19, 0x1A, 0x1B}, "mem store 4B inc dword [rcx]");
+
+    run_mem_store({0x48, 0x89, 0x11}, 0x0102030405060708ULL, 8,
+                  {0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01},
+                  "mem store 8B mov [rcx], rdx");
+    run_mem_store({0x48, 0xC7, 0x01, 0xFE, 0xFF, 0xFF, 0xFF}, 0, 8,
+                  {0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+                  "mem store 8B mov qword [rcx], -2 sign-extended");
+    run_mem_store({0x48, 0x31, 0x11}, 0x00FF00FF00FF00FFULL, 8,
+                  {0xE7, 0x19, 0xE5, 0x1B, 0xE3, 0x1D, 0xE1, 0x1F},
+                  "mem store 8B xor [rcx], rdx");
+    run_mem_store({0x48, 0xFF, 0x09}, 0, 8, {0x17, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F},
+                  "mem store 8B dec qword [rcx]");
+
+    // push writes exact 8 bytes at [rsp - 8] and pop restores rsp without touching neighbors.
+    std::array<std::uint8_t, 24> stack_buf = baseline;
+    Insn push_insn{};
+    Insn pop_insn{};
+    expect(decode_vec({0x41, 0x52}, push_insn) && decode_vec({0x5B}, pop_insn),
+           "decode push r10 / pop rbx");
+    CpuState ps{};
+    const std::uint64_t initial_rsp = reinterpret_cast<std::uintptr_t>(stack_buf.data() + 16);
+    ps.gpr[static_cast<int>(Reg::rsp)] = initial_rsp;
+    ps.gpr[static_cast<int>(Reg::r10)] = 0x0807060504030201ULL;
+    Interpreter::execute(ps, push_insn);
+    static constexpr std::uint8_t kExpectedPush[8] = {
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    };
+    expect(ps.gpr[static_cast<int>(Reg::rsp)] == initial_rsp - 8 &&
+               std::memcmp(stack_buf.data(), baseline.data(), 8) == 0 &&
+               std::memcmp(stack_buf.data() + 8, kExpectedPush, 8) == 0 &&
+               std::memcmp(stack_buf.data() + 16, baseline.data() + 16, 8) == 0,
+           "push writes exact 8 bytes at [rsp - 8] leaving neighbors untouched");
+    Interpreter::execute(ps, pop_insn);
+    expect(ps.gpr[static_cast<int>(Reg::rsp)] == initial_rsp &&
+               ps.gpr[static_cast<int>(Reg::rbx)] == 0x0807060504030201ULL,
+           "pop reads pushed qword and restores rsp");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -350,6 +1727,20 @@ int run_recomp_suite(const char* fixture_path) {
     test_function_decode_and_run();
     test_pe_reader();
     test_r0_vectors();
+    test_decode_alu_forms();
+    test_decode_group1();
+    test_decode_modrm_sib();
+    test_decode_moves();
+    test_decode_extensions();
+    test_decode_lea();
+    test_decode_stack_ret_nop();
+    test_decode_branches();
+    test_decode_test_insns();
+    test_decode_inc_dec();
+    test_decode_rejections();
+    test_interp_flags_exhaustive();
+    test_eval_cond_exhaustive();
+    test_register_and_memory_writes();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");
         return 0;

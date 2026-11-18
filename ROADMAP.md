@@ -153,7 +153,7 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
 
 Design: `docs/RECOMP_PLAN.md` (the decompilation plan `docs/GAMEPLAY_PLAN.md` is superseded).
 
-- [ ] **R0 Feasibility spikes:** generated `.so` loads on the user's phone, image at `0x140000000`, LLVM + LLD size and translation speed, one retail function translated and matching the PC.
+- [ ] **R0 Feasibility spikes:** generated `.so` loads on the user's phone, image at `0x140000000`, LLVM + LLD size and translation speed, one retail function translated and matching the PC (built; CI and phone run pending).
 - [ ] **R1 Lifter:** PE / PDB / `.pdata`, function discovery, x86-64 → LLVM IR, coverage meter.
 - [ ] **R2 Host differential rig:** translated vs original code on the PC CPU; CI on synthetic binaries and an arm64 runner.
 - [ ] **R3 Runtime core:** guest memory, TEB/TLS, threads, dispatch, ABI bridge, memory ordering, Win64 unwinding and C++ EH.
@@ -186,6 +186,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-18 | — | Phase 5 R0 feasibility spikes built (`wse/recomp/`, `recomp` suite, `wse_recomp` LLVM 18 + LLD lifter/`recomp_llvm_test`, `libwse_r0.so` + launcher "R0 spikes" row, local `tools/r0_pc_reference.cpp` verifying `rglString::indexOf` `0x14030f630`, CI jobs `recomp-host` and `llvm-android` added); Windows host gate PASS (`STATUS.md` §1–§2); CI and phone run pending |
 | 2026-11-18 | — | P11.3 wired in the app: `UiGameShell::step_input` takes the overlay context from the world's screen window, keeps overlay touches from the menu UI and syncs keys into `world.input`; the layout is clamped to `SDL_GetWindowSafeArea` |
 | 2026-11-18 | — | P13.3: Home with a taller art hero and a "Your modules" strip (landscape grid), static Manrope weights (labels no longer render ExtraLight), chamfered switch, diamond-thumb slider, smooth selected glow, Ken Burns hero and staggered entrance; screenshots on the app backdrop (CI green; Kotlin only) |
 | 2026-11-18 | — | P13.0-P13.2: CI launcher screenshots (Roborazzi), bundled Cinzel + Manrope (OFL), fixed iron-and-gold dark theme tinted by module art, chamfered component kit replacing every stock Material widget in the launcher (CI green; Kotlin only, no engine change) |
