@@ -1,6 +1,6 @@
 // Reconstructed value and token semantics for retail `rglString` (Phase 2G).
 //
-// Evidence (WSE2 v1.1.5.5 PE + PDB):
+// Evidence (WSE2 v1.1.5.6 PE + PDB):
 //   rglString            PDB type 0x35f5, 72 B (`docs/ARCHITECTURE.md` §4):
 //                          +0x00 int32_t  m_cursor
 //                          +0x08 char*    m_buffer (points to static or heap storage)

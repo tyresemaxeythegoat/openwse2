@@ -1,5 +1,5 @@
 // Native VM opcodes (Milestone 5): scenes, props, lighting, camera, shaders
-// Implemented from WSE2 v1.1.5.5 mbStatement::execute decompilations (56 opcodes).
+// Implemented from WSE2 v1.1.5.6 mbStatement::execute decompilations (56 opcodes).
 
 #pragma once
 

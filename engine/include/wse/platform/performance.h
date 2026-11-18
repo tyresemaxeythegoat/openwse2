@@ -3,7 +3,7 @@
 // clock-driven frame pacing, and persistent performance settings
 // (`docs/PLATFORM_PLAN.md`, slice P8).
 //
-// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.5 layout
+// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.6 layout
 // and carries no PE/PDB citations. Standard library only: keeps `<SDL3/SDL.h>`
 // and `<jni.h>` out of portable engine headers.
 

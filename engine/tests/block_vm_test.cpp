@@ -1242,7 +1242,7 @@ void test_native_arithmetic_registers_and_vars() {
                std::abs(static_cast<double>(ctx.registers[16] - 4500)) <= 2.0 &&
                std::abs(static_cast<double>(ctx.registers[17] - 13500)) <= 2.0 &&
                ctx.registers[18] == 1234,
-           "shuffle_range, store_random*, trig stores, and store_troop_gold match v1.1.5.5");
+           "shuffle_range, store_random*, trig stores, and store_troop_gold match v1.1.5.6");
 }
 
 void test_native_positions_and_math() {
@@ -1442,7 +1442,7 @@ void test_native_strings_and_entity_ops() {
                ctx.stringRegisters[18] == u"<qst=0>Aid {reg1} towns</>" &&
                ctx.stringRegisters[19] == u"Commander" &&
                ctx.stringRegisters[11] == u"hero%20world%21",
-           "all 25 strings/UI/entity native opcodes match v1.1.5.5 semantics");
+           "all 25 strings/UI/entity native opcodes match v1.1.5.6 semantics");
 }
 
 void test_entity_iterators() {
@@ -1832,7 +1832,7 @@ void test_native_entity_ops() {
                ctx.registers[30] == 1 && ctx.registers[31] == 4 && ctx.registers[32] == 6 &&
                ctx.registers[33] == 2 && ctx.registers[34] == 1 && ctx.registers[35] == 2 &&
                ctx.registers[36] == 777 && ctx.registers[37] == 6,
-           "all 108 entity/player/quest/UI/site/troop/party native opcodes match v1.1.5.5");
+           "all 108 entity/player/quest/UI/site/troop/party native opcodes match v1.1.5.6");
 }
 
 void test_native_mission_ops() {
@@ -2026,7 +2026,7 @@ void test_native_mission_ops() {
                w.mission_finish_delay == 4.0f && w.jump_mission_no == 1 &&
                w.jump_menu_no == 9 && w.trigger_result == 12345 &&
                ctx.registers[30] == 0 && ctx.registers[31] == 2 && ctx.registers[32] == 5,
-           "all 66 agent/team/prop/mission/timer native opcodes match v1.1.5.5");
+           "all 66 agent/team/prop/mission/timer native opcodes match v1.1.5.6");
 }
 
 // Module scripts can free or reshape an object while the VM is iterating or

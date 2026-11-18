@@ -1,7 +1,7 @@
 // Platform seam: virtual file system.
 //
 // Port infrastructure, not a reconstruction: nothing here mirrors a retail
-// layout, so it carries no v1.1.5.5 citation. The retail engine opens module
+// layout, so it carries no v1.1.5.6 citation. The retail engine opens module
 // files through Win32 paths (`rglInputTextFileStream`, KERNEL32 imports, see
 // docs/ARCHITECTURE.md section 6); every portable loader goes through `Vfs`
 // instead so the same code reads a host directory, an in-memory fixture, or an

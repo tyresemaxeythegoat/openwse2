@@ -18,12 +18,13 @@ gives 1:1 behaviour and byte-compatible saves by construction. This document own
 
 ## The target
 
-Pinned to **WSE2 v1.1.5.5** `mb_warband_wse2_x64.exe`: 7,060,992 B, SHA-256
-`d4e97d56…4e29709`, 14,618 `.pdata` entries. Any other build is refused with a clear message.
-**The user's GOG install and phone install now have WSE2 v1.1.5.6 (7,066,112 B,
-`fbe9808c…`, PE timestamp 2026-11-15, 14,644 `.pdata` entries; the R0 phone run of
-2026-11-19 refused it): the phone install must carry the v1.1.5.5 exe, PDB and DLLs from the
-official `WSE2.zip`.**
+Accepts **any WSE2 x64 build whose shipped PDB matches** (`mb_warband_wse2_x64.exe` +
+`mb_warband_wse2_x64.pdb` RSDS GUID match; functions are resolved by symbol name rather than
+pinned addresses). **WSE2 v1.1.5.6** (7,066,112 B, SHA-256 `fbe9808c…4164898`, PDB age 456,
+14,644 `.pdata` entries, PE timestamp 2026-11-15 — on both the user's GOG PC install and phone
+install) is the verified baseline. Earlier R0 builds pinned **WSE2 v1.1.5.5** (7,060,992 B,
+SHA-256 `d4e97d56…4e29709`, PDB age 449, 14,618 `.pdata` entries; the 2026-11-19 R0 phone run
+happened under that pin and refused v1.1.5.6).
 
 Import surface of v1.1.5.5 (546 functions in 23 DLLs). The C runtime is statically linked, so
 there are no CRT DLLs to replace:

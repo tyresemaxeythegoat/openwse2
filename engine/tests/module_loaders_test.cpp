@@ -1,4 +1,4 @@
-// Host tests for clean-room v1.1.5.5 Warband/WSE2 module file loaders.
+// Host tests for clean-room v1.1.5.6 Warband/WSE2 module file loaders.
 //
 // Build/run: powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
 

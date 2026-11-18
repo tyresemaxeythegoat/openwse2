@@ -1,7 +1,7 @@
 // Platform seam: maps `wse::asset` shader/material state (`wse/asset/shader.h`)
 // onto the minimal RHI (`wse/platform/rhi.h`), slice P5.
 //
-// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.5 layout;
+// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.6 layout;
 // the front-face convention cites the retail D3D9 winding proof (consumed state
 // citations live in `wse/asset/shader.h`).
 

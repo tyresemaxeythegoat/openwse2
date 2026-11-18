@@ -1,6 +1,6 @@
 // Platform seam: Storage Access Framework (SAF) virtual file system and Warband module scanner.
 //
-// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.5 layout
+// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.6 layout
 // and carries no PE/PDB citations. Builds a one-time case-insensitive tree index
 // over an opaque-document-ID tree (`SafTreeBackend`), avoiding per-open Android
 // DocumentsContract binder IPC round-trips (docs/PLATFORM_PLAN.md, slice P2).

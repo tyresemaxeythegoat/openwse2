@@ -17,7 +17,7 @@ numbers:
 ## Guardrails
 
 1. **Evidence-backed decompilation only.** Never hallucinate memory offsets, struct sizes, or
-   function behavior. Every reconstructed class, vtable, and function must cite v1.1.5.5 evidence
+   function behavior. Every reconstructed class, vtable, and function must cite v1.1.5.6 evidence
    (function VA, PDB TPI type index/size, RTTI/vtable symbol, string cross-reference, or REA `ev_*`
    record).
 2. **Bring Your Own Assets (BYOA).** This is an engine reimplementation for interoperability. Do
@@ -33,7 +33,7 @@ numbers:
 
 ## Target
 
-- Analysis binary: official **WSE2 v1.1.5.5** `mb_warband_wse2_x64.exe` (PDB-backed; image base
+- Analysis binary: official **WSE2 v1.1.5.6** `mb_warband_wse2_x64.exe` (PDB-backed, rebased from v1.1.5.5 on 2026-11-19; image base
   `0x140000000`). The 32-bit `mb_warband_wse2.exe` in `WSE2.zip` is out of scope.
 - Reference device in the legacy docs: OPPO Reno 11, Mali-G68 (PanVK). No device is attached.
 

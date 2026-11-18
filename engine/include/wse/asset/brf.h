@@ -1,7 +1,7 @@
-// Clean-room v1.1.5.5 .brf binary resource container decoder, MetaMesh LOD
+// Clean-room v1.1.5.6 .brf binary resource container decoder, MetaMesh LOD
 // grouper, and module.ini resource catalog loader.
 //
-// Reconstructed from v1.1.5.5 PE + PDB evidence:
+// Reconstructed from v1.1.5.6 PE + PDB evidence:
 // - rglResourceManager (0xae1e, 1880 B), g_resourceManager (0x140624a70)
 // - rglResourceManager::readStream (0x1402f04a0), registerResource (0x1402efaf0)
 // - rglResourceManager::loadCoreResources (0x1402ef480),

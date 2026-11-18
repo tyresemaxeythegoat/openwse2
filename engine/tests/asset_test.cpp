@@ -1,4 +1,4 @@
-// Host unit tests for clean-room v1.1.5.5 .brf and .dds asset decoders
+// Host unit tests for clean-room v1.1.5.6 .brf and .dds asset decoders
 // (engine/include/wse/asset/brf.h and engine/include/wse/asset/dds.h).
 #include <array>
 #include <bit>
@@ -1437,7 +1437,7 @@ void test_p5_shader_review_regressions() {
 void test_p5_shaders_materials_and_spirv_cache() {
     using namespace wse::asset;
 
-    // 1. Retail v1.1.5.5 effect search order (`rglEffectManager::initDeviceObjects`,
+    // 1. Retail v1.1.5.6 effect search order (`rglEffectManager::initDeviceObjects`,
     //    `rglRenderer::initPostFxShaders`, `rglGraphicsContext::checkLoadingPostEffects`).
     {
         wse::platform::MemoryVfs vfs;

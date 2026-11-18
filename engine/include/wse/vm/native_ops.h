@@ -1,6 +1,6 @@
-// Extended native Warband opcode handlers (v1.1.5.5 mbStatement::execute).
+// Extended native Warband opcode handlers (v1.1.5.6 mbStatement::execute).
 //
-// Grounded in official WSE2 v1.1.5.5 PDB/binary decompilation:
+// Grounded in official WSE2 v1.1.5.6 PDB/binary decompilation:
 //   entity_slots (500..510, 520..530, 540..550, 560..570)  0x1401c9919..0x1401ca7ed
 //   positions_and_math (700..746)                          0x1401caa95..0x1401cbdbc
 //   display_message (1106)                                 0x1401cdcd4

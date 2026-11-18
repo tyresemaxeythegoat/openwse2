@@ -73,9 +73,9 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `include/wse/game/trigger.h` | trigger/simple-trigger records, loaders, savegames, and event-key runtime state machines | `0x140244990`, `0x1402446c0`, `0x14020ffe0`, `0x14020fc30`, `0x1400cd080`, `0x1400cd430`, `0x140244af0`, `0x140244ce0`, `0x140210120`, `0x140244e50`, `0x14020fd00`, `0x140210320` |
 | `include/wse/game/script.h` | `mbScript`/`mbScriptManager` readers, 65-entry name table, and script mapping | `0x14020f820`, `0x14020f940`, `0x14020fb20`; globals `0x1406a0af0`/`0x1406a0af8`/`0x1406a0afc`; table `0x140616ad0`; formats `0x14055d6b0`/`0x14055d6c0` |
 | `include/wse/game/module_loader_common.h` | `ModuleLoadError`, token/version header helpers, BOM/comment-stripping INI parsers, and VFS text loader helpers (strictly via `wse::platform::Vfs` + `wse::io::TokenReader`); `[section]` headers are recognised after comment stripping, and `read_wrapping_u32_token` wraps negative literals in unsigned arithmetic | `rglIni` (`0x1402a6ff0`), `rglSectionlessIni`, `mbCoreGame` |
-| `include/wse/game/module_world_loaders.h` | world/campaign loaders (`skills`, `factions`, `troops` v1/v2, `item_kinds` v1/v3, `party_templates`, `parties`, `scenes`, `quests`, `info_pages`, `strings`, `quick_strings`, `game_variables`, `module.ini`, `module_config.ini`, `Data/item_modifiers.txt`) | `0x1402a6ff0`, `0x140093f80`, v1.1.5.5 stream readers cited in header |
-| `include/wse/game/module_asset_loaders.h` | asset/visual loaders (`meshes`, `actions`, `skins` (`0x140213810`), `sounds` v2/v3, `music`, `particle_systems`, `postfx`, `Data/{flora_kinds,ground_specs,skyboxes}.txt`) | v1.1.5.5 stream readers cited in header |
-| `include/wse/game/module_mission_loaders.h` | interactive/mission loaders (`map_icons`, `scene_props`, `menus`, `presentations`, `mission_templates`, `tableau_materials`, `conversation` v1/v2) | v1.1.5.5 stream readers cited in header |
+| `include/wse/game/module_world_loaders.h` | world/campaign loaders (`skills`, `factions`, `troops` v1/v2, `item_kinds` v1/v3, `party_templates`, `parties`, `scenes`, `quests`, `info_pages`, `strings`, `quick_strings`, `game_variables`, `module.ini`, `module_config.ini`, `Data/item_modifiers.txt`) | `0x1402a6ff0`, `0x140093f80`, v1.1.5.6 stream readers cited in header |
+| `include/wse/game/module_asset_loaders.h` | asset/visual loaders (`meshes`, `actions`, `skins` (`0x140213810`), `sounds` v2/v3, `music`, `particle_systems`, `postfx`, `Data/{flora_kinds,ground_specs,skyboxes}.txt`) | v1.1.5.6 stream readers cited in header |
+| `include/wse/game/module_mission_loaders.h` | interactive/mission loaders (`map_icons`, `scene_props`, `menus`, `presentations`, `mission_templates`, `tableau_materials`, `conversation` v1/v2) | v1.1.5.6 stream readers cited in header |
 | `include/wse/game/module_bundle.h` | `WseOwnedStringBanks`, `ModuleBundle`, `ModuleLoadOptions`, and `load_module()` orchestrator populating `WseWorldState`, `ScriptManager`, triggers, and `VmContext` string banks; `load_module()` first resets module-derived `WseWorldState` (safety deviation: a reload never inherits the previous module's optional files), and the bundle is move-only because `VmContext` holds views into it | `mbGame::readModuleFiles` cited in header |
 | `include/wse/game/headless_runner.h` | **port infrastructure:** `HeadlessRunOptions`, `HeadlessRunReport`, `HeadlessSession`, and `run_headless_module()` / `run_headless_session()` executing `load_module`, `game_start`, and simulated trigger frames via `Vfs` and `LogSink`; unimplemented opcodes stop and fail the run only when `fail_on_unimplemented` is set (otherwise they are counted and reported) | clean-room orchestration over `module_bundle.h`, `trigger.h`, `block_vm.h` |
 | `include/wse/asset/{brf,dds,shader,skeleton,font}.h` | `.brf` container decoder (all 8 resource types, `MetaMesh` LOD grouper, `module.ini` resource catalog; `skeleton_anim` `(qx,qy,qz,qw)` wire order), `.dds` parser/RGBA8 decoder (`BC1`–`BC5`, uncompressed/`L8`/`L16`/`A8L8`/`A8`, `DX10`) + Warband `Vfs` texture resolver, P5 effect search / `wse2_shaders.{brf,ini}` / `rglShader` suitability / `rglMaterial` state / `GLShaders` + WSE2 SPIR-V 1.0 cache pipeline, P9 skeletal bind-pose FK evaluation + CPU linear-blend skinning, and P9 `Data/font_data.xml` bitmap font loader + `<c=...>`/word-wrap text layout (`rglFont` `0x140297a20`, `0x140298100`, `0x14029b650`, `0x14029b7d0`) | `rglResourceManager`, `rglMesh`, `rglMetaMesh`, `rglTexture`, `rglShader`, `rglMaterial`, `rglPhysicsMaterial`, `rglBody`, `rglSkeletonModel`, `rglSkeletonAnimation`, `rglSkeleton`, `rglBone`, `rglQuaternion`, `rglFont`, `rglGraphicsContext::initEffect`, `rglPostProcess::initEffect` |
@@ -284,7 +284,7 @@ Safety deviations and portable choices in `savegame.h` (each keeps valid saves l
   `count_exceeded`.
 - **Versioned bodies (`[802..1174]`).** `read_world_body_sections` and `read_party_record` (and
   optionally `write_savegame_container`) implement the four `g_compatibleSavegameVersion` branches
-  verified in v1.1.5.5 (`is_marshall` `(900..999) || >= 1020`, `extra_icon_*` & 5 combat options
+  verified in v1.1.5.6 (`is_marshall` `(900..999) || >= 1020`, `extra_icon_*` & 5 combat options
   `> 1136`, `ignore_with_player_party` `> 1160`), with omitted fields reset to retail defaults
   (`SavegameContainerResult::legacy_layout_unsupported` remains in the API enum).
 - **Troop merge.** Loaded troop fields are merged into the module troop; when
@@ -461,7 +461,7 @@ Asset decoders (`wse/asset/{brf,dds}.h`, P3 review & evidence follow-ups):
   Every texel of the output is written, so a caller's buffer is resized but not cleared first
   (reuse one buffer across decodes); BC blocks are stored a 4-texel row at a time and only
   right/bottom edge blocks of a non-multiple-of-4 image are clipped.
-- Verified against the v1.1.5.5 control flow: `rglResourceManager::createMetaMesh` (`0x1402f3030`)
+- Verified against the v1.1.5.6 control flow: `rglResourceManager::createMetaMesh` (`0x1402f3030`)
   requires `prefix.length >= 2` (`0x1402f31b3`), splits at the first `.`, and routes dotted non-LOD
   names to LOD `0`; `rglResourceManager::tryGetTexture` (`0x1402f35a0`) + `rglTexture::initDeviceObjects`
   (`0x1403184d0`) probe module language, module `Textures`, `TexturesHD` (single-frame only, before
@@ -900,7 +900,7 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
 
 These are counted as implemented because they consume their operands and keep scripts running, but
 they are **not** verified reconstructions of the cited handlers. Treat their results as
-placeholders until each is checked against the v1.1.5.5 disassembly:
+placeholders until each is checked against the v1.1.5.6 disassembly:
 
 - **Simplified helpers in `world_campaign_helpers.h` (no VA evidence yet):** `party_add_template`
   adds the midpoint of each stack's min/max instead of a random count and ignores
@@ -910,7 +910,7 @@ placeholders until each is checked against the v1.1.5.5 disassembly:
   local rules.
 - **Simplified combat:** `agent_deliver_damage_to_agent` (1722) applies weapon damage times the
   deliverer's damage modifier with no armor, skill, or hit-location model.
-- **Checked against v1.1.5.5 and correct as written:** `store_num_free_stacks` (2154,
+- **Checked against v1.1.5.6 and correct as written:** `store_num_free_stacks` (2154,
   `0x1401dd77a`) stores the constant `10` in retail too; `troop_is_mounted` (152, `0x1401c704b`)
   tests equipment slot 8 (`mbTroopEquipment[8].isValid`), not a troop flag; `entering_town` (36,
   `0x1401c65c8`) needs main-party behaviour 4 toward the town, a readable town, and a distance

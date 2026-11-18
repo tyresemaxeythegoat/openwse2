@@ -1,4 +1,4 @@
-// Clean-room v1.1.5.5 module loader primitives: error diagnostics, token/INI
+// Clean-room v1.1.5.6 module loader primitives: error diagnostics, token/INI
 // helpers, and VFS path utilities. All file I/O routes through wse::platform::Vfs.
 #pragma once
 

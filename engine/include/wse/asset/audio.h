@@ -1,7 +1,7 @@
-// Clean-room v1.1.5.5 audio asset decoders, retail path resolution, and
+// Clean-room v1.1.5.6 audio asset decoders, retail path resolution, and
 // sound/music flag helpers (Slice P6, docs/PLATFORM_PLAN.md).
 //
-// Grounded in WSE2 v1.1.5.5 PDB/binary evidence:
+// Grounded in WSE2 v1.1.5.6 PDB/binary evidence:
 //   - mbSoundSample::readStream            0x140332580 (%sSounds\languages\%s\%s -> %sSounds\%s -> Sounds\languages\%s\%s -> Sounds\%s)
 //   - mbSoundSample::playSound             0x140332a70 (priority & flags 0x01=2D, 0x02=looping)
 //   - mbSoundManager::readStream           0x1403330a0

@@ -1,6 +1,6 @@
 // Portable statement-block interpreter and trigger/script execution bridge.
 //
-// Evidence (WSE2 v1.1.5.5 PE + Ghidra 12.1.4 REA pseudocode + PDB TPI):
+// Evidence (WSE2 v1.1.5.6 PE + Ghidra 12.1.4 REA pseudocode + PDB TPI):
 //   mbStatement::parseOperand      0x1401c61f0  operand decode + fallback tags
 //   mbStatement::returnValue       0x1401c6280  register/slot/local lvalue store
 //   mbStatement::execute           0x1401c62d0  this_or_next / neg / dispatch
@@ -17,7 +17,7 @@
 //   Layouts: mbBasicGame (0xadd3, 221616B), mbCallStack (0x715b, 3096B),
 //            mbLoop (0x1f89a, 56B), mbLoopManager (0x1eb6b, 7176B).
 //
-// Key structural facts verified directly against v1.1.5.5:
+// Key structural facts verified directly against v1.1.5.6:
 //   - mbBasicGame +0x270 (0x140663c60) is the 128-entry int64 register array
 //     accessed by operand tag 1; +0x258 (0x140663c48) is mbSlots m_globalVariables
 //     accessed by operand tag 2; frame locals are accessed by operand tag 0x11.
@@ -547,7 +547,7 @@ inline void analyze_statement_block(StatementBlock& block, VmContext* ctx = null
 
 [[nodiscard]] constexpr NativeDispatch dispatch_native_non_switch(
     std::uint32_t opcode) noexcept {
-    // Retail v1.1.5.5 non-switch runtime opcodes outside mbStatement::execute's
+    // Retail v1.1.5.6 non-switch runtime opcodes outside mbStatement::execute's
     // switch table: 473/477/1070/1104/1302/1491 fall through to bResult=1;
     // 1004 falls into execute_wse and returns false when unhandled.
     switch (opcode) {
