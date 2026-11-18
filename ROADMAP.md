@@ -148,17 +148,20 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
 - [ ] **P11 In-game UI & touch controls on Android:** UI aspect modes, crisp text, drawn touch overlay and context buttons, touch-friendly menus, soft keyboard (`docs/PLATFORM_PLAN.md` "P11").
 - [ ] **P12 Launcher redesign:** Jetpack Compose + Material 3, module art from the user's install (`main.bmp`), dynamic colour, motion, CI screenshot tests (`docs/PLATFORM_PLAN.md` "P12").
 
-### Phase 5 — Gameplay runtime (1:1 with WSE2 v1.1.5.5)
+### Phase 5 — Gameplay by recompiling the retail code (on-device, LLVM)
 
-Design, order and oracles: `docs/GAMEPLAY_PLAN.md`.
+Design: `docs/RECOMP_PLAN.md` (the decompilation plan `docs/GAMEPLAY_PLAN.md` is superseded).
 
-- [ ] **G0 Oracles:** retail saves load and re-save byte-identical (both directions); map time and random-number determinism decided; call-graph closure tooling.
-- [ ] **G1 3D on the phone:** Vulkan presentation in the app, UI on Vulkan, scenes and the world map with the module's shaders, GPU skinning.
-- [ ] **G2 Campaign map:** time, party movement and pathfinding, party AI, spotting, encounters into menus, auto-resolve.
-- [ ] **G3 Walking scenes:** mission start, spawning, camera, locomotion and animation, retail collision (replaces the P9 Bullet item), scene pathfinding.
-- [ ] **G4 Combat:** melee, blocking, shields, missiles, horses, damage, death.
-- [ ] **G5 Battles at scale:** battle AI, divisions and orders, reinforcements, results back to the map; 1,000+ agents with behaviour-neutral optimization.
-- [ ] **G6 Whole game:** sieges, tournaments, character creation, remaining menus, save anywhere both ways.
+- [ ] **R0 Feasibility spikes:** generated `.so` loads on the user's phone, image at `0x140000000`, LLVM + LLD size and translation speed, one retail function translated and matching the PC.
+- [ ] **R1 Lifter:** PE / PDB / `.pdata`, function discovery, x86-64 → LLVM IR, coverage meter.
+- [ ] **R2 Host differential rig:** translated vs original code on the PC CPU; CI on synthetic binaries and an arm64 runner.
+- [ ] **R3 Runtime core:** guest memory, TEB/TLS, threads, dispatch, ABI bridge, memory ordering, Win64 unwinding and C++ EH.
+- [ ] **R4 OS shims:** all 546 imports owned; startup reaches the main loop.
+- [ ] **R5 Graphics:** D3D9 subset + D3DX on the Vulkan RHI, fx_2_0 and SM2/3 → SPIR-V.
+- [ ] **R6 Audio, input, Lua:** translated `fmodex64` / `lua5164` over shims; DInput / XInput from SDL and the touch overlay.
+- [ ] **R7 PC bring-up:** whole exe translated for x86-64 running on Windows with our shims only; savegame oracle.
+- [ ] **R8 Phone bring-up:** translation service in the launcher; Native main menu to battle on Mali-G68.
+- [ ] **R9 Performance and hardening:** profiling, crash reports for missing targets, several mods end to end.
 
 ## Engineering backlog (ordered)
 
@@ -182,6 +185,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-18 | — | Phase 5 replanned as on-device recompilation of the user's v1.1.5.5 exe with embedded LLVM (`docs/RECOMP_PLAN.md`); decompilation plan superseded; P6/P9 in-app audio + Lua unit cancelled (the recompiled game drives FMOD and Lua through shims) |
 | 2026-11-18 | — | Planned Phase 5 (gameplay runtime G0-G6, 1:1 with retail, evidence first, byte-compatible saves; `docs/GAMEPLAY_PLAN.md`) and P12 (Compose + Material 3 launcher with the install's module art) from an interview with the user |
 | 2026-11-18 | — | P10.1-P10.8: launcher pages, dark theme, scan progress and per-module install check gating Play, grouped settings with quality presets and first-launch defaults; asynchronous module start with a loading screen, module mode on the performance hub with an FPS overlay, texture budget, ADPF performance hints (204 host tests; Windows host gate PASS; built as parallel Antigravity units on worktrees, reviewed and gated by Claude) |
 | 2026-11-18 | — | P10 rescoped: its UI/UX work is the Android launcher, not the in-game UI; the in-game UI aspect, crisp text, touch overlay, touch menus and soft keyboard units moved to a new slice P11 (plan only, no code) |

@@ -11,6 +11,7 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
 - **Evidence citation:** Every reconstructed struct, field offset, function, or opcode handler must cite concrete v1.1.5.5 evidence (function VA, PDB TPI type index/size, and/or REA `ev_*` evidence hash).
 - **Documented safety deviations:** Bounds checks, null checks, loop guards (e.g., `str_split` empty delimiter), and error callbacks may replace retail unchecked indexing/crashing paths, provided valid module behavior is preserved and deviations are documented.
 - **BYOA only:** Never bundle TaleWorlds/Warband assets, retail executables, PDBs, DRM bypasses, or emulators/compatibility layers (no Wine, Box64, or Dynarmic). Android builds load user-supplied Warband installs and `Modules/`.
+- **Recompilation (Phase 5, `docs/RECOMP_PLAN.md`, decided 2026-11-18):** the app translates the user's own WSE2 v1.1.5.5 exe and its shipped x64 DLLs (`lua5164`, `fmodex64`) to ARM64 ahead of time on the device with embedded LLVM. Native shims for the system DLLs the exe imports are allowed. Still banned: Wine, Box64, Dynarmic, QEMU, translating code during play (JIT), and committing or bundling retail binaries, PDBs, or anything lifted from them. Tests on retail code run only locally; CI uses synthetic test binaries.
 
 ## 2. Build & Verification Gates
 
@@ -102,7 +103,7 @@ in several files is what made the documents drift before.
 | Current phase, gate results, `N/440` and other coverage counts, blockers, next tasks | `STATUS.md` §1–§5 | Link to `STATUS.md`; do **not** restate the number |
 | Phase checklists, backlog order, milestone log | `ROADMAP.md` | — |
 | Phase 3/4 design: seam, target layout, slice contents, platform risks | `docs/PLATFORM_PLAN.md` | `ROADMAP.md` holds only the checklist |
-| Phase 5 gameplay design: slice order, oracles, evidence map, decisions | `docs/GAMEPLAY_PLAN.md` | `ROADMAP.md` holds only the checklist; progress in `STATUS.md` |
+| Phase 5 design: recompilation slices, runtime model, shims, decisions | `docs/RECOMP_PLAN.md` (`docs/GAMEPLAY_PLAN.md` is superseded) | `ROADMAP.md` holds only the checklist; progress in `STATUS.md` |
 | Struct layouts, offsets, function VAs, evidence IDs | `docs/ARCHITECTURE.md` + `docs/SYMBOL_MAP.json` | Source comments cite the VA; prose docs link |
 | Per-handler behavior notes and safety deviations | `engine/README.md` and the header comment next to the handler | — |
 | Opcode numbers and names | generated `docs/wse_opcodes.json` | Never typed by hand |
