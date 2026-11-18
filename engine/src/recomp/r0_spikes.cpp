@@ -723,7 +723,7 @@ R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
                                translated == model;
         }
     }
-    rep.line("  => %s", result.d_matches ? "PASS" : "FAIL");
+    rep.line("  => %s", result.d_matches ? "PASS" : ((!exe_ok || !result.a_loads) ? "SKIPPED" : "FAIL"));
 
     if (image != nullptr) {
         munmap(image, image_size);
