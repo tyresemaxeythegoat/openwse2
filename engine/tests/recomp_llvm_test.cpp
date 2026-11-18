@@ -122,7 +122,7 @@ void test_translate_small_functions(const std::string& dir) {
     dlclose(h);
 }
 
-// --- R1 differential corpus (`engine/tests/recomp_corpus/int_corpus.c`) ---------------------
+// --- R1 differential corpus (`engine/tests/recomp_corpus/*_corpus.c`) ----------------------
 // Our own C, compiled by clang for Win64 into a PE at 0x140000000 (CMake). The PE is mapped at
 // its base; every export runs natively (ms_abi) and translated on the same inputs.
 
@@ -199,7 +199,7 @@ std::uint64_t pick(Rng& r) {
     }
 }
 
-void test_int_corpus(const char* path) {
+void test_corpus(const char* path) {
     std::ifstream in(path, std::ios::binary);
     const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     PeImage img;
@@ -292,7 +292,7 @@ void test_int_corpus(const char* path) {
     for (const auto& [what, n] : rep.unsupported) {
         std::printf("    unsupported %-32s %zu\n", what.c_str(), n);
     }
-    expect(rep.lifted == fns.size(), "corpus: every integer function lifts");
+    expect(rep.lifted == fns.size(), "corpus: every corpus function lifts");
 
     std::vector<char> obj;
     TranslateTimings t;
@@ -303,8 +303,8 @@ void test_int_corpus(const char* path) {
         std::printf("  emit: %s\n", err.c_str());
         return;
     }
-    const std::string o = std::string(dir) + "/int_corpus.o";
-    const std::string so = std::string(dir) + "/int_corpus.so";
+    const std::string o = std::string(dir) + "/corpus.o";
+    const std::string so = std::string(dir) + "/corpus.so";
     std::ofstream(o, std::ios::binary).write(obj.data(), static_cast<std::streamsize>(obj.size()));
     std::string log;
     expect(link_shared_object({o}, so, &log), "corpus: LLD links the translated module");
@@ -358,6 +358,9 @@ void test_int_corpus(const char* path) {
                 if (r != 4) {
                     s.gpr[r] = rng.next();
                 }
+                for (int k = 0; k < 16; ++k) {
+                    s.xmm[r][k] = static_cast<std::uint8_t>(rng.next());
+                }
             }
             s.gpr[1] = is_mem ? reinterpret_cast<std::uintptr_t>(buf_trans) : arg[0];
             s.gpr[2] = arg[1];
@@ -372,6 +375,10 @@ void test_int_corpus(const char* path) {
             for (const int r : kCalleeSaved) {
                 ok = ok && s.gpr[r] == before.gpr[r];
             }
+            for (int x = 6; x < 16; ++x) {  // xmm6..xmm15 are callee-saved in Win64
+                ok = ok && std::memcmp(s.xmm[x], before.xmm[x], 16) == 0;
+            }
+            ok = ok && !s.df;  // the Win64 ABI returns with DF clear
             if (!ok) {
                 ++bad;
                 std::printf("  MISMATCH %s(0x%llx, 0x%llx, 0x%llx, 0x%llx): native 0x%llx translated 0x%llx "
@@ -406,8 +413,8 @@ int main() {
         return 1;
     }
     test_translate_small_functions(dir);
-#ifdef WSE_RECOMP_INT_CORPUS
-    test_int_corpus(WSE_RECOMP_INT_CORPUS);
+#ifdef WSE_RECOMP_CORPUS
+    test_corpus(WSE_RECOMP_CORPUS);
 #else
     std::printf("  (no Win64 corpus: clang/lld-link were not found at configure time)\n");
 #endif

@@ -583,32 +583,49 @@ if(WSE_ENABLE_LLVM)
         wse_apply_strict_warnings(recomp_llvm_test)
         add_test(NAME recomp_llvm COMMAND recomp_llvm_test)
 
-        # R1 differential corpus: our own C compiled for Win64 into a PE at 0x140000000 with no
-        # relocations or imports (`engine/tests/recomp_corpus/`). CI requires it
+        # R1 differential corpus: our own C compiled for Win64 into one PE at 0x140000000 with no
+        # relocations or imports (`engine/tests/recomp_corpus/*_corpus.c`; `corpus_entry` is in
+        # `int_corpus.c`). CI requires it
         # (-DWSE_REQUIRE_RECOMP_CORPUS=ON); elsewhere the test skips it when the tools are missing.
         option(WSE_REQUIRE_RECOMP_CORPUS "Fail configuration when the R1 Win64 corpus cannot be built" OFF)
         find_program(WSE_CORPUS_CLANG NAMES clang-18 clang HINTS "${LLVM_TOOLS_BINARY_DIR}")
         find_program(WSE_CORPUS_LLD_LINK NAMES lld-link-18 lld-link HINTS "${LLVM_TOOLS_BINARY_DIR}")
         if(WSE_CORPUS_CLANG AND WSE_CORPUS_LLD_LINK)
             set(_wse_corpus_dir "${CMAKE_CURRENT_BINARY_DIR}/recomp_corpus")
-            set(_wse_corpus_src "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/int_corpus.c")
-            set(_wse_corpus_exe "${_wse_corpus_dir}/int_corpus.exe")
+            set(_wse_corpus_exe "${_wse_corpus_dir}/corpus.exe")
             file(MAKE_DIRECTORY "${_wse_corpus_dir}")
+            set(_wse_corpus_common --target=x86_64-pc-windows-msvc -O2 -ffreestanding -fno-builtin
+                -fno-stack-protector -Wall -Wextra -Werror)
+            # Integer and string corpora: no SSE, so every instruction is integer or string.
+            set(_wse_corpus_flags_int -mno-sse -mno-sse2 -mno-mmx -fno-vectorize -fno-slp-vectorize)
+            set(_wse_corpus_flags_string ${_wse_corpus_flags_int})
+            # SSE corpus: SSE4.1 with the vectorizers on.
+            set(_wse_corpus_flags_sse -msse4.1)
+            set(_wse_corpus_objs)
+            foreach(_unit int string sse)
+                set(_src "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/${_unit}_corpus.c")
+                if(EXISTS "${_src}")
+                    set(_obj "${_wse_corpus_dir}/${_unit}_corpus.obj")
+                    add_custom_command(
+                        OUTPUT "${_obj}"
+                        COMMAND "${WSE_CORPUS_CLANG}" ${_wse_corpus_common} ${_wse_corpus_flags_${_unit}}
+                                -c "${_src}" -o "${_obj}"
+                        DEPENDS "${_src}"
+                        COMMENT "R1 corpus: ${_unit}_corpus.c for Win64"
+                        VERBATIM)
+                    list(APPEND _wse_corpus_objs "${_obj}")
+                endif()
+            endforeach()
             add_custom_command(
                 OUTPUT "${_wse_corpus_exe}"
-                COMMAND "${WSE_CORPUS_CLANG}" --target=x86_64-pc-windows-msvc -O2 -ffreestanding
-                        -fno-builtin -fno-stack-protector -mno-sse -mno-sse2 -mno-mmx
-                        -fno-vectorize -fno-slp-vectorize -Wall -Wextra -Werror
-                        -c "${_wse_corpus_src}" -o "${_wse_corpus_dir}/int_corpus.obj"
                 COMMAND "${WSE_CORPUS_LLD_LINK}" -nologo "-out:${_wse_corpus_exe}" -entry:corpus_entry
-                        -subsystem:console -fixed -base:0x140000000 -nodefaultlib
-                        "${_wse_corpus_dir}/int_corpus.obj"
-                DEPENDS "${_wse_corpus_src}"
-                COMMENT "Building the R1 Win64 integer corpus"
+                        -subsystem:console -fixed -base:0x140000000 -nodefaultlib ${_wse_corpus_objs}
+                DEPENDS ${_wse_corpus_objs}
+                COMMENT "R1 corpus: linking the Win64 PE"
                 VERBATIM)
             add_custom_target(wse_recomp_corpus DEPENDS "${_wse_corpus_exe}")
             add_dependencies(recomp_llvm_test wse_recomp_corpus)
-            target_compile_definitions(recomp_llvm_test PRIVATE "WSE_RECOMP_INT_CORPUS=\"${_wse_corpus_exe}\"")
+            target_compile_definitions(recomp_llvm_test PRIVATE "WSE_RECOMP_CORPUS=\"${_wse_corpus_exe}\"")
         elseif(WSE_REQUIRE_RECOMP_CORPUS)
             message(FATAL_ERROR "R1 corpus: clang (${WSE_CORPUS_CLANG}) or lld-link (${WSE_CORPUS_LLD_LINK}) not found")
         endif()

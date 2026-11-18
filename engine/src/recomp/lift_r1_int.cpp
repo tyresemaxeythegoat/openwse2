@@ -12,6 +12,14 @@ using llvm::Value;
 
 bool is_lock(const DInsn& d) { return (d.ins.attributes & ZYDIS_ATTRIB_HAS_LOCK) != 0; }
 
+// LOCK-prefixed operands are assumed naturally aligned. x86 also locks misaligned ones (a bus
+// lock), but LLVM lowers an under-aligned atomic to a libatomic call, which a translated module
+// cannot import, and AArch64 atomics need the alignment anyway. R1 deviation: a misaligned LOCK
+// access is not atomic-safe on the phone (it faults); R3 revisits memory ordering.
+llvm::MaybeAlign atomic_align(const DInsn& d) {
+    return llvm::MaybeAlign(d.ops[0].size >= 8 ? d.ops[0].size / 8U : 1U);
+}
+
 Value* cint(Ctx&, Value* like, std::uint64_t v) { return llvm::ConstantInt::get(like->getType(), v); }
 
 // Shift count masked to 5 bits (6 for 64-bit operands), as an iN of the destination width.
@@ -46,7 +54,7 @@ Lifted alu(Ctx& c, const DInsn& d) {
         default: c.why = "lock with this ALU op"; return Lifted::unsupported;
         }
         Value* addr = c.host_ptr(c.address(d, d.ops[0]));
-        Value* old = c.B.CreateAtomicRMW(op, addr, b, llvm::MaybeAlign(1), llvm::AtomicOrdering::SequentiallyConsistent);
+        Value* old = c.B.CreateAtomicRMW(op, addr, b, atomic_align(d), llvm::AtomicOrdering::SequentiallyConsistent);
         a = old;
         switch (mn) {
         case ZYDIS_MNEMONIC_ADD: r = c.B.CreateAdd(a, b); c.set_add_flags(a, b, r); break;
@@ -364,7 +372,7 @@ Lifted lift_int(Ctx& c, const DInsn& d) {
             const int m = d.ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY ? 0 : 1;
             const int r = 1 - m;
             Value* addr = c.host_ptr(c.address(d, d.ops[m]));
-            Value* old = B.CreateAtomicRMW(llvm::AtomicRMWInst::Xchg, addr, c.read(d, r), llvm::MaybeAlign(1),
+            Value* old = B.CreateAtomicRMW(llvm::AtomicRMWInst::Xchg, addr, c.read(d, r), atomic_align(d),
                                            llvm::AtomicOrdering::SequentiallyConsistent);
             c.write(d, r, old);
             return Lifted::yes;
@@ -380,7 +388,7 @@ Lifted lift_int(Ctx& c, const DInsn& d) {
         Value* old = nullptr;
         if (is_lock(d) && d.ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY) {
             old = B.CreateAtomicRMW(llvm::AtomicRMWInst::Add, c.host_ptr(c.address(d, d.ops[0])), src,
-                                    llvm::MaybeAlign(1), llvm::AtomicOrdering::SequentiallyConsistent);
+                                    atomic_align(d), llvm::AtomicOrdering::SequentiallyConsistent);
         } else {
             old = c.read(d, 0);
             c.write(d, 0, B.CreateAdd(old, src));
@@ -398,7 +406,7 @@ Lifted lift_int(Ctx& c, const DInsn& d) {
         Value* cur = nullptr;
         if (d.ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY) {
             llvm::AtomicCmpXchgInst* x = B.CreateAtomicCmpXchg(
-                c.host_ptr(c.address(d, d.ops[0])), expected, src, llvm::MaybeAlign(1),
+                c.host_ptr(c.address(d, d.ops[0])), expected, src, atomic_align(d),
                 llvm::AtomicOrdering::SequentiallyConsistent, llvm::AtomicOrdering::SequentiallyConsistent);
             cur = B.CreateExtractValue(x, 0);
         } else {
@@ -433,7 +441,7 @@ Lifted lift_int(Ctx& c, const DInsn& d) {
         Value* r = nullptr;
         if (is_lock(d) && d.ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY) {
             a = B.CreateAtomicRMW(mn == ZYDIS_MNEMONIC_INC ? llvm::AtomicRMWInst::Add : llvm::AtomicRMWInst::Sub,
-                                  c.host_ptr(c.address(d, d.ops[0])), one, llvm::MaybeAlign(1),
+                                  c.host_ptr(c.address(d, d.ops[0])), one, atomic_align(d),
                                   llvm::AtomicOrdering::SequentiallyConsistent);
             r = mn == ZYDIS_MNEMONIC_INC ? B.CreateAdd(a, one) : B.CreateSub(a, one);
         } else {
