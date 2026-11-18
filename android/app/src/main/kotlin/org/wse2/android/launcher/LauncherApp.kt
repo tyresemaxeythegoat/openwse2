@@ -300,7 +300,11 @@ fun LauncherAppContent(
                 onPlay = onPlay,
                 topContentPadding = topPadding,
                 sharedTransitionScope = sharedScope,
-                animatedVisibilityScope = animScope
+                animatedVisibilityScope = animScope,
+                modules = modulesState.modules,
+                selectedIndex = modulesState.selectedIndex,
+                moduleArt = moduleArt,
+                onSelectModule = onSelectModule
             )
             LauncherTab.MODULES -> ModulesScreen(
                 state = modulesState,
