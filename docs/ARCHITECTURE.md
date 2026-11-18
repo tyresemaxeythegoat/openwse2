@@ -1186,7 +1186,8 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     | `rglSliderWidget::getPercentage` | `0x14030dae0` | knob position from the value (`slider_hor` track, `handle_hor` knob) |
     | `mbSoundManager::setTransform` | `0x140332970` | listener position from the camera transform (headless `--audio`) |
 
-    Port approximations (not traced): mission containers are not drawn and take no pointer input; the
+    Port approximations (not traced): mission containers draw in stack order and take input top
+    container first, but a pressed container is not raised to the top; the
     mission pass runs once per frame and uses the frame's `dt` for its clock; the mixer has no worker
     thread or command queue; `wse_headless` links no audio codec. Details in
     [engine/README.md](../engine/README.md).

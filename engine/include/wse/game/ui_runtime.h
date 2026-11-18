@@ -1037,8 +1037,9 @@ public:
     //   presentation does not also step on the frame it opens.
     // - mission frames (`lighting.has_scene`): `step_world_frame` has already retired the
     //   campaign windows, so an open notes / presentation window is dropped here without writing
-    //   a campaign window back. Mission-side presentations (`start_presentation` in a scene,
-    //   which queues nothing) are not driven yet (`STATUS.md` §5).
+    //   a campaign window back. The conversation window's containers
+    //   (`start_conversation_presentation` 4907) run in `update_mission_presentations`, and
+    //   while any is open `root` draws them (`compose_mission_root`).
     // - a consumed `0x12` (`jump_to_menu` 2060, `mbMapWindow::frameMove` `0x140117f90` opens
     //   `mbMenuWindow` `0x12`) builds the menu window for `world.jump_menu_no` from `menus`
     //   (`mbMenuWindow::open` `0x140120240`, which runs the menu's operations), closing an open
@@ -1066,6 +1067,9 @@ public:
                 current_window = -1;
                 rep.closed_for_mission = true;
             }
+            if (!mission_stack_.empty() || root.id == "mission") {
+                compose_mission_root();
+            }
             return rep;
         }
 
@@ -1073,6 +1077,9 @@ public:
             // Leaving the scene closes the conversation window and its containers.
             mission_stack_.clear();
             world.m6.ui.active_presentations.clear();
+        }
+        if (root.id == "mission") {
+            reset_root("closed");
         }
         world.m6.ui.pending_conversation_presentations.clear();
         world.m6.ui.mission_duration_requests.clear();
@@ -1502,8 +1509,12 @@ public:
                                       const UiPointerInput& in,
                                       vm::VmContext* vm_ctx = nullptr,
                                       std::span<const LoadedPresentation> presentations = {}) {
-        std::vector<UiEvent> events;
         world.m5.cursor_pos = {in.x, in.y};
+        if (!in_mission_container_ && !mission_stack_.empty() &&
+            current_window != kScreenWindowPresentation && current_window != kScreenWindowNotes) {
+            return handle_mission_input(world, in, vm_ctx, presentations);
+        }
+        std::vector<UiEvent> events;
 
         if (in.escape_pressed && current_window == kScreenWindowNotes) {
             const std::string id = root.id;
@@ -1606,6 +1617,7 @@ public:
             }
             const UiHitEntry* e = find_hit_entry(hits, text_focus);
             if (in.left_pressed) {
+                press_consumed_ = true;
                 raise(text_focus, kUiStateLeftPress);
                 if (e == nullptr || !e->contains(in.x, in.y)) {
                     commit = true;
@@ -1637,6 +1649,7 @@ public:
             // An open combo popup takes the next press: an item selects it, anything closes.
             const std::int32_t combo = popup_overlay_;
             popup_overlay_ = -1;
+            press_consumed_ = in.left_pressed;
             if (in.left_pressed && valid(combo)) {
                 for (std::size_t k = 0; k < popup_items_.size(); ++k) {
                     if (popup_items_[k].contains(in.x, in.y)) {
@@ -1664,6 +1677,7 @@ public:
                     }
                     raise(e.overlay_id, bit);
                     if (bit == kUiStateLeftPress && left_press(world, e, in, raise)) {
+                        press_consumed_ = true;
                         break;
                     }
                 }
@@ -1748,18 +1762,119 @@ private:
         std::int32_t duration_cs = 0;
         float cs_accum = 0.0f;
         float elapsed_s = 0.0f;
+        // Swap slots (see `swap_mission_presentation`). `vm_no` is the number the VM sees while
+        // the container is swapped in; `no` itself never changes, so a trigger that calls
+        // `start_presentation` 900 in a scene cannot renumber the container.
+        std::int32_t vm_no = -1;
+        std::int32_t window = kScreenWindowPresentation;
+        std::int32_t focused_overlay = -1;
+        UiWidget tree{};
+        std::vector<std::int32_t> hovered{};
+        std::int32_t armed = -1;
+        std::int32_t drag = -1;
+        float drag_grab = 0.0f;
+        float drag_last = 0.0f;
+        std::int32_t hold = -1;
+        float hold_start = 0.0f;
+        float hold_last = 0.0f;
+        std::int32_t popup = -1;
+        std::vector<UiRect> popup_items{};
+        std::unordered_map<std::int32_t, float> scroll{};
     };
     std::vector<MissionPresentation> mission_stack_{};
+    bool in_mission_container_ = false;  // a mission container is swapped in
+    bool press_consumed_ = false;        // the last `handle_input` consumed its press
 
-    // Makes `mp` the presentation the VM sees (`g_presentationContainer`): its overlays,
-    // number, duration, and triggers are swapped into `world` / `active_triggers_`; calling it
-    // again swaps them back.
+    // Makes `mp` the presentation the VM and the input code see (`g_presentationContainer`):
+    // its overlays, number, duration, triggers, focus, widget tree and interactive state are
+    // swapped into `world` / the session; calling it again swaps them back.
     void swap_mission_presentation(WseWorldState& world, MissionPresentation& mp) {
         world.overlays.swap(mp.overlays);
         world.m6.ui.overlay_ext.swap(mp.overlay_ext);
-        std::swap(world.active_presentation_no, mp.no);
+        std::swap(world.active_presentation_no, mp.vm_no);
         std::swap(world.presentation_duration, mp.duration_cs);
+        std::swap(world.m5.focused_overlay_no, mp.focused_overlay);
         std::swap(active_triggers_, mp.triggers);
+        std::swap(current_window, mp.window);
+        std::swap(presentation_no_, mp.no);
+        std::swap(root, mp.tree);
+        hovered_overlays_.swap(mp.hovered);
+        std::swap(armed_overlay_, mp.armed);
+        std::swap(drag_overlay_, mp.drag);
+        std::swap(drag_grab_offset_, mp.drag_grab);
+        std::swap(drag_last_x_, mp.drag_last);
+        std::swap(hold_overlay_, mp.hold);
+        std::swap(hold_start_s_, mp.hold_start);
+        std::swap(hold_last_s_, mp.hold_last);
+        std::swap(popup_overlay_, mp.popup);
+        popup_items_.swap(mp.popup_items);
+        scroll_pos_.swap(mp.scroll);
+        in_mission_container_ = !in_mission_container_;
+        if (!in_mission_container_) {
+            mp.vm_no = mp.no;  // drop a number a trigger wrote; the container keeps its own
+        }
+    }
+
+    // The session state `update_mission_presentations` / `handle_mission_input` set aside while
+    // the mission containers run (a mission has no campaign presentation open).
+    struct CampaignPresentationState {
+        std::int32_t no;
+        std::int32_t duration;
+        std::uint32_t serial;
+        SimpleTriggerManager triggers;
+    };
+    CampaignPresentationState save_campaign_presentation(const WseWorldState& world) {
+        CampaignPresentationState s{world.active_presentation_no, world.presentation_duration,
+                                    world.m6.ui.presentation_start_serial, std::move(active_triggers_)};
+        active_triggers_ = SimpleTriggerManager{};
+        return s;
+    }
+    void restore_campaign_presentation(WseWorldState& world, CampaignPresentationState& s) {
+        world.active_presentation_no = s.no;
+        world.presentation_duration = s.duration;
+        world.m6.ui.presentation_start_serial = s.serial;
+        active_triggers_ = std::move(s.triggers);
+    }
+
+    // Draws the mission containers: `root` becomes a screen-sized container holding each
+    // container's overlay tree in stack order (later = on top), as the conversation window
+    // draws its `mbPresentationContainer` children (`mbConversationWindow::updatePresentations`
+    // `0x1400888c0` adds each new container last).
+    void compose_mission_root() {
+        reset_root("mission");
+        for (const MissionPresentation& mp : mission_stack_) {
+            root.children.push_back(mp.tree);
+        }
+    }
+
+    // Pointer and key input for the mission containers, top container first. Each container
+    // runs the presentation input path of `handle_input` on its own overlays and triggers
+    // (hover enter / leave reach every container); a press one container consumes is not
+    // handed to the containers below it (`rglContainerWidget::triggerState` `0x14028af30`).
+    std::vector<UiEvent> handle_mission_input(WseWorldState& world,
+                                              const UiPointerInput& in,
+                                              vm::VmContext* vm_ctx,
+                                              std::span<const LoadedPresentation> presentations) {
+        std::vector<UiEvent> events;
+        CampaignPresentationState saved = save_campaign_presentation(world);
+        UiPointerInput rest = in;
+        for (std::size_t k = mission_stack_.size(); k > 0U; --k) {
+            MissionPresentation& mp = mission_stack_[k - 1U];
+            swap_mission_presentation(world, mp);
+            press_consumed_ = false;
+            std::vector<UiEvent> ev = handle_input(world, rest, vm_ctx, presentations);
+            const bool consumed = press_consumed_;
+            swap_mission_presentation(world, mp);
+            events.insert(events.end(), ev.begin(), ev.end());
+            if (consumed) {
+                rest.left_pressed = false;
+                rest.text_input.clear();
+            }
+        }
+        press_consumed_ = false;
+        restore_campaign_presentation(world, saved);
+        compose_mission_root();
+        return events;
     }
 
     // `mbConversationWindow::updatePresentations` (`0x1400888c0`), once per mission frame:
@@ -1771,18 +1886,15 @@ private:
     //    `mbPresentationContainer::frameMove` `0x140208ec0`) and closes once its duration ran out.
     // `world.m6.ui.active_presentations` lists the open containers afterwards (read by
     // `presentation_activate` 4901 and the mission branch of `is_presentation_active` 903).
-    // Port: mission containers are not drawn and take no pointer input yet (`STATUS.md` §5).
+    // Afterwards each container's overlay tree is rebuilt and `root` shows them all
+    // (`compose_mission_root`); `handle_input` routes the pointer to them.
     void update_mission_presentations(WseWorldState& world,
                                       vm::VmContext& vm_ctx,
                                       float dt_s,
                                       std::span<const LoadedPresentation> presentations) {
         const float dt = (std::isfinite(dt_s) && dt_s > 0.0f) ? dt_s : 0.0f;
         // The campaign presentation state, restored afterwards (a mission has none open).
-        const std::int32_t saved_no = world.active_presentation_no;
-        const std::int32_t saved_duration = world.presentation_duration;
-        const std::uint32_t saved_serial = world.m6.ui.presentation_start_serial;
-        SimpleTriggerManager saved_triggers = std::move(active_triggers_);
-        active_triggers_ = SimpleTriggerManager{};
+        CampaignPresentationState saved = save_campaign_presentation(world);
 
         for (const auto& [no, cs] : world.m6.ui.mission_duration_requests) {
             for (MissionPresentation& mp : mission_stack_) {
@@ -1805,6 +1917,7 @@ private:
             });
             MissionPresentation mp{};
             mp.no = p;
+            mp.vm_no = p;
             mp.flags = presentations[static_cast<std::size_t>(p)].flags;
             mp.triggers = presentations[static_cast<std::size_t>(p)].triggers;
             // Read-only (flag bit 0) presentations default to 10.0 s, others to 100 s
@@ -1843,13 +1956,13 @@ private:
         }
 
         world.m6.ui.active_presentations.clear();
-        for (const MissionPresentation& mp : mission_stack_) {
+        for (MissionPresentation& mp : mission_stack_) {
             world.m6.ui.active_presentations.push_back(mp.no);
+            swap_mission_presentation(world, mp);
+            sync_overlays_from_world(world);
+            swap_mission_presentation(world, mp);
         }
-        world.active_presentation_no = saved_no;
-        world.presentation_duration = saved_duration;
-        world.m6.ui.presentation_start_serial = saved_serial;
-        active_triggers_ = std::move(saved_triggers);
+        restore_campaign_presentation(world, saved);
     }
 
     // `overlay_animate_to_*` (932..937) per `rglWidget::frameMove` (`0x14031c110`): each running
@@ -2223,6 +2336,14 @@ private:
                 }
                 const std::array<std::int64_t, 2> params{id, p2};
                 dispatch_presentation_trigger(world, vm_ctx, st.key, params);
+                if (in_mission_container_) {
+                    // A mission container closes from `update_mission_presentations` once its
+                    // duration ran out; it does not switch presentations in place.
+                    if (world.presentation_duration <= 0) {
+                        return;
+                    }
+                    continue;
+                }
                 if (!follow_presentation_state(world, vm_ctx, presentations) ||
                     presentation_epoch_ != epoch) {
                     return;

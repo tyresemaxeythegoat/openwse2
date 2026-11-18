@@ -1404,6 +1404,90 @@ void test_overlay_animation_textbox_gamebutton() {
     }
 }
 
+void test_mission_presentation_draw_and_input() {
+    using wse::game::LoadedPresentation;
+    using wse::game::kPresentationFlagManualEndOnly;
+    constexpr std::int64_t s0 = 0;
+    // Each presentation creates one button in -60; -62 counts in `n62_reg`, -63 in `n63_reg`.
+    const auto make_prs = [](std::uint32_t flags, std::size_t n62_reg, std::size_t n63_reg,
+                             std::vector<wse::vm::Statement> extra_62) {
+        LoadedPresentation p{};
+        p.id = "prsnt_mission_input";
+        p.flags = flags;
+        const auto add = [&p](float key, std::vector<wse::vm::Statement> stmts) {
+            wse::game::SimpleTrigger t{};
+            t.interval = key;
+            t.block.statements = std::move(stmts);
+            p.triggers.triggers.push_back(std::move(t));
+        };
+        add(-60.0f, {make_stmt(912U, {reg(0), s0})});
+        std::vector<wse::vm::Statement> t62{
+            make_stmt(wse::vm::core_op::kValAdd, {reg(static_cast<std::int32_t>(n62_reg)), 1})};
+        t62.insert(t62.end(), extra_62.begin(), extra_62.end());
+        add(-62.0f, std::move(t62));
+        add(-63.0f, {make_stmt(wse::vm::core_op::kValAdd, {reg(static_cast<std::int32_t>(n63_reg)), 1})});
+        return p;
+    };
+    auto ctx_ptr = std::make_unique<wse::vm::VmContext>();
+    wse::vm::VmContext& ctx = *ctx_ptr;
+    ctx.stringRegisters[0] = u"Go";
+    ctx.world.lighting.has_scene = true;
+    for (const std::size_t r : {40U, 41U, 42U, 43U}) {
+        ctx.registers[r] = 0;
+    }
+    wse::game::UiSession session{};
+    std::vector<LoadedPresentation> prs{};
+    prs.push_back(make_prs(kPresentationFlagManualEndOnly, 40U, 41U, {}));  // B (bottom)
+    // A (top) also calls start_presentation 900 from its -62.
+    prs.push_back(make_prs(0U, 42U, 43U, {make_stmt(900U, {7})}));
+    const auto step = [&]() { (void)session.drive_frame(ctx.world, ctx, 0.05f, prs, -1); };
+    ctx.world.m6.ui.pending_conversation_presentations.push_back(0);
+    step();
+    ctx.world.m6.ui.pending_conversation_presentations.push_back(1);
+    step();
+    expect(ctx.world.m6.ui.active_presentations.size() == 2U && ctx.world.overlays.empty(),
+           "B (manual_end_only) and A are both open; the campaign overlay list stays empty");
+    expect(session.root.id == "mission" && session.root.children.size() == 2U &&
+               find_widget(session.root.children[0], "overlay_0") != nullptr &&
+               find_widget(session.root.children[1], "overlay_0") != nullptr,
+           "root draws both mission containers, each with its own button");
+    const wse::game::UiWidget* btn =
+        session.root.children.size() == 2U ? find_widget(session.root.children[1], "overlay_0") : nullptr;
+    if (btn == nullptr) {
+        return;
+    }
+    const float x = btn->pos.x + btn->size.x * 0.5f;
+    const float y = btn->pos.y + btn->size.y * 0.5f;
+    wse::game::UiPointerInput in{};
+    in.x = x;
+    in.y = y;
+    (void)session.handle_input(ctx.world, in, &ctx, prs);
+    expect(ctx.registers[41] == 1 && ctx.registers[43] == 1,
+           "hover enter (-63) reaches the button of every mission container");
+    in.left_down = true;
+    in.left_pressed = true;
+    (void)session.handle_input(ctx.world, in, &ctx, prs);
+    in.left_down = false;
+    in.left_pressed = false;
+    in.left_released = true;
+    (void)session.handle_input(ctx.world, in, &ctx, prs);
+    expect(ctx.registers[42] == 1 && ctx.registers[40] == 0,
+           "a press the top container's button consumes fires its -62 only, not the one below");
+    const auto& open = ctx.world.m6.ui.active_presentations;
+    expect(open.size() == 2U && open[0] == 0 && open[1] == 1 &&
+               ctx.world.active_presentation_no < 0 && session.root.id == "mission",
+           "start_presentation in a container trigger renumbers no container and leaves no "
+           "campaign presentation");
+    step();
+    expect(ctx.world.m6.ui.active_presentations.size() == 2U &&
+               ctx.world.m6.ui.active_presentations[1] == 1,
+           "the containers keep their numbers on the next frame");
+    ctx.world.lighting.has_scene = false;
+    step();
+    expect(session.root.id != "mission" && session.root.children.empty(),
+           "leaving the scene stops drawing the mission containers");
+}
+
 void test_synthetic_ui_rhi_render_and_uv_orientation() {
     // 16x16 font atlas: glyph 'A' covers x=[0..8), y=[0..16), top half red, bottom half blue
     // in top-down DDS/RGBA8 coordinates (row 0..7 red, row 8..15 blue).
@@ -2111,6 +2195,7 @@ int run_ui_suite(const char* fixture_path) {
     test_overlay_button_boxes();
     test_overlay_animation_textbox_gamebutton();
     test_mission_presentations_and_ui_frame();
+    test_mission_presentation_draw_and_input();
     test_synthetic_ui_rhi_render_and_uv_orientation();
     test_retail_warband_native_main_menu();
     test_batch_menu_remeasure_and_ui_buffers();
