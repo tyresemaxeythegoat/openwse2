@@ -6,12 +6,13 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
 
 ## 1. Evidence & Clean-Room Rules
 
-- **Baseline version:** Official **WSE2 v1.1.5.5** (`mb_warband_wse2_x64.exe`, PDB + PE + Ghidra 12.1.4 REA analysis).
+- **Baseline version:** Official **WSE2 v1.1.5.6** (`mb_warband_wse2_x64.exe`, PDB + PE + Ghidra 12.1.4 REA analysis).
 - **Superseded baseline:** The `2026-10-14` x64 build is superseded. Do not cite its addresses or TPI type IDs in new code or active documentation outside explicitly labeled historical/superseded sections.
-- **Evidence citation:** Every reconstructed struct, field offset, function, or opcode handler must cite concrete v1.1.5.5 evidence (function VA, PDB TPI type index/size, and/or REA `ev_*` evidence hash).
+- **Superseded `v1.1.5.5` build:** Rebased to v1.1.5.6 on 2026-11-19 with `tools/rebase_build.py`; do not cite un-rebased v1.1.5.5 addresses in new code or active documentation outside historical records (curated class TPI type indices and sizes are identical in both builds).
+- **Evidence citation:** Every reconstructed struct, field offset, function, or opcode handler must cite concrete v1.1.5.6 evidence (function VA, PDB TPI type index/size, and/or REA `ev_*` evidence hash).
 - **Documented safety deviations:** Bounds checks, null checks, loop guards (e.g., `str_split` empty delimiter), and error callbacks may replace retail unchecked indexing/crashing paths, provided valid module behavior is preserved and deviations are documented.
 - **BYOA only:** Never bundle TaleWorlds/Warband assets, retail executables, PDBs, DRM bypasses, or emulators/compatibility layers (no Wine, Box64, or Dynarmic). Android builds load user-supplied Warband installs and `Modules/`.
-- **Recompilation (Phase 5, `docs/RECOMP_PLAN.md`, decided 2026-11-18):** the app translates the user's own WSE2 v1.1.5.5 exe and its shipped x64 DLLs (`lua5164`, `fmodex64`) to ARM64 ahead of time on the device with embedded LLVM. Native shims for the system DLLs the exe imports are allowed. Still banned: Wine, Box64, Dynarmic, QEMU, translating code during play (JIT), and committing or bundling retail binaries, PDBs, or anything lifted from them. Tests on retail code run only locally; CI uses synthetic test binaries.
+- **Recompilation (Phase 5, `docs/RECOMP_PLAN.md`, decided 2026-11-18):** the app translates the user's own WSE2 x64 exe (any build whose shipped PDB matches it; v1.1.5.6 is the verified one) and its shipped x64 DLLs (`lua5164`, `fmodex64`) to ARM64 ahead of time on the device with embedded LLVM. Native shims for the system DLLs the exe imports are allowed. Still banned: Wine, Box64, Dynarmic, QEMU, translating code during play (JIT), and committing or bundling retail binaries, PDBs, or anything lifted from them. Tests on retail code run only locally; CI uses synthetic test binaries.
 
 ## 2. Build & Verification Gates
 
@@ -89,7 +90,7 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
 | `engine/` | **active** | Clean-room C++20 headers (`include/wse/{core,io,vm,game,platform,asset}`), host tests, CLI tools, fixtures |
 | `docs/` | **active** | `PLATFORM_PLAN.md` (Phase 3/4 design), `ARCHITECTURE.md`, `SYMBOL_MAP.json`, generated native & WSE opcode maps |
 | `tools/build_symbol_map.py`, `check_citations.py`, `demand_rank.py`, `extract_native_opcodes.py`, `extract_wse_opcodes.py`, `pdb_symbols.py`, `pe_evidence.py`, `symbol_inventory.py`, `vtables.py` | **active** | Evidence extraction, citation verification, generators, and demand analysis |
-| `tools/r0_pc_reference.cpp` | **active** (local only) | Phase 5 R0 (d) PC reference (Windows only, never run in CI; maps the user's v1.1.5.5 exe and runs retail code) |
+| `tools/r0_pc_reference.cpp` | **active** (local only) | Phase 5 R0 (d) PC reference (Windows only, never run in CI; maps the user's v1.1.5.6 exe and runs retail code) |
 | `tools/pe_catalog.py`, `check_panvk.py`, `patch_panvk.py` | legacy | Static-recompilation catalog and PanVK helpers |
 | `analysis/`, `proof/`, `runtime/` | legacy | Superseded static-recompilation dossier, lifter proofs, guest runtime, PanVK loader |
 
@@ -99,7 +100,7 @@ Whenever an engine milestone or evidence export lands, keep all five living proj
 
 1. `AGENTS.md` — workflow, gates, constraints, and environment guardrails.
 2. `ROADMAP.md` — phase checklists, ordered engineering backlog, and the one-line milestone log.
-3. `docs/ARCHITECTURE.md` — verified v1.1.5.5 layouts, PE/REA evidence tables, module contracts, and implemented subsystems.
+3. `docs/ARCHITECTURE.md` — verified v1.1.5.6 layouts, PE/REA evidence tables, module contracts, and implemented subsystems.
 4. `docs/SYMBOL_MAP.json` — authoritative PDB layout + symbol index (`tools/build_symbol_map.py`).
 5. `STATUS.md` (plus `engine/README.md`) — gate pass/fail ledger, coverage counts, blockers, next tasks, and confirmed pseudocode/disassembly facts.
 
@@ -135,7 +136,7 @@ Commit subjects may carry the running count (`… (222/440)`); that is a log ent
 - **Python working directory:** Never run Python from `%TEMP%\opencode\wse2_pc` because an `inspect.py` script there shadows Python's standard library. Run Python from inside `repo/` or another clean working directory.
 - **PowerShell:** `pwsh` is not installed; use Windows PowerShell (`powershell`) with `;` instead of `&&`. Note `Select-String` is case-insensitive unless `-CaseSensitive` is specified.
 - **Git push stderr:** `git push` prints progress to `stderr`, causing Windows PowerShell to raise `NativeCommandError` even when the push succeeds; verify exit code `0` and that local `HEAD` matches the pushed remote branch.
-- **Ghidra / REA (8 GB RAM host):** Run only one Ghidra analysis at a time, launch heavy exports detached/background, and use `--address-start` / `--address-end` rather than `--name` queries on the v1.1.5.5 binary.
+- **Ghidra / REA (8 GB RAM host):** Run only one Ghidra analysis at a time, launch heavy exports detached/background, and use `--address-start` / `--address-end` rather than `--name` queries on the v1.1.5.6 binary.
 - **Do not switch commits under a running build:** an object that started compiling before a `git checkout` and finished after it is newer than the changed headers, so CMake keeps it; mixed `WseWorldState` layouts then crash `selftest_host` (every suite passing alone). Delete `CMakeFiles/wse_selftest.dir/**/*.o` (or the build tree) after such a switch.
 - **Disassembly sweeps:** Capstone linear sweeps halt at invalid padding bytes; scan with per-instruction resync or targeted function bounds.
 - **Parallel agent units:** give each unit its own worktree under `repo/.wt/<unit>` (`.wt/` and `.verify/` are in `.git/info/exclude`) with the spec in `.verify/SPEC.md`. Build single suites there with `wse2_pc/verify_suite.sh <suite>` (per-worktree `TMP`, so the fixed-name scratch files never collide); only one full gate at a time on this host. A delegated agent's `--dir` resolves against the spawning shell's current directory: return to the repo root before spawning.

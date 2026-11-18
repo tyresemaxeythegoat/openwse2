@@ -6,10 +6,24 @@ Last updated: 2026-11-14.
 This document records only facts derived from the shipped x64 binary and its PDB, or from the public
 WSESDK headers. Anything not yet proven by decompilation is marked **open**.
 
-The evidence baseline is the official **WSE2 v1.1.5.5** release (2026-11-12). It supersedes the
-2026-10-14 build that earlier revisions of this document cited; every address below refers to v1.1.5.5.
+The evidence baseline is the official **WSE2 v1.1.5.6** release (PE timestamp 2026-11-15). It
+supersedes v1.1.5.5 and, before that, the 2026-10-14 build that earlier revisions of this document
+cited; every address below refers to v1.1.5.6.
+
+**How the baseline moved (2026-11-19).** The evidence was gathered on v1.1.5.5 and rebased with
+`tools/rebase_build.py`: `docs/SYMBOL_MAP.json` was regenerated from the v1.1.5.6 PDB (exe
+7,066,112 B, SHA-256 `fbe9808c…4164898`, PDB age 456, same GUID, 14,644 `.pdata` entries), the
+curated class TPI type indices and sizes are identical in both builds, and every cited address
+was moved and then re-checked against both binaries (code decodes alike, data bytes or resolved
+pointers agree). So a statement below that something was "verified" or "checked" against a build
+records a check done on v1.1.5.5 whose cited code is unchanged in v1.1.5.6, except at the reviewed
+sites in `tools/rebase_overrides/v1.1.5.5-to-v1.1.5.6.json` (one bug fix found so far:
+`rglGraphicsContext::setAlphaTestMode` now null-checks its effect pointer before updating the
+alpha-test uniform; the comment in `engine/include/wse/asset/shader.h` notes it).
 
 ## 1. Evidence provenance
+
+Original REA and PDB extraction (on v1.1.5.5; addresses rebased to v1.1.5.6 as described above):
 
 | Artifact | Method | Result |
 | --- | --- | --- |
@@ -188,9 +202,9 @@ dispatch-table entry type, and `gameConstTable` (56 bytes) holds a named `std::v
 `mbStatement::executeWSE` (`0x1401e4f40`) receives the three decoded operand arrays and handles every
 opcode above the native jump table. The SDK's extended operation range is 2800–5202.
 `docs/wse_opcodes.json`, `docs/WSE_OPCODES.md`, and the generated
-`engine/include/wse/vm/wse_opcodes.h` map 440/440 in-range SDK operations in WSE2 v1.1.5.5 to their
+`engine/include/wse/vm/wse_opcodes.h` map 440/440 in-range SDK operations in WSE2 v1.1.5.6 to their
 handlers (431 switch cases plus 9 equality-tested cases), recording the pseudocode line and handler
-extent for each. The map is generated from the `executeWSE` pseudocode export
+extent for each. The map is generated from the v1.1.5.5 `executeWSE` pseudocode export
 `ev_2aaa96a845fb5e0466129d8f6726e8172c13981585db951f98d8235a415cf0f9` (8,844 lines). No in-range
 SDK opcode is unknown or unhandled. The 440 include the seven operations v1.1.5.5 added without
 renumbering: 3911 and 4517–4522.
@@ -586,7 +600,7 @@ opcode ID.
 
 Global instance `g_game` at `0x140620070` (with `+8` pointer interior offset for `mbGame` globals); `g_mission` at `0x140620078`; `g_missionTemplates` at `0x140620068`.
 
-### World/entity, skill, item, mesh, and mission PDB layouts (v1.1.5.5)
+### World/entity, skill, item, mesh, and mission PDB layouts (v1.1.5.6)
 
 Verified in [SYMBOL_MAP.json](SYMBOL_MAP.json) and modeled in [world_state.h](../engine/include/wse/game/world_state.h):
 
@@ -993,7 +1007,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 8. ~~Handler-site addresses cited only in `engine/include` source comments~~ **Resolved (B7):**
    `tools/build_symbol_map.py` exports `function_ranges`, `global_objects`, and `superseded_vas`,
    and `tools/check_citations.py` verifies all `1,494` unique header VAs (`1,714` VA refs) across `54` headers (plus REA `ev_*` IDs) in CI.
-9. ~~Measure v1.1.5.5 module effect loading and material/shader technique resolution for P5.~~
+9. ~~Measure v1.1.5.6 module effect loading and material/shader technique resolution for P5.~~
    **Resolved (Slice P5):** PE/PDB analysis verified effect search & postFX loading
    (`rglEffectManager::initDeviceObjects` `0x14028be40`, `rglGraphicsContext::checkLoadingPostEffects`
    `0x14029ca90`, `rglRenderer::initPostFxShaders` `0x1402db7a0`, `D3DXCreateEffectFromFileA`
@@ -1010,13 +1024,13 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    `getFormatName`, `createMetaMesh`, `gammaCorrectMeshes`, `dumpUsageInfo`) rather than the
    functions they were labeled as. The citation checker accepts any address inside a known
    function, so it cannot catch a mislabeled interior VA; cite function entry VAs. Subsequent
-   v1.1.5.5 verification confirmed `rglMesh::updateRenderOrder` (`0x1402ba0c0`, `0x1402ba165`
+   v1.1.5.6 verification confirmed `rglMesh::updateRenderOrder` (`0x1402ba0c0`, `0x1402ba165`
    signed nibble `-8..+7`), per-draw blend `7` vertex-alpha dispatch (`0x1402e93b9` /
    `0x1402ba13e`), `D3DRS_ALPHAREF` persistence on blended materials (`0x1402e8719`), the
    `0x20` shader specular gate (`0x1402e8734`), `FrontFace::counter_clockwise` (`0x1402e8fb3` /
    `0x14025ada0` / `0x140502b60`), and shader-managed gamma (`rglMesh::gammaCorrect`
    `0x1402c0520`, no DX9 `D3DSAMP_SRGBTEXTURE` / `D3DRS_SRGBWRITEENABLE`).
-10. ~~Audit v1.1.5.5 FMOD Ex audio call sites (`mbSoundManager`, `mbMusicManager`) for P6 replacement.~~
+10. ~~Audit v1.1.5.6 FMOD Ex audio call sites (`mbSoundManager`, `mbMusicManager`) for P6 replacement.~~
    **Resolved (Slice P6):** PE/PDB analysis verified `rglConfig::load` (`0x140264700`),
    `mbSoundSample::readStream` (`0x140332580`: 4-step `<module>/Sounds/languages/<lang>`,
    `<module>/Sounds`, `Sounds/languages/<lang>`, `Sounds` lookup; 3D min=`2.0f`/max=`80.0f`),
@@ -1040,7 +1054,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
    without FMOD via [audio.h](../engine/include/wse/asset/audio.h),
    [platform/audio.h](../engine/include/wse/platform/audio.h),
    [world_audio.h](../engine/include/wse/game/world_audio.h), and `wse_audio` (`stb_vorbis` + `dr_mp3`).
-11. ~~Reconstruct v1.1.5.5 input key tables and `mbGameKeyManager` binding semantics for P7.~~
+11. ~~Reconstruct v1.1.5.6 input key tables and `mbGameKeyManager` binding semantics for P7.~~
     **Resolved (Slice P7):** Disassembly verified `rglInputManager::getKeyName` (`0x1402ad5d0`: `125`
     named DirectInput/mouse/gamepad raw keys across `1..255`), `g_gameKeyManager` (`0x1406a0c00`: `95`
     × 32-byte slots holding primary + alt `{key, num_modifiers, mod[2]}` chords),
@@ -1069,7 +1083,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     implemented in [scene_loaders.h](../engine/include/wse/game/scene_loaders.h),
     [skeleton.h](../engine/include/wse/asset/skeleton.h), and
     [rhi_scene.h](../engine/include/wse/platform/rhi_scene.h).
-13. ~~Reconstruct v1.1.5.5 bitmap font, localization, widget layout, and window/presentation flow for Slice P9 Part 2.~~
+13. ~~Reconstruct v1.1.5.6 bitmap font, localization, widget layout, and window/presentation flow for Slice P9 Part 2.~~
     **Resolved (Slice P9 Part 2):** Verified `rglFont::readFile` (`0x140297a20`), `rglFont::drawText`
     (`0x140298100`), `rglFont::measureText` (`0x14029b650`), and `rglFont::drawGlyph` (`0x14029b7d0`:
     bottom-up `uv.y = (height - v + 4)/height`, `v_bottom = (height - h + padding - 6)/height`,
@@ -1133,7 +1147,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     `rglSimpleButtonWidget` use `rglWidget::setColor` (`0x14031f650`), which does not touch a mesh.
     Implemented as `MeshDrawCall::tint_rgba` in [rhi.h](../engine/include/wse/platform/rhi.h).
 17. ~~Trace how presentation overlays receive and react to pointer input.~~
-    **Resolved (mostly):** v1.1.5.5 entry VAs below. Implemented in
+    **Resolved (mostly):** v1.1.5.6 entry VAs below. Implemented in
     [ui_runtime.h](../engine/include/wse/game/ui_runtime.h) (`UiSession::handle_input`).
 
     | Function | VA | Finding |
@@ -1160,7 +1174,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     sender is untraced. Details in [engine/README.md](../engine/README.md).
 
 18. Overlay animation, text box entry, and game-button mesh scale (P9 Part 2 review items 2, 4, 5).
-    **Resolved:** v1.1.5.5 entry VAs below. Implemented in [ui_runtime.h](../engine/include/wse/game/ui_runtime.h)
+    **Resolved:** v1.1.5.6 entry VAs below. Implemented in [ui_runtime.h](../engine/include/wse/game/ui_runtime.h)
     (`UiSession::step_presentation`, `native_ui_start_anim`, text box input) and [rhi_ui.h](../engine/include/wse/platform/rhi_ui.h)
     (game-button mesh draw). Details in [engine/README.md](../engine/README.md).
 
@@ -1184,7 +1198,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     Details in [engine/README.md](../engine/README.md).
 
 19. Mission presentations, text box cap and focus commit, slider track, headless audio, and SAF rename (P9 Part 2 review items 1, 3, 5; P4 review item 6; P6 review items 1, 2).
-    **Resolved:** v1.1.5.5 entry VAs below. Implemented in [ui_runtime.h](../engine/include/wse/game/ui_runtime.h)
+    **Resolved:** v1.1.5.6 entry VAs below. Implemented in [ui_runtime.h](../engine/include/wse/game/ui_runtime.h)
     (`UiSession::update_mission_presentations`, text box limit and focus commit, slider track),
     [ui_frame.h](../engine/include/wse/platform/ui_frame.h) (input glue),
     [saf_vfs.h](../engine/include/wse/platform/saf_vfs.h) (rename / move), and
@@ -1215,7 +1229,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     [engine/README.md](../engine/README.md).
 
 20. Number-box text entry, number-box range, combo popup item height, and shader warm-up (P9 Part 2 review item 5; P5 lowering review item 11).
-    **Resolved:** v1.1.5.5 entry VAs below. Implemented in [ui_runtime.h](../engine/include/wse/game/ui_runtime.h)
+    **Resolved:** v1.1.5.6 entry VAs below. Implemented in [ui_runtime.h](../engine/include/wse/game/ui_runtime.h)
     (`set_number_box_value`, `step_number_box`, numeric typing in `handle_input`, the combo popup)
     and [shader.h](../engine/include/wse/asset/shader.h) (`SpirvShaderCache::warm_up`, port
     infrastructure). Details in [engine/README.md](../engine/README.md).
@@ -1235,7 +1249,7 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
     scrollable (retail builds a scrollable popup there).
 
 21. Placeholder audit: party size limits, troop skill levels, and four confirmed handlers.
-    **Resolved:** v1.1.5.5 entry VAs below. Implemented in [block_vm.h](../engine/include/wse/vm/block_vm.h)
+    **Resolved:** v1.1.5.6 entry VAs below. Implemented in [block_vm.h](../engine/include/wse/vm/block_vm.h)
     (`troop_skill_level`, `party_max_companions`, `party_max_prisoners`) and
     [world_campaign_helpers.h](../engine/include/wse/game/world_campaign_helpers.h) (the
     script-less fallback). Details in [engine/README.md](../engine/README.md).
@@ -1253,10 +1267,10 @@ and requires `extractNativeLibs=true`. It is independent of the reconstructed ga
 
 ## 9. Evidence index
 
-REA evidence records. The first table is the current WSE2 v1.1.5.5 baseline; the second is the
+REA evidence records. The first table lists the v1.1.5.5 Ghidra REA exports (rebased to v1.1.5.6 on 2026-11-19); the second is the
 superseded 2026-10-14 build, kept only to explain older citations.
 
-**v1.1.5.5 (current)** — analysis profile digest `9b537ee6fdad293e1c8ea50e7b50d0b6b22972a83032bca093d279ab7e770ce4`:
+**v1.1.5.5 (Ghidra REA exports)** — analysis profile digest `9b537ee6fdad293e1c8ea50e7b50d0b6b22972a83032bca093d279ab7e770ce4`:
 
 | ID | Operation | Notes |
 | --- | --- | --- |
