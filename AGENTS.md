@@ -51,6 +51,15 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
   cmake -S . -B build-san -DCMAKE_CXX_COMPILER=clang++ -DWSE_SANITIZE=ON && cmake --build build-san -j && ctest --test-dir build-san --output-on-failure
   ```
   Builds every suite with AddressSanitizer + UndefinedBehaviorSanitizer. The unmodified third-party `lua51` target alone is built with `-fno-sanitize=float-cast-overflow` (stock `lua_number2int` casts any number key to `int`); do not widen that exclusion or apply it to first-party targets. If the local clang has no sanitizer runtime, `g++` works with `-DCMAKE_CXX_FLAGS=-Wno-maybe-uninitialized` (libstdc++ `<regex>` trips that warning under `-O2`).
+- **Recompiler gate (`WSE_ENABLE_LLVM`, Linux/CI):**
+  ```sh
+  CXX=clang++-18 cmake -S . -B build-recomp -DWSE_ENABLE_LLVM=ON \
+    -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm -DLLD_DIR=/usr/lib/llvm-18/lib/cmake/lld
+  cmake --build build-recomp -j"$(nproc)" --target recomp_llvm_test recomp_test
+  ./build-recomp/recomp_test
+  ./build-recomp/recomp_llvm_test
+  ```
+  Requires `llvm-18-dev` and `liblld-18-dev` (plus their transitive dev packages; CI job `recomp-host`, synthetic code only).
 - **Android NDK gate (CI-verified for every pushed commit on any branch):**
   ```sh
   aarch64-linux-android29-clang++ -std=c++20 -O2 -Wall -Wextra -Werror ...
@@ -80,6 +89,7 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
 | `engine/` | **active** | Clean-room C++20 headers (`include/wse/{core,io,vm,game,platform,asset}`), host tests, CLI tools, fixtures |
 | `docs/` | **active** | `PLATFORM_PLAN.md` (Phase 3/4 design), `ARCHITECTURE.md`, `SYMBOL_MAP.json`, generated native & WSE opcode maps |
 | `tools/build_symbol_map.py`, `check_citations.py`, `demand_rank.py`, `extract_native_opcodes.py`, `extract_wse_opcodes.py`, `pdb_symbols.py`, `pe_evidence.py`, `symbol_inventory.py`, `vtables.py` | **active** | Evidence extraction, citation verification, generators, and demand analysis |
+| `tools/r0_pc_reference.cpp` | **active** (local only) | Phase 5 R0 (d) PC reference (Windows only, never run in CI; maps the user's v1.1.5.5 exe and runs retail code) |
 | `tools/pe_catalog.py`, `check_panvk.py`, `patch_panvk.py` | legacy | Static-recompilation catalog and PanVK helpers |
 | `analysis/`, `proof/`, `runtime/` | legacy | Superseded static-recompilation dossier, lifter proofs, guest runtime, PanVK loader |
 

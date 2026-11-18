@@ -29,10 +29,14 @@ engine/
                       rhi_brf.h, rhi_scene.h, audio.h, audio_worker.h, input.h, performance.h
   include/wse/asset/  brf.h, dds.h, shader.h, skeleton.h,  .brf / .dds / WAV+OGG+MP3 asset decoders, module resource catalog, shader/material/SPIR-V pipeline, skeletal FK & skinning
                       audio.h, audio_codecs.h
+  include/wse/recomp/ x86_decode.h, x86_interp.h,             Phase 5 R0 x86-64 decoder subset, reference interpreter,
+                      pe_image.h, r0_inputs.h, x86_synth.h    PE32+ reader, R0 (d) vectors, synthetic test code
   src/audio/          wse_audio_internal.hpp,               `stb_vorbis` + `dr_mp3` codec backend (`wse_audio`, isolated from public headers)
                       wse_audio_{vendor,codecs}.cpp
   src/lua/            lua_bitop.*, lua_globals_script.hpp,    stock MIT Lua 5.1.5 WSE runtime (`wse_lua`, `<lua.h>` isolated here)
                       wse_lua_{internal.hpp,ops,callbacks,manager}.cpp
+  src/recomp/         recomp_llvm.h, r0_spikes.h,             Phase 5 R0 LLVM 18 + LLD lifter & spike runner
+                      lifter_llvm.cpp, r0_spikes.cpp          (`wse_recomp`, built only with `-DWSE_ENABLE_LLVM=ON`)
   tools/              wse_headless.cpp, wse_brf.cpp           headless module CLI validator (`Modules/Native`) + `.brf`/`.dds` inspector
   tests/              one *_test.cpp per suite (+ wse_test_common.h),
                       plus wse_selftest.{h,cpp} and selftest_host_test.cpp, no framework
@@ -40,7 +44,7 @@ engine/
   build_host.ps1      Windows host gate
 ```
 
-The core engine headers under `include/wse/` remain header-only; the Lua runtime (`src/lua/`) compiles into static library `wse_lua` + stock MIT `lua51`, and the compressed audio codecs (`src/audio/`) compile into `wse_audio` + `wse_audio_vendor` (`stb_vorbis` + `dr_mp3`) via CMake (`../CMakeLists.txt`), CI (`.github/workflows/ci.yml`), or `engine/build_host.ps1`.
+The core engine headers under `include/wse/` remain header-only; the Lua runtime (`src/lua/`) compiles into static library `wse_lua` + stock MIT `lua51`, the compressed audio codecs (`src/audio/`) compile into `wse_audio` + `wse_audio_vendor` (`stb_vorbis` + `dr_mp3`), and the Phase 5 R0 translator (`src/recomp/`) compiles into `wse_recomp` when `-DWSE_ENABLE_LLVM=ON` is set via CMake (`../CMakeLists.txt`), CI (`.github/workflows/ci.yml`), or (for the header-only suites) `engine/build_host.ps1`.
 
 ## Current modules
 
@@ -105,7 +109,15 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/input_test.cpp` | Slice P7/P8 tests for `get_raw_key_name` (`0x1402ad360` 125 keys), `WseGameKeyManager` (`0x1400e96a0` 75 built-ins + Custom1..20 + modifier chords + gamepad alts + `getKeyData` + `storeKeys`/`restoreKeys`), `InputContext` & gamepad attach overlay hiding, multi-touch stick/look/4-direction attack & block swipes/command radial, `TouchLayoutEditor`, per-module `Vfs` JSON profiles (`%.9g` round-trip & corrupt rejection), `FreeCameraController` driving the P4 `BrfMeshRenderer` viewer, `WorldInputBridge` (`65`, `70..73`, `75`, `77..78`, `3100..3102`), plus P8 opt-in low-pass filtered `Mission` gyro aiming, `CampaignMap` two-finger pinch-to-zoom, and backwards-compatible v1 JSON profile serialization | `SyntheticInputBackend` + `MemoryVfs` + `SoftwareRhiDevice` |
 | `tests/scene_test.cpp` | host & opt-in retail tests for `WorldMapManifold` (`map.txt` material unpack & barycentric surface height query), `.sco` v0..v4 (`spr_` normalization, AI mesh, `0xff4ad1a6` ground paint, `416` survival), `Data/skeleton_bodies.xml` parser (comments, twist symmetry, deg->rad), `skeleton.h` FK & CPU linear-blend skinning (incl. analytical root motion), multi-draw `BrfSceneRenderer` terrain + prop + skinned render over `SoftwareRhiDevice` (incl. static IB reuse), and retail `Native` `skeletons.brf` + `ani_stand.brf` + `body_meshes.brf` render | synthetic binary/text + `MemoryVfs` + `SoftwareRhiDevice` (+ optional `HostVfs` retail install) |
 | `tests/ui_test.cpp` | Slice P9 Part 2 tests for `wse/io/xml.h` round-trip/entity/error handling, `wse/asset/font.h` `Data/font_data.xml` glyph metrics & `<c=...>`/word-wrap/alignment text layout, `wse/game/ui_runtime.h` `LanguageTable`, `GameVariablesTable`, `UiSession` initial/menu/notes/presentation windows (`-60`..`-63` triggers + modal `0x15`/`0x16` close regressions), `wse/platform/rhi_ui.h` synthetic upright glyph/BRF UV orientation & highlight rendering over `SoftwareRhiDevice`, and retail `Native` main menu + game menu rendering | synthetic XML/CSV/RGBA8 + `MemoryVfs` + `SoftwareRhiDevice` (+ optional `HostVfs` retail install) |
-| `tests/wse_selftest.{h,cpp}`, `tests/selftest_host_test.cpp` | shared aggregate runner invoking all `23` core suites (`WSE_SELF_TEST_LIBRARY=1`) for both host verification (`selftest_host_test`) and the Android SDL3 `libwse2.so` app shell (`platform/sdl/sdl_selftest_main.cpp`); `run_all_suites` takes an optional stop callback polled between suites. In the CMake build each suite is compiled once into `wse_selftest` and every `<name>_test` executable is `tests/suite_main.cpp` linked against it | all 23 suites + `fixtures/scripts.txt` |
+| `include/wse/recomp/x86_decode.h` | Phase 5 R0 x86-64 decoder subset (`Reg`, `Op`, `Cond`, `Operand`, `Insn`, `decode_insn`: moves, `movsx`/`movzx`, `lea`, `push`/`pop`, ALU group except `adc`/`sbb`, `test`, `inc`/`dec`, conditional/unconditional near branches, `ret`, `nop`) | `rglString::indexOf` `0x14030f630` leaf subset (port infrastructure) |
+| `include/wse/recomp/x86_interp.h` | Phase 5 R0 reference interpreter and function CFG decoder (`CpuState`, `DecodedFunction`, `decode_function`, `eval_cond`, `Interpreter` executing decoded `Insn` records over host memory as the lifter oracle) | port infrastructure |
+| `include/wse/recomp/pe_image.h` | minimal bounds-checked PE32+ reader (`PeImage`, `PeSection`, `PeFunctionRange`, `parse_pe`, `map_pe_sections`: headers, sections, `.pdata` function ranges, preferred-base mapping) | port infrastructure |
+| `include/wse/recomp/r0_inputs.h` | R0 (d) deterministic 512-case test vectors (`make_r0_index_of_cases`), `RglStringFake`, `r0_index_of_model`, `fnv1a_results`, and Win64 `GuestStack` | `rglString::indexOf` `0x14030f630` (and `rglString` PDB type `0x35f5`, `docs/ARCHITECTURE.md`) |
+| `include/wse/recomp/x86_synth.h` | synthetic x86-64 test function generator (`make_synthetic_function`) in the R0 decoder subset for R0 (c) timing and host tests | port infrastructure |
+| `src/recomp/{recomp_llvm,r0_spikes}.h`, `src/recomp/{lifter_llvm,r0_spikes}.cpp` | Phase 5 R0 LLVM 18 + LLD lifter, optimizer, object emitter, embedded linker (`Translator`, `emit_probe_object`, `link_shared_object`), and spike runner (`run_r0_spikes`; `wse_recomp` under `-DWSE_ENABLE_LLVM=ON`, `libwse_r0.so` via `../platform/android/r0_jni.cpp` for `../android/app/src/main/kotlin/org/wse2/android/launcher/R0Spikes.kt`) | port infrastructure (`rglString::indexOf` `0x14030f630` checked for R0 (d); design in `docs/RECOMP_PLAN.md`) |
+| `tests/recomp_test.cpp` | host suite `recomp`: `decode_insn` operands/rejections, `Interpreter` flags, `decode_function`, synthetic R0 (c) model match, `parse_pe`/`map_pe_sections`, and R0 (d) vectors/FNV-1a | synthetic x86-64 bytes + synthetic PE32+ |
+| `tests/recomp_llvm_test.cpp` | host translator test (`recomp_llvm`, built with `-DWSE_ENABLE_LLVM=ON`, CI job `recomp-host`): lifts/optimizes/links synthetic functions and runs R0 spikes (a)–(c) against `Interpreter` | synthetic x86-64 bytes only |
+| `tests/wse_selftest.{h,cpp}`, `tests/selftest_host_test.cpp` | shared aggregate runner invoking all `24` core suites (`WSE_SELF_TEST_LIBRARY=1`) for both host verification (`selftest_host_test`) and the Android SDL3 `libwse2.so` app shell (`platform/sdl/sdl_selftest_main.cpp`); `run_all_suites` takes an optional stop callback polled between suites. In the CMake build each suite is compiled once into `wse_selftest` and every `<name>_test` executable is `tests/suite_main.cpp` linked against it | all 24 suites + `fixtures/scripts.txt` |
 
 ## Module text format
 
@@ -827,6 +839,24 @@ P7 input (`wse/platform/input.h`, `wse/game/world_input.h`, `platform/sdl/sdl_in
   when `WseGameKeyManager::revision()` changes. `FreeCameraController` matches
   `make_orbit_mvp_matrix` orientation and wraps yaw.
 
+Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
+
+- **Decoder subset (`x86_decode.h`, `x86_interp.h`):** `decode_insn` rejects anything outside its
+  R0 leaf integer subset (legacy prefixes other than REX, `AH`..`BH` byte registers, `adc`/`sbb`,
+  calls/indirect branches, SSE, truncated encodings) with an error naming the address and up to
+  6 opcode bytes (no guessing). `decode_function` rejects control flow leaving the function range
+  or branching into the middle of an instruction.
+- **Plain guest memory accesses (`src/recomp/lifter_llvm.cpp`):** translated guest loads and
+  stores are plain LLVM loads and stores in R0 (TSO-to-ARM64 memory-ordering lowering lands in R3
+  per `docs/RECOMP_PLAN.md`).
+- **R0 ELF loader (`src/recomp/r0_spikes.cpp`):** the anonymous-memory fallback loader
+  (`LoadedCode::load_own`) accepts only 64-bit `ET_DYN` ELF objects with `PT_LOAD` segments,
+  `.dynsym` symbols, `R_AARCH64_RELATIVE` / `R_X86_64_RELATIVE` relocations, and zero `DT_NEEDED`
+  entries (external imports and all other relocation types are refused).
+- **R0 (d) input bounds (`r0_inputs.h`):** `make_r0_index_of_cases` keeps `start` in `[0, len]`
+  because retail `rglString::indexOf` (`0x14030f630`) does not check `start`. `pe_image.h`
+  bounds-checks all PE32+ headers, sections, and `.pdata` reads against the input buffer.
+
 ## Handler design decisions and limits
 
 - **Exceptions (`execute_wse` / `DispatchFn`):** `execute_wse()` and all eight `execute_wse_*`
@@ -956,7 +986,8 @@ audio tests: PASS
 input tests: PASS
 scene tests: PASS
 ui tests: PASS
-selftest_host tests: PASS (23/23, ...)
+recomp tests: PASS
+selftest_host tests: PASS (24/24, ...)
 engine host tests: PASS
 ```
 
