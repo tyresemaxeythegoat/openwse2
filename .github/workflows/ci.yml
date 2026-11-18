@@ -68,6 +68,85 @@ jobs:
         run: |
           ctest --test-dir build-san --output-on-failure --no-tests=error
 
+  # Phase 5 translator on the host against Ubuntu's LLVM 18 + LLD (synthetic code only).
+  recomp-host:
+    name: Recompiler (Linux, LLVM 18)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 18 + LLD development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev liblld-18-dev zlib1g-dev libzstd-dev \
+            libxml2-dev libedit-dev libffi-dev libncurses-dev libcurl4-openssl-dev
+
+      - name: Build and run the translator test
+        run: |
+          CXX=clang++-18 cmake -S . -B build-recomp -DWSE_ENABLE_LLVM=ON \
+            -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm -DLLD_DIR=/usr/lib/llvm-18/lib/cmake/lld
+          cmake --build build-recomp -j"$(nproc)" --target recomp_llvm_test recomp_test
+          ./build-recomp/recomp_test
+          ./build-recomp/recomp_llvm_test
+
+  # LLVM + LLD 18.1.8 for arm64-v8a, AArch64 target only, static, built once and cached.
+  # Source: the llvmorg-18.1.8 tag, checked against its commit below.
+  llvm-android:
+    name: LLVM 18.1.8 for Android (cached)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      WSE_NDK_VERSION: '30.0.16248370'
+      WSE_LLVM_TAG: 'llvmorg-18.1.8'
+      WSE_LLVM_COMMIT: '3b5b5c1ec4a3095ab096dd780e84d7ab81f3d7ff'
+    steps:
+      - name: Restore cached LLVM install
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/llvm-android
+          key: llvm-android-18.1.8-ndk30.0.16248370-minsize-aarch64-v1
+
+      - name: Build LLVM + LLD
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "${sdk_root}/ndk/${WSE_NDK_VERSION}" ]; then
+            (yes || true) | "${sdk_root}/cmdline-tools/latest/bin/sdkmanager" --install "ndk;${WSE_NDK_VERSION}" > /dev/null
+          fi
+          ndk="${sdk_root}/ndk/${WSE_NDK_VERSION}"
+
+          git init -q llvm-project
+          cd llvm-project
+          git remote add origin https://github.com/llvm/llvm-project.git
+          git sparse-checkout set --no-cone /llvm /lld /cmake /third-party /libunwind/include
+          git fetch -q --depth 1 origin "refs/tags/${WSE_LLVM_TAG}"
+          git checkout -q FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${WSE_LLVM_COMMIT}"
+          cd ..
+
+          cmake -G Ninja -S llvm-project/llvm -B llvm-build \
+            -DCMAKE_TOOLCHAIN_FILE="${ndk}/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_static \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DCMAKE_INSTALL_PREFIX="${HOME}/llvm-android" \
+            -DLLVM_ENABLE_PROJECTS=lld \
+            -DLLVM_TARGETS_TO_BUILD=AArch64 \
+            -DLLVM_HOST_TRIPLE=aarch64-linux-android29 \
+            -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-linux-android29 \
+            -DLLVM_BUILD_TOOLS=OFF -DLLVM_BUILD_UTILS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_BENCHMARKS=OFF -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_LIBXML2=OFF \
+            -DLLVM_ENABLE_TERMINFO=OFF -DLLVM_ENABLE_LIBEDIT=OFF -DLLVM_ENABLE_LIBPFM=OFF \
+            -DLLVM_ENABLE_RTTI=OFF -DLLVM_ENABLE_BINDINGS=OFF
+          cmake --build llvm-build -j"$(nproc)"
+          cmake --install llvm-build
+          du -sh "${HOME}/llvm-android"
+
   android-arm64:
     name: Android NDK (aarch64-linux-android29)
     runs-on: ubuntu-24.04
@@ -116,8 +195,16 @@ jobs:
   android-apk:
     name: Android APK (arm64-v8a)
     runs-on: ubuntu-24.04
+    needs: llvm-android
     steps:
       - uses: actions/checkout@v4
+
+      - name: Restore LLVM for Android
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/llvm-android
+          key: llvm-android-18.1.8-ndk30.0.16248370-minsize-aarch64-v1
+          fail-on-cache-miss: true
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -152,6 +239,7 @@ jobs:
           extra_props=(
             "-Pwse.ndkVersion=${WSE_NDK_VERSION}"
             "-Pwse.cmakeVersion=${WSE_CMAKE_VERSION}"
+            "-Pwse.llvmPrefix=${HOME}/llvm-android"
           )
           echo "Gradle props: ${extra_props[*]}"
 
@@ -169,6 +257,7 @@ jobs:
           extra_props=(
             "-Pwse.ndkVersion=${WSE_NDK_VERSION}"
             "-Pwse.cmakeVersion=${WSE_CMAKE_VERSION}"
+            "-Pwse.llvmPrefix=${HOME}/llvm-android"
           )
 
           gradle -p android recordRoborazziDebug --no-daemon "${extra_props[@]}"
@@ -182,6 +271,10 @@ jobs:
           echo "${contents}" | grep -Fx "lib/arm64-v8a/libwse2.so"
           echo "${contents}" | grep -Fx "lib/arm64-v8a/libSDL3.so"
           echo "${contents}" | grep -Fx "lib/arm64-v8a/libpanvk_hw.so"
+          echo "${contents}" | grep -Fx "lib/arm64-v8a/libwse_r0.so"
+          # R0 (c): the translator's APK cost (uncompressed and compressed bytes).
+          unzip -lv "${apk_path}" | grep -E 'lib/arm64-v8a/lib(wse2|wse_r0)[.]so'
+          ls -l "${apk_path}"
           echo "${contents}" | grep -Fx "assets/scripts.txt"
           # Only the self-test fixture may be packaged (BYOA: no other assets).
           extra_assets="$(echo "${contents}" | grep '^assets/' | grep -Fxv "assets/scripts.txt" || true)"

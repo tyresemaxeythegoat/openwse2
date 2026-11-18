@@ -308,6 +308,12 @@ data class DriverUiState(
         get() = modeKeys[selectedIndex.coerceIn(0, modeKeys.lastIndex)]
 }
 
+// Phase 5 R0 feasibility spikes (`R0Spikes.kt`): `report` is shown in a dialog when set.
+data class R0UiState(
+    val running: Boolean = false,
+    val report: String? = null
+)
+
 data class AdvancedUiState(
     val installFolder: InstallFolderState = InstallFolderState(),
     val scanState: ScanState = ScanState(),

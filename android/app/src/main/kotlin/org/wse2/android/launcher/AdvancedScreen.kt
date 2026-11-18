@@ -1,6 +1,9 @@
 package org.wse2.android.launcher
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,7 +49,10 @@ fun AdvancedScreen(
     onShowFpsOverlayChange: (Boolean) -> Unit,
     onLaunchSelfTest: () -> Unit,
     modifier: Modifier = Modifier,
-    topContentPadding: Dp = 0.dp
+    topContentPadding: Dp = 0.dp,
+    r0State: R0UiState = R0UiState(),
+    onRunR0Spikes: () -> Unit = {},
+    onDismissR0Report: () -> Unit = {}
 ) {
     val colors = LocalWseColors.current
     val treeUri = state.installFolder.treeUri
@@ -187,6 +193,33 @@ fun AdvancedScreen(
                 }
             }
 
+            LauncherSectionHeader(title = "Recompiler (Phase 5)")
+            LauncherGroupedCard {
+                WseListRow(
+                    title = "R0 spikes",
+                    supporting = if (r0State.running) {
+                        "Running: translating with the embedded LLVM. This can take a few minutes."
+                    } else {
+                        "Checks that this phone can load generated code, map the game image " +
+                            "and translate mb_warband_wse2_x64.exe from the selected folder."
+                    },
+                    trailing = if (r0State.running) {
+                        {
+                            CircularProgressIndicator(
+                                color = colors.accent,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    showDivider = false,
+                    enabled = !r0State.running,
+                    onClick = onRunR0Spikes
+                )
+            }
+
             LauncherSectionHeader(title = "Status Log")
             LauncherGroupedCard {
                 Text(
@@ -211,6 +244,30 @@ fun AdvancedScreen(
                 )
             }
         }
+    }
+
+    r0State.report?.let { report ->
+        val context = LocalContext.current
+        WseDialog(
+            title = "R0 spikes",
+            text = report,
+            confirm = WseDialogAction("Copy") {
+                val clipboard =
+                    context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                clipboard?.setPrimaryClip(ClipData.newPlainText("WSE2 R0 spikes", report))
+                onDismissR0Report()
+            },
+            dismiss = WseDialogAction("Share") {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "WSE2 R0 spikes")
+                    putExtra(Intent.EXTRA_TEXT, report)
+                }
+                context.startActivity(Intent.createChooser(send, "Share R0 report"))
+                onDismissR0Report()
+            },
+            onDismissRequest = onDismissR0Report
+        )
     }
 
     if (showLicencesDialog) {

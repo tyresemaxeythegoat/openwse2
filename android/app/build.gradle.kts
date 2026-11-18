@@ -157,6 +157,10 @@ val resolvedNdkVersion = providers.gradleProperty("wse.ndkVersion").orNull
     ?: detectSdkSubdir("ndk")
 val resolvedCmakeVersion = providers.gradleProperty("wse.cmakeVersion").orNull
     ?: detectSdkSubdir("cmake")
+// Install prefix of LLVM + LLD 18 built for arm64-v8a (CI job `llvm-android`). When set, the
+// Phase 5 translator is built into `libwse_r0.so` (Advanced > "R0 spikes"); without it the
+// APK has no translator and that row reports the library as missing.
+val resolvedLlvmPrefix = providers.gradleProperty("wse.llvmPrefix").orNull
 
 android {
     namespace = "org.wse2.android"
@@ -187,6 +191,14 @@ android {
                     "-DWSE_BUILD_TOOLS=OFF",
                     "-DWSE_BUILD_HEADER_CHECKS=OFF"
                 )
+                if (resolvedLlvmPrefix != null) {
+                    targets += "wse_r0"
+                    arguments += listOf(
+                        "-DWSE_ENABLE_LLVM=ON",
+                        "-DLLVM_DIR=$resolvedLlvmPrefix/lib/cmake/llvm",
+                        "-DLLD_DIR=$resolvedLlvmPrefix/lib/cmake/lld"
+                    )
+                }
             }
         }
     }

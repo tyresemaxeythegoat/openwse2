@@ -113,6 +113,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val _heroArt = MutableStateFlow<ModuleArt?>(null)
     val heroArt: StateFlow<ModuleArt?> = _heroArt.asStateFlow()
 
+    private val _r0State = MutableStateFlow(R0UiState())
+    val r0State: StateFlow<R0UiState> = _r0State.asStateFlow()
+
     private val _events = Channel<LauncherEvent>(Channel.UNLIMITED)
     val events: Flow<LauncherEvent> = _events.receiveAsFlow()
 
@@ -304,6 +307,32 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
+    }
+
+    // Runs on its own thread: translation takes seconds to minutes and must not hold up
+    // folder scans on `executor`.
+    fun runR0Spikes() {
+        if (_r0State.value.running) {
+            return
+        }
+        _r0State.value = R0UiState(running = true)
+        val treeUri = _installFolder.value.treeUri
+        Thread({
+            val report = try {
+                R0Spikes.run(app, treeUri)
+            } catch (t: Throwable) {
+                "R0 spikes failed: ${t.message ?: t.javaClass.simpleName}"
+            }
+            mainHandler.post {
+                if (!isCleared.get()) {
+                    _r0State.value = R0UiState(running = false, report = report)
+                }
+            }
+        }, "wse-r0-spikes").start()
+    }
+
+    fun dismissR0Report() {
+        _r0State.value = _r0State.value.copy(report = null)
     }
 
     fun selectDriver(index: Int) {

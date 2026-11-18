@@ -33,6 +33,7 @@ int run_audio_suite(const char* fixture_path);
 int run_input_suite(const char* fixture_path);
 int run_scene_suite(const char* fixture_path);
 int run_ui_suite(const char* fixture_path);
+int run_recomp_suite(const char* fixture_path);
 
 struct SuiteResult {
     const char* name = "";

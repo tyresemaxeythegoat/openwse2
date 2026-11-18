@@ -80,6 +80,7 @@ fun LauncherApp(
     val statusLog by viewModel.statusLog.collectAsStateWithLifecycle()
     val moduleArt by viewModel.moduleArt.collectAsStateWithLifecycle()
     val heroArt by viewModel.heroArt.collectAsStateWithLifecycle()
+    val r0State by viewModel.r0State.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var activeDialog by remember { mutableStateOf<LauncherDialogState?>(null) }
@@ -146,7 +147,10 @@ fun LauncherApp(
         onAllowMockFallbackChange = viewModel::setAllowMockFallback,
         onProbeVulkan = viewModel::probeVulkanDriver,
         onShowFpsOverlayChange = viewModel::setShowFpsOverlay,
-        onLaunchSelfTest = viewModel::onLaunchSelfTestClicked
+        onLaunchSelfTest = viewModel::onLaunchSelfTestClicked,
+        r0State = r0State,
+        onRunR0Spikes = viewModel::runR0Spikes,
+        onDismissR0Report = viewModel::dismissR0Report
     )
 
     when (val dialog = activeDialog) {
@@ -240,7 +244,10 @@ fun LauncherAppContent(
     onAllowMockFallbackChange: (Boolean) -> Unit,
     onProbeVulkan: () -> Unit,
     onShowFpsOverlayChange: (Boolean) -> Unit,
-    onLaunchSelfTest: () -> Unit
+    onLaunchSelfTest: () -> Unit,
+    r0State: R0UiState = R0UiState(),
+    onRunR0Spikes: () -> Unit = {},
+    onDismissR0Report: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
@@ -346,7 +353,10 @@ fun LauncherAppContent(
                 onProbeVulkan = onProbeVulkan,
                 onShowFpsOverlayChange = onShowFpsOverlayChange,
                 onLaunchSelfTest = onLaunchSelfTest,
-                topContentPadding = topPadding
+                topContentPadding = topPadding,
+                r0State = r0State,
+                onRunR0Spikes = onRunR0Spikes,
+                onDismissR0Report = onDismissR0Report
             )
         }
     }

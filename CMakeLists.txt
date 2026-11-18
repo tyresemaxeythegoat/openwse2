@@ -424,6 +424,7 @@ if((WSE_BUILD_TESTS AND BUILD_TESTING) OR WSE_BUILD_ANDROID_APP)
         engine/tests/input_test.cpp
         engine/tests/scene_test.cpp
         engine/tests/ui_test.cpp
+        engine/tests/recomp_test.cpp
     )
     set_target_properties(wse_selftest PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_compile_definitions(wse_selftest PRIVATE WSE_SELF_TEST_LIBRARY=1)
@@ -473,6 +474,7 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
     wse_add_host_test(input)
     wse_add_host_test(scene)
     wse_add_host_test(ui)
+    wse_add_host_test(recomp)
 
     add_executable(selftest_host_test engine/tests/selftest_host_test.cpp)
     target_link_libraries(selftest_host_test PRIVATE wse_selftest)
@@ -483,6 +485,55 @@ if(WSE_BUILD_TESTS AND BUILD_TESTING)
 
     set_tests_properties(wse_dict wse_array platform module_loaders headless lua selftest_host
                          PROPERTIES RUN_SERIAL TRUE)
+endif()
+
+# Phase 5 translator (`docs/RECOMP_PLAN.md`): x86-64 -> LLVM IR -> native code, linked by an
+# embedded LLD. Off by default: it needs an LLVM 18 + LLD build (`-DLLVM_DIR=<prefix>/lib/cmake/llvm`).
+# CI builds it on Linux against Ubuntu's `llvm-18-dev` / `liblld-18-dev` (`recomp-host`) and for
+# Android against LLVM 18.1.8 built from source (`llvm-android`), where it becomes `libwse_r0.so`.
+option(WSE_ENABLE_LLVM "Build the Phase 5 translator (wse_recomp) against LLVM + LLD 18" OFF)
+if(WSE_ENABLE_LLVM)
+    if(WIN32)
+        message(FATAL_ERROR "WSE_ENABLE_LLVM is for Linux and Android builds")
+    endif()
+    find_package(LLVM 18 REQUIRED CONFIG)
+    find_package(LLD REQUIRED CONFIG HINTS "${LLVM_DIR}/../lld")
+    message(STATUS "wse_recomp: LLVM ${LLVM_PACKAGE_VERSION} (${LLVM_DIR}), targets ${LLVM_TARGETS_TO_BUILD}")
+    if(ANDROID)
+        set(_wse_llvm_target_components aarch64codegen aarch64desc aarch64info aarch64utils)
+    else()
+        set(_wse_llvm_target_components nativecodegen)
+    endif()
+    llvm_map_components_to_libnames(_wse_llvm_libs
+        core passes support target mc object option codegen ${_wse_llvm_target_components})
+    separate_arguments(_wse_llvm_defs NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+
+    add_library(wse_recomp STATIC
+        engine/src/recomp/lifter_llvm.cpp
+        engine/src/recomp/r0_spikes.cpp
+    )
+    set_target_properties(wse_recomp PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(wse_recomp SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${LLD_INCLUDE_DIRS})
+    target_compile_definitions(wse_recomp PRIVATE ${_wse_llvm_defs})
+    if(NOT LLVM_ENABLE_RTTI)
+        set_source_files_properties(engine/src/recomp/lifter_llvm.cpp PROPERTIES COMPILE_OPTIONS "-fno-rtti")
+    endif()
+    target_link_libraries(wse_recomp PUBLIC wse_engine PRIVATE lldELF lldCommon ${_wse_llvm_libs} ${CMAKE_DL_LIBS})
+    wse_apply_strict_warnings(wse_recomp)
+
+    if(WSE_BUILD_TESTS AND BUILD_TESTING AND NOT ANDROID)
+        add_executable(recomp_llvm_test engine/tests/recomp_llvm_test.cpp)
+        target_link_libraries(recomp_llvm_test PRIVATE wse_recomp ${CMAKE_DL_LIBS})
+        wse_apply_strict_warnings(recomp_llvm_test)
+        add_test(NAME recomp_llvm COMMAND recomp_llvm_test)
+    endif()
+
+    if(WSE_BUILD_ANDROID_APP)
+        add_library(wse_r0 SHARED platform/android/r0_jni.cpp)
+        target_link_libraries(wse_r0 PRIVATE wse_recomp log)
+        target_link_options(wse_r0 PRIVATE "-Wl,--gc-sections" "-Wl,--exclude-libs,ALL")
+        wse_apply_strict_warnings(wse_r0)
+    endif()
 endif()
 
 if(WSE_BUILD_TOOLS)

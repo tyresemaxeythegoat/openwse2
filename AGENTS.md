@@ -20,15 +20,15 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
     ```powershell
     powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
     ```
-    Compiles and runs all host test suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`, `module_loaders`, `headless`, `lua`, `asset`, `audio`, `input`, `scene`, `ui`) plus the `lua51`, `wse_lua`, and `wse_audio` static libraries, and builds `wse_headless` and `wse_brf` via Zig `clang++ -std=c++20 -O2 -Wall -Wextra -Werror` and must finish with `engine host tests: PASS`.
+    Compiles and runs all host test suites (`operand`, `trigger`, `savegame`, `script`, `wse_bitwise_fp`, `wse_system`, `wse_string`, `wse_dict`, `wse_array`, `wse_world`, `block_vm`, `native_world`, `native_m5`, `wse_m6`, `platform`, `module_loaders`, `headless`, `lua`, `asset`, `audio`, `input`, `scene`, `ui`, `recomp`) plus the `lua51`, `wse_lua`, and `wse_audio` static libraries, and builds `wse_headless` and `wse_brf` via Zig `clang++ -std=c++20 -O2 -Wall -Wextra -Werror` and must finish with `engine host tests: PASS`.
   - Linux / cloud sessions (no PowerShell or Zig needed; verified with Ubuntu `clang++` 18.1.3). Run from the repository root and build outside the tree. The `wse_dict`, `wse_array`, `platform`, `module_loaders`, and `headless` suites write fixed-name scratch files under the system temp directory, so do not run two copies of the gate at once:
     ```sh
     out="$(mktemp -d)"; root="$PWD"
-    for t in operand trigger savegame script wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 module_loaders headless input scene ui; do
+    for t in operand trigger savegame script wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 module_loaders headless input scene ui recomp; do
       clang++ -std=c++20 -O2 -Wall -Wextra -Werror -I engine/include \
         -o "$out/${t}_test" "engine/tests/${t}_test.cpp" || exit 1
     done
-    cd "$out" && for t in operand trigger savegame wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 module_loaders headless input scene ui; do ./${t}_test || exit 1; done \
+    cd "$out" && for t in operand trigger savegame wse_bitwise_fp wse_system wse_string wse_dict wse_array wse_world block_vm native_world native_m5 wse_m6 module_loaders headless input scene ui recomp; do ./${t}_test || exit 1; done \
       && ./script_test "$root/engine/fixtures/scripts.txt" && echo "engine host tests: PASS"
     ```
     Every suite must print `<name> tests: PASS`. The `platform` suite touches the real host Vulkan loader (and any GPU driver it finds) only when `WSE_TEST_SYSTEM_VULKAN=1` is set; otherwise it uses the in-process mock ICD. `wse_string`, `wse_dict`, `wse_array`, and `block_vm` take ~5–15 s each to compile.
@@ -39,7 +39,7 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
       && ctest --test-dir "$out/cmake" -R '^(lua|audio|asset|platform)$' --output-on-failure
     ```
     `WSE_DUMP_SPIRV_DIR=<dir> ./asset_test` writes every SPIR-V module the suite compiles; CI validates them with `spirv-val --target-env vulkan1.0`.
-    The CMake build compiles each suite once into the `wse_selftest` static library; every `<name>_test` executable is `engine/tests/suite_main.cpp` linked against it, and `selftest_host_test` (CTest `selftest_host`) runs all 23 in one process, as the Android self-test APK does. A new suite needs a `run_<name>_suite` entry in `engine/tests/wse_selftest.{h,cpp}` and in both `CMakeLists.txt` lists.
+    The CMake build compiles each suite once into the `wse_selftest` static library; every `<name>_test` executable is `engine/tests/suite_main.cpp` linked against it, and `selftest_host_test` (CTest `selftest_host`) runs all 24 in one process, as the Android self-test APK does. A new suite needs a `run_<name>_suite` entry in `engine/tests/wse_selftest.{h,cpp}` and in both `CMakeLists.txt` lists.
 
     CMake downloads `lua-5.1.5.tar.gz` from `www.lua.org` (SHA-256 pinned). Where that host is blocked, unpack the same tarball (the Ubuntu archive's `lua5.1_5.1.5.orig.tar.gz` is byte-identical) and pass `-DWSE_LUA_SOURCE_DIR=<dir containing src/lua.h>`. Lua is compiled **as C++** so Lua errors unwind as exceptions; never wrap `<lua.h>` in `extern "C"`.
 
