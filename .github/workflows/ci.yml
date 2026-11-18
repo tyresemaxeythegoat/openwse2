@@ -157,6 +157,25 @@ jobs:
 
           gradle -p android assembleDebug --no-daemon "${extra_props[@]}"
 
+      - name: Render launcher screenshots
+        env:
+          WSE_NDK_VERSION: '30.0.16248370'
+          WSE_CMAKE_VERSION: '3.31.6'
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_HOME="${sdk_root}"
+          export ANDROID_SDK_ROOT="${sdk_root}"
+          extra_props=(
+            "-Pwse.ndkVersion=${WSE_NDK_VERSION}"
+            "-Pwse.cmakeVersion=${WSE_CMAKE_VERSION}"
+          )
+
+          gradle -p android recordRoborazziDebug --no-daemon "${extra_props[@]}"
+
+      - name: Check debug APK contents
+        run: |
+          set -euo pipefail
           apk_path="android/app/build/outputs/apk/debug/app-debug.apk"
           test -f "${apk_path}"
           contents="$(unzip -Z1 "${apk_path}")"
@@ -177,4 +196,11 @@ jobs:
         with:
           name: wse2-android-selftest-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload launcher screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-screenshots
+          path: android/app/build/outputs/roborazzi/**/*.png
           if-no-files-found: error
