@@ -10,9 +10,13 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
+#include "wse/recomp/pdb_reader.h"
 #include "wse/recomp/pe_image.h"
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/x86_decode.h"
@@ -246,7 +250,7 @@ void put64(std::vector<std::uint8_t>& f, std::size_t off, std::uint64_t v) {
     std::memcpy(f.data() + off, &v, 8);
 }
 
-void test_pe_reader() {
+std::vector<std::uint8_t> make_base_synthetic_pe() {
     std::vector<std::uint8_t> f(0x600, 0);
     put16(f, 0, 0x5A4D);
     put32(f, 0x3C, 0x40);
@@ -281,6 +285,11 @@ void test_pe_reader() {
     put32(f, 0x400, 0x1000);
     put32(f, 0x404, static_cast<std::uint32_t>(0x1000 + kSmax.size()));
     put32(f, 0x408, 0);
+    return f;
+}
+
+void test_pe_reader() {
+    const std::vector<std::uint8_t> f = make_base_synthetic_pe();
 
     PeImage img;
     std::string err;
@@ -1715,6 +1724,705 @@ void test_register_and_memory_writes() {
            "pop reads pushed qword and restores rsp");
 }
 
+void append_u16(std::vector<std::uint8_t>& out, std::uint16_t v) {
+    out.push_back(static_cast<std::uint8_t>(v & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((v >> 8U) & 0xFFU));
+}
+
+void append_u32(std::vector<std::uint8_t>& out, std::uint32_t v) {
+    out.push_back(static_cast<std::uint8_t>(v & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((v >> 8U) & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((v >> 16U) & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((v >> 24U) & 0xFFU));
+}
+
+void append_cv_record(std::vector<std::uint8_t>& out, std::uint16_t kind,
+                      const std::vector<std::uint8_t>& payload, bool pad4 = true) {
+    const std::size_t raw_total = 4U + payload.size();
+    const std::size_t pad = pad4 ? ((4U - (raw_total % 4U)) % 4U) : 0U;
+    const std::uint16_t rec_len = static_cast<std::uint16_t>(2U + payload.size() + pad);
+    append_u16(out, rec_len);
+    append_u16(out, kind);
+    out.insert(out.end(), payload.begin(), payload.end());
+    for (std::size_t i = 0; i < pad; ++i) {
+        out.push_back(0U);
+    }
+}
+
+void append_s_pub32(std::vector<std::uint8_t>& out, std::uint32_t flags, std::uint16_t section,
+                    std::uint32_t offset, std::string_view name, bool pad4 = true) {
+    std::vector<std::uint8_t> payload;
+    payload.reserve(10U + name.size() + 1U);
+    append_u32(payload, flags);
+    append_u32(payload, offset);
+    append_u16(payload, section);
+    payload.insert(payload.end(), name.begin(), name.end());
+    payload.push_back('\0');
+    append_cv_record(out, 0x110EU, payload, pad4);
+}
+
+std::vector<std::uint8_t> make_pdb_info_stream(const PdbGuidAge& ga, std::size_t total_size = 28U) {
+    std::vector<std::uint8_t> s(total_size < 28U ? 28U : total_size, 0U);
+    put32(s, 0U, 20000404U);
+    put32(s, 4U, 0x12345678U);
+    put32(s, 8U, ga.age);
+    std::memcpy(s.data() + 12U, ga.guid.data(), 16U);
+    return s;
+}
+
+std::vector<std::uint8_t> make_dbi_stream(std::int32_t version_signature,
+                                          std::uint16_t sym_record_stream, std::uint32_t age = 1U,
+                                          std::size_t total_size = 64U) {
+    std::vector<std::uint8_t> s(total_size < 64U ? 64U : total_size, 0U);
+    put32(s, 0U, static_cast<std::uint32_t>(version_signature));
+    put32(s, 4U, 19990903U);
+    put32(s, 8U, age);
+    put16(s, 12U, 0xFFFFU);
+    put16(s, 16U, 0xFFFFU);
+    put16(s, 20U, sym_record_stream);
+    put16(s, 58U, 0x8664U);
+    return s;
+}
+
+struct SyntheticMsfStream {
+    bool empty = false;
+    std::vector<std::uint8_t> data;
+};
+
+struct BuiltMsf {
+    std::vector<std::uint8_t> bytes;
+    std::uint32_t block_size = 0;
+    std::uint32_t num_blocks = 0;
+    std::uint32_t block_map_addr = 0;
+    std::vector<std::uint32_t> dir_blocks;
+    std::vector<std::size_t> dir_stream_size_offsets;
+    std::vector<std::vector<std::size_t>> dir_stream_block_offsets;
+    std::vector<std::vector<std::uint32_t>> stream_blocks;
+};
+
+std::size_t msf_dir_file_off(const BuiltMsf& m, std::size_t dir_off) {
+    const std::size_t blk_idx = dir_off / m.block_size;
+    const std::size_t in_blk = dir_off % m.block_size;
+    return static_cast<std::size_t>(m.dir_blocks[blk_idx]) * m.block_size + in_blk;
+}
+
+BuiltMsf build_synthetic_msf(std::uint32_t block_size,
+                             const std::vector<SyntheticMsfStream>& streams) {
+    BuiltMsf out;
+    out.block_size = block_size;
+    out.block_map_addr = 3U;
+
+    const std::uint32_t num_streams = static_cast<std::uint32_t>(streams.size());
+    std::vector<std::uint32_t> stream_block_counts(streams.size(), 0U);
+    std::vector<std::size_t> active_streams;
+    std::uint32_t total_stream_blocks = 0U;
+    for (std::size_t i = 0; i < streams.size(); ++i) {
+        if (!streams[i].empty && !streams[i].data.empty()) {
+            const std::uint32_t cnt = static_cast<std::uint32_t>(
+                (streams[i].data.size() + block_size - 1U) / block_size);
+            stream_block_counts[i] = cnt;
+            total_stream_blocks += cnt;
+            active_streams.push_back(i);
+        }
+    }
+
+    const std::uint32_t dir_bytes = 4U + 4U * num_streams + 4U * total_stream_blocks;
+    const std::uint32_t num_dir_blocks = (dir_bytes + block_size - 1U) / block_size;
+    const std::uint32_t num_map_blocks = (num_dir_blocks * 4U + block_size - 1U) / block_size;
+    const std::uint32_t needed_blocks = num_dir_blocks + total_stream_blocks;
+
+    // Skip superblock (0), FPM1/FPM2 intervals, and the contiguous block map.
+    const std::uint32_t fpm_interval = block_size * 8U;
+    const std::uint32_t pool_target = needed_blocks + 4U;
+    std::vector<std::uint32_t> pool;
+    pool.reserve(pool_target);
+    std::uint32_t cand = out.block_map_addr + num_map_blocks;
+    while (pool.size() < pool_target) {
+        const std::uint32_t mod = cand % fpm_interval;
+        if (mod != 1U && mod != 2U) {
+            pool.push_back(cand);
+        }
+        ++cand;
+    }
+
+    // Even slots then odd slots ensure multi-block streams and directories are non-contiguous,
+    // leaving unused free blocks so the free block map contains both allocated and free bits.
+    std::vector<std::uint32_t> alloc_order;
+    alloc_order.reserve(needed_blocks);
+    for (std::size_t i = 0; i < pool.size() && alloc_order.size() < needed_blocks; i += 2U) {
+        alloc_order.push_back(pool[i]);
+    }
+    for (std::size_t i = 1U; i < pool.size() && alloc_order.size() < needed_blocks; i += 2U) {
+        alloc_order.push_back(pool[i]);
+    }
+
+    out.num_blocks = pool.back() + 1U;
+    out.bytes.assign(static_cast<std::size_t>(out.num_blocks) * block_size, 0U);
+
+    out.dir_blocks.resize(num_dir_blocks);
+    out.stream_blocks.resize(streams.size());
+    for (const std::size_t i : active_streams) {
+        out.stream_blocks[i].resize(stream_block_counts[i]);
+    }
+
+    std::size_t next_alloc = 0;
+    std::uint32_t dir_assigned = 0;
+    std::vector<std::uint32_t> stream_assigned(streams.size(), 0U);
+    while (next_alloc < needed_blocks) {
+        for (const std::size_t i : active_streams) {
+            if (stream_assigned[i] < stream_block_counts[i]) {
+                out.stream_blocks[i][stream_assigned[i]++] = alloc_order[next_alloc++];
+            }
+        }
+        if (dir_assigned < num_dir_blocks) {
+            out.dir_blocks[dir_assigned++] = alloc_order[next_alloc++];
+        }
+    }
+
+    static constexpr std::uint8_t kMagic[32] = {
+        'M', 'i', 'c', 'r', 'o', 's', 'o', 'f', 't', ' ', 'C', '/', 'C', '+', '+', ' ',
+        'M', 'S', 'F', ' ', '7', '.', '0', '0', '\r', '\n', 0x1A, 'D', 'S', 0x00, 0x00, 0x00,
+    };
+    std::memcpy(out.bytes.data(), kMagic, sizeof(kMagic));
+    put32(out.bytes, 32U, block_size);
+    put32(out.bytes, 36U, 1U);
+    put32(out.bytes, 40U, out.num_blocks);
+    put32(out.bytes, 44U, dir_bytes);
+    put32(out.bytes, 48U, 0U);
+    put32(out.bytes, 52U, out.block_map_addr);
+
+    for (const std::size_t i : active_streams) {
+        const auto& s = streams[i];
+        std::size_t copied = 0;
+        for (const std::uint32_t blk : out.stream_blocks[i]) {
+            const std::size_t rem = s.data.size() - copied;
+            const std::size_t chunk = rem < block_size ? rem : block_size;
+            std::memcpy(out.bytes.data() + static_cast<std::size_t>(blk) * block_size,
+                        s.data.data() + copied, chunk);
+            copied += chunk;
+        }
+    }
+
+    std::vector<std::uint8_t> dir(dir_bytes, 0U);
+    put32(dir, 0U, num_streams);
+    out.dir_stream_size_offsets.resize(streams.size());
+    out.dir_stream_block_offsets.resize(streams.size());
+    for (std::size_t i = 0; i < streams.size(); ++i) {
+        const std::size_t off = 4U + i * 4U;
+        out.dir_stream_size_offsets[i] = off;
+        const std::uint32_t sz = streams[i].empty
+                                     ? 0xFFFFFFFFU
+                                     : static_cast<std::uint32_t>(streams[i].data.size());
+        put32(dir, off, sz);
+    }
+    std::size_t pos = 4U + static_cast<std::size_t>(num_streams) * 4U;
+    for (std::size_t i = 0; i < streams.size(); ++i) {
+        for (const std::uint32_t blk : out.stream_blocks[i]) {
+            out.dir_stream_block_offsets[i].push_back(pos);
+            put32(dir, pos, blk);
+            pos += 4U;
+        }
+    }
+
+    std::size_t dir_copied = 0;
+    for (const std::uint32_t blk : out.dir_blocks) {
+        const std::size_t rem = dir.size() - dir_copied;
+        const std::size_t chunk = rem < block_size ? rem : block_size;
+        std::memcpy(out.bytes.data() + static_cast<std::size_t>(blk) * block_size,
+                    dir.data() + dir_copied, chunk);
+        dir_copied += chunk;
+    }
+
+    const std::size_t map_off = static_cast<std::size_t>(out.block_map_addr) * block_size;
+    for (std::size_t i = 0; i < out.dir_blocks.size(); ++i) {
+        put32(out.bytes, map_off + i * 4U, out.dir_blocks[i]);
+    }
+
+    std::vector<bool> used(out.num_blocks, false);
+    used[0] = true;
+    for (std::uint32_t base = 0; base < out.num_blocks; base += fpm_interval) {
+        if (base + 1U < out.num_blocks) {
+            used[base + 1U] = true;
+        }
+        if (base + 2U < out.num_blocks) {
+            used[base + 2U] = true;
+        }
+    }
+    for (std::uint32_t b = 0; b < num_map_blocks; ++b) {
+        used[out.block_map_addr + b] = true;
+    }
+    for (const std::uint32_t blk : out.dir_blocks) {
+        used[blk] = true;
+    }
+    for (const auto& blks : out.stream_blocks) {
+        for (const std::uint32_t blk : blks) {
+            used[blk] = true;
+        }
+    }
+    for (std::uint32_t base = 0; base < out.num_blocks; base += fpm_interval) {
+        for (const std::uint32_t fpm_offset : {1U, 2U}) {
+            if (base + fpm_offset >= out.num_blocks) {
+                continue;
+            }
+            const std::size_t fpm_byte_off =
+                static_cast<std::size_t>(base + fpm_offset) * block_size;
+            std::memset(out.bytes.data() + fpm_byte_off, 0xFF, block_size);
+            for (std::uint32_t rel = 0; rel < fpm_interval && base + rel < out.num_blocks; ++rel) {
+                if (used[base + rel]) {
+                    out.bytes[fpm_byte_off + (rel / 8U)] &=
+                        static_cast<std::uint8_t>(~(1U << (rel % 8U)));
+                }
+            }
+        }
+    }
+
+    return out;
+}
+
+std::vector<std::uint8_t> make_synthetic_pe_with_codeview(
+    const std::array<std::uint8_t, 16>& guid, std::uint32_t age, std::string_view pdb_path) {
+    std::vector<std::uint8_t> f = make_base_synthetic_pe();
+    f.resize(0x800, 0U);
+    put16(f, 0x46, 3);
+    const std::size_t opt = 0x58;
+    put32(f, opt + 56, 0x4000);
+    put32(f, opt + 112 + 6 * 8, 0x3000);
+    put32(f, opt + 112 + 6 * 8 + 4, 56);
+
+    const std::size_t sec3 = opt + 0xF0 + 2U * 40U;
+    std::memcpy(f.data() + sec3, ".rdata", 6);
+    put32(f, sec3 + 8, 0x100);
+    put32(f, sec3 + 12, 0x3000);
+    put32(f, sec3 + 16, 0x200);
+    put32(f, sec3 + 20, 0x600);
+    put32(f, sec3 + 36, 0x40000040);
+
+    // Entry 0: non-CodeView entry (IMAGE_DEBUG_TYPE_VC_FEATURE = 12) must be skipped.
+    put32(f, 0x600 + 12, 12U);
+
+    // Entry 1: CodeView RSDS entry pointing to raw file offset 0x640.
+    const std::uint32_t rsds_size = static_cast<std::uint32_t>(24U + pdb_path.size() + 1U);
+    put32(f, 0x61C + 12, 2U);
+    put32(f, 0x61C + 16, rsds_size);
+    put32(f, 0x61C + 20, 0x3040U);
+    put32(f, 0x61C + 24, 0x640U);
+
+    std::memcpy(f.data() + 0x640, "RSDS", 4);
+    std::memcpy(f.data() + 0x644, guid.data(), 16);
+    put32(f, 0x654, age);
+    if (!pdb_path.empty()) {
+        std::memcpy(f.data() + 0x658, pdb_path.data(), pdb_path.size());
+    }
+    f[0x658 + pdb_path.size()] = '\0';
+    return f;
+}
+
+bool has_non_contiguous_blocks(const std::vector<std::uint32_t>& blocks) {
+    for (std::size_t i = 1U; i < blocks.size(); ++i) {
+        if (blocks[i] != blocks[i - 1U] + 1U) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void test_pdb_reader() {
+    const PdbGuidAge expected_ga{
+        {0x10, 0x21, 0x32, 0x43, 0x54, 0x65, 0x76, 0x87,
+         0x98, 0xA9, 0xBA, 0xCB, 0xDC, 0xED, 0xFE, 0x0F},
+        3U,
+    };
+
+    // 1. Extended PE CodeView RSDS parsing and rejections.
+    const std::string expected_pdb_path = "C:\\WSE2\\mb_warband_wse2_x64.pdb";
+    const std::vector<std::uint8_t> pe_cv =
+        make_synthetic_pe_with_codeview(expected_ga.guid, expected_ga.age, expected_pdb_path);
+    PeImage pe_img;
+    PeCodeView cv;
+    std::string err;
+    expect(parse_pe(pe_cv.data(), pe_cv.size(), pe_img, &err) && pe_img.sections.size() == 3U &&
+               pe_img.debug_rva == 0x3000U && pe_img.debug_size == 56U,
+           "parse_pe reads data directory 6 and .rdata section");
+    expect(read_pe_codeview(pe_cv.data(), pe_cv.size(), pe_img, cv, &err) &&
+               cv.guid == expected_ga.guid && cv.age == expected_ga.age &&
+               cv.pdb_path == expected_pdb_path,
+           "read_pe_codeview extracts RSDS GUID, age and PDB path");
+
+    {
+        const std::vector<std::uint8_t> base_pe = make_base_synthetic_pe();
+        PeImage base_img;
+        expect(parse_pe(base_pe.data(), base_pe.size(), base_img, &err) &&
+                   !read_pe_codeview(base_pe.data(), base_pe.size(), base_img, cv, &err) &&
+                   !err.empty(),
+               "read_pe_codeview rejects PE without a debug directory");
+    }
+    {
+        err.clear();
+        expect(!read_pe_codeview(nullptr, 0U, pe_img, cv, &err) && !err.empty(),
+               "read_pe_codeview rejects empty buffer");
+    }
+    {
+        std::vector<std::uint8_t> no_cv = pe_cv;
+        put32(no_cv, 0x61C + 12, 12U);
+        err.clear();
+        expect(!read_pe_codeview(no_cv.data(), no_cv.size(), pe_img, cv, &err) && !err.empty(),
+               "read_pe_codeview rejects debug directory with no CodeView entry");
+    }
+    {
+        std::vector<std::uint8_t> wrong_sig = pe_cv;
+        std::memcpy(wrong_sig.data() + 0x640, "NB10", 4);
+        err.clear();
+        expect(!read_pe_codeview(wrong_sig.data(), wrong_sig.size(), pe_img, cv, &err) &&
+                   !err.empty(),
+               "read_pe_codeview rejects non-RSDS CodeView signature");
+    }
+    for (const std::uint32_t bad_len : {3U, 10U, 24U}) {
+        std::vector<std::uint8_t> trunc_cv = pe_cv;
+        put32(trunc_cv, 0x61C + 16, bad_len);
+        err.clear();
+        expect(!read_pe_codeview(trunc_cv.data(), trunc_cv.size(), pe_img, cv, &err) &&
+                   !err.empty(),
+               "read_pe_codeview rejects truncated RSDS record");
+    }
+    {
+        std::vector<std::uint8_t> unterminated = pe_cv;
+        put32(unterminated, 0x61C + 16, 28U);
+        std::memcpy(unterminated.data() + 0x658, "abcd", 4);
+        err.clear();
+        expect(!read_pe_codeview(unterminated.data(), unterminated.size(), pe_img, cv, &err) &&
+                   !err.empty(),
+               "read_pe_codeview rejects unterminated RSDS PDB path");
+    }
+    {
+        std::vector<std::uint8_t> oob_cv = pe_cv;
+        put32(oob_cv, 0x61C + 16, 32U);
+        put32(oob_cv, 0x61C + 24, 0x7F0U);
+        err.clear();
+        expect(!read_pe_codeview(oob_cv.data(), oob_cv.size(), pe_img, cv, &err) && !err.empty(),
+               "read_pe_codeview rejects CodeView raw range past EOF");
+    }
+    {
+        PeImage bad_dir_img = pe_img;
+        bad_dir_img.debug_rva = 0x9000U;
+        err.clear();
+        expect(!read_pe_codeview(pe_cv.data(), pe_cv.size(), bad_dir_img, cv, &err) &&
+                   !err.empty(),
+               "read_pe_codeview rejects unbacked debug directory RVA");
+    }
+
+    // 2. Synthetic 512-byte MSF PDB: empty streams, multi-block non-contiguous streams and
+    //    directory, interleaved non-S_PUB32 records, unaligned RecordLen, and VA resolution.
+    std::vector<std::uint8_t> sym512;
+    append_cv_record(sym512, 0x110DU, std::vector<std::uint8_t>(16U, 0xABU));  // S_GDATA32
+    append_s_pub32(sym512, 2U, 1U, 0x10U, "?smax@@YAHHH@Z", true);
+    append_cv_record(sym512, 0x0006U, {});  // RecordLen == 2, zero payload
+    append_s_pub32(sym512, 0U, 2U, 0x04U, "__pdata_sym", false);  // unaligned (26 bytes)
+    append_cv_record(sym512, 0x1108U, {1U, 0U, 0U, 0U, 'T', '\0'});  // S_UDT
+    append_s_pub32(sym512, 1U, 3U, 0x40U, "??_C@_04HIBGFPH@RSDS?$AA@", true);
+    append_s_pub32(sym512, 0U, 0U, 0x1234U, "__abs_sym", true);
+    append_s_pub32(sym512, 0U, 99U, 0U, "__oob_sec_sym", true);
+    for (int k = 0; k < 40; ++k) {
+        append_cv_record(sym512, 0x1107U, std::vector<std::uint8_t>(24U, 0x55U));  // S_CONSTANT
+    }
+
+    std::vector<SyntheticMsfStream> streams512(140U);
+    streams512[0].empty = true;
+    streams512[1].data = make_pdb_info_stream(expected_ga, 600U);
+    streams512[2].empty = true;
+    streams512[3].data = make_dbi_stream(-1, 4U, expected_ga.age, 580U);
+    streams512[4].data = sym512;
+    for (std::size_t i = 5U; i < streams512.size(); ++i) {
+        streams512[i].empty = true;
+    }
+
+    const BuiltMsf msf512 = build_synthetic_msf(512U, streams512);
+    expect(msf512.dir_blocks.size() >= 2U && has_non_contiguous_blocks(msf512.dir_blocks) &&
+               msf512.stream_blocks[1].size() >= 2U &&
+               msf512.stream_blocks[3].size() >= 2U &&
+               msf512.stream_blocks[4].size() >= 3U &&
+               has_non_contiguous_blocks(msf512.stream_blocks[4]),
+           "synthetic 512B MSF spans non-contiguous directory and stream blocks");
+
+    std::vector<PdbPublic> publics;
+    PdbGuidAge ga;
+    expect(read_pdb_publics(msf512.bytes.data(), msf512.bytes.size(), publics, &ga, &err) &&
+               ga.guid == expected_ga.guid && ga.age == expected_ga.age,
+           "read_pdb_publics extracts matching GUID/age from stream 1 across 512B blocks");
+    expect(publics.size() == 5U &&
+               publics[0].name == "?smax@@YAHHH@Z" && publics[0].section == 1U &&
+               publics[0].offset == 0x10U && publics[0].flags == 2U &&
+               publics[1].name == "__pdata_sym" && publics[1].section == 2U &&
+               publics[1].offset == 0x04U && publics[1].flags == 0U &&
+               publics[2].name == "??_C@_04HIBGFPH@RSDS?$AA@" && publics[2].section == 3U &&
+               publics[2].offset == 0x40U && publics[2].flags == 1U &&
+               publics[3].name == "__abs_sym" && publics[3].section == 0U &&
+               publics[4].name == "__oob_sec_sym" && publics[4].section == 99U,
+           "read_pdb_publics collects S_PUB32 records and honours exact RecordLen");
+
+    expect(pdb_public_va(publics, "?smax@@YAHHH@Z", pe_img.sections, pe_img.image_base) ==
+                   0x140001010ULL &&
+               pdb_public_va(publics, "__pdata_sym", pe_img.sections, pe_img.image_base) ==
+                   0x140002004ULL &&
+               pdb_public_va(publics, "??_C@_04HIBGFPH@RSDS?$AA@", pe_img.sections,
+                             pe_img.image_base) == 0x140003040ULL &&
+               !pdb_public_va(publics, "?smax", pe_img.sections, pe_img.image_base).has_value() &&
+               !pdb_public_va(publics, "missing", pe_img.sections, pe_img.image_base).has_value() &&
+               !pdb_public_va(publics, "__abs_sym", pe_img.sections, pe_img.image_base)
+                    .has_value() &&
+               !pdb_public_va(publics, "__oob_sec_sym", pe_img.sections, pe_img.image_base)
+                    .has_value(),
+           "pdb_public_va resolves 1-based sections and rejects absent or invalid sections");
+
+    {
+        std::vector<PdbPublic> publics_no_info;
+        expect(read_pdb_publics(msf512.bytes.data(), msf512.bytes.size(), publics_no_info, nullptr,
+                                &err) &&
+                   publics_no_info.size() == 5U,
+               "read_pdb_publics accepts null PdbGuidAge output pointer");
+    }
+
+    // 3. Block size 4096 with multi-block stream and multi-block directory, plus 1024 and 2048.
+    {
+        std::vector<std::uint8_t> sym4096;
+        append_s_pub32(sym4096, 2U, 1U, 0x100U, "_first_4k");
+        for (int k = 0; k < 180; ++k) {
+            append_cv_record(sym4096, 0x1107U, std::vector<std::uint8_t>(24U, 0x33U));
+        }
+        append_s_pub32(sym4096, 0U, 3U, 0x200U, "_second_4k");
+
+        std::vector<SyntheticMsfStream> streams4096(1105U);
+        streams4096[0].empty = true;
+        streams4096[1].data = make_pdb_info_stream(expected_ga);
+        streams4096[2].empty = true;
+        streams4096[3].data = make_dbi_stream(-1, 4U, expected_ga.age);
+        streams4096[4].data = sym4096;
+        for (std::size_t i = 5U; i < streams4096.size(); ++i) {
+            streams4096[i].empty = true;
+        }
+        const BuiltMsf msf4096 = build_synthetic_msf(4096U, streams4096);
+        expect(msf4096.dir_blocks.size() >= 2U && msf4096.stream_blocks[4].size() >= 2U &&
+                   read_pdb_publics(msf4096.bytes.data(), msf4096.bytes.size(), publics, &ga,
+                                    &err) &&
+                   publics.size() == 2U && publics[0].name == "_first_4k" &&
+                   publics[1].name == "_second_4k" && ga.guid == expected_ga.guid,
+               "read_pdb_publics handles 4096-byte blocks with multi-block stream and directory");
+
+        for (const std::uint32_t bs : {1024U, 2048U}) {
+            std::vector<SyntheticMsfStream> streams_mid(5U);
+            streams_mid[0].empty = true;
+            streams_mid[1].data = make_pdb_info_stream(expected_ga);
+            streams_mid[2].empty = true;
+            streams_mid[3].data = make_dbi_stream(-1, 4U, expected_ga.age);
+            append_s_pub32(streams_mid[4].data, 2U, 1U, 0x20U, "_mid_bs");
+            const BuiltMsf msf_mid = build_synthetic_msf(bs, streams_mid);
+            expect(read_pdb_publics(msf_mid.bytes.data(), msf_mid.bytes.size(), publics, &ga,
+                                    &err) &&
+                       publics.size() == 1U && publics[0].name == "_mid_bs",
+                   "read_pdb_publics handles 1024- and 2048-byte block sizes");
+        }
+    }
+
+    // 4. Multi-block block map (512B blocks, >128 directory blocks => >1 block-map block).
+    {
+        std::vector<SyntheticMsfStream> streams_map(16500U);
+        streams_map[0].empty = true;
+        streams_map[1].data = make_pdb_info_stream(expected_ga);
+        streams_map[2].empty = true;
+        streams_map[3].data = make_dbi_stream(-1, 4U, expected_ga.age);
+        append_s_pub32(streams_map[4].data, 2U, 1U, 0x80U, "_multi_map");
+        for (std::size_t i = 5U; i < streams_map.size(); ++i) {
+            streams_map[i].empty = true;
+        }
+        const BuiltMsf msf_map = build_synthetic_msf(512U, streams_map);
+        expect(msf_map.dir_blocks.size() > 128U &&
+                   read_pdb_publics(msf_map.bytes.data(), msf_map.bytes.size(), publics, &ga,
+                                    &err) &&
+                   publics.size() == 1U && publics[0].name == "_multi_map" &&
+                   ga.age == expected_ga.age,
+               "read_pdb_publics handles a block map spanning multiple blocks");
+    }
+
+    // 5. Empty SymRecordStream (both 0xFFFFFFFF and zero-byte stream) yields 0 publics cleanly.
+    {
+        std::vector<SyntheticMsfStream> empty_sym_streams(5U);
+        empty_sym_streams[0].empty = true;
+        empty_sym_streams[1].data = make_pdb_info_stream(expected_ga);
+        empty_sym_streams[2].empty = true;
+        empty_sym_streams[3].data = make_dbi_stream(-1, 4U, expected_ga.age);
+        empty_sym_streams[4].empty = true;
+        const BuiltMsf msf_empty_ff = build_synthetic_msf(512U, empty_sym_streams);
+        expect(read_pdb_publics(msf_empty_ff.bytes.data(), msf_empty_ff.bytes.size(), publics,
+                                &ga, &err) &&
+                   publics.empty() && ga.guid == expected_ga.guid,
+               "read_pdb_publics accepts empty (0xFFFFFFFF) SymRecordStream");
+
+        empty_sym_streams[4].empty = false;
+        const BuiltMsf msf_empty_0 = build_synthetic_msf(512U, empty_sym_streams);
+        expect(read_pdb_publics(msf_empty_0.bytes.data(), msf_empty_0.bytes.size(), publics, &ga,
+                                &err) &&
+                   publics.empty(),
+               "read_pdb_publics accepts zero-byte SymRecordStream");
+    }
+
+    // 6. Rejections: every malformed MSF, DBI and CodeView case returns false with an error.
+    const auto expect_pdb_reject = [&](const std::uint8_t* ptr, std::size_t len,
+                                       const char* label) {
+        std::vector<PdbPublic> out = {{"stale", 1U, 0U, 0U}};
+        PdbGuidAge out_ga{};
+        out_ga.age = 999U;
+        std::string rej_err;
+        const bool ok = read_pdb_publics(ptr, len, out, &out_ga, &rej_err);
+        expect(!ok && out.empty() && out_ga.age == 0U && !rej_err.empty(), label);
+    };
+
+    std::vector<SyntheticMsfStream> base_streams(5U);
+    base_streams[0].empty = true;
+    base_streams[1].data = make_pdb_info_stream(expected_ga);
+    base_streams[2].empty = true;
+    base_streams[3].data = make_dbi_stream(-1, 4U, expected_ga.age);
+    append_s_pub32(base_streams[4].data, 2U, 1U, 0x0U, "_ok");
+    const BuiltMsf base_msf = build_synthetic_msf(512U, base_streams);
+
+    expect_pdb_reject(nullptr, 0U, "read_pdb_publics rejects null buffer");
+    expect_pdb_reject(base_msf.bytes.data(), 55U,
+                      "read_pdb_publics rejects truncated superblock");
+
+    {
+        auto bad = base_msf.bytes;
+        bad[0] = 'X';
+        expect_pdb_reject(bad.data(), bad.size(), "read_pdb_publics rejects bad MSF magic");
+    }
+    for (const std::uint32_t bad_bs : {0U, 256U, 1536U, 8192U}) {
+        auto bad = base_msf.bytes;
+        put32(bad, 32U, bad_bs);
+        expect_pdb_reject(bad.data(), bad.size(),
+                          "read_pdb_publics rejects unsupported block size");
+    }
+    {
+        auto bad = base_msf.bytes;
+        put32(bad, 40U, 0U);
+        expect_pdb_reject(bad.data(), bad.size(), "read_pdb_publics rejects zero block count");
+    }
+    {
+        auto bad = base_msf.bytes;
+        bad.pop_back();
+        expect_pdb_reject(bad.data(), bad.size(),
+                          "read_pdb_publics rejects NumBlocks * BlockSize > size");
+    }
+    {
+        auto bad = base_msf.bytes;
+        put32(bad, 44U, 3U);
+        expect_pdb_reject(bad.data(), bad.size(),
+                          "read_pdb_publics rejects NumDirectoryBytes < 4");
+    }
+    {
+        auto bad = base_msf.bytes;
+        put32(bad, 52U, base_msf.num_blocks);
+        expect_pdb_reject(bad.data(), bad.size(),
+                          "read_pdb_publics rejects BlockMapAddr past end");
+    }
+    {
+        auto bad = base_msf.bytes;
+        put32(bad, static_cast<std::size_t>(base_msf.block_map_addr) * base_msf.block_size,
+              base_msf.num_blocks);
+        expect_pdb_reject(bad.data(), bad.size(),
+                          "read_pdb_publics rejects directory block index past end");
+    }
+    {
+        auto bad = base_msf.bytes;
+        put32(bad, msf_dir_file_off(base_msf, base_msf.dir_stream_block_offsets[4][0]),
+              base_msf.num_blocks);
+        expect_pdb_reject(bad.data(), bad.size(),
+                          "read_pdb_publics rejects stream block index past end");
+    }
+    {
+        auto bad = base_msf.bytes;
+        put32(bad, msf_dir_file_off(base_msf, base_msf.dir_stream_size_offsets[4]), 513U);
+        expect_pdb_reject(bad.data(), bad.size(),
+                          "read_pdb_publics rejects stream size larger than its blocks");
+    }
+    {
+        auto bad = base_msf.bytes;
+        put32(bad, msf_dir_file_off(base_msf, base_msf.dir_stream_size_offsets[4]), 0xFFFFFFFEU);
+        expect_pdb_reject(bad.data(), bad.size(),
+                          "read_pdb_publics rejects stream size larger than file");
+    }
+    {
+        auto bad_streams = base_streams;
+        bad_streams[1].data.resize(27U);
+        const BuiltMsf bad = build_synthetic_msf(512U, bad_streams);
+        expect_pdb_reject(bad.bytes.data(), bad.bytes.size(),
+                          "read_pdb_publics rejects truncated PDB info stream");
+    }
+    {
+        auto bad_streams = base_streams;
+        bad_streams[3].data.resize(63U);
+        const BuiltMsf bad = build_synthetic_msf(512U, bad_streams);
+        expect_pdb_reject(bad.bytes.data(), bad.bytes.size(),
+                          "read_pdb_publics rejects truncated DBI stream header");
+    }
+    {
+        auto bad_streams = base_streams;
+        bad_streams[3].data = make_dbi_stream(0, 4U, expected_ga.age);
+        const BuiltMsf bad = build_synthetic_msf(512U, bad_streams);
+        expect_pdb_reject(bad.bytes.data(), bad.bytes.size(),
+                          "read_pdb_publics rejects DBI with bad VersionSignature");
+    }
+    for (const std::uint16_t bad_sym_idx : {std::uint16_t{5U}, std::uint16_t{0xFFFFU}}) {
+        auto bad_streams = base_streams;
+        bad_streams[3].data = make_dbi_stream(-1, bad_sym_idx, expected_ga.age);
+        const BuiltMsf bad = build_synthetic_msf(512U, bad_streams);
+        expect_pdb_reject(bad.bytes.data(), bad.bytes.size(),
+                          "read_pdb_publics rejects SymRecordStream index out of range");
+    }
+    for (const std::size_t tail : {1U, 2U, 3U}) {
+        auto bad_streams = base_streams;
+        bad_streams[4].data.insert(bad_streams[4].data.end(), tail, 0x01U);
+        const BuiltMsf bad = build_synthetic_msf(512U, bad_streams);
+        expect_pdb_reject(bad.bytes.data(), bad.bytes.size(),
+                          "read_pdb_publics rejects truncated trailing CodeView header");
+    }
+    {
+        auto bad_streams = base_streams;
+        append_u16(bad_streams[4].data, 1U);  // RecordLen < 2
+        append_u16(bad_streams[4].data, 0x110EU);
+        const BuiltMsf bad = build_synthetic_msf(512U, bad_streams);
+        expect_pdb_reject(bad.bytes.data(), bad.bytes.size(),
+                          "read_pdb_publics rejects CodeView RecordLen < 2");
+    }
+    {
+        auto bad_streams = base_streams;
+        append_u16(bad_streams[4].data, 10U);  // payload 8 < 10 required for S_PUB32
+        append_u16(bad_streams[4].data, 0x110EU);
+        bad_streams[4].data.insert(bad_streams[4].data.end(), 8U, 0U);
+        const BuiltMsf bad = build_synthetic_msf(512U, bad_streams);
+        expect_pdb_reject(bad.bytes.data(), bad.bytes.size(),
+                          "read_pdb_publics rejects truncated S_PUB32 fields");
+    }
+    {
+        auto bad_streams = base_streams;
+        append_u16(bad_streams[4].data, 14U);  // 2 + 10 fixed + 2 non-NUL name bytes
+        append_u16(bad_streams[4].data, 0x110EU);
+        append_u32(bad_streams[4].data, 2U);
+        append_u32(bad_streams[4].data, 0U);
+        append_u16(bad_streams[4].data, 1U);
+        bad_streams[4].data.push_back('a');
+        bad_streams[4].data.push_back('b');
+        const BuiltMsf bad = build_synthetic_msf(512U, bad_streams);
+        expect_pdb_reject(bad.bytes.data(), bad.bytes.size(),
+                          "read_pdb_publics rejects unterminated S_PUB32 name");
+    }
+    for (const std::uint16_t rec_kind : {std::uint16_t{0x110EU}, std::uint16_t{0x110DU}}) {
+        auto bad_streams = base_streams;
+        append_u16(bad_streams[4].data, 0x20U);
+        append_u16(bad_streams[4].data, rec_kind);
+        bad_streams[4].data.insert(bad_streams[4].data.end(), 12U, 0U);
+        const BuiltMsf bad = build_synthetic_msf(512U, bad_streams);
+        expect_pdb_reject(bad.bytes.data(), bad.bytes.size(),
+                          "read_pdb_publics rejects CodeView record length past stream");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -1726,6 +2434,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_interpreter_flags();
     test_function_decode_and_run();
     test_pe_reader();
+    test_pdb_reader();
     test_r0_vectors();
     test_decode_alu_forms();
     test_decode_group1();

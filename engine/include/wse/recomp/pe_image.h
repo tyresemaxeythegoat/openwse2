@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -35,6 +36,8 @@ struct PeImage {
     std::uint32_t size_of_image = 0;
     std::uint32_t size_of_headers = 0;
     std::uint32_t entry_rva = 0;
+    std::uint32_t debug_rva = 0;
+    std::uint32_t debug_size = 0;
     std::vector<PeSection> sections;
     std::vector<PeFunctionRange> functions;  // `.pdata`, sorted by `begin`
 
@@ -124,6 +127,11 @@ inline bool parse_pe(const std::uint8_t* f, std::size_t n, PeImage& out, std::st
                       !rd32(f, n, opt + 112 + 3 * 8 + 4, exc_size))) {
         return fail("truncated data directories");
     }
+    if (ndirs > 6 && (opt_size < 112U + 7U * 8U ||
+                      !rd32(f, n, opt + 112 + 6 * 8, out.debug_rva) ||
+                      !rd32(f, n, opt + 112 + 6 * 8 + 4, out.debug_size))) {
+        return fail("truncated data directories");
+    }
     const std::size_t sec0 = opt + opt_size;
     for (std::uint16_t i = 0; i < nsec; ++i) {
         const std::size_t s = sec0 + static_cast<std::size_t>(i) * 40;
@@ -182,6 +190,76 @@ inline bool map_pe_sections(const std::uint8_t* f, std::size_t n, const PeImage&
         std::memcpy(dest + s.virtual_address, f + s.raw_offset, copy);
     }
     return true;
+}
+
+// RSDS record of the debug directory (IMAGE_DEBUG_TYPE_CODEVIEW = 2): GUID, age, PDB path.
+struct PeCodeView {
+    std::array<std::uint8_t, 16> guid{};
+    std::uint32_t age = 0;
+    std::string pdb_path;
+};
+
+// Reads the first CodeView (RSDS) debug directory record from a PE32+ file buffer.
+inline bool read_pe_codeview(const std::uint8_t* file, std::size_t size, const PeImage& image,
+                             PeCodeView& out, std::string* error) {
+    using namespace pe_detail;
+    out = PeCodeView{};
+    const auto fail = [&](const char* m) {
+        if (error != nullptr) {
+            *error = m;
+        }
+        return false;
+    };
+    if (file == nullptr || size == 0U) {
+        return fail("empty PE buffer");
+    }
+    if (image.debug_rva == 0U || image.debug_size == 0U) {
+        return fail("PE has no debug directory");
+    }
+    if (image.debug_size < 28U) {
+        return fail("PE debug directory too small");
+    }
+    const std::uint8_t* dir = image.file_ptr(file, size, image.debug_rva, image.debug_size);
+    if (dir == nullptr) {
+        return fail("PE debug directory not file-backed");
+    }
+    constexpr std::uint32_t kImageDebugTypeCodeView = 2U;
+    for (std::uint64_t off = 0; off + 28ULL <= image.debug_size; off += 28ULL) {
+        std::uint32_t type = 0;
+        std::uint32_t raw_size = 0;
+        std::uint32_t raw_off = 0;
+        (void)rd32(dir, image.debug_size, static_cast<std::size_t>(off) + 12U, type);
+        (void)rd32(dir, image.debug_size, static_cast<std::size_t>(off) + 16U, raw_size);
+        (void)rd32(dir, image.debug_size, static_cast<std::size_t>(off) + 24U, raw_off);
+        if (type != kImageDebugTypeCodeView) {
+            continue;
+        }
+        if (static_cast<std::uint64_t>(raw_off) > size ||
+            static_cast<std::uint64_t>(raw_size) > static_cast<std::uint64_t>(size) - raw_off) {
+            return fail("CodeView debug data extends past end of file");
+        }
+        const std::uint8_t* cv = file + raw_off;
+        if (raw_size < 4U) {
+            return fail("truncated CodeView record");
+        }
+        if (std::memcmp(cv, "RSDS", 4) != 0) {
+            return fail("unsupported CodeView signature (expected RSDS)");
+        }
+        if (raw_size < 25U) {
+            return fail("truncated RSDS CodeView record");
+        }
+        std::memcpy(out.guid.data(), cv + 4, 16);
+        (void)rd32(cv, raw_size, 20U, out.age);
+        const void* nul = std::memchr(cv + 24, '\0', static_cast<std::size_t>(raw_size) - 24U);
+        if (nul == nullptr) {
+            return fail("unterminated RSDS PDB path");
+        }
+        const std::size_t path_len =
+            static_cast<std::size_t>(static_cast<const std::uint8_t*>(nul) - (cv + 24));
+        out.pdb_path.assign(reinterpret_cast<const char*>(cv + 24), path_len);
+        return true;
+    }
+    return fail("no CodeView entry in PE debug directory");
 }
 
 }  // namespace wse::recomp
