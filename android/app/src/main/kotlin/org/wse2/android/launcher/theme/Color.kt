@@ -2,159 +2,150 @@ package org.wse2.android.launcher.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.pow
 
-/** Default Warband warm amber/gold seed (matches legacy wse_accent #E59A3C). */
-val DefaultSeedColorArgb: Int = 0xFFE59A3C.toInt()
+/** Default gold seed ARGB used when no module art is available. */
+val DefaultSeedColorArgb: Int = 0xFFC9A15A.toInt()
+
+internal object WsePalette {
+    val Background = Color(0xFF0E0D0C)
+    val Surface = Color(0xFF151311)
+    val SurfaceContainerLowest = Color(0xFF0A0908)
+    val SurfaceContainerLow = Color(0xFF1A1815)
+    val SurfaceContainer = Color(0xFF201D19)
+    val SurfaceContainerHigh = Color(0xFF29251F)
+    val SurfaceContainerHighest = Color(0xFF332E27)
+
+    val OnSurface = Color(0xFFEDE6DA)
+    val OnSurfaceVariant = Color(0xFFB5AA98)
+    val Outline = Color(0xFF6E5E40)
+    val OutlineVariant = Color(0xFF3A3226)
+
+    val Gold = Color(0xFFC9A15A)
+    val OnGold = Color(0xFF1A1408)
+    val GoldContainer = Color(0xFF3A2E17)
+    val OnGoldContainer = Color(0xFFF4E4C1)
+    val GoldBright = Color(0xFFD9B46A)
+    val GoldDeep = Color(0xFFB08A45)
+
+    val Bronze = Color(0xFFA8743F)
+    val OnBronze = Color(0xFF140E07)
+    val BronzeContainer = Color(0xFF2D2115)
+    val OnBronzeContainer = Color(0xFFEEDAC2)
+
+    val Error = Color(0xFFD8664F)
+    val OnError = Color(0xFF1E0A06)
+    val ErrorContainer = Color(0xFF3B1A14)
+    val OnErrorContainer = Color(0xFFF7CFC6)
+
+    val Hairline = Gold.copy(alpha = 0.45f)
+
+    val StatusReady = Color(0xFF7FB37A)
+    val StatusReadyText = Color(0xFF96C991)
+    val StatusWarning = Color(0xFFD6A04B)
+    val StatusWarningText = Color(0xFFE2B468)
+    val StatusErrorText = Color(0xFFED9380)
+}
+
+@Immutable
+data class WseColors(
+    val background: Color = WsePalette.Background,
+    val surface: Color = WsePalette.Surface,
+    val surfaceContainerLow: Color = WsePalette.SurfaceContainerLow,
+    val surfaceContainer: Color = WsePalette.SurfaceContainer,
+    val surfaceContainerHigh: Color = WsePalette.SurfaceContainerHigh,
+    val surfaceContainerHighest: Color = WsePalette.SurfaceContainerHighest,
+    val onSurface: Color = WsePalette.OnSurface,
+    val onSurfaceVariant: Color = WsePalette.OnSurfaceVariant,
+    val outline: Color = WsePalette.Outline,
+    val outlineVariant: Color = WsePalette.OutlineVariant,
+    val primary: Color = WsePalette.Gold,
+    val onPrimary: Color = WsePalette.OnGold,
+    val primaryContainer: Color = WsePalette.GoldContainer,
+    val onPrimaryContainer: Color = WsePalette.OnGoldContainer,
+    val primaryGradientTop: Color = WsePalette.GoldBright,
+    val primaryGradientBottom: Color = WsePalette.GoldDeep,
+    val secondary: Color = WsePalette.Bronze,
+    val onSecondary: Color = WsePalette.OnBronze,
+    val error: Color = WsePalette.Error,
+    val onError: Color = WsePalette.OnError,
+    val errorContainer: Color = WsePalette.ErrorContainer,
+    val onErrorContainer: Color = WsePalette.OnErrorContainer,
+    val hairline: Color = WsePalette.Hairline,
+    val accent: Color = WsePalette.Gold,
+    val ready: Color = WsePalette.StatusReady,
+    val readyText: Color = WsePalette.StatusReadyText,
+    val warning: Color = WsePalette.StatusWarning,
+    val warningText: Color = WsePalette.StatusWarningText,
+    val errorTone: Color = WsePalette.Error,
+    val errorToneText: Color = WsePalette.StatusErrorText,
+    val neutral: Color = WsePalette.OnSurfaceVariant,
+    val neutralText: Color = WsePalette.OnSurfaceVariant
+) {
+    companion object {
+        val hairline: Color = WsePalette.Hairline
+    }
+}
+
+val LocalWseColors = compositionLocalOf { WseColors() }
+
+internal val WseDarkColorScheme: ColorScheme = darkColorScheme(
+    primary = WsePalette.Gold,
+    onPrimary = WsePalette.OnGold,
+    primaryContainer = WsePalette.GoldContainer,
+    onPrimaryContainer = WsePalette.OnGoldContainer,
+    inversePrimary = Color(0xFF7D602B),
+    secondary = WsePalette.Bronze,
+    onSecondary = WsePalette.OnBronze,
+    secondaryContainer = WsePalette.BronzeContainer,
+    onSecondaryContainer = WsePalette.OnBronzeContainer,
+    tertiary = Color(0xFF9E8E72),
+    onTertiary = Color(0xFF17130D),
+    tertiaryContainer = Color(0xFF332D22),
+    onTertiaryContainer = Color(0xFFE6DEC9),
+    background = WsePalette.Background,
+    onBackground = WsePalette.OnSurface,
+    surface = WsePalette.Surface,
+    onSurface = WsePalette.OnSurface,
+    surfaceVariant = WsePalette.SurfaceContainerHigh,
+    onSurfaceVariant = WsePalette.OnSurfaceVariant,
+    surfaceTint = WsePalette.Gold,
+    inverseSurface = WsePalette.OnSurface,
+    inverseOnSurface = WsePalette.Surface,
+    error = WsePalette.Error,
+    onError = WsePalette.OnError,
+    errorContainer = WsePalette.ErrorContainer,
+    onErrorContainer = WsePalette.OnErrorContainer,
+    outline = WsePalette.Outline,
+    outlineVariant = WsePalette.OutlineVariant,
+    scrim = Color(0xFF000000),
+    surfaceDim = WsePalette.Background,
+    surfaceBright = WsePalette.SurfaceContainerHigh,
+    surfaceContainerLowest = WsePalette.SurfaceContainerLowest,
+    surfaceContainerLow = WsePalette.SurfaceContainerLow,
+    surfaceContainer = WsePalette.SurfaceContainer,
+    surfaceContainerHigh = WsePalette.SurfaceContainerHigh,
+    surfaceContainerHighest = WsePalette.SurfaceContainerHighest
+)
 
 /**
- * Derives a Material 3 [ColorScheme] from an ARGB [seed] via pure tonal HSL derivation.
- * Used on Android < 12 or when dynamic colour is disabled (e.g. module-art themed accents).
+ * Blends the module art [seedArgb] into WSE gold (35% seed, 65% gold), clamping the seed's
+ * saturation to at most 0.6 and its lightness to [0.45, 0.70] before blending.
  */
-fun schemeFromSeed(seed: Int, dark: Boolean): ColorScheme {
-    val (rawH, rawS, _) = argbToHsl(seed)
-    val isAchromatic = rawS < 0.08f
-    val primarySat = if (isAchromatic) rawS.coerceAtMost(0.06f) else rawS.coerceIn(0.35f, 0.82f)
-    val secondarySat = if (isAchromatic) {
-        rawS.coerceAtMost(0.05f)
-    } else {
-        (primarySat * 0.36f).coerceIn(0.14f, 0.30f)
-    }
-    val tertiaryHue = (rawH + 60f) % 360f
-    val tertiarySat = if (isAchromatic) {
-        rawS.coerceAtMost(0.06f)
-    } else {
-        (primarySat * 0.45f).coerceIn(0.18f, 0.45f)
-    }
-    val neutralSat = if (isAchromatic) 0f else (primarySat * 0.08f).coerceAtMost(0.06f)
-    val neutralVariantSat = if (isAchromatic) 0f else (primarySat * 0.14f).coerceIn(0.03f, 0.11f)
-
-    return if (dark) {
-        val primary = hslToColor(rawH, primarySat, 0.72f)
-        val primaryContainer = hslToColor(rawH, (primarySat * 0.85f).coerceAtMost(0.75f), 0.27f)
-        val secondary = hslToColor(rawH, secondarySat, 0.74f)
-        val secondaryContainer = hslToColor(rawH, secondarySat, 0.26f)
-        val tertiary = hslToColor(tertiaryHue, tertiarySat, 0.74f)
-        val tertiaryContainer = hslToColor(tertiaryHue, tertiarySat, 0.26f)
-
-        darkColorScheme(
-            primary = primary,
-            onPrimary = pickReadableOnColor(
-                background = primary,
-                darkCandidate = hslToColor(rawH, primarySat, 0.14f),
-                lightCandidate = hslToColor(rawH, primarySat, 0.96f)
-            ),
-            primaryContainer = primaryContainer,
-            onPrimaryContainer = pickReadableOnColor(
-                background = primaryContainer,
-                darkCandidate = hslToColor(rawH, primarySat, 0.12f),
-                lightCandidate = hslToColor(rawH, primarySat, 0.91f)
-            ),
-            inversePrimary = hslToColor(rawH, primarySat, 0.38f),
-            secondary = secondary,
-            onSecondary = pickReadableOnColor(
-                background = secondary,
-                darkCandidate = hslToColor(rawH, secondarySat, 0.14f),
-                lightCandidate = hslToColor(rawH, secondarySat, 0.96f)
-            ),
-            secondaryContainer = secondaryContainer,
-            onSecondaryContainer = hslToColor(rawH, secondarySat, 0.90f),
-            tertiary = tertiary,
-            onTertiary = pickReadableOnColor(
-                background = tertiary,
-                darkCandidate = hslToColor(tertiaryHue, tertiarySat, 0.14f),
-                lightCandidate = hslToColor(tertiaryHue, tertiarySat, 0.96f)
-            ),
-            tertiaryContainer = tertiaryContainer,
-            onTertiaryContainer = hslToColor(tertiaryHue, tertiarySat, 0.90f),
-            background = hslToColor(rawH, neutralSat, 0.07f),
-            onBackground = hslToColor(rawH, neutralSat, 0.91f),
-            surface = hslToColor(rawH, neutralSat, 0.07f),
-            onSurface = hslToColor(rawH, neutralSat, 0.91f),
-            surfaceVariant = hslToColor(rawH, neutralVariantSat, 0.22f),
-            onSurfaceVariant = hslToColor(rawH, neutralVariantSat, 0.78f),
-            surfaceTint = primary,
-            inverseSurface = hslToColor(rawH, neutralSat, 0.90f),
-            inverseOnSurface = hslToColor(rawH, neutralSat, 0.16f),
-            error = Color(0xFFFFB4AB),
-            onError = Color(0xFF690005),
-            errorContainer = Color(0xFF93000A),
-            onErrorContainer = Color(0xFFFFDAD6),
-            outline = hslToColor(rawH, neutralVariantSat, 0.56f),
-            outlineVariant = hslToColor(rawH, neutralVariantSat, 0.26f),
-            scrim = Color(0xFF000000),
-            surfaceContainerLowest = hslToColor(rawH, neutralSat, 0.05f),
-            surfaceContainerLow = hslToColor(rawH, neutralSat, 0.10f),
-            surfaceContainer = hslToColor(rawH, neutralSat, 0.12f),
-            surfaceContainerHigh = hslToColor(rawH, neutralSat, 0.15f),
-            surfaceContainerHighest = hslToColor(rawH, neutralSat, 0.19f)
-        )
-    } else {
-        val primary = hslToColor(rawH, primarySat, 0.36f)
-        val primaryContainer = hslToColor(rawH, (primarySat * 0.85f).coerceAtMost(0.80f), 0.88f)
-        val secondary = hslToColor(rawH, secondarySat, 0.39f)
-        val secondaryContainer = hslToColor(rawH, secondarySat, 0.88f)
-        val tertiary = hslToColor(tertiaryHue, tertiarySat, 0.39f)
-        val tertiaryContainer = hslToColor(tertiaryHue, tertiarySat, 0.88f)
-
-        lightColorScheme(
-            primary = primary,
-            onPrimary = pickReadableOnColor(
-                background = primary,
-                darkCandidate = hslToColor(rawH, primarySat, 0.10f),
-                lightCandidate = Color.White
-            ),
-            primaryContainer = primaryContainer,
-            onPrimaryContainer = pickReadableOnColor(
-                background = primaryContainer,
-                darkCandidate = hslToColor(rawH, primarySat, 0.14f),
-                lightCandidate = Color.White
-            ),
-            inversePrimary = hslToColor(rawH, primarySat, 0.74f),
-            secondary = secondary,
-            onSecondary = pickReadableOnColor(
-                background = secondary,
-                darkCandidate = hslToColor(rawH, secondarySat, 0.10f),
-                lightCandidate = Color.White
-            ),
-            secondaryContainer = secondaryContainer,
-            onSecondaryContainer = hslToColor(rawH, secondarySat, 0.16f),
-            tertiary = tertiary,
-            onTertiary = pickReadableOnColor(
-                background = tertiary,
-                darkCandidate = hslToColor(tertiaryHue, tertiarySat, 0.10f),
-                lightCandidate = Color.White
-            ),
-            tertiaryContainer = tertiaryContainer,
-            onTertiaryContainer = hslToColor(tertiaryHue, tertiarySat, 0.16f),
-            background = hslToColor(rawH, neutralSat, 0.97f),
-            onBackground = hslToColor(rawH, neutralSat, 0.11f),
-            surface = hslToColor(rawH, neutralSat, 0.97f),
-            onSurface = hslToColor(rawH, neutralSat, 0.11f),
-            surfaceVariant = hslToColor(rawH, neutralVariantSat, 0.88f),
-            onSurfaceVariant = hslToColor(rawH, neutralVariantSat, 0.29f),
-            surfaceTint = primary,
-            inverseSurface = hslToColor(rawH, neutralSat, 0.18f),
-            inverseOnSurface = hslToColor(rawH, neutralSat, 0.95f),
-            error = Color(0xFFBA1A1A),
-            onError = Color(0xFFFFFFFF),
-            errorContainer = Color(0xFFFFDAD6),
-            onErrorContainer = Color(0xFF410002),
-            outline = hslToColor(rawH, neutralVariantSat, 0.48f),
-            outlineVariant = hslToColor(rawH, neutralVariantSat, 0.78f),
-            scrim = Color(0xFF000000),
-            surfaceContainerLowest = Color.White,
-            surfaceContainerLow = hslToColor(rawH, neutralSat, 0.95f),
-            surfaceContainer = hslToColor(rawH, neutralSat, 0.93f),
-            surfaceContainerHigh = hslToColor(rawH, neutralSat, 0.90f),
-            surfaceContainerHighest = hslToColor(rawH, neutralSat, 0.87f)
-        )
-    }
+fun accentFor(seedArgb: Int): Color {
+    val (h, s, l) = argbToHsl(seedArgb)
+    val clampedSeed = hslToColor(
+        hue = h,
+        sat = s.coerceAtMost(0.6f),
+        lightness = l.coerceIn(0.45f, 0.70f)
+    )
+    return lerp(WsePalette.Gold, clampedSeed, 0.35f)
 }
 
 private fun argbToHsl(argb: Int): Triple<Float, Float, Float> {
@@ -202,29 +193,4 @@ private fun hslToColor(hue: Float, sat: Float, lightness: Float): Color {
         blue = (b1 + m).coerceIn(0f, 1f),
         alpha = 1f
     )
-}
-
-private fun pickReadableOnColor(
-    background: Color,
-    darkCandidate: Color,
-    lightCandidate: Color
-): Color {
-    val bgLum = relativeLuminance(background)
-    val darkContrast = contrastRatio(bgLum, relativeLuminance(darkCandidate))
-    val lightContrast = contrastRatio(bgLum, relativeLuminance(lightCandidate))
-    return if (darkContrast >= lightContrast) darkCandidate else lightCandidate
-}
-
-private fun contrastRatio(l1: Float, l2: Float): Float {
-    val hi = max(l1, l2)
-    val lo = min(l1, l2)
-    return (hi + 0.05f) / (lo + 0.05f)
-}
-
-private fun relativeLuminance(c: Color): Float {
-    fun linearize(channel: Float): Float =
-        if (channel <= 0.04045f) channel / 12.92f else ((channel + 0.055f) / 1.055f).pow(2.4f)
-    return 0.2126f * linearize(c.red) +
-        0.7152f * linearize(c.green) +
-        0.0722f * linearize(c.blue)
 }

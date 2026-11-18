@@ -3,16 +3,25 @@ package org.wse2.android.launcher.theme
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+/**
+ * Dark-only iron-and-gold theme for the WSE2 launcher.
+ *
+ * [darkTheme] and [dynamicColor] are kept for caller compatibility and are intentionally ignored;
+ * [seedColorArgb] tints the accent via [accentFor] and animates changes over 600 ms.
+ */
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun Wse2Theme(
     darkTheme: Boolean = true,
@@ -20,28 +29,35 @@ fun Wse2Theme(
     seedColorArgb: Int = DefaultSeedColorArgb,
     content: @Composable () -> Unit
 ) {
-    val context = LocalContext.current
-    val colorScheme = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    } else {
-        schemeFromSeed(seed = seedColorArgb, dark = darkTheme)
+    val targetAccent = accentFor(seedColorArgb)
+    val animatedAccent by animateColorAsState(
+        targetValue = targetAccent,
+        animationSpec = tween(durationMillis = 600),
+        label = "wse-accent"
+    )
+    val wseColors = remember(animatedAccent) {
+        WseColors(accent = animatedAccent)
     }
 
+    val context = LocalContext.current
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val activity = context.findActivity() ?: return@SideEffect
             val insetsController = WindowCompat.getInsetsController(activity.window, view)
-            insetsController.isAppearanceLightStatusBars = !darkTheme
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
+            insetsController.isAppearanceLightStatusBars = false
+            insetsController.isAppearanceLightNavigationBars = false
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Wse2Typography,
-        content = content
-    )
+    CompositionLocalProvider(LocalWseColors provides wseColors) {
+        MaterialTheme(
+            colorScheme = WseDarkColorScheme,
+            shapes = Wse2Shapes,
+            typography = Wse2Typography,
+            content = content
+        )
+    }
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {

@@ -1,34 +1,39 @@
 package org.wse2.android.launcher
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.wse2.android.R
+import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
+import org.wse2.android.launcher.theme.wseBackdrop
+import org.wse2.android.launcher.ui.WseDialog
+import org.wse2.android.launcher.ui.WseDialogAction
+import org.wse2.android.launcher.ui.WseListRow
+import org.wse2.android.launcher.ui.WseSecondaryButton
 
 @Composable
 fun AdvancedScreen(
@@ -43,11 +48,13 @@ fun AdvancedScreen(
     modifier: Modifier = Modifier,
     topContentPadding: Dp = 0.dp
 ) {
+    val colors = LocalWseColors.current
     val treeUri = state.installFolder.treeUri
     val selectedModule = state.selectedModule
     val verifyEnabled = selectedModule?.hasScriptsTxt == true &&
         treeUri != null &&
         !state.scanState.inProgress
+    var showLicencesDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -70,49 +77,31 @@ fun AdvancedScreen(
             Text(
                 text = "Advanced",
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
+                color = colors.onSurface
             )
 
             LauncherSectionHeader(title = "Warband Folder (SAF)")
             LauncherGroupedCard {
-                ListItem(
-                    headlineContent = { Text("Tree URI") },
-                    supportingContent = {
-                        Text(
-                            text = treeUri?.toString() ?: "No Warband folder selected.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                WseListRow(
+                    title = "Tree URI",
+                    supporting = treeUri?.toString() ?: "No Warband folder selected."
                 )
-                LauncherSectionDivider()
-
-                ListItem(
-                    headlineContent = { Text("SAF tree index") },
-                    supportingContent = {
-                        Text(
-                            text = state.scanState.indexStatsText,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                WseListRow(
+                    title = "SAF tree index",
+                    supporting = state.scanState.indexStatsText
                 )
-                LauncherSectionDivider()
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    OutlinedButton(
+                    WseSecondaryButton(
+                        text = "Verify scripts.txt via SafVfs",
                         onClick = onVerifyScripts,
                         enabled = verifyEnabled,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
-                    ) {
-                        Text("Verify scripts.txt via SafVfs")
-                    }
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
@@ -133,14 +122,11 @@ fun AdvancedScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    OutlinedButton(
+                    WseSecondaryButton(
+                        text = "Import Turnip / PanVK Driver Package (.zip)",
                         onClick = onImportDriver,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
-                    ) {
-                        Text("Import Turnip / PanVK Driver Package (.zip)")
-                    }
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
                 LauncherSectionDivider()
 
@@ -158,22 +144,23 @@ fun AdvancedScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    OutlinedButton(
+                    WseSecondaryButton(
+                        text = "Probe Vulkan Driver (CPU reference frame)",
                         onClick = onProbeVulkan,
                         enabled = !state.driverState.isProbeInProgress,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
-                    ) {
-                        if (state.driverState.isProbeInProgress) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text("Probe Vulkan Driver (CPU reference frame)")
-                    }
+                        leadingIcon = if (state.driverState.isProbeInProgress) {
+                            {
+                                CircularProgressIndicator(
+                                    color = colors.accent,
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
@@ -192,14 +179,11 @@ fun AdvancedScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    OutlinedButton(
+                    WseSecondaryButton(
+                        text = "Launch WSE2 SDL3 Self-Test (WseActivity)",
                         onClick = onLaunchSelfTest,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
-                    ) {
-                        Text("Launch WSE2 SDL3 Self-Test (WseActivity)")
-                    }
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
@@ -210,14 +194,58 @@ fun AdvancedScreen(
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colors.onSurfaceVariant,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
                 )
             }
+
+            LauncherSectionHeader(title = "About")
+            LauncherGroupedCard {
+                WseListRow(
+                    title = "Licences",
+                    supporting = "SIL Open Font License 1.1 (Cinzel, Manrope)",
+                    showDivider = false,
+                    onClick = { showLicencesDialog = true }
+                )
+            }
         }
     }
+
+    if (showLicencesDialog) {
+        val licenceText = rememberFontLicencesText()
+        WseDialog(
+            title = "Licences",
+            text = licenceText,
+            confirm = WseDialogAction("Close") { showLicencesDialog = false },
+            onDismissRequest = { showLicencesDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun rememberFontLicencesText(): String {
+    val context = LocalContext.current
+    return remember(context) {
+        val cinzel = readRawLicence(context, R.raw.ofl_cinzel)
+        val manrope = readRawLicence(context, R.raw.ofl_manrope)
+        buildString {
+            append("CINZEL\n\n")
+            append(cinzel)
+            append("\n\n-----------------------------------------------------------\n\n")
+            append("MANROPE\n\n")
+            append(manrope)
+        }
+    }
+}
+
+private fun readRawLicence(context: Context, resId: Int): String = try {
+    context.resources.openRawResource(resId).bufferedReader(Charsets.UTF_8).use {
+        it.readText().trim()
+    }
+} catch (_: Throwable) {
+    "SIL Open Font License 1.1"
 }
 
 private fun previewAdvancedState(): AdvancedUiState = AdvancedUiState(
@@ -245,7 +273,7 @@ private fun previewAdvancedState(): AdvancedUiState = AdvancedUiState(
 @Composable
 private fun PreviewAdvancedDark() {
     Wse2Theme(darkTheme = true, dynamicColor = false) {
-        Surface {
+        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             AdvancedScreen(
                 state = previewAdvancedState(),
                 onVerifyScripts = {},
@@ -264,7 +292,7 @@ private fun PreviewAdvancedDark() {
 @Composable
 private fun PreviewAdvancedLight() {
     Wse2Theme(darkTheme = false, dynamicColor = false) {
-        Surface {
+        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             AdvancedScreen(
                 state = previewAdvancedState(),
                 onVerifyScripts = {},

@@ -9,19 +9,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
+import org.wse2.android.launcher.theme.wseBackdrop
 
 private val SettingsPlaceholderPerformance = PerformanceUiState.fromJson("{}")
 
@@ -44,6 +42,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     topContentPadding: Dp = 0.dp
 ) {
+    val colors = LocalWseColors.current
     val perf = state.performance ?: SettingsPlaceholderPerformance
     val enabled = state.isLoaded
 
@@ -68,7 +67,7 @@ fun SettingsScreen(
             Text(
                 text = "Settings",
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
+                color = colors.onSurface
             )
 
             LauncherSectionHeader(title = "Graphics")
@@ -194,15 +193,13 @@ fun SettingsScreen(
                 )
                 LauncherSectionDivider()
 
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = "Applies to the in-game interface in a later update.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                Text(
+                    text = "Applies to the in-game interface in a later update.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
                 )
             }
 
@@ -272,7 +269,7 @@ private fun previewSettingsState(): SettingsUiState = SettingsUiState(
 @Composable
 private fun PreviewSettingsDark() {
     Wse2Theme(darkTheme = true, dynamicColor = false) {
-        Surface {
+        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             SettingsScreen(
                 state = previewSettingsState(),
                 onQualityPresetChange = {},
@@ -297,7 +294,7 @@ private fun PreviewSettingsDark() {
 @Composable
 private fun PreviewSettingsLight() {
     Wse2Theme(darkTheme = false, dynamicColor = false) {
-        Surface {
+        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             SettingsScreen(
                 state = previewSettingsState(),
                 onQualityPresetChange = {},
