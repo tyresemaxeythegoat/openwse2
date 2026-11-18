@@ -54,6 +54,10 @@ public:
                      std::string* error);
 
     [[nodiscard]] const LiftReport& report() const noexcept;
+    // Drops the module lifted so far without emitting it (the coverage meter lifts in batches).
+    void discard();
+    // Time spent in `lift()` since construction (all batches).
+    [[nodiscard]] double total_lift_ms() const noexcept;
 
 private:
     struct Impl;

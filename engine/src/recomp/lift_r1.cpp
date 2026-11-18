@@ -334,6 +334,7 @@ struct R1Translator::Impl {
     std::string init_error;
     LiftReport report;
     double lift_ms = 0.0;
+    double total_ms = 0.0;  // lift time of discarded / emitted modules
 
     void reset() {
         module = std::make_unique<llvm::Module>("wse_r1", *context);
@@ -366,6 +367,11 @@ R1Translator::~R1Translator() = default;
 
 const std::string& R1Translator::init_error() const noexcept { return impl_->init_error; }
 const LiftReport& R1Translator::report() const noexcept { return impl_->report; }
+void R1Translator::discard() {
+    impl_->total_ms += impl_->lift_ms;
+    impl_->reset();
+}
+double R1Translator::total_lift_ms() const noexcept { return impl_->total_ms + impl_->lift_ms; }
 
 void R1Translator::declare(const std::vector<std::uint64_t>& entries) {
     for (const std::uint64_t va : entries) {
@@ -662,6 +668,7 @@ bool R1Translator::emit_object(int opt_level, std::vector<char>& object, Transla
         return false;
     }
     const double lift_ms = impl_->lift_ms;
+    impl_->total_ms += lift_ms;
     const bool ok = llvm_common::optimize_and_emit(m, *t.tm, opt_level, object, timings, error);
     if (timings != nullptr) {
         timings->lift_ms = lift_ms;

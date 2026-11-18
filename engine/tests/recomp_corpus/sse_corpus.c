@@ -926,14 +926,15 @@ EXPORT u64 m_saxpy_f64(u64 a, u64 b, u64 c, u64 d) {
 EXPORT u64 m_dot_product_f32(u64 a, u64 b, u64 c, u64 d) {
     (void)c;
     (void)d;
-    const float* x = (const float*)a;
-    const float* y = x + 512;
+    const u32* x = (const u32*)a;
+    const u32* y = x + 512;
     u64 n = b & 511ULL;
     float acc = 0.0f;
     for (u64 i = 0; i < n; ++i) {
-        acc += x[i] * y[i];
+        /* Finite inputs only (see m_sum_floats): two NaN operands may differ in payload. */
+        acc += f_of(x[i] & 0xBFFFFFFFU) * f_of(y[i] & 0xBFFFFFFFU);
     }
-    return bits_f(acc);
+    return acc != acc ? 0x7FC00000ULL : bits_f(acc);
 }
 
 EXPORT u64 m_clamp_01_f32(u64 a, u64 b, u64 c, u64 d) {

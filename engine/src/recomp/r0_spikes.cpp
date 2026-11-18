@@ -27,6 +27,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <thread>
@@ -38,6 +39,8 @@
 
 #include "recomp_llvm.h"
 #include "wse/recomp/pdb_reader.h"
+#include "discover.h"
+#include "lift_r1.h"
 #include "wse/recomp/pe_image.h"
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/x86_interp.h"
@@ -420,6 +423,103 @@ std::string to_lower(std::string s) {
 
 }  // namespace
 
+// The R1 coverage meter (`docs/RECOMP_PLAN.md` "R1 design"). Entries: non-chained `.pdata`
+// begins, PDB functions in `.text`, then direct call targets to a fixed point. A first pass only
+// collects entries; the second discovers and lifts each function and drops its body, so the
+// decoded image is never held in memory at once. Lifting goes in batches whose LLVM module is
+// discarded.
+static void run_r1_coverage(Report& rep, const PeImage& img, const std::vector<PdbPublic>& publics,
+                            const std::uint8_t* image) {
+    const auto t0 = std::chrono::steady_clock::now();
+    std::uint64_t text_b = 0;
+    std::uint64_t text_e = 0;
+    for (const PeSection& s : img.sections) {
+        if (s.name == ".text") {
+            text_b = img.image_base + s.virtual_address;
+            text_e = text_b + s.virtual_size;
+        }
+    }
+    ImageView view(image, img.image_base, img.size_of_image, text_b, text_e);
+    std::set<std::uint64_t> entries;
+    for (const PeFunctionRange& r : img.functions) {
+        if (r.unwind < img.size_of_image && ((image[r.unwind] >> 3) & 0x4) == 0) {
+            entries.insert(img.image_base + r.begin);
+        }
+    }
+    for (const PdbPublic& p : publics) {
+        if (p.section == 0 || p.section > img.sections.size() || (p.flags & 2U) == 0) {
+            continue;  // flag 2: a function (CVPSF_FUNCTION)
+        }
+        const std::uint64_t va = img.image_base + img.sections[p.section - 1].virtual_address + p.offset;
+        if (view.in_text(va)) {
+            entries.insert(va);
+        }
+    }
+    Discoverer disc(view);
+    std::vector<std::uint64_t> work(entries.begin(), entries.end());
+    std::set<std::uint64_t> seen;
+    while (!work.empty()) {
+        const std::uint64_t e = work.back();
+        work.pop_back();
+        if (!seen.insert(e).second) {
+            continue;
+        }
+        const DFunction f = disc.discover(e, entries);
+        for (const std::uint64_t t : f.call_targets) {
+            if (view.in_text(t) && entries.insert(t).second) {
+                work.push_back(t);
+            }
+        }
+    }
+    const double discover_ms = ms_since(t0);
+
+    ImageInfo info;
+    info.base = img.image_base;
+    R1Translator tr(info);
+    const std::vector<std::uint64_t> all(entries.begin(), entries.end());
+    constexpr std::size_t kBatch = 400;
+    std::size_t complete = 0;
+    std::uint64_t insns = 0;
+    std::map<std::string, std::size_t> discover_errors;
+    for (std::size_t i = 0; i < all.size(); ++i) {
+        if (i % kBatch == 0) {
+            tr.discard();
+            tr.declare(all);
+        }
+        const DFunction f = disc.discover(all[i], entries);
+        insns += f.insns.size();
+        if (!f.error.empty()) {
+            discover_errors[f.error.substr(0, f.error.find(" at "))]++;
+            continue;
+        }
+        if (f.unresolved_indirect_jumps.empty()) {
+            ++complete;
+        }
+        std::string why;
+        (void)tr.lift(f, &why);
+    }
+    tr.discard();
+    const LiftReport& r = tr.report();
+    rep.line("  functions %zu, bodies complete %zu, instructions %llu (discovery %.0f ms)", all.size(), complete,
+             static_cast<unsigned long long>(insns), discover_ms);
+    for (const auto& [what, n] : discover_errors) {
+        rep.line("    not decoded: %-30s %zu", what.c_str(), n);
+    }
+    rep.line("  lifted %zu/%zu (%.2f%%) in %.0f ms", r.lifted, r.attempted,
+             r.attempted == 0 ? 0.0 : 100.0 * static_cast<double>(r.lifted) / static_cast<double>(r.attempted),
+             tr.total_lift_ms());
+    std::vector<std::pair<std::size_t, std::string>> top;
+    for (const auto& [what, n] : r.unsupported) {
+        top.emplace_back(n, what);
+    }
+    std::sort(top.rbegin(), top.rend());
+    rep.line("  first unsupported instruction per failing function (top %zu of %zu):",
+             std::min<std::size_t>(top.size(), 20), top.size());
+    for (std::size_t k = 0; k < top.size() && k < 20; ++k) {
+        rep.line("    %-36s %zu", top[k].second.c_str(), top[k].first);
+    }
+}
+
 R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
     R0SpikeResult result;
     const auto t_all = std::chrono::steady_clock::now();
@@ -505,6 +605,7 @@ R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
     // Any WSE2 x64 build is accepted when its own PDB (shipped next to it) matches it: functions
     // are found by name, not by a pinned address.
     PeImage img;
+    std::vector<PdbPublic> publics;
     bool exe_ok = false;
     std::uint64_t index_of_va = 0;
     if (input.exe.empty()) {
@@ -512,7 +613,6 @@ R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
     } else {
         std::string err;
         PeCodeView cv;
-        std::vector<PdbPublic> publics;
         PdbGuidAge ga;
         const std::string sha = to_lower(input.exe_sha256);
         const char* label = sha == kWse2V1155ExeSha256   ? "v1.1.5.5"
@@ -680,7 +780,7 @@ R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
     rep.line("");
     rep.line("(d) rglString::indexOf (found through the PDB) translated vs PC");
     if (!exe_ok || !result.a_loads) {
-        rep.line("  skipped: %s", !result.a_loads ? "no load method works" : "no mapped v1.1.5.5 exe");
+        rep.line("  skipped: %s", !result.a_loads ? "no load method works" : "no exe with a matching PDB");
     } else {
         const PeFunctionRange* range = nullptr;
         for (const PeFunctionRange& r : img.functions) {
@@ -748,6 +848,15 @@ R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
         }
     }
     rep.line("  => %s", result.d_matches ? "PASS" : ((!exe_ok || !result.a_loads) ? "SKIPPED" : "FAIL"));
+
+    // --- R1 coverage ------------------------------------------------------------------------
+    rep.line("");
+    rep.line("R1 coverage: every function of this exe decoded and lifted (no codegen)");
+    if (!exe_ok || !result.b_maps || image == nullptr) {
+        rep.line("  skipped: %s", !exe_ok ? "no exe with a matching PDB" : "image not mapped");
+    } else {
+        run_r1_coverage(rep, img, publics, static_cast<const std::uint8_t*>(image));
+    }
 
     if (image != nullptr) {
         munmap(image, image_size);
