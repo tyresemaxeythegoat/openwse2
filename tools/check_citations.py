@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify that every v1.1.5.5 PE virtual address and REA evidence hash cited in C++ headers resolves cleanly.
+"""Verify that every PE virtual address (of the pinned build, docs/SYMBOL_MAP.json "target") and REA evidence hash cited in C++ headers resolves cleanly.
 
 Default mode uses committed artifacts only (docs/SYMBOL_MAP.json, docs/native_opcodes.json,
 docs/wse_opcodes.json) so CI runs deterministically from a clean checkout.
@@ -146,7 +146,7 @@ class CitationIndex:
 
         self.superseded_vas = {parse_hex(x) for x in sym_map.get("superseded_vas", [])}
 
-        # Optional deep local validation against retail v1.1.5.5 artifacts.
+        # Optional deep local validation against the pinned retail build's artifacts.
         self.pdata_ranges = []
         self.pdata_starts = []
         self.raw_globals = {}
@@ -214,7 +214,7 @@ class CitationIndex:
 
     def check_va(self, va, is_range_end=False):
         if va in self.superseded_vas or va in self.raw_superseded:
-            return False, "superseded 2026-10-14 VA (no v1.1.5.5 symbol match at this address)"
+            return False, "superseded VA (an address of an older build: v1.1.5.5 or 2026-10-14; not valid in the pinned build)"
 
         if va in self.exact_vas:
             return True, self.exact_vas[va]
@@ -259,11 +259,11 @@ def run_self_test(idx):
 
 def main():
     repo_default = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ap = argparse.ArgumentParser(description="Verify v1.1.5.5 VAs and evidence hashes cited in headers.")
+    ap = argparse.ArgumentParser(description="Verify pinned-build VAs and evidence hashes cited in headers.")
     ap.add_argument("--repo-root", default=repo_default)
     ap.add_argument("--include-root", default=None, help="Header root (defaults to <repo-root>/engine/include)")
-    ap.add_argument("--exe", help="Optional v1.1.5.5 PE32+ executable for local .pdata verification")
-    ap.add_argument("--globals", help="Optional v1.1.5.5 globals JSON")
+    ap.add_argument("--exe", help="Optional pinned-build PE32+ executable for local .pdata verification")
+    ap.add_argument("--globals", help="Optional pinned-build globals JSON")
     ap.add_argument("--old-globals", help="Optional superseded globals JSON")
     ap.add_argument("--self-test", action="store_true", help="Also verify known-bad VAs are rejected")
     ap.add_argument("--docs", action="store_true",

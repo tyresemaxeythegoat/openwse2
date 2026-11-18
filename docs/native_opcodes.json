@@ -1,8 +1,8 @@
 {
  "schema": "wse2-native-opcode-map/1",
  "target": "mb_warband_wse2_x64.exe",
- "release": "v1.1.5.5",
- "exe_sha256": "d4e97d56981a6dab3de0348e3a0513ae200e7b5701b86732a4654b0aa4e29709",
+ "release": "v1.1.5.6",
+ "exe_sha256": "fbe9808c7644414da86713d21900f520063e4ae308d71a5ab18ceb1f4e164898",
  "community_name_source": "https://mbcommands.fandom.com/wiki/Operations",
  "function": {
   "symbol": "?execute@mbStatement@@QEAA_NH@Z",
@@ -63,7 +63,7 @@
     "opcode": 15,
     "name": "try_for_attached_parties",
     "signature": "(try_for_attached_parties, <attached_party_no>, <root_party_no>),",
-    "note": "Deprecated vanilla loop; no mbStatementBlock handler in WSE2 v1.1.5.5"
+    "note": "Deprecated vanilla loop; no mbStatementBlock handler in WSE2 v1.1.5.5/v1.1.5.6"
    }
   ],
   "noop_true_slots": [

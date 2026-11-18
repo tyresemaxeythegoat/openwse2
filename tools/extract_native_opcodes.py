@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract the v1.1.5.5 native Warband opcode map from mb_warband_wse2_x64.exe.
+"""Extract the native Warband opcode map (pinned build: docs/SYMBOL_MAP.json target) from mb_warband_wse2_x64.exe.
 
 Combines:
 - mbStatementBlock control-flow dispatch (< 30) verified in mb_warband_wse2_x64.exe
@@ -81,15 +81,18 @@ COMMUNITY_NAMES: dict[int, dict] = {
     },
 }
 
-# Community-documented opcodes that have no handler at all in WSE2 v1.1.5.5. Recorded so a
+# Community-documented opcodes that have no handler at all in WSE2 v1.1.5.5 or v1.1.5.6. Recorded so a
 # module that still compiles one in is recognised by name instead of as an unknown ID.
 COMMUNITY_DEAD_NAMES: dict[int, dict] = {
     15: {
         "name": "try_for_attached_parties",
         "signature": "(try_for_attached_parties, <attached_party_no>, <root_party_no>),",
-        "note": "Deprecated vanilla loop; no mbStatementBlock handler in WSE2 v1.1.5.5",
+        "note": "Deprecated vanilla loop; no mbStatementBlock handler in WSE2 v1.1.5.5/v1.1.5.6",
     },
 }
+
+
+RELEASE = "v1.1.5.6"
 
 
 def sha256_file(path: Path) -> str:
@@ -476,7 +479,7 @@ def extract_map(exe_path: Path, sdk_path: Path, block_vm_path: Path) -> dict:
     return {
         "schema": "wse2-native-opcode-map/1",
         "target": exe_path.name,
-        "release": "v1.1.5.5",
+        "release": RELEASE,
         "exe_sha256": sha,
         "community_name_source": COMMUNITY_SOURCE_URL,
         "function": {
@@ -609,8 +612,9 @@ def render_markdown(doc: dict) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Extract native v1.1.5.5 opcode map from mb_warband_wse2_x64.exe")
-    ap.add_argument("--exe", required=True, type=Path, help="Path to v1.1.5.5 mb_warband_wse2_x64.exe")
+    ap = argparse.ArgumentParser(description="Extract the native opcode map from mb_warband_wse2_x64.exe")
+    ap.add_argument("--exe", required=True, type=Path, help="Path to the pinned mb_warband_wse2_x64.exe")
+    ap.add_argument("--release", default="v1.1.5.6", help="release label of --exe")
     ap.add_argument("--sdk", required=True, type=Path, help="Path to Warband header_operations.py")
     ap.add_argument(
         "--block-vm",
@@ -629,6 +633,8 @@ def main() -> int:
         default=Path(__file__).resolve().parents[1] / "docs" / "NATIVE_OPCODES.md",
     )
     args = ap.parse_args()
+    global RELEASE
+    RELEASE = args.release
 
     doc = extract_map(args.exe, args.sdk, args.block_vm)
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
