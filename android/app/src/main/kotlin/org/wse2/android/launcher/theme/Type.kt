@@ -35,27 +35,15 @@ val CinzelFontFamily: FontFamily = FontFamily(
     )
 )
 
+// Static Manrope weights (googlefonts/manrope `fonts/ttf/`): the variable file defaults to
+// weight 200, and Android does not reliably apply a variation per weight to one font resource,
+// so labels rendered near ExtraLight. Normal maps to the Medium file on purpose (body text is
+// Medium in this theme).
 val ManropeFontFamily: FontFamily = FontFamily(
-    Font(
-        resId = R.font.manrope,
-        weight = FontWeight.Normal,
-        variationSettings = FontVariation.Settings(FontVariation.weight(400))
-    ),
-    Font(
-        resId = R.font.manrope,
-        weight = FontWeight.Medium,
-        variationSettings = FontVariation.Settings(FontVariation.weight(500))
-    ),
-    Font(
-        resId = R.font.manrope,
-        weight = FontWeight.SemiBold,
-        variationSettings = FontVariation.Settings(FontVariation.weight(600))
-    ),
-    Font(
-        resId = R.font.manrope,
-        weight = FontWeight.Bold,
-        variationSettings = FontVariation.Settings(FontVariation.weight(700))
-    )
+    Font(resId = R.font.manrope_medium, weight = FontWeight.Normal),
+    Font(resId = R.font.manrope_medium, weight = FontWeight.Medium),
+    Font(resId = R.font.manrope_semibold, weight = FontWeight.SemiBold),
+    Font(resId = R.font.manrope_bold, weight = FontWeight.Bold)
 )
 
 object WseType {
