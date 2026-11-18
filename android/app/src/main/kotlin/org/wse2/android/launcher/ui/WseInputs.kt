@@ -7,6 +7,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,33 +20,45 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
 import org.wse2.android.launcher.theme.WseShapes
@@ -59,30 +73,51 @@ fun WseSwitch(
     enabled: Boolean = true
 ) {
     val colors = LocalWseColors.current
-    Switch(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        enabled = enabled,
-        modifier = modifier,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = colors.onPrimary,
-            checkedTrackColor = colors.primary,
-            checkedBorderColor = colors.primary,
-            checkedIconColor = colors.onPrimary,
-            uncheckedThumbColor = colors.onSurfaceVariant,
-            uncheckedTrackColor = colors.surfaceContainerHigh,
-            uncheckedBorderColor = colors.outline,
-            uncheckedIconColor = colors.surfaceContainerHigh,
-            disabledCheckedThumbColor = colors.onSurface.copy(alpha = 0.45f),
-            disabledCheckedTrackColor = colors.primaryContainer.copy(alpha = 0.45f),
-            disabledCheckedBorderColor = colors.outlineVariant.copy(alpha = 0.45f),
-            disabledCheckedIconColor = colors.onSurface.copy(alpha = 0.45f),
-            disabledUncheckedThumbColor = colors.onSurfaceVariant.copy(alpha = 0.45f),
-            disabledUncheckedTrackColor = colors.surfaceContainer.copy(alpha = 0.45f),
-            disabledUncheckedBorderColor = colors.outlineVariant.copy(alpha = 0.45f),
-            disabledUncheckedIconColor = colors.surfaceContainer.copy(alpha = 0.45f)
-        )
+    val shape = WseShapes.small
+    val thumbOffset by animateDpAsState(
+        targetValue = if (checked) 22.dp else 2.dp,
+        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        label = "wse-switch-thumb"
     )
+    val trackColor by animateColorAsState(
+        targetValue = if (checked) colors.primary else colors.surfaceContainerHigh,
+        animationSpec = tween(durationMillis = 150),
+        label = "wse-switch-track"
+    )
+    val toggleModifier = if (onCheckedChange != null) {
+        Modifier.toggleable(
+            value = checked,
+            enabled = enabled,
+            role = Role.Switch,
+            onValueChange = onCheckedChange
+        )
+    } else {
+        Modifier
+    }
+    Box(
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .then(toggleModifier)
+            .alpha(if (enabled) 1f else 0.45f),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 44.dp, height = 24.dp)
+                .clip(shape)
+                .background(trackColor)
+                .border(1.dp, if (checked) colors.primaryGradientTop else colors.hairline, shape)
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset(x = thumbOffset)
+                    .size(20.dp)
+                    .clip(CutCornerShape(3.dp))
+                    .background(if (checked) colors.onPrimary else colors.outline)
+            )
+        }
+    }
 }
 
 @Composable
@@ -129,28 +164,119 @@ fun WseSlider(
                 }
             )
         }
-        Slider(
+        WseSliderTrack(
             value = value,
             onValueChange = onValueChange,
-            enabled = enabled,
             valueRange = valueRange,
             steps = steps,
-            onValueChangeFinished = onValueChangeFinished,
-            colors = SliderDefaults.colors(
-                thumbColor = colors.primary,
-                activeTrackColor = colors.accent,
-                activeTickColor = colors.onPrimary.copy(alpha = 0.55f),
-                inactiveTrackColor = colors.surfaceContainerHigh,
-                inactiveTickColor = colors.outline.copy(alpha = 0.65f),
-                disabledThumbColor = colors.onSurfaceVariant.copy(alpha = 0.45f),
-                disabledActiveTrackColor = colors.outline.copy(alpha = 0.45f),
-                disabledActiveTickColor = colors.onSurfaceVariant.copy(alpha = 0.25f),
-                disabledInactiveTrackColor = colors.surfaceContainer.copy(alpha = 0.45f),
-                disabledInactiveTickColor = colors.outlineVariant.copy(alpha = 0.25f)
-            ),
-            modifier = Modifier.fillMaxWidth()
+            enabled = enabled,
+            onValueChangeFinished = onValueChangeFinished
         )
     }
+}
+
+// A 4 dp gold track with a chamfered diamond thumb; no tick marks. `steps` intermediate
+// stops snap like the Material slider (`steps + 1` equal intervals).
+@Composable
+private fun WseSliderTrack(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    enabled: Boolean,
+    onValueChangeFinished: (() -> Unit)?
+) {
+    val colors = LocalWseColors.current
+    val start = valueRange.start
+    val end = valueRange.endInclusive
+    val span = (end - start).takeIf { it > 0f } ?: 1f
+    val fraction = ((value - start) / span).coerceIn(0f, 1f)
+    val currentOnChange by rememberUpdatedState(onValueChange)
+    val currentOnFinished by rememberUpdatedState(onValueChangeFinished)
+    val activeColor = if (enabled) colors.primary else colors.outline.copy(alpha = 0.45f)
+    val inactiveColor = colors.outlineVariant
+    val thumbTop = if (enabled) colors.primaryGradientTop else colors.outline
+    val thumbBottom = if (enabled) colors.primaryGradientBottom else colors.outlineVariant
+    val thumbEdge = if (enabled) colors.onPrimaryContainer.copy(alpha = 0.55f) else colors.outlineVariant
+
+    fun snap(f: Float): Float {
+        val clamped = f.coerceIn(0f, 1f)
+        if (steps <= 0) return start + clamped * span
+        val intervals = steps + 1
+        return start + (clamped * intervals).roundToInt() / intervals.toFloat() * span
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(value, valueRange, steps)
+                if (enabled) {
+                    setProgress { target ->
+                        currentOnChange(target.coerceIn(start, end))
+                        currentOnFinished?.invoke()
+                        true
+                    }
+                }
+            }
+            .pointerInput(enabled, start, end, steps) {
+                if (!enabled) return@pointerInput
+                val inset = 9.dp.toPx()
+                detectTapGestures { offset ->
+                    val usable = (size.width - 2f * inset).coerceAtLeast(1f)
+                    currentOnChange(snap((offset.x - inset) / usable))
+                    currentOnFinished?.invoke()
+                }
+            }
+            .pointerInput(enabled, start, end, steps) {
+                if (!enabled) return@pointerInput
+                val inset = 9.dp.toPx()
+                detectHorizontalDragGestures(
+                    onDragEnd = { currentOnFinished?.invoke() },
+                    onDragCancel = { currentOnFinished?.invoke() }
+                ) { change, _ ->
+                    change.consume()
+                    val usable = (size.width - 2f * inset).coerceAtLeast(1f)
+                    currentOnChange(snap((change.position.x - inset) / usable))
+                }
+            }
+            .drawBehind {
+                val inset = 9.dp.toPx()
+                val cy = size.height / 2f
+                val trackH = 4.dp.toPx()
+                val x0 = inset
+                val x1 = size.width - inset
+                val tx = x0 + (x1 - x0) * fraction
+                drawRect(
+                    color = inactiveColor,
+                    topLeft = Offset(x0, cy - trackH / 2f),
+                    size = Size((x1 - x0).coerceAtLeast(0f), trackH)
+                )
+                drawRect(
+                    color = activeColor,
+                    topLeft = Offset(x0, cy - trackH / 2f),
+                    size = Size((tx - x0).coerceAtLeast(0f), trackH)
+                )
+                val r = 9.dp.toPx()
+                val diamond = Path().apply {
+                    moveTo(tx, cy - r)
+                    lineTo(tx + r, cy)
+                    lineTo(tx, cy + r)
+                    lineTo(tx - r, cy)
+                    close()
+                }
+                drawPath(
+                    path = diamond,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(thumbTop, thumbBottom),
+                        startY = cy - r,
+                        endY = cy + r
+                    )
+                )
+                drawPath(path = diamond, color = thumbEdge, style = Stroke(width = 1.dp.toPx()))
+            }
+    )
 }
 
 @Composable

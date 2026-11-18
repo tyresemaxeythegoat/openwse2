@@ -111,11 +111,12 @@ fun WseBannerCard(
             }
             .drawWithCache {
                 val cutPx = 8.dp.toPx()
-                val glowLayers = listOf(
-                    Triple(2.dp.toPx(), 4.dp.toPx(), 0.20f),
-                    Triple(5.dp.toPx(), 7.dp.toPx(), 0.11f),
-                    Triple(8.dp.toPx(), 10.dp.toPx(), 0.05f)
-                )
+                // Twelve 1 dp rings with quadratically falling alpha: a soft glow, no visible steps.
+                val ringCount = 12
+                val glowLayers = (1..ringCount).map { i ->
+                    val falloff = 1f - (i - 1).toFloat() / ringCount
+                    Triple(i.dp.toPx(), 1.25.dp.toPx(), 0.17f * falloff * falloff)
+                }
                 val cachedPaths = glowLayers.map { (spread, strokeWidth, layerAlpha) ->
                     val path = Path().apply {
                         val l = -spread

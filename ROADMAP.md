@@ -147,7 +147,7 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
 - [x] **P10 Launcher UI/UX & performance on Android** *(host-verified; device run pending)*: launcher rebuilt as home / modules / settings / advanced pages (dark theme, first-run flow with a background scan and install check, grouped settings), asynchronous start with a loading screen, performance hub in module mode, texture budget, performance-core hints (`docs/PLATFORM_PLAN.md` "P10").
 - [x] **P11 In-game UI & touch controls on Android** *(host-verified; device run pending; the app does not draw the touch overlay yet)*: UI aspect modes, crisp text, drawn touch overlay and context buttons, touch-friendly menus, soft keyboard (`docs/PLATFORM_PLAN.md` "P11").
 - [x] **P12 Launcher redesign:** Jetpack Compose + Material 3, module art from the user's install (`main.bmp`), dynamic colour, motion (`docs/PLATFORM_PLAN.md` "P12"); the CI screenshot tests moved to P13.0 *(works on the user's phone, 2026-11-18)*.
-- [ ] **P13 Launcher art direction:** modern medieval look: bundled OFL fonts, fixed iron-and-gold dark palette tinted by the module art, custom component kit, code-drawn backdrop, moderate motion, CI screenshots (`docs/PLATFORM_PLAN.md` "P13").
+- [x] **P13 Launcher art direction** *(CI screenshots reviewed; phone check pending)*: modern medieval look: bundled OFL fonts, fixed iron-and-gold dark palette tinted by the module art, custom component kit, code-drawn backdrop, moderate motion, CI screenshots (`docs/PLATFORM_PLAN.md` "P13").
 
 ### Phase 5 — Gameplay by recompiling the retail code (on-device, LLVM)
 
@@ -186,6 +186,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-18 | — | P13.3: Home with a taller art hero and a "Your modules" strip (landscape grid), static Manrope weights (labels no longer render ExtraLight), chamfered switch, diamond-thumb slider, smooth selected glow, Ken Burns hero and staggered entrance; screenshots on the app backdrop (CI green; Kotlin only) |
 | 2026-11-18 | — | P13.0-P13.2: CI launcher screenshots (Roborazzi), bundled Cinzel + Manrope (OFL), fixed iron-and-gold dark theme tinted by module art, chamfered component kit replacing every stock Material widget in the launcher (CI green; Kotlin only, no engine change) |
 | 2026-11-18 | — | Wave B: P11.2 per-batch nearest/linear filter and UI text scale, P11.5/P11.6 touch drag-scroll, first tap, scissor clipping and soft keyboard, P12.2 `main.bmp` module art with a seed colour, P12.3/P12.4 Compose Home / Modules / Settings / Advanced with the old view pages removed (Windows host gate PASS; built as Antigravity units, merged and gated by Claude) |
 | 2026-11-18 | — | Wave A: P11.1 UI aspect modes (letterbox viewport, pointer mapped through it), P11.3/P11.4 drawn touch overlay, context buttons, delayed swipes and two-level order radial, P12.1 Compose + Material 3 launcher on a ViewModel, P4 `VulkanRhiDevice` rendering and reading back on a real GPU (mock ICD keeps the CPU path) (Windows host gate PASS; built as Antigravity units, fixed and gated by Claude) |

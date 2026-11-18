@@ -5,11 +5,13 @@ import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -81,7 +83,8 @@ fun ModuleArtGraphic(
     fallbackTitle: String,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    blurRadius: Dp = 0.dp
+    blurRadius: Dp = 0.dp,
+    imageModifier: Modifier = Modifier
 ) {
     val bitmap = art?.bitmap
     if (bitmap != null) {
@@ -90,15 +93,27 @@ fun ModuleArtGraphic(
         } else {
             Modifier
         }
-        Image(
-            bitmap = bitmap,
-            contentDescription = contentDescription,
-            contentScale = ContentScale.Crop,
-            modifier = modifier.then(blurModifier)
-        )
+        Box(modifier = modifier.clipToBounds()) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(imageModifier)
+                    .then(blurModifier)
+            )
+        }
     } else {
         val brush = remember(fallbackTitle) { moduleFallbackBrush(fallbackTitle) }
-        Box(modifier = modifier.background(brush))
+        Box(modifier = modifier.clipToBounds()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(imageModifier)
+                    .background(brush)
+            )
+        }
     }
 }
 

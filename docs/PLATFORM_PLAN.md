@@ -303,6 +303,25 @@ gradient's dark end). Claude's screenshot review left these for P13.3:
 7. The tests render screens without the app backdrop.
 8. The hero blur is too strong for real art.
 
+P13.3 landed (Claude, after agy's quota ran out), with the user's review on screenshots:
+- Manrope: the variable file defaults to weight 200 and lost its per-weight variations, so
+  every label rendered near ExtraLight. It is now three static files
+  (`manrope_{medium,semibold,bold}.ttf`, 144,696 / 145,104 / 146,104 B); Cinzel stays variable.
+- Home, portrait: the user chose "taller hero + module strip". The hero takes 55 % of the
+  height, Play is 60 dp, a "Your modules" strip of 140x92 dp art cards follows, and the
+  secondary buttons sit at the bottom.
+- Home, landscape: the hero takes 58 % of the width, with a 2-column module grid.
+- Hero: the scrim ends opaque (no bright band at the bottom), and the art is clipped with a
+  light 3 dp blur.
+- Kit: a chamfered `WseSwitch`, a tick-free diamond-thumb `WseSlider`, and a 12-ring
+  selected glow.
+- Motion: an 18 s Ken Burns drift on the hero and a staggered fade-up of the Home blocks,
+  both off at animator scale 0 and in tests (`LocalInspectionMode`).
+- Screenshots: rendered on the app backdrop.
+
+Open: a thin bright line along the hero's top edge, and no entrance animation on the
+Modules grid yet.
+
 ## Risks decided up front
 
 | Risk | Decision |

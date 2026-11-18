@@ -6,50 +6,75 @@ import android.content.res.Configuration
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.wse2.android.launcher.art.ModuleArt
 import org.wse2.android.launcher.art.ModuleArtGraphic
+import org.wse2.android.launcher.theme.CinzelFontFamily
 import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
+import org.wse2.android.launcher.theme.WseShapes
 import org.wse2.android.launcher.theme.WseType
 import org.wse2.android.launcher.theme.wseBackdrop
 import org.wse2.android.launcher.ui.WsePrimaryButton
 import org.wse2.android.launcher.ui.WseSecondaryButton
+import org.wse2.android.launcher.ui.WseSectionHeader
 import org.wse2.android.launcher.ui.WseStatusChip
 import org.wse2.android.launcher.ui.WseStatusTone
 import org.wse2.android.launcher.ui.WseTextButton
+import org.wse2.android.launcher.ui.rememberWseAnimationsEnabled
+import org.wse2.android.launcher.ui.wseStaggeredEntrance
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -62,7 +87,11 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     topContentPadding: Dp = 0.dp,
     sharedTransitionScope: SharedTransitionScope? = null,
-    animatedVisibilityScope: AnimatedVisibilityScope? = null
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    modules: List<ModuleChoice> = emptyList(),
+    selectedIndex: Int = -1,
+    moduleArt: Map<String, ModuleArt> = emptyMap(),
+    onSelectModule: (Int) -> Unit = {}
 ) {
     val hasFolder = state.installFolder.treeUri != null ||
         !state.installFolder.displayName.isNullOrBlank()
@@ -111,6 +140,11 @@ fun HomeScreen(
         Modifier
     }
 
+    // Each Home entry reveals its blocks once (staggered); the set resets when Home leaves.
+    val revealedKeys = remember { mutableSetOf<Any>() }
+    val animationsEnabled = rememberWseAnimationsEnabled()
+    val showModules = modules.size > 1
+
     BoxWithConstraints(
         modifier = modifier.fillMaxSize()
     ) {
@@ -128,13 +162,14 @@ fun HomeScreen(
                     fadeRightEdge = true,
                     topContentPadding = topContentPadding,
                     artModifier = artSharedModifier,
+                    animationsEnabled = animationsEnabled,
                     modifier = Modifier
-                        .weight(2f)
+                        .weight(0.58f)
                         .fillMaxHeight()
                 )
                 Column(
                     modifier = Modifier
-                        .weight(1f)
+                        .weight(0.42f)
                         .fillMaxHeight()
                         .verticalScroll(rememberScrollState())
                         .padding(
@@ -155,6 +190,21 @@ fun HomeScreen(
                         folderDisplay = folderDisplay,
                         statusLog = state.statusLog,
                         compactButtonsStacked = true,
+                        moduleSectionBeforeButtons = false,
+                        revealedKeys = revealedKeys,
+                        animationsEnabled = animationsEnabled,
+                        moduleSection = if (showModules) {
+                            {
+                                HomeModuleGrid(
+                                    modules = modules,
+                                    selectedIndex = selectedIndex,
+                                    moduleArt = moduleArt,
+                                    onSelectModule = onSelectModule
+                                )
+                            }
+                        } else {
+                            null
+                        },
                         onChooseFolder = onChooseFolder,
                         onChangeModule = onChangeModule,
                         onShowMissingFiles = onShowMissingFiles,
@@ -163,7 +213,7 @@ fun HomeScreen(
                 }
             }
         } else {
-            val heroHeight = (maxHeight * 0.48f).coerceIn(250.dp, 420.dp) + topContentPadding
+            val heroHeight = (maxHeight * 0.55f).coerceAtLeast(300.dp) + topContentPadding
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -177,6 +227,7 @@ fun HomeScreen(
                     fadeRightEdge = false,
                     topContentPadding = topContentPadding,
                     artModifier = artSharedModifier,
+                    animationsEnabled = animationsEnabled,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(heroHeight)
@@ -184,8 +235,8 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     HomeActionsPanel(
                         statusInfo = statusInfo,
@@ -197,6 +248,21 @@ fun HomeScreen(
                         folderDisplay = folderDisplay,
                         statusLog = state.statusLog,
                         compactButtonsStacked = false,
+                        moduleSectionBeforeButtons = true,
+                        revealedKeys = revealedKeys,
+                        animationsEnabled = animationsEnabled,
+                        moduleSection = if (showModules) {
+                            {
+                                HomeModuleStrip(
+                                    modules = modules,
+                                    selectedIndex = selectedIndex,
+                                    moduleArt = moduleArt,
+                                    onSelectModule = onSelectModule
+                                )
+                            }
+                        } else {
+                            null
+                        },
                         onChooseFolder = onChooseFolder,
                         onChangeModule = onChangeModule,
                         onShowMissingFiles = onShowMissingFiles,
@@ -287,24 +353,49 @@ private fun HomeHeroBanner(
     fadeRightEdge: Boolean,
     topContentPadding: Dp,
     artModifier: Modifier,
+    animationsEnabled: Boolean,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalWseColors.current
     val fadeTarget = colors.background
+    // Ends fully opaque so the art never shows through as a band at the bottom edge.
     val verticalScrim = Brush.verticalGradient(
-        0.0f to fadeTarget.copy(alpha = 0.28f),
-        0.38f to fadeTarget.copy(alpha = 0.14f),
-        0.72f to fadeTarget.copy(alpha = 0.76f),
-        0.94f to fadeTarget.copy(alpha = 0.94f),
-        1.0f to fadeTarget.copy(alpha = 0.0f)
+        0.0f to fadeTarget.copy(alpha = 0.30f),
+        0.35f to fadeTarget.copy(alpha = 0.10f),
+        0.70f to fadeTarget.copy(alpha = 0.70f),
+        1.0f to fadeTarget.copy(alpha = 1.0f)
     )
+    // Slow Ken Burns drift (18 s each way); read in the draw phase only, so it never
+    // recomposes. Off when the system animator scale is 0 and in screenshot tests.
+    val kenBurns: State<Float>? = if (animationsEnabled) {
+        val transition = rememberInfiniteTransition(label = "home-hero")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 18_000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "home-hero-ken-burns"
+        )
+    } else {
+        null
+    }
     Box(modifier = modifier) {
         ModuleArtGraphic(
             art = art,
             fallbackTitle = heroTitle,
             contentDescription = heroTitle,
-            blurRadius = 6.dp,
-            modifier = artModifier.fillMaxSize()
+            blurRadius = 3.dp,
+            modifier = artModifier.fillMaxSize(),
+            imageModifier = Modifier.graphicsLayer {
+                val t = kenBurns?.value ?: 0f
+                val s = 1f + 0.08f * t
+                scaleX = s
+                scaleY = s
+                translationX = -size.width * 0.03f * t
+                translationY = -size.height * 0.015f * t
+            }
         )
         Box(
             modifier = Modifier
@@ -317,8 +408,8 @@ private fun HomeHeroBanner(
                     .fillMaxSize()
                     .background(
                         Brush.horizontalGradient(
-                            0.72f to Color.Transparent,
-                            1.0f to fadeTarget.copy(alpha = 0.92f)
+                            0.70f to Color.Transparent,
+                            1.0f to fadeTarget
                         )
                     )
             )
@@ -330,7 +421,7 @@ private fun HomeHeroBanner(
                     start = 20.dp,
                     end = 20.dp,
                     top = topContentPadding + 16.dp,
-                    bottom = 16.dp
+                    bottom = 12.dp
                 )
         ) {
             Text(
@@ -369,6 +460,10 @@ private fun HomeActionsPanel(
     folderDisplay: String?,
     statusLog: String,
     compactButtonsStacked: Boolean,
+    moduleSectionBeforeButtons: Boolean,
+    revealedKeys: MutableSet<Any>,
+    animationsEnabled: Boolean,
+    moduleSection: (@Composable () -> Unit)?,
     onChooseFolder: () -> Unit,
     onChangeModule: () -> Unit,
     onShowMissingFiles: (ModuleChoice, List<String>) -> Unit,
@@ -381,22 +476,23 @@ private fun HomeActionsPanel(
         HomeChipTone.MISSING -> WseStatusTone.Error
         HomeChipTone.PENDING -> WseStatusTone.Neutral
     }
-
     val chipClickable = isMissing && selectedModule != null
-    WseStatusChip(
-        text = statusInfo.chipLabel,
-        tone = chipTone,
-        enabled = true,
-        onClick = if (chipClickable) {
-            {
-                if (selectedModule != null && installStatus != null) {
-                    onShowMissingFiles(selectedModule, installStatus.missingFiles)
+    Box(modifier = Modifier.wseStaggeredEntrance("chip", 0, revealedKeys, animationsEnabled)) {
+        WseStatusChip(
+            text = statusInfo.chipLabel,
+            tone = chipTone,
+            enabled = true,
+            onClick = if (chipClickable) {
+                {
+                    if (selectedModule != null && installStatus != null) {
+                        onShowMissingFiles(selectedModule, installStatus.missingFiles)
+                    }
                 }
+            } else {
+                null
             }
-        } else {
-            null
-        }
-    )
+        )
+    }
 
     WsePrimaryButton(
         text = "Play",
@@ -412,7 +508,10 @@ private fun HomeActionsPanel(
                 modifier = Modifier.size(18.dp)
             )
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(60.dp)
+            .then(Modifier.wseStaggeredEntrance("play", 1, revealedKeys, animationsEnabled))
     )
 
     if (statusInfo.disabledReason != null) {
@@ -435,21 +534,32 @@ private fun HomeActionsPanel(
         }
     }
 
+    if (moduleSection != null && moduleSectionBeforeButtons) {
+        Box(modifier = Modifier.wseStaggeredEntrance("modules", 2, revealedKeys, animationsEnabled)) { moduleSection() }
+    }
+
     if (compactButtonsStacked) {
-        WseSecondaryButton(
-            text = "Change module",
-            onClick = onChangeModule,
-            modifier = Modifier.fillMaxWidth()
-        )
-        WseSecondaryButton(
-            text = "Choose folder",
-            onClick = onChooseFolder,
-            enabled = !scanInProgress,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Column(
+            modifier = Modifier.wseStaggeredEntrance("buttons", 2, revealedKeys, animationsEnabled),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            WseSecondaryButton(
+                text = "Change module",
+                onClick = onChangeModule,
+                modifier = Modifier.fillMaxWidth()
+            )
+            WseSecondaryButton(
+                text = "Choose folder",
+                onClick = onChooseFolder,
+                enabled = !scanInProgress,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     } else {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(Modifier.wseStaggeredEntrance("buttons", 3, revealedKeys, animationsEnabled)),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             WseSecondaryButton(
@@ -464,6 +574,10 @@ private fun HomeActionsPanel(
                 modifier = Modifier.weight(1f)
             )
         }
+    }
+
+    if (moduleSection != null && !moduleSectionBeforeButtons) {
+        Box(modifier = Modifier.wseStaggeredEntrance("modules", 3, revealedKeys, animationsEnabled)) { moduleSection() }
     }
 
     val footerText = buildString {
@@ -483,8 +597,136 @@ private fun HomeActionsPanel(
         style = MaterialTheme.typography.bodySmall,
         color = colors.onSurfaceVariant,
         maxLines = 2,
-        overflow = TextOverflow.Ellipsis
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.wseStaggeredEntrance("footer", 4, revealedKeys, animationsEnabled)
     )
+}
+
+@Composable
+private fun HomeModuleStrip(
+    modules: List<ModuleChoice>,
+    selectedIndex: Int,
+    moduleArt: Map<String, ModuleArt>,
+    onSelectModule: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        WseSectionHeader(title = "Your modules")
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(modules.size) { index ->
+                val module = modules[index]
+                HomeModuleCard(
+                    module = module,
+                    art = moduleArt[module.modulePath],
+                    selected = index == selectedIndex,
+                    onClick = { onSelectModule(index) },
+                    modifier = Modifier.size(width = 140.dp, height = 92.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeModuleGrid(
+    modules: List<ModuleChoice>,
+    selectedIndex: Int,
+    moduleArt: Map<String, ModuleArt>,
+    onSelectModule: (Int) -> Unit
+) {
+    // A plain two-column grid: it sits inside a scrolling column, so it must not be lazy.
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        WseSectionHeader(title = "Your modules")
+        modules.indices.chunked(2).forEach { rowIndices ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                rowIndices.forEach { index ->
+                    val module = modules[index]
+                    HomeModuleCard(
+                        module = module,
+                        art = moduleArt[module.modulePath],
+                        selected = index == selectedIndex,
+                        onClick = { onSelectModule(index) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(140f / 92f)
+                    )
+                }
+                if (rowIndices.size == 1) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeModuleCard(
+    module: ModuleChoice,
+    art: ModuleArt?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalWseColors.current
+    val name = module.displayName.ifBlank { module.folderName }
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = tween(durationMillis = 120),
+        label = "home-module-card-scale"
+    )
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(WseShapes.medium)
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = if (selected) colors.accent else colors.hairline,
+                shape = WseShapes.medium
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            )
+    ) {
+        ModuleArtGraphic(
+            art = art,
+            fallbackTitle = name,
+            contentDescription = name,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.40f to Color.Transparent,
+                        1.0f to colors.background.copy(alpha = 0.90f)
+                    )
+                )
+        )
+        Text(
+            text = name,
+            style = MaterialTheme.typography.titleSmall.copy(
+                fontFamily = CinzelFontFamily,
+                fontWeight = FontWeight.Bold
+            ),
+            color = colors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        )
+    }
 }
 
 private object HomeIcons {

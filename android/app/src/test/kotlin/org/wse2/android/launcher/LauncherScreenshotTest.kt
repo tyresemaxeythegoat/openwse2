@@ -4,15 +4,24 @@ package org.wse2.android.launcher
 
 import android.graphics.Bitmap
 import android.net.Uri
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
+import java.io.File
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,12 +29,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.wse2.android.launcher.art.ModuleArt
 import org.wse2.android.launcher.theme.DefaultSeedColorArgb
+import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
-import java.io.File
-import kotlin.math.abs
-import kotlin.math.roundToInt
-import kotlin.math.sin
-import kotlin.math.sqrt
+import org.wse2.android.launcher.theme.wseBackdrop
 
 private const val OUTPUT_DIR = "build/outputs/roborazzi"
 private const val PORTRAIT_QUALIFIERS = "w411dp-h891dp-port-xxhdpi"
@@ -161,13 +167,20 @@ class LauncherScreenshotTest {
         state: HomeUiState,
         seedColorArgb: Int
     ) {
+        val modules = sampleModules()
+        val selected = modules.indexOfFirst { it.modulePath == state.selectedModule?.modulePath }
         captureScreen(fileName = fileName, seedColorArgb = seedColorArgb) {
             HomeScreen(
                 state = state,
                 onChooseFolder = {},
                 onChangeModule = {},
                 onShowMissingFiles = { _, _ -> },
-                onPlay = {}
+                onPlay = {},
+                modules = modules,
+                selectedIndex = selected,
+                // The no-art case also leaves the strip on its generated gradients.
+                moduleArt = if (state.heroArt != null) sampleModuleArtMap() else emptyMap(),
+                onSelectModule = {}
             )
         }
     }
@@ -242,8 +255,20 @@ class LauncherScreenshotTest {
                 dynamicColor = false,
                 seedColorArgb = seedColorArgb
             ) {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    content()
+                // The same root the app draws (gradient, accent glow, vignette, grain).
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .wseBackdrop(LocalWseColors.current.accent)
+                ) {
+                    Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
+                        // Inspection mode turns the Ken Burns drift and the entrance
+                        // animations off (`rememberWseAnimationsEnabled`), so every capture
+                        // is the settled frame and waitForIdle never chases an infinite loop.
+                        CompositionLocalProvider(LocalInspectionMode provides true) {
+                            content()
+                        }
+                    }
                 }
             }
         }
