@@ -1,6 +1,6 @@
 // Extended native Warband opcode handlers (mission_combat_and_teams,
 // audio_particles_and_tableau, game_state_and_stores). Grounded in official
-// WSE2 v1.1.5.5 PDB/binary decompilation:
+// WSE2 v1.1.5.6 PDB/binary decompilation:
 //   mission_combat_and_teams (8):   1784, 1786, 1787, 1828, 1837, 1900, 1971, 1976
 //   audio_particles_and_tableau (26): 601..604, 609, 1960, 1961, 1965, 1968, 1975,
 //                                    1980, 1984, 1985, 1987..1994, 1996..2000

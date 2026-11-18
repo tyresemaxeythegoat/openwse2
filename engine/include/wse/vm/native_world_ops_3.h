@@ -1,5 +1,5 @@
 // Extended native Warband opcode handlers (other_native tier, 80 opcodes).
-// Grounded in official WSE2 v1.1.5.5 PDB/binary decompilation:
+// Grounded in official WSE2 v1.1.5.6 PDB/binary decompilation:
 //   input/options/profile (16): 78, 260..271, 350, 351, 380
 //   spawn effectors & net bans (6): 426, 427, 465..468
 //   mp mission/audio/pos/ui (13): 470, 616, 702, 715, 960, 970..972, 980, 985,

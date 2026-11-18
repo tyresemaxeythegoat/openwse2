@@ -3,7 +3,7 @@
 //
 // Port infrastructure (`AudioDevice`, `NullAudioDevice`, `CaptureAudioDevice`)
 // keeps `<SDL3/SDL.h>` out of engine headers; `WseAudioMixer` reconstructs
-// WSE2 v1.1.5.5 `mbSoundManager` / `mbMusicManager` semantics from PDB/binary
+// WSE2 v1.1.5.6 `mbSoundManager` / `mbMusicManager` semantics from PDB/binary
 // evidence:
 //   - mbSoundSample::playSound            0x140332a70 (priority calc, 2D/looping -> 0)
 //   - mbSoundSample::readStream           0x140332580 (3D min=2.0f, max=80.0f)
@@ -170,7 +170,7 @@ private:
     std::vector<float> samples_{};
 };
 
-// Defaults match `rglConfig::Sound` globals verified across v1.1.5.5
+// Defaults match `rglConfig::Sound` globals verified across v1.1.5.6
 // `rglConfig::load` (`0x140264700`), `mbSoundManager::initializeFmod` (`0x140333d40`),
 // `mbSoundSample::readStream` (`0x140332580`), and `mbSoundManager::updateOcclusionDistances`
 // (`0x140334020`): `bSound=1`, `bMusic=1`, `fSoundVolume=1.0f`, `fMusicVolume=0.4f`,

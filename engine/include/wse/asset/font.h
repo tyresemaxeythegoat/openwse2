@@ -1,7 +1,7 @@
-// Clean-room v1.1.5.5 bitmap font loader, glyph metric calculator, word wrapper,
+// Clean-room v1.1.5.6 bitmap font loader, glyph metric calculator, word wrapper,
 // and quad text layout engine (`Data/font_data.xml` + `Textures/font.dds`).
 //
-// Reconstructed from v1.1.5.5 PE + PDB evidence (`mb_warband_wse2_x64.pdb`):
+// Reconstructed from v1.1.5.6 PE + PDB evidence (`mb_warband_wse2_x64.pdb`):
 // - rglFont          size 0x3890 (14480 B), +0x00 m_width, +0x04 m_height,
 //                    +0x08 m_padding, +0x0c m_fontSize, +0x10 m_fontWidth,
 //                    +0x14 m_fontHeight, +0x18 m_fontScale, +0x1c m_lineSpacing,

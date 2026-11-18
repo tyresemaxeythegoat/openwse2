@@ -1,4 +1,4 @@
-// Clean-room v1.1.5.5 full module bundle loader: coordinates world, asset,
+// Clean-room v1.1.5.6 full module bundle loader: coordinates world, asset,
 // script, trigger, string-bank, and Data/ files via wse::platform::Vfs.
 #pragma once
 

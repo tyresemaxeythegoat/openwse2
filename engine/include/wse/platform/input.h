@@ -4,7 +4,7 @@
 //
 // Keeps `<SDL3/SDL.h>` out of engine headers (`platform/sdl/sdl_input.{h,cpp}`
 // implements `InputBackend` for SDL3); `WseGameKeyManager` reconstructs WSE2
-// v1.1.5.5 `rglInputManager` / `mbGameKeyManager` semantics from PDB/binary evidence:
+// v1.1.5.6 `rglInputManager` / `mbGameKeyManager` semantics from PDB/binary evidence:
 //   - rglInputManager::getKeyName         0x1402ad5d0 (125 key names across 1..255)
 //   - mbGameKeyManager::mbGameKeyManager  0x1400e96f0 (`g_gameKeyManager` 0x1406a0c00, 95 slots)
 //   - mbGameKeyManager::reset             0x1400e9800 (75 default keys + Custom1..20 + 13 gamepad alts)

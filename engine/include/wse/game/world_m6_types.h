@@ -1,5 +1,5 @@
 // Milestone 6 world extension types and shared runtime helpers (204 WSE opcodes).
-// Grounded in WSE2 v1.1.5.5 binary helpers (mbnetBuffer, WSEAntiCheat, mbAgent,
+// Grounded in WSE2 v1.1.5.6 binary helpers (mbnetBuffer, WSEAntiCheat, mbAgent,
 // mbTerrainGenerator, mbMenu, mbPresentationContainer, WSELuaManager).
 
 #pragma once

@@ -1,7 +1,7 @@
-// Clean-room v1.1.5.5 UI localization, widget properties, presentation runtime,
+// Clean-room v1.1.5.6 UI localization, widget properties, presentation runtime,
 // and menu/initial/notes window controllers (`docs/PLATFORM_PLAN.md`, P9 Part 2).
 //
-// Reconstructed from v1.1.5.5 PE + PDB evidence (`mb_warband_wse2_x64.pdb`):
+// Reconstructed from v1.1.5.6 PE + PDB evidence (`mb_warband_wse2_x64.pdb`):
 // - mbLanguageManager::getText             (0x14028e460),
 //   mbLanguageManager file scan            (0x14028d850: languages/<lang>/*.csv)
 // - rglReadWidgetProperties                (0x140329440: <prefix>_text_color,

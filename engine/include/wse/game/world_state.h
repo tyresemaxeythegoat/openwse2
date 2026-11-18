@@ -1,6 +1,6 @@
 // Native game-world and mission runtime state backing WSE2 VM handlers.
 //
-// All sizes, offsets, and validators are grounded in official WSE2 v1.1.5.5
+// All sizes, offsets, and validators are grounded in official WSE2 v1.1.5.6
 // PDB layouts (mb_warband_wse2_x64.pdb) and binary disassembly
 // (mb_warband_wse2_x64.exe):
 //   mbTroop            size 0x0a28 (2600), +0x0128 m_flags, +0x0140 m_attributes[4],
@@ -1307,7 +1307,7 @@ struct WseWorldState {
     std::vector<WseBattleEvent> battle_events{};
     std::vector<std::string> mesh_names{};
 
-    // Whole-savegame framing + Phase 2C queued-window runtime fields (v1.1.5.5 PE/PDB).
+    // Whole-savegame framing + Phase 2C queued-window runtime fields (v1.1.5.6 PE/PDB).
     std::int32_t savegame_no = 0;                         // mbGame +0x0000
     std::int32_t seed = 0;                                // mbGame +0x0004
     std::string savegame_name{};                          // mbGame +0x0008

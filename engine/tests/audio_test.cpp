@@ -499,7 +499,7 @@ void test_mixer_3d_panning_lod_priority_occlusion_and_determinism() {
     using namespace wse::asset;
     using namespace wse::platform;
 
-    // 1. v1.1.5.5 default config + listener_from_camera_transform (-u -> forward, +f -> up, +s -> right)
+    // 1. v1.1.5.6 default config + listener_from_camera_transform (-u -> forward, +f -> up, +s -> right)
     {
         AudioConfig cfg{};
         expect(cfg.sound_enabled && cfg.music_enabled && close(cfg.sound_volume, 1.0f) &&
@@ -507,7 +507,7 @@ void test_mixer_3d_panning_lod_priority_occlusion_and_determinism() {
                    cfg.max_virtual_channels == 100 && close(cfg.distance_priority_factor, 0.47f) &&
                    close(cfg.occlusion_max_distance, 80.0f) && close(cfg.min_distance_3d, 2.0f) &&
                    close(cfg.max_distance_3d, 80.0f),
-               "AudioConfig defaults match v1.1.5.5 rglConfig::Sound");
+               "AudioConfig defaults match v1.1.5.6 rglConfig::Sound");
 
         wse::core::WseTransform cam{};
         cam.s = {1.0f, 0.0f, 0.0f, 0.0f};

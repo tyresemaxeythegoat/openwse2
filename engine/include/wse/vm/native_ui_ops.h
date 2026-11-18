@@ -1,5 +1,5 @@
 // Native VM opcodes (Milestone 5): UI, presentations, cursors, dialogs, screens
-// Implemented from WSE2 v1.1.5.5 mbStatement::execute decompilations (62 opcodes).
+// Implemented from WSE2 v1.1.5.6 mbStatement::execute decompilations (62 opcodes).
 
 #pragma once
 

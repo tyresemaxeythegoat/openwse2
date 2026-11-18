@@ -1,7 +1,7 @@
-// Clean-room v1.1.5.5 .dds texture parser, software RGBA8 block decoder,
+// Clean-room v1.1.5.6 .dds texture parser, software RGBA8 block decoder,
 // and Warband Vfs texture path resolver.
 //
-// Reconstructed from v1.1.5.5 PE + PDB evidence:
+// Reconstructed from v1.1.5.6 PE + PDB evidence:
 // - rglTexture (0x1aadd, 288 B), rglTexture::initDeviceObjects (0x1403184d0)
 // - rglResourceManager::tryGetTexture (0x1402f35a0)
 // - Search templates: "Textures\\%s" (0x14056c4a8), "TexturesHD\\%s" (0x14056c4b8),

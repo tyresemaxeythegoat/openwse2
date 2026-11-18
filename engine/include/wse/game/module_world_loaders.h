@@ -1,4 +1,4 @@
-// Clean-room v1.1.5.5 core world/campaign module loaders reading exclusively
+// Clean-room v1.1.5.6 core world/campaign module loaders reading exclusively
 // through wse::platform::Vfs and wse::io::TokenReader.
 #pragma once
 

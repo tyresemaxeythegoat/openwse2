@@ -2,7 +2,7 @@
 // skeletal-skinned mesh rendering over the minimal RHI (`docs/PLATFORM_PLAN.md`,
 // slice P9 Part 1).
 //
-// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.5 layout
+// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.6 layout
 // and carries no PE/PDB citations.
 #pragma once
 

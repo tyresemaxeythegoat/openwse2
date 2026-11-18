@@ -1,5 +1,5 @@
 // Extended native Warband opcode handlers (world, face keys, input, notes,
-// items, parties, troops). Grounded in official WSE2 v1.1.5.5 PDB/binary
+// items, parties, troops). Grounded in official WSE2 v1.1.5.6 PDB/binary
 // decompilation:
 //   undocumented (53, 2180, 2749)          0x1401c671c, 0x1401ddca9, 0x1401e14f3
 //   input (65, 70..73, 77)                 0x1401c68d2..0x1401c6b35

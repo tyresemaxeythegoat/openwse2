@@ -1,6 +1,6 @@
-// Clean-room v1.1.5.5 skeletal pose evaluation and CPU linear-blend skinning.
+// Clean-room v1.1.5.6 skeletal pose evaluation and CPU linear-blend skinning.
 //
-// Reconstructed from v1.1.5.5 PE + PDB evidence:
+// Reconstructed from v1.1.5.6 PE + PDB evidence:
 // - rglSkeletonModel::readStream (0x14030dff0): rest-world bone chain + origins
 // - rglSkeleton::updateBonePositions (0x1403098c0)
 // - rglSkeleton::getBoneTransformForAnimation (0x14030b530)

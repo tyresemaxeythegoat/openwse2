@@ -1,7 +1,7 @@
 // Android ADPF performance-hint session wrapper (API 33+) with thread-priority
 // fallback for API 29-32 (docs/PLATFORM_PLAN.md, P10.8).
 //
-// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.5 layout
+// Port infrastructure, not a reconstruction: mirrors no retail v1.1.5.6 layout
 // and carries no PE/PDB citations. Loaded at run time via dlopen/dlsym so the
 // binary builds and runs against minSdk 29. On non-Android hosts, inline no-op
 // stand-ins are provided so callers (such as sdl_selftest_main.cpp) can invoke

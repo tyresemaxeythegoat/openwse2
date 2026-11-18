@@ -1,4 +1,4 @@
-// Clean-room v1.1.5.5 module mission, menu, scene-prop, presentation, tableau,
+// Clean-room v1.1.5.6 module mission, menu, scene-prop, presentation, tableau,
 // map-icon, and conversation loaders reading through Vfs and TokenReader.
 #pragma once
 

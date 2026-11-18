@@ -2,7 +2,7 @@
 // kept strictly header-clean (no `<lua.h>` include) so standalone header
 // checks and Android/host targets compile without Lua C headers.
 //
-// Evidence (WSE2 v1.1.5.5 PE + PDB + Ghidra 12.1.4):
+// Evidence (WSE2 v1.1.5.6 PE + PDB + Ghidra 12.1.4):
 //   WSELuaManager::WSELuaManager    0x14033d190  size 21504B (type 0xadaf)
 //   WSELuaManager::initialize       0x14033d840  Lua state + stdlibs + LuaGlobals + main.lua
 //   WSELuaManager::OnOperationExecute    0x14033db90  statement-level Lua hook

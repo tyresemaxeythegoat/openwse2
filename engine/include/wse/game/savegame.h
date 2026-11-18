@@ -1,7 +1,7 @@
 // Clean-room Phase 2A whole-savegame container framing, header, checksum control,
-// and world-state serialization matching retail v1.1.5.5 binary `.sav` framing.
+// and world-state serialization matching retail v1.1.5.6 binary `.sav` framing.
 //
-// Evidence (WSE2 v1.1.5.5 PE + PDB):
+// Evidence (WSE2 v1.1.5.6 PE + PDB):
 //   Container save flow & checksum verification:
 //     mbGame::save                           0x1400e1820
 //       writes magic 0x52445257 ("WRDR"), format version 0x496 (1174),

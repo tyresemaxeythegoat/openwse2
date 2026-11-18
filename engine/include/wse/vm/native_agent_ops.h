@@ -1,5 +1,5 @@
 // Native agent & horse spawning opcode handlers (Milestone 5, 50 opcodes).
-// Grounded in official WSE2 v1.1.5.5 PDB/binary decompilation:
+// Grounded in official WSE2 v1.1.5.6 PDB/binary decompilation:
 //   agents (50): 1689, 1692, 1693, 1713, 1717, 1725, 1733, 1734, 1739, 1742..1746,
 //                1748, 1749, 1752..1755, 1757..1764, 1767..1769, 1777, 1778, 1803,
 //                1806..1809, 1825..1827, 1973, 2076, 2077, 2080..2083, 2670, 2671

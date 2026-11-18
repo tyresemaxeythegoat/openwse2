@@ -1,5 +1,5 @@
 // Native multiplayer & player opcode handlers (Milestone 5, 48 opcodes).
-// Grounded in official WSE2 v1.1.5.5 PDB/binary decompilation:
+// Grounded in official WSE2 v1.1.5.6 PDB/binary decompilation:
 //   multiplayer_and_players (48): 388..393, 409, 410, 425, 429, 431, 433..442,
 //                                 459, 460, 475, 476, 478..499, 2748
 

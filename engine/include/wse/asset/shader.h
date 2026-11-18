@@ -1,6 +1,6 @@
-// Clean-room v1.1.5.5 shader, technique, effect, material state, and SPIR-V cache module.
+// Clean-room v1.1.5.6 shader, technique, effect, material state, and SPIR-V cache module.
 //
-// Reconstructed from v1.1.5.5 PE + PDB evidence (`docs/PLATFORM_PLAN.md`, slice P5):
+// Reconstructed from v1.1.5.6 PE + PDB evidence (`docs/PLATFORM_PLAN.md`, slice P5):
 // - rglEffectManager::initDeviceObjects (0x14028be40),
 //   rglGraphicsContext::checkLoadingPostEffects (0x14029ca90),
 //   rglRenderer::initPostFxShaders (0x1402db7a0), D3DXCreateEffectFromFileA (0x140502b70)
@@ -56,7 +56,7 @@
 namespace wse::asset {
 
 // -----------------------------------------------------------------------------
-// rglShader & rglMaterial flags from v1.1.5.5 PE reconstruction
+// rglShader & rglMaterial flags from v1.1.5.6 PE reconstruction
 // -----------------------------------------------------------------------------
 
 // rglShader::m_flags (`+0x58`, rglShader::isSuitable 0x1403028c0,
@@ -594,7 +594,7 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
 }
 
 // -----------------------------------------------------------------------------
-// Retail v1.1.5.5 Effect Search Order (`rglEffectManager::initDeviceObjects` et al.)
+// Retail v1.1.5.6 Effect Search Order (`rglEffectManager::initDeviceObjects` et al.)
 // -----------------------------------------------------------------------------
 
 [[nodiscard]] inline std::vector<std::string> build_wse2_effect_candidates(const EffectConfig& cfg) {

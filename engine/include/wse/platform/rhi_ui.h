@@ -1,7 +1,7 @@
 // Clean-room 2D UI RHI renderer & resource cache over wse::platform::RhiDevice
 // (`docs/PLATFORM_PLAN.md`, P9 Part 2).
 //
-// Port infrastructure over `wse::platform::RhiDevice`; contains no v1.1.5.5 PE/PDB
+// Port infrastructure over `wse::platform::RhiDevice`; contains no v1.1.5.6 PE/PDB
 // citations. Transforms Warband Y-up `[0, 1] x [0, 0.75]` UI coordinates into
 // Vulkan clip space (`vulkan_flip_y = true`) and flips bottom-up Warband BRF/font
 // UV V coordinates into top-down `decode_dds_mip_rgba8` / `SoftwareRhiDevice` rows

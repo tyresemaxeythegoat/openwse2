@@ -1,7 +1,7 @@
-// Clean-room v1.1.5.5 map manifold, scene object (.sco), and skeleton bodies
+// Clean-room v1.1.5.6 map manifold, scene object (.sco), and skeleton bodies
 // XML loaders via Vfs/TokenReader/BinaryReader.
 //
-// Reconstructed from v1.1.5.5 PE + PDB evidence:
+// Reconstructed from v1.1.5.6 PE + PDB evidence:
 // - mbGame::readMap (0x1400d9b60), rglManifold::readStream (0x1402b1490),
 //   rglManifoldFace::readStream (0x1402b1400), rglManifold::computeBounds (0x1402b1f70)
 // - mbSite::readSceneObjFile (0x140210d60), mbMissionObject::readStream (0x140152d60),
