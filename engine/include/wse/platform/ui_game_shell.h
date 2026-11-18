@@ -31,6 +31,7 @@
 #include "wse/game/headless_runner.h"
 #include "wse/platform/input.h"
 #include "wse/platform/rhi.h"
+#include "wse/platform/rhi_geometry.h"
 #include "wse/platform/rhi_ui.h"
 #include "wse/platform/ui_frame.h"
 #include "wse/platform/vfs.h"
@@ -125,6 +126,12 @@ struct UiGameShellOptions {
     // Open on the main menu and defer `game_start` to "Start a New Game". Off: `game_start`
     // runs in `start` (`run.run_game_start`) and module frames run from the first frame.
     bool start_at_initial_window = true;
+    // `rgba8`: draw with `SoftwareRhiDevice` into `pixels()` (capped at `max_render_height`).
+    // `geometry`: record screen-space triangle batches at the full window size into
+    // `geometry()` (`GeometryCaptureRhiDevice`) for the host to draw on the GPU; `pixels()`
+    // stays empty and no CPU rasterizing happens.
+    enum class Output : std::uint8_t { rgba8, geometry };
+    Output output = Output::rgba8;
     UiRenderConfig render{};
 
     UiGameShellOptions() { run.fail_on_unimplemented = false; }
@@ -151,7 +158,13 @@ public:
                                    options_.language, *assets_, &err)) {
             return fail("UI assets: " + err, error_out);
         }
-        rhi_ = std::make_unique<SoftwareRhiDevice>();
+        if (options_.output == UiGameShellOptions::Output::geometry) {
+            auto geo = std::make_unique<GeometryCaptureRhiDevice>();
+            geometry_ = geo.get();
+            rhi_ = std::move(geo);
+        } else {
+            rhi_ = std::make_unique<SoftwareRhiDevice>();
+        }
         renderer_ = std::make_unique<UiRhiRenderer>(*rhi_);
         if (!renderer_->init(assets_.get(), &err)) {
             return fail("UI renderer: " + err, error_out);
@@ -194,6 +207,8 @@ public:
         ctx_.reset();
         renderer_.reset();  // before the device that owns its handles
         rhi_.reset();
+        geometry_ = nullptr;
+        has_frame_ = false;
         assets_.reset();
         pixels_.clear();
         width_ = height_ = 0U;
@@ -230,6 +245,12 @@ public:
     }
 
     [[nodiscard]] const std::vector<std::uint8_t>& pixels() const noexcept { return pixels_; }
+    // `Output::geometry` only (else null): the last recorded frame, and the device that owns
+    // its textures (`texture()` for pixel data, `take_destroyed_textures()` to free host copies).
+    [[nodiscard]] const GeometryFrame* geometry() const noexcept {
+        return geometry_ != nullptr && has_frame_ ? &geometry_->frame() : nullptr;
+    }
+    [[nodiscard]] GeometryCaptureRhiDevice* geometry_device() const noexcept { return geometry_; }
     [[nodiscard]] std::uint32_t width() const noexcept { return width_; }
     [[nodiscard]] std::uint32_t height() const noexcept { return height_; }
     // Bumped each time `pixels()` is redrawn; a host re-uploads its texture only on a change.
@@ -300,7 +321,9 @@ private:
         }
         std::uint32_t w = window_w;
         std::uint32_t h = window_h;
-        if (options_.max_render_height != 0U && h > options_.max_render_height) {
+        // The GPU path draws at native size; only the CPU rasterizer is capped.
+        if (geometry_ == nullptr && options_.max_render_height != 0U &&
+            h > options_.max_render_height) {
             w = std::max<std::uint32_t>(
                 1U, static_cast<std::uint32_t>(static_cast<std::uint64_t>(w) *
                                                options_.max_render_height / h));
@@ -312,7 +335,7 @@ private:
         // Menus and most presentations sit still for many frames: keep the last frame when the
         // tree and the frame size are unchanged.
         const std::uint64_t tree_hash = UiTreeHasher::hash(ui_->root);
-        if (!pixels_.empty() && tree_hash == last_tree_hash_ && w == width_ && h == height_) {
+        if (has_frame_ && tree_hash == last_tree_hash_ && w == width_ && h == height_) {
             ++frames_reused_;
             return;
         }
@@ -320,13 +343,16 @@ private:
             width_ = w;
             height_ = h;
             last_tree_hash_ = tree_hash;
+            has_frame_ = true;
             ++frame_serial_;
         }
     }
 
     UiGameShellOptions options_{};
     std::unique_ptr<LoadedUiAssets> assets_{};
-    std::unique_ptr<SoftwareRhiDevice> rhi_{};
+    std::unique_ptr<RhiDevice> rhi_{};
+    GeometryCaptureRhiDevice* geometry_ = nullptr;  // `rhi_` in `Output::geometry`
+    bool has_frame_ = false;
     std::unique_ptr<UiRhiRenderer> renderer_{};
     std::unique_ptr<vm::VmContext> ctx_{};
     std::unique_ptr<game::ModuleBundle> bundle_{};

@@ -24,6 +24,16 @@ if(NOT _wse_multi_config AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
 
+# Android Gradle builds the debug APK (the one CI uploads and testers install) with
+# CMAKE_BUILD_TYPE=Debug, which the NDK maps to -O0: the VM, loaders and UI then run several
+# times slower than on the -O2 host gate, so device timings would be meaningless. Keep the
+# native code optimised in that APK; -g keeps it debuggable. Turn off to step through -O0 code.
+option(WSE_ANDROID_OPTIMIZE_DEBUG "Compile Android Debug builds at -O2" ON)
+if(ANDROID AND WSE_ANDROID_OPTIMIZE_DEBUG AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # Compile options follow CMAKE_<LANG>_FLAGS_DEBUG on the command line, so -O2 wins.
+    add_compile_options(-O2 -g)
+endif()
+
 if(WSE_SANITIZE AND NOT MSVC)
     add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined
                         -fno-omit-frame-pointer)

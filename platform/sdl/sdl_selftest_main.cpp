@@ -12,6 +12,7 @@
 #include "wse/platform/audio_worker.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/performance.h"
+#include "wse/platform/rhi_geometry.h"
 #include "wse/platform/ui_game_shell.h"
 #include "wse/platform/vfs.h"
 
@@ -26,6 +27,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -34,6 +36,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #ifdef __ANDROID__
@@ -224,13 +227,128 @@ void apply_display_frame_rate(SDL_Window* window,
 #endif
 }
 
+// Draws `GeometryFrame` batches with `SDL_RenderGeometry` on whatever GPU backend the SDL
+// renderer uses (GLES / Vulkan on Android). Textures are copied from the capture device on
+// first use and freed when the UI renderer destroys them.
+class SdlGeometryPresenter {
+public:
+    explicit SdlGeometryPresenter(SDL_Renderer* renderer) noexcept : renderer_(renderer) {}
+    SdlGeometryPresenter(const SdlGeometryPresenter&) = delete;
+    SdlGeometryPresenter& operator=(const SdlGeometryPresenter&) = delete;
+    ~SdlGeometryPresenter() { drop_all(); }
+
+    // After `SDL_EVENT_RENDER_DEVICE_RESET` every texture is gone; they are recreated lazily.
+    void drop_all() noexcept {
+        for (auto& [handle, tex] : textures_) {
+            (void)handle;
+            SDL_DestroyTexture(tex);
+        }
+        textures_.clear();
+    }
+
+    // Returns false if a batch failed to draw (logged once).
+    bool draw(const wse::platform::GeometryFrame& frame,
+              wse::platform::GeometryCaptureRhiDevice& device) {
+        for (const wse::platform::TextureHandle gone : device.take_destroyed_textures()) {
+            if (const auto it = textures_.find(gone); it != textures_.end()) {
+                SDL_DestroyTexture(it->second);
+                textures_.erase(it);
+            }
+        }
+        SDL_SetRenderScale(renderer_, 1.0f, 1.0f);
+        SDL_SetRenderDrawColor(renderer_, frame.clear_r, frame.clear_g, frame.clear_b, 255);
+        SDL_RenderClear(renderer_);
+        bool ok = true;
+        const auto* verts = reinterpret_cast<const SDL_Vertex*>(frame.vertices.data());
+        for (const wse::platform::GeometryBatch& b : frame.batches) {
+            if (b.index_count == 0U) {
+                continue;
+            }
+            const SDL_BlendMode mode = sdl_blend(b.blend);
+            SDL_Texture* tex = texture_for(b.texture, device);
+            if (tex != nullptr) {
+                SDL_SetTextureBlendMode(tex, mode);
+            } else {
+                SDL_SetRenderDrawBlendMode(renderer_, mode);
+            }
+            if (!SDL_RenderGeometry(renderer_, tex, verts + b.first_vertex,
+                                    static_cast<int>(b.vertex_count),
+                                    frame.indices.data() + b.first_index,
+                                    static_cast<int>(b.index_count))) {
+                ok = false;
+                if (!logged_failure_) {
+                    logged_failure_ = true;
+                    SDL_Log("[WSE2] SDL_RenderGeometry failed: %s", SDL_GetError());
+                }
+            }
+        }
+        SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_NONE);
+        return ok;
+    }
+
+private:
+    static SDL_BlendMode sdl_blend(wse::platform::BlendMode mode) noexcept {
+        switch (mode) {
+            case wse::platform::BlendMode::opaque:
+                return SDL_BLENDMODE_NONE;
+            case wse::platform::BlendMode::alpha:  // SRCALPHA / INVSRCALPHA (colour)
+                return SDL_BLENDMODE_BLEND;
+            case wse::platform::BlendMode::additive_alpha:  // SRCALPHA / ONE
+                return SDL_BLENDMODE_ADD;
+            case wse::platform::BlendMode::multiply:  // ZERO / SRCCOLOR
+                return SDL_BLENDMODE_MOD;
+            case wse::platform::BlendMode::additive:  // ONE / ONE
+                return SDL_ComposeCustomBlendMode(SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE,
+                                                  SDL_BLENDOPERATION_ADD, SDL_BLENDFACTOR_ONE,
+                                                  SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD);
+        }
+        return SDL_BLENDMODE_BLEND;
+    }
+
+    SDL_Texture* texture_for(wse::platform::TextureHandle handle,
+                             const wse::platform::GeometryCaptureRhiDevice& device) {
+        if (handle == 0) {
+            return nullptr;
+        }
+        if (const auto it = textures_.find(handle); it != textures_.end()) {
+            return it->second;
+        }
+        const auto* data = device.texture(handle);
+        if (data == nullptr) {
+            return nullptr;
+        }
+        SDL_Texture* tex = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32,
+                                             SDL_TEXTUREACCESS_STATIC,
+                                             static_cast<int>(data->width),
+                                             static_cast<int>(data->height));
+        if (tex == nullptr) {
+            return nullptr;
+        }
+        SDL_UpdateTexture(tex, nullptr, data->rgba8.data(), static_cast<int>(data->width * 4U));
+        SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
+        textures_.emplace(handle, tex);
+        return tex;
+    }
+
+    SDL_Renderer* renderer_ = nullptr;
+    std::unordered_map<wse::platform::TextureHandle, SDL_Texture*> textures_{};
+    bool logged_failure_ = false;
+};
+
+static_assert(sizeof(SDL_Vertex) == sizeof(wse::platform::GeometryVertex));
+static_assert(offsetof(SDL_Vertex, position) == offsetof(wse::platform::GeometryVertex, x));
+static_assert(offsetof(SDL_Vertex, color) == offsetof(wse::platform::GeometryVertex, r));
+static_assert(offsetof(SDL_Vertex, tex_coord) == offsetof(wse::platform::GeometryVertex, u));
+
 // Module mode (`--module <warband_root> [module_rel_dir]`; on Android the `wse.module_root` /
 // `wse.module` intent extras, `WseActivity.getArguments`): instead of the self-test, load the
 // module from a plain directory (`HostVfs`) and run it through `UiGameShell` every display
 // frame: SDL events -> `SdlInputBackend` -> `UiInputAccumulator`, one module frame, then the
-// RGBA8 UI frame is streamed into an SDL texture stretched over the window (Warband's UI
-// space is stretched the same way, so pointer positions map 1:1). When the module stops
-// (a VM error with `stop_on_error`), the last frame stays up with the error on top.
+// UI is drawn on the GPU (`UiGameShellOptions::Output::geometry` + `SdlGeometryPresenter`) at
+// the window's pixel size; Warband's UI space is stretched over the window, so pointer
+// positions map 1:1. The window is only redrawn and presented when the frame changed (or
+// after a resize, a render reset or a return to the foreground). When the module stops (a VM
+// error with `stop_on_error`), the last frame stays up with the error on top.
 // With `from_saf` (Android `--saf-module`, launched from `WseLauncherActivity`) the install
 // is the SAF tree `WseActivity` registered, opened on this thread
 // (`android_saf::RegisteredGameTree`); `warband_root` is unused.
@@ -273,6 +391,7 @@ int run_module_shell(SDL_Window* window,
     opts.run.load_options.root_data_dir = "Data";
     opts.run.load_options.require_core_files = true;
     opts.run.enable_lua = false;  // the app links no `wse_lua` runtime yet
+    opts.output = wse::platform::UiGameShellOptions::Output::geometry;
 
     wse::platform::UiGameShell shell;
     bool running = vfs != nullptr && shell.start(*vfs, opts, &error);
@@ -285,10 +404,11 @@ int run_module_shell(SDL_Window* window,
 #endif
     frame_pacer.set_target_fps(60);
 
-    SDL_Texture* tex = nullptr;
-    std::uint32_t tex_w = 0U;
-    std::uint32_t tex_h = 0U;
-    std::uint64_t uploaded_serial = ~std::uint64_t{0};
+    SdlGeometryPresenter presenter(renderer);
+    std::uint64_t presented_serial = ~std::uint64_t{0};
+    int presented_w = 0;
+    int presented_h = 0;
+    bool presented_stopped = false;
     std::vector<wse::platform::RawInputEvent> events;
     std::uint64_t last_ns = SDL_GetTicksNS();
     bool quit = false;
@@ -301,14 +421,12 @@ int run_module_shell(SDL_Window* window,
             } else if (ev.type == SDL_EVENT_TEXT_INPUT && ev.text.text != nullptr) {
                 shell.feed_text(ev.text.text);
             } else if (ev.type == SDL_EVENT_RENDER_DEVICE_RESET) {
-                // Every texture is gone: recreate (and re-upload) on this frame.
-                if (tex != nullptr) {
-                    SDL_DestroyTexture(tex);
-                    tex = nullptr;
-                }
+                presenter.drop_all();  // every texture is gone; recreated on the next draw
+                presented_serial = ~std::uint64_t{0};
             } else if (ev.type == SDL_EVENT_RENDER_TARGETS_RESET ||
-                       ev.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
-                uploaded_serial = ~std::uint64_t{0};  // contents may be lost: re-upload
+                       ev.type == SDL_EVENT_DID_ENTER_FOREGROUND ||
+                       ev.type == SDL_EVENT_WINDOW_EXPOSED) {
+                presented_serial = ~std::uint64_t{0};  // the window contents may be gone
             }
             if (sdl_input) {
                 sdl_input->push_sdl_event(&ev);
@@ -339,47 +457,35 @@ int run_module_shell(SDL_Window* window,
             }
         }
 
-        SDL_SetRenderScale(renderer, 1.0f, 1.0f);
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
-        if (shell.width() != 0U && shell.pixels().size() ==
-                                       static_cast<std::size_t>(shell.width()) * shell.height() * 4U) {
-            if (tex == nullptr || tex_w != shell.width() || tex_h != shell.height()) {
-                if (tex != nullptr) {
-                    SDL_DestroyTexture(tex);
-                }
-                tex_w = shell.width();
-                tex_h = shell.height();
-                tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32,
-                                        SDL_TEXTUREACCESS_STREAMING, static_cast<int>(tex_w),
-                                        static_cast<int>(tex_h));
-                if (tex != nullptr) {
-                    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
-                }
-                uploaded_serial = ~std::uint64_t{0};  // new texture: upload whatever is current
+        const bool changed = presented_serial != shell.frame_serial() || presented_w != out_w ||
+                             presented_h != out_h || presented_stopped != !running;
+        if (changed) {
+            const wse::platform::GeometryFrame* frame = shell.geometry();
+            if (frame != nullptr && shell.geometry_device() != nullptr) {
+                (void)presenter.draw(*frame, *shell.geometry_device());
+            } else {
+                SDL_SetRenderScale(renderer, 1.0f, 1.0f);
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                SDL_RenderClear(renderer);
             }
-            if (tex != nullptr) {
-                // `UiGameShell` keeps the last frame while the widget tree is unchanged;
-                // upload only redrawn frames.
-                if (uploaded_serial != shell.frame_serial()) {
-                    SDL_UpdateTexture(tex, nullptr, shell.pixels().data(),
-                                      static_cast<int>(tex_w * 4U));
-                    uploaded_serial = shell.frame_serial();
-                }
-                SDL_RenderTexture(renderer, tex, nullptr, nullptr);
+            if (!running) {
+                const float scale =
+                    std::clamp(std::floor(static_cast<float>(out_w) / 340.0f), 1.0f, 6.0f);
+                SDL_SetRenderScale(renderer, scale, scale);
+                draw_filled_rect(renderer, 0.0f, 0.0f, static_cast<float>(out_w) / scale, 30.0f,
+                                 150, 34, 34);
+                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+                SDL_RenderDebugText(renderer, 6.0f, 6.0f, "WSE2 module stopped");
+                const std::string line =
+                    error.size() > 80U ? error.substr(0U, 77U) + "..." : error;
+                SDL_RenderDebugText(renderer, 6.0f, 18.0f, line.c_str());
             }
+            SDL_RenderPresent(renderer);
+            presented_serial = shell.frame_serial();
+            presented_w = out_w;
+            presented_h = out_h;
+            presented_stopped = !running;
         }
-        if (!running) {
-            const float scale = std::clamp(std::floor(static_cast<float>(out_w) / 340.0f), 1.0f, 6.0f);
-            SDL_SetRenderScale(renderer, scale, scale);
-            draw_filled_rect(renderer, 0.0f, 0.0f, static_cast<float>(out_w) / scale, 30.0f, 150,
-                             34, 34);
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-            SDL_RenderDebugText(renderer, 6.0f, 6.0f, "WSE2 module stopped");
-            const std::string line = error.size() > 80U ? error.substr(0U, 77U) + "..." : error;
-            SDL_RenderDebugText(renderer, 6.0f, 18.0f, line.c_str());
-        }
-        SDL_RenderPresent(renderer);
         const std::uint64_t wait_ticks =
             static_cast<std::uint64_t>(frame_pacer.remaining_wait_ticks());
         if (wait_ticks > 0U) {
@@ -387,9 +493,7 @@ int run_module_shell(SDL_Window* window,
                         static_cast<std::uint64_t>(wse::platform::FramePacer::kNsPerTick));
         }
     }
-    if (tex != nullptr) {
-        SDL_DestroyTexture(tex);
-    }
+    presenter.drop_all();
     shell.stop();
     return running || error.empty() ? 0 : 2;
 }

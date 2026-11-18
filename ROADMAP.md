@@ -167,6 +167,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-18 | — | Android UI performance: the app draws the UI on the GPU (`GeometryCaptureRhiDevice` batches -> `SDL_RenderGeometry`, 0.033 ms CPU per redraw at 2400x1080 vs 103 ms software), presents only changed frames, and the debug APK's native code is built at `-O2` instead of `-O0`; device run pending (Windows host gate PASS) |
 | 2026-11-18 | — | P9 app shell: unchanged UI frames are reused (widget-tree hash; retail Native menu 106 -> 11.5 ms average per frame), and the launcher's "Run Selected Module" runs a SAF-picked install on the SDL thread (`RegisteredGameTree`); device run pending (Windows host gate PASS) |
 | 2026-11-18 | — | P9 app frame loop: `UiGameShell` (`wse/platform/ui_game_shell.h`) runs a module behind the main menu, steps it once per display frame with SDL / touch input (`HeadlessModuleRunner`) and renders the UI into an SDL texture (`--module`, or the `wse.module_root` intent extra); host check on retail Native reaches `start_game_0`; device run and SAF installs pending (Windows host gate PASS) |
 | 2026-11-18 | — | Scripts started from a handler (`execute_mapped_script`) run in their own frame instead of overwriting depth 0's locals and loop frames (`mbStatementBlock::execute` `0x1401f69d0`); `store_skill_level` (2170) now includes `game_get_skill_modifier_for_troop`; interpreter profiled at 35–61 ns per statement (Windows host gate PASS) |

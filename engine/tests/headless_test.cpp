@@ -487,6 +487,22 @@ void test_ui_game_shell() {
     expect(menu_shell.frame(1.0f / 60.0f, 800U, 600U) &&
                menu_shell.frame_serial() == menu_serial + 1U,
            "the hovered menu, unchanged, reuses its frame");
+    // Geometry output: batches at the full window size, no CPU frame, same reuse rule.
+    {
+        wse::platform::UiGameShellOptions geo_opts = menu_opts;
+        geo_opts.output = wse::platform::UiGameShellOptions::Output::geometry;
+        wse::platform::UiGameShell geo_shell;
+        expect(geo_shell.start(vfs, geo_opts, &err) && geo_shell.geometry() == nullptr &&
+                   geo_shell.geometry_device() != nullptr,
+               "geometry shell starts with no frame recorded yet");
+        expect(geo_shell.frame(1.0f / 60.0f, 2400U, 1080U) && geo_shell.geometry() != nullptr &&
+                   geo_shell.geometry()->width == 2400U && geo_shell.geometry()->height == 1080U &&
+                   geo_shell.pixels().empty(),
+               "geometry output records at the full window size and rasterizes nothing");
+        const std::uint64_t s0 = geo_shell.frame_serial();
+        expect(geo_shell.frame(1.0f / 60.0f, 2400U, 1080U) && geo_shell.frame_serial() == s0,
+               "an unchanged tree keeps the recorded geometry");
+    }
     tap(0.05f + 0.0925f, 0.44f + 0.0155f);  // start_new_game_button
     expect(menu_shell.frame(1.0f / 60.0f, 800U, 600U) && menu_shell.in_game() &&
                menu_shell.vm()->globalVariables.get(1) == 7,

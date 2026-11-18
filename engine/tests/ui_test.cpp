@@ -24,6 +24,7 @@
 #include "wse/game/ui_runtime.h"
 #include "wse/io/xml.h"
 #include "wse/platform/rhi.h"
+#include "wse/platform/rhi_geometry.h"
 #include "wse/platform/rhi_ui.h"
 #include "wse/platform/ui_frame.h"
 #include "wse/platform/vfs.h"
@@ -2224,6 +2225,183 @@ void test_mission_presentations_and_ui_frame() {
     }
 }
 
+// `GeometryCaptureRhiDevice` records the same picture `SoftwareRhiDevice` draws: the captured
+// screen-space batches, replayed through the software rasterizer with an identity transform,
+// match the direct render (texture orientation, tint, blend, painter's order).
+void test_geometry_capture_matches_software() {
+    // 8x8 texture: top half green, bottom half yellow (top-down rows).
+    std::vector<std::uint8_t> panel_tex(8U * 8U * 4U, 255);
+    for (std::uint32_t y = 0; y < 8U; ++y) {
+        for (std::uint32_t x = 0; x < 8U; ++x) {
+            const std::size_t off = (static_cast<std::size_t>(y) * 8U + x) * 4U;
+            panel_tex[off + 0] = (y < 4U) ? 0 : 255;
+            panel_tex[off + 1] = 255;
+            panel_tex[off + 2] = static_cast<std::uint8_t>(x * 30U);
+            panel_tex[off + 3] = 255;
+        }
+    }
+    std::vector<std::uint8_t> font_tex(16U * 16U * 4U, 255);
+    wse::asset::FontData font{};
+    font.width = 16;
+    font.height = 16;
+    font.font_size = 16;
+    font.base_size = 16;
+    font.font_scale = 1.0f;
+    font.font_width = 1.0f;
+    font.font_height = 1.0f;
+    font.line_spacing = 1.0f;
+    wse::asset::FontGlyph ga{};
+    ga.u_right = 0.5f;
+    ga.uv_y = 1.0f;
+    ga.yadjust = 1.0f;
+    ga.postshift = 0.5f;
+    font.glyphs['A'] = ga;
+
+    wse::asset::BrfMesh quad{};
+    quad.name = "geo_quad";
+    quad.positions = {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}};
+    quad.face_corners = {
+        wse::asset::BrfFaceCorner{0, 0xFFFFFFFFU, {0, 0, 1}, {}, false, {0.0f, 0.0f}, {}},
+        wse::asset::BrfFaceCorner{1, 0xFFFFFFFFU, {0, 0, 1}, {}, false, {1.0f, 0.0f}, {}},
+        wse::asset::BrfFaceCorner{2, 0xFFFFFFFFU, {0, 0, 1}, {}, false, {1.0f, 1.0f}, {}},
+        wse::asset::BrfFaceCorner{3, 0xFFFFFFFFU, {0, 0, 1}, {}, false, {0.0f, 1.0f}, {}},
+    };
+    quad.faces = {{{{0, 1, 2}}}, {{{0, 2, 3}}}};
+
+    wse::game::UiWidget root{};
+    root.size = {1.0f, 0.75f};
+    wse::game::UiWidget img{};
+    img.kind = wse::game::UiWidgetKind::Image;
+    img.pos = {0.55f, 0.15f};
+    img.size = {0.40f, 0.45f};
+    img.mesh_name = "geo_quad";
+    root.children.push_back(img);
+    wse::game::UiWidget tinted = img;  // overlapping, half-transparent red tint on top
+    tinted.pos = {0.45f, 0.30f};
+    tinted.tint_mesh = true;
+    tinted.color_argb = 0x80FF2020U;
+    root.children.push_back(tinted);
+    wse::game::UiWidget btn{};
+    btn.kind = wse::game::UiWidgetKind::SimpleButton;
+    btn.pos = {0.05f, 0.20f};
+    btn.size = {0.30f, 0.35f};
+    btn.text = "AA";
+    btn.text_scale = {0.20f, 0.20f};
+    btn.text_color_argb = 0xFF3060FFU;
+    root.children.push_back(btn);
+
+    wse::platform::UiRenderConfig cfg{};
+    cfg.viewport_width = 160;
+    cfg.viewport_height = 120;
+    const auto setup = [&](wse::platform::UiRhiRenderer& r) {
+        std::string e;
+        return r.init(nullptr, &e) && r.upload_texture("font", 16, 16, font_tex) &&
+               r.upload_texture("panel_tex", 8, 8, panel_tex) && r.upload_brf_mesh(quad, "panel_tex");
+    };
+
+    wse::platform::SoftwareRhiDevice sw{};
+    wse::platform::UiRhiRenderer sw_renderer(sw);
+    std::vector<std::uint8_t> direct;
+    expect(setup(sw_renderer) && sw_renderer.render_tree(root, font, cfg, direct),
+           "software render of the comparison tree");
+
+    wse::platform::GeometryCaptureRhiDevice geo{};
+    wse::platform::UiRhiRenderer geo_renderer(geo);
+    std::vector<std::uint8_t> none{1, 2, 3};
+    expect(setup(geo_renderer) && geo_renderer.render_tree(root, font, cfg, none) && none.empty(),
+           "geometry capture of the same tree succeeds and reads nothing back");
+    const wse::platform::GeometryFrame& f = geo.frame();
+    expect(f.width == 160U && f.height == 120U && f.clear_r == cfg.clear_r && !f.batches.empty(),
+           "captured frame keeps the pass size, clear colour and batches");
+    bool indices_ok = true;
+    for (const auto& b : f.batches) {
+        for (std::uint32_t i = 0; i < b.index_count; ++i) {
+            const std::int32_t ix = f.indices[b.first_index + i];
+            indices_ok = indices_ok && ix >= 0 && static_cast<std::uint32_t>(ix) < b.vertex_count;
+        }
+    }
+    expect(indices_ok, "batch indices stay inside their batch's vertex range");
+    expect(geo.unsupported_draws() == 0U, "UI draws use only features the capture device supports");
+
+    // Replay: pixel coordinates -> NDC with an identity transform, same textures and blends.
+    wse::platform::SoftwareRhiDevice replay{};
+    std::vector<wse::platform::MeshDrawCall> draws;
+    std::vector<wse::platform::BufferHandle> keep;
+    for (const auto& b : f.batches) {
+        if (b.index_count == 0U) {
+            continue;
+        }
+        std::vector<wse::platform::MeshVertex> mv(b.vertex_count);
+        for (std::uint32_t i = 0; i < b.vertex_count; ++i) {
+            const auto& gv = f.vertices[b.first_vertex + i];
+            mv[i].px = gv.x / 160.0f * 2.0f - 1.0f;
+            mv[i].py = gv.y / 120.0f * 2.0f - 1.0f;
+            mv[i].u = gv.u;
+            mv[i].v = gv.v;
+            const auto c8 = [](float c) {
+                return static_cast<std::uint32_t>(std::lround(std::clamp(c, 0.0f, 1.0f) * 255.0f));
+            };
+            mv[i].color_rgba = c8(gv.r) | (c8(gv.g) << 8U) | (c8(gv.b) << 16U) | (c8(gv.a) << 24U);
+        }
+        std::vector<std::uint16_t> ix(b.index_count);
+        for (std::uint32_t i = 0; i < b.index_count; ++i) {
+            ix[i] = static_cast<std::uint16_t>(f.indices[b.first_index + i]);
+        }
+        wse::platform::MeshDrawCall d{};
+        d.vertex_buffer = replay.create_buffer(
+            wse::platform::BufferUsage::vertex,
+            {reinterpret_cast<const std::uint8_t*>(mv.data()), mv.size() * sizeof(mv[0])});
+        d.index_buffer = replay.create_buffer(
+            wse::platform::BufferUsage::index,
+            {reinterpret_cast<const std::uint8_t*>(ix.data()), ix.size() * sizeof(ix[0])});
+        if (const auto* t = geo.texture(b.texture); t != nullptr) {
+            d.texture = replay.create_texture_rgba8(t->width, t->height, t->rgba8);
+        }
+        wse::platform::PipelineDesc pd{};
+        pd.depth_test = false;
+        pd.depth_write = false;
+        pd.cull_mode = wse::platform::CullMode::none;
+        pd.blend_mode = b.blend;
+        d.pipeline = replay.create_pipeline(pd);
+        d.index_count = b.index_count;
+        draws.push_back(d);
+    }
+    wse::platform::RenderPassDesc pass{};
+    pass.width = 160;
+    pass.height = 120;
+    pass.clear_r = f.clear_r;
+    pass.clear_g = f.clear_g;
+    pass.clear_b = f.clear_b;
+    pass.clear_a = f.clear_a;
+    std::vector<std::uint8_t> replayed;
+    expect(replay.render_pass_and_readback(pass, draws, replayed) && replayed.size() == direct.size(),
+           "captured batches replay through the software rasterizer");
+    std::size_t differing = 0;
+    std::size_t lit = 0;
+    for (std::size_t p = 0; p + 3 < direct.size() && p + 3 < replayed.size(); p += 4) {
+        int worst = 0;
+        for (std::size_t c = 0; c < 3; ++c) {
+            worst = std::max(worst, std::abs(static_cast<int>(direct[p + c]) - static_cast<int>(replayed[p + c])));
+        }
+        differing += worst > 8 ? 1U : 0U;
+        lit += (direct[p] != cfg.clear_r || direct[p + 1] != cfg.clear_g) ? 1U : 0U;
+    }
+    expect(lit > 160U * 120U / 10U, "the comparison tree covers a real part of the frame");
+    expect(differing * 200U <= direct.size() / 4U,
+           "replayed capture matches the direct software render (<= 0.5% pixels differ)");
+    if (differing * 200U > direct.size() / 4U) {
+        std::printf("      geometry replay: %zu of %zu pixels differ\n", differing, direct.size() / 4U);
+    }
+
+    // Destroyed textures are reported once, for the host to free its copies.
+    const wse::platform::TextureHandle t = geo.create_texture_rgba8(1, 1, std::vector<std::uint8_t>(4, 255));
+    geo.destroy_texture(t);
+    const auto gone = geo.take_destroyed_textures();
+    expect(gone.size() == 1U && gone[0] == t && geo.take_destroyed_textures().empty() &&
+               geo.texture(t) == nullptr,
+           "destroyed textures are reported once");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -2246,6 +2424,7 @@ int run_ui_suite(const char* fixture_path) {
     test_synthetic_ui_rhi_render_and_uv_orientation();
     test_retail_warband_native_main_menu();
     test_batch_menu_remeasure_and_ui_buffers();
+    test_geometry_capture_matches_software();
 
     if (g_failures == 0) {
         std::printf("ui tests: PASS\n");
