@@ -813,7 +813,7 @@ modifiers:
 
 | Bit | Effect |
 | --- | --- |
-| `0x40000000` (30) | arms the global "stop/return" latch (`DAT_1405d0d9c`) after execution |
+| `0x40000000` (30) | arms the global "stop/return" latch after execution (its address is not identified yet: the label in the older notes pointed into `.rdata` unwind data, so it was wrong) |
 | `0x80000000` (31) | inverts the boolean result |
 
 Dispatch order:
@@ -837,7 +837,8 @@ Dispatch order:
 
 `mbStatementBlock::execute` (`0x1401f69d0`) is the interpreter loop:
 
-- Pushes a frame on the global call stack (`DAT_1405d0da0`); frame storage is `0x1C08` bytes with a
+- Pushes a frame on the global call stack (`g_curCallStack`, `0x14061eeb8`, referenced three
+  times in this function); frame storage is `0x1C08` bytes with a
   128-entry loop stack of `0x38`-byte frames and a depth field at `+0x1C00`.
 - Calls `analyze()` on entry, then zeroes `clamp(m_numLocalVariablesUsed, 0x20, 0x400)`
   qwords of locals when `rglConfig::General::bLocalVariablesZeroInitialization` (`0x140617819`,

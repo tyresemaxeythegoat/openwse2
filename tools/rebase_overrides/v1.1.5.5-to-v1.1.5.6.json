@@ -1,0 +1,11 @@
+{
+ "_about": "Reviewed v1.1.5.5 -> v1.1.5.6 mappings that tools/rebase_build.py rules do not cover. Each entry was proposed by a review batch (Antigravity) or found by Claude, and checked by Claude against both builds locally.",
+ "0x1401e22f0": {
+  "new": "0x1401e2470",
+  "evidence": "mbStatement::execute opcode jump table (2,738 32-bit RVA entries, data inside .text after the dispatch jmp); every entry in v1.1.5.6 equals the v1.1.5.5 entry + 0x180, the drift of the surrounding code."
+ },
+ "0x1402a0165": {
+  "new": "0x1402a031a",
+  "evidence": "rglGraphicsContext::setAlphaTestMode +0xb5 (old) / +0xba (new): the render-state block (D3DRS 8/136/251, ALPHATESTENABLE/ALPHAREF) is unchanged apart from the rdi/rbx register swap. v1.1.5.6 adds a null check of the effect pointer [rcx+0x878] before the +0xf0 virtual call (bug fix)."
+ }
+}

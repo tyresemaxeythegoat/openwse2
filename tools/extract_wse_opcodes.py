@@ -499,6 +499,10 @@ def main():
     parser.add_argument('--header',
                         default=str(default_root / 'engine' / 'include' / 'wse' / 'vm' /
                                     'wse_opcodes.h'))
+    parser.add_argument('--rebase-map',
+                        help='va_map.json from tools/rebase_build.py: move every VA in the existing '
+                             'JSON to the new build and re-emit the JSON, Markdown and header')
+    parser.add_argument('--release', help='new release label for --rebase-map, e.g. v1.1.5.6')
     args = parser.parse_args()
 
     json_path = Path(args.json)
@@ -518,6 +522,42 @@ def main():
                 'run python tools/extract_wse_opcodes.py --sync-status'
             )
         print(f"wse opcode status check PASS ({expected['summary']['implemented_opcodes']}/{expected['summary']['handled_opcodes']})")
+        return
+
+    if args.rebase_map:
+        if not args.release:
+            raise SystemExit('--rebase-map needs --release')
+        mapping = {int(k, 16): int(v, 16)
+                   for k, v in json.loads(Path(args.rebase_map).read_text(encoding='utf-8')).items()}
+        document = json.loads(json_path.read_text(encoding='utf-8'))
+        va_re = re.compile(r'\b(0x|FUN_)(14[0-9a-fA-F]{7})\b')
+        missing = set()
+
+        def move(value):
+            if isinstance(value, str):
+                def sub(m):
+                    v = int(m.group(2), 16)
+                    if v not in mapping:
+                        missing.add(v)
+                        return m.group(0)
+                    return m.group(1) + '%x' % mapping[v]
+                return va_re.sub(sub, value)
+            if isinstance(value, list):
+                return [move(v) for v in value]
+            if isinstance(value, dict):
+                return {k: move(v) for k, v in value.items()}
+            return value
+
+        old_release = document.get('release')
+        document = move(document)
+        document['release'] = args.release
+        # Handler line numbers still point into the pseudocode export they were parsed from.
+        document['pseudocode_release'] = document.get('pseudocode_release', old_release)
+        write_header(document, header_path)
+        annotate_implemented(document, header_path, vm_dir)
+        json_path.write_text(json.dumps(document, indent=1) + '\n', encoding='utf-8')
+        write_markdown(document, Path(args.markdown))
+        print(f'rebased {json_path} to {args.release}; VAs not in the map (left as they are): {len(missing)}')
         return
 
     if args.sync_status or not (args.pseudocode and args.sdk):

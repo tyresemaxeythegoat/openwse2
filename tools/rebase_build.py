@@ -46,14 +46,16 @@ import pefile
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS = ROOT / "tools"
-VA_RE = re.compile(r"0x14[0-9a-fA-F]{7}\b")
+# `0x14…` citations and Ghidra labels (`FUN_14…`, `DAT_14…`, `LAB_14…`, `PTR_14…`).
+VA_RE = re.compile(r"\b(0x|FUN_|DAT_|LAB_|PTR_)(14[0-9a-fA-F]{7})\b")
 MASK_RE = re.compile(r"0x[0-9a-f]+")
 # Generated from Ghidra pseudocode: regenerate, never rewrite.
 GENERATED = {"docs/wse_opcodes.json", "docs/WSE_OPCODES.md", "engine/include/wse/vm/wse_opcodes.h",
              "docs/SYMBOL_MAP.json",
              # its self-test embeds deliberately wrong VAs
              "tools/check_citations.py", "tools/rebase_build.py"}
-LEGACY_PREFIXES = ("analysis/", "proof/", "runtime/")
+# Legacy dossiers keep their historical addresses; overrides files name old-build VAs on purpose.
+LEGACY_PREFIXES = ("analysis/", "proof/", "runtime/", "tools/rebase_overrides/")
 SKIP_LINE_RE = re.compile(r"superseded|2026-10-14|historical|citation-check: ignore-line", re.I)
 TEXT_SUFFIXES = {".h", ".hpp", ".cpp", ".c", ".md", ".py", ".txt", ".kt", ".kts", ".ps1", ".sh",
                  ".yml", ".json", ".cmake"}
@@ -177,6 +179,12 @@ class Mapper:
             hit = self.data_offset(va)
             if hit is not None:
                 return hit, "data-offset", old.by_va.get(old.sym_at_or_before(va))
+            hit = self.data_bytes(va)
+            if hit is not None:
+                return hit, "data-bytes", None
+            hit = self.xref(va)
+            if hit is not None:
+                return hit, "xref", None
             hit = self.signature(va)
             if hit is not None:
                 return hit, "signature", old.by_va.get(old.sym_at_or_before(va))
@@ -186,11 +194,17 @@ class Mapper:
         if name is None or name not in new.by_name:
             return None, "unresolved", f"enclosing symbol {name!r} not in the new build"
         nv = new.by_name[name]
-        if self.unchanged(sv, nv):
+        # The plain offset is valid only inside the .pdata range that was compared: a symbol can
+        # span several chained fragments, and a later one may have changed.
+        ofr = old.func_of(sv)
+        if ofr is not None and ofr[0] <= va < ofr[1] and self.unchanged(sv, nv):
             return nv + (va - sv), "same", name
         hit = self.aligned(sv, nv).get(va)
         if hit is not None:
             return hit, "aligned", name
+        hit = self.within_instruction(sv, nv, va)
+        if hit is not None:
+            return hit, "within-instruction", name
         hit = self.gap_match(sv, nv, va)
         if hit is not None:
             return hit, "gap", name
@@ -198,6 +212,94 @@ class Mapper:
         if hit is not None:
             return hit, "signature", name
         return None, "unresolved", f"inside changed code of {name}"
+
+    def within_instruction(self, so: int, sn: int, va: int):
+        """`va` lies inside an aligned instruction (an operand or a byte after its opcode): keep
+        the same byte offset from the new start, if both instructions have the same bytes length
+        and the same masked text."""
+        table = self.aligned(so, sn)
+        a = stream(self.old, *self.old.span(so))
+        starts = [x[0] for x in a]
+        i = bisect.bisect_right(starts, va) - 1
+        if i < 0 or i + 1 >= len(a) or starts[i] not in table:
+            return None
+        start, end = starts[i], starts[i + 1]
+        if not (start < va < end):
+            return None
+        new_start = table[start]
+        b = decode_from(self.new, new_start, 1)
+        o = decode_from(self.old, start, 1)
+        if not b or not o or b[0][1] != o[0][1]:
+            return None
+        nxt = decode_from(self.new, new_start, 2)
+        if len(nxt) < 2 or nxt[1][0] - new_start != end - start:
+            return None
+        return new_start + (va - start)
+
+    _RIP_RE = re.compile(r"\[rip ([+-]) (0x[0-9a-f]+|\d+)\]")
+
+    def _rip_target(self, ins) -> int | None:
+        m = self._RIP_RE.search(ins.op_str)
+        if m is None:
+            return None
+        disp = int(m.group(2), 0)
+        return ins.address + ins.size + (disp if m.group(1) == "+" else -disp)
+
+    def _old_xrefs(self) -> dict[int, list[int]]:
+        """RIP-relative data references in the old build's code: target -> instruction VAs
+        (one linear pass over every .pdata range, built once)."""
+        if getattr(self, "_xref_index", None) is None:
+            index: dict[int, list[int]] = {}
+            old = self.old
+            for s, e in old.ranges:
+                code = old.img[s - old.base:e - old.base]
+                for ins in MD.disasm(code, s):
+                    t = self._rip_target(ins)
+                    if t is not None:
+                        index.setdefault(t, []).append(ins.address)
+            self._xref_index = index
+        return self._xref_index
+
+    def xref(self, va: int):
+        """Unnamed data that code addresses RIP-relatively: map each referencing instruction and
+        read the target its new copy addresses; every reference must agree."""
+        refs = self._old_xrefs().get(va, [])
+        targets = set()
+        for r in refs[:32]:
+            nr, cls, _why = self.map(r)
+            if nr is None or cls == "xref":
+                continue
+            got = list(MD.disasm(self.new.img[nr - self.new.base:nr - self.new.base + 16], nr, count=1))
+            old_ins = list(MD.disasm(self.old.img[r - self.old.base:r - self.old.base + 16], r, count=1))
+            if not got or not old_ins or got[0].mnemonic != old_ins[0].mnemonic:
+                continue
+            t = self._rip_target(got[0])
+            if t is not None:
+                targets.add(t)
+        return targets.pop() if len(targets) == 1 else None
+
+    def data_bytes(self, va: int, n: int = 16):
+        """Unnamed data: the `n` bytes at `va` occur exactly once in the same section of the new
+        build."""
+        old, new = self.old, self.new
+        rva = va - old.base
+        for s in old.pe.sections:
+            if s.VirtualAddress <= rva < s.VirtualAddress + s.Misc_VirtualSize:
+                name = s.Name
+                break
+        else:
+            return None
+        sec = next((s for s in new.pe.sections if s.Name == name), None)
+        if sec is None:
+            return None
+        needle = bytes(old.img[rva:rva + n])
+        if len(needle) < n or needle.count(needle[:1]) == n:  # skip all-equal padding
+            return None
+        hay = bytes(new.img[sec.VirtualAddress:sec.VirtualAddress + sec.Misc_VirtualSize])
+        first = hay.find(needle)
+        if first < 0 or hay.find(needle, first + 1) >= 0:
+            return None
+        return new.base + sec.VirtualAddress + first
 
     def data_offset(self, va: int):
         """Unnamed data inside a named object that keeps its size in the new build."""
@@ -297,8 +399,8 @@ def cited_vas(files: list[str]) -> dict[int, list[str]]:
         for n, line in enumerate(lines, 1):
             if SKIP_LINE_RE.search(line):
                 continue
-            for m in VA_RE.findall(line):
-                seen.setdefault(int(m, 16), []).append(f"{f}:{n}")
+            for _prefix, digits in VA_RE.findall(line):
+                seen.setdefault(int(digits, 16), []).append(f"{f}:{n}")
     return seen
 
 
@@ -306,11 +408,13 @@ def rewrite(files: list[str], mapping: dict[int, int]) -> int:
     changed = 0
 
     def sub(m: re.Match) -> str:
-        v = int(m.group(0), 16)
+        prefix, digits = m.group(1), m.group(2)
+        v = int(digits, 16)
         if v not in mapping:
             return m.group(0)
-        text = "0x%x" % mapping[v]
-        return text.upper().replace("0X", "0x") if m.group(0)[2:].isupper() else text
+        text = "%x" % mapping[v]
+        upper = digits.upper() == digits and any(c in "ABCDEF" for c in digits)
+        return prefix + (text.upper() if upper else text)
 
     for f in files:
         p = ROOT / f
@@ -371,6 +475,53 @@ def update_target(new_exe: Path, release: str) -> None:
     path.write_text(src, encoding="utf-8", newline="\n")
 
 
+def decode_from(b: Build, at: int, n: int) -> list[tuple[int, str]]:
+    code = b.img[at - b.base:at - b.base + 16 * n]
+    out = []
+    for ins in MD.disasm(code, at):
+        out.append((ins.address, ins.mnemonic + " " + MASK_RE.sub("#", ins.op_str)))
+        if len(out) == n:
+            break
+    return out
+
+
+def candidates_section(mapper: Mapper, sv: int, nv: int, va: int, prefix: int = 3, keep: int = 6) -> list[str]:
+    """Old code at `va`, the expected new VA from the nearest aligned instruction's drift, and
+    the new offsets whose first `prefix` instructions match, nearest to the expectation first."""
+    old, new = mapper.old, mapper.new
+    table = mapper.aligned(sv, nv)
+    before = [a for a in table if a <= va]
+    anchor = max(before) if before else None
+    drift = (table[anchor] - anchor) if anchor is not None else (nv - sv)
+    expected = va + drift
+    want = decode_from(old, va, 30)
+    lines = ["", f"Expected new VA from the nearest aligned instruction before it "
+                 f"({hex(anchor) if anchor else 'none'}, drift {drift:+#x}): {hex(expected)}", "",
+             "## Old build, decoded from the VA", "```"]
+    lines += [f"{hex(a)}  {t}" for a, t in want]
+    lines += ["```"]
+    if len(want) < prefix:
+        return lines
+    s, e = new.span(nv)
+    head = [t for _a, t in want[:prefix]]
+    hits = [p for p in range(s, e) if [t for _a, t in decode_from(new, p, prefix)] == head]
+    hits.sort(key=lambda p: abs(p - expected))
+    lines += ["", f"## New-build candidates ({len(hits)} offsets match the first {prefix} instructions; "
+                  f"nearest {min(keep, len(hits))} to the expected VA shown)"]
+    for p in hits[:keep]:
+        got = decode_from(new, p, 30)
+        same = 0
+        for (_x, t1), (_y, t2) in zip(want, got):
+            if t1 != t2:
+                break
+            same += 1
+        lines += ["", f"### {hex(p)} (distance {p - expected:+#x}; first {same} of {len(want)} instructions identical)",
+                  "```"]
+        lines += [f"{hex(a)}  {t}" for a, t in got]
+        lines += ["```"]
+    return lines
+
+
 def write_packets(out: Path, mapper: Mapper, unresolved) -> None:
     """One review file per unresolved VA: citing lines, old/new code around it (local only)."""
     out.mkdir(parents=True, exist_ok=True)
@@ -399,7 +550,9 @@ def write_packets(out: Path, mapper: Mapper, unresolved) -> None:
                 lines += ["```", "", "## New build, the corresponding gap", "```"]
                 lines += [f"{hex(a)}  {t}" for a, t in new_gap[:120]]
                 lines += ["```"]
-        else:
+        if nv is not None and sv is not None:
+            lines += candidates_section(mapper, sv, nv, va)
+        if nv is None or old.func_of(va) is None:
             for label, b in (("old", old), ("new", new)):
                 secs = [(s.Name.rstrip(b"\0").decode(), b.base + s.VirtualAddress, s.Misc_VirtualSize)
                         for s in b.pe.sections]
@@ -416,6 +569,8 @@ def main() -> int:
     ap.add_argument("--release", required=True, help="new release label, e.g. v1.1.5.6")
     ap.add_argument("--work", required=True, type=Path, help="scratch directory outside the repository")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--overrides", type=Path,
+                    help="JSON of reviewed mappings {old_va: {new: va, evidence: text}} that the rules miss")
     args = ap.parse_args()
     work = args.work.resolve()
     if ROOT in work.parents or work == ROOT:
@@ -440,16 +595,30 @@ def main() -> int:
     mapper = Mapper(old, new)
     files = tracked_text_files()
     cites = cited_vas(files)
+    # The generated opcode map is mapped too (va_map.json feeds
+    # `tools/extract_wse_opcodes.py --rebase-map`), but never rewritten here.
+    for va, where in cited_vas(["docs/wse_opcodes.json"]).items():
+        cites.setdefault(va, []).extend(where)
     mapping: dict[int, int] = {}
     counts: dict[str, int] = {}
     unresolved = []
+    reviewed: dict[int, int] = {}
+    if args.overrides:
+        for k, v in json.load(open(args.overrides, encoding="utf-8")).items():
+            if not k.startswith("0x"):
+                continue  # comments
+            if v.get("new"):
+                reviewed[int(k, 16)] = int(v["new"], 16)
     for va in sorted(cites):
-        nv, cls, why = mapper.map(va)
+        if va in reviewed:
+            nv, cls, why = reviewed[va], "reviewed", "overrides file"
+        else:
+            nv, cls, why = mapper.map(va)
         counts[cls] = counts.get(cls, 0) + 1
         if nv is None:
             unresolved.append((va, why, cites[va]))
-        elif nv != va:
-            mapping[va] = nv
+        else:
+            mapping[va] = nv  # identical VAs too, so "absent" always means unresolved
     (work / "va_map.json").write_text(json.dumps({hex(k): hex(v) for k, v in mapping.items()}, indent=0))
     write_packets(work / "packets", mapper, unresolved)
 
