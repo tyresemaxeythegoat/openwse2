@@ -390,7 +390,10 @@ private fun HomeHeroBanner(
             modifier = artModifier.fillMaxSize(),
             imageModifier = Modifier.graphicsLayer {
                 val t = kenBurns?.value ?: 0f
-                val s = 1f + 0.08f * t
+                // 5 % overscan even at rest: crops the art's outermost pixels, so a light
+                // border in a module's main.bmp (or the blur's clamped edge) never shows as
+                // a line along the hero's top edge.
+                val s = 1.05f + 0.08f * t
                 scaleX = s
                 scaleY = s
                 translationX = -size.width * 0.03f * t
