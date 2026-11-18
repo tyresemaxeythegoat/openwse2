@@ -555,7 +555,9 @@ inline bool read_text_or_clear(wse::platform::Vfs& vfs, std::string_view path, s
     // `rglRenderer::renderMesh` (`0x1402e8719`) -> `rglGraphicsContext::setAlphaTestMode`
     // (`0x1402a0260`): `(mat.flags & 0x700) != 0` only zeroes the shader's `fAlphaTestVal`
     // uniform; `D3DRS_ALPHATESTENABLE` and `D3DRS_ALPHAREF` (`8`/`136`/`251` at `0x1402a031a`)
-    // stay active whenever `alpha_test_mode != None`, even on blended materials.
+    // stay active whenever `alpha_test_mode != None`, even on blended materials. (v1.1.5.6 adds
+    // a null check of the effect pointer before that uniform update; the render states are
+    // unchanged, so nothing here differs.)
     out.alpha_ref_u8 = alpha_test_ref_u8(out.alpha_test_mode);
 
     const std::uint32_t raw_order = (mat.flags & kMaterialFlagRenderOrderMask) >> 24U;

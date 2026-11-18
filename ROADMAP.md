@@ -186,6 +186,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-19 | — | Evidence baseline rebased from WSE2 v1.1.5.5 to v1.1.5.6 with `tools/rebase_build.py` (2,141 cited addresses moved and re-checked against both builds; `SYMBOL_MAP.json` regenerated; native opcode map re-extracted and identical); on-device PDB reader so R0 (d) finds functions by name in any installed build; R0 phone run: (a) PASS, (b) PASS, (c) measured |
 | 2026-11-18 | — | Phase 5 R0 feasibility spikes built (`wse/recomp/`, `recomp` suite, `wse_recomp` LLVM 18 + LLD lifter/`recomp_llvm_test`, `libwse_r0.so` + launcher "R0 spikes" row, local `tools/r0_pc_reference.cpp` verifying `rglString::indexOf` `0x1403103f0`, CI jobs `recomp-host` and `llvm-android` added); Windows host gate PASS (`STATUS.md` §1–§2); CI and phone run pending |
 | 2026-11-18 | — | P11.3 wired in the app: `UiGameShell::step_input` takes the overlay context from the world's screen window, keeps overlay touches from the menu UI and syncs keys into `world.input`; the layout is clamped to `SDL_GetWindowSafeArea` |
 | 2026-11-18 | — | P13.3: Home with a taller art hero and a "Your modules" strip (landscape grid), static Manrope weights (labels no longer render ExtraLight), chamfered switch, diamond-thumb slider, smooth selected glow, Ken Burns hero and staggered entrance; screenshots on the app backdrop (CI green; Kotlin only) |
