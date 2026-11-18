@@ -185,8 +185,11 @@ their offset. P11.3/P11.4: widget sizes in short-side units, `apply_safe_area`, 
 (`MapCenter`, `MapFollow`, `MapPanMode`, `DialogUp/Select/Down`, `MoveAll`, `MoveOne`,
 `Spare1..4`) with `widget_visible_in_context`, delayed swipe classification (120 ms or
 `swipe_threshold`), the two-level order radial, `touch_overlay_render.h`, and
-`UiGameShell::set_touch_overlay`. Not wired in the app yet: nothing calls `set_touch_overlay`
-or passes `SDL_GetWindowSafeArea`. Map, dialog and bulk-move buttons send `Custom5..12`,
+`UiGameShell::set_touch_overlay`. The module shell wires it: each frame `UiGameShell::step_input`
+sets the context from the world's screen window, keeps touches that start on the visible
+overlay (`WseInputManager::overlay_claims_touch`) away from the menu UI, and mirrors keys into
+`world.input`; the app clamps the user's layout to `SDL_GetWindowSafeArea` whenever the window
+or safe area changes, so drawing and hit-testing use the same rectangles. Map, dialog and bulk-move buttons send `Custom5..12`,
 because Warband has no game key for them; a module that binds those custom keys itself will
 also see them. P11.2, P11.5 and P11.6 followed in wave B:
 `GeometryBatch::filter` (nearest only for axis-aligned 1:1 texel-to-pixel draws, linear

@@ -1015,6 +1015,16 @@ int run_module_shell(SDL_Window* window,
     }
     FpsOverlayState fps_overlay;
     bool text_input_active = false;
+    // Touch overlay (P11.3): the user's layout, clamped into the window's safe area whenever
+    // the window or its safe area changes. The clamped copy lives in `input_mgr` so taps are
+    // hit-tested against the same rectangles the shell draws.
+    const auto base_widgets =
+        input_mgr != nullptr ? input_mgr->profile().widgets
+                             : wse::platform::TouchOverlayProfile{}.widgets;
+    wse::platform::SafeAreaInsets overlay_insets{};
+    int overlay_win_w = 0;
+    int overlay_win_h = 0;
+    bool overlay_ready = false;
     while (!quit && !app.terminating.load()) {
         bool step_target_changed = false;
         const std::int32_t effective_fps =
@@ -1049,16 +1059,49 @@ int run_module_shell(SDL_Window* window,
         int out_w = win_w;
         int out_h = win_h;
         SDL_GetRenderOutputSize(renderer, &out_w, &out_h);
-        if (sdl_input) {
-            sdl_input->set_viewport_size(std::max(win_w, 1), std::max(win_h, 1));
-            sdl_input->poll_events(events);
-            for (const auto& e : events) {
-                shell.feed(e);
+        if (input_mgr != nullptr) {
+            const int w = std::max(win_w, 1);
+            const int h = std::max(win_h, 1);
+            SDL_Rect safe{0, 0, w, h};
+            if (!SDL_GetWindowSafeArea(window, &safe) || safe.w <= 0 || safe.h <= 0) {
+                safe = {0, 0, w, h};
+            }
+            const float fw = static_cast<float>(w);
+            const float fh = static_cast<float>(h);
+            const wse::platform::SafeAreaInsets insets{
+                std::clamp(static_cast<float>(safe.x) / fw, 0.0f, 1.0f),
+                std::clamp(static_cast<float>(safe.y) / fh, 0.0f, 1.0f),
+                std::clamp(static_cast<float>(w - safe.x - safe.w) / fw, 0.0f, 1.0f),
+                std::clamp(static_cast<float>(h - safe.y - safe.h) / fh, 0.0f, 1.0f),
+            };
+            if (!overlay_ready || insets != overlay_insets || w != overlay_win_w ||
+                h != overlay_win_h) {
+                overlay_ready = true;
+                overlay_insets = insets;
+                overlay_win_w = w;
+                overlay_win_h = h;
+                input_mgr->set_viewport_size(w, h);
+                auto& prof = input_mgr->profile();
+                prof.widgets = base_widgets;
+                wse::platform::apply_safe_area(prof, insets, fw / fh);
+                shell.set_touch_overlay(&input_mgr->profile(), shell.world_input_context(),
+                                        insets, &input_mgr->frame_state());
             }
         }
         const std::uint64_t now_ns = SDL_GetTicksNS();
         const float dt = static_cast<float>(now_ns - last_ns) * 1e-9f;
         last_ns = now_ns;
+        if (sdl_input) {
+            sdl_input->set_viewport_size(std::max(win_w, 1), std::max(win_h, 1));
+            sdl_input->poll_events(events);
+            if (input_mgr != nullptr) {
+                shell.step_input(*input_mgr, events, dt);
+            } else {
+                for (const auto& e : events) {
+                    shell.feed(e);
+                }
+            }
+        }
         if (running) {
             running = shell.frame(dt, static_cast<std::uint32_t>(std::max(out_w, 1)),
                                   static_cast<std::uint32_t>(std::max(out_h, 1)));

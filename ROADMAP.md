@@ -186,6 +186,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-18 | — | P11.3 wired in the app: `UiGameShell::step_input` takes the overlay context from the world's screen window, keeps overlay touches from the menu UI and syncs keys into `world.input`; the layout is clamped to `SDL_GetWindowSafeArea` |
 | 2026-11-18 | — | P13.3: Home with a taller art hero and a "Your modules" strip (landscape grid), static Manrope weights (labels no longer render ExtraLight), chamfered switch, diamond-thumb slider, smooth selected glow, Ken Burns hero and staggered entrance; screenshots on the app backdrop (CI green; Kotlin only) |
 | 2026-11-18 | — | P13.0-P13.2: CI launcher screenshots (Roborazzi), bundled Cinzel + Manrope (OFL), fixed iron-and-gold dark theme tinted by module art, chamfered component kit replacing every stock Material widget in the launcher (CI green; Kotlin only, no engine change) |
 | 2026-11-18 | — | Wave B: P11.2 per-batch nearest/linear filter and UI text scale, P11.5/P11.6 touch drag-scroll, first tap, scissor clipping and soft keyboard, P12.2 `main.bmp` module art with a seed colour, P12.3/P12.4 Compose Home / Modules / Settings / Advanced with the old view pages removed (Windows host gate PASS; built as Antigravity units, merged and gated by Claude) |

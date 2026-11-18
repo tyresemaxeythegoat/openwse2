@@ -1902,6 +1902,18 @@ public:
                context_allows_touch_overlay(context_);
     }
 
+    // Whether a finger landing at (`x`, `y`) (viewport-normalized, `y` down) would be taken
+    // by the visible overlay in this context, as `handle_touch_down` decides it: a widget hit,
+    // or any touch on the campaign map while pinch zoom is on. Hosts use it to keep overlay
+    // touches away from the menu UI.
+    [[nodiscard]] bool overlay_claims_touch(float x, float y) const noexcept {
+        if (!is_touch_overlay_visible() || !std::isfinite(x) || !std::isfinite(y)) {
+            return false;
+        }
+        return pick_widget_for_touch(x, y) != TouchWidgetId::Count ||
+               (context_ == InputContext::CampaignMap && profile_.pinch_zoom_enabled);
+    }
+
     [[nodiscard]] bool is_widget_visible(TouchWidgetId id) const noexcept {
         if (id >= TouchWidgetId::Count) {
             return false;

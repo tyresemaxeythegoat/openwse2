@@ -27,6 +27,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -34,6 +35,7 @@
 #include <vector>
 
 #include "wse/game/headless_runner.h"
+#include "wse/game/world_input.h"
 #include "wse/platform/input.h"
 #include "wse/platform/performance.h"
 #include "wse/platform/rhi.h"
@@ -472,6 +474,47 @@ public:
         touch_overlay_context_ = context;
     }
 
+    // The `InputContext` of the world's current screen window (`world.m5.active_window`,
+    // `WorldInputBridge::context_for_screen_window`); `Menu` while loading.
+    [[nodiscard]] InputContext world_input_context() const noexcept {
+        if (is_loading() || ctx_ == nullptr) {
+            return InputContext::Menu;
+        }
+        return game::WorldInputBridge::context_for_screen_window(ctx_->world.m5.active_window);
+    }
+
+    // One frame of device input, called before `frame()` in place of `feed()`:
+    //   1. `mgr` takes the world's screen context, and the overlay draws in it;
+    //   2. every event goes to the menu UI except touches that start on the visible overlay
+    //      (`WseInputManager::overlay_claims_touch`), which stay with that finger until it
+    //      lifts, so an overlay button never also presses the menu under it;
+    //   3. `mgr` processes all events and `WorldInputBridge` mirrors keys, game keys and the
+    //      overlay's virtual keys into `world.input` for the input opcodes. The UI cursor in
+    //      `world.m5.cursor_pos` is kept: `UiSession::handle_input` owns it, mapped through
+    //      the letterbox viewport.
+    void step_input(WseInputManager& mgr, std::span<const RawInputEvent> events, float dt_s) {
+        if (is_loading() || ctx_ == nullptr) {
+            return;
+        }
+        game::WseWorldState& world = ctx_->world;
+        game::WorldInputBridge::sync_context_from_world(mgr, world);
+        touch_overlay_context_ = mgr.context();
+        for (const RawInputEvent& ev : events) {
+            if (!route_to_overlay(mgr, ev)) {
+                input_.feed(ev);
+            }
+        }
+        game::WorldInputBridge::pull_from_world(mgr, world);
+        mgr.process_frame(events, dt_s);
+        const core::WseVec2 ui_cursor = world.m5.cursor_pos;
+        game::WorldInputBridge::sync_to_world(mgr, world);
+        world.m5.cursor_pos = ui_cursor;
+    }
+    // Touches `step_input` currently keeps from the menu UI.
+    [[nodiscard]] std::size_t overlay_finger_count() const noexcept {
+        return overlay_fingers_.size();
+    }
+
     [[nodiscard]] const std::vector<std::uint8_t>& pixels() const noexcept { return pixels_; }
     // `Output::geometry` only (else null): the last recorded frame, and the device that owns
     // its textures (`texture()` for pixel data, `take_destroyed_textures()` to free host copies).
@@ -575,6 +618,7 @@ private:
         has_frame_ = false;
         assets_.reset();
         input_ = UiInputAccumulator{};
+        overlay_fingers_.clear();
         last_events_.clear();
         pixels_.clear();
         width_ = height_ = 0U;
@@ -772,6 +816,37 @@ private:
         return true;
     }
 
+    // Step 2 of `step_input`: true when `ev` belongs to a finger the overlay owns.
+    bool route_to_overlay(const WseInputManager& mgr, const RawInputEvent& ev) {
+        const auto owned =
+            std::find(overlay_fingers_.begin(), overlay_fingers_.end(), ev.finger_id);
+        switch (ev.type) {
+        case RawInputEvent::Type::TouchDown:
+            if (owned != overlay_fingers_.end()) {
+                overlay_fingers_.erase(owned);  // a repeated DOWN (missed UP) is hit-tested again
+            }
+            if (mgr.overlay_claims_touch(ev.x, ev.y)) {
+                overlay_fingers_.push_back(ev.finger_id);
+                return true;
+            }
+            return false;
+        case RawInputEvent::Type::TouchMove:
+            return owned != overlay_fingers_.end();
+        case RawInputEvent::Type::TouchUp:
+        case RawInputEvent::Type::TouchCancel:
+            if (owned != overlay_fingers_.end()) {
+                overlay_fingers_.erase(owned);
+                return true;
+            }
+            return false;
+        case RawInputEvent::Type::FocusLost:
+            overlay_fingers_.clear();
+            return false;
+        default:
+            return false;
+        }
+    }
+
     [[nodiscard]] std::uint64_t compute_overlay_hash() const noexcept {
         if (geometry_ == nullptr || touch_overlay_profile_ == nullptr) {
             return 0ULL;
@@ -904,6 +979,7 @@ private:
     InputContext touch_overlay_context_ = InputContext::Mission;
     SafeAreaInsets touch_overlay_safe_area_{};
     const InputFrameState* touch_overlay_state_ = nullptr;
+    std::vector<std::int64_t> overlay_fingers_{};  // touches the overlay owns (`step_input`)
     std::vector<game::UiEvent> last_events_{};
     std::vector<std::uint8_t> pixels_{};
     std::uint32_t width_ = 0U;

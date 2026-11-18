@@ -1704,6 +1704,58 @@ void test_p11_touch_overlay_render_and_context_buttons() {
         expect(shell_ok && menu_batches == ui_only_batches && appended &&
                    shell_safe,
                "P11.3 UiGameShell appends overlay batch after UI batches inside safe area");
+
+        // 7e. `step_input` (the app's wiring): the world's screen window picks the context,
+        // overlay touches stay away from the menu UI, keys reach `world.input`, and the UI
+        // cursor survives the sync.
+        WseInputManager mgr;
+        mgr.set_viewport_size(1600, 1200);
+        apply_safe_area(mgr.profile(), insets, 1600.0f / 1200.0f);
+        shell.set_touch_overlay(&mgr.profile(), InputContext::Menu, insets, &mgr.frame_state());
+        wse::vm::VmContext* vm_ctx = shell.vm();
+        bool wired = vm_ctx != nullptr;
+        if (wired) {
+            wse::game::WseWorldState& world = vm_ctx->world;
+            world.m5.active_window = wse::game::kScreenWindowTactical;
+            world.m5.cursor_pos = wse::core::WseVec2{0.25f, 0.5f};
+            const auto& stick =
+                mgr.profile().widgets[static_cast<std::size_t>(TouchWidgetId::MoveStick)];
+            RawInputEvent key{};
+            key.type = RawInputEvent::Type::KeyDown;
+            key.raw_key = RawKey::kA;
+            RawInputEvent down{};
+            down.type = RawInputEvent::Type::TouchDown;
+            down.finger_id = 7;
+            down.x = stick.cx;
+            down.y = stick.cy;
+            const std::vector<RawInputEvent> first{key, down};
+            shell.step_input(mgr, first, 1.0f / 60.0f);
+            const bool mission_claimed =
+                mgr.context() == InputContext::Mission && shell.overlay_finger_count() == 1U &&
+                world.input.key_down[static_cast<std::size_t>(RawKey::kA)] &&
+                world.m5.cursor_pos.x == 0.25f && world.m5.cursor_pos.y == 0.5f;
+            wired = wired && mission_claimed && shell.frame(1.0f / 60.0f, 1600U, 1200U) &&
+                    shell.geometry() != nullptr &&
+                    shell.geometry()->batches.size() == ui_only_batches + 1U;
+            expect(mission_claimed, "P11.3 step_input: Mission context claims a MoveStick touch");
+
+            RawInputEvent up = down;
+            up.type = RawInputEvent::Type::TouchUp;
+            const std::vector<RawInputEvent> second{up};
+            shell.step_input(mgr, second, 1.0f / 60.0f);
+            wired = wired && shell.overlay_finger_count() == 0U;
+
+            world.m5.active_window = wse::game::kScreenWindowMenu;
+            const std::vector<RawInputEvent> third{down};
+            shell.step_input(mgr, third, 1.0f / 60.0f);
+            wired = wired && mgr.context() == InputContext::Menu &&
+                    shell.overlay_finger_count() == 0U &&
+                    shell.frame(1.0f / 60.0f, 1600U, 1200U) && shell.geometry() != nullptr &&
+                    shell.geometry()->batches.size() == ui_only_batches;
+        }
+        expect(wired,
+               "P11.3 UiGameShell::step_input routes overlay touches by the world's screen "
+               "context and draws the overlay only where it is allowed");
     }
 
     // 8. A saved profile from before this change still loads (new widgets get defaults).
