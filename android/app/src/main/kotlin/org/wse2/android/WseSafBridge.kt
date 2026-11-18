@@ -159,6 +159,12 @@ class WseSafBridge(
     external fun nativeRegisterGameTree()
     external fun nativeVerifyModule(moduleRelDir: String): String
     external fun nativeCheckModuleInstall(moduleRelDir: String): String
+
+    // P12.2: decodes `relPath` (a `main.bmp` under the picked tree, "" -> the install root's
+    // `main.bmp`) scaled so its longer side is at most `maxSide`. Returns null when the file is
+    // missing or not a supported BMP, else `[width, height, seedArgb, pixel0, pixel1, ...]` with
+    // pixels as opaque ARGB ints, rows top-down.
+    external fun nativeLoadModuleArt(relPath: String, maxSide: Int): IntArray?
     external fun nativeProbeVulkanAndRenderMesh(
         driverMode: String,
         customIcdPath: String,

@@ -301,8 +301,8 @@ struct UiWidget {
     bool pressed = false;
     // Container overlays (`set_container_overlay` 945): children are placed at
     // `pos + child_offset` (the scroll position of a scrollable container) and, when
-    // `clip_children` is set, are neither hit outside this widget's box nor drawn when they lie
-    // entirely outside it (the RHI has no scissor yet, so partly visible children draw whole).
+    // `clip_children` is set, are neither hit outside this widget's box nor drawn outside it
+    // (scissor-clipped to the container's box; fully outside children may still be skipped).
     wse::core::WseVec2 child_offset{};
     bool clip_children = false;
     // Draw the mesh into this rectangle (relative to `pos`) instead of stretching it over the
@@ -472,10 +472,12 @@ inline constexpr std::uint32_t kUiTextFlagsScrollable = 0x000E0000U;
 // (`rglString::getUnicodeLength`, so code points, not bytes).
 inline constexpr std::size_t kUiTextBoxMaxLength = 28U;
 inline constexpr float kUiScrollStep = 0.05f;
+inline constexpr float kUiTouchDragScrollThreshold = 0.01f;
 
 // One frame of pointer input for `UiSession::handle_input`. `*_pressed` / `left_released`
 // are edges seen this frame; `wheel` is in notches (positive = away from the user);
-// `time_s` is a monotonic clock used for number-box auto-repeat.
+// `time_s` is a monotonic clock used for number-box auto-repeat; `touch` is true when the
+// pointer is a finger this frame (enabling touch drag-to-scroll without changing mouse behaviour).
 struct UiPointerInput {
     float x = 0.0f;
     float y = 0.0f;
@@ -485,6 +487,7 @@ struct UiPointerInput {
     bool right_pressed = false;
     bool middle_pressed = false;
     bool escape_pressed = false;
+    bool touch = false;
     float wheel = 0.0f;
     float time_s = 0.0f;
     // Characters typed this frame, in order (`rglWindowManager` delivers each as state `0x1000`
@@ -630,6 +633,12 @@ public:
         if (closing_win == kScreenWindowPresentation) {
             const std::int32_t closing_no = presentation_no_;
             world.active_presentation_no = -1;
+            if (world.m5.focused_overlay_no >= 0 &&
+                static_cast<std::size_t>(world.m5.focused_overlay_no) < world.overlays.size()) {
+                world.overlays[static_cast<std::size_t>(world.m5.focused_overlay_no)].m5.focused =
+                    false;
+            }
+            world.m5.focused_overlay_no = -1;
             std::erase_if(world.m5.enqueued_windows, [closing_no](const auto& entry) {
                 return entry.first == kQueuedWindowPresentationType &&
                        (entry.second == closing_no || entry.second < 0);
@@ -1703,6 +1712,48 @@ public:
                     }
                 }
             }
+            if (in.left_pressed) {
+                scroll_drag_overlay_ = -1;
+                scroll_drag_press_y_ = 0.0f;
+                scroll_drag_last_y_ = 0.0f;
+                scroll_drag_active_ = false;
+                if (in.touch && drag_overlay_ < 0 && popup_overlay_ < 0 &&
+                    focused_text_box(world) < 0 && std::isfinite(in.y)) {
+                    for (std::size_t k = hits.size(); k > 0U; --k) {
+                        const UiHitEntry& e = hits[k - 1U];
+                        if (e.scrollable && e.contains(in.x, in.y) && valid(e.overlay_id)) {
+                            scroll_drag_overlay_ = e.overlay_id;
+                            scroll_drag_press_y_ = in.y;
+                            scroll_drag_last_y_ = in.y;
+                            break;
+                        }
+                    }
+                }
+            } else if (scroll_drag_overlay_ >= 0) {
+                if (in.touch && (in.left_down || in.left_released) && valid(scroll_drag_overlay_) &&
+                    world.overlays[static_cast<std::size_t>(scroll_drag_overlay_)].visible &&
+                    std::isfinite(in.y)) {
+                    if (!scroll_drag_active_ &&
+                        std::fabs(in.y - scroll_drag_press_y_) > kUiTouchDragScrollThreshold) {
+                        scroll_drag_active_ = true;
+                        armed_overlay_ = -1;
+                        hold_overlay_ = -1;
+                        armed_widget_id_.clear();
+                        clear_pressed_state(root);
+                    }
+                    if (scroll_drag_active_) {
+                        const float dy = in.y - scroll_drag_last_y_;
+                        scroll_drag_last_y_ = in.y;
+                        scroll_pos_[scroll_drag_overlay_] =
+                            std::max(0.0f, scroll_pos_[scroll_drag_overlay_] + dy);
+                    }
+                } else {
+                    scroll_drag_overlay_ = -1;
+                    scroll_drag_press_y_ = 0.0f;
+                    scroll_drag_last_y_ = 0.0f;
+                    scroll_drag_active_ = false;
+                }
+            }
         }
 
         if (in.left_released) {
@@ -1715,6 +1766,15 @@ public:
             }
             armed_overlay_ = -1;
             hold_overlay_ = -1;
+            scroll_drag_overlay_ = -1;
+            scroll_drag_press_y_ = 0.0f;
+            scroll_drag_last_y_ = 0.0f;
+            scroll_drag_active_ = false;
+        } else if (!in.left_down) {
+            scroll_drag_overlay_ = -1;
+            scroll_drag_press_y_ = 0.0f;
+            scroll_drag_last_y_ = 0.0f;
+            scroll_drag_active_ = false;
         }
 
         // Number-box auto-repeat while an arrow stays held.
@@ -1772,6 +1832,28 @@ public:
     // Overlay id of the open combo popup (-1 when none) and its item boxes.
     [[nodiscard]] std::int32_t combo_popup_overlay() const noexcept { return popup_overlay_; }
 
+    // True when a text or number box overlay currently holds keyboard focus (`world.m5.focused_overlay_no`
+    // in a campaign presentation, or a focused overlay inside an active mission presentation).
+    [[nodiscard]] bool has_focused_text_input(const WseWorldState& world) const noexcept {
+        if (current_window == kScreenWindowPresentation) {
+            return focused_text_box(world) >= 0;
+        }
+        if (!in_mission_container_ && !mission_stack_.empty()) {
+            for (const MissionPresentation& mp : mission_stack_) {
+                const std::int32_t id = mp.focused_overlay;
+                if (id >= 0 && static_cast<std::size_t>(id) < mp.overlays.size()) {
+                    const WsePresentationOverlay& ov = mp.overlays[static_cast<std::size_t>(id)];
+                    const UiOverlayInput kind = overlay_input_kind(ov);
+                    if (ov.visible && ov.m5.focused &&
+                        (kind == UiOverlayInput::TextBox || kind == UiOverlayInput::NumberBox)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
 private:
     // One `mbPresentationContainer` of the mission (conversation) window `0xc`.
     struct MissionPresentation {
@@ -1801,6 +1883,10 @@ private:
         std::int32_t popup = -1;
         std::vector<UiRect> popup_items{};
         std::unordered_map<std::int32_t, float> scroll{};
+        std::int32_t scroll_drag_overlay = -1;
+        float scroll_drag_press_y = 0.0f;
+        float scroll_drag_last_y = 0.0f;
+        bool scroll_drag_active = false;
     };
     std::vector<MissionPresentation> mission_stack_{};
     bool in_mission_container_ = false;  // a mission container is swapped in
@@ -1830,6 +1916,10 @@ private:
         std::swap(popup_overlay_, mp.popup);
         popup_items_.swap(mp.popup_items);
         scroll_pos_.swap(mp.scroll);
+        std::swap(scroll_drag_overlay_, mp.scroll_drag_overlay);
+        std::swap(scroll_drag_press_y_, mp.scroll_drag_press_y);
+        std::swap(scroll_drag_last_y_, mp.scroll_drag_last_y);
+        std::swap(scroll_drag_active_, mp.scroll_drag_active);
         in_mission_container_ = !in_mission_container_;
         if (!in_mission_container_) {
             mp.vm_no = mp.no;  // drop a number a trigger wrote; the container keeps its own
@@ -2085,6 +2175,10 @@ private:
     std::int32_t popup_overlay_ = -1;
     std::vector<UiRect> popup_items_{};
     std::unordered_map<std::int32_t, float> scroll_pos_{};
+    std::int32_t scroll_drag_overlay_ = -1;
+    float scroll_drag_press_y_ = 0.0f;
+    float scroll_drag_last_y_ = 0.0f;
+    bool scroll_drag_active_ = false;
     // Bumped by every presentation (re)start so a trigger that restarts it stops the dispatch.
     std::uint32_t presentation_epoch_ = 0;
 
@@ -2119,6 +2213,10 @@ private:
         popup_overlay_ = -1;
         popup_items_.clear();
         scroll_pos_.clear();
+        scroll_drag_overlay_ = -1;
+        scroll_drag_press_y_ = 0.0f;
+        scroll_drag_last_y_ = 0.0f;
+        scroll_drag_active_ = false;
     }
 
     // Absolute boxes of the visible, enabled overlays in draw order (later = on top), clipped by
@@ -2684,6 +2782,13 @@ private:
         node.pressed = now_hl && left_down;
         for (UiWidget& c : node.children) {
             update_hover_state(c, target, left_down);
+        }
+    }
+
+    static void clear_pressed_state(UiWidget& node) noexcept {
+        node.pressed = false;
+        for (UiWidget& c : node.children) {
+            clear_pressed_state(c);
         }
     }
 };

@@ -45,15 +45,26 @@ struct GeometryVertex {
 };
 static_assert(sizeof(GeometryVertex) == 8U * sizeof(float));
 
-// Consecutive triangles sharing a texture and blend mode. `indices[first_index ..
+enum class GeometryFilter : std::uint8_t {
+    linear = 0,
+    nearest = 1,
+};
+
+// Consecutive triangles sharing a texture, blend mode, filter and scissor clip. `indices[first_index ..
 // first_index + index_count)` index `vertices[first_vertex ..]` (relative to `first_vertex`).
 struct GeometryBatch {
     TextureHandle texture = 0;  // 0 = untextured (vertex colour only)
     BlendMode blend = BlendMode::opaque;
+    GeometryFilter filter = GeometryFilter::linear;
     std::uint32_t first_vertex = 0;
     std::uint32_t vertex_count = 0;
     std::uint32_t first_index = 0;
     std::uint32_t index_count = 0;
+    bool has_clip = false;
+    std::uint32_t clip_x = 0;
+    std::uint32_t clip_y = 0;
+    std::uint32_t clip_w = 0;
+    std::uint32_t clip_h = 0;
 };
 
 struct GeometryFrame {
@@ -213,6 +224,49 @@ private:
         return handle_counter_;
     }
 
+    [[nodiscard]] static GeometryFilter classify_triangle_filter(const GeometryVertex& g0,
+                                                                 const GeometryVertex& g1,
+                                                                 const GeometryVertex& g2,
+                                                                 std::uint32_t tex_width,
+                                                                 std::uint32_t tex_height) noexcept {
+        if (tex_width == 0U || tex_height == 0U) {
+            return GeometryFilter::linear;
+        }
+        const float dx1 = g1.x - g0.x;
+        const float dy1 = g1.y - g0.y;
+        const float dx2 = g2.x - g0.x;
+        const float dy2 = g2.y - g0.y;
+        const float det = dx1 * dy2 - dx2 * dy1;
+        if (!(std::fabs(det) > 1e-6f) || !std::isfinite(det)) {
+            return GeometryFilter::linear;
+        }
+        const float fw = static_cast<float>(tex_width);
+        const float fh = static_cast<float>(tex_height);
+        const float du1 = (g1.u - g0.u) * fw;
+        const float dv1 = (g1.v - g0.v) * fh;
+        const float du2 = (g2.u - g0.u) * fw;
+        const float dv2 = (g2.v - g0.v) * fh;
+
+        const float inv_det = 1.0f / det;
+        const float dtx_dx = (du1 * dy2 - du2 * dy1) * inv_det;
+        const float dtx_dy = (du2 * dx1 - du1 * dx2) * inv_det;
+        const float dty_dx = (dv1 * dy2 - dv2 * dy1) * inv_det;
+        const float dty_dy = (dv2 * dx1 - dv1 * dx2) * inv_det;
+        if (!std::isfinite(dtx_dx) || !std::isfinite(dtx_dy) ||
+            !std::isfinite(dty_dx) || !std::isfinite(dty_dy)) {
+            return GeometryFilter::linear;
+        }
+        const float rx = std::fabs(dtx_dx);
+        const float ry = std::fabs(dty_dy);
+        if (rx < 0.98f || rx > 1.02f || ry < 0.98f || ry > 1.02f) {
+            return GeometryFilter::linear;
+        }
+        if (std::fabs(dtx_dy) > 1e-3f * rx || std::fabs(dty_dx) > 1e-3f * ry) {
+            return GeometryFilter::linear;
+        }
+        return GeometryFilter::nearest;
+    }
+
     bool record_draw(const MeshDrawCall& draw, std::string* error_out) {
         const auto pip_it = pipelines_.find(draw.pipeline);
         const auto vb_it = buffers_.find(draw.vertex_buffer);
@@ -223,8 +277,13 @@ private:
         if (vb_it->second.usage != BufferUsage::vertex || ib_it->second.usage != BufferUsage::index) {
             return rhi_detail::set_error(error_out, "draw call buffer usage mismatch");
         }
-        if (draw.texture != 0 && textures_.find(draw.texture) == textures_.end()) {
-            return rhi_detail::set_error(error_out, "draw call references invalid texture");
+        const TextureData* tex_data = nullptr;
+        if (draw.texture != 0) {
+            const auto tex_it = textures_.find(draw.texture);
+            if (tex_it == textures_.end()) {
+                return rhi_detail::set_error(error_out, "draw call references invalid texture");
+            }
+            tex_data = &tex_it->second;
         }
         const PipelineDesc& pip = pip_it->second;
         const std::vector<std::uint8_t>& vb = vb_it->second.bytes;
@@ -240,18 +299,25 @@ private:
             ++unsupported_draws_;
         }
 
-        // Continue the previous batch when texture and blend match (painter's order is kept:
-        // only consecutive draws merge).
-        if (frame_.batches.empty() || frame_.batches.back().texture != draw.texture ||
-            frame_.batches.back().blend != pip.blend_mode) {
-            GeometryBatch b{};
-            b.texture = draw.texture;
-            b.blend = pip.blend_mode;
-            b.first_vertex = static_cast<std::uint32_t>(frame_.vertices.size());
-            b.first_index = static_cast<std::uint32_t>(frame_.indices.size());
-            frame_.batches.push_back(b);
+        const float vx = static_cast<float>(frame_.viewport_x);
+        const float vy = static_cast<float>(frame_.viewport_y);
+        const float fw = static_cast<float>(frame_.viewport_width);
+        const float fh = static_cast<float>(frame_.viewport_height);
+
+        bool batch_has_clip = false;
+        std::uint32_t batch_clip_x = 0U;
+        std::uint32_t batch_clip_y = 0U;
+        std::uint32_t batch_clip_w = 0U;
+        std::uint32_t batch_clip_h = 0U;
+        if (draw.has_clip) {
+            batch_has_clip = true;
+            const rhi_detail::ScissorRect sc =
+                rhi_detail::compute_draw_scissor(draw, vx, vy, fw, fh, frame_.width, frame_.height);
+            batch_clip_x = static_cast<std::uint32_t>(sc.x0);
+            batch_clip_y = static_cast<std::uint32_t>(sc.y0);
+            batch_clip_w = (sc.x1 > sc.x0) ? static_cast<std::uint32_t>(sc.x1 - sc.x0) : 0U;
+            batch_clip_h = (sc.y1 > sc.y0) ? static_cast<std::uint32_t>(sc.y1 - sc.y0) : 0U;
         }
-        GeometryBatch& batch = frame_.batches.back();
 
         const bool tinted = draw.tint_rgba != 0xFFFFFFFFU;
         const float tint[4] = {static_cast<float>(draw.tint_rgba & 0xFFU) / 255.0f,
@@ -259,24 +325,8 @@ private:
                                static_cast<float>((draw.tint_rgba >> 16U) & 0xFFU) / 255.0f,
                                static_cast<float>((draw.tint_rgba >> 24U) & 0xFFU) / 255.0f};
         const float* m = draw.mvp;
-        const float vx = static_cast<float>(frame_.viewport_x);
-        const float vy = static_cast<float>(frame_.viewport_y);
-        const float fw = static_cast<float>(frame_.viewport_width);
-        const float fh = static_cast<float>(frame_.viewport_height);
 
-        // A draw usually reads a small index range of a shared buffer: transform only the
-        // vertices it references, once each (`remap_` holds the batch-relative slot; only the
-        // entries this draw touched are reset afterwards, so the cost follows the draw's size,
-        // not the buffer's).
-        if (remap_.size() < num_verts) {
-            remap_.resize(num_verts, -1);
-        }
-        touched_.clear();
-        const auto project = [&](std::uint16_t vi) -> std::int32_t {
-            if (remap_[vi] != -1) {
-                return remap_[vi];
-            }
-            touched_.push_back(vi);
+        const auto project_raw = [&](std::uint16_t vi, GeometryVertex& gv) noexcept -> bool {
             MeshVertex mv{};
             std::memcpy(&mv, vb.data() + static_cast<std::size_t>(vi) * sizeof(MeshVertex),
                         sizeof(MeshVertex));
@@ -285,10 +335,8 @@ private:
             const float cw = m[3] * mv.px + m[7] * mv.py + m[11] * mv.pz + m[15];
             if (!(cw > 1e-6f) || !std::isfinite(cx) || !std::isfinite(cy) ||
                 !std::isfinite(mv.u) || !std::isfinite(mv.v)) {
-                remap_[vi] = -2;  // unusable: drop triangles that use it
-                return -2;
+                return false;
             }
-            GeometryVertex gv{};
             const float inv_w = 1.0f / cw;
             gv.x = vx + (cx * inv_w * 0.5f + 0.5f) * fw;
             gv.y = vy + (cy * inv_w * 0.5f + 0.5f) * fh;
@@ -307,13 +355,100 @@ private:
             }
             gv.u = mv.u;
             gv.v = mv.v;
+            return true;
+        };
+
+        const auto is_triangle_visible = [&](const GeometryVertex& s0,
+                                             const GeometryVertex& s1,
+                                             const GeometryVertex& s2) noexcept -> bool {
+            if (pip.cull_mode == CullMode::none) {
+                return true;
+            }
+            // `SoftwareRhiDevice`'s test: twice the framebuffer-space signed area (+y
+            // down), front when > 0 for counter-clockwise front faces.
+            const float area = (s2.x - s0.x) * (s1.y - s0.y) - (s2.y - s0.y) * (s1.x - s0.x);
+            if (area == 0.0f) {
+                return false;
+            }
+            const bool front =
+                pip.front_face == FrontFace::counter_clockwise ? area > 0.0f : area < 0.0f;
+            return !((pip.cull_mode == CullMode::back && !front) ||
+                     (pip.cull_mode == CullMode::front && front));
+        };
+
+        const std::uint32_t idx_end = draw.first_index + draw.index_count;
+        GeometryFilter filter = GeometryFilter::linear;
+        if (tex_data != nullptr) {
+            for (std::uint32_t idx = draw.first_index; idx + 2U < idx_end; idx += 3U) {
+                std::uint16_t tri[3]{};
+                std::memcpy(tri, ib.data() + static_cast<std::size_t>(idx) * 2U, sizeof(tri));
+                if (tri[0] >= num_verts || tri[1] >= num_verts || tri[2] >= num_verts) {
+                    continue;
+                }
+                GeometryVertex g0{}, g1{}, g2{};
+                if (!project_raw(tri[0], g0) || !project_raw(tri[1], g1) ||
+                    !project_raw(tri[2], g2) || !is_triangle_visible(g0, g1, g2)) {
+                    continue;
+                }
+                const float det = (g1.x - g0.x) * (g2.y - g0.y) - (g2.x - g0.x) * (g1.y - g0.y);
+                if (!(std::fabs(det) > 1e-6f) || !std::isfinite(det)) {
+                    continue;
+                }
+                filter = classify_triangle_filter(g0, g1, g2, tex_data->width, tex_data->height);
+                break;
+            }
+        }
+
+        // Continue the previous batch when texture, blend and filter match (painter's order is
+        // kept: only consecutive draws merge).
+        const bool same_clip =
+            !frame_.batches.empty() && frame_.batches.back().has_clip == batch_has_clip &&
+            (!batch_has_clip || (frame_.batches.back().clip_x == batch_clip_x &&
+                                 frame_.batches.back().clip_y == batch_clip_y &&
+                                 frame_.batches.back().clip_w == batch_clip_w &&
+                                 frame_.batches.back().clip_h == batch_clip_h));
+        if (frame_.batches.empty() || frame_.batches.back().texture != draw.texture ||
+            frame_.batches.back().blend != pip.blend_mode ||
+            frame_.batches.back().filter != filter || !same_clip) {
+            GeometryBatch b{};
+            b.texture = draw.texture;
+            b.blend = pip.blend_mode;
+            b.filter = filter;
+            b.has_clip = batch_has_clip;
+            b.clip_x = batch_clip_x;
+            b.clip_y = batch_clip_y;
+            b.clip_w = batch_clip_w;
+            b.clip_h = batch_clip_h;
+            b.first_vertex = static_cast<std::uint32_t>(frame_.vertices.size());
+            b.first_index = static_cast<std::uint32_t>(frame_.indices.size());
+            frame_.batches.push_back(b);
+        }
+        GeometryBatch& batch = frame_.batches.back();
+
+        // A draw usually reads a small index range of a shared buffer: transform only the
+        // vertices it references, once each (`remap_` holds the batch-relative slot; only the
+        // entries this draw touched are reset afterwards, so the cost follows the draw's size,
+        // not the buffer's).
+        if (remap_.size() < num_verts) {
+            remap_.resize(num_verts, -1);
+        }
+        touched_.clear();
+        const auto project = [&](std::uint16_t vi) -> std::int32_t {
+            if (remap_[vi] != -1) {
+                return remap_[vi];
+            }
+            touched_.push_back(vi);
+            GeometryVertex gv{};
+            if (!project_raw(vi, gv)) {
+                remap_[vi] = -2;  // unusable: drop triangles that use it
+                return -2;
+            }
             const auto slot = static_cast<std::int32_t>(frame_.vertices.size() - batch.first_vertex);
             frame_.vertices.push_back(gv);
             remap_[vi] = slot;
             return slot;
         };
 
-        const std::uint32_t idx_end = draw.first_index + draw.index_count;
         for (std::uint32_t idx = draw.first_index; idx + 2U < idx_end; idx += 3U) {
             std::uint16_t tri[3]{};
             std::memcpy(tri, ib.data() + static_cast<std::size_t>(idx) * 2U, sizeof(tri));
@@ -326,22 +461,11 @@ private:
             if (a < 0 || b < 0 || c < 0) {
                 continue;
             }
-            if (pip.cull_mode != CullMode::none) {
-                // `SoftwareRhiDevice`'s test: twice the framebuffer-space signed area (+y
-                // down), front when > 0 for counter-clockwise front faces.
-                const GeometryVertex& s0 = frame_.vertices[batch.first_vertex + static_cast<std::uint32_t>(a)];
-                const GeometryVertex& s1 = frame_.vertices[batch.first_vertex + static_cast<std::uint32_t>(b)];
-                const GeometryVertex& s2 = frame_.vertices[batch.first_vertex + static_cast<std::uint32_t>(c)];
-                const float area = (s2.x - s0.x) * (s1.y - s0.y) - (s2.y - s0.y) * (s1.x - s0.x);
-                if (area == 0.0f) {
-                    continue;
-                }
-                const bool front =
-                    pip.front_face == FrontFace::counter_clockwise ? area > 0.0f : area < 0.0f;
-                if ((pip.cull_mode == CullMode::back && !front) ||
-                    (pip.cull_mode == CullMode::front && front)) {
-                    continue;
-                }
+            const GeometryVertex& s0 = frame_.vertices[batch.first_vertex + static_cast<std::uint32_t>(a)];
+            const GeometryVertex& s1 = frame_.vertices[batch.first_vertex + static_cast<std::uint32_t>(b)];
+            const GeometryVertex& s2 = frame_.vertices[batch.first_vertex + static_cast<std::uint32_t>(c)];
+            if (!is_triangle_visible(s0, s1, s2)) {
+                continue;
             }
             frame_.indices.push_back(a);
             frame_.indices.push_back(b);

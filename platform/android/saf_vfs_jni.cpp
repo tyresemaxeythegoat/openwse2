@@ -8,6 +8,8 @@
 
 #include <unistd.h>
 
+#include <algorithm>
+#include <array>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
@@ -24,7 +26,9 @@
 
 #include "driver_loader.h"
 #include "saf_game_tree.h"
+#include "wse/asset/bmp.h"
 #include "wse/core/json.h"
+#include "wse/game/module_loader_common.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/performance.h"
 #include "wse/platform/driver_package.h"
@@ -726,6 +730,110 @@ Java_org_wse2_android_WseSafBridge_nativeCheckModuleInstall(JNIEnv* env,
     return utf8_to_jstring(
         env, wse::platform::install_check_json(
                  wse::platform::find_missing_warband_files(*cache.vfs, "", module_dir)));
+}
+
+// Decodes `<rel_path>/main.bmp` (or root `main.bmp` when `rel_path` is empty) through the
+// cached SAF tree VFS, downscales to `max_side` clamped to [16, 2048], computes the HSV seed
+// colour, and returns `[w, h, seed, pixels...]` or null on any failure (P12.2).
+JNIEXPORT jintArray JNICALL
+Java_org_wse2_android_WseSafBridge_nativeLoadModuleArt(JNIEnv* env,
+                                                       jobject thiz,
+                                                       jstring rel_path_jstr,
+                                                       jint max_side_jint) {
+    if (env == nullptr || thiz == nullptr || rel_path_jstr == nullptr) {
+        (void)clear_if_exception(env);
+        return nullptr;
+    }
+
+    const jsize rel_len = env->GetStringLength(rel_path_jstr);
+    if (clear_if_exception(env)) {
+        return nullptr;
+    }
+    const std::string rel_path = jstring_to_utf8(env, rel_path_jstr);
+    if (rel_path.empty() && rel_len != 0) {
+        (void)clear_if_exception(env);
+        return nullptr;
+    }
+
+    const std::string bmp_rel_path = wse::game::vfs_join_path(rel_path, "main.bmp");
+
+    std::vector<std::uint8_t> bmp_bytes;
+    {
+        SafCacheState& cache = get_saf_cache();
+        std::lock_guard<std::mutex> lock(cache.mutex);
+
+        ScopedBridgeSession session(env, thiz);
+        std::string vfs_error;
+        if (!ensure_cached_tree_vfs(cache, session, vfs_error)) {
+            (void)clear_if_exception(env);
+            return nullptr;
+        }
+        if (!cache.vfs->read_file(bmp_rel_path, bmp_bytes)) {
+            (void)clear_if_exception(env);
+            return nullptr;
+        }
+    }
+
+    const std::uint32_t max_side = static_cast<std::uint32_t>(
+        std::clamp<std::int32_t>(static_cast<std::int32_t>(max_side_jint), 16, 2048));
+
+    wse::asset::DecodedBmp scaled{};
+    {
+        wse::asset::DecodedBmp decoded{};
+        if (!wse::asset::decode_bmp(bmp_bytes, decoded)) {
+            return nullptr;
+        }
+        std::vector<std::uint8_t>{}.swap(bmp_bytes);
+        scaled = wse::asset::downscale_to_fit(decoded, max_side);
+    }
+
+    if (scaled.width == 0U || scaled.height == 0U ||
+        static_cast<std::uint64_t>(scaled.width) * scaled.height != scaled.argb.size()) {
+        return nullptr;
+    }
+
+    if (scaled.argb.size() > static_cast<std::size_t>(std::numeric_limits<jsize>::max()) - 3U) {
+        return nullptr;
+    }
+
+    const std::uint32_t seed = wse::asset::seed_color_argb(scaled);
+    const jsize total_len = static_cast<jsize>(std::size_t{3} + scaled.argb.size());
+    jintArray result = env->NewIntArray(total_len);
+    if (clear_if_exception(env) || result == nullptr) {
+        if (result != nullptr) {
+            env->DeleteLocalRef(result);
+        }
+        return nullptr;
+    }
+
+    const std::array<jint, 3> header{
+        static_cast<jint>(scaled.width),
+        static_cast<jint>(scaled.height),
+        static_cast<jint>(seed),
+    };
+    env->SetIntArrayRegion(result, 0, 3, header.data());
+    if (clear_if_exception(env)) {
+        env->DeleteLocalRef(result);
+        return nullptr;
+    }
+
+    std::array<jint, 4096> chunk{};
+    std::size_t offset = 0;
+    while (offset < scaled.argb.size()) {
+        const std::size_t n = std::min(chunk.size(), scaled.argb.size() - offset);
+        for (std::size_t i = 0; i < n; ++i) {
+            chunk[i] = static_cast<jint>(scaled.argb[offset + i]);
+        }
+        env->SetIntArrayRegion(result, static_cast<jsize>(std::size_t{3} + offset),
+                               static_cast<jsize>(n), chunk.data());
+        if (clear_if_exception(env)) {
+            env->DeleteLocalRef(result);
+            return nullptr;
+        }
+        offset += n;
+    }
+
+    return result;
 }
 
 // `config/performance.json` under the app's private files directory (`configRoot`) is the one

@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <limits>
 #include <span>
 #include <unordered_map>
 #include <memory>
@@ -20,6 +21,7 @@
 #include <string_view>
 #include <vector>
 
+#include "wse/asset/bmp.h"
 #include "wse/asset/brf.h"
 #include "wse/asset/font.h"
 #include "wse/game/module_mission_loaders.h"
@@ -2538,6 +2540,1282 @@ void test_geometry_capture_matches_software() {
            "destroyed textures are reported once");
 }
 
+void test_geometry_batch_filter() {
+    using wse::platform::BlendMode;
+    using wse::platform::BufferUsage;
+    using wse::platform::CullMode;
+    using wse::platform::GeometryBatch;
+    using wse::platform::GeometryCaptureRhiDevice;
+    using wse::platform::GeometryFilter;
+    using wse::platform::MeshDrawCall;
+    using wse::platform::MeshVertex;
+    using wse::platform::PipelineDesc;
+    using wse::platform::RenderPassDesc;
+
+    expect(GeometryBatch{}.filter == GeometryFilter::linear,
+           "GeometryBatch defaults to linear filter");
+
+    GeometryCaptureRhiDevice geo{};
+    const std::vector<std::uint8_t> tex_bytes(16U * 8U * 4U, 255U);
+    const auto tex = geo.create_texture_rgba8(16U, 8U, tex_bytes);
+    expect(tex != 0U, "filter test texture created");
+
+    PipelineDesc pd{};
+    pd.depth_test = false;
+    pd.depth_write = false;
+    pd.cull_mode = CullMode::none;
+    pd.blend_mode = BlendMode::alpha;
+    const auto pip = geo.create_pipeline(pd);
+
+    // 16x8 object-space quad centred at the origin.
+    const std::array<MeshVertex, 4> quad_verts{{
+        {-8.0f, -4.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0xFFFFFFFFU},
+        {8.0f, -4.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0xFFFFFFFFU},
+        {8.0f, 4.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0xFFFFFFFFU},
+        {-8.0f, 4.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0xFFFFFFFFU},
+    }};
+    const std::array<MeshVertex, 4> flipped_verts{{
+        {-8.0f, -4.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0xFFFFFFFFU},
+        {8.0f, -4.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0xFFFFFFFFU},
+        {8.0f, 4.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0xFFFFFFFFU},
+        {-8.0f, 4.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0xFFFFFFFFU},
+    }};
+    const std::array<std::uint16_t, 6> quad_indices{0, 1, 2, 0, 2, 3};
+    const auto vb = geo.create_buffer(
+        BufferUsage::vertex,
+        {reinterpret_cast<const std::uint8_t*>(quad_verts.data()), sizeof(quad_verts)});
+    const auto vb_flip = geo.create_buffer(
+        BufferUsage::vertex,
+        {reinterpret_cast<const std::uint8_t*>(flipped_verts.data()), sizeof(flipped_verts)});
+    const auto ib = geo.create_buffer(
+        BufferUsage::index,
+        {reinterpret_cast<const std::uint8_t*>(quad_indices.data()), sizeof(quad_indices)});
+
+    const auto make_draw = [&](wse::platform::TextureHandle draw_tex,
+                               wse::platform::BufferHandle draw_vb,
+                               float tx,
+                               float ty,
+                               float sx,
+                               float sy,
+                               float angle_rad) {
+        MeshDrawCall d{};
+        d.pipeline = pip;
+        d.vertex_buffer = draw_vb;
+        d.index_buffer = ib;
+        d.texture = draw_tex;
+        d.index_count = 6U;
+        const float c = std::cos(angle_rad);
+        const float s = std::sin(angle_rad);
+        float model[16]{};
+        model[0] = c * sx;
+        model[1] = s * sx;
+        model[4] = -s * sy;
+        model[5] = c * sy;
+        model[10] = 1.0f;
+        model[12] = tx;
+        model[13] = ty;
+        model[15] = 1.0f;
+        float proj[16]{};
+        wse::platform::make_d3d9_ortho_off_center_rh(0.0f, 160.0f, 0.0f, 120.0f, -1.0f, 1.0f,
+                                                     proj, true);
+        wse::platform::rhi_ui_detail::mat4_mul(proj, model, d.mvp);
+        return d;
+    };
+
+    RenderPassDesc pass{};
+    pass.width = 160U;
+    pass.height = 120U;
+    std::vector<std::uint8_t> dummy;
+
+    const auto run_one = [&](const MeshDrawCall& d) -> GeometryFilter {
+        const std::array<MeshDrawCall, 1> arr{d};
+        expect(geo.render_pass_and_readback(pass, arr, dummy), "filter single draw succeeds");
+        expect(geo.frame().batches.size() == 1U, "single draw produces one batch");
+        return geo.frame().batches.empty() ? GeometryFilter::linear : geo.frame().batches[0].filter;
+    };
+
+    constexpr float kDeg10 = 10.0f * 3.14159265358979323846f / 180.0f;
+    expect(run_one(make_draw(tex, vb, 80.0f, 60.0f, 1.0f, 1.0f, 0.0f)) == GeometryFilter::nearest,
+           "1:1 axis-aligned textured quad uses nearest filter");
+    expect(run_one(make_draw(tex, vb, 80.0f, 60.0f, 1.01f, 1.01f, 0.0f)) == GeometryFilter::nearest,
+           "1.01x within 1 +/- 0.02 uses nearest filter");
+    expect(run_one(make_draw(tex, vb, 80.0f, 60.0f, 1.5f, 1.5f, 0.0f)) == GeometryFilter::linear,
+           "1.5x scaled textured quad uses linear filter");
+    expect(run_one(make_draw(tex, vb, 80.0f, 60.0f, 1.0f, 1.5f, 0.0f)) == GeometryFilter::linear,
+           "non-uniformly scaled textured quad uses linear filter");
+    expect(run_one(make_draw(tex, vb, 80.0f, 60.0f, 1.0f, 1.0f, kDeg10)) == GeometryFilter::linear,
+           "10-degree rotated textured quad uses linear filter");
+    expect(run_one(make_draw(tex, vb, 80.0f, 60.0f, 1.0f, 1.0f, 0.005f)) == GeometryFilter::linear,
+           "rotation > 1e-3 uses linear filter");
+    expect(run_one(make_draw(tex, vb, 80.0f, 60.0f, 1.0f, 1.0f, 0.0005f)) == GeometryFilter::nearest,
+           "rotation within 1e-3 stays nearest");
+    expect(run_one(make_draw(0U, vb, 80.0f, 60.0f, 1.0f, 1.0f, 0.0f)) == GeometryFilter::linear,
+           "untextured panel uses linear filter");
+    expect(run_one(make_draw(tex, vb_flip, 80.0f, 60.0f, 1.0f, 1.0f, 0.0f)) == GeometryFilter::nearest,
+           "1:1 V-flipped textured quad uses nearest filter");
+
+    // Two draws with the same texture and blend but different filters land in two batches.
+    const std::array<MeshDrawCall, 2> split_draws{
+        make_draw(tex, vb, 40.0f, 60.0f, 1.0f, 1.0f, 0.0f),
+        make_draw(tex, vb, 100.0f, 60.0f, 1.5f, 1.5f, 0.0f),
+    };
+    expect(geo.render_pass_and_readback(pass, split_draws, dummy), "split-batch draws succeed");
+    expect(geo.frame().batches.size() == 2U &&
+               geo.frame().batches[0].texture == tex &&
+               geo.frame().batches[1].texture == tex &&
+               geo.frame().batches[0].blend == BlendMode::alpha &&
+               geo.frame().batches[1].blend == BlendMode::alpha &&
+               geo.frame().batches[0].filter == GeometryFilter::nearest &&
+               geo.frame().batches[1].filter == GeometryFilter::linear,
+           "same texture & blend with different filters split into two batches");
+
+    const std::array<MeshDrawCall, 2> merged_nearest{
+        make_draw(tex, vb, 40.0f, 60.0f, 1.0f, 1.0f, 0.0f),
+        make_draw(tex, vb, 100.0f, 60.0f, 1.0f, 1.0f, 0.0f),
+    };
+    expect(geo.render_pass_and_readback(pass, merged_nearest, dummy) &&
+               geo.frame().batches.size() == 1U &&
+               geo.frame().batches[0].filter == GeometryFilter::nearest,
+           "consecutive nearest draws with same texture and blend merge into one batch");
+}
+
+void test_ui_text_scale() {
+    expect(wse::platform::UiRenderConfig{}.text_scale == 1.0f,
+           "UiRenderConfig::text_scale defaults to 1.0");
+    expect(wse::platform::UiGameShellOptions{}.ui_text_scale == 1.0f,
+           "UiGameShellOptions::ui_text_scale defaults to 1.0");
+
+    wse::asset::FontData font{};
+    font.width = 16;
+    font.height = 16;
+    font.font_size = 16;
+    font.base_size = 16;
+    font.font_scale = 1.0f;
+    font.font_width = 1.0f;
+    font.font_height = 1.0f;
+    font.line_spacing = 1.0f;
+    wse::asset::FontGlyph g_space{};
+    g_space.postshift = 0.25f;
+    font.glyphs[' '] = g_space;
+    wse::asset::FontGlyph ga{};
+    ga.uv_x = 0.0f;
+    ga.u_right = 0.5f;
+    ga.uv_y = 1.0f;
+    ga.v_bottom = 0.0f;
+    ga.yadjust = 0.8f;
+    ga.postshift = 0.6f;
+    font.glyphs['A'] = ga;
+    font.glyphs['B'] = ga;
+
+    std::vector<std::uint8_t> font_tex(16U * 16U * 4U, 255U);
+    wse::platform::GeometryCaptureRhiDevice geo{};
+    wse::platform::UiRhiRenderer renderer(geo);
+    std::string err;
+    expect(renderer.init(nullptr, &err) && renderer.upload_texture("font", 16U, 16U, font_tex),
+           "text scale renderer init succeeds");
+
+    const auto verts_equal = [](const std::vector<wse::platform::GeometryVertex>& a,
+                                const std::vector<wse::platform::GeometryVertex>& b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            if (a[i].x != b[i].x || a[i].y != b[i].y || a[i].r != b[i].r || a[i].g != b[i].g ||
+                a[i].b != b[i].b || a[i].a != b[i].a || a[i].u != b[i].u || a[i].v != b[i].v) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const auto x_bounds = [](const wse::platform::GeometryFrame& f, std::size_t batch_idx) {
+        const auto& b = f.batches[batch_idx];
+        float lo = std::numeric_limits<float>::max();
+        float hi = std::numeric_limits<float>::lowest();
+        for (std::uint32_t i = 0; i < b.vertex_count; ++i) {
+            const float x = f.vertices[b.first_vertex + i].x;
+            lo = std::min(lo, x);
+            hi = std::max(hi, x);
+        }
+        return std::pair<float, float>{lo, hi};
+    };
+
+    const auto capture = [&](const wse::game::UiWidget& root, float scale) {
+        wse::platform::UiRenderConfig cfg{};
+        cfg.viewport_width = 800U;
+        cfg.viewport_height = 600U;
+        cfg.text_scale = scale;
+        std::vector<std::uint8_t> none;
+        expect(renderer.render_tree(root, font, cfg, none), "text scale render_tree succeeds");
+        return geo.frame();
+    };
+
+    // 1. Centred button text: width scales by 1.5x, centre unchanged, 1.0 matches baseline,
+    //    5.0 clamps to 2.0, 0.1 clamps to 0.75, non-finite falls back to 1.0.
+    wse::game::UiWidget root{};
+    root.size = {1.0f, 0.75f};
+    wse::game::UiWidget btn{};
+    btn.kind = wse::game::UiWidgetKind::SimpleButton;
+    btn.pos = {0.20f, 0.25f};
+    btn.size = {0.40f, 0.06f};
+    btn.text = "AB AB";
+    btn.text_scale = {0.03f, 0.03f};
+    btn.text_flags = wse::asset::kTextFlagCenterAlign;
+    btn.text_color_argb = 0xFFFFFFFFU;
+    root.children.push_back(btn);
+
+    const auto f1 = capture(root, 1.0f);
+    expect(f1.batches.size() == 1U && !f1.vertices.empty(), "centred text draws one batch");
+    // Verify text_scale = 1.0 produces the exact unscaled layout_text vertices.
+    {
+        const float ttop_y = btn.pos.y + btn.size.y * 0.5f - btn.text_scale.y * 0.28f;
+        const auto layout = font.layout_text(btn.text, btn.pos.x, btn.pos.x + btn.size.x, ttop_y,
+                                             btn.text_scale.x, btn.text_scale.y, btn.text_flags,
+                                             btn.text_color_argb);
+        bool exact = f1.vertices.size() == layout.quads.size() * 4U;
+        for (std::size_t q = 0; exact && q < layout.quads.size(); ++q) {
+            const auto& fq = layout.quads[q];
+            const std::array<std::pair<float, float>, 4> expected_xy{{
+                {fq.x0 * 800.0f, (1.0f - fq.y0 / 0.75f) * 600.0f},
+                {fq.x1 * 800.0f, (1.0f - fq.y0 / 0.75f) * 600.0f},
+                {fq.x1 * 800.0f, (1.0f - fq.y1 / 0.75f) * 600.0f},
+                {fq.x0 * 800.0f, (1.0f - fq.y1 / 0.75f) * 600.0f},
+            }};
+            for (std::size_t k = 0; k < 4U; ++k) {
+                const auto& gv = f1.vertices[q * 4U + k];
+                exact = exact && std::fabs(gv.x - expected_xy[k].first) < 1e-3f &&
+                        std::fabs(gv.y - expected_xy[k].second) < 1e-3f;
+            }
+        }
+        expect(exact, "text_scale = 1 produces exact unscaled baseline vertices");
+    }
+
+    const auto [lo1, hi1] = x_bounds(f1, 0U);
+    const float w1 = hi1 - lo1;
+    const float c1 = 0.5f * (lo1 + hi1);
+
+    const auto f15 = capture(root, 1.5f);
+    const auto [lo15, hi15] = x_bounds(f15, 0U);
+    const float w15 = hi15 - lo15;
+    const float c15 = 0.5f * (lo15 + hi15);
+    expect(std::fabs(w15 - 1.5f * w1) <= 1.0f && std::fabs(c15 - c1) <= 1.0f,
+           "text_scale = 1.5 makes centred run 1.5x wide with the same centre");
+
+    const auto f2 = capture(root, 2.0f);
+    const auto f5 = capture(root, 5.0f);
+    const auto [lo2, hi2] = x_bounds(f2, 0U);
+    expect(verts_equal(f5.vertices, f2.vertices) && std::fabs((hi2 - lo2) - 2.0f * w1) <= 1.0f,
+           "text_scale = 5.0 clamps to 2.0");
+
+    const auto f075 = capture(root, 0.75f);
+    const auto f01 = capture(root, 0.1f);
+    expect(verts_equal(f01.vertices, f075.vertices), "text_scale = 0.1 clamps to 0.75");
+
+    const auto fnan = capture(root, std::numeric_limits<float>::quiet_NaN());
+    const auto finf = capture(root, std::numeric_limits<float>::infinity());
+    expect(verts_equal(fnan.vertices, f1.vertices) && verts_equal(finf.vertices, f1.vertices),
+           "non-finite text_scale falls back to 1.0");
+
+    // 2. Tight single-line button does not spuriously wrap when enlarged.
+    {
+        wse::game::UiWidget tight_root{};
+        tight_root.size = {1.0f, 0.75f};
+        wse::game::UiWidget tight = btn;
+        tight.size = {0.10f, 0.05f};
+        tight.text_scale = {0.025f, 0.025f};
+        tight_root.children.push_back(tight);
+        const auto tf1 = capture(tight_root, 1.0f);
+        const auto tf15 = capture(tight_root, 1.5f);
+        const auto [tlo1, thi1] = x_bounds(tf1, 0U);
+        const auto [tlo15, thi15] = x_bounds(tf15, 0U);
+        expect(std::fabs((thi15 - tlo15) - 1.5f * (thi1 - tlo1)) <= 1.0f &&
+                   std::fabs(0.5f * (tlo15 + thi15) - 0.5f * (tlo1 + thi1)) <= 1.0f,
+               "tight single-line centred button scales 1.5x without wrapping");
+    }
+
+    // 3. Left-aligned label keeps its left edge; widget boxes and hit areas do not change.
+    {
+        wse::game::UiWidget box_root{};
+        box_root.size = {1.0f, 0.75f};
+        wse::game::UiWidget panel{};
+        panel.kind = wse::game::UiWidgetKind::SolidPanel;
+        panel.pos = {0.15f, 0.40f};
+        panel.size = {0.30f, 0.05f};
+        panel.color_argb = 0xFF334455U;
+        box_root.children.push_back(panel);
+        wse::game::UiWidget lbl{};
+        lbl.kind = wse::game::UiWidgetKind::Label;
+        lbl.pos = {0.15f, 0.40f};
+        lbl.size = {0.30f, 0.05f};
+        lbl.text = "AB AB";
+        lbl.text_scale = {0.03f, 0.03f};
+        lbl.text_flags = 0U;
+        lbl.text_color_argb = 0xFFFFFFFFU;
+        box_root.children.push_back(lbl);
+
+        const auto bf1 = capture(box_root, 1.0f);
+        const auto bf15 = capture(box_root, 1.5f);
+        expect(bf1.batches.size() == 2U && bf15.batches.size() == 2U,
+               "panel + left label produce 2 batches");
+        bool panel_same = bf1.batches[0].vertex_count == bf15.batches[0].vertex_count;
+        for (std::uint32_t i = 0; panel_same && i < bf1.batches[0].vertex_count; ++i) {
+            const auto& va = bf1.vertices[bf1.batches[0].first_vertex + i];
+            const auto& vb = bf15.vertices[bf15.batches[0].first_vertex + i];
+            panel_same = va.x == vb.x && va.y == vb.y;
+        }
+        const auto [llo1, lhi1] = x_bounds(bf1, 1U);
+        const auto [llo15, lhi15] = x_bounds(bf15, 1U);
+        expect(panel_same, "SolidPanel box vertices do not change with text_scale");
+        expect(std::fabs(llo15 - llo1) <= 1.0f &&
+                   std::fabs((lhi15 - llo15) - 1.5f * (lhi1 - llo1)) <= 1.0f,
+               "left-aligned text keeps its left edge and scales width by 1.5x");
+        expect(lbl.hit_test(0.44f, 0.42f) && !lbl.hit_test(0.46f, 0.42f),
+               "widget hit area does not change");
+    }
+
+    // 4. UiGameShell copies `ui_text_scale` into `UiRenderConfig::text_scale` every frame.
+    {
+        wse::platform::MemoryVfs vfs;
+        const auto op_global = [](std::uint64_t slot) noexcept {
+            return (static_cast<std::uint64_t>(wse::vm::OperandTag::slot) << 56U) | slot;
+        };
+        const std::string scripts = "scriptsfile version 1\n1\ngame_start -1\n1\n" +
+                                    std::to_string(wse::vm::core_op::kAssign) + " 2 " +
+                                    std::to_string(op_global(1U)) + " 7\n";
+        expect(vfs.write_text("Modules/ScaleMod/scripts.txt", scripts) &&
+                   vfs.write_text("Modules/ScaleMod/triggers.txt", "triggersfile version 1\n0\n") &&
+                   vfs.write_text("Modules/ScaleMod/simple_triggers.txt",
+                                  "simple_triggers_file version 1\n0\n"),
+               "seed synthetic ScaleMod scripts");
+        std::string font_xml =
+            "<FontData width=\"256\" height=\"256\" padding=\"10\" font_size=\"64\" "
+            "font_scale=\"100\" line_spacing=\"100\"><FontDetails>";
+        for (int code = 32; code <= 126; ++code) {
+            if (code == 32) {
+                font_xml += "<character code=\"32\" postshift=\"16\"/>";
+            } else {
+                font_xml += "<character code=\"" + std::to_string(code) +
+                            "\" u=\"20\" v=\"20\" w=\"64\" h=\"76\" preshift=\"2\" yadjust=\"48\" "
+                            "postshift=\"40\"/>";
+            }
+        }
+        font_xml += "</FontDetails></FontData>\n";
+        expect(vfs.write_text("Data/font_data.xml", font_xml) &&
+                   vfs.write_file("Textures/font.dds", build_argb_mip_dds(64U, 64U, false)),
+               "seed synthetic font XML and DDS for UiGameShell text_scale test");
+
+        const auto run_shell_frame = [&](float ui_scale) {
+            wse::platform::UiGameShellOptions opts{};
+            opts.run.module_dir = "Modules/ScaleMod";
+            opts.run.load_options.require_core_files = false;
+            opts.check_install = false;
+            opts.output = wse::platform::UiGameShellOptions::Output::geometry;
+            opts.ui_text_scale = ui_scale;
+            wse::platform::UiGameShell shell;
+            std::string shell_err;
+            expect(shell.start(vfs, std::move(opts), &shell_err),
+                   "UiGameShell starts for ui_text_scale test");
+            expect(shell.frame(1.0f / 60.0f, 800U, 600U) && shell.geometry() != nullptr,
+                   "UiGameShell renders geometry frame");
+            return *shell.geometry();
+        };
+
+        const auto g1 = run_shell_frame(1.0f);
+        const auto g15 = run_shell_frame(1.5f);
+        const auto g2 = run_shell_frame(2.0f);
+        const auto g5 = run_shell_frame(5.0f);
+        expect(g1.vertices.size() >= 4U && g15.vertices.size() == g1.vertices.size(),
+               "UiGameShell emits initial-window text quads");
+        if (g1.vertices.size() >= 4U && g15.vertices.size() >= 4U) {
+            const float gw1 = std::fabs(g1.vertices[1].x - g1.vertices[0].x);
+            const float gh1 = std::fabs(g1.vertices[2].y - g1.vertices[0].y);
+            const float gw15 = std::fabs(g15.vertices[1].x - g15.vertices[0].x);
+            const float gh15 = std::fabs(g15.vertices[2].y - g15.vertices[0].y);
+            expect(gw1 > 0.5f && gh1 > 0.5f && std::fabs(gw15 - 1.5f * gw1) <= 0.5f &&
+                       std::fabs(gh15 - 1.5f * gh1) <= 0.5f,
+                   "UiGameShell copies ui_text_scale=1.5 into render (glyphs scale 1.5x)");
+        }
+        expect(verts_equal(g5.vertices, g2.vertices),
+               "UiGameShell clamps ui_text_scale=5.0 to 2.0");
+    }
+}
+
+// P11.5: touch drag-to-scroll on a 40-item list, mouse drag unchanged, and first tap counts
+// without a prior hover frame.
+void test_touch_drag_scroll_and_first_tap() {
+    using wse::platform::RawInputEvent;
+    namespace RawKey = wse::platform::RawKey;
+
+    // 1. UiInputAccumulator sets `touch` for TouchDown/Move/Up and clears it for mouse.
+    {
+        wse::platform::UiInputAccumulator acc{};
+        RawInputEvent ev{};
+        ev.type = RawInputEvent::Type::MouseMotion;
+        ev.x = 0.2f;
+        ev.y = 0.2f;
+        acc.feed(ev);
+        expect(!acc.take(0.0f).touch, "mouse motion produces touch = false");
+
+        ev = RawInputEvent{};
+        ev.type = RawInputEvent::Type::MouseButtonDown;
+        ev.raw_key = RawKey::kLeftMouse;
+        ev.x = 0.2f;
+        ev.y = 0.2f;
+        acc.feed(ev);
+        expect(!acc.take(0.1f).touch, "mouse press produces touch = false");
+
+        ev.type = RawInputEvent::Type::MouseButtonUp;
+        acc.feed(ev);
+        expect(!acc.take(0.2f).touch, "mouse release produces touch = false");
+
+        RawInputEvent td{};
+        td.type = RawInputEvent::Type::TouchDown;
+        td.finger_id = 3;
+        td.x = 0.3f;
+        td.y = 0.5f;
+        acc.feed(td);
+        const auto in_down = acc.take(0.3f);
+        expect(in_down.touch && in_down.left_pressed && in_down.left_down,
+               "TouchDown sets touch = true");
+        const auto in_hold = acc.take(0.35f);
+        expect(in_hold.touch && !in_hold.left_pressed && in_hold.left_down,
+               "held finger with no move keeps touch = true");
+
+        RawInputEvent tm{};
+        tm.type = RawInputEvent::Type::TouchMove;
+        tm.finger_id = 3;
+        tm.x = 0.3f;
+        tm.y = 0.4f;
+        acc.feed(tm);
+        expect(acc.take(0.4f).touch, "TouchMove sets touch = true");
+
+        RawInputEvent tu{};
+        tu.type = RawInputEvent::Type::TouchUp;
+        tu.finger_id = 3;
+        tu.x = 0.3f;
+        tu.y = 0.4f;
+        acc.feed(tu);
+        const auto in_up = acc.take(0.5f);
+        expect(in_up.touch && in_up.left_released && !in_up.left_down,
+               "TouchUp sets touch = true on release frame");
+        expect(!acc.take(0.6f).touch, "idle frame after TouchUp clears touch = false");
+    }
+
+    // 2. 40-item scrollable list: touch drag up by 0.2 scrolls by 0.2 (+/- 0.005) and cancels
+    // the armed item click; the same drag with touch = false does not scroll.
+    {
+        OverlayRig rig;
+        wse::game::WsePresentationOverlay c = boxed_text(0.1f, 0.1f, 0.4f, 0.4f);
+        c.val = 0x20000;  // kUiTextFlagsScrollable
+        const std::int32_t cid = rig.add(c);
+        for (int k = 0; k < 40; ++k) {
+            wse::game::WsePresentationOverlay item =
+                box_button(0.0f, 0.05f * static_cast<float>(k), 0.35f, 0.05f);
+            item.m5.container_overlay_no = cid;
+            (void)rig.add(item);
+        }
+        const auto offset_y = [&]() {
+            const auto* w = find_widget(rig.session.root, "overlay_0");
+            return w != nullptr ? w->child_offset.y : 99.0f;
+        };
+        const float initial_offset = offset_y();
+        expect(close(initial_offset, -1.6f), "40-item list starts at top (content_top 2.0, area 0.4)");
+
+        // Mouse drag up by 0.2 (touch = false): does not scroll.
+        rig.press(0.25f, 0.20f);
+        rig.move(0.25f, 0.40f, true);
+        expect(close(offset_y(), initial_offset),
+               "mouse drag (touch = false) inside scrollable list does not scroll");
+        rig.release(0.25f, 0.40f);
+        rig.reset_regs();
+
+        // Touch drag up by 0.2 through UiInputAccumulator starting over a list item.
+        wse::platform::UiInputAccumulator acc{};
+        const auto to_win_y = [](float ui_y) {
+            return 1.0f - ui_y / wse::game::kUiScreenHeight;
+        };
+        RawInputEvent td{};
+        td.type = RawInputEvent::Type::TouchDown;
+        td.finger_id = 1;
+        td.x = 0.25f / wse::game::kUiScreenWidth;
+        td.y = to_win_y(0.175f);
+        acc.feed(td);
+        (void)rig.send(acc.take(0.0f));
+
+        RawInputEvent tm{};
+        tm.type = RawInputEvent::Type::TouchMove;
+        tm.finger_id = 1;
+        tm.x = 0.25f / wse::game::kUiScreenWidth;
+        tm.y = to_win_y(0.375f);  // +0.20 UI units up
+        acc.feed(tm);
+        (void)rig.send(acc.take(0.02f));
+        expect(std::fabs((offset_y() - initial_offset) - 0.20f) <= 0.005f,
+               "touch drag up by 0.2 scrolls the 40-item list by 0.2 (+/- 0.005)");
+
+        RawInputEvent tu{};
+        tu.type = RawInputEvent::Type::TouchUp;
+        tu.finger_id = 1;
+        tu.x = 0.25f / wse::game::kUiScreenWidth;
+        tu.y = to_win_y(0.375f);
+        acc.feed(tu);
+        const auto release_ev = rig.send(acc.take(0.04f));
+        expect(release_ev.empty() && rig.n62() == 0,
+               "releasing after touch drag-to-scroll does not click the item under the finger");
+        expect(std::fabs((offset_y() - initial_offset) - 0.20f) <= 0.005f,
+               "scroll position stays after finger release");
+
+        // Sub-threshold touch jitter (<= 0.01) still taps the item without scrolling.
+        const float before_tap = offset_y();
+        td.y = to_win_y(0.225f);
+        acc.feed(td);
+        (void)rig.send(acc.take(0.06f));
+        tm.y = to_win_y(0.230f);  // +0.005 <= 0.01
+        acc.feed(tm);
+        (void)rig.send(acc.take(0.08f));
+        tu.y = to_win_y(0.230f);
+        acc.feed(tu);
+        const auto tap_ev = rig.send(acc.take(0.10f));
+        expect(close(offset_y(), before_tap) && tap_ev.size() == 1U &&
+                   tap_ev[0].kind == wse::game::UiActionKind::OverlayClicked && rig.n62() == 1,
+               "touch movement <= 0.01 does not scroll and clicks the item on release");
+
+        // Clamping like the wheel path: down past start clamps at -1.6, up past end at 0.0.
+        td.y = to_win_y(0.45f);
+        acc.feed(td);
+        (void)rig.send(acc.take(0.12f));
+        tm.y = to_win_y(0.05f);  // -0.40 down -> clamps at 0 scroll (-1.6 offset)
+        acc.feed(tm);
+        (void)rig.send(acc.take(0.14f));
+        expect(close(offset_y(), initial_offset), "touch drag down clamps at start of list");
+        tu.y = to_win_y(0.05f);
+        acc.feed(tu);
+        (void)rig.send(acc.take(0.16f));
+
+        td.y = to_win_y(0.12f);
+        acc.feed(td);
+        (void)rig.send(acc.take(0.18f));
+        tm.y = to_win_y(2.50f);  // way up -> clamps at max_scroll (0.0 offset)
+        acc.feed(tm);
+        (void)rig.send(acc.take(0.20f));
+        expect(close(offset_y(), 0.0f), "touch drag up clamps at end of list");
+        tu.y = to_win_y(2.50f);
+        acc.feed(tu);
+        (void)rig.send(acc.take(0.22f));
+    }
+
+    // 3. First tap counts: touch press + release on a button never hovered before clicks it.
+    {
+        // Presentation overlay button.
+        OverlayRig rig;
+        const std::int32_t btn = rig.add(box_button(0.4f, 0.25f, 0.2f, 0.1f));
+        wse::game::UiPointerInput down{};
+        down.x = 0.50f;
+        down.y = 0.30f;
+        down.left_down = true;
+        down.left_pressed = true;
+        down.touch = true;
+        const auto ev_down = rig.send(down);
+        expect(ev_down.empty() && rig.n62() == 0,
+               "first touch press on unhovered overlay button arms without firing early");
+
+        wse::game::UiPointerInput up{};
+        up.x = 0.50f;
+        up.y = 0.30f;
+        up.left_released = true;
+        up.touch = true;
+        const auto ev_up = rig.send(up);
+        expect(ev_up.size() == 1U && ev_up[0].kind == wse::game::UiActionKind::OverlayClicked &&
+                   ev_up[0].param == btn && rig.n62() == 1,
+               "first touch press + release on never-hovered overlay button clicks it");
+    }
+    {
+        // Built-in initial window button.
+        auto ctx_ptr = std::make_unique<wse::vm::VmContext>();
+        wse::game::UiSession session{};
+        session.build_initial_window(ctx_ptr->world);
+        const auto* start_btn = find_widget(session.root, "start_new_game_button");
+        expect(start_btn != nullptr, "initial window has start_new_game_button");
+        if (start_btn != nullptr) {
+            wse::game::UiPointerInput down{};
+            down.x = start_btn->pos.x + start_btn->size.x * 0.5f;
+            down.y = start_btn->pos.y + start_btn->size.y * 0.5f;
+            down.left_down = true;
+            down.left_pressed = true;
+            down.touch = true;
+            const auto ev_down = session.handle_input(ctx_ptr->world, down, ctx_ptr.get());
+            expect(ev_down.empty() && start_btn->highlighted && start_btn->pressed,
+                   "first touch press arms never-hovered built-in button");
+
+            wse::game::UiPointerInput up{};
+            up.x = down.x;
+            up.y = down.y;
+            up.left_released = true;
+            up.touch = true;
+            const auto ev_up = session.handle_input(ctx_ptr->world, up, ctx_ptr.get());
+            expect(ev_up.size() == 1U && ev_up[0].kind == wse::game::UiActionKind::StartNewGame,
+                   "first touch press + release on never-hovered built-in button clicks it");
+        }
+    }
+}
+
+// P11.5: scissor clipping in UiRhiRenderer, SoftwareRhiDevice, and GeometryCaptureRhiDevice.
+void test_ui_scissor_clipping() {
+    std::vector<std::uint8_t> font_tex(16U * 16U * 4U, 255);
+    wse::asset::FontData font{};
+    font.width = 16;
+    font.height = 16;
+    font.font_size = 16;
+    font.base_size = 16;
+    font.font_scale = 1.0f;
+    font.font_width = 1.0f;
+    font.font_height = 1.0f;
+    font.line_spacing = 1.0f;
+
+    wse::asset::BrfMesh quad{};
+    quad.name = "clip_quad";
+    quad.positions = {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}};
+    quad.face_corners = {
+        wse::asset::BrfFaceCorner{0, 0xFFFFFFFFU, {0, 0, 1}, {}, false, {0.0f, 0.0f}, {}},
+        wse::asset::BrfFaceCorner{1, 0xFFFFFFFFU, {0, 0, 1}, {}, false, {1.0f, 0.0f}, {}},
+        wse::asset::BrfFaceCorner{2, 0xFFFFFFFFU, {0, 0, 1}, {}, false, {1.0f, 1.0f}, {}},
+        wse::asset::BrfFaceCorner{3, 0xFFFFFFFFU, {0, 0, 1}, {}, false, {0.0f, 1.0f}, {}},
+    };
+    quad.faces = {{{{0, 1, 2}}}, {{{0, 2, 3}}}};
+
+    std::vector<std::uint8_t> clip_tex(8U * 8U * 4U, 255);
+    const auto setup = [&](wse::platform::UiRhiRenderer& r) {
+        std::string err;
+        return r.init(nullptr, &err) && r.upload_texture("font", 16, 16, font_tex) &&
+               r.upload_texture("clip_tex", 8, 8, clip_tex) &&
+               r.upload_brf_mesh(quad, "clip_tex");
+    };
+
+    // 1. SoftwareRhiDevice: child half outside its clip_children container is drawn inside and
+    // sets zero pixels outside the container.
+    {
+        wse::game::UiWidget root{};
+        root.size = {1.0f, 0.75f};
+
+        wse::game::UiWidget container{};
+        container.id = "clip_box";
+        container.kind = wse::game::UiWidgetKind::Container;
+        container.pos = {0.25f, 0.15f};
+        container.size = {0.50f, 0.45f};
+        container.clip_children = true;
+
+        wse::game::UiWidget half_panel{};
+        half_panel.id = "half_panel";
+        half_panel.kind = wse::game::UiWidgetKind::SolidPanel;
+        half_panel.pos = {-0.10f, -0.10f};  // abs [0.15, 0.45] x [0.05, 0.30]
+        half_panel.size = {0.30f, 0.25f};
+        half_panel.color_argb = 0xFFFF0000U;
+        container.children.push_back(half_panel);
+
+        wse::game::UiWidget half_mesh{};
+        half_mesh.id = "half_mesh";
+        half_mesh.kind = wse::game::UiWidgetKind::Image;
+        half_mesh.mesh_name = "clip_quad";
+        half_mesh.pos = {0.35f, 0.35f};  // abs [0.60, 0.90] x [0.50, 0.75]
+        half_mesh.size = {0.30f, 0.25f};
+        half_mesh.tint_mesh = true;
+        half_mesh.color_argb = 0xFF00FF00U;
+        container.children.push_back(half_mesh);
+
+        root.children.push_back(container);
+
+        wse::platform::UiRenderConfig cfg{};
+        cfg.viewport_width = 160U;
+        cfg.viewport_height = 120U;
+        cfg.clear_r = 10U;
+        cfg.clear_g = 20U;
+        cfg.clear_b = 30U;
+
+        wse::platform::SoftwareRhiDevice sw{};
+        wse::platform::UiRhiRenderer sw_renderer(sw);
+        std::vector<std::uint8_t> rgba;
+        expect(setup(sw_renderer) && sw_renderer.render_tree(root, font, cfg, rgba) &&
+                   rgba.size() == 160U * 120U * 4U,
+               "software scissor render succeeds");
+
+        // Container [0.25, 0.75] x [0.15, 0.60] -> pixels x in [40, 120), y_down in [24, 96).
+        std::size_t red_inside = 0U;
+        std::size_t green_inside = 0U;
+        std::size_t leaked_outside = 0U;
+        for (std::uint32_t y = 0; y < 120U; ++y) {
+            for (std::uint32_t x = 0; x < 160U; ++x) {
+                const std::size_t off = (static_cast<std::size_t>(y) * 160U + x) * 4U;
+                const std::uint8_t r = rgba[off + 0U];
+                const std::uint8_t g = rgba[off + 1U];
+                const std::uint8_t b = rgba[off + 2U];
+                const bool in_box = (x >= 40U && x < 120U && y >= 24U && y < 96U);
+                if (!in_box) {
+                    if (r != cfg.clear_r || g != cfg.clear_g || b != cfg.clear_b) {
+                        ++leaked_outside;
+                    }
+                } else {
+                    if (r > 200U && g < 30U) {
+                        ++red_inside;
+                    }
+                    if (g > 200U && r < 30U) {
+                        ++green_inside;
+                    }
+                }
+            }
+        }
+        expect(red_inside > 500U && green_inside > 200U,
+               "partly visible dynamic and static children are drawn inside the container");
+        expect(leaked_outside == 0U,
+               "no pixel of a clipped child is set outside its clip_children container");
+    }
+
+    // 2. Nested clip_children intersection on SoftwareRhiDevice.
+    {
+        wse::game::UiWidget root{};
+        root.size = {1.0f, 0.75f};
+
+        wse::game::UiWidget outer{};
+        outer.kind = wse::game::UiWidgetKind::Container;
+        outer.pos = {0.20f, 0.15f};
+        outer.size = {0.60f, 0.45f};  // [0.20, 0.80] x [0.15, 0.60]
+        outer.clip_children = true;
+
+        wse::game::UiWidget inner{};
+        inner.kind = wse::game::UiWidgetKind::Container;
+        inner.pos = {-0.10f, -0.10f};  // abs [0.10, 0.50] x [0.05, 0.45]
+        inner.size = {0.40f, 0.40f};
+        inner.clip_children = true;
+
+        wse::game::UiWidget full{};
+        full.kind = wse::game::UiWidgetKind::SolidPanel;
+        full.pos = {-0.10f, -0.05f};  // abs [0.0, 1.0] x [0.0, 0.75]
+        full.size = {1.0f, 0.75f};
+        full.color_argb = 0xFF0000FFU;
+        inner.children.push_back(full);
+        outer.children.push_back(inner);
+        root.children.push_back(outer);
+
+        wse::platform::UiRenderConfig cfg{};
+        cfg.viewport_width = 160U;
+        cfg.viewport_height = 120U;
+        cfg.clear_r = 5U;
+        cfg.clear_g = 5U;
+        cfg.clear_b = 5U;
+
+        wse::platform::SoftwareRhiDevice sw{};
+        wse::platform::UiRhiRenderer sw_renderer(sw);
+        std::vector<std::uint8_t> rgba;
+        expect(setup(sw_renderer) && sw_renderer.render_tree(root, font, cfg, rgba),
+               "nested scissor render succeeds");
+
+        // Intersection [0.20, 0.50] x [0.15, 0.45] -> x in [32, 80), y_down in [48, 96).
+        std::size_t blue_inside = 0U;
+        std::size_t outside = 0U;
+        for (std::uint32_t y = 0; y < 120U; ++y) {
+            for (std::uint32_t x = 0; x < 160U; ++x) {
+                const std::size_t off = (static_cast<std::size_t>(y) * 160U + x) * 4U;
+                const bool in_inter = (x >= 32U && x < 80U && y >= 48U && y < 96U);
+                if (in_inter) {
+                    if (rgba[off + 2U] > 200U && rgba[off + 0U] < 30U) {
+                        ++blue_inside;
+                    }
+                } else if (rgba[off + 0U] != cfg.clear_r || rgba[off + 1U] != cfg.clear_g ||
+                           rgba[off + 2U] != cfg.clear_b) {
+                    ++outside;
+                }
+            }
+        }
+        expect(blue_inside == 48U * 48U && outside == 0U,
+               "nested clip_children clips strictly to the intersection rectangle");
+    }
+
+    // 3. GeometryCaptureRhiDevice: batches carry clip rect in window pixels for 2400x1080 4:3
+    // viewport and do not merge clipped and unclipped draws.
+    {
+        wse::game::UiWidget root{};
+        root.size = {1.0f, 0.75f};
+
+        wse::game::UiWidget unclipped{};
+        unclipped.kind = wse::game::UiWidgetKind::SolidPanel;
+        unclipped.pos = {0.02f, 0.02f};
+        unclipped.size = {0.08f, 0.08f};
+        unclipped.color_argb = 0xFFFFFFFFU;
+        root.children.push_back(unclipped);
+
+        wse::game::UiWidget container{};
+        container.kind = wse::game::UiWidgetKind::Container;
+        container.pos = {0.25f, 0.15f};
+        container.size = {0.50f, 0.45f};
+        container.clip_children = true;
+
+        wse::game::UiWidget child_panel{};
+        child_panel.kind = wse::game::UiWidgetKind::SolidPanel;
+        child_panel.pos = {-0.10f, -0.10f};
+        child_panel.size = {0.30f, 0.25f};
+        child_panel.color_argb = 0xFFFF2020U;
+        container.children.push_back(child_panel);
+
+        wse::game::UiWidget child_panel_2 = child_panel;
+        child_panel_2.pos = {0.05f, 0.05f};
+        child_panel_2.size = {0.10f, 0.10f};
+        container.children.push_back(child_panel_2);
+
+        wse::game::UiWidget child_mesh{};
+        child_mesh.kind = wse::game::UiWidgetKind::Image;
+        child_mesh.mesh_name = "clip_quad";
+        child_mesh.pos = {0.35f, 0.35f};
+        child_mesh.size = {0.30f, 0.25f};
+        container.children.push_back(child_mesh);
+
+        root.children.push_back(container);
+
+        wse::game::UiWidget unclipped_after = unclipped;
+        unclipped_after.pos = {0.85f, 0.02f};
+        root.children.push_back(unclipped_after);
+
+        wse::platform::GeometryCaptureRhiDevice geo{};
+        wse::platform::UiRhiRenderer geo_renderer(geo);
+        expect(setup(geo_renderer), "geometry scissor setup succeeds");
+
+        const wse::platform::UiViewportRect vp = wse::platform::compute_ui_viewport(
+            2400U, 1080U, wse::platform::UiAspectMode::Ratio4x3);
+        expect(vp.x == 480U && vp.y == 0U && vp.width == 1440U && vp.height == 1080U,
+               "4:3 viewport inside 2400x1080 is (480, 0, 1440, 1080)");
+        geo.set_viewport(vp.x, vp.y, vp.width, vp.height);
+
+        wse::platform::UiRenderConfig cfg{};
+        cfg.viewport_width = 2400U;
+        cfg.viewport_height = 1080U;
+        std::vector<std::uint8_t> none;
+        expect(geo_renderer.render_tree(root, font, cfg, none),
+               "geometry scissor render at 2400x1080 succeeds");
+
+        const wse::platform::GeometryFrame& f = geo.frame();
+        // Container [0.25, 0.75] x [0.15, 0.60] mapped into (480, 0, 1440, 1080):
+        // x: 480 + 0.25*1440 = 840, w: 0.50*1440 = 720
+        // y (y-up): top = (1 - 0.60/0.75)*1080 = 216, h = (0.45/0.75)*1080 = 648
+        expect(f.batches.size() == 4U,
+               "unclipped and clipped draws stay separate batches; matching clipped draws merge");
+        if (f.batches.size() == 4U) {
+            expect(!f.batches[0].has_clip && !f.batches[3].has_clip,
+                   "unclipped draws have has_clip = false");
+            expect(f.batches[1].index_count == 12U,
+                   "consecutive clipped panels with identical clip/texture/blend merge");
+            for (std::size_t bi = 1U; bi <= 2U; ++bi) {
+                const wse::platform::GeometryBatch& b = f.batches[bi];
+                expect(b.has_clip && b.clip_x == 840U && b.clip_y == 216U && b.clip_w == 720U &&
+                           b.clip_h == 648U,
+                       "clipped batch carries window-pixel clip rect (840, 216, 720, 648)");
+            }
+        }
+    }
+}
+
+void push_u16_le(std::vector<std::uint8_t>& out, std::uint16_t v) {
+    out.push_back(static_cast<std::uint8_t>(v & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((v >> 8U) & 0xFFU));
+}
+
+void push_u32_le(std::vector<std::uint8_t>& out, std::uint32_t v) {
+    out.push_back(static_cast<std::uint8_t>(v & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((v >> 8U) & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((v >> 16U) & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((v >> 24U) & 0xFFU));
+}
+
+void push_i32_le(std::vector<std::uint8_t>& out, std::int32_t v) {
+    push_u32_le(out, static_cast<std::uint32_t>(v));
+}
+
+void patch_u32_le(std::vector<std::uint8_t>& out, std::size_t off, std::uint32_t v) {
+    out[off + 0U] = static_cast<std::uint8_t>(v & 0xFFU);
+    out[off + 1U] = static_cast<std::uint8_t>((v >> 8U) & 0xFFU);
+    out[off + 2U] = static_cast<std::uint8_t>((v >> 16U) & 0xFFU);
+    out[off + 3U] = static_cast<std::uint8_t>((v >> 24U) & 0xFFU);
+}
+
+struct TestBmpSpec {
+    std::int32_t width = 0;
+    std::int32_t height = 0;
+    std::uint16_t bit_count = 24;
+    std::uint32_t compression = 0;
+    std::uint32_t dib_size = 40;
+    std::uint32_t clr_used = 0;
+    std::uint32_t r_mask = 0x00FF0000U;
+    std::uint32_t g_mask = 0x0000FF00U;
+    std::uint32_t b_mask = 0x000000FFU;
+    std::uint32_t a_mask = 0xFF000000U;
+    std::span<const std::uint32_t> palette{};
+    std::span<const std::uint32_t> pixels_top_down{};  // 0xAARRGGBB or palette index
+};
+
+std::vector<std::uint8_t> make_test_bmp(const TestBmpSpec& spec) {
+    std::vector<std::uint8_t> out;
+    out.reserve(256);
+
+    // File header (14 B); bfSize and bfOffBits patched once header + palette are written.
+    out.push_back('B');
+    out.push_back('M');
+    push_u32_le(out, 0U);
+    push_u32_le(out, 0U);
+    push_u32_le(out, 0U);
+
+    // DIB header (40 B minimum, padded with zero bytes if larger e.g. V4 108 B).
+    push_u32_le(out, spec.dib_size);
+    push_i32_le(out, spec.width);
+    push_i32_le(out, spec.height);
+    push_u16_le(out, 1U);
+    push_u16_le(out, spec.bit_count);
+    push_u32_le(out, spec.compression);
+    push_u32_le(out, 0U);
+    push_u32_le(out, 0U);
+    push_u32_le(out, 0U);
+    push_u32_le(out, spec.clr_used);
+    push_u32_le(out, 0U);
+
+    if (spec.dib_size > 40U) {
+        out.resize(14U + spec.dib_size, 0U);
+    }
+    if (spec.compression == 3U) {
+        if (spec.dib_size == 40U) {
+            push_u32_le(out, spec.r_mask);
+            push_u32_le(out, spec.g_mask);
+            push_u32_le(out, spec.b_mask);
+        } else if (spec.dib_size >= 56U) {
+            patch_u32_le(out, 54U, spec.r_mask);
+            patch_u32_le(out, 58U, spec.g_mask);
+            patch_u32_le(out, 62U, spec.b_mask);
+            patch_u32_le(out, 66U, spec.a_mask);
+        }
+    }
+
+    for (const std::uint32_t argb : spec.palette) {
+        out.push_back(static_cast<std::uint8_t>(argb & 0xFFU));
+        out.push_back(static_cast<std::uint8_t>((argb >> 8U) & 0xFFU));
+        out.push_back(static_cast<std::uint8_t>((argb >> 16U) & 0xFFU));
+        out.push_back(0U);
+    }
+
+    const std::uint32_t pixel_offset = static_cast<std::uint32_t>(out.size());
+    patch_u32_le(out, 10U, pixel_offset);
+
+    const std::uint32_t w = spec.width > 0 ? static_cast<std::uint32_t>(spec.width) : 0U;
+    const std::uint32_t h = spec.height < 0 ? static_cast<std::uint32_t>(-spec.height)
+                                            : static_cast<std::uint32_t>(spec.height);
+    const bool top_down = (spec.height < 0);
+    const std::size_t row_stride =
+        ((static_cast<std::size_t>(w) * spec.bit_count + 31U) / 32U) * 4U;
+
+    if (w > 0U && h > 0U && spec.pixels_top_down.size() == static_cast<std::size_t>(w) * h) {
+        for (std::uint32_t sy = 0; sy < h; ++sy) {
+            const std::uint32_t y = top_down ? sy : (h - 1U - sy);
+            const std::size_t row_start = out.size();
+            if (spec.bit_count == 24U) {
+                for (std::uint32_t x = 0; x < w; ++x) {
+                    const std::uint32_t px = spec.pixels_top_down[static_cast<std::size_t>(y) * w + x];
+                    out.push_back(static_cast<std::uint8_t>(px & 0xFFU));
+                    out.push_back(static_cast<std::uint8_t>((px >> 8U) & 0xFFU));
+                    out.push_back(static_cast<std::uint8_t>((px >> 16U) & 0xFFU));
+                }
+            } else if (spec.bit_count == 32U && spec.compression == 0U) {
+                for (std::uint32_t x = 0; x < w; ++x) {
+                    const std::uint32_t px = spec.pixels_top_down[static_cast<std::size_t>(y) * w + x];
+                    out.push_back(static_cast<std::uint8_t>(px & 0xFFU));
+                    out.push_back(static_cast<std::uint8_t>((px >> 8U) & 0xFFU));
+                    out.push_back(static_cast<std::uint8_t>((px >> 16U) & 0xFFU));
+                    out.push_back(static_cast<std::uint8_t>((px >> 24U) & 0xFFU));
+                }
+            } else if (spec.bit_count == 32U && spec.compression == 3U) {
+                const auto pack_channel = [](std::uint32_t val8, std::uint32_t mask) -> std::uint32_t {
+                    if (mask == 0U) {
+                        return 0U;
+                    }
+                    unsigned shift = 0;
+                    while (((mask >> shift) & 1U) == 0U) {
+                        ++shift;
+                    }
+                    return (val8 << shift) & mask;
+                };
+                for (std::uint32_t x = 0; x < w; ++x) {
+                    const std::uint32_t px = spec.pixels_top_down[static_cast<std::size_t>(y) * w + x];
+                    const std::uint32_t r = (px >> 16U) & 0xFFU;
+                    const std::uint32_t g = (px >> 8U) & 0xFFU;
+                    const std::uint32_t b = px & 0xFFU;
+                    const std::uint32_t a = (px >> 24U) & 0xFFU;
+                    const std::uint32_t word = pack_channel(r, spec.r_mask) |
+                                               pack_channel(g, spec.g_mask) |
+                                               pack_channel(b, spec.b_mask) |
+                                               pack_channel(a, spec.a_mask);
+                    push_u32_le(out, word);
+                }
+            } else if (spec.bit_count == 8U) {
+                for (std::uint32_t x = 0; x < w; ++x) {
+                    const std::uint32_t idx = spec.pixels_top_down[static_cast<std::size_t>(y) * w + x];
+                    out.push_back(static_cast<std::uint8_t>(idx & 0xFFU));
+                }
+            } else if (spec.bit_count == 4U) {
+                for (std::uint32_t x = 0; x < w; x += 2U) {
+                    const std::uint8_t hi =
+                        static_cast<std::uint8_t>(spec.pixels_top_down[static_cast<std::size_t>(y) * w + x] & 0x0FU);
+                    const std::uint8_t lo = (x + 1U < w)
+                                                ? static_cast<std::uint8_t>(
+                                                      spec.pixels_top_down[static_cast<std::size_t>(y) * w + x + 1U] &
+                                                      0x0FU)
+                                                : 0x0FU;  // unused odd nibble must be ignored
+                    out.push_back(static_cast<std::uint8_t>((hi << 4U) | lo));
+                }
+            }
+            while (out.size() - row_start < row_stride) {
+                out.push_back(0xAAU);  // explicit non-zero padding byte
+            }
+        }
+    }
+
+    patch_u32_le(out, 2U, static_cast<std::uint32_t>(out.size()));
+    return out;
+}
+
+void test_module_art_bmp_downscale_and_seed() {
+    // 1. 3x2 distinct pixels across 24-bit bottom-up/top-down, 32-bit BI_RGB/BI_BITFIELDS,
+    // 8-bit and 4-bit palettized.
+    const std::array<std::uint32_t, 6> expected_argb{
+        0xFFFF1020U, 0xFF10FF30U, 0xFF2030FFU,
+        0xFFFFFF40U, 0xFF30FFFFU, 0xFFFF50FFU,
+    };
+    const std::array<std::uint32_t, 6> non_opaque_src{
+        0x00FF1020U, 0x4210FF30U, 0x7F2030FFU,
+        0x11FFFF40U, 0x8030FFFFU, 0x00FF50FFU,
+    };
+    const std::array<std::uint32_t, 6> palette_indices{0U, 1U, 2U, 3U, 4U, 5U};
+
+    const auto decode_check = [&](const std::vector<std::uint8_t>& bytes, const char* label) {
+        wse::asset::DecodedBmp decoded{};
+        std::string err;
+        expect(wse::asset::decode_bmp(bytes, decoded, &err) && err.empty() &&
+                   decoded.width == 3U && decoded.height == 2U &&
+                   decoded.argb.size() == expected_argb.size() &&
+                   std::equal(decoded.argb.begin(), decoded.argb.end(), expected_argb.begin()),
+               label);
+    };
+
+    {
+        TestBmpSpec s{};
+        s.width = 3;
+        s.height = 2;
+        s.bit_count = 24;
+        s.pixels_top_down = expected_argb;
+        const std::vector<std::uint8_t> bmp24_bu = make_test_bmp(s);
+        decode_check(bmp24_bu, "24-bit bottom-up 3x2 with row padding decodes top-down");
+
+        s.height = -2;
+        decode_check(make_test_bmp(s), "24-bit top-down 3x2 decodes identically");
+
+        // 2. Truncated pixel data rejected cleanly.
+        std::vector<std::uint8_t> truncated = bmp24_bu;
+        truncated.pop_back();
+        wse::asset::DecodedBmp out{};
+        out.width = 99U;
+        std::string err;
+        expect(!wse::asset::decode_bmp(truncated, out, &err) && out.width == 0U &&
+                   out.argb.empty() && !err.empty(),
+               "truncated 24-bit BMP pixel data is rejected and clears out");
+    }
+
+    {
+        TestBmpSpec s{};
+        s.width = 3;
+        s.height = 2;
+        s.bit_count = 32;
+        s.compression = 0;
+        s.pixels_top_down = non_opaque_src;
+        decode_check(make_test_bmp(s),
+                     "32-bit BI_RGB matches and ignores source alpha");
+
+        s.compression = 3;
+        decode_check(make_test_bmp(s),
+                     "32-bit BI_BITFIELDS (40 B header) matches and ignores alpha");
+
+        s.dib_size = 108;
+        s.r_mask = 0x000000FFU;
+        s.g_mask = 0x0000FF00U;
+        s.b_mask = 0x00FF0000U;
+        s.a_mask = 0xFF000000U;
+        decode_check(make_test_bmp(s),
+                     "32-bit BI_BITFIELDS (V4 108 B header, RGBX masks) matches");
+    }
+
+    {
+        TestBmpSpec s{};
+        s.width = 3;
+        s.height = 2;
+        s.bit_count = 8;
+        s.clr_used = 6;
+        s.palette = expected_argb;
+        s.pixels_top_down = palette_indices;
+        decode_check(make_test_bmp(s), "8-bit palettized 3x2 with row padding matches");
+
+        s.bit_count = 4;
+        decode_check(make_test_bmp(s), "4-bit palettized 3x2 with row padding matches");
+    }
+
+    // 2. Error / rejection paths.
+    {
+        wse::asset::DecodedBmp out{};
+        std::string err;
+        const std::array<std::uint8_t, 10> too_short{'B', 'M', 10, 0, 0, 0, 0, 0, 0, 0};
+        expect(!wse::asset::decode_bmp(too_short, out, &err),
+               "short buffer is rejected without crash");
+
+        TestBmpSpec rle8{};
+        rle8.width = 3;
+        rle8.height = 2;
+        rle8.bit_count = 8;
+        rle8.compression = 1;
+        rle8.clr_used = 6;
+        rle8.palette = expected_argb;
+        rle8.pixels_top_down = palette_indices;
+        expect(!wse::asset::decode_bmp(make_test_bmp(rle8), out, &err),
+               "BI_RLE8 compression is rejected");
+
+        TestBmpSpec rle4 = rle8;
+        rle4.bit_count = 4;
+        rle4.compression = 2;
+        expect(!wse::asset::decode_bmp(make_test_bmp(rle4), out, &err),
+               "BI_RLE4 compression is rejected");
+
+        TestBmpSpec zero_w{};
+        zero_w.width = 0;
+        zero_w.height = 2;
+        zero_w.bit_count = 24;
+        expect(!wse::asset::decode_bmp(make_test_bmp(zero_w), out, &err),
+               "zero-width BMP is rejected");
+
+        TestBmpSpec huge{};
+        huge.width = 9000;
+        huge.height = 1;
+        huge.bit_count = 24;
+        std::vector<std::uint8_t> huge_bytes = make_test_bmp(huge);
+        huge_bytes.resize(14U + 40U + 9000U * 3U, 0U);
+        expect(!wse::asset::decode_bmp(huge_bytes, out, &err),
+               "9000-pixel width BMP is rejected");
+
+        huge.width = 1;
+        huge.height = 9000;
+        huge_bytes = make_test_bmp(huge);
+        huge_bytes.resize(14U + 40U + 4U * 9000U, 0U);
+        expect(!wse::asset::decode_bmp(huge_bytes, out, &err),
+               "9000-pixel height BMP is rejected");
+
+        const std::array<std::uint32_t, 4> small_pal{
+            0xFF102030U, 0xFF405060U, 0xFF708090U, 0xFFA0B0C0U,
+        };
+        const std::array<std::uint32_t, 6> bad_idx{0U, 1U, 4U, 2U, 3U, 0U};
+        TestBmpSpec bad_pal8{};
+        bad_pal8.width = 3;
+        bad_pal8.height = 2;
+        bad_pal8.bit_count = 8;
+        bad_pal8.clr_used = 4;
+        bad_pal8.palette = small_pal;
+        bad_pal8.pixels_top_down = bad_idx;
+        expect(!wse::asset::decode_bmp(make_test_bmp(bad_pal8), out, &err),
+               "8-bit out-of-range palette index is rejected");
+
+        TestBmpSpec bad_pal4 = bad_pal8;
+        bad_pal4.bit_count = 4;
+        expect(!wse::asset::decode_bmp(make_test_bmp(bad_pal4), out, &err),
+               "4-bit out-of-range palette index is rejected");
+    }
+
+    // 3. downscale_to_fit: 1024x512 (left half red, right half blue) -> 256x128, and 10x10 -> 256.
+    {
+        constexpr std::uint32_t kRed = 0xFFFF0000U;
+        constexpr std::uint32_t kBlue = 0xFF0000FFU;
+        constexpr std::uint32_t kAvg = 0xFF800080U;
+        wse::asset::DecodedBmp wide{};
+        wide.width = 1024U;
+        wide.height = 512U;
+        wide.argb.resize(static_cast<std::size_t>(wide.width) * wide.height);
+        for (std::uint32_t y = 0; y < wide.height; ++y) {
+            for (std::uint32_t x = 0; x < wide.width; ++x) {
+                wide.argb[static_cast<std::size_t>(y) * wide.width + x] =
+                    (x < 512U) ? kRed : kBlue;
+            }
+        }
+        const wse::asset::DecodedBmp scaled = wse::asset::downscale_to_fit(wide, 256U);
+        bool valid_halves = (scaled.width == 256U && scaled.height == 128U &&
+                             scaled.argb.size() == 256U * 128U);
+        bool only_valid_colors = valid_halves;
+        for (std::uint32_t y = 0; valid_halves && y < scaled.height; ++y) {
+            for (std::uint32_t x = 0; x < scaled.width; ++x) {
+                const std::uint32_t px = scaled.argb[static_cast<std::size_t>(y) * scaled.width + x];
+                if (px != kRed && px != kBlue && px != kAvg) {
+                    only_valid_colors = false;
+                }
+                if (x < 128U && px != kRed) {
+                    valid_halves = false;
+                } else if (x >= 128U && px != kBlue) {
+                    valid_halves = false;
+                }
+            }
+        }
+        expect(valid_halves && only_valid_colors,
+               "downscale_to_fit 1024x512 -> 256x128 keeps red left and blue right");
+
+        wse::asset::DecodedBmp small{};
+        small.width = 10U;
+        small.height = 10U;
+        small.argb.assign(100U, 0xFF123456U);
+        small.argb[0] = 0xFFABCDEFU;
+        const wse::asset::DecodedBmp unchanged = wse::asset::downscale_to_fit(small, 256U);
+        expect(unchanged.width == 10U && unchanged.height == 10U && unchanged.argb == small.argb,
+               "downscale_to_fit leaves 10x10 unchanged for max_side 256");
+
+        const wse::asset::DecodedBmp zero_max = wse::asset::downscale_to_fit(small, 0U);
+        expect(zero_max.width == 10U && zero_max.height == 10U && zero_max.argb == small.argb,
+               "downscale_to_fit copies when max_side == 0");
+    }
+
+    // 4. seed_color_argb: mostly red-orange + grey -> red-orange bin; all-grey -> neutral slate.
+    {
+        wse::asset::DecodedBmp warm{};
+        warm.width = 8U;
+        warm.height = 8U;
+        warm.argb.assign(64U, 0xFF808080U);
+        for (std::size_t i = 0; i < 48U; ++i) {
+            warm.argb[i] = 0xFFF05010U;  // hue ~ 17.1 deg (bin 1: [10, 20) deg)
+        }
+        warm.argb[48] = 0xFF333333U;
+        warm.argb[49] = 0xFFCCCCCCU;
+        const std::uint32_t seed = wse::asset::seed_color_argb(warm);
+        const double r = static_cast<double>((seed >> 16U) & 0xFFU) / 255.0;
+        const double g = static_cast<double>((seed >> 8U) & 0xFFU) / 255.0;
+        const double b = static_cast<double>(seed & 0xFFU) / 255.0;
+        const double mx = std::max({r, g, b});
+        const double mn = std::min({r, g, b});
+        const double d = mx - mn;
+        double hue = 0.0;
+        if (d > 0.0 && mx == r) {
+            hue = ((g - b) / d) * 60.0;
+            if (hue < 0.0) {
+                hue += 360.0;
+            }
+        }
+        expect((seed >> 24U) == 0xFFU && d > 0.0 && mx == r && hue >= 10.0 && hue < 20.0,
+               "seed_color_argb selects red-orange hue bin over grey");
+
+        wse::asset::DecodedBmp grey{};
+        grey.width = 4U;
+        grey.height = 4U;
+        grey.argb = {
+            0xFF000000U, 0xFF202020U, 0xFF404040U, 0xFF606060U,
+            0xFF808080U, 0xFFA0A0A0U, 0xFFC0C0C0U, 0xFFFFFFFFU,
+            0xFF101010U, 0xFF303030U, 0xFF505050U, 0xFF707070U,
+            0xFF909090U, 0xFFB0B0B0U, 0xFFD0D0D0U, 0xFFE0E0E0U,
+        };
+        expect(wse::asset::seed_color_argb(grey) == 0xFF5B6B8CU,
+               "seed_color_argb returns 0xFF5B6B8C neutral slate on all-grey image");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -2562,6 +3840,11 @@ int run_ui_suite(const char* fixture_path) {
     test_batch_menu_remeasure_and_ui_buffers();
     test_geometry_capture_matches_software();
     test_texture_budget();
+    test_module_art_bmp_downscale_and_seed();
+    test_touch_drag_scroll_and_first_tap();
+    test_ui_scissor_clipping();
+    test_geometry_batch_filter();
+    test_ui_text_scale();
 
     if (g_failures == 0) {
         std::printf("ui tests: PASS\n");

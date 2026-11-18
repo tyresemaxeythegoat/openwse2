@@ -303,6 +303,8 @@ struct UiGameShellOptions {
     std::uint32_t max_texture_size = 0U;
     // UI canvas aspect ratio in the window (P11.1, from `config/performance.json` `ui_aspect`).
     UiAspectMode ui_aspect = UiAspectMode::Ratio4x3;
+    // UI text scale multiplier (P11.2, from `config/performance.json` `ui_scale`).
+    float ui_text_scale = 1.0f;
 
     UiGameShellOptions() { run.fail_on_unimplemented = false; }
 };
@@ -494,6 +496,11 @@ public:
     [[nodiscard]] bool running() const noexcept {
         return !is_loading() && runner_ != nullptr && runner_->running();
     }
+    // True when a text or number box overlay holds keyboard focus and the shell is running.
+    [[nodiscard]] bool text_input_wanted() const noexcept {
+        return running() && ctx_ != nullptr && ui_ != nullptr &&
+               ui_->has_focused_text_input(ctx_->world);
+    }
     // Files the last failed `start` could not find (`find_missing_warband_files`); empty when
     // `start` succeeded or failed for another reason.
     [[nodiscard]] const std::vector<std::string>& missing_files() const noexcept {
@@ -574,6 +581,7 @@ private:
         viewport_ = UiViewportRect{};
         last_tree_hash_ = 0U;
         last_overlay_hash_ = 0U;
+        last_text_scale_ = 1.0f;
         frames_reused_ = 0U;
         ++frame_serial_;  // a host holding the old frame re-checks it
         in_game_ = false;
@@ -837,12 +845,16 @@ private:
         UiRenderConfig cfg = options_.render;
         cfg.viewport_width = w;
         cfg.viewport_height = h;
+        cfg.text_scale = options_.ui_text_scale;
+        const float eff_text_scale = rhi_ui_detail::clamp_ui_text_scale(cfg.text_scale);
         // Menus and most presentations sit still for many frames: keep the last frame when the
-        // tree, the overlay state, the frame size and the viewport are unchanged.
+        // tree, the overlay state, the frame size, the viewport and the text scale are
+        // unchanged.
         const std::uint64_t tree_hash = UiTreeHasher::hash(ui_->root);
         const std::uint64_t overlay_hash = compute_overlay_hash();
         if (has_frame_ && tree_hash == last_tree_hash_ && overlay_hash == last_overlay_hash_ &&
-            w == width_ && h == height_ && vp == viewport_) {
+            w == width_ && h == height_ && vp == viewport_ &&
+            eff_text_scale == last_text_scale_) {
             ++frames_reused_;
             return;
         }
@@ -870,6 +882,7 @@ private:
             viewport_ = vp;
             last_tree_hash_ = tree_hash;
             last_overlay_hash_ = overlay_hash;
+            last_text_scale_ = eff_text_scale;
             has_frame_ = true;
             ++frame_serial_;
         }
@@ -898,6 +911,7 @@ private:
     UiViewportRect viewport_{};
     std::uint64_t last_tree_hash_ = 0U;
     std::uint64_t last_overlay_hash_ = 0U;
+    float last_text_scale_ = 1.0f;
     std::uint64_t frame_serial_ = 0U;
     std::uint64_t frames_reused_ = 0U;
     std::vector<std::string> missing_files_{};

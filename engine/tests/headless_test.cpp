@@ -898,6 +898,130 @@ void test_ui_game_shell() {
            "module frames run after the new game starts");
 }
 
+// P11.6: `UiGameShell::text_input_wanted` flips true when a text or number box gains focus
+// and false when it loses it (Enter, Escape, outside tap, presentation close, or shell stop).
+void test_text_input_wanted() {
+    constexpr std::uint32_t kStartPresentation = 900U;
+    constexpr std::uint32_t kCreateTextBoxOverlay = 917U;
+    constexpr std::uint32_t kOverlaySetPosition = 926U;
+    constexpr std::uint32_t kCreateNumberBoxOverlay = 942U;
+    constexpr std::uint32_t kOverlayObtainFocus = 949U;
+
+    wse::platform::MemoryVfs vfs;
+    std::ostringstream scripts;
+    scripts << "scriptsfile version 1\n1\n"
+            << "game_start -1\n1\n"
+            << kStartPresentation << " 1 0\n";
+    seed_minimal_module(vfs, "Modules/TextInputMod", scripts.str());
+
+    std::ostringstream prsnt;
+    prsnt << "presentationsfile version 1\n 1\n"
+          << "prsnt_text_input 0 0 1\n"
+          << "-60.000000  11 "
+          << wse::vm::core_op::kSetFixedPointMultiplier << " 1 1000 "
+          << kCreateTextBoxOverlay << " 1 " << op_reg(0U) << " "
+          << wse::vm::core_op::kInitPosition << " 1 1 "
+          << wse::vm::core_op::kPositionSetX << " 2 1 200 "
+          << wse::vm::core_op::kPositionSetY << " 2 1 200 "
+          << kOverlaySetPosition << " 2 " << op_reg(0U) << " 1 "
+          << kCreateNumberBoxOverlay << " 3 " << op_reg(1U) << " 0 100 "
+          << wse::vm::core_op::kInitPosition << " 1 1 "
+          << wse::vm::core_op::kPositionSetX << " 2 1 200 "
+          << wse::vm::core_op::kPositionSetY << " 2 1 400 "
+          << kOverlaySetPosition << " 2 " << op_reg(1U) << " 1\n";
+    expect(vfs.write_text("Modules/TextInputMod/presentations.txt", prsnt.str()),
+           "write presentations.txt for text_input_wanted test");
+    expect(vfs.write_text(
+               "Data/font_data.xml",
+               "<FontData width=\"64\" height=\"64\" padding=\"0\" font_size=\"32\" "
+               "font_scale=\"100\" line_spacing=\"100\"><FontDetails>"
+               "<character code=\"65\" u=\"0\" v=\"0\" w=\"16\" h=\"16\" postshift=\"16\"/>"
+               "</FontDetails></FontData>\n"),
+           "write synthetic font_data.xml for text_input_wanted test");
+
+    wse::platform::UiGameShellOptions opts{};
+    opts.run.module_dir = "Modules/TextInputMod";
+    opts.run.load_options.require_core_files = false;
+    opts.check_install = false;
+    opts.start_at_initial_window = false;
+    opts.output = wse::platform::UiGameShellOptions::Output::geometry;
+
+    wse::platform::UiGameShell shell;
+    expect(!shell.text_input_wanted(), "stopped shell never wants text input");
+    std::string err;
+    expect(shell.start(vfs, opts, &err) && shell.running(), "start text-input shell");
+    expect(!shell.text_input_wanted(), "text_input_wanted starts false before presentation opens");
+
+    expect(shell.frame(1.0f / 60.0f, 800U, 600U) &&
+               shell.vm()->world.m5.active_window == wse::game::kScreenWindowPresentation,
+           "first shell frame opens the presentation");
+    expect(!shell.text_input_wanted(), "text_input_wanted is false with no focused text box");
+
+    const auto touch_tap = [&](float ui_x, float ui_y, std::int64_t fid) {
+        wse::platform::RawInputEvent e{};
+        e.finger_id = fid;
+        e.x = ui_x / wse::game::kUiScreenWidth;
+        e.y = 1.0f - ui_y / wse::game::kUiScreenHeight;
+        e.type = wse::platform::RawInputEvent::Type::TouchDown;
+        shell.feed(e);
+        e.type = wse::platform::RawInputEvent::Type::TouchUp;
+        shell.feed(e);
+    };
+
+    // Tap inside text box [0.20, 0.45] x [0.20, 0.24].
+    touch_tap(0.30f, 0.22f, 1);
+    expect(shell.frame(1.0f / 60.0f, 800U, 600U) && shell.text_input_wanted(),
+           "text_input_wanted flips true when a text box gains focus");
+
+    // Enter commits and loses focus -> flips false.
+    {
+        wse::platform::RawInputEvent enter{};
+        enter.type = wse::platform::RawInputEvent::Type::KeyDown;
+        enter.raw_key = wse::platform::RawKey::kEnter;
+        shell.feed(enter);
+    }
+    expect(shell.frame(1.0f / 60.0f, 800U, 600U) && !shell.text_input_wanted(),
+           "text_input_wanted flips false when Enter commits and unfocuses the text box");
+
+    // Tap text box again -> true; tap outside -> false.
+    touch_tap(0.30f, 0.22f, 2);
+    expect(shell.frame(1.0f / 60.0f, 800U, 600U) && shell.text_input_wanted(),
+           "text_input_wanted flips true again on second focus");
+    touch_tap(0.80f, 0.60f, 3);
+    expect(shell.frame(1.0f / 60.0f, 800U, 600U) && !shell.text_input_wanted(),
+           "text_input_wanted flips false when tapping outside the text box");
+
+    // Tap center of number box [0.20, 0.32] x [0.40, 0.44] -> true; Escape -> false.
+    touch_tap(0.26f, 0.42f, 4);
+    expect(shell.frame(1.0f / 60.0f, 800U, 600U) && shell.text_input_wanted(),
+           "text_input_wanted flips true when a number box gains focus");
+    {
+        wse::platform::RawInputEvent esc{};
+        esc.type = wse::platform::RawInputEvent::Type::KeyDown;
+        esc.raw_key = wse::platform::RawKey::kEscape;
+        shell.feed(esc);
+    }
+    expect(shell.frame(1.0f / 60.0f, 800U, 600U) && !shell.text_input_wanted(),
+           "text_input_wanted flips false when Escape loses focus on a number box");
+
+    // Scripted overlay_obtain_focus -> true; closing presentation or stopping shell -> false.
+    wse::vm::Statement obtain_stmt{};
+    obtain_stmt.opcode = kOverlayObtainFocus;
+    obtain_stmt.numOperands = 1;
+    obtain_stmt.operands[0] = 0;
+    wse::vm::StatementBlock obtain_blk{};
+    obtain_blk.statements.push_back(obtain_stmt);
+    expect(wse::vm::execute_statement_block(obtain_blk, *shell.vm()) && shell.text_input_wanted(),
+           "text_input_wanted flips true on scripted overlay_obtain_focus");
+    shell.session()->close_active_modal_window(shell.vm()->world);
+    expect(!shell.text_input_wanted(),
+           "text_input_wanted flips false when the presentation closes");
+
+    touch_tap(0.30f, 0.22f, 5);
+    shell.stop();
+    expect(!shell.text_input_wanted(), "text_input_wanted is false after shell stop");
+}
+
 } // namespace
 
 namespace wse::selftest {
@@ -919,6 +1043,7 @@ int run_headless_suite(const char* fixture_path) {
     test_list_warband_languages();
     test_ui_game_shell_start_async();
     test_ui_aspect_modes();
+    test_text_input_wanted();
 
     if (failures == 0) {
         std::printf("headless tests: PASS\n");

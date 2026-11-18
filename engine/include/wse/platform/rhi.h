@@ -431,7 +431,194 @@ struct MeshDrawCall {
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f,
     };
+    // Optional scissor clip rectangle in the UI render's virtual coordinates (`UiRenderConfig::virtual_*`,
+    // +x right, +y up like the UI projection).
+    bool has_clip = false;
+    float clip_x0 = 0.0f;
+    float clip_y0 = 0.0f;
+    float clip_x1 = 0.0f;
+    float clip_y1 = 0.0f;
 };
+
+namespace rhi_detail {
+
+// Half-open framebuffer-pixel scissor rectangle `[x0, x1) x [y0, y1)` (+y down).
+struct ScissorRect {
+    std::int64_t x0 = 0;
+    std::int64_t y0 = 0;
+    std::int64_t x1 = 0;
+    std::int64_t y1 = 0;
+};
+
+[[nodiscard]] inline bool invert_mat4_f64(const float src[16], double out[16]) noexcept {
+    double m[16];
+    for (int i = 0; i < 16; ++i) {
+        if (!std::isfinite(src[i])) {
+            return false;
+        }
+        m[i] = static_cast<double>(src[i]);
+    }
+    double inv[16];
+    inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] +
+             m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
+    inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] -
+             m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
+    inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] +
+             m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
+    inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] -
+              m[8] * m[6] * m[13] - m[12] * m[5] * m[10] + m[12] * m[6] * m[9];
+
+    inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] -
+             m[9] * m[3] * m[14] - m[13] * m[2] * m[11] + m[13] * m[3] * m[10];
+    inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] +
+             m[8] * m[3] * m[14] + m[12] * m[2] * m[11] - m[12] * m[3] * m[10];
+    inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] -
+             m[8] * m[3] * m[13] - m[12] * m[1] * m[11] + m[12] * m[3] * m[9];
+    inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] +
+              m[8] * m[2] * m[13] + m[12] * m[1] * m[10] - m[12] * m[2] * m[9];
+
+    inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] +
+             m[5] * m[3] * m[14] + m[13] * m[2] * m[7] - m[13] * m[3] * m[6];
+    inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] -
+             m[4] * m[3] * m[14] - m[12] * m[2] * m[7] + m[12] * m[3] * m[6];
+    inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] +
+              m[4] * m[3] * m[13] + m[12] * m[1] * m[7] - m[12] * m[3] * m[5];
+    inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] -
+              m[4] * m[2] * m[13] - m[12] * m[1] * m[6] + m[12] * m[2] * m[5];
+
+    inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] -
+             m[5] * m[3] * m[10] - m[9] * m[2] * m[7] + m[9] * m[3] * m[6];
+    inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] +
+             m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
+    inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] -
+              m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
+    inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] +
+              m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
+
+    const double det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+    if (!(std::fabs(det) > 1.0e-18) || !std::isfinite(det)) {
+        return false;
+    }
+    const double inv_det = 1.0 / det;
+    for (int i = 0; i < 16; ++i) {
+        out[i] = inv[i] * inv_det;
+    }
+    return true;
+}
+
+// Projects `draw`'s UI-virtual clip rectangle through `P = draw.mvp * inv(draw.model)` into
+// framebuffer pixels `[x0, x1) x [y0, y1)` within `(vp_x, vp_y, vp_w, vp_h)` and `fb_w x fb_h`.
+[[nodiscard]] inline ScissorRect compute_draw_scissor(const MeshDrawCall& draw,
+                                                      float vp_x,
+                                                      float vp_y,
+                                                      float vp_w,
+                                                      float vp_h,
+                                                      std::uint32_t fb_w,
+                                                      std::uint32_t fb_h) noexcept {
+    if (!draw.has_clip) {
+        return ScissorRect{0, 0, static_cast<std::int64_t>(fb_w),
+                           static_cast<std::int64_t>(fb_h)};
+    }
+    if (vp_w <= 0.0f || vp_h <= 0.0f || fb_w == 0U || fb_h == 0U ||
+        !std::isfinite(draw.clip_x0) || !std::isfinite(draw.clip_y0) ||
+        !std::isfinite(draw.clip_x1) || !std::isfinite(draw.clip_y1) ||
+        !(draw.clip_x1 > draw.clip_x0) || !(draw.clip_y1 > draw.clip_y0)) {
+        return ScissorRect{};
+    }
+
+    bool model_identity = true;
+    for (int col = 0; col < 4 && model_identity; ++col) {
+        for (int row = 0; row < 4; ++row) {
+            const float expected = (col == row) ? 1.0f : 0.0f;
+            if (draw.model[col * 4 + row] != expected) {
+                model_identity = false;
+                break;
+            }
+        }
+    }
+
+    double proj[16]{};
+    if (model_identity) {
+        for (int i = 0; i < 16; ++i) {
+            if (!std::isfinite(draw.mvp[i])) {
+                return ScissorRect{};
+            }
+            proj[i] = static_cast<double>(draw.mvp[i]);
+        }
+    } else {
+        double inv_model[16]{};
+        if (!invert_mat4_f64(draw.model, inv_model)) {
+            return ScissorRect{};
+        }
+        for (int col = 0; col < 4; ++col) {
+            for (int row = 0; row < 4; ++row) {
+                double sum = 0.0;
+                for (int k = 0; k < 4; ++k) {
+                    sum += static_cast<double>(draw.mvp[k * 4 + row]) *
+                           inv_model[col * 4 + k];
+                }
+                if (!std::isfinite(sum)) {
+                    return ScissorRect{};
+                }
+                proj[col * 4 + row] = sum;
+            }
+        }
+    }
+
+    const double x0 = static_cast<double>(draw.clip_x0);
+    const double y0 = static_cast<double>(draw.clip_y0);
+    const double x1 = static_cast<double>(draw.clip_x1);
+    const double y1 = static_cast<double>(draw.clip_y1);
+    const double cx0 = proj[0] * x0 + proj[4] * y0 + proj[12];
+    const double cy0 = proj[1] * x0 + proj[5] * y0 + proj[13];
+    const double cw0 = proj[3] * x0 + proj[7] * y0 + proj[15];
+    const double cx1 = proj[0] * x1 + proj[4] * y1 + proj[12];
+    const double cy1 = proj[1] * x1 + proj[5] * y1 + proj[13];
+    const double cw1 = proj[3] * x1 + proj[7] * y1 + proj[15];
+    if (!(cw0 > 1.0e-6) || !(cw1 > 1.0e-6) || !std::isfinite(cx0) || !std::isfinite(cy0) ||
+        !std::isfinite(cx1) || !std::isfinite(cy1)) {
+        return ScissorRect{};
+    }
+
+    const double px0 =
+        static_cast<double>(vp_x) + ((cx0 / cw0) * 0.5 + 0.5) * static_cast<double>(vp_w);
+    const double py0 =
+        static_cast<double>(vp_y) + ((cy0 / cw0) * 0.5 + 0.5) * static_cast<double>(vp_h);
+    const double px1 =
+        static_cast<double>(vp_x) + ((cx1 / cw1) * 0.5 + 0.5) * static_cast<double>(vp_w);
+    const double py1 =
+        static_cast<double>(vp_y) + ((cy1 / cw1) * 0.5 + 0.5) * static_cast<double>(vp_h);
+
+    const double min_bx = std::max(0.0, static_cast<double>(vp_x));
+    const double max_bx =
+        std::min(static_cast<double>(fb_w), static_cast<double>(vp_x) + static_cast<double>(vp_w));
+    const double min_by = std::max(0.0, static_cast<double>(vp_y));
+    const double max_by =
+        std::min(static_cast<double>(fb_h), static_cast<double>(vp_y) + static_cast<double>(vp_h));
+    if (!(max_bx > min_bx) || !(max_by > min_by)) {
+        return ScissorRect{};
+    }
+
+    const double fx0 = std::clamp(std::min(px0, px1), min_bx, max_bx);
+    const double fx1 = std::clamp(std::max(px0, px1), min_bx, max_bx);
+    const double fy0 = std::clamp(std::min(py0, py1), min_by, max_by);
+    const double fy1 = std::clamp(std::max(py0, py1), min_by, max_by);
+
+    const auto ix0 = std::clamp<std::int64_t>(static_cast<std::int64_t>(std::ceil(fx0 - 0.5)), 0,
+                                              static_cast<std::int64_t>(fb_w));
+    const auto ix1 = std::clamp<std::int64_t>(static_cast<std::int64_t>(std::ceil(fx1 - 0.5)), 0,
+                                              static_cast<std::int64_t>(fb_w));
+    const auto iy0 = std::clamp<std::int64_t>(static_cast<std::int64_t>(std::ceil(fy0 - 0.5)), 0,
+                                              static_cast<std::int64_t>(fb_h));
+    const auto iy1 = std::clamp<std::int64_t>(static_cast<std::int64_t>(std::ceil(fy1 - 0.5)), 0,
+                                              static_cast<std::int64_t>(fb_h));
+    if (ix1 <= ix0 || iy1 <= iy0) {
+        return ScissorRect{};
+    }
+    return ScissorRect{ix0, iy0, ix1, iy1};
+}
+
+}  // namespace rhi_detail
 
 class RhiDevice {
 public:
@@ -739,6 +926,16 @@ public:
             }
 
             const std::uint32_t idx_end = draw.first_index + draw.index_count;
+            const rhi_detail::ScissorRect scissor =
+                draw.has_clip
+                    ? rhi_detail::compute_draw_scissor(
+                          draw, 0.0f, 0.0f, static_cast<float>(pass.width),
+                          static_cast<float>(pass.height), pass.width, pass.height)
+                    : rhi_detail::ScissorRect{0, 0, static_cast<std::int64_t>(pass.width),
+                                              static_cast<std::int64_t>(pass.height)};
+            if (scissor.x0 >= scissor.x1 || scissor.y0 >= scissor.y1) {
+                continue;
+            }
             for (std::uint32_t idx = draw.first_index; idx + 2U < idx_end; idx += 3U) {
                 std::uint16_t tri[3]{};
                 std::memcpy(tri, ib.data() + static_cast<std::size_t>(idx) * 2U, sizeof(tri));
@@ -761,7 +958,7 @@ public:
                     std::memcpy(&v2, vb.data() + tri[2] * sizeof(MeshVertex), sizeof(MeshVertex));
                     frame = triangle_uv_frame(v0, v1, v2, draw.model);
                 }
-                clip_and_rasterize(pass, pip, a, b, c, frame, tex, normal_tex, spec_tex,
+                clip_and_rasterize(pass, pip, scissor, a, b, c, frame, tex, normal_tex, spec_tex,
                                    out_rgba8, depth_scratch_);
             }
         }
@@ -1031,6 +1228,7 @@ private:
     // crossing the near plane are cut instead of dropped.
     static void clip_and_rasterize(const RenderPassDesc& pass,
                                    const PipelineDesc& pip,
+                                   const rhi_detail::ScissorRect& scissor,
                                    const ClipVert& a,
                                    const ClipVert& b,
                                    const ClipVert& c,
@@ -1078,7 +1276,7 @@ private:
                                   pip.compensate_d3d9_half_pixel);
         }
         for (std::size_t i = 1; i + 1U < count; ++i) {
-            rasterize_triangle(pass, pip, screen[0], screen[i], screen[i + 1U], frame, tex,
+            rasterize_triangle(pass, pip, scissor, screen[0], screen[i], screen[i + 1U], frame, tex,
                                normal_tex, spec_tex, color_buf, depth_buf);
         }
     }
@@ -1115,6 +1313,7 @@ private:
 
     static void rasterize_triangle(const RenderPassDesc& pass,
                                    const PipelineDesc& pip,
+                                   const rhi_detail::ScissorRect& scissor,
                                    const ScreenVert& s0,
                                    ScreenVert s1,
                                    ScreenVert s2,
@@ -1166,12 +1365,14 @@ private:
         const std::int64_t max_fx = std::max({s0.fx, s1.fx, s2.fx});
         const std::int64_t min_fy = std::min({s0.fy, s1.fy, s2.fy});
         const std::int64_t max_fy = std::max({s0.fy, s1.fy, s2.fy});
-        const std::int64_t x_begin = std::max<std::int64_t>(0, floor_div(min_fx - half + kSubpixel - 1, kSubpixel));
-        const std::int64_t x_end = std::min<std::int64_t>(static_cast<std::int64_t>(pass.width) - 1,
-                                                          floor_div(max_fx - half, kSubpixel));
-        const std::int64_t y_begin = std::max<std::int64_t>(0, floor_div(min_fy - half + kSubpixel - 1, kSubpixel));
-        const std::int64_t y_end = std::min<std::int64_t>(static_cast<std::int64_t>(pass.height) - 1,
-                                                          floor_div(max_fy - half, kSubpixel));
+        const std::int64_t x_begin =
+            std::max<std::int64_t>(scissor.x0, floor_div(min_fx - half + kSubpixel - 1, kSubpixel));
+        const std::int64_t x_end =
+            std::min<std::int64_t>(scissor.x1 - 1, floor_div(max_fx - half, kSubpixel));
+        const std::int64_t y_begin =
+            std::max<std::int64_t>(scissor.y0, floor_div(min_fy - half + kSubpixel - 1, kSubpixel));
+        const std::int64_t y_end =
+            std::min<std::int64_t>(scissor.y1 - 1, floor_div(max_fy - half, kSubpixel));
         if (x_begin > x_end || y_begin > y_end) {
             return;
         }

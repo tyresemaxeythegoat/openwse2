@@ -17,6 +17,7 @@ import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
 import android.provider.DocumentsContract
+import android.util.LruCache
 import android.view.Display
 import androidx.lifecycle.AndroidViewModel
 import kotlinx.coroutines.channels.Channel
@@ -28,6 +29,10 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import org.json.JSONObject
 import org.wse2.android.WseSafBridge
 import org.wse2.android.WseVulkanProbeService
+import org.wse2.android.launcher.art.CARD_ART_MAX_SIDE
+import org.wse2.android.launcher.art.HERO_ART_MAX_SIDE
+import org.wse2.android.launcher.art.ModuleArt
+import org.wse2.android.launcher.art.decodeModuleArtIntArray
 import org.wse2.android.launcher.theme.DefaultSeedColorArgb
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -39,82 +44,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipInputStream
 
-data class InstallFolderState(
-    val treeUri: Uri? = null,
-    val displayName: String? = null
-)
-
-data class ScanState(
-    val inProgress: Boolean = false,
-    val generation: Long = 0L,
-    val folderLabel: String? = null,
-    val indexStatsText: String = "SafVfs index: idle"
-)
-
-data class ModulesUiState(
-    val modules: List<ModuleChoice> = emptyList(),
-    val selectedIndex: Int = -1,
-    val installStatuses: Map<String, ModuleInstallStatus> = emptyMap(),
-    val emptyMessage: String = "Select a Warband folder to discover modules."
-) {
-    val selectedModule: ModuleChoice?
-        get() = modules.getOrNull(selectedIndex)
-
-    val selectedInstallStatus: ModuleInstallStatus?
-        get() = selectedModule?.let { installStatuses[it.modulePath] }
-}
-
-data class SettingsUiState(
-    val performance: PerformanceUiState? = null,
-    val isLoaded: Boolean = false,
-    val languageOptions: List<String> = listOf("en"),
-    val frameRateValues: List<Int> = listOf(30, 60, 90, 120, 0),
-    val frameRateLabels: List<String> = listOf(
-        "30 Hz (battery saver)",
-        "60 Hz",
-        "90 Hz",
-        "120 Hz",
-        "Uncapped"
-    ),
-    val presentModeKeys: List<String> = LauncherViewModel.PRESENT_MODE_KEYS,
-    val presentModeLabels: List<String> = LauncherViewModel.PRESENT_MODE_LABELS,
-    val hasPhoneGyro: Boolean = false
-)
-
-data class DriverUiState(
-    val options: List<String> = LauncherViewModel.DRIVER_OPTIONS,
-    val modeKeys: List<String> = LauncherViewModel.DRIVER_MODE_KEYS,
-    val selectedIndex: Int = 0,
-    val statusText: String = "Uses the device's built-in Vulkan driver.",
-    val allowMockFallback: Boolean = false,
-    val isProbeInProgress: Boolean = false
-) {
-    val selectedModeKey: String
-        get() = modeKeys[selectedIndex.coerceIn(0, modeKeys.lastIndex)]
-}
-
-sealed interface LauncherEvent {
-    data class ShowScanError(val reason: String) : LauncherEvent
-
-    data class ShowMissingFiles(
-        val module: ModuleChoice,
-        val missingFiles: List<String>
-    ) : LauncherEvent
-
-    data class ShowWarbandFilesNotFound(val reason: String) : LauncherEvent
-
-    data class ShowToast(val message: String) : LauncherEvent
-
-    data class LaunchGame(
-        val runModule: Boolean,
-        val treeUri: String,
-        val moduleName: String,
-        val gpuDriver: String,
-        val showFpsOverlay: Boolean
-    ) : LauncherEvent
-}
-
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
+
+    private data class ArtCacheKey(
+        val treeUri: String,
+        val moduleDir: String,
+        val maxSide: Int
+    )
 
     private data class ScanSnapshot(
         val treeUri: Uri?,
@@ -138,6 +74,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private var settingsNeedsRefresh = false
     private var lastCommittedSettings: PerformanceUiState? = null
     private var preScanSnapshot: ScanSnapshot? = null
+    private val artCache = LruCache<ArtCacheKey, ModuleArt>(ART_CACHE_MAX_ENTRIES)
+    private val inFlightArtKeys = HashSet<ArtCacheKey>()
 
     private val _selectedTab = MutableStateFlow(LauncherTab.HOME)
     val selectedTab: StateFlow<LauncherTab> = _selectedTab.asStateFlow()
@@ -168,6 +106,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private val _seedColorArgb = MutableStateFlow(DefaultSeedColorArgb)
     val seedColorArgb: StateFlow<Int> = _seedColorArgb.asStateFlow()
+
+    private val _moduleArt = MutableStateFlow<Map<String, ModuleArt>>(emptyMap())
+    val moduleArt: StateFlow<Map<String, ModuleArt>> = _moduleArt.asStateFlow()
+
+    private val _heroArt = MutableStateFlow<ModuleArt?>(null)
+    val heroArt: StateFlow<ModuleArt?> = _heroArt.asStateFlow()
 
     private val _events = Channel<LauncherEvent>(Channel.UNLIMITED)
     val events: Flow<LauncherEvent> = _events.receiveAsFlow()
@@ -299,23 +243,41 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
         val uri = _installFolder.value.treeUri
         val currentModules = _modulesState.value
-        if (uri != null && currentModules.modules.any {
-                currentModules.installStatuses[it.modulePath]?.state == InstallCheckState.CHECKING
+        if (uri != null) {
+            if (currentModules.modules.any {
+                    currentModules.installStatuses[it.modulePath]?.state == InstallCheckState.CHECKING
+                }
+            ) {
+                startPendingInstallChecks(uri, restoredGen)
             }
-        ) {
-            startPendingInstallChecks(uri, restoredGen)
+            scheduleArtLoads(uri, restoredGen, currentModules.modules, currentModules.selectedIndex)
+        } else {
+            _moduleArt.value = emptyMap()
+            _heroArt.value = null
+            setSeedColor(DefaultSeedColorArgb)
         }
     }
 
     fun selectModule(position: Int) {
         val current = _modulesState.value
+        val uri = _installFolder.value.treeUri
+        val gen = _scanState.value.generation
         if (position !in current.modules.indices) {
             _modulesState.value = current.copy(selectedIndex = -1)
+            if (uri != null) {
+                scheduleHeroFallback(uri, gen)
+            } else {
+                _heroArt.value = null
+                setSeedColor(DefaultSeedColorArgb)
+            }
             return
         }
         val mod = current.modules[position]
         prefs().edit().putString(KEY_SELECTED_MODULE, mod.folderName).apply()
         _modulesState.value = current.copy(selectedIndex = position)
+        if (uri != null) {
+            selectHeroArtForModule(uri, gen, mod.modulePath)
+        }
     }
 
     fun showMissingFiles(module: ModuleChoice, missingFiles: List<String>) {
@@ -1005,6 +967,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
 
         val savedModule = prefs().getString(KEY_SELECTED_MODULE, null)
+        evictArtForTree(uri)
         if (parsedModules.isNotEmpty()) {
             val savedIdx = if (!savedModule.isNullOrBlank()) {
                 parsedModules.indexOfFirst { it.folderName.equals(savedModule, ignoreCase = true) }
@@ -1027,6 +990,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             )
             _statusLog.value = "Found ${parsedModules.size} module(s) in $indexMs ms."
             startPendingInstallChecks(uri, gen)
+            scheduleArtLoads(uri, gen, parsedModules, idx)
         } else {
             _modulesState.value = ModulesUiState(
                 modules = emptyList(),
@@ -1035,6 +999,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 emptyMessage = "No Modules/*/module.ini folders found in selected tree."
             )
             _statusLog.value = "Indexed $fileCount file(s), 0 Warband modules."
+            scheduleArtLoads(uri, gen, emptyList(), -1)
         }
     }
 
@@ -1055,8 +1020,131 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             installStatuses = emptyMap(),
             emptyMessage = "No modules available."
         )
+        _moduleArt.value = emptyMap()
+        _heroArt.value = null
+        setSeedColor(DefaultSeedColorArgb)
         _statusLog.value = "ERROR: $reason"
         _events.trySend(LauncherEvent.ShowScanError(reason))
+    }
+
+    private fun evictArtForTree(uri: Uri) {
+        val prefix = uri.toString()
+        for (key in artCache.snapshot().keys) {
+            if (key.treeUri == prefix) {
+                artCache.remove(key)
+            }
+        }
+        inFlightArtKeys.removeAll { it.treeUri == prefix }
+    }
+
+    private fun scheduleArtLoads(
+        uri: Uri,
+        gen: Long,
+        modules: List<ModuleChoice>,
+        selectedIndex: Int
+    ) {
+        _moduleArt.value = emptyMap()
+        val selectedMod = modules.getOrNull(selectedIndex)
+        if (selectedMod != null) {
+            selectHeroArtForModule(uri, gen, selectedMod.modulePath)
+            loadModuleArtIfNeeded(uri, gen, "", HERO_ART_MAX_SIDE)
+            for (mod in modules) {
+                if (mod.modulePath != selectedMod.modulePath) {
+                    loadModuleArtIfNeeded(uri, gen, mod.modulePath, CARD_ART_MAX_SIDE)
+                }
+            }
+        } else {
+            scheduleHeroFallback(uri, gen)
+        }
+    }
+
+    private fun scheduleHeroFallback(uri: Uri, gen: Long) {
+        val cachedRoot = artCache.get(ArtCacheKey(uri.toString(), "", HERO_ART_MAX_SIDE))
+        if (cachedRoot != null) {
+            _heroArt.value = cachedRoot
+            _moduleArt.value = _moduleArt.value + ("" to cachedRoot)
+            setSeedColor(cachedRoot.seedArgb)
+        } else {
+            _heroArt.value = null
+            setSeedColor(DefaultSeedColorArgb)
+            loadModuleArtIfNeeded(uri, gen, "", HERO_ART_MAX_SIDE)
+        }
+    }
+
+    private fun selectHeroArtForModule(uri: Uri, gen: Long, moduleDir: String) {
+        val uriStr = uri.toString()
+        val cachedHero = artCache.get(ArtCacheKey(uriStr, moduleDir, HERO_ART_MAX_SIDE))
+        if (cachedHero != null) {
+            _heroArt.value = cachedHero
+            _moduleArt.value = _moduleArt.value + (moduleDir to cachedHero)
+            setSeedColor(cachedHero.seedArgb)
+            return
+        }
+        val cardArt = artCache.get(ArtCacheKey(uriStr, moduleDir, CARD_ART_MAX_SIDE))
+            ?: _moduleArt.value[moduleDir]
+        if (cardArt != null) {
+            _heroArt.value = cardArt
+            _moduleArt.value = _moduleArt.value + (moduleDir to cardArt)
+            setSeedColor(cardArt.seedArgb)
+        } else {
+            _heroArt.value = null
+            setSeedColor(DefaultSeedColorArgb)
+        }
+        loadModuleArtIfNeeded(uri, gen, moduleDir, HERO_ART_MAX_SIDE)
+    }
+
+    private fun loadModuleArtIfNeeded(
+        uri: Uri,
+        gen: Long,
+        moduleDir: String,
+        maxSide: Int
+    ) {
+        val key = ArtCacheKey(uri.toString(), moduleDir, maxSide)
+        val cached = artCache.get(key)
+        if (cached != null) {
+            applyLoadedArt(moduleDir, maxSide, cached)
+            return
+        }
+        if (!inFlightArtKeys.add(key)) {
+            return
+        }
+        val relPath = moduleDir  // the JNI side appends "/main.bmp" ("" = install root)
+        executor.execute {
+            val art = try {
+                val bridge = WseSafBridge(app, uri)
+                val raw = bridge.nativeLoadModuleArt(relPath, maxSide)
+                decodeModuleArtIntArray(raw, DefaultSeedColorArgb)
+            } catch (_: Throwable) {
+                ModuleArt(bitmap = null, seedArgb = DefaultSeedColorArgb)
+            }
+            mainHandler.post {
+                inFlightArtKeys.remove(key)
+                if (isCleared.get() || gen != scanGeneration.get() || _installFolder.value.treeUri != uri) {
+                    return@post
+                }
+                artCache.put(key, art)
+                applyLoadedArt(moduleDir, maxSide, art)
+            }
+        }
+    }
+
+    private fun applyLoadedArt(moduleDir: String, maxSide: Int, art: ModuleArt) {
+        val existingMap = _moduleArt.value
+        if (maxSide == HERO_ART_MAX_SIDE || !existingMap.containsKey(moduleDir)) {
+            _moduleArt.value = existingMap + (moduleDir to art)
+        }
+        val selectedDir = _modulesState.value.selectedModule?.modulePath
+        val isActiveHero = if (selectedDir == null) {
+            moduleDir.isEmpty()
+        } else {
+            selectedDir == moduleDir
+        }
+        if (isActiveHero) {
+            if (maxSide == HERO_ART_MAX_SIDE || _heroArt.value == null) {
+                _heroArt.value = art
+            }
+            setSeedColor(art.seedArgb)
+        }
     }
 
     private fun startPendingInstallChecks(uri: Uri, gen: Long) {
@@ -1354,38 +1442,30 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         get() = app.filesDir.absolutePath
 
     companion object {
-        val DRIVER_OPTIONS = listOf(
-            "System Vulkan",
-            "Turnip (Adreno custom)",
-            "PanVK (Mali direct ICD)"
-        )
-        val DRIVER_MODE_KEYS = listOf("system", "turnip", "panvk")
-        val ALL_FRAME_RATE_VALUES = listOf(30, 60, 90, 120, 0)
+        val DRIVER_OPTIONS = LauncherDefaults.DRIVER_OPTIONS
+        val DRIVER_MODE_KEYS = LauncherDefaults.DRIVER_MODE_KEYS
+        val ALL_FRAME_RATE_VALUES = LauncherDefaults.ALL_FRAME_RATE_VALUES
 
-        const val QUALITY_PRESET_CUSTOM = "custom"
-        val QUALITY_PRESET_LABELS = listOf("Low", "Medium", "High", "Custom")
-        val QUALITY_PRESET_KEYS = listOf("low", "medium", "high", "custom")
+        const val QUALITY_PRESET_CUSTOM = LauncherDefaults.QUALITY_PRESET_CUSTOM
+        val QUALITY_PRESET_LABELS = LauncherDefaults.QUALITY_PRESET_LABELS
+        val QUALITY_PRESET_KEYS = LauncherDefaults.QUALITY_PRESET_KEYS
 
-        val PRESENT_MODE_KEYS = listOf("fifo", "mailbox", "immediate", "fifo_relaxed")
-        val PRESENT_MODE_LABELS = listOf(
-            "Present: FIFO (vsync)",
-            "Present: mailbox",
-            "Present: immediate (tearing)",
-            "Present: FIFO relaxed"
-        )
+        val PRESENT_MODE_KEYS = LauncherDefaults.PRESENT_MODE_KEYS
+        val PRESENT_MODE_LABELS = LauncherDefaults.PRESENT_MODE_LABELS
 
-        val TEXTURE_SIZE_LABELS = listOf("No cap", "256", "512", "1024", "2048", "4096")
-        val TEXTURE_SIZE_VALUES = listOf(0, 256, 512, 1024, 2048, 4096)
+        val TEXTURE_SIZE_LABELS = LauncherDefaults.TEXTURE_SIZE_LABELS
+        val TEXTURE_SIZE_VALUES = LauncherDefaults.TEXTURE_SIZE_VALUES
 
-        val UI_ASPECT_LABELS = listOf("4:3", "16:9", "Stretch")
-        val UI_ASPECT_KEYS = listOf("4:3", "16:9", "stretch")
+        val UI_ASPECT_LABELS = LauncherDefaults.UI_ASPECT_LABELS
+        val UI_ASPECT_KEYS = LauncherDefaults.UI_ASPECT_KEYS
 
-        const val RENDER_SCALE_MIN = 50
-        const val RENDER_SCALE_MAX = 100
-        const val UI_SCALE_MIN = 75
-        const val UI_SCALE_MAX = 200
-        const val SCALE_STEP = 5
+        const val RENDER_SCALE_MIN = LauncherDefaults.RENDER_SCALE_MIN
+        const val RENDER_SCALE_MAX = LauncherDefaults.RENDER_SCALE_MAX
+        const val UI_SCALE_MIN = LauncherDefaults.UI_SCALE_MIN
+        const val UI_SCALE_MAX = LauncherDefaults.UI_SCALE_MAX
+        const val SCALE_STEP = LauncherDefaults.SCALE_STEP
 
+        private const val ART_CACHE_MAX_ENTRIES = 24
         private const val MAX_DRIVER_PACKAGE_BYTES = 256L * 1024L * 1024L
         private const val PROBE_TIMEOUT_MS = 60_000L
         private const val PREFS_NAME = "wse2_launcher"
@@ -1401,17 +1481,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         private const val KEY_THERMAL_THROTTLE = "thermal_throttling_enabled"
         private const val PERFORMANCE_JSON = "config/performance.json"
 
-        fun frameRateLabel(hz: Int): String = when (hz) {
-            0 -> "Uncapped"
-            30 -> "30 Hz (battery saver)"
-            else -> "$hz Hz"
-        }
+        fun frameRateLabel(hz: Int): String = LauncherDefaults.frameRateLabel(hz)
 
-        fun snapPercent(percent: Int, minPct: Int, maxPct: Int): Int {
-            val clamped = percent.coerceIn(minPct, maxPct)
-            val steps = (clamped - minPct + (SCALE_STEP / 2)) / SCALE_STEP
-            return (minPct + steps * SCALE_STEP).coerceIn(minPct, maxPct)
-        }
+        fun snapPercent(percent: Int, minPct: Int, maxPct: Int): Int =
+            LauncherDefaults.snapPercent(percent, minPct, maxPct)
 
         private fun frameRateCapKey(hz: Int): String = if (hz <= 0) "uncapped" else hz.toString()
 
@@ -1425,14 +1498,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             }
         }
 
-        private fun isValidLanguageTag(tag: String): Boolean {
-            if (tag.isEmpty() || tag.length > 16) {
-                return false
-            }
-            return tag.all { c ->
-                c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c == '_' || c == '-'
-            }
-        }
+        private fun isValidLanguageTag(tag: String): Boolean =
+            LauncherDefaults.isValidLanguageTag(tag)
 
         private fun buildLanguageOptions(
             scanned: List<String>,

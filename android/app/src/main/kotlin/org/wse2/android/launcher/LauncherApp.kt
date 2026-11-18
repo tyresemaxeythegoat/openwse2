@@ -2,13 +2,26 @@ package org.wse2.android.launcher
 
 import android.content.res.Configuration
 import android.widget.Toast
-import androidx.compose.animation.Crossfade
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
@@ -38,9 +51,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.wse2.android.launcher.art.ModuleArt
 
 private sealed interface LauncherDialogState {
     data class ScanError(val reason: String) : LauncherDialogState
@@ -68,6 +84,8 @@ fun LauncherApp(
     val driverState by viewModel.driverState.collectAsStateWithLifecycle()
     val showFpsOverlay by viewModel.showFpsOverlay.collectAsStateWithLifecycle()
     val statusLog by viewModel.statusLog.collectAsStateWithLifecycle()
+    val moduleArt by viewModel.moduleArt.collectAsStateWithLifecycle()
+    val heroArt by viewModel.heroArt.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var activeDialog by remember { mutableStateOf<LauncherDialogState?>(null) }
@@ -103,11 +121,16 @@ fun LauncherApp(
         driverState = driverState,
         showFpsOverlay = showFpsOverlay,
         statusLog = statusLog,
+        moduleArt = moduleArt,
+        heroArt = heroArt,
         onSelectTab = viewModel::selectTab,
         onChooseFolder = onChooseFolder,
         onRescan = viewModel::rescanSelectedFolder,
         onCancelScan = viewModel::cancelScan,
-        onSelectModule = viewModel::selectModule,
+        onSelectModule = { index ->
+            viewModel.selectModule(index)
+            viewModel.selectTab(LauncherTab.HOME)
+        },
         onShowMissingFiles = viewModel::showMissingFiles,
         onPlay = viewModel::onPlayClicked,
         onQualityPresetChange = viewModel::setQualityPreset,
@@ -214,6 +237,7 @@ fun LauncherApp(
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun LauncherAppContent(
     selectedTab: LauncherTab,
@@ -224,6 +248,8 @@ fun LauncherAppContent(
     driverState: DriverUiState,
     showFpsOverlay: Boolean,
     statusLog: String,
+    moduleArt: Map<String, ModuleArt>,
+    heroArt: ModuleArt?,
     onSelectTab: (LauncherTab) -> Unit,
     onChooseFolder: () -> Unit,
     onRescan: () -> Unit,
@@ -253,32 +279,69 @@ fun LauncherAppContent(
     onLaunchSelfTest: () -> Unit
 ) {
     val context = LocalContext.current
+    val layoutDirection = LocalLayoutDirection.current
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    val renderRoute: @Composable (LauncherTab) -> Unit = { tab ->
+    BackHandler(enabled = selectedTab != LauncherTab.HOME) {
+        onSelectTab(LauncherTab.HOME)
+    }
+
+    val selectedModule = modulesState.selectedModule
+    val resolvedHeroArt = heroArt
+        ?: selectedModule?.let { moduleArt[it.modulePath] }
+        ?: moduleArt[""]
+
+    val homeState = HomeUiState(
+        installFolder = installFolder,
+        scanState = scanState,
+        selectedModule = selectedModule,
+        installStatus = modulesState.selectedInstallStatus,
+        heroArt = resolvedHeroArt,
+        statusLog = statusLog
+    )
+
+    val advancedState = AdvancedUiState(
+        installFolder = installFolder,
+        scanState = scanState,
+        selectedModule = selectedModule,
+        driverState = driverState,
+        showFpsOverlay = showFpsOverlay,
+        statusLog = statusLog
+    )
+
+    val renderRoute: @Composable (
+        LauncherTab,
+        Dp,
+        SharedTransitionScope,
+        AnimatedVisibilityScope
+    ) -> Unit = { tab, topPadding, sharedScope, animScope ->
         when (tab) {
-            LauncherTab.HOME -> InterimHomeScreen(
-                installFolder = installFolder,
-                scanState = scanState,
-                modulesState = modulesState,
-                statusLog = statusLog,
+            LauncherTab.HOME -> HomeScreen(
+                state = homeState,
                 onChooseFolder = onChooseFolder,
                 onChangeModule = { onSelectTab(LauncherTab.MODULES) },
                 onShowMissingFiles = onShowMissingFiles,
-                onPlay = onPlay
+                onPlay = onPlay,
+                topContentPadding = topPadding,
+                sharedTransitionScope = sharedScope,
+                animatedVisibilityScope = animScope
             )
-            LauncherTab.MODULES -> InterimModulesScreen(
+            LauncherTab.MODULES -> ModulesScreen(
+                state = modulesState,
                 installFolder = installFolder,
                 scanState = scanState,
-                modulesState = modulesState,
+                moduleArt = moduleArt,
                 onChooseFolder = onChooseFolder,
                 onRescan = onRescan,
                 onCancelScan = onCancelScan,
                 onSelectModule = onSelectModule,
-                onShowMissingFiles = onShowMissingFiles
+                onShowMissingFiles = onShowMissingFiles,
+                topContentPadding = topPadding,
+                sharedTransitionScope = sharedScope,
+                animatedVisibilityScope = animScope
             )
-            LauncherTab.SETTINGS -> InterimSettingsScreen(
-                settingsState = settingsState,
+            LauncherTab.SETTINGS -> SettingsScreen(
+                state = settingsState,
                 onQualityPresetChange = onQualityPresetChange,
                 onFrameRateCapChange = onFrameRateCapChange,
                 onPresentModeChange = onPresentModeChange,
@@ -291,84 +354,36 @@ fun LauncherAppContent(
                 onUiScaleChange = onUiScaleChange,
                 onGyroAimChange = onGyroAimChange,
                 onPinchZoomChange = onPinchZoomChange,
-                onLanguageChange = onLanguageChange
+                onLanguageChange = onLanguageChange,
+                topContentPadding = topPadding
             )
-            LauncherTab.ADVANCED -> InterimAdvancedScreen(
-                installFolder = installFolder,
-                scanState = scanState,
-                modulesState = modulesState,
-                driverState = driverState,
-                showFpsOverlay = showFpsOverlay,
-                statusLog = statusLog,
+            LauncherTab.ADVANCED -> AdvancedScreen(
+                state = advancedState,
                 onVerifyScripts = onVerifyScripts,
                 onSelectDriver = onSelectDriver,
                 onImportDriver = onImportDriver,
                 onAllowMockFallbackChange = onAllowMockFallbackChange,
                 onProbeVulkan = onProbeVulkan,
                 onShowFpsOverlayChange = onShowFpsOverlayChange,
-                onLaunchSelfTest = onLaunchSelfTest
+                onLaunchSelfTest = onLaunchSelfTest,
+                topContentPadding = topPadding
             )
         }
     }
 
-    if (isLandscape) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            NavigationRail(
-                windowInsets = WindowInsets.safeDrawing.only(
-                    WindowInsetsSides.Vertical + WindowInsetsSides.Start
-                )
-            ) {
-                Spacer(Modifier.weight(1f))
-                LauncherTab.entries.forEach { tab ->
-                    val label = tab.resolvedTitle(context)
-                    NavigationRailItem(
-                        selected = tab == selectedTab,
-                        onClick = { onSelectTab(tab) },
-                        icon = { Icon(navIconFor(tab), contentDescription = label) },
-                        label = {
-                            Text(
-                                text = label,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-            }
-            Scaffold(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                contentWindowInsets = WindowInsets.safeDrawing.only(
-                    WindowInsetsSides.Vertical + WindowInsetsSides.End
-                )
-            ) { innerPadding ->
-                Crossfade(
-                    targetState = selectedTab,
-                    label = "launcher-tab-landscape",
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) { tab ->
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        renderRoute(tab)
-                    }
-                }
-            }
-        }
-    } else {
-        Scaffold(
-            contentWindowInsets = WindowInsets.safeDrawing,
-            bottomBar = {
-                NavigationBar(
+    SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
+        val sharedScope = this
+        if (isLandscape) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                NavigationRail(
                     windowInsets = WindowInsets.safeDrawing.only(
-                        WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+                        WindowInsetsSides.Vertical + WindowInsetsSides.Start
                     )
                 ) {
+                    Spacer(Modifier.weight(1f))
                     LauncherTab.entries.forEach { tab ->
                         val label = tab.resolvedTitle(context)
-                        NavigationBarItem(
+                        NavigationRailItem(
                             selected = tab == selectedTab,
                             onClick = { onSelectTab(tab) },
                             icon = { Icon(navIconFor(tab), contentDescription = label) },
@@ -381,23 +396,98 @@ fun LauncherAppContent(
                             }
                         )
                     }
+                    Spacer(Modifier.weight(1f))
+                }
+                Scaffold(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    contentWindowInsets = WindowInsets.safeDrawing.only(
+                        WindowInsetsSides.Vertical + WindowInsetsSides.End
+                    )
+                ) { innerPadding ->
+                    AnimatedContent(
+                        targetState = selectedTab,
+                        transitionSpec = { fadeThroughSpec() },
+                        label = "launcher-tab-landscape",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(
+                                start = innerPadding.calculateStartPadding(layoutDirection),
+                                end = innerPadding.calculateEndPadding(layoutDirection),
+                                bottom = innerPadding.calculateBottomPadding()
+                            )
+                    ) { tab ->
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            renderRoute(
+                                tab,
+                                innerPadding.calculateTopPadding(),
+                                sharedScope,
+                                this@AnimatedContent
+                            )
+                        }
+                    }
                 }
             }
-        ) { innerPadding ->
-            Crossfade(
-                targetState = selectedTab,
-                label = "launcher-tab-portrait",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) { tab ->
-                Box(modifier = Modifier.fillMaxSize()) {
-                    renderRoute(tab)
+        } else {
+            Scaffold(
+                contentWindowInsets = WindowInsets.safeDrawing,
+                bottomBar = {
+                    NavigationBar(
+                        windowInsets = WindowInsets.safeDrawing.only(
+                            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+                        )
+                    ) {
+                        LauncherTab.entries.forEach { tab ->
+                            val label = tab.resolvedTitle(context)
+                            NavigationBarItem(
+                                selected = tab == selectedTab,
+                                onClick = { onSelectTab(tab) },
+                                icon = { Icon(navIconFor(tab), contentDescription = label) },
+                                label = {
+                                    Text(
+                                        text = label,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+            ) { innerPadding ->
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = { fadeThroughSpec() },
+                    label = "launcher-tab-portrait",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(
+                            start = innerPadding.calculateStartPadding(layoutDirection),
+                            end = innerPadding.calculateEndPadding(layoutDirection),
+                            bottom = innerPadding.calculateBottomPadding()
+                        )
+                ) { tab ->
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        renderRoute(
+                            tab,
+                            innerPadding.calculateTopPadding(),
+                            sharedScope,
+                            this@AnimatedContent
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+private fun fadeThroughSpec(): ContentTransform =
+    (fadeIn(animationSpec = tween(durationMillis = 210, delayMillis = 90)) +
+        scaleIn(
+            initialScale = 0.94f,
+            animationSpec = tween(durationMillis = 210, delayMillis = 90)
+        )) togetherWith fadeOut(animationSpec = tween(durationMillis = 90))
 
 private fun navIconFor(tab: LauncherTab): ImageVector = when (tab) {
     LauncherTab.HOME -> NavIcons.Home

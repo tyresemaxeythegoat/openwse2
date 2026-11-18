@@ -86,9 +86,13 @@ public:
         switch (ev.type) {
         case RawInputEvent::Type::MouseMotion:
             set_position(ev.x, ev.y);
+            frame_.touch = false;
+            mouse_pointer_this_frame_ = true;
             break;
         case RawInputEvent::Type::MouseButtonDown:
             set_position(ev.x, ev.y);
+            frame_.touch = false;
+            mouse_pointer_this_frame_ = true;
             if (ev.raw_key == RawKey::kLeftMouse) {
                 left_down_ = true;
                 frame_.left_pressed = true;
@@ -100,6 +104,8 @@ public:
             break;
         case RawInputEvent::Type::MouseButtonUp:
             set_position(ev.x, ev.y);
+            frame_.touch = false;
+            mouse_pointer_this_frame_ = true;
             if (ev.raw_key == RawKey::kLeftMouse) {
                 left_down_ = false;
                 frame_.left_released = true;
@@ -107,6 +113,9 @@ public:
             break;
         case RawInputEvent::Type::MouseWheel:
             frame_.wheel += ev.dy;
+            if (touch_finger_ < 0) {
+                frame_.touch = false;
+            }
             break;
         case RawInputEvent::Type::TouchDown:
             if (touch_finger_ < 0) {
@@ -114,11 +123,15 @@ public:
                 set_position(ev.x, ev.y);
                 left_down_ = true;
                 frame_.left_pressed = true;
+                frame_.touch = true;
+                mouse_pointer_this_frame_ = false;
             }
             break;
         case RawInputEvent::Type::TouchMove:
             if (ev.finger_id == touch_finger_) {
                 set_position(ev.x, ev.y);
+                frame_.touch = true;
+                mouse_pointer_this_frame_ = false;
             }
             break;
         case RawInputEvent::Type::TouchUp:
@@ -127,6 +140,8 @@ public:
                 touch_finger_ = -1;
                 left_down_ = false;
                 frame_.left_released = true;
+                frame_.touch = true;
+                mouse_pointer_this_frame_ = false;
             }
             break;
         case RawInputEvent::Type::TouchCancel:
@@ -134,6 +149,7 @@ public:
                 touch_finger_ = -1;
                 left_down_ = false;
                 has_raw_pos_ = false;
+                frame_.touch = false;
                 // Move off-screen so the armed button sees a leave instead of a release.
                 frame_.x = -1.0f;
                 frame_.y = -1.0f;
@@ -142,6 +158,7 @@ public:
         case RawInputEvent::Type::FocusLost:
             touch_finger_ = -1;
             left_down_ = false;
+            frame_.touch = false;
             break;
         case RawInputEvent::Type::KeyDown:
             if (ev.raw_key == RawKey::kEscape) {
@@ -165,10 +182,12 @@ public:
     [[nodiscard]] game::UiPointerInput take(float time_s) {
         game::UiPointerInput out = frame_;
         out.left_down = left_down_;
+        out.touch = frame_.touch || (touch_finger_ >= 0 && !mouse_pointer_this_frame_);
         out.time_s = time_s;
         frame_ = game::UiPointerInput{};
         frame_.x = out.x;
         frame_.y = out.y;
+        mouse_pointer_this_frame_ = false;
         return out;
     }
 
@@ -200,6 +219,7 @@ private:
 
     game::UiPointerInput frame_{};
     bool left_down_ = false;
+    bool mouse_pointer_this_frame_ = false;
     std::int64_t touch_finger_ = -1;
     UiViewportRect viewport_{};
     std::uint32_t win_w_ = 0;

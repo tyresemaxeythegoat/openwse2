@@ -42,6 +42,7 @@ struct UiRenderConfig {
     std::uint8_t clear_g = 12;
     std::uint8_t clear_b = 14;
     std::uint8_t clear_a = 255;
+    float text_scale = 1.0f;
 };
 
 struct DecodedUiTexture {
@@ -221,30 +222,62 @@ inline void try_load_named_texture(Vfs& vfs,
     }
 }
 
+[[nodiscard]] inline float clamp_ui_text_scale(float s) noexcept {
+    return std::isfinite(s) ? std::clamp(s, 0.75f, 2.0f) : 1.0f;
+}
+
 [[nodiscard]] inline bool resolve_widget_text_rect(const game::UiWidget& w,
                                                    float abs_x,
                                                    float abs_y,
+                                                   float text_scale,
                                                    float& out_min_x,
                                                    float& out_max_x,
                                                    float& out_top_y) noexcept {
     if (w.text.empty() || w.text_scale.x <= 0.0f || w.text_scale.y <= 0.0f) {
         return false;
     }
-    out_min_x = abs_x + w.text_pos.x;
+    const float min_x = abs_x + w.text_pos.x;
     if (w.size.x <= 0.0f || w.size.y <= 0.0f) {
         // Box-less text (overlay text without `overlay_set_area_size`): anchored at the
         // widget position, first baseline on it, aligned around it, broken only at '\n'.
-        out_max_x = out_min_x;
+        out_min_x = min_x;
+        out_max_x = min_x;
         out_top_y = abs_y + w.text_pos.y;
         return true;
     }
     const bool single_line = (w.text_flags & asset::kTextFlagSingleLine) != 0U ||
                              (w.size.y <= w.text_scale.y * 2.1f);
-    out_max_x = out_min_x + w.size.x;
+    const float eff_scale_y = w.text_scale.y * text_scale;
+    const float max_x = min_x + w.size.x;
+    out_min_x = min_x;
+    out_max_x = max_x;
     if (single_line) {
-        out_top_y = abs_y + w.text_pos.y + w.size.y * 0.5f - w.text_scale.y * 0.28f;
+        out_top_y = abs_y + w.text_pos.y + w.size.y * 0.5f - eff_scale_y * 0.28f;
+        // Single-line widgets (e.g. menu buttons) keep retail box bounds, so when text is
+        // scaled above 1.0 expand the wrap span around the horizontal anchor rather than
+        // wrapping onto extra lines over neighbouring widgets.
+        if (text_scale > 1.0f && (w.text_flags & asset::kTextFlagBoxWrap) == 0U) {
+            const bool vcenter_or_left = (w.text_flags & asset::kTextFlagVCenterOrLeft) != 0U;
+            const bool center_align =
+                ((w.text_flags & asset::kTextFlagCenterAlign) != 0U) && !vcenter_or_left;
+            const bool right_align =
+                ((w.text_flags & asset::kTextFlagRightAlign) != 0U) && !center_align &&
+                !vcenter_or_left;
+            const float span = w.size.x * text_scale;
+            if (center_align) {
+                const float mid = (min_x + max_x) * 0.5f;
+                out_min_x = mid - span * 0.5f;
+                out_max_x = mid + span * 0.5f;
+            } else if (right_align) {
+                out_min_x = max_x - span;
+                out_max_x = max_x;
+            } else {
+                out_min_x = min_x;
+                out_max_x = min_x + span;
+            }
+        }
     } else {
-        out_top_y = abs_y + w.text_pos.y + w.size.y - w.text_scale.y * 0.75f;
+        out_top_y = abs_y + w.text_pos.y + w.size.y - eff_scale_y * 0.75f;
     }
     return true;
 }
@@ -658,14 +691,39 @@ public:
         float proj[16]{};
         make_d3d9_ortho_off_center_rh(
             0.0f, cfg.virtual_width, 0.0f, cfg.virtual_height, -10.0f, 10.0f, proj, true);
+        const float text_scale = rhi_ui_detail::clamp_ui_text_scale(cfg.text_scale);
 
         // Emit dynamic quads & static BRF draws cleanly while keeping painter's order.
+        struct ClipRect {
+            bool has_clip = false;
+            float x0 = 0.0f;
+            float y0 = 0.0f;
+            float x1 = 0.0f;
+            float y1 = 0.0f;
+        };
+        const auto intersect_clip = [](const ClipRect& parent,
+                                       float x0,
+                                       float y0,
+                                       float x1,
+                                       float y1) noexcept -> ClipRect {
+            if (!parent.has_clip) {
+                return ClipRect{true, x0, y0, x1, y1};
+            }
+            return ClipRect{true, std::max(parent.x0, x0), std::max(parent.y0, y0),
+                            std::min(parent.x1, x1), std::min(parent.y1, y1)};
+        };
+
         struct PendingBatch {
             bool is_dynamic = false;
             std::size_t first_idx = 0;
             std::size_t idx_count = 0;
             TextureHandle tex = 0;
             PipelineHandle pip = 0;
+            bool has_clip = false;
+            float clip_x0 = 0.0f;
+            float clip_y0 = 0.0f;
+            float clip_x1 = 0.0f;
+            float clip_y1 = 0.0f;
             MeshDrawCall static_draw{};
         };
 
@@ -676,7 +734,8 @@ public:
         const auto push_dyn_quads = [&](std::span<const MeshVertex> qv,
                                         std::span<const std::uint16_t> qi,
                                         TextureHandle tex,
-                                        PipelineHandle pip) {
+                                        PipelineHandle pip,
+                                        const ClipRect& clip) {
             if (qi.empty() || dyn_verts.size() + qv.size() > 65535U) {
                 return;
             }
@@ -686,8 +745,13 @@ public:
             for (const std::uint16_t idx : qi) {
                 dyn_indices.push_back(static_cast<std::uint16_t>(vbase + idx));
             }
+            const bool same_clip =
+                !batches.empty() && batches.back().has_clip == clip.has_clip &&
+                (!clip.has_clip ||
+                 (batches.back().clip_x0 == clip.x0 && batches.back().clip_y0 == clip.y0 &&
+                  batches.back().clip_x1 == clip.x1 && batches.back().clip_y1 == clip.y1));
             if (!batches.empty() && batches.back().is_dynamic && batches.back().tex == tex &&
-                batches.back().pip == pip) {
+                batches.back().pip == pip && same_clip) {
                 batches.back().idx_count += qi.size();
             } else {
                 PendingBatch pb{};
@@ -696,11 +760,21 @@ public:
                 pb.idx_count = qi.size();
                 pb.tex = tex;
                 pb.pip = pip;
+                pb.has_clip = clip.has_clip;
+                pb.clip_x0 = clip.x0;
+                pb.clip_y0 = clip.y0;
+                pb.clip_x1 = clip.x1;
+                pb.clip_y1 = clip.y1;
                 batches.push_back(pb);
             }
         };
 
-        const auto emit_solid_panel = [&](float x, float y, float w, float h, std::uint32_t argb) {
+        const auto emit_solid_panel = [&](float x,
+                                          float y,
+                                          float w,
+                                          float h,
+                                          std::uint32_t argb,
+                                          const ClipRect& clip) {
             if (w <= 0.0f || h <= 0.0f || ((argb >> 24U) == 0U)) {
                 return;
             }
@@ -708,7 +782,7 @@ public:
             std::vector<std::uint16_t> qi;
             rhi_ui_detail::append_quad(
                 qv, qi, x, y, x + w, y + h, 0.0f, 0.0f, 1.0f, 1.0f, argb_to_rgba8(argb));
-            push_dyn_quads(qv, qi, white_tex_, alpha_pip_);
+            push_dyn_quads(qv, qi, white_tex_, alpha_pip_, clip);
         };
 
         const auto resolve_tex = [&](std::string_view key, TextureHandle fallback) noexcept {
@@ -724,7 +798,8 @@ public:
         const auto visit = [&](auto& self,
                                const game::UiWidget& node,
                                float px,
-                               float py) -> void {
+                               float py,
+                               const ClipRect& clip) -> void {
             if (!node.visible) {
                 return;
             }
@@ -775,18 +850,24 @@ public:
                     if (node.tint_mesh) {
                         pb.static_draw.tint_rgba = argb_to_rgba8(node.color_argb);
                     }
+                    pb.static_draw.has_clip = clip.has_clip;
+                    pb.static_draw.clip_x0 = clip.x0;
+                    pb.static_draw.clip_y0 = clip.y0;
+                    pb.static_draw.clip_x1 = clip.x1;
+                    pb.static_draw.clip_y1 = clip.y1;
                     std::memcpy(pb.static_draw.model, model, sizeof(model));
                     rhi_ui_detail::mat4_mul(proj, model, pb.static_draw.mvp);
                     batches.push_back(pb);
                 } else if (node.kind == game::UiWidgetKind::SolidPanel) {
-                    emit_solid_panel(ax, ay, node.size.x, node.size.y, node.color_argb);
+                    emit_solid_panel(ax, ay, node.size.x, node.size.y, node.color_argb, clip);
                 }
             }
 
             float tmin_x = 0.0f;
             float tmax_x = 0.0f;
             float ttop_y = 0.0f;
-            if (rhi_ui_detail::resolve_widget_text_rect(node, ax, ay, tmin_x, tmax_x, ttop_y)) {
+            if (rhi_ui_detail::resolve_widget_text_rect(
+                    node, ax, ay, text_scale, tmin_x, tmax_x, ttop_y)) {
                 const std::uint32_t base_col =
                     (node.highlighted &&
                      (node.kind == game::UiWidgetKind::SimpleButton ||
@@ -794,8 +875,8 @@ public:
                         ? node.highlight_color_argb
                         : node.text_color_argb;
                 const asset::TextLayoutResult layout = font.layout_text(
-                    node.text, tmin_x, tmax_x, ttop_y, node.text_scale.x, node.text_scale.y,
-                    node.text_flags, base_col);
+                    node.text, tmin_x, tmax_x, ttop_y, node.text_scale.x * text_scale,
+                    node.text_scale.y * text_scale, node.text_flags, base_col);
                 if (!layout.quads.empty() && font_tex_ != 0) {
                     std::vector<MeshVertex> qv;
                     std::vector<std::uint16_t> qi;
@@ -806,27 +887,36 @@ public:
                             qv, qi, q.x0, q.y0, q.x1, q.y1, q.u0, 1.0f - q.v0, q.u1, 1.0f - q.v1,
                             argb_to_rgba8(q.color_argb));
                     }
-                    push_dyn_quads(qv, qi, font_tex_, alpha_pip_);
+                    push_dyn_quads(qv, qi, font_tex_, alpha_pip_, clip);
                 }
             }
 
             const float cx = ax + node.child_offset.x;
             const float cy = ay + node.child_offset.y;
+            const ClipRect child_clip =
+                node.clip_children
+                    ? intersect_clip(clip, ax, ay, ax + node.size.x, ay + node.size.y)
+                    : clip;
+            if (child_clip.has_clip &&
+                (!(child_clip.x1 > child_clip.x0) || !(child_clip.y1 > child_clip.y0))) {
+                return;
+            }
             for (const game::UiWidget& child : node.children) {
-                if (node.clip_children) {
-                    // No scissor in the RHI yet: drop children entirely outside the container.
+                if (child_clip.has_clip && child.children.empty() && !child.has_mesh_rect &&
+                    child.text_pos.x == 0.0f && child.text_pos.y == 0.0f &&
+                    child.size.x > 0.0f && child.size.y > 0.0f) {
                     const float c0x = cx + child.pos.x;
                     const float c0y = cy + child.pos.y;
-                    if (c0x > ax + node.size.x || c0x + child.size.x < ax ||
-                        c0y > ay + node.size.y || c0y + child.size.y < ay) {
+                    if (c0x > child_clip.x1 || c0x + child.size.x < child_clip.x0 ||
+                        c0y > child_clip.y1 || c0y + child.size.y < child_clip.y0) {
                         continue;
                     }
                 }
-                self(self, child, cx, cy);
+                self(self, child, cx, cy, child_clip);
             }
         };
 
-        visit(visit, root, 0.0f, 0.0f);
+        visit(visit, root, 0.0f, 0.0f, ClipRect{});
 
         std::vector<MeshDrawCall> draw_calls;
         draw_calls.reserve(batches.size());
@@ -858,6 +948,11 @@ public:
             dc.texture = pb.tex;
             dc.first_index = static_cast<std::uint32_t>(pb.first_idx);
             dc.index_count = static_cast<std::uint32_t>(pb.idx_count);
+            dc.has_clip = pb.has_clip;
+            dc.clip_x0 = pb.clip_x0;
+            dc.clip_y0 = pb.clip_y0;
+            dc.clip_x1 = pb.clip_x1;
+            dc.clip_y1 = pb.clip_y1;
             std::memcpy(dc.mvp, proj, sizeof(proj));
             rhi_ui_detail::mat4_identity(dc.model);
             draw_calls.push_back(dc);

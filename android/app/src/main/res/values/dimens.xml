@@ -1,61 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Typography (sp) -->
-    <dimen name="wse_text_page_title">22sp</dimen>
-    <dimen name="wse_text_section_title">12sp</dimen>
-    <dimen name="wse_text_body">15sp</dimen>
-    <dimen name="wse_text_caption">13sp</dimen>
-    <dimen name="wse_text_log">12sp</dimen>
-    <dimen name="wse_text_button_primary">16sp</dimen>
-    <dimen name="wse_text_button_secondary">14sp</dimen>
-    <dimen name="wse_text_tab">13sp</dimen>
-
-    <!-- Touch targets & component sizes (dp) -->
-    <dimen name="wse_min_touch_target">48dp</dimen>
-    <dimen name="wse_primary_button_min_height">56dp</dimen>
-    <dimen name="wse_tab_bar_min_height">56dp</dimen>
-    <dimen name="wse_tab_indicator_height">3dp</dimen>
-    <dimen name="wse_divider_height">1dp</dimen>
+    <!-- Drawable dimensions (referenced by res/drawable/*) -->
     <dimen name="wse_stroke_width">1dp</dimen>
     <dimen name="wse_stroke_selected_width">2dp</dimen>
-
-    <!-- Responsive width cap (dp) -->
-    <dimen name="wse_wide_screen_width">600dp</dimen>
-    <dimen name="wse_content_max_width">720dp</dimen>
-
-    <!-- Corner radii (dp) -->
     <dimen name="wse_card_corner_radius">12dp</dimen>
     <dimen name="wse_control_corner_radius">10dp</dimen>
-
-    <!-- Spacing & padding (dp) -->
-    <dimen name="wse_page_padding">16dp</dimen>
-    <dimen name="wse_page_padding_bottom">24dp</dimen>
-    <dimen name="wse_card_padding">16dp</dimen>
-    <dimen name="wse_card_spacing">12dp</dimen>
-    <dimen name="wse_row_spacing">8dp</dimen>
-    <dimen name="wse_page_title_spacing">14dp</dimen>
-    <dimen name="wse_section_title_spacing">10dp</dimen>
-    <dimen name="wse_text_spacing">6dp</dimen>
-    <dimen name="wse_status_padding_h">4dp</dimen>
-    <dimen name="wse_status_padding_top">8dp</dimen>
-    <dimen name="wse_status_padding_bottom">4dp</dimen>
-
-    <!-- Control padding (dp) -->
-    <dimen name="wse_button_padding_h">16dp</dimen>
-    <dimen name="wse_button_padding_v">12dp</dimen>
-    <dimen name="wse_row_padding_h">14dp</dimen>
-    <dimen name="wse_row_padding_v">12dp</dimen>
-    <dimen name="wse_row_subtitle_spacing">2dp</dimen>
-    <dimen name="wse_tab_padding_h">6dp</dimen>
-    <dimen name="wse_tab_padding_top">10dp</dimen>
-    <dimen name="wse_tab_padding_bottom">12dp</dimen>
-    <dimen name="wse_check_padding_h">6dp</dimen>
-    <dimen name="wse_check_padding_v">8dp</dimen>
-    <dimen name="wse_check_margin_bottom">4dp</dimen>
-    <dimen name="wse_spinner_label_spacing">4dp</dimen>
-    <dimen name="wse_spinner_padding_h">12dp</dimen>
-    <dimen name="wse_spinner_padding_v">10dp</dimen>
     <dimen name="wse_spinner_arrow_size">24dp</dimen>
     <dimen name="wse_spinner_arrow_inset">10dp</dimen>
-    <dimen name="wse_spinner_arrow_space">40dp</dimen>
 </resources>

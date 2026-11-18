@@ -188,7 +188,15 @@ their offset. P11.3/P11.4: widget sizes in short-side units, `apply_safe_area`, 
 `UiGameShell::set_touch_overlay`. Not wired in the app yet: nothing calls `set_touch_overlay`
 or passes `SDL_GetWindowSafeArea`. Map, dialog and bulk-move buttons send `Custom5..12`,
 because Warband has no game key for them; a module that binds those custom keys itself will
-also see them. Left: P11.2, P11.5, P11.6.
+also see them. P11.2, P11.5 and P11.6 followed in wave B:
+`GeometryBatch::filter` (nearest only for axis-aligned 1:1 texel-to-pixel draws, linear
+otherwise; the presenter sets `SDL_SetTextureScaleMode` per batch), `UiRenderConfig::text_scale`
+from `ui_scale` (glyphs only, boxes and hit areas unchanged, so labels can overflow their box
+above 1.0), touch-only drag-to-scroll and first-tap press (`UiPointerInput::touch`), scissor
+clipping (`MeshDrawCall::has_clip` in UI units, `GeometryBatch::clip_*` in window pixels,
+`SoftwareRhiDevice` discards outside; `VulkanRhiDevice` ignores it for now), and the soft
+keyboard (`UiGameShell::text_input_wanted`, edge-triggered `SDL_StartTextInput` /
+`SDL_StopTextInput`). Every P11 unit is host-verified; none has run on a device.
 
 **Device acceptance.** Text readable at 1080p without zooming; 2D windows undistorted on a 20:9
 phone; every touch control reachable with a thumb in landscape.
@@ -242,7 +250,11 @@ and JNI calls; `Wse2Theme` (dynamic colour on Android 12+, `schemeFromSeed` fall
 interim Compose screens (`LauncherApp`, `InterimScreens`) on a `NavigationBar` /
 `NavigationRail`. The view-based pages stay compiled because the ViewModel reuses
 `InstallCheckState` and `PerformanceUiState`; P12.4 removes them. Only CI compiles it (no SDK on
-the host). Left: P12.2–P12.5.
+the host). Wave B added P12.2 (`wse/asset/bmp.h`: `decode_bmp`, `downscale_to_fit`,
+`seed_color_argb`; JNI `nativeLoadModuleArt`) and P12.3/P12.4 (Compose `HomeScreen`,
+`ModulesScreen`, `SettingsScreen`, `AdvancedScreen` taking plain state, module art with an LRU
+cache and a seed colour, shared-element transition, predictive back; the view-based pages,
+`LauncherUi` and `themes.xml` removed). Left: P12.5 screenshot tests.
 
 ## Risks decided up front
 

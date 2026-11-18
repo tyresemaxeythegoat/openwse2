@@ -34,6 +34,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -475,9 +476,9 @@ public:
 
     // After `SDL_EVENT_RENDER_DEVICE_RESET` every texture is gone; they are recreated lazily.
     void drop_all() noexcept {
-        for (auto& [handle, tex] : textures_) {
+        for (auto& [handle, entry] : textures_) {
             (void)handle;
-            SDL_DestroyTexture(tex);
+            SDL_DestroyTexture(entry.tex);
         }
         textures_.clear();
     }
@@ -487,7 +488,7 @@ public:
               wse::platform::GeometryCaptureRhiDevice& device) {
         for (const wse::platform::TextureHandle gone : device.take_destroyed_textures()) {
             if (const auto it = textures_.find(gone); it != textures_.end()) {
-                SDL_DestroyTexture(it->second);
+                SDL_DestroyTexture(it->second.tex);
                 textures_.erase(it);
             }
         }
@@ -509,10 +510,34 @@ public:
             if (b.index_count == 0U) {
                 continue;
             }
+            if (b.has_clip && (b.clip_w == 0U || b.clip_h == 0U)) {
+                continue;
+            }
+            if (b.has_clip) {
+                const auto clamp_i32 = [](std::uint32_t v) noexcept -> int {
+                    return static_cast<int>(
+                        std::min<std::uint32_t>(v, static_cast<std::uint32_t>(std::numeric_limits<int>::max())));
+                };
+                const SDL_Rect clip_rect{
+                    clamp_i32(b.clip_x),
+                    clamp_i32(b.clip_y),
+                    clamp_i32(b.clip_w),
+                    clamp_i32(b.clip_h),
+                };
+                SDL_SetRenderClipRect(renderer_, &clip_rect);
+            } else {
+                SDL_SetRenderClipRect(renderer_, nullptr);
+            }
             const SDL_BlendMode mode = sdl_blend(b.blend);
-            SDL_Texture* tex = texture_for(b.texture, device);
+            const SDL_ScaleMode scale_mode = sdl_scale_mode(b.filter);
+            TextureEntry* tex_entry = texture_for(b.texture, device, scale_mode);
+            SDL_Texture* tex = tex_entry != nullptr ? tex_entry->tex : nullptr;
             if (tex != nullptr) {
                 SDL_SetTextureBlendMode(tex, mode);
+                if (tex_entry->scale_mode != scale_mode) {
+                    SDL_SetTextureScaleMode(tex, scale_mode);
+                    tex_entry->scale_mode = scale_mode;
+                }
             } else {
                 SDL_SetRenderDrawBlendMode(renderer_, mode);
             }
@@ -527,11 +552,22 @@ public:
                 }
             }
         }
+        SDL_SetRenderClipRect(renderer_, nullptr);
         SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_NONE);
         return ok;
     }
 
 private:
+    struct TextureEntry {
+        SDL_Texture* tex = nullptr;
+        SDL_ScaleMode scale_mode = SDL_SCALEMODE_LINEAR;
+    };
+
+    static SDL_ScaleMode sdl_scale_mode(wse::platform::GeometryFilter filter) noexcept {
+        return filter == wse::platform::GeometryFilter::nearest ? SDL_SCALEMODE_NEAREST
+                                                                : SDL_SCALEMODE_LINEAR;
+    }
+
     static SDL_BlendMode sdl_blend(wse::platform::BlendMode mode) noexcept {
         switch (mode) {
             case wse::platform::BlendMode::opaque:
@@ -550,13 +586,14 @@ private:
         return SDL_BLENDMODE_BLEND;
     }
 
-    SDL_Texture* texture_for(wse::platform::TextureHandle handle,
-                             const wse::platform::GeometryCaptureRhiDevice& device) {
+    TextureEntry* texture_for(wse::platform::TextureHandle handle,
+                              const wse::platform::GeometryCaptureRhiDevice& device,
+                              SDL_ScaleMode initial_scale_mode) {
         if (handle == 0) {
             return nullptr;
         }
         if (const auto it = textures_.find(handle); it != textures_.end()) {
-            return it->second;
+            return &it->second;
         }
         const auto* data = device.texture(handle);
         if (data == nullptr) {
@@ -570,13 +607,14 @@ private:
             return nullptr;
         }
         SDL_UpdateTexture(tex, nullptr, data->rgba8.data(), static_cast<int>(data->width * 4U));
-        SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
-        textures_.emplace(handle, tex);
-        return tex;
+        SDL_SetTextureScaleMode(tex, initial_scale_mode);
+        const auto it =
+            textures_.emplace(handle, TextureEntry{tex, initial_scale_mode}).first;
+        return &it->second;
     }
 
     SDL_Renderer* renderer_ = nullptr;
-    std::unordered_map<wse::platform::TextureHandle, SDL_Texture*> textures_{};
+    std::unordered_map<wse::platform::TextureHandle, TextureEntry> textures_{};
     bool logged_failure_ = false;
 };
 
@@ -866,6 +904,7 @@ int run_module_shell(SDL_Window* window,
         resolve_install_language(*vfs, module_dir, perf.launch_cfg.settings.language);
     opts.max_texture_size = perf.launch_cfg.settings.max_texture_size;
     opts.ui_aspect = perf.launch_cfg.settings.ui_aspect;
+    opts.ui_text_scale = perf.launch_cfg.settings.ui_scale;
     opts.output = wse::platform::UiGameShellOptions::Output::geometry;
 #ifdef __ANDROID__
     if (from_saf) {
@@ -941,9 +980,6 @@ int run_module_shell(SDL_Window* window,
 #endif
     log_load_result("started");
 
-#ifndef __ANDROID__
-    SDL_StartTextInput(window);  // desktop keyboards; Android IME is an open item
-#endif
     wse::platform::PerformanceAdaptation module_adapt{};
     bool target_changed = false;
     (void)perf.step(window, renderer, frame_pacer, input_mgr, sdl_input, &target_changed,
@@ -978,6 +1014,7 @@ int run_module_shell(SDL_Window* window,
         SDL_Log("[WSE2] performance hint unavailable; default thread priority");
     }
     FpsOverlayState fps_overlay;
+    bool text_input_active = false;
     while (!quit && !app.terminating.load()) {
         bool step_target_changed = false;
         const std::int32_t effective_fps =
@@ -1028,6 +1065,15 @@ int run_module_shell(SDL_Window* window,
             if (!running) {
                 error = shell.report().last_error;
                 SDL_Log("[WSE2] module shell stopped: %s", error.c_str());
+            }
+        }
+        const bool want_text_input = running && shell.text_input_wanted();
+        if (want_text_input != text_input_active) {
+            text_input_active = want_text_input;
+            if (text_input_active) {
+                SDL_StartTextInput(window);
+            } else {
+                SDL_StopTextInput(window);
             }
         }
 
@@ -1101,6 +1147,9 @@ int run_module_shell(SDL_Window* window,
             SDL_DelayNS(wait_ticks *
                         static_cast<std::uint64_t>(wse::platform::FramePacer::kNsPerTick));
         }
+    }
+    if (text_input_active) {
+        SDL_StopTextInput(window);
     }
     presenter.drop_all();
     shell.stop();
