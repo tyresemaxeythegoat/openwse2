@@ -134,7 +134,7 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
 - [~] **P9** Convergence with Phase 2: Part 1 scene/terrain/skeletal foundation and Part 2 UI/font/menu/presentation runtime landed
       (`wse/io/xml.h`, `wse/asset/{skeleton,font}.h`, `wse/game/{scene_loaders,ui_runtime}.h`,
       `wse/platform/{rhi_scene,rhi_ui}.h`, `scene_test.cpp`, `ui_test.cpp`);
-      remaining: Bullet physics hookup and on-device execution
+      remaining: on-device execution (the Bullet physics item is replaced by the retail collision reconstruction in Phase 5 G3, `docs/GAMEPLAY_PLAN.md`)
       *(Lua 5.1 2F & 2H headless runner already integrated)*.
 
 ### Phase 4 — Native Android Features
@@ -146,6 +146,19 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
 - [x] **P8 Sensor & performance hooks:** opt-in low-pass filtered gyro aiming (`Mission`-only, deadzone + invert/FocusLost reset), two-finger campaign map pinch-to-zoom without camera look drag (`wse/platform/input.h`, `wse/game/world_input.h`), `SDL_INIT_SENSOR` `SDL_SENSOR_GYRO` streaming (`platform/sdl/sdl_input.{h,cpp}`), thermal status & headroom hysteresis controller -> resolution scale / LOD bias / thermal FPS step-down, `FramePacer` + `PresentModePreference` for 60/90/120 Hz & uncapped (`wse/platform/performance.h`), Android `PowerManager` thermal listener/`getThermalHeadroom` + `ANativeWindow_setFrameRate*` + SDL3 present pacing (`platform/sdl/sdl_selftest_main.cpp`, `platform/android/saf_vfs_jni.cpp`, `WseActivity.kt`, `WseLauncherActivity.kt`) with settings toggles & persisted JSON/launcher prefs *(host-verified; on-device hardware verification pending)*.
 - [x] **P10 Launcher UI/UX & performance on Android** *(host-verified; device run pending)*: launcher rebuilt as home / modules / settings / advanced pages (dark theme, first-run flow with a background scan and install check, grouped settings), asynchronous start with a loading screen, performance hub in module mode, texture budget, performance-core hints (`docs/PLATFORM_PLAN.md` "P10").
 - [ ] **P11 In-game UI & touch controls on Android:** UI aspect modes, crisp text, drawn touch overlay and context buttons, touch-friendly menus, soft keyboard (`docs/PLATFORM_PLAN.md` "P11").
+- [ ] **P12 Launcher redesign:** Jetpack Compose + Material 3, module art from the user's install (`main.bmp`), dynamic colour, motion, CI screenshot tests (`docs/PLATFORM_PLAN.md` "P12").
+
+### Phase 5 — Gameplay runtime (1:1 with WSE2 v1.1.5.5)
+
+Design, order and oracles: `docs/GAMEPLAY_PLAN.md`.
+
+- [ ] **G0 Oracles:** retail saves load and re-save byte-identical (both directions); map time and random-number determinism decided; call-graph closure tooling.
+- [ ] **G1 3D on the phone:** Vulkan presentation in the app, UI on Vulkan, scenes and the world map with the module's shaders, GPU skinning.
+- [ ] **G2 Campaign map:** time, party movement and pathfinding, party AI, spotting, encounters into menus, auto-resolve.
+- [ ] **G3 Walking scenes:** mission start, spawning, camera, locomotion and animation, retail collision (replaces the P9 Bullet item), scene pathfinding.
+- [ ] **G4 Combat:** melee, blocking, shields, missiles, horses, damage, death.
+- [ ] **G5 Battles at scale:** battle AI, divisions and orders, reinforcements, results back to the map; 1,000+ agents with behaviour-neutral optimization.
+- [ ] **G6 Whole game:** sieges, tournaments, character creation, remaining menus, save anywhere both ways.
 
 ## Engineering backlog (ordered)
 
@@ -169,6 +182,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-18 | — | Planned Phase 5 (gameplay runtime G0-G6, 1:1 with retail, evidence first, byte-compatible saves; `docs/GAMEPLAY_PLAN.md`) and P12 (Compose + Material 3 launcher with the install's module art) from an interview with the user |
 | 2026-11-18 | — | P10.1-P10.8: launcher pages, dark theme, scan progress and per-module install check gating Play, grouped settings with quality presets and first-launch defaults; asynchronous module start with a loading screen, module mode on the performance hub with an FPS overlay, texture budget, ADPF performance hints (204 host tests; Windows host gate PASS; built as parallel Antigravity units on worktrees, reviewed and gated by Claude) |
 | 2026-11-18 | — | P10 rescoped: its UI/UX work is the Android launcher, not the in-game UI; the in-game UI aspect, crisp text, touch overlay, touch menus and soft keyboard units moved to a new slice P11 (plan only, no code) |
 | 2026-11-18 | — | First device run of the module UI (works); P10.0: module mode locked to landscape, missing Warband files reported in an error dialog (`find_missing_warband_files`, launcher `AlertDialog`); P10 UI/UX and performance plan written from a clean-room study of a reference Android build (Windows host gate PASS) |

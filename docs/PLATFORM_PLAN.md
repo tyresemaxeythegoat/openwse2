@@ -73,6 +73,7 @@ Each slice is one milestone. "Done when" is the acceptance test, not a descripti
 | P9 *(parts 1 & 2 host verified)* | Convergence with Phase 2 | Part 1 landed: skeletal FK & CPU linear-blend skinning (`wse/asset/skeleton.h`, fixing `skeleton_anim` `(qx,qy,qz,qw)` read order in `wse/asset/brf.h`), `map.txt`/`.sco`/`skeleton_bodies.xml` loaders (`wse/game/scene_loaders.h`), and chunked terrain + multi-object/skinned `BrfSceneRenderer` over `RhiDevice` (`wse/platform/rhi_scene.h`, static IB + slot skin-data cache). Part 2 landed: shared XML DOM parser (`wse/io/xml.h`), `Data/font_data.xml` glyph loader & `<c=...>`/word-wrap text layout (`wse/asset/font.h`), `LanguageTable` / `GameVariablesTable` / `UiWidget` / `UiSession` initial+menu+notes+presentation controllers (`wse/game/ui_runtime.h`), and 2D UI RHI renderer (`wse/platform/rhi_ui.h`, Y-up `[0,1]x[0,0.75]` ortho & bottom-up V -> top-down DDS `1 - v` UV conversion) tested in `ui_test.cpp`. Lua 5.1 link (2F) and 2H headless runner integrated. Remaining: Bullet physics hookup and on-device `Native` run. | Scene/terrain/skeletal and `Native` main menu + menu/presentation RHI passes on host; `Native` main menu renders on device from a user-supplied install |
 | P10 *(host verified; device pending)* | Launcher UI/UX and performance on Android *(Phase 4)* | Launcher rebuilt as home / modules / settings / advanced pages with a dark theme, a first-run flow with a background scan and install check, grouped settings; asynchronous start with a loading screen, performance hub in module mode, texture budget, performance-core hints; details in "P10 — Launcher UI/UX and performance on Android" below | The device acceptance list in that section holds on the user's phone |
 | P11 *(planned)* | In-game UI and touch controls on Android *(Phase 4)* | UI aspect modes and crisp text, drawn touch overlay with context buttons and gestures, touch-friendly menus, soft keyboard; details in "P11 — In-game UI and touch controls on Android" below | The device acceptance list in that section holds on the user's phone |
+| P12 *(planned)* | Launcher redesign *(Phase 4)* | Jetpack Compose + Material 3 launcher with the install's own module art, dynamic colour, motion, and screenshot tests in CI; details in "P12 — Launcher redesign" below | The screenshot artifact and the user's phone check both look right |
 
 **Order.** P0 → P1 → P2 are strict. P3 is host-only and can run beside P1/P2. P4 needs P1; P5
 needs P3 + P4. P6, P7, P8 need only P1 and can interleave. P9 needs Phase 2E and 2H progress.
@@ -178,6 +179,49 @@ aspect and UI scale that the P10.4 settings page stores. Same workflow as P10.
 
 **Device acceptance.** Text readable at 1080p without zooming; 2D windows undistorted on a 20:9
 phone; every touch control reachable with a thumb in landscape.
+
+## P12 — Launcher redesign: Compose, Material 3 and the install's own art
+
+**Why.** The P10 launcher works but looks flat: grey cards and stock widgets, no art, no depth,
+no motion (user, 2026-11-18). The target is a cross between a console game hub and Material You:
+the module's own image up front, one bold Play action, soft tonal surfaces, real motion.
+
+**Decisions (interview, 2026-11-18).**
+- Rewrite the launcher screens in **Jetpack Compose with Material 3**. This adds AndroidX
+  (Compose BOM, `material3`, `activity-compose`, the Kotlin Compose compiler plugin) and about
+  3–5 MB to the APK. The P10 logic stays: JNI calls, the SAF bridge, the scan / install-check
+  state machine and the settings save rules move out of the activity into a `ViewModel` with
+  no behaviour change.
+- **Art comes only from the user's install at run time** (BYOA): every module folder has a
+  `main.bmp` (the picture the PC launcher shows), and the install root has one too. Nothing
+  from the game is bundled; tests use generated placeholder images.
+
+**Design.**
+- *Home:* full-bleed hero of the selected module's `main.bmp`, softly blurred and darkened
+  toward the bottom, module name in large display type over it, one large Play button with
+  haptic feedback, and the install status as a small chip ("Ready", "3 files missing"). In
+  landscape the hero takes the left two thirds and the actions sit in a side column.
+- *Modules:* a grid of cards, each with its own `main.bmp`, name and a status chip; tapping a
+  card makes it the selection with a shared-element transition into Home's hero.
+- *Settings:* Material 3 list items grouped under headers; segmented buttons for the quality
+  preset and UI aspect, sliders with value labels for scales, switches for toggles; the
+  Advanced page keeps the developer tools out of the way.
+- *Colour:* dynamic colour from the wallpaper on Android 12+; below that, and as the accent
+  when dynamic colour is off, a seed colour taken from the selected module's art. Dark theme
+  by default, light theme supported.
+- *Layout and motion:* edge-to-edge with proper insets, `NavigationBar` in portrait and
+  `NavigationRail` in landscape, predictive back, fade-through between tabs.
+
+| Unit | What | Owner | Done when |
+| --- | --- | --- | --- |
+| P12.1 | Compose + Material 3 build setup, `ViewModel` holding the P10 launcher state and JNI calls, the theme (dynamic colour, fallback seed, type scale) | agy (Claude spec) | APK builds in CI; the old screens still work through the `ViewModel` |
+| P12.2 | Module art: decode `main.bmp` from the SAF tree (or `HostVfs`) off the main thread, cache it scaled, take a seed colour from it | Claude spec, agy | Host test for the seed colour and the BMP fallback path; a module without `main.bmp` gets a generated gradient |
+| P12.3 | Home and Modules screens in Compose (hero, Play, status chip, card grid, shared-element transition) | agy | Screenshot tests pass in CI |
+| P12.4 | Settings and Advanced screens in Compose; remove the old view-based pages and `LauncherUi` | agy | Every P10 setting and developer control is reachable; screenshot tests pass |
+| P12.5 | **Screenshot tests in CI** (Roborazzi on Robolectric, test-only dependencies): Home, Modules, Settings in portrait and landscape, light and dark, with placeholder art; images uploaded as a CI artifact | Claude spec, agy | The artifact shows every screen, so the look can be reviewed without a phone |
+
+**Batches.** One batch: P12.1 first (others build on it), then P12.2–P12.5 in parallel
+worktrees. One gate, one push, one APK, plus the screenshot artifact for review.
 
 ## Risks decided up front
 

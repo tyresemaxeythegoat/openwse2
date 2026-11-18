@@ -102,6 +102,7 @@ in several files is what made the documents drift before.
 | Current phase, gate results, `N/440` and other coverage counts, blockers, next tasks | `STATUS.md` §1–§5 | Link to `STATUS.md`; do **not** restate the number |
 | Phase checklists, backlog order, milestone log | `ROADMAP.md` | — |
 | Phase 3/4 design: seam, target layout, slice contents, platform risks | `docs/PLATFORM_PLAN.md` | `ROADMAP.md` holds only the checklist |
+| Phase 5 gameplay design: slice order, oracles, evidence map, decisions | `docs/GAMEPLAY_PLAN.md` | `ROADMAP.md` holds only the checklist; progress in `STATUS.md` |
 | Struct layouts, offsets, function VAs, evidence IDs | `docs/ARCHITECTURE.md` + `docs/SYMBOL_MAP.json` | Source comments cite the VA; prose docs link |
 | Per-handler behavior notes and safety deviations | `engine/README.md` and the header comment next to the handler | — |
 | Opcode numbers and names | generated `docs/wse_opcodes.json` | Never typed by hand |
