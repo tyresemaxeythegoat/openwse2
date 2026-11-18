@@ -1,4 +1,6 @@
-# Gameplay plan (Phase 5)
+# Gameplay plan (Phase 5) — superseded 2026-11-18
+
+> **Superseded by `docs/RECOMP_PLAN.md`** (the user chose recompiling the retail code over decompiling it). The oracles below (savegame round-trip, simulation comparison) are reused there.
 
 This document owns the design of Phase 5: everything between "the module's scripts run" and
 "you can play a campaign on the phone". `ROADMAP.md` holds only the checklist; `STATUS.md`
