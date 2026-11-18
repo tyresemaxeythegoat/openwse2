@@ -256,6 +256,53 @@ the host). Wave B added P12.2 (`wse/asset/bmp.h`: `decode_bmp`, `downscale_to_fi
 cache and a seed colour, shared-element transition, predictive back; the view-based pages,
 `LauncherUi` and `themes.xml` removed). Left: P12.5 screenshot tests.
 
+## P13 — Launcher art direction: modern medieval
+
+**Why.** The P12 launcher works on the user's phone (2026-11-18) but "still looks kinda flat and
+soulless". Measured in `android/.../launcher/` (5,253 lines of Kotlin): every surface is a stock
+Material 3 component (9 `OutlinedButton`, 6 `TextButton`, 2 `Button`, 2 `FilledTonalButton`,
+2 `AssistChip`, 7 `ListItem`, 6 `Surface`, 3 `AlertDialog`, stock `NavigationBar` /
+`NavigationRail`), all type is `FontFamily.SansSerif`, backgrounds are flat scheme colours,
+and the colours come from the wallpaper (`dynamicDarkColorScheme`).
+
+**Decisions (interview, 2026-11-18).**
+- *Direction:* medieval and cinematic, but modern: a current game store page for a medieval
+  game, not a fantasy skin. Detailing stays **subtle**: chamfered corners, thin gold hairline
+  borders, a serif display face for titles, film grain and vignette; clean sans body text.
+  No ornate flourishes or engraved textures.
+- *What reads as flat:* stock components, generic type, plain backgrounds. Motion: **moderate**
+  (smooth transitions, press feedback, a gentle hero pan; no ambient particles).
+- *Colour:* a **fixed dark iron-and-gold palette**; the selected module's art seed colour tints
+  the accents and glow. Wallpaper (dynamic) colour is removed.
+- *Theme:* **dark only**; the light scheme is removed.
+- *Fonts:* bundle open-licence (SIL OFL) fonts in `res/font/` with their licence text: a serif
+  display face (Cinzel or similar) for titles and a sans for body text. Fonts are not game
+  assets, so BYOA holds; sizes are measured before choosing and recorded here.
+
+| Unit | What | Owner | Done when |
+| --- | --- | --- | --- |
+| P13.0 | **Screenshot tests in CI** (was P12.5): Roborazzi on Robolectric, test-only dependencies; `HomeScreen`, `ModulesScreen`, `SettingsScreen`, `AdvancedScreen` with fake state and generated placeholder art, portrait and landscape, dark; PNGs uploaded as a CI artifact | Claude spec, agy | The artifact shows every screen; Claude reviews the look from it before each launcher APK |
+| P13.1 | Design tokens: fonts, the iron-and-gold scheme with art-seed accent tint, a chamfered shape set, and a backdrop modifier (gradient + grain + vignette, drawn in code) | Claude spec, agy | `Wse2Theme` has no dynamic or light scheme; type uses the bundled fonts; screenshots show the backdrop |
+| P13.2 | Component kit replacing the stock widgets: primary Play button (gold, chamfered, sheen on press), secondary and text buttons with hairline borders, status chip, framed art banner card with a nameplate, section header with a hairline divider, list rows, themed switch / slider / segmented control / dialog / navigation bar and rail | Claude spec, agy | No stock Material button, chip, `ListItem`, `AlertDialog` or navigation component is used directly in the four screens (grep check); screenshots reviewed |
+| P13.3 | Screens restyled on the kit, plus moderate motion: slow hero pan (Ken Burns), press scale, staggered card entrance, existing fade-through; all animations follow the system animator scale (off when the user disables animations) | agy | Screenshots reviewed by Claude and the user's phone check; APK growth stays within the font sizes plus 100 KB |
+
+**Batches.** P13.0 and P13.1+P13.2 in parallel (different files), then P13.3. One gate, one
+push, one APK per batch; every launcher APK ships with its screenshot artifact.
+
+**Status (2026-11-18).** P13.0-P13.2 landed and CI renders 12 screenshots (`launcher-screenshots`
+artifact; Roborazzi `1.36.0`, Robolectric `4.14.1`, SDK 34). Fonts: Cinzel `125,468 B` and
+Manrope `164,700 B` (variable, SIL OFL 1.1, licences in `res/raw/` and an Advanced "Licences"
+row). Contrast checked: body text 15.66:1 on the background, Play label 7.61:1 (5.72:1 on the
+gradient's dark end). Claude's screenshot review left these for P13.3:
+1. Label weights render thin (variable-font weight possibly not applied).
+2. The Play label is too small for the main action.
+3. The hero's blur also blurs its frame lines.
+4. Empty space below the Home actions (portrait, and the landscape column).
+5. The slider keeps stock tick dots, and the switches are stock pills.
+6. The selected card's glow is stepped.
+7. The tests render screens without the app backdrop.
+8. The hero blur is too strong for real art.
+
 ## Risks decided up front
 
 | Risk | Decision |

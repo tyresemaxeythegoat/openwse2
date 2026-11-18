@@ -12,11 +12,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,32 +21,29 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.wse2.android.launcher.art.ModuleArt
-import org.wse2.android.launcher.art.ModuleArtGraphic
+import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
+import org.wse2.android.launcher.theme.WseShapes
+import org.wse2.android.launcher.theme.wseBackdrop
+import org.wse2.android.launcher.ui.WseBannerCard
+import org.wse2.android.launcher.ui.WsePrimaryButton
+import org.wse2.android.launcher.ui.WseSecondaryButton
+import org.wse2.android.launcher.ui.WseSectionHeader
+import org.wse2.android.launcher.ui.WseStatusChip
+import org.wse2.android.launcher.ui.WseStatusTone
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -68,6 +62,7 @@ fun ModulesScreen(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
+    val colors = LocalWseColors.current
     val hasFolder = installFolder.treeUri != null ||
         !installFolder.displayName.isNullOrBlank()
     val folderLabel = installFolder.displayName?.takeIf { it.isNotBlank() }
@@ -89,12 +84,13 @@ fun ModulesScreen(
                 Text(
                     text = "Modules",
                     style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = colors.onSurface
                 )
 
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = WseShapes.large,
+                    color = colors.surfaceContainerLow,
+                    border = BorderStroke(1.dp, colors.hairline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -103,15 +99,11 @@ fun ModulesScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "WARBAND FOLDER",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        WseSectionHeader(title = "Warband folder")
                         Text(
                             text = folderLabel ?: "No Warband folder selected",
                             style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = colors.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -119,34 +111,34 @@ fun ModulesScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            OutlinedButton(
+                            WseSecondaryButton(
+                                text = "Choose folder",
                                 onClick = onChooseFolder,
                                 enabled = !scanState.inProgress,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .defaultMinSize(minHeight = 48.dp)
-                            ) {
-                                Text("Choose folder", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            OutlinedButton(
+                                modifier = Modifier.weight(1f)
+                            )
+                            WseSecondaryButton(
+                                text = "Rescan",
                                 onClick = onRescan,
                                 enabled = hasFolder && !scanState.inProgress,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .defaultMinSize(minHeight = 48.dp)
-                            ) {
-                                Text("Rescan", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
+                                modifier = Modifier.weight(1f)
+                            )
                         }
 
                         if (scanState.inProgress) {
                             val label = scanState.folderLabel?.takeIf { it.isNotBlank() } ?: "folder"
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            LinearProgressIndicator(
+                                color = colors.accent,
+                                trackColor = colors.surfaceContainerHigh,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 CircularProgressIndicator(
+                                    color = colors.accent,
+                                    trackColor = colors.surfaceContainerHigh,
                                     modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp
                                 )
@@ -154,18 +146,15 @@ fun ModulesScreen(
                                 Text(
                                     text = "Scanning $label…",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    color = colors.onSurface,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
-                            OutlinedButton(
+                            WseSecondaryButton(
+                                text = "Cancel",
                                 onClick = onCancelScan,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 48.dp)
-                            ) {
-                                Text("Cancel")
-                            }
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
@@ -176,14 +165,15 @@ fun ModulesScreen(
             item(key = "modules-scanning", span = { GridItemSpan(maxLineSpan) }) {
                 val label = scanState.folderLabel?.takeIf { it.isNotBlank() } ?: "folder"
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = WseShapes.large,
+                    color = colors.surfaceContainerLow,
+                    border = BorderStroke(1.dp, colors.hairline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = "Scanning $label for Modules/*/module.ini…",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colors.onSurfaceVariant,
                         modifier = Modifier.padding(16.dp)
                     )
                 }
@@ -191,8 +181,9 @@ fun ModulesScreen(
         } else if (state.modules.isEmpty()) {
             item(key = "modules-empty", span = { GridItemSpan(maxLineSpan) }) {
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = WseShapes.large,
+                    color = colors.surfaceContainerLow,
+                    border = BorderStroke(1.dp, colors.hairline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -203,20 +194,18 @@ fun ModulesScreen(
                     ) {
                         Text(
                             text = if (hasFolder) "No modules found" else "Choose your Warband folder",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = colors.onSurface
                         )
                         Text(
                             text = state.emptyMessage,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = colors.onSurfaceVariant
                         )
-                        Button(
-                            onClick = onChooseFolder,
-                            modifier = Modifier.defaultMinSize(minHeight = 48.dp)
-                        ) {
-                            Text("Choose folder")
-                        }
+                        WsePrimaryButton(
+                            text = "Choose folder",
+                            onClick = onChooseFolder
+                        )
                     }
                 }
             }
@@ -277,27 +266,24 @@ fun ModulesScreen(
                         }
                     }
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = WseShapes.large,
+                        color = colors.surfaceContainerLow,
+                        border = BorderStroke(1.dp, colors.hairline),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                text = "SELECTED MODULE DETAILS",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            WseSectionHeader(title = "Selected module details")
                             Text(
                                 text = "${selectedMod.modulePath} · $scriptsLabel · BRFs: " +
                                     "${selectedMod.loadResourceCount} common + " +
                                     "${selectedMod.loadModResourceCount} mod · $installLabel",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = colors.onSurfaceVariant
                             )
                         }
                     }
@@ -319,16 +305,12 @@ private fun ModuleGridCard(
 ) {
     val displayTitle = module.displayName.ifBlank { module.folderName }
     val chipLabel: String
-    val chipContainer: Color
-    val chipLabelColor: Color
-    val chipBorderColor: Color
+    val chipTone: WseStatusTone
     val isMissing = status?.state == InstallCheckState.MISSING
     when (status?.state) {
         InstallCheckState.READY -> {
             chipLabel = "Ready"
-            chipContainer = MaterialTheme.colorScheme.primaryContainer
-            chipLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-            chipBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+            chipTone = WseStatusTone.Ready
         }
         InstallCheckState.MISSING -> {
             val count = status.missingFiles.size
@@ -337,114 +319,31 @@ private fun ModuleGridCard(
                 count > 1 -> "$count files missing"
                 else -> "Files missing"
             }
-            chipContainer = MaterialTheme.colorScheme.errorContainer
-            chipLabelColor = MaterialTheme.colorScheme.onErrorContainer
-            chipBorderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+            chipTone = WseStatusTone.Error
         }
         null, InstallCheckState.CHECKING -> {
             chipLabel = "Checking…"
-            chipContainer = MaterialTheme.colorScheme.surfaceContainerHighest
-            chipLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-            chipBorderColor = MaterialTheme.colorScheme.outlineVariant
+            chipTone = WseStatusTone.Neutral
         }
     }
 
-    OutlinedCard(
+    WseBannerCard(
+        art = art?.bitmap,
+        fallbackSeed = displayTitle,
+        title = displayTitle,
+        subtitle = module.folderName,
+        chip = {
+            WseStatusChip(
+                text = chipLabel,
+                tone = chipTone,
+                enabled = true,
+                onClick = if (isMissing) onShowMissingFiles else null
+            )
+        },
+        selected = selected,
         onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(
-            width = if (selected) 2.dp else 1.dp,
-            color = if (selected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.outlineVariant
-            }
-        ),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            }
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { this.selected = selected }
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-        ) {
-            ModuleArtGraphic(
-                art = art,
-                fallbackTitle = displayTitle,
-                contentDescription = displayTitle,
-                modifier = artModifier.fillMaxSize()
-            )
-            if (selected) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f),
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                ) {
-                    Text(
-                        text = "Selected",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = displayTitle,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = module.folderName,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(2.dp))
-            AssistChip(
-                onClick = onShowMissingFiles,
-                enabled = isMissing,
-                label = {
-                    Text(
-                        text = chipLabel,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = chipContainer,
-                    labelColor = chipLabelColor,
-                    disabledContainerColor = chipContainer,
-                    disabledLabelColor = chipLabelColor
-                ),
-                border = AssistChipDefaults.assistChipBorder(
-                    enabled = true,
-                    borderColor = chipBorderColor,
-                    disabledBorderColor = chipBorderColor
-                )
-            )
-        }
-    }
+        artModifier = artModifier
+    )
 }
 
 private fun previewModulesState(): ModulesUiState {
@@ -492,7 +391,7 @@ private fun previewModulesState(): ModulesUiState {
 @Composable
 private fun PreviewModulesDark() {
     Wse2Theme(darkTheme = true, dynamicColor = false) {
-        Surface {
+        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             ModulesScreen(
                 state = previewModulesState(),
                 installFolder = InstallFolderState(displayName = "Mount & Blade - Warband"),
@@ -512,7 +411,7 @@ private fun PreviewModulesDark() {
 @Composable
 private fun PreviewModulesLight() {
     Wse2Theme(darkTheme = false, dynamicColor = false) {
-        Surface {
+        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             ModulesScreen(
                 state = previewModulesState(),
                 installFolder = InstallFolderState(displayName = "Mount & Blade - Warband"),
@@ -532,7 +431,7 @@ private fun PreviewModulesLight() {
 @Composable
 private fun PreviewModulesEmptyDark() {
     Wse2Theme(darkTheme = true, dynamicColor = false) {
-        Surface {
+        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             ModulesScreen(
                 state = ModulesUiState(),
                 installFolder = InstallFolderState(),

@@ -15,9 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -27,17 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,11 +40,17 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.wse2.android.launcher.art.ModuleArt
+import org.wse2.android.launcher.theme.LocalWseColors
+import org.wse2.android.launcher.theme.wseBackdrop
+import org.wse2.android.launcher.ui.WseDialog
+import org.wse2.android.launcher.ui.WseDialogAction
+import org.wse2.android.launcher.ui.WseNavItem
+import org.wse2.android.launcher.ui.WseNavigationBar
+import org.wse2.android.launcher.ui.WseNavigationRail
 
 private sealed interface LauncherDialogState {
     data class ScanError(val reason: String) : LauncherDialogState
@@ -157,25 +151,15 @@ fun LauncherApp(
 
     when (val dialog = activeDialog) {
         is LauncherDialogState.ScanError -> {
-            AlertDialog(
-                onDismissRequest = { activeDialog = null },
-                title = { Text("Could not read this folder") },
-                text = { Text(dialog.reason) },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            activeDialog = null
-                            onChooseFolder()
-                        }
-                    ) {
-                        Text("Choose a different folder")
-                    }
+            WseDialog(
+                title = "Could not read this folder",
+                text = dialog.reason,
+                confirm = WseDialogAction("Choose a different folder") {
+                    activeDialog = null
+                    onChooseFolder()
                 },
-                dismissButton = {
-                    TextButton(onClick = { activeDialog = null }) {
-                        Text("OK")
-                    }
-                }
+                dismiss = WseDialogAction("OK") { activeDialog = null },
+                onDismissRequest = { activeDialog = null }
             )
         }
         is LauncherDialogState.MissingFiles -> {
@@ -191,46 +175,26 @@ fun LauncherApp(
                     append("\nChoose the folder that contains Modules/ and CommonRes/.")
                 }
             }
-            AlertDialog(
-                onDismissRequest = { activeDialog = null },
-                title = { Text("Missing files ($modName)") },
-                text = {
-                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                        Text(message)
-                    }
+            WseDialog(
+                title = "Missing files ($modName)",
+                text = message,
+                confirm = WseDialogAction("Choose folder") {
+                    activeDialog = null
+                    onChooseFolder()
                 },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            activeDialog = null
-                            onChooseFolder()
-                        }
-                    ) {
-                        Text("Choose folder")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { activeDialog = null }) {
-                        Text("OK")
-                    }
-                }
+                dismiss = WseDialogAction("OK") { activeDialog = null },
+                onDismissRequest = { activeDialog = null }
             )
         }
         is LauncherDialogState.WarbandFilesNotFound -> {
-            AlertDialog(
-                onDismissRequest = { activeDialog = null },
-                title = { Text("Warband files not found") },
-                text = {
-                    Text(
-                        "${dialog.reason}\n\nTap \"Choose folder\" and pick the Mount & Blade: " +
-                            "Warband folder itself (the one that contains Modules, Data and CommonRes)."
-                    )
+            WseDialog(
+                title = "Warband files not found",
+                text = "${dialog.reason}\n\nTap \"Choose folder\" and pick the Mount & Blade: " +
+                    "Warband folder itself (the one that contains Modules, Data and CommonRes).",
+                confirm = WseDialogAction(context.getString(android.R.string.ok)) {
+                    activeDialog = null
                 },
-                confirmButton = {
-                    TextButton(onClick = { activeDialog = null }) {
-                        Text(context.getString(android.R.string.ok))
-                    }
-                }
+                onDismissRequest = { activeDialog = null }
             )
         }
         null -> Unit
@@ -281,6 +245,7 @@ fun LauncherAppContent(
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val colors = LocalWseColors.current
 
     BackHandler(enabled = selectedTab != LauncherTab.HOME) {
         onSelectTab(LauncherTab.HOME)
@@ -308,6 +273,17 @@ fun LauncherAppContent(
         showFpsOverlay = showFpsOverlay,
         statusLog = statusLog
     )
+
+    val navTabs = LauncherTab.entries
+    val navItems = remember(context, navTabs) {
+        navTabs.map { tab ->
+            WseNavItem(
+                label = tab.resolvedTitle(context),
+                icon = navIconFor(tab)
+            )
+        }
+    }
+    val selectedTabIndex = navTabs.indexOf(selectedTab).coerceAtLeast(0)
 
     val renderRoute: @Composable (
         LauncherTab,
@@ -371,37 +347,27 @@ fun LauncherAppContent(
         }
     }
 
-    SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
+    SharedTransitionLayout(
+        modifier = Modifier
+            .fillMaxSize()
+            .wseBackdrop(colors.accent)
+    ) {
         val sharedScope = this
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxSize()) {
-                NavigationRail(
+                WseNavigationRail(
+                    items = navItems,
+                    selectedIndex = selectedTabIndex,
+                    onSelect = { index -> onSelectTab(navTabs[index]) },
                     windowInsets = WindowInsets.safeDrawing.only(
                         WindowInsetsSides.Vertical + WindowInsetsSides.Start
                     )
-                ) {
-                    Spacer(Modifier.weight(1f))
-                    LauncherTab.entries.forEach { tab ->
-                        val label = tab.resolvedTitle(context)
-                        NavigationRailItem(
-                            selected = tab == selectedTab,
-                            onClick = { onSelectTab(tab) },
-                            icon = { Icon(navIconFor(tab), contentDescription = label) },
-                            label = {
-                                Text(
-                                    text = label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                }
+                )
                 Scaffold(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
+                    containerColor = Color.Transparent,
                     contentWindowInsets = WindowInsets.safeDrawing.only(
                         WindowInsetsSides.Vertical + WindowInsetsSides.End
                     )
@@ -431,29 +397,17 @@ fun LauncherAppContent(
             }
         } else {
             Scaffold(
+                containerColor = Color.Transparent,
                 contentWindowInsets = WindowInsets.safeDrawing,
                 bottomBar = {
-                    NavigationBar(
+                    WseNavigationBar(
+                        items = navItems,
+                        selectedIndex = selectedTabIndex,
+                        onSelect = { index -> onSelectTab(navTabs[index]) },
                         windowInsets = WindowInsets.safeDrawing.only(
                             WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
                         )
-                    ) {
-                        LauncherTab.entries.forEach { tab ->
-                            val label = tab.resolvedTitle(context)
-                            NavigationBarItem(
-                                selected = tab == selectedTab,
-                                onClick = { onSelectTab(tab) },
-                                icon = { Icon(navIconFor(tab), contentDescription = label) },
-                                label = {
-                                    Text(
-                                        text = label,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            )
-                        }
-                    }
+                    )
                 }
             ) { innerPadding ->
                 AnimatedContent(

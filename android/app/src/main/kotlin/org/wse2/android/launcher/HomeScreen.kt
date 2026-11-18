@@ -13,27 +13,17 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,14 +35,21 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.wse2.android.launcher.art.ModuleArt
 import org.wse2.android.launcher.art.ModuleArtGraphic
+import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
+import org.wse2.android.launcher.theme.WseType
+import org.wse2.android.launcher.theme.wseBackdrop
+import org.wse2.android.launcher.ui.WsePrimaryButton
+import org.wse2.android.launcher.ui.WseSecondaryButton
+import org.wse2.android.launcher.ui.WseStatusChip
+import org.wse2.android.launcher.ui.WseStatusTone
+import org.wse2.android.launcher.ui.WseTextButton
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -115,9 +112,7 @@ fun HomeScreen(
     }
 
     BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+        modifier = modifier.fillMaxSize()
     ) {
         val isLandscape =
             LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE ||
@@ -294,13 +289,14 @@ private fun HomeHeroBanner(
     artModifier: Modifier,
     modifier: Modifier = Modifier
 ) {
-    val surfaceColor = MaterialTheme.colorScheme.surface
+    val colors = LocalWseColors.current
+    val fadeTarget = colors.background
     val verticalScrim = Brush.verticalGradient(
-        0.0f to surfaceColor.copy(alpha = 0.30f),
-        0.38f to surfaceColor.copy(alpha = 0.14f),
-        0.70f to surfaceColor.copy(alpha = 0.72f),
-        0.92f to surfaceColor.copy(alpha = 0.94f),
-        1.0f to surfaceColor
+        0.0f to fadeTarget.copy(alpha = 0.28f),
+        0.38f to fadeTarget.copy(alpha = 0.14f),
+        0.72f to fadeTarget.copy(alpha = 0.76f),
+        0.94f to fadeTarget.copy(alpha = 0.94f),
+        1.0f to fadeTarget.copy(alpha = 0.0f)
     )
     Box(modifier = modifier) {
         ModuleArtGraphic(
@@ -322,7 +318,7 @@ private fun HomeHeroBanner(
                     .background(
                         Brush.horizontalGradient(
                             0.72f to Color.Transparent,
-                            1.0f to surfaceColor
+                            1.0f to fadeTarget.copy(alpha = 0.92f)
                         )
                     )
             )
@@ -339,14 +335,14 @@ private fun HomeHeroBanner(
         ) {
             Text(
                 text = overline.uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
+                style = WseType.overline,
+                color = colors.primary
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 text = heroTitle,
                 style = MaterialTheme.typography.displayMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = colors.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -354,7 +350,7 @@ private fun HomeHeroBanner(
             Text(
                 text = heroSubtitle,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = colors.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -378,85 +374,46 @@ private fun HomeActionsPanel(
     onShowMissingFiles: (ModuleChoice, List<String>) -> Unit,
     onPlay: () -> Unit
 ) {
+    val colors = LocalWseColors.current
     val haptic = LocalHapticFeedback.current
-    val chipContainerColor: Color
-    val chipLabelColor: Color
-    val chipBorderColor: Color
-    val chipIcon: ImageVector
-    when (statusInfo.tone) {
-        HomeChipTone.READY -> {
-            chipContainerColor = MaterialTheme.colorScheme.primaryContainer
-            chipLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-            chipBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-            chipIcon = HomeIcons.Check
-        }
-        HomeChipTone.MISSING -> {
-            chipContainerColor = MaterialTheme.colorScheme.errorContainer
-            chipLabelColor = MaterialTheme.colorScheme.onErrorContainer
-            chipBorderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
-            chipIcon = HomeIcons.Warning
-        }
-        HomeChipTone.PENDING -> {
-            chipContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-            chipLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-            chipBorderColor = MaterialTheme.colorScheme.outlineVariant
-            chipIcon = HomeIcons.Pending
-        }
+    val chipTone = when (statusInfo.tone) {
+        HomeChipTone.READY -> WseStatusTone.Ready
+        HomeChipTone.MISSING -> WseStatusTone.Error
+        HomeChipTone.PENDING -> WseStatusTone.Neutral
     }
 
     val chipClickable = isMissing && selectedModule != null
-    AssistChip(
-        onClick = {
-            if (chipClickable && selectedModule != null && installStatus != null) {
-                onShowMissingFiles(selectedModule, installStatus.missingFiles)
+    WseStatusChip(
+        text = statusInfo.chipLabel,
+        tone = chipTone,
+        enabled = true,
+        onClick = if (chipClickable) {
+            {
+                if (selectedModule != null && installStatus != null) {
+                    onShowMissingFiles(selectedModule, installStatus.missingFiles)
+                }
             }
-        },
-        enabled = chipClickable,
-        leadingIcon = {
-            Icon(
-                imageVector = chipIcon,
-                contentDescription = null,
-                modifier = Modifier.size(AssistChipDefaults.IconSize)
-            )
-        },
-        label = { Text(statusInfo.chipLabel) },
-        colors = AssistChipDefaults.assistChipColors(
-            containerColor = chipContainerColor,
-            labelColor = chipLabelColor,
-            leadingIconContentColor = chipLabelColor,
-            disabledContainerColor = chipContainerColor,
-            disabledLabelColor = chipLabelColor,
-            disabledLeadingIconContentColor = chipLabelColor
-        ),
-        border = AssistChipDefaults.assistChipBorder(
-            enabled = true,
-            borderColor = chipBorderColor,
-            disabledBorderColor = chipBorderColor
-        )
+        } else {
+            null
+        }
     )
 
-    Button(
+    WsePrimaryButton(
+        text = "Play",
         onClick = {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             onPlay()
         },
         enabled = isReady,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-    ) {
-        Icon(
-            imageVector = HomeIcons.Play,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = "Play",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-        )
-    }
+        leadingIcon = {
+            Icon(
+                imageVector = HomeIcons.Play,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
 
     if (statusInfo.disabledReason != null) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -464,62 +421,48 @@ private fun HomeActionsPanel(
                 text = statusInfo.disabledReason,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (isMissing) {
-                    MaterialTheme.colorScheme.error
+                    colors.error
                 } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                    colors.onSurfaceVariant
                 }
             )
             if (isMissing && selectedModule != null && installStatus != null) {
-                TextButton(
-                    onClick = { onShowMissingFiles(selectedModule, installStatus.missingFiles) },
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp)
-                ) {
-                    Text("View missing files")
-                }
+                WseTextButton(
+                    text = "View missing files",
+                    onClick = { onShowMissingFiles(selectedModule, installStatus.missingFiles) }
+                )
             }
         }
     }
 
     if (compactButtonsStacked) {
-        FilledTonalButton(
+        WseSecondaryButton(
+            text = "Change module",
             onClick = onChangeModule,
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = 48.dp)
-        ) {
-            Text("Change module")
-        }
-        OutlinedButton(
+            modifier = Modifier.fillMaxWidth()
+        )
+        WseSecondaryButton(
+            text = "Choose folder",
             onClick = onChooseFolder,
             enabled = !scanInProgress,
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = 48.dp)
-        ) {
-            Text("Choose folder")
-        }
+            modifier = Modifier.fillMaxWidth()
+        )
     } else {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            OutlinedButton(
+            WseSecondaryButton(
+                text = "Choose folder",
                 onClick = onChooseFolder,
                 enabled = !scanInProgress,
-                modifier = Modifier
-                    .weight(1f)
-                    .defaultMinSize(minHeight = 48.dp)
-            ) {
-                Text("Choose folder", maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            FilledTonalButton(
+                modifier = Modifier.weight(1f)
+            )
+            WseSecondaryButton(
+                text = "Modules",
                 onClick = onChangeModule,
-                modifier = Modifier
-                    .weight(1f)
-                    .defaultMinSize(minHeight = 48.dp)
-            ) {
-                Text("Modules", maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 
@@ -538,7 +481,7 @@ private fun HomeActionsPanel(
     Text(
         text = footerText,
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = colors.onSurfaceVariant,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis
     )
@@ -557,82 +500,6 @@ private object HomeIcons {
                 moveTo(8f, 5f)
                 verticalLineTo(19f)
                 lineTo(19f, 12f)
-                close()
-            }
-        }.build()
-    }
-
-    val Check: ImageVector by lazy {
-        ImageVector.Builder(
-            name = "Check",
-            defaultWidth = 24.dp,
-            defaultHeight = 24.dp,
-            viewportWidth = 24f,
-            viewportHeight = 24f
-        ).apply {
-            path(fill = SolidColor(Color.White)) {
-                moveTo(9f, 16.17f)
-                lineTo(4.83f, 12f)
-                lineTo(3.41f, 13.41f)
-                lineTo(9f, 19f)
-                lineTo(21f, 7f)
-                lineTo(19.59f, 5.59f)
-                close()
-            }
-        }.build()
-    }
-
-    val Warning: ImageVector by lazy {
-        ImageVector.Builder(
-            name = "Warning",
-            defaultWidth = 24.dp,
-            defaultHeight = 24.dp,
-            viewportWidth = 24f,
-            viewportHeight = 24f
-        ).apply {
-            path(fill = SolidColor(Color.White)) {
-                moveTo(1f, 21f)
-                horizontalLineTo(23f)
-                lineTo(12f, 2f)
-                close()
-                moveTo(13f, 18f)
-                horizontalLineTo(11f)
-                verticalLineTo(16f)
-                horizontalLineTo(13f)
-                close()
-                moveTo(13f, 14f)
-                horizontalLineTo(11f)
-                verticalLineTo(10f)
-                horizontalLineTo(13f)
-                close()
-            }
-        }.build()
-    }
-
-    val Pending: ImageVector by lazy {
-        ImageVector.Builder(
-            name = "Pending",
-            defaultWidth = 24.dp,
-            defaultHeight = 24.dp,
-            viewportWidth = 24f,
-            viewportHeight = 24f
-        ).apply {
-            path(fill = SolidColor(Color.White)) {
-                moveTo(12f, 2f)
-                curveTo(6.48f, 2f, 2f, 6.48f, 2f, 12f)
-                curveTo(2f, 17.52f, 6.48f, 22f, 12f, 22f)
-                curveTo(17.52f, 22f, 22f, 17.52f, 22f, 12f)
-                curveTo(22f, 6.48f, 17.52f, 2f, 12f, 2f)
-                close()
-                moveTo(13f, 17f)
-                horizontalLineTo(11f)
-                verticalLineTo(11f)
-                horizontalLineTo(13f)
-                close()
-                moveTo(13f, 9f)
-                horizontalLineTo(11f)
-                verticalLineTo(7f)
-                horizontalLineTo(13f)
                 close()
             }
         }.build()
@@ -669,7 +536,7 @@ private fun previewHomeState(missing: Boolean = false): HomeUiState {
 @Composable
 private fun PreviewHomePortraitDark() {
     Wse2Theme(darkTheme = true, dynamicColor = false) {
-        Surface {
+        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             HomeScreen(
                 state = previewHomeState(),
                 onChooseFolder = {},
@@ -681,11 +548,11 @@ private fun PreviewHomePortraitDark() {
     }
 }
 
-@Preview(name = "Home Portrait Light", showBackground = true, widthDp = 390, heightDp = 844)
+@Preview(name = "Home Portrait Missing", showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
 private fun PreviewHomePortraitLight() {
     Wse2Theme(darkTheme = false, dynamicColor = false) {
-        Surface {
+        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             HomeScreen(
                 state = previewHomeState(missing = true),
                 onChooseFolder = {},
@@ -701,7 +568,7 @@ private fun PreviewHomePortraitLight() {
 @Composable
 private fun PreviewHomeLandscapeDark() {
     Wse2Theme(darkTheme = true, dynamicColor = false) {
-        Surface {
+        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             HomeScreen(
                 state = previewHomeState(),
                 onChooseFolder = {},
