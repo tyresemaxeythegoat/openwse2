@@ -266,6 +266,10 @@ class WseLauncherActivity : Activity() {
             text = "Launch WSE2 SDL3 Self-Test (WseActivity)"
             setOnClickListener { launchSelfTestActivity() }
         })
+        container.addView(Button(this).apply {
+            text = "Run Selected Module (UI shell)"
+            setOnClickListener { launchSelfTestActivity(runModule = true) }
+        })
 
         addSectionTitle("Status Log")
         outputStatusText = TextView(this).apply {
@@ -875,10 +879,17 @@ class WseLauncherActivity : Activity() {
         }
     }
 
-    private fun launchSelfTestActivity() {
+    // `runModule`: WseActivity runs the selected module's UI from the picked tree
+    // (`--saf-module`) instead of the self-test.
+    private fun launchSelfTestActivity(runModule: Boolean = false) {
         val selectedPos = moduleSpinner.selectedItemPosition
         val selectedMod = if (selectedPos in modules.indices) modules[selectedPos].folderName else "Native"
+        if (runModule && (selectedTreeUri == null || selectedPos !in modules.indices)) {
+            outputStatusText.text = "Pick a Warband folder and a module first."
+            return
+        }
         val intent = Intent(this, WseActivity::class.java).apply {
+            putExtra(EXTRA_RUN_MODULE, runModule)
             putExtra(EXTRA_TREE_URI, selectedTreeUri?.toString() ?: "")
             putExtra(EXTRA_MODULE_NAME, selectedMod)
             // Stable mode id ("system" / "turnip" / "panvk"), as parse_driver_mode expects.
@@ -912,5 +923,6 @@ class WseLauncherActivity : Activity() {
         const val EXTRA_TREE_URI = "wse2.extra.TREE_URI"
         const val EXTRA_MODULE_NAME = "wse2.extra.MODULE_NAME"
         const val EXTRA_GPU_DRIVER = "wse2.extra.GPU_DRIVER"
+        const val EXTRA_RUN_MODULE = "wse2.extra.RUN_MODULE"
     }
 }

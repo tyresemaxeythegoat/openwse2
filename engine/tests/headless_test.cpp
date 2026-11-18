@@ -414,6 +414,26 @@ void test_ui_game_shell() {
                shell.pixels()[2] == 3U,
            "empty presentation renders the configured clear colour");
 
+    // An unchanged tree at the same size keeps the last frame; a changed one redraws.
+    const std::uint64_t serial = shell.frame_serial();
+    expect(shell.frame(0.0f, 1600U, 1200U) && shell.frame_serial() == serial &&
+               shell.frames_reused() == 1U,
+           "an unchanged widget tree reuses the last frame");
+    {
+        wse::game::UiWidget a{};
+        a.children.emplace_back();
+        a.children[0].children.emplace_back();
+        wse::game::UiWidget b = a;
+        expect(wse::platform::UiTreeHasher::hash(a) == wse::platform::UiTreeHasher::hash(b),
+               "equal trees hash equal");
+        b.children[0].children[0].text = "x";
+        expect(wse::platform::UiTreeHasher::hash(a) != wse::platform::UiTreeHasher::hash(b),
+               "a text change two levels down changes the tree hash");
+        b = a;
+        b.children[0].children[0].highlighted = true;
+        expect(wse::platform::UiTreeHasher::hash(a) != wse::platform::UiTreeHasher::hash(b),
+               "a hover-state change changes the tree hash");
+    }
     const double before = vm->appTimeSeconds;
     expect(shell.frame(5.0f, 640U, 360U), "long shell frame runs");
     expect(std::abs(vm->appTimeSeconds - before - 0.25) < 1e-9,
@@ -450,6 +470,23 @@ void test_ui_game_shell() {
         e.type = wse::platform::RawInputEvent::Type::MouseButtonUp;
         menu_shell.feed(e);
     };
+    // Hovering a button changes the tree (highlight), so that frame redraws; the next reuses it.
+    const std::uint64_t menu_serial = menu_shell.frame_serial();
+    expect(menu_shell.frame(1.0f / 60.0f, 800U, 600U) && menu_shell.frame_serial() == menu_serial,
+           "a still main menu reuses its frame");
+    {
+        wse::platform::RawInputEvent hover{};
+        hover.type = wse::platform::RawInputEvent::Type::MouseMotion;
+        hover.x = (0.05f + 0.0925f) / wse::game::kUiScreenWidth;
+        hover.y = 1.0f - (0.44f + 0.0155f) / wse::game::kUiScreenHeight;
+        menu_shell.feed(hover);
+    }
+    expect(menu_shell.frame(1.0f / 60.0f, 800U, 600U) &&
+               menu_shell.frame_serial() == menu_serial + 1U,
+           "hovering a main-menu button redraws the frame");
+    expect(menu_shell.frame(1.0f / 60.0f, 800U, 600U) &&
+               menu_shell.frame_serial() == menu_serial + 1U,
+           "the hovered menu, unchanged, reuses its frame");
     tap(0.05f + 0.0925f, 0.44f + 0.0155f);  // start_new_game_button
     expect(menu_shell.frame(1.0f / 60.0f, 800U, 600U) && menu_shell.in_game() &&
                menu_shell.vm()->globalVariables.get(1) == 7,

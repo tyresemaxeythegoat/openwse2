@@ -154,6 +154,9 @@ class WseSafBridge(
     }
 
     external fun nativeScanTree(): String
+    // Keeps this bridge (JNI global reference) for the game thread's module shell
+    // (platform/android/saf_game_tree.h); `WseActivity` calls it before SDL starts.
+    external fun nativeRegisterGameTree()
     external fun nativeVerifyModule(moduleRelDir: String): String
     external fun nativeProbeVulkanAndRenderMesh(
         driverMode: String,

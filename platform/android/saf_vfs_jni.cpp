@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "driver_loader.h"
+#include "saf_game_tree.h"
 #include "wse/core/json.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/performance.h"
@@ -893,3 +894,117 @@ Java_org_wse2_android_WseSafBridge_nativeProbeVulkanAndRenderMesh(JNIEnv* env,
 }
 
 }  // extern "C"
+
+// ---------------------------------------------------------------------------
+// Registered game tree for the in-app module shell (`saf_game_tree.h`).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct GameTreeRegistry {
+    std::mutex mutex;
+    jobject bridge = nullptr;  // global reference to a `WseSafBridge`
+};
+
+GameTreeRegistry& game_tree_registry() {
+    static GameTreeRegistry registry{};
+    return registry;
+}
+
+}  // namespace
+
+extern "C" {
+
+// `WseActivity` registers the bridge for the launcher's tree before SDL starts the game
+// thread; a later call replaces it, and a null `thiz` cannot occur (instance method).
+JNIEXPORT void JNICALL
+Java_org_wse2_android_WseSafBridge_nativeRegisterGameTree(JNIEnv* env, jobject thiz) {
+    if (env == nullptr || thiz == nullptr) {
+        return;
+    }
+    GameTreeRegistry& reg = game_tree_registry();
+    std::lock_guard<std::mutex> lock(reg.mutex);
+    jobject global = env->NewGlobalRef(thiz);
+    if (clear_if_exception(env) || global == nullptr) {
+        return;
+    }
+    if (reg.bridge != nullptr) {
+        env->DeleteGlobalRef(reg.bridge);
+    }
+    reg.bridge = global;
+}
+
+}  // extern "C"
+
+namespace wse::platform::android_saf {
+
+struct RegisteredGameTree::Impl {
+    jobject bridge = nullptr;  // own global reference, released with the tree
+    JNIEnv* env = nullptr;
+    std::unique_ptr<ScopedBridgeSession> session{};
+    std::shared_ptr<AndroidJniSafBackend> backend{};
+    std::unique_ptr<SafVfs> vfs{};
+
+    ~Impl() {
+        vfs.reset();
+        if (backend) {
+            backend->set_binding(nullptr);
+        }
+        session.reset();  // releases its local class reference on `env`
+        if (env != nullptr && bridge != nullptr) {
+            env->DeleteGlobalRef(bridge);
+        }
+    }
+};
+
+RegisteredGameTree::RegisteredGameTree(std::unique_ptr<Impl> impl) noexcept
+    : impl_(std::move(impl)) {}
+
+RegisteredGameTree::~RegisteredGameTree() = default;
+
+Vfs& RegisteredGameTree::vfs() noexcept { return *impl_->vfs; }
+
+std::size_t RegisteredGameTree::file_count() const noexcept {
+    return impl_->vfs->index_file_count();
+}
+
+std::unique_ptr<RegisteredGameTree> RegisteredGameTree::open(void* jni_env,
+                                                             std::string* error_out) {
+    const auto fail = [error_out](const char* message) -> std::unique_ptr<RegisteredGameTree> {
+        if (error_out != nullptr) {
+            *error_out = message;
+        }
+        return nullptr;
+    };
+    auto* env = static_cast<JNIEnv*>(jni_env);
+    if (env == nullptr) {
+        return fail("no JNIEnv for the calling thread");
+    }
+    auto impl = std::make_unique<Impl>();
+    {
+        GameTreeRegistry& reg = game_tree_registry();
+        std::lock_guard<std::mutex> lock(reg.mutex);
+        if (reg.bridge == nullptr) {
+            return fail("no SAF tree registered (launch from WseLauncherActivity)");
+        }
+        impl->bridge = env->NewGlobalRef(reg.bridge);
+    }
+    impl->env = env;
+    if (clear_if_exception(env) || impl->bridge == nullptr) {
+        impl->bridge = nullptr;
+        return fail("could not reference the registered SAF bridge");
+    }
+    impl->session = std::make_unique<ScopedBridgeSession>(env, impl->bridge);
+    if (!impl->session->valid()) {
+        return fail("the registered SAF bridge has no tree URI");
+    }
+    impl->backend = std::make_shared<AndroidJniSafBackend>();
+    impl->session->attach(impl->backend);
+    impl->vfs = std::make_unique<SafVfs>(impl->backend, false);
+    if (!impl->vfs->rebuild_index()) {
+        return fail("indexing the SAF tree failed (permission revoked or tree removed?)");
+    }
+    return std::unique_ptr<RegisteredGameTree>(new RegisteredGameTree(std::move(impl)));
+}
+
+}  // namespace wse::platform::android_saf

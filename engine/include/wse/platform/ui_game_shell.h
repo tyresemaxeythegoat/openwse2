@@ -37,6 +37,76 @@
 
 namespace wse::platform {
 
+// FNV-1a over every field of a widget tree, for skipping the rasterizer when nothing changed:
+// `UiRhiRenderer::render_tree` reads only the tree, the font, the render config and the
+// uploaded assets, so equal hashes (with equal config) give an identical frame. Every
+// `UiWidget` field is hashed, render-relevant or not; a field added to `UiWidget` must be added
+// here, or changes to it alone will not redraw.
+class UiTreeHasher {
+public:
+    [[nodiscard]] static std::uint64_t hash(const game::UiWidget& root) {
+        UiTreeHasher h;
+        h.widget(root);
+        return h.state_;
+    }
+
+private:
+    void bytes(const void* data, std::size_t n) noexcept {
+        const auto* p = static_cast<const unsigned char*>(data);
+        for (std::size_t i = 0; i < n; ++i) {
+            state_ = (state_ ^ p[i]) * 0x100000001b3ULL;
+        }
+    }
+    template <typename T>
+    void pod(const T& v) noexcept {
+        bytes(&v, sizeof(T));
+    }
+    void str(const std::string& s) noexcept {
+        pod(s.size());
+        bytes(s.data(), s.size());
+    }
+    void vec2(const core::WseVec2& v) noexcept {
+        pod(v.x);
+        pod(v.y);
+    }
+    void widget(const game::UiWidget& w) {
+        str(w.id);
+        pod(w.kind);
+        vec2(w.pos);
+        vec2(w.size);
+        str(w.text);
+        vec2(w.text_pos);
+        vec2(w.text_scale);
+        pod(w.text_flags);
+        pod(w.color_argb);
+        pod(w.tint_mesh);
+        pod(w.text_color_argb);
+        pod(w.highlight_color_argb);
+        str(w.mesh_name);
+        str(w.highlight_mesh_name);
+        str(w.material_name);
+        pod(w.overlay_id);
+        pod(w.action_tag);
+        pod(w.action_param);
+        pod(w.draw_priority);
+        pod(w.visible);
+        pod(w.enabled);
+        pod(w.highlighted);
+        pod(w.pressed);
+        vec2(w.child_offset);
+        pod(w.clip_children);
+        pod(w.has_mesh_rect);
+        vec2(w.mesh_pos);
+        vec2(w.mesh_size);
+        pod(w.children.size());
+        for (const game::UiWidget& c : w.children) {
+            widget(c);
+        }
+    }
+
+    std::uint64_t state_ = 0xcbf29ce484222325ULL;
+};
+
 struct UiGameShellOptions {
     // Module run settings. `drive_ui` is forced on; `trigger_frames` is unused (the host
     // decides how many frames run). Unimplemented opcodes are counted, not fatal, by default:
@@ -127,6 +197,9 @@ public:
         assets_.reset();
         pixels_.clear();
         width_ = height_ = 0U;
+        last_tree_hash_ = 0U;
+        frames_reused_ = 0U;
+        ++frame_serial_;  // a host holding the old frame re-checks it
     }
 
     void feed(const RawInputEvent& ev) { input_.feed(ev); }
@@ -159,6 +232,10 @@ public:
     [[nodiscard]] const std::vector<std::uint8_t>& pixels() const noexcept { return pixels_; }
     [[nodiscard]] std::uint32_t width() const noexcept { return width_; }
     [[nodiscard]] std::uint32_t height() const noexcept { return height_; }
+    // Bumped each time `pixels()` is redrawn; a host re-uploads its texture only on a change.
+    [[nodiscard]] std::uint64_t frame_serial() const noexcept { return frame_serial_; }
+    // Frames whose widget tree hashed the same as the last drawn one (rasterizer skipped).
+    [[nodiscard]] std::uint64_t frames_reused() const noexcept { return frames_reused_; }
     [[nodiscard]] const std::vector<game::UiEvent>& last_events() const noexcept { return last_events_; }
     [[nodiscard]] bool running() const noexcept { return runner_ != nullptr && runner_->running(); }
     // The main menu's quit button was pressed; the host should close.
@@ -232,9 +309,18 @@ private:
         UiRenderConfig cfg = options_.render;
         cfg.viewport_width = w;
         cfg.viewport_height = h;
+        // Menus and most presentations sit still for many frames: keep the last frame when the
+        // tree and the frame size are unchanged.
+        const std::uint64_t tree_hash = UiTreeHasher::hash(ui_->root);
+        if (!pixels_.empty() && tree_hash == last_tree_hash_ && w == width_ && h == height_) {
+            ++frames_reused_;
+            return;
+        }
         if (renderer_->render_tree(ui_->root, assets_->font, cfg, pixels_)) {
             width_ = w;
             height_ = h;
+            last_tree_hash_ = tree_hash;
+            ++frame_serial_;
         }
     }
 
@@ -251,6 +337,9 @@ private:
     std::vector<std::uint8_t> pixels_{};
     std::uint32_t width_ = 0U;
     std::uint32_t height_ = 0U;
+    std::uint64_t last_tree_hash_ = 0U;
+    std::uint64_t frame_serial_ = 0U;
+    std::uint64_t frames_reused_ = 0U;
     bool in_game_ = false;
     bool quit_requested_ = false;
 };

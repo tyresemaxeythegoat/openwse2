@@ -18,6 +18,8 @@
 #ifdef __ANDROID__
 #include <android/native_window.h>
 #include <dlfcn.h>
+
+#include "../android/saf_game_tree.h"
 #endif
 #include "wse_selftest.h"
 
@@ -229,16 +231,42 @@ void apply_display_frame_rate(SDL_Window* window,
 // RGBA8 UI frame is streamed into an SDL texture stretched over the window (Warband's UI
 // space is stretched the same way, so pointer positions map 1:1). When the module stops
 // (a VM error with `stop_on_error`), the last frame stays up with the error on top.
-// SAF-picked installs are not reachable here yet: the SAF backend needs a JNI binding on
-// this thread (STATUS.md §5, P9 Part 2 open item 1).
+// With `from_saf` (Android `--saf-module`, launched from `WseLauncherActivity`) the install
+// is the SAF tree `WseActivity` registered, opened on this thread
+// (`android_saf::RegisteredGameTree`); `warband_root` is unused.
 int run_module_shell(SDL_Window* window,
                      SDL_Renderer* renderer,
                      wse::platform::SdlInputBackend* sdl_input,
                      AppLifecycle& app,
                      wse::platform::FramePacer& frame_pacer,
                      const std::string& warband_root,
-                     const std::string& module_dir) {
-    wse::platform::HostVfs vfs{fs::path(warband_root)};
+                     const std::string& module_dir,
+                     bool from_saf) {
+    std::string error;
+    const std::uint64_t load_start_ns = SDL_GetTicksNS();
+    // Declared before `shell`, which keeps a reference to the VFS until it is destroyed.
+    std::unique_ptr<wse::platform::HostVfs> host_vfs;
+#ifdef __ANDROID__
+    std::unique_ptr<wse::platform::android_saf::RegisteredGameTree> saf_tree;
+#endif
+    wse::platform::Vfs* vfs = nullptr;
+    if (from_saf) {
+#ifdef __ANDROID__
+        saf_tree = wse::platform::android_saf::RegisteredGameTree::open(SDL_GetAndroidJNIEnv(),
+                                                                        &error);
+        if (saf_tree) {
+            vfs = &saf_tree->vfs();
+            SDL_Log("[WSE2] SAF tree indexed: %zu files (%llu ms)", saf_tree->file_count(),
+                    static_cast<unsigned long long>((SDL_GetTicksNS() - load_start_ns) /
+                                                    1000000ULL));
+        }
+#else
+        error = "--saf-module is Android-only";
+#endif
+    } else {
+        host_vfs = std::make_unique<wse::platform::HostVfs>(fs::path(warband_root));
+        vfs = host_vfs.get();
+    }
     wse::platform::UiGameShellOptions opts{};
     opts.run.module_dir = module_dir;
     opts.run.load_options.native_dir = "Modules/Native";
@@ -247,10 +275,9 @@ int run_module_shell(SDL_Window* window,
     opts.run.enable_lua = false;  // the app links no `wse_lua` runtime yet
 
     wse::platform::UiGameShell shell;
-    std::string error;
-    const std::uint64_t load_start_ns = SDL_GetTicksNS();
-    bool running = shell.start(vfs, opts, &error);
-    SDL_Log("[WSE2] module shell: %s %s (%s, %llu ms)", warband_root.c_str(), module_dir.c_str(),
+    bool running = vfs != nullptr && shell.start(*vfs, opts, &error);
+    SDL_Log("[WSE2] module shell: %s %s (%s, %llu ms)",
+            from_saf ? "(SAF tree)" : warband_root.c_str(), module_dir.c_str(),
             running ? "started" : error.c_str(),
             static_cast<unsigned long long>((SDL_GetTicksNS() - load_start_ns) / 1000000ULL));
 #ifndef __ANDROID__
@@ -261,6 +288,7 @@ int run_module_shell(SDL_Window* window,
     SDL_Texture* tex = nullptr;
     std::uint32_t tex_w = 0U;
     std::uint32_t tex_h = 0U;
+    std::uint64_t uploaded_serial = ~std::uint64_t{0};
     std::vector<wse::platform::RawInputEvent> events;
     std::uint64_t last_ns = SDL_GetTicksNS();
     bool quit = false;
@@ -272,6 +300,15 @@ int run_module_shell(SDL_Window* window,
                 quit = true;
             } else if (ev.type == SDL_EVENT_TEXT_INPUT && ev.text.text != nullptr) {
                 shell.feed_text(ev.text.text);
+            } else if (ev.type == SDL_EVENT_RENDER_DEVICE_RESET) {
+                // Every texture is gone: recreate (and re-upload) on this frame.
+                if (tex != nullptr) {
+                    SDL_DestroyTexture(tex);
+                    tex = nullptr;
+                }
+            } else if (ev.type == SDL_EVENT_RENDER_TARGETS_RESET ||
+                       ev.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
+                uploaded_serial = ~std::uint64_t{0};  // contents may be lost: re-upload
             }
             if (sdl_input) {
                 sdl_input->push_sdl_event(&ev);
@@ -319,10 +356,16 @@ int run_module_shell(SDL_Window* window,
                 if (tex != nullptr) {
                     SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
                 }
+                uploaded_serial = ~std::uint64_t{0};  // new texture: upload whatever is current
             }
             if (tex != nullptr) {
-                SDL_UpdateTexture(tex, nullptr, shell.pixels().data(),
-                                  static_cast<int>(tex_w * 4U));
+                // `UiGameShell` keeps the last frame while the widget tree is unchanged;
+                // upload only redrawn frames.
+                if (uploaded_serial != shell.frame_serial()) {
+                    SDL_UpdateTexture(tex, nullptr, shell.pixels().data(),
+                                      static_cast<int>(tex_w * 4U));
+                    uploaded_serial = shell.frame_serial();
+                }
                 SDL_RenderTexture(renderer, tex, nullptr, nullptr);
             }
         }
@@ -420,17 +463,27 @@ int main(int argc, char* argv[]) {
         apply_launch_cfg(launch_cfg);
     }
 
-    // `--module <warband_root> [module_rel_dir]` runs a module (`run_module_shell`);
-    // otherwise an optional first argument overrides the self-test fixture path.
+    // `--module <warband_root> [module_rel_dir]` runs a module from a directory and
+    // `--saf-module <module_rel_dir>` one from the SAF tree `WseActivity` registered
+    // (`run_module_shell`); otherwise an optional first argument overrides the self-test
+    // fixture path.
     std::string cli_fixture;
     std::string module_root;
     std::string module_rel = "Modules/Native";
+    bool module_mode = false;
+    bool module_from_saf = false;
     if (argc > 2 && argv[1] && std::string_view(argv[1]) == "--module" && argv[2] &&
         argv[2][0] != '\0') {
+        module_mode = true;
         module_root = argv[2];
         if (argc > 3 && argv[3] && argv[3][0] != '\0') {
             module_rel = argv[3];
         }
+    } else if (argc > 2 && argv[1] && std::string_view(argv[1]) == "--saf-module" && argv[2] &&
+               argv[2][0] != '\0') {
+        module_mode = true;
+        module_from_saf = true;
+        module_rel = argv[2];
     } else if (argc > 1 && argv[1] && argv[1][0] != '\0') {
         cli_fixture = argv[1];
     }
@@ -461,9 +514,9 @@ int main(int argc, char* argv[]) {
     std::atomic<bool>& terminating = app.terminating;
     SDL_AddEventWatch(on_app_event, &app);
 
-    if (!module_root.empty()) {
+    if (module_mode) {
         const int rc = run_module_shell(window, renderer, sdl_input.get(), app, frame_pacer,
-                                        module_root, module_rel);
+                                        module_root, module_rel, module_from_saf);
         SDL_RemoveEventWatch(on_app_event, &app);
         if (audio_worker) {
             audio_worker->stop();

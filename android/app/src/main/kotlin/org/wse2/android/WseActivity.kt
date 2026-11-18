@@ -2,6 +2,7 @@ package org.wse2.android
 
 import android.content.Context
 import android.os.Build
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -18,8 +19,19 @@ class WseActivity : SDLActivity() {
     // `adb shell am start -n org.wse2.android/.WseActivity -e wse.module_root <dir>
     // [-e wse.module Modules/<name>]` runs that module's UI (`run_module_shell` in
     // sdl_selftest_main.cpp) instead of the self-test. `<dir>` is a plain directory the app can
-    // read (e.g. under getExternalFilesDir); SAF-picked installs are not wired to it yet.
+    // read (e.g. under getExternalFilesDir).
+    //
+    // From the launcher's "Run Selected Module" button (EXTRA_RUN_MODULE) the module comes from
+    // the SAF tree it picked instead: onCreate registers a WseSafBridge for that tree and the
+    // shell runs `--saf-module Modules/<name>`.
     override fun getArguments(): Array<String> {
+        val launched = intent
+        if (launched != null && launched.getBooleanExtra(WseLauncherActivity.EXTRA_RUN_MODULE, false)) {
+            val name = launched.getStringExtra(WseLauncherActivity.EXTRA_MODULE_NAME)
+            if (gameTreeRegistered && !name.isNullOrEmpty()) {
+                return arrayOf("--saf-module", "Modules/$name")
+            }
+        }
         val root = intent?.getStringExtra(EXTRA_MODULE_ROOT)
         if (root.isNullOrEmpty()) {
             return emptyArray()
@@ -33,6 +45,7 @@ class WseActivity : SDLActivity() {
     }
 
     private var powerManager: PowerManager? = null
+    private var gameTreeRegistered = false
     private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
     private val thermalHandler = Handler(Looper.getMainLooper())
     private var lastHeadroomPollMs = Long.MIN_VALUE / 2
@@ -47,6 +60,7 @@ class WseActivity : SDLActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // The launcher saved its choices into config/performance.json under filesDir.
         WseSafBridge.nativeApplyPerformanceSettings(filesDir.absolutePath)
+        registerGameTree()
 
         powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
         super.onCreate(savedInstanceState)
@@ -76,6 +90,27 @@ class WseActivity : SDLActivity() {
         }
         thermalListener = null
         super.onPause()
+    }
+
+    // The launcher holds a persistable read/write grant on the tree it picked, so this activity
+    // can open it by URI. Runs before super.onCreate, which later starts the SDL thread that
+    // reads the registration.
+    private fun registerGameTree() {
+        val launched = intent ?: return
+        if (!launched.getBooleanExtra(WseLauncherActivity.EXTRA_RUN_MODULE, false)) {
+            return
+        }
+        val tree = launched.getStringExtra(WseLauncherActivity.EXTRA_TREE_URI)
+        if (tree.isNullOrEmpty()) {
+            return
+        }
+        gameTreeRegistered = try {
+            // WseSafBridge's companion object loads libSDL3.so and libwse2.so.
+            WseSafBridge(applicationContext, Uri.parse(tree)).nativeRegisterGameTree()
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun pushThermalUpdate(pollHeadroom: Boolean) {
