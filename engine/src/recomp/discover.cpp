@@ -113,6 +113,7 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
     ZydisRegister index_reg = ZYDIS_REGISTER_NONE;
     std::uint64_t table = 0;
     std::int64_t table_disp = 0;
+    std::uint64_t entry_load_va = 0;
     bool have_entry_load = false;
     bool signed_entries = false;
     bool have_add = false;
@@ -133,6 +134,7 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
             table_disp = p->ops[1].mem.disp.value;
             signed_entries = i.mnemonic == ZYDIS_MNEMONIC_MOVSXD;
             have_entry_load = true;
+            entry_load_va = p->va;
             continue;
         }
     }
@@ -140,12 +142,13 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
         return false;
     }
     // The base register must hold the image base. Its load may sit in an earlier block, so
-    // search every instruction before the jmp (nearest first) for the last write to it.
+    // search every instruction before the table load (nearest first) for the last write to it
+    // (the register may be reused between the `add` and the `jmp`).
     bool base_ok = false;
     bool table_relative = false;  // clang shape: entries are offsets from the table
     for (auto r = fn.insns.rbegin(); r != fn.insns.rend(); ++r) {
         const DInsn* p = &r->second;
-        if (p->va >= jmp.va) {
+        if (p->va >= entry_load_va) {
             continue;
         }
         if (p->ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER && widen(p->ops[0].reg.value) == base_reg &&
@@ -231,6 +234,23 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
                 limit = d.ops[1].imm.value.s;
                 break;
             }
+        }
+    }
+    if (limit < 0) {
+        // No `cmp`/`ja`: an index masked by `and idx, 2^k - 1` (clang lowers `switch (x & 7)`
+        // this way) is bounded by the mask. It must be the last write to the index register
+        // before the table load, possibly in an earlier block (threaded switches reuse it).
+        for (auto r = fn.insns.rbegin(); r != fn.insns.rend(); ++r) {
+            const DInsn* p = &r->second;
+            if (p->ops[0].type != ZYDIS_OPERAND_TYPE_REGISTER || widen(p->ops[0].reg.value) != bound_reg ||
+                (p->ops[0].actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) == 0 || p->va >= entry_load_va) {
+                continue;
+            }
+            if (p->ins.mnemonic == ZYDIS_MNEMONIC_AND && p->ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE &&
+                p->ops[1].imm.value.s >= 0) {
+                limit = p->ops[1].imm.value.s;
+            }
+            break;
         }
     }
     if (limit < 0 || limit > 65535) {

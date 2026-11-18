@@ -43,10 +43,10 @@ static inline void write_u64_le(u8* p, u64 v) {
     }
 }
 
-#define RUN_CMPS(insn, p1, p2, n, t, fl_out)                                                       \
+#define RUN_CMPS(insn, p1, p2, n, tflag, fl_out)                                                       \
     do {                                                                                           \
         u8 _zf = 0, _cf = 0, _sf = 0, _of = 0, _pf = 0;                                            \
-        u8 _t = (u8)(t);                                                                           \
+        u8 _t = (u8)(tflag);                                                                           \
         __asm__ volatile(                                                                          \
             "cmpb $1, %[t]\n\t" insn                                                               \
             "\n\t"                                                                                 \
@@ -79,10 +79,10 @@ static inline void write_u64_le(u8* p, u64 v) {
         (fl_out) = pack_flags(_zf, _cf, _sf, _of, _pf);                                            \
     } while (0)
 
-#define RUN_SCAS(insn, p, n, val, t, fl_out)                                                       \
+#define RUN_SCAS(insn, p, n, val, tflag, fl_out)                                                       \
     do {                                                                                           \
         u8 _zf = 0, _cf = 0, _sf = 0, _of = 0, _pf = 0;                                            \
-        u8 _t = (u8)(t);                                                                           \
+        u8 _t = (u8)(tflag);                                                                           \
         __asm__ volatile(                                                                          \
             "cmpb $1, %[t]\n\t" insn                                                               \
             "\n\t"                                                                                 \
