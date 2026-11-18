@@ -27,22 +27,29 @@ class WseActivity : SDLActivity() {
     // shell runs `--saf-module Modules/<name>`.
     override fun getArguments(): Array<String> {
         val launched = intent
+        val args = mutableListOf<String>()
         if (launched != null && launched.getBooleanExtra(WseLauncherActivity.EXTRA_RUN_MODULE, false)) {
             val name = launched.getStringExtra(WseLauncherActivity.EXTRA_MODULE_NAME)
             if (gameTreeRegistered && !name.isNullOrEmpty()) {
-                return arrayOf("--saf-module", "Modules/$name")
+                args.add("--saf-module")
+                args.add("Modules/$name")
             }
         }
-        val root = intent?.getStringExtra(EXTRA_MODULE_ROOT)
-        if (root.isNullOrEmpty()) {
-            return emptyArray()
+        if (args.isEmpty()) {
+            val root = launched?.getStringExtra(EXTRA_MODULE_ROOT)
+            if (!root.isNullOrEmpty()) {
+                args.add("--module")
+                args.add(root)
+                val module = launched.getStringExtra(EXTRA_MODULE)
+                if (!module.isNullOrEmpty()) {
+                    args.add(module)
+                }
+            }
         }
-        val module = intent?.getStringExtra(EXTRA_MODULE)
-        return if (module.isNullOrEmpty()) {
-            arrayOf("--module", root)
-        } else {
-            arrayOf("--module", root, module)
+        if (launched?.getBooleanExtra(EXTRA_SHOW_FPS, false) == true) {
+            args.add("--show-fps")
         }
+        return args.toTypedArray()
     }
 
     private var powerManager: PowerManager? = null
@@ -156,6 +163,7 @@ class WseActivity : SDLActivity() {
     }
 
     companion object {
+        const val EXTRA_SHOW_FPS = "wse.show_fps"
         private const val EXTRA_MODULE_ROOT = "wse.module_root"
         private const val EXTRA_MODULE = "wse.module"
         private const val HEADROOM_FORECAST_SECONDS = 30

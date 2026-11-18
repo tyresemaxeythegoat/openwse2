@@ -13,6 +13,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <span>
+#include <unordered_map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -27,6 +29,7 @@
 #include "wse/platform/rhi_geometry.h"
 #include "wse/platform/rhi_ui.h"
 #include "wse/platform/ui_frame.h"
+#include "wse/platform/ui_game_shell.h"
 #include "wse/platform/vfs.h"
 #include "wse/vm/block_vm.h"
 
@@ -2228,6 +2231,118 @@ void test_mission_presentations_and_ui_frame() {
 // `GeometryCaptureRhiDevice` records the same picture `SoftwareRhiDevice` draws: the captured
 // screen-space batches, replayed through the software rasterizer with an identity transform,
 // match the direct render (texture orientation, tint, blend, painter's order).
+// P10.7: an uncompressed A8R8G8B8 DDS with a full mip chain; every texel of mip `m` has blue
+// byte `10 * m + 1`, so a test can tell which mip was decoded. `with_mips = false` writes
+// only the top level (uniform blue 1).
+std::vector<std::uint8_t> build_argb_mip_dds(std::uint32_t w, std::uint32_t h, bool with_mips) {
+    std::vector<std::uint8_t> b(128U, 0U);
+    const auto put = [&](std::size_t off, std::uint32_t v) {
+        for (unsigned i = 0; i < 4U; ++i) {
+            b[off + i] = static_cast<std::uint8_t>((v >> (8U * i)) & 0xFFU);
+        }
+    };
+    std::uint32_t mips = 1U;
+    if (with_mips) {
+        for (std::uint32_t mw = w, mh = h; mw > 1U || mh > 1U; mw = std::max(mw / 2U, 1U),
+                           mh = std::max(mh / 2U, 1U)) {
+            ++mips;
+        }
+    }
+    b[0] = 'D';
+    b[1] = 'D';
+    b[2] = 'S';
+    b[3] = ' ';
+    put(4, 124U);
+    put(8, 0x1U | 0x2U | 0x4U | 0x1000U | (with_mips ? 0x20000U : 0U));
+    put(12, h);
+    put(16, w);
+    put(20, w * 4U);
+    put(28, mips);
+    put(76, 32U);
+    put(80, 0x41U);  // RGB | ALPHAPIXELS
+    put(88, 32U);
+    put(92, 0x00FF0000U);
+    put(96, 0x0000FF00U);
+    put(100, 0x000000FFU);
+    put(104, 0xFF000000U);
+    put(108, 0x1000U | (with_mips ? 0x400008U : 0U));
+    std::uint32_t mw = w;
+    std::uint32_t mh = h;
+    for (std::uint32_t m = 0; m < mips; ++m) {
+        for (std::uint32_t i = 0; i < mw * mh; ++i) {
+            b.push_back(static_cast<std::uint8_t>(10U * m + 1U));  // B
+            b.push_back(0x20U);                                     // G
+            b.push_back(0x30U);                                     // R
+            b.push_back(0xFFU);                                     // A
+        }
+        mw = std::max(mw / 2U, 1U);
+        mh = std::max(mh / 2U, 1U);
+    }
+    return b;
+}
+
+// P10.7 texture budget: the largest mip that fits the cap is chosen and decoded; a texture
+// without a small enough mip is box-filtered down; the UI loader applies the cap except to the
+// font atlas, and the decoded size is counted.
+void test_texture_budget() {
+    std::string err;
+    const auto chain = build_argb_mip_dds(64U, 32U, true);
+    wse::asset::DdsImageView view{};
+    expect(wse::asset::parse_dds(std::as_bytes(std::span<const std::uint8_t>(chain)), view, &err) &&
+               view.mip_count == 7U,
+           "P10.7 parse a 64x32 DDS with 7 mips");
+    expect(wse::asset::select_budget_mip(view, 0U) == 0U &&
+               wse::asset::select_budget_mip(view, 64U) == 0U &&
+               wse::asset::select_budget_mip(view, 32U) == 1U &&
+               wse::asset::select_budget_mip(view, 20U) == 2U &&
+               wse::asset::select_budget_mip(view, 1U) == 6U,
+           "P10.7 the largest mip whose sides fit the cap is chosen; 0 means no cap");
+
+    std::vector<std::uint8_t> rgba;
+    std::uint32_t w = 0U;
+    std::uint32_t h = 0U;
+    expect(wse::asset::decode_dds_rgba8_budgeted(view, 0U, 16U, rgba, w, h, &err) && w == 16U &&
+               h == 8U && rgba.size() == 16U * 8U * 4U && rgba[2] == 21U,
+           "P10.7 a 16 cap decodes mip 2 (16x8) of the chain");
+    expect(wse::asset::decode_dds_rgba8_budgeted(view, 0U, 0U, rgba, w, h, &err) && w == 64U &&
+               h == 32U && rgba[2] == 1U,
+           "P10.7 no cap decodes the top level");
+
+    const auto flat = build_argb_mip_dds(64U, 64U, false);
+    wse::asset::DdsImageView flat_view{};
+    expect(wse::asset::parse_dds(std::as_bytes(std::span<const std::uint8_t>(flat)), flat_view,
+                                 &err) &&
+               flat_view.mip_count == 1U,
+           "P10.7 parse a 64x64 DDS without mips");
+    expect(wse::asset::decode_dds_rgba8_budgeted(flat_view, 0U, 16U, rgba, w, h, &err) &&
+               w == 16U && h == 16U && rgba.size() == 16U * 16U * 4U && rgba[0] == 0x30U &&
+               rgba[1] == 0x20U && rgba[2] == 1U && rgba[3] == 0xFFU,
+           "P10.7 a texture without mips is box-filtered down to the cap (uniform colour kept)");
+    expect(!wse::asset::decode_dds_rgba8_budgeted(view, 1U, 16U, rgba, w, h, &err),
+           "P10.7 an out-of-range face is an error");
+
+    wse::platform::MemoryVfs vfs;
+    expect(vfs.write_file("Textures/big.dds", chain) && vfs.write_file("Textures/font.dds", chain),
+           "P10.7 seed textures");
+    std::unordered_map<std::string, wse::platform::DecodedUiTexture> textures;
+    expect(wse::platform::load_dds_texture_into_map(vfs, "Textures/big.dds", "big", textures, &err,
+                                                    16U) &&
+               textures["big"].width == 16U && textures["big"].height == 8U,
+           "P10.7 the UI loader applies the texture cap");
+    wse::platform::LoadedUiAssets assets{};
+    assets.textures["big"] = textures["big"];
+    assets.textures["font"].width = 2U;
+    assets.textures["font"].height = 2U;
+    assets.textures["font"].rgba8.assign(16U, 0U);
+    expect(assets.texture_bytes() == 16U * 8U * 4U + 16U,
+           "P10.7 texture_bytes counts every decoded texture");
+
+    wse::platform::UiGameShell shell;
+    expect(shell.texture_bytes() == 0U, "P10.7 a stopped shell holds no texture memory");
+    wse::platform::UiGameShellOptions opts{};
+    expect(opts.max_texture_size == 0U, "P10.7 the shell has no texture cap by default");
+}
+
 void test_geometry_capture_matches_software() {
     // 8x8 texture: top half green, bottom half yellow (top-down rows).
     std::vector<std::uint8_t> panel_tex(8U * 8U * 4U, 255);
@@ -2425,6 +2540,7 @@ int run_ui_suite(const char* fixture_path) {
     test_retail_warband_native_main_menu();
     test_batch_menu_remeasure_and_ui_buffers();
     test_geometry_capture_matches_software();
+    test_texture_budget();
 
     if (g_failures == 0) {
         std::printf("ui tests: PASS\n");

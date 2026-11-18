@@ -2360,6 +2360,167 @@ void test_p4_review_fixes() {
     }
 }
 
+// P10.4: launcher settings page keys in `config/performance.json` (quality preset, render scale,
+// texture size cap, UI aspect, UI scale, language), the presets, the first-launch defaults, and
+// the partial-JSON save the launcher's settings page uses.
+void test_p10_launcher_settings() {
+    using namespace wse::platform;
+
+    {
+        UiAspectMode m{};
+        expect(parse_ui_aspect_mode("4:3", m) && m == UiAspectMode::Ratio4x3 &&
+                   parse_ui_aspect_mode("16:9", m) && m == UiAspectMode::Ratio16x9 &&
+                   parse_ui_aspect_mode("stretch", m) && m == UiAspectMode::Stretch &&
+                   !parse_ui_aspect_mode("21:9", m),
+               "P10.4 UI aspect keys parse");
+        expect(ui_aspect_mode_key(UiAspectMode::Ratio16x9) == "16:9",
+               "P10.4 UI aspect key round-trips");
+        QualityPreset q{};
+        expect(parse_quality_preset("low", q) && q == QualityPreset::Low &&
+                   parse_quality_preset("medium", q) && q == QualityPreset::Medium &&
+                   parse_quality_preset("high", q) && q == QualityPreset::High &&
+                   parse_quality_preset("custom", q) && q == QualityPreset::Custom &&
+                   !parse_quality_preset("ultra", q),
+               "P10.4 quality preset keys parse");
+        expect(quality_preset_key(QualityPreset::Medium) == "medium",
+               "P10.4 quality preset key round-trips");
+    }
+
+    {
+        const PerformanceSettings def{};
+        expect(def.quality_preset == QualityPreset::Custom && def.render_scale == 1.0f &&
+                   def.max_texture_size == 0U && def.ui_aspect == UiAspectMode::Ratio4x3 &&
+                   def.ui_scale == 1.0f && def.language == "en",
+               "P10.4 new settings defaults");
+
+        PerformanceSettings s{};
+        s.render_scale = 0.1f;
+        s.ui_scale = 9.0f;
+        s.max_texture_size = 3000U;
+        s.language = "../etc";
+        sanitize_performance_settings(s);
+        expect(s.render_scale == 0.5f && s.ui_scale == 2.0f && s.max_texture_size == 2048U &&
+                   s.language == "en",
+               "P10.4 sanitize clamps scales, rounds the texture cap down to a power of two, "
+               "and rejects a bad language");
+        s.max_texture_size = 100U;
+        sanitize_performance_settings(s);
+        expect(s.max_texture_size == 256U, "P10.4 texture cap floor is 256");
+        s.max_texture_size = 9000U;
+        sanitize_performance_settings(s);
+        expect(s.max_texture_size == 4096U, "P10.4 texture cap ceiling is 4096");
+        s.language = "zh-CN";
+        sanitize_performance_settings(s);
+        expect(s.language == "zh-CN", "P10.4 a folder-style language name is kept");
+        s.language = "abcdefghijklmnopq";  // 17 characters
+        sanitize_performance_settings(s);
+        expect(s.language == "en", "P10.4 a language longer than 16 characters is rejected");
+    }
+
+    {
+        PerformanceSettings s{};
+        s.quality_preset = QualityPreset::High;
+        s.render_scale = 0.8f;
+        s.max_texture_size = 1024U;
+        s.ui_aspect = UiAspectMode::Stretch;
+        s.ui_scale = 1.25f;
+        s.language = "de";
+        PerformanceSettings back{};
+        std::string err;
+        expect(deserialize_performance_settings_json(serialize_performance_settings_json(s),
+                                                     back, &err) &&
+                   back == s,
+               "P10.4 new keys round-trip through JSON");
+        PerformanceSettings old{};
+        expect(deserialize_performance_settings_json(
+                   "{\"version\":1,\"frame_rate_cap\":\"90\"}", old, &err) &&
+                   old.frame_rate_cap == FrameRateCap::Fps90 &&
+                   old.quality_preset == QualityPreset::Custom && old.language == "en",
+               "P10.4 a file from before P10 loads with the new defaults");
+        expect(!deserialize_performance_settings_json("{\"ui_aspect\":\"wide\"}", old, &err),
+               "P10.4 an invalid ui_aspect is an error");
+    }
+
+    {
+        PerformanceSettings s{};
+        apply_quality_preset(s, QualityPreset::Low);
+        expect(s.quality_preset == QualityPreset::Low && s.frame_rate_cap == FrameRateCap::Fps30 &&
+                   s.render_scale == 0.75f && s.max_texture_size == 512U,
+               "P10.4 low preset");
+        apply_quality_preset(s, QualityPreset::Medium);
+        expect(s.quality_preset == QualityPreset::Medium &&
+                   s.frame_rate_cap == FrameRateCap::Fps30 && s.render_scale == 0.85f &&
+                   s.max_texture_size == 1024U,
+               "P10.4 medium preset");
+        apply_quality_preset(s, QualityPreset::High);
+        expect(s.quality_preset == QualityPreset::High &&
+                   s.frame_rate_cap == FrameRateCap::Fps60 && s.render_scale == 1.0f &&
+                   s.max_texture_size == 2048U,
+               "P10.4 high preset");
+        s.ui_scale = 1.5f;
+        apply_quality_preset(s, QualityPreset::Custom);
+        expect(s.quality_preset == QualityPreset::Custom &&
+                   s.frame_rate_cap == FrameRateCap::Fps60 && s.max_texture_size == 2048U &&
+                   s.ui_scale == 1.5f,
+               "P10.4 custom keeps every value; presets leave UI settings alone");
+        expect(kFirstLaunchQualityPreset == QualityPreset::Medium,
+               "P10.4 first launch uses the medium preset");
+    }
+
+    {
+        MemoryVfs vfs;
+        PerformanceSettings s{};
+        bool created = false;
+        std::string err;
+        expect(ensure_first_launch_settings(vfs, s, &created, &err) && created &&
+                   s.quality_preset == QualityPreset::Medium &&
+                   s.frame_rate_cap == FrameRateCap::Fps30 &&
+                   vfs.is_file(performance_settings_vfs_path()),
+               "P10.4 first launch writes the medium preset");
+        PerformanceSettings again{};
+        expect(ensure_first_launch_settings(vfs, again, &created, &err) && !created &&
+                   again == s,
+               "P10.4 a later launch loads the stored file");
+        expect(vfs.write_text(performance_settings_vfs_path(), "{not json"),
+               "P10.4 corrupt the settings file");
+        expect(ensure_first_launch_settings(vfs, again, &created, &err) && created &&
+                   again.quality_preset == QualityPreset::Medium,
+               "P10.4 a corrupt file is replaced with the first-launch defaults");
+    }
+
+    {
+        MemoryVfs vfs;
+        PerformanceSettings stored{};
+        stored.frame_rate_cap = FrameRateCap::Fps90;
+        std::string err;
+        expect(save_performance_settings(vfs, stored, &err), "P10.4 seed stored settings");
+        PerformanceSettings merged{};
+        expect(save_launcher_settings_json(
+                   vfs, "{\"ui_scale\":\"1.25\",\"language\":\"de\",\"ui_aspect\":\"16:9\"}",
+                   &merged, &err) &&
+                   merged.ui_scale == 1.25f && merged.language == "de" &&
+                   merged.ui_aspect == UiAspectMode::Ratio16x9 &&
+                   merged.frame_rate_cap == FrameRateCap::Fps90,
+               "P10.4 a partial save changes only the keys it names");
+        PerformanceSettings loaded{};
+        expect(load_performance_settings(vfs, loaded, &err) && loaded == merged,
+               "P10.4 the partial save is on disk");
+        expect(!save_launcher_settings_json(vfs, "{\"render_scale\":\"fast\"}", nullptr, &err) &&
+                   load_performance_settings(vfs, loaded, &err) && loaded == merged,
+               "P10.4 an invalid value saves nothing");
+        expect(save_launcher_settings_json(vfs, "{\"quality_preset\":\"low\"}", &merged, &err) &&
+                   merged.quality_preset == QualityPreset::Low &&
+                   merged.frame_rate_cap == FrameRateCap::Fps30 &&
+                   merged.max_texture_size == 512U && merged.ui_scale == 1.25f,
+               "P10.4 choosing a preset applies its values and keeps the UI settings");
+        expect(save_launcher_settings_json(
+                   vfs, "{\"quality_preset\":\"low\",\"frame_rate_cap\":\"60\"}", &merged,
+                   &err) &&
+                   merged.frame_rate_cap == FrameRateCap::Fps60,
+               "P10.4 explicit keys win over the preset in the same save");
+    }
+}
+
 void test_p8_performance_and_frame_pacing() {
     using namespace wse::platform;
 
@@ -2702,6 +2863,7 @@ int run_platform_suite(const char* fixture_path) {
     test_p4_review_fixes();
     test_p5_rhi_review_fixes();
     test_p8_performance_and_frame_pacing();
+    test_p10_launcher_settings();
     if (failures != 0) {
         std::printf("platform tests: FAIL (%d)\n", failures);
         return 1;

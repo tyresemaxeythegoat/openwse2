@@ -774,6 +774,88 @@ inline bool decode_dds_mip_rgba8(const DdsImageView& image,
     }
 }
 
+// Selects the largest mip level whose width and height both fit within `max_size`
+// (0 = no cap -> mip 0); if no mip fits, returns the last mip.
+[[nodiscard]] inline std::uint32_t select_budget_mip(const DdsImageView& image,
+                                                     std::uint32_t max_size) noexcept {
+    if (max_size == 0U || image.mip_count <= 1U) {
+        return 0U;
+    }
+    std::uint32_t fallback_w = image.width;
+    std::uint32_t fallback_h = image.height;
+    for (std::uint32_t m = 0U; m < image.mip_count; ++m) {
+        const bool has_slice = m < image.slices.size();
+        const std::uint32_t mw = has_slice ? image.slices[m].width : fallback_w;
+        const std::uint32_t mh = has_slice ? image.slices[m].height : fallback_h;
+        if (mw <= max_size && mh <= max_size) {
+            return m;
+        }
+        fallback_w = (std::max)(1U, fallback_w >> 1U);
+        fallback_h = (std::max)(1U, fallback_h >> 1U);
+    }
+    return image.mip_count - 1U;
+}
+
+// Decodes only the mip chosen by `select_budget_mip(image, max_size)` and, while a side
+// still exceeds `max_size` (for `max_size > 0`), halves it with a 2x2 box filter.
+[[nodiscard]] inline bool decode_dds_rgba8_budgeted(const DdsImageView& image,
+                                                    std::size_t face_index,
+                                                    std::uint32_t max_size,
+                                                    std::vector<std::uint8_t>& out_rgba,
+                                                    std::uint32_t& out_w,
+                                                    std::uint32_t& out_h,
+                                                    std::string* error_out = nullptr) {
+    out_w = 0U;
+    out_h = 0U;
+    const std::uint32_t mip = select_budget_mip(image, max_size);
+    if (!decode_dds_mip_rgba8(image, mip, face_index, out_rgba, error_out)) {
+        return false;
+    }
+    const DdsMipSlice& slice = image.slices[face_index * image.mip_count + mip];
+    std::uint32_t w = slice.width;
+    std::uint32_t h = slice.height;
+    if (max_size > 0U && (w > max_size || h > max_size)) {
+        std::vector<std::uint8_t> next;
+        while (w > max_size || h > max_size) {
+            const std::uint32_t nw = (std::max)(1U, w / 2U);
+            const std::uint32_t nh = (std::max)(1U, h / 2U);
+            next.resize(static_cast<std::size_t>(nw) * nh * 4U);
+            const std::uint8_t* src = out_rgba.data();
+            std::uint8_t* dst = next.data();
+            for (std::uint32_t y = 0U; y < nh; ++y) {
+                const std::uint32_t y0 = y * 2U;
+                const std::uint32_t y1 = (std::min)(y0 + 1U, h - 1U);
+                const std::size_t row0 = static_cast<std::size_t>(y0) * w;
+                const std::size_t row1 = static_cast<std::size_t>(y1) * w;
+                for (std::uint32_t x = 0U; x < nw; ++x) {
+                    const std::uint32_t x0 = x * 2U;
+                    const std::uint32_t x1 = (std::min)(x0 + 1U, w - 1U);
+                    const std::size_t p00 = (row0 + x0) * 4U;
+                    const std::size_t p10 = (row0 + x1) * 4U;
+                    const std::size_t p01 = (row1 + x0) * 4U;
+                    const std::size_t p11 = (row1 + x1) * 4U;
+                    const std::size_t d = (static_cast<std::size_t>(y) * nw + x) * 4U;
+                    for (std::size_t c = 0U; c < 4U; ++c) {
+                        const std::uint32_t sum = static_cast<std::uint32_t>(src[p00 + c]) +
+                                                  static_cast<std::uint32_t>(src[p10 + c]) +
+                                                  static_cast<std::uint32_t>(src[p01 + c]) +
+                                                  static_cast<std::uint32_t>(src[p11 + c]);
+                        dst[d + c] = static_cast<std::uint8_t>((sum + 2U) >> 2U);
+                    }
+                }
+            }
+            out_rgba.swap(next);
+            w = nw;
+            h = nh;
+        }
+        // Drop excess capacity from the pre-downscale decode buffer.
+        out_rgba.shrink_to_fit();
+    }
+    out_w = w;
+    out_h = h;
+    return true;
+}
+
 // Animated/indexed frame count formula from rglTexture::initDeviceObjects
 // (0x1403177b7..0x1403177ce): 1 when (flags & 0x0F000000) == 0, else
 // ((flags >> 24) & 0xF) * 4 (4..60 frames).

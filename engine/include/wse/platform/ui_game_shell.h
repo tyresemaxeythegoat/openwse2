@@ -20,11 +20,16 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -108,6 +113,12 @@ private:
     std::uint64_t state_ = 0xcbf29ce484222325ULL;
 };
 
+// Joins `rel` under `warband_root` (or keeps `rel` bare when `warband_root` is empty).
+[[nodiscard]] inline std::string warband_root_path(std::string_view warband_root,
+                                                   std::string_view rel) {
+    return warband_root.empty() ? std::string(rel) : game::vfs_join_path(warband_root, rel);
+}
+
 // The files a module launch cannot do without, checked before anything loads so a wrong
 // folder (the user picked `Modules/`, a module folder, or an unrelated directory instead of
 // the Warband install) gets one message naming what is missing instead of the first loader
@@ -117,7 +128,7 @@ private:
     Vfs& vfs, std::string_view warband_root, std::string_view module_dir) {
     std::vector<std::string> missing;
     const auto root_path = [&](std::string_view rel) {
-        return warband_root.empty() ? std::string(rel) : game::vfs_join_path(warband_root, rel);
+        return warband_root_path(warband_root, rel);
     };
     if (!vfs.is_dir(module_dir)) {
         missing.push_back(std::string(module_dir) + "/ (module folder)");
@@ -139,6 +150,102 @@ private:
     return missing;
 }
 
+// Escapes a UTF-8 string for a JSON string value (without surrounding quotes).
+[[nodiscard]] inline std::string json_escape(std::string_view text) {
+    constexpr char kHex[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(text.size());
+    for (const unsigned char uc : text) {
+        switch (uc) {
+        case '"':
+            out.append("\\\"");
+            break;
+        case '\\':
+            out.append("\\\\");
+            break;
+        case '\n':
+            out.append("\\n");
+            break;
+        case '\r':
+            out.append("\\r");
+            break;
+        case '\t':
+            out.append("\\t");
+            break;
+        default:
+            if (uc < 0x20U) {
+                out.append("\\u00");
+                out.push_back(kHex[(uc >> 4U) & 0x0fU]);
+                out.push_back(kHex[uc & 0x0fU]);
+            } else {
+                out.push_back(static_cast<char>(uc));
+            }
+            break;
+        }
+    }
+    return out;
+}
+
+// Serializes `find_missing_warband_files`' result as JSON for the Android launcher's
+// pre-play install check (P10.3).
+[[nodiscard]] inline std::string install_check_json(const std::vector<std::string>& missing) {
+    std::string out = missing.empty() ? "{\"ok\":true,\"missing\":[" : "{\"ok\":false,\"missing\":[";
+    for (std::size_t i = 0; i < missing.size(); ++i) {
+        if (i != 0U) {
+            out.push_back(',');
+        }
+        out.push_back('"');
+        out.append(json_escape(missing[i]));
+        out.push_back('"');
+    }
+    out.append("]}");
+    return out;
+}
+
+// Lists the available Warband languages under `<warband_root>/languages/` for the launcher's
+// language picker (P10.3): `"en"` first, then sorted valid language directories.
+[[nodiscard]] inline std::vector<std::string> list_warband_languages(
+    Vfs& vfs, std::string_view warband_root) {
+    std::vector<std::string> languages{"en"};
+    std::vector<VfsEntry> entries;
+    if (!vfs.list_dir(warband_root_path(warband_root, "languages"), entries)) {
+        return languages;
+    }
+
+    const auto is_valid_name = [](std::string_view name) noexcept {
+        if (name.empty() || name.size() > 16U) {
+            return false;
+        }
+        for (const char ch : name) {
+            const bool allowed = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                                 (ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
+            if (!allowed) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    for (const VfsEntry& entry : entries) {
+        if (!entry.is_directory || !is_valid_name(entry.name) ||
+            ascii_lower(entry.name) == "en") {
+            continue;
+        }
+        languages.push_back(entry.name);
+    }
+
+    std::sort(languages.begin() + 1, languages.end(),
+              [](const std::string& a, const std::string& b) {
+                  const std::string la = ascii_lower(a);
+                  const std::string lb = ascii_lower(b);
+                  if (la != lb) {
+                      return la < lb;
+                  }
+                  return a < b;
+              });
+    return languages;
+}
+
 // One readable message for `find_missing_warband_files`' result.
 [[nodiscard]] inline std::string format_missing_warband_files(const std::vector<std::string>& missing) {
     std::string msg = "These Warband files were not found:\n";
@@ -149,6 +256,13 @@ private:
            "and CommonRes) in the launcher.";
     return msg;
 }
+
+enum class UiShellStartState : std::uint8_t { idle, loading, ready, failed };
+
+struct UiShellStartProgress {
+    float fraction = 0.0f;
+    std::string stage{};
+};
 
 struct UiGameShellOptions {
     // Module run settings. `drive_ui` is forced on; `trigger_frames` is unused (the host
@@ -178,6 +292,13 @@ struct UiGameShellOptions {
     enum class Output : std::uint8_t { rgba8, geometry };
     Output output = Output::rgba8;
     UiRenderConfig render{};
+    // Optional hooks invoked on the `start_async` load worker thread before VFS access and
+    // before the thread exits (including on failure or cancellation); the Android host uses
+    // these to attach/detach the worker to the JVM and rebind the SAF tree.
+    std::function<void()> worker_thread_init{};
+    std::function<void()> worker_thread_exit{};
+    // Texture side cap (from `config/performance.json` `max_texture_size`, 0 = no cap).
+    std::uint32_t max_texture_size = 0U;
 
     UiGameShellOptions() { run.fail_on_unimplemented = false; }
 };
@@ -194,94 +315,122 @@ public:
     // `game_start` stops the run.
     [[nodiscard]] bool start(Vfs& vfs, UiGameShellOptions options, std::string* error_out = nullptr) {
         stop();
-        missing_files_.clear();
-        options_ = std::move(options);
-        options_.run.drive_ui = true;
+        auto work = std::make_unique<LoadWork>();
+        work->vfs = &vfs;
+        work->options = std::move(options);
+        work->options.run.drive_ui = true;
 
-        // A wrong folder gets one message listing everything that is missing.
-        if (const auto missing = options_.check_install
-                                     ? find_missing_warband_files(vfs, options_.warband_root,
-                                                                  options_.run.module_dir)
-                                     : std::vector<std::string>{};
-            !missing.empty()) {
-            missing_files_ = missing;
-            return fail(format_missing_warband_files(missing), error_out);
-        }
-
-        assets_ = std::make_unique<LoadedUiAssets>();
-        std::string err;
-        if (!load_native_ui_assets(vfs, options_.warband_root, options_.run.module_dir,
-                                   options_.language, *assets_, &err)) {
-            return fail("UI assets: " + err, error_out);
-        }
-        if (options_.output == UiGameShellOptions::Output::geometry) {
-            auto geo = std::make_unique<GeometryCaptureRhiDevice>();
-            geometry_ = geo.get();
-            rhi_ = std::move(geo);
-        } else {
-            rhi_ = std::make_unique<SoftwareRhiDevice>();
-        }
-        renderer_ = std::make_unique<UiRhiRenderer>(*rhi_);
-        if (!renderer_->init(assets_.get(), &err)) {
-            return fail("UI renderer: " + err, error_out);
-        }
-
-        ctx_ = std::make_unique<vm::VmContext>();
-        bundle_ = std::make_unique<game::ModuleBundle>();
-        ui_ = std::make_unique<game::UiSession>();
-        ui_->font = &assets_->font;
-        ui_->lang = assets_->lang;
-        ui_->vars = assets_->vars;
-        ui_->mesh_bounds = collect_ui_mesh_bounds(*assets_);
-        game::HeadlessRunOptions run = options_.run;
-        if (options_.start_at_initial_window) {
-            run.run_game_start = false;
-        }
-        runner_ = std::make_unique<game::HeadlessModuleRunner>(vfs, *ctx_, *bundle_, run,
-                                                               ui_.get());
-        if (!runner_->start()) {
-            const auto& rep = runner_->report();
-            return fail(rep.load_error.ok ? "game_start: " + rep.last_error
-                                          : "module: " + rep.load_error.format(),
-                        error_out);
-        }
-        input_ = UiInputAccumulator{};
-        quit_requested_ = false;
-        in_game_ = !options_.start_at_initial_window;
-        if (!in_game_) {
-            ui_->build_initial_window(ctx_->world, module_display_name(options_.run.module_dir),
-                                      /*has_saves=*/false, /*can_new_game=*/true,
-                                      /*can_tutorial=*/false, /*can_multiplayer=*/false);
+        const bool ok = execute_load(*work);
+        commit_work(*work);
+        if (!ok) {
+            if (error_out != nullptr) {
+                *error_out = start_error_;
+            }
+            return false;
         }
         return true;
     }
 
-    void stop() noexcept {
-        runner_.reset();  // before the session, VM and bundle it points into
-        ui_.reset();
-        bundle_.reset();
-        ctx_.reset();
-        renderer_.reset();  // before the device that owns its handles
-        rhi_.reset();
-        geometry_ = nullptr;
-        has_frame_ = false;
-        assets_.reset();
-        pixels_.clear();
-        width_ = height_ = 0U;
-        last_tree_hash_ = 0U;
-        frames_reused_ = 0U;
-        ++frame_serial_;  // a host holding the old frame re-checks it
+    // Starts `start()`'s load work on a background thread and returns immediately. Returns false
+    // if an async start is already in flight; otherwise tears down any previous run first.
+    // `vfs` must outlive the shell (including any cancelled load until `poll_start` / `stop`).
+    [[nodiscard]] bool start_async(Vfs& vfs, UiGameShellOptions options) {
+        if (is_loading()) {
+            return false;
+        }
+        stop();
+
+        auto work = std::make_unique<LoadWork>();
+        work->vfs = &vfs;
+        work->options = std::move(options);
+        work->options.run.drive_ui = true;
+
+        pending_ = std::move(work);
+        cancel_requested_.store(false, std::memory_order_release);
+        worker_done_.store(false, std::memory_order_release);
+        set_progress(0.05f, "Checking install");
+        start_state_.store(UiShellStartState::loading, std::memory_order_release);
+
+        worker_ = std::thread([this]() { run_worker(); });
+        return true;
     }
 
-    void feed(const RawInputEvent& ev) { input_.feed(ev); }
-    void feed_text(std::string_view utf8) { input_.feed_text(utf8); }
+    // Host-thread poll for `start_async()` (also reports `ready` / `failed` after synchronous
+    // `start()`). Joins the worker and commits the loaded state once the worker has finished.
+    [[nodiscard]] UiShellStartState poll_start() {
+        const UiShellStartState cur = start_state_.load(std::memory_order_acquire);
+        if (cur != UiShellStartState::loading) {
+            return cur;
+        }
+        if (!worker_done_.load(std::memory_order_acquire)) {
+            return UiShellStartState::loading;
+        }
+        if (worker_.joinable()) {
+            worker_.join();
+        }
+        if (pending_) {
+            auto work = std::move(pending_);
+            commit_work(*work);
+        } else {
+            start_error_ = "Async start finished with no result";
+            start_state_.store(UiShellStartState::failed, std::memory_order_release);
+        }
+        worker_done_.store(false, std::memory_order_release);
+        return start_state_.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] UiShellStartProgress start_progress() const {
+        std::lock_guard<std::mutex> lock(progress_mutex_);
+        return progress_;
+    }
+
+    void cancel_start() noexcept {
+        if (is_loading()) {
+            cancel_requested_.store(true, std::memory_order_release);
+        }
+    }
+
+    // Host thread: valid after `poll_start()` returns `failed` (or synchronous `start()` fails).
+    [[nodiscard]] const std::string& start_error() const noexcept { return start_error_; }
+
+    void stop() noexcept {
+        cancel_requested_.store(true, std::memory_order_release);
+        if (worker_.joinable()) {
+            worker_.join();
+        }
+        pending_.reset();
+        worker_done_.store(false, std::memory_order_release);
+        cancel_requested_.store(false, std::memory_order_release);
+        reset_runtime();
+        missing_files_.clear();
+        start_error_.clear();
+        {
+            std::lock_guard<std::mutex> lock(progress_mutex_);
+            progress_.fraction = 0.0f;
+            progress_.stage.clear();
+        }
+        start_state_.store(UiShellStartState::idle, std::memory_order_release);
+    }
+
+    void feed(const RawInputEvent& ev) {
+        if (is_loading()) {
+            return;
+        }
+        input_.feed(ev);
+    }
+    void feed_text(std::string_view utf8) {
+        if (is_loading()) {
+            return;
+        }
+        input_.feed_text(utf8);
+    }
 
     // Advances the module by `dt_s` (clamped to `[0, max_frame_seconds]`) with the input fed
     // since the last frame, then renders at the window's aspect ratio (`window_w x window_h`,
     // scaled down to `max_render_height`). Returns whether the module is still running; the
     // last frame stays in `pixels()` either way.
     bool frame(float dt_s, std::uint32_t window_w, std::uint32_t window_h) {
-        if (runner_ == nullptr) {
+        if (is_loading() || runner_ == nullptr) {
             return false;
         }
         const float dt = std::isfinite(dt_s) ? std::clamp(dt_s, 0.0f, options_.max_frame_seconds)
@@ -304,9 +453,12 @@ public:
     // `Output::geometry` only (else null): the last recorded frame, and the device that owns
     // its textures (`texture()` for pixel data, `take_destroyed_textures()` to free host copies).
     [[nodiscard]] const GeometryFrame* geometry() const noexcept {
-        return geometry_ != nullptr && has_frame_ ? &geometry_->frame() : nullptr;
+        return !is_loading() && geometry_ != nullptr && has_frame_ ? &geometry_->frame()
+                                                                    : nullptr;
     }
-    [[nodiscard]] GeometryCaptureRhiDevice* geometry_device() const noexcept { return geometry_; }
+    [[nodiscard]] GeometryCaptureRhiDevice* geometry_device() const noexcept {
+        return is_loading() ? nullptr : geometry_;
+    }
     [[nodiscard]] std::uint32_t width() const noexcept { return width_; }
     [[nodiscard]] std::uint32_t height() const noexcept { return height_; }
     // Bumped each time `pixels()` is redrawn; a host re-uploads its texture only on a change.
@@ -314,29 +466,237 @@ public:
     // Frames whose widget tree hashed the same as the last drawn one (rasterizer skipped).
     [[nodiscard]] std::uint64_t frames_reused() const noexcept { return frames_reused_; }
     [[nodiscard]] const std::vector<game::UiEvent>& last_events() const noexcept { return last_events_; }
-    [[nodiscard]] bool running() const noexcept { return runner_ != nullptr && runner_->running(); }
+    [[nodiscard]] bool running() const noexcept {
+        return !is_loading() && runner_ != nullptr && runner_->running();
+    }
     // Files the last failed `start` could not find (`find_missing_warband_files`); empty when
     // `start` succeeded or failed for another reason.
     [[nodiscard]] const std::vector<std::string>& missing_files() const noexcept {
         return missing_files_;
     }
     // The main menu's quit button was pressed; the host should close.
-    [[nodiscard]] bool quit_requested() const noexcept { return quit_requested_; }
-    // `game_start` has run and module frames are stepping.
-    [[nodiscard]] bool in_game() const noexcept { return in_game_; }
-    [[nodiscard]] game::HeadlessRunReport report() const {
-        return runner_ != nullptr ? runner_->report() : game::HeadlessRunReport{};
+    [[nodiscard]] bool quit_requested() const noexcept {
+        return !is_loading() && quit_requested_;
     }
-    [[nodiscard]] game::UiSession* session() const noexcept { return ui_.get(); }
-    [[nodiscard]] vm::VmContext* vm() const noexcept { return ctx_.get(); }
+    // `game_start` has run and module frames are stepping.
+    [[nodiscard]] bool in_game() const noexcept { return !is_loading() && in_game_; }
+    [[nodiscard]] game::HeadlessRunReport report() const {
+        return (!is_loading() && runner_ != nullptr) ? runner_->report()
+                                                     : game::HeadlessRunReport{};
+    }
+    [[nodiscard]] game::UiSession* session() const noexcept {
+        return is_loading() ? nullptr : ui_.get();
+    }
+    [[nodiscard]] vm::VmContext* vm() const noexcept { return is_loading() ? nullptr : ctx_.get(); }
+    [[nodiscard]] std::size_t texture_bytes() const noexcept {
+        return !is_loading() && assets_ != nullptr ? assets_->texture_bytes() : 0U;
+    }
 
 private:
-    bool fail(std::string message, std::string* error_out) {
-        if (error_out != nullptr) {
-            *error_out = std::move(message);
+    struct LoadWork {
+        Vfs* vfs = nullptr;
+        UiGameShellOptions options{};
+        std::unique_ptr<LoadedUiAssets> assets{};
+        std::unique_ptr<RhiDevice> rhi{};
+        GeometryCaptureRhiDevice* geometry = nullptr;
+        std::unique_ptr<UiRhiRenderer> renderer{};
+        std::unique_ptr<vm::VmContext> ctx{};
+        std::unique_ptr<game::ModuleBundle> bundle{};
+        std::unique_ptr<game::UiSession> ui{};
+        std::unique_ptr<game::HeadlessModuleRunner> runner{};
+        bool in_game = false;
+        std::vector<std::string> missing_files{};
+        std::string error{};
+        bool ok = false;
+
+        void reset_built() noexcept {
+            runner.reset();
+            ui.reset();
+            bundle.reset();
+            ctx.reset();
+            renderer.reset();
+            rhi.reset();
+            geometry = nullptr;
+            assets.reset();
         }
-        stop();
-        return false;
+    };
+
+    [[nodiscard]] bool is_loading() const noexcept {
+        return start_state_.load(std::memory_order_acquire) == UiShellStartState::loading;
+    }
+
+    void set_progress(float fraction, std::string_view stage) {
+        std::lock_guard<std::mutex> lock(progress_mutex_);
+        progress_.fraction = fraction;
+        progress_.stage = std::string(stage);
+    }
+
+    void reset_runtime() noexcept {
+        runner_.reset();  // before the session, VM and bundle it points into
+        ui_.reset();
+        bundle_.reset();
+        ctx_.reset();
+        renderer_.reset();  // before the device that owns its handles
+        rhi_.reset();
+        geometry_ = nullptr;
+        has_frame_ = false;
+        assets_.reset();
+        input_ = UiInputAccumulator{};
+        last_events_.clear();
+        pixels_.clear();
+        width_ = height_ = 0U;
+        last_tree_hash_ = 0U;
+        frames_reused_ = 0U;
+        ++frame_serial_;  // a host holding the old frame re-checks it
+        in_game_ = false;
+        quit_requested_ = false;
+    }
+
+    bool execute_load(LoadWork& work) {
+        const auto cancelled = [&]() noexcept {
+            return cancel_requested_.load(std::memory_order_acquire);
+        };
+        const auto fail_load = [&](std::string message) -> bool {
+            work.reset_built();
+            if (cancelled()) {
+                work.missing_files.clear();
+                work.error = "Start cancelled";
+            } else {
+                work.error = std::move(message);
+            }
+            work.ok = false;
+            return false;
+        };
+
+        set_progress(0.05f, "Checking install");
+        // A wrong folder gets one message listing everything that is missing.
+        if (work.options.check_install) {
+            std::vector<std::string> missing = find_missing_warband_files(
+                *work.vfs, work.options.warband_root, work.options.run.module_dir);
+            if (!missing.empty()) {
+                work.missing_files = std::move(missing);
+                return fail_load(format_missing_warband_files(work.missing_files));
+            }
+        }
+        if (cancelled()) {
+            return fail_load("Start cancelled");
+        }
+
+        set_progress(0.20f, "Loading UI assets");
+        work.assets = std::make_unique<LoadedUiAssets>();
+        std::string err;
+        if (!load_native_ui_assets(*work.vfs, work.options.warband_root,
+                                   work.options.run.module_dir, work.options.language,
+                                   *work.assets, &err, {}, work.options.max_texture_size)) {
+            return fail_load("UI assets: " + err);
+        }
+        if (cancelled()) {
+            return fail_load("Start cancelled");
+        }
+
+        set_progress(0.45f, "Preparing renderer");
+        if (work.options.output == UiGameShellOptions::Output::geometry) {
+            auto geo = std::make_unique<GeometryCaptureRhiDevice>();
+            work.geometry = geo.get();
+            work.rhi = std::move(geo);
+        } else {
+            work.rhi = std::make_unique<SoftwareRhiDevice>();
+        }
+        work.renderer = std::make_unique<UiRhiRenderer>(*work.rhi);
+        if (!work.renderer->init(work.assets.get(), &err)) {
+            return fail_load("UI renderer: " + err);
+        }
+        if (cancelled()) {
+            return fail_load("Start cancelled");
+        }
+
+        set_progress(0.65f, "Loading module");
+        work.ctx = std::make_unique<vm::VmContext>();
+        work.bundle = std::make_unique<game::ModuleBundle>();
+        work.ui = std::make_unique<game::UiSession>();
+        work.ui->font = &work.assets->font;
+        work.ui->lang = work.assets->lang;
+        work.ui->vars = work.assets->vars;
+        work.ui->mesh_bounds = collect_ui_mesh_bounds(*work.assets);
+        game::HeadlessRunOptions run = work.options.run;
+        if (work.options.start_at_initial_window) {
+            run.run_game_start = false;
+        }
+        work.runner = std::make_unique<game::HeadlessModuleRunner>(
+            *work.vfs, *work.ctx, *work.bundle, run, work.ui.get());
+        if (!work.runner->start()) {
+            const auto& rep = work.runner->report();
+            return fail_load(rep.load_error.ok ? "game_start: " + rep.last_error
+                                               : "module: " + rep.load_error.format());
+        }
+        if (cancelled()) {
+            return fail_load("Start cancelled");
+        }
+
+        set_progress(0.90f, work.options.start_at_initial_window ? "Opening main menu"
+                                                                 : "Starting module");
+        work.in_game = !work.options.start_at_initial_window;
+        if (!work.in_game) {
+            work.ui->build_initial_window(work.ctx->world,
+                                          module_display_name(work.options.run.module_dir),
+                                          /*has_saves=*/false, /*can_new_game=*/true,
+                                          /*can_tutorial=*/false, /*can_multiplayer=*/false);
+        }
+        if (cancelled()) {
+            return fail_load("Start cancelled");
+        }
+        work.ok = true;
+        return true;
+    }
+
+    void run_worker() {
+        LoadWork& work = *pending_;
+        {
+            struct ExitGuard {
+                const std::function<void()>& fn;
+                ~ExitGuard() {
+                    if (fn) {
+                        fn();
+                    }
+                }
+            };
+            if (work.options.worker_thread_init) {
+                work.options.worker_thread_init();
+            }
+            ExitGuard exit_guard{work.options.worker_thread_exit};
+            (void)execute_load(work);
+        }
+        worker_done_.store(true, std::memory_order_release);
+    }
+
+    void commit_work(LoadWork& work) {
+        if (!work.ok || cancel_requested_.load(std::memory_order_acquire)) {
+            if (cancel_requested_.load(std::memory_order_acquire)) {
+                work.reset_built();
+                work.missing_files.clear();
+                work.error = "Start cancelled";
+            }
+            reset_runtime();
+            missing_files_ = std::move(work.missing_files);
+            start_error_ = std::move(work.error);
+            start_state_.store(UiShellStartState::failed, std::memory_order_release);
+            return;
+        }
+        reset_runtime();
+        options_ = std::move(work.options);
+        assets_ = std::move(work.assets);
+        rhi_ = std::move(work.rhi);
+        geometry_ = work.geometry;
+        renderer_ = std::move(work.renderer);
+        ctx_ = std::move(work.ctx);
+        bundle_ = std::move(work.bundle);
+        ui_ = std::move(work.ui);
+        runner_ = std::move(work.runner);
+        in_game_ = work.in_game;
+        missing_files_.clear();
+        start_error_.clear();
+        set_progress(1.0f, "Ready");
+        start_state_.store(UiShellStartState::ready, std::memory_order_release);
     }
 
     // `Modules/<name>` -> `<name>` for the main menu's module label.
@@ -428,8 +788,16 @@ private:
     std::uint64_t frame_serial_ = 0U;
     std::uint64_t frames_reused_ = 0U;
     std::vector<std::string> missing_files_{};
+    std::string start_error_{};
     bool in_game_ = false;
     bool quit_requested_ = false;
+    std::atomic<UiShellStartState> start_state_{UiShellStartState::idle};
+    std::atomic<bool> worker_done_{false};
+    std::atomic<bool> cancel_requested_{false};
+    mutable std::mutex progress_mutex_{};
+    UiShellStartProgress progress_{};
+    std::unique_ptr<LoadWork> pending_{};
+    std::thread worker_{};
 };
 
 }  // namespace wse::platform

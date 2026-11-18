@@ -30,6 +30,7 @@
 #include "wse/platform/driver_package.h"
 #include "wse/platform/rhi.h"
 #include "wse/platform/saf_vfs.h"
+#include "wse/platform/ui_game_shell.h"
 
 namespace {
 
@@ -463,28 +464,31 @@ public:
         if (env == nullptr || thiz == nullptr) {
             return;
         }
-        cls_ = env->GetObjectClass(thiz);
-        if (clear_if_exception(env) || cls_ == nullptr) {
+        jclass cls = env->GetObjectClass(thiz);
+        if (clear_if_exception(env) || cls == nullptr) {
             return;
         }
         binding_.env = env;
         binding_.bridge = thiz;
-        binding_.mid_tree_key = env->GetMethodID(cls_, "treeUriString", "()Ljava/lang/String;");
-        binding_.mid_root = env->GetMethodID(cls_, "rootDocumentId", "()Ljava/lang/String;");
+        binding_.mid_tree_key = env->GetMethodID(cls, "treeUriString", "()Ljava/lang/String;");
+        binding_.mid_root = env->GetMethodID(cls, "rootDocumentId", "()Ljava/lang/String;");
         binding_.mid_list =
-            env->GetMethodID(cls_, "listChildren", "(Ljava/lang/String;)[Ljava/lang/String;");
-        binding_.mid_read = env->GetMethodID(cls_, "readDocument", "(Ljava/lang/String;)[B");
+            env->GetMethodID(cls, "listChildren", "(Ljava/lang/String;)[Ljava/lang/String;");
+        binding_.mid_read = env->GetMethodID(cls, "readDocument", "(Ljava/lang/String;)[B");
         binding_.mid_write = env->GetMethodID(
-            cls_, "writeDocument",
+            cls, "writeDocument",
             "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[B)Ljava/lang/String;");
         binding_.mid_mkdir = env->GetMethodID(
-            cls_, "createDirectory", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
-        binding_.mid_delete = env->GetMethodID(cls_, "deleteDocument", "(Ljava/lang/String;)Z");
+            cls, "createDirectory", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+        binding_.mid_delete = env->GetMethodID(cls, "deleteDocument", "(Ljava/lang/String;)Z");
         binding_.mid_rename = env->GetMethodID(
-            cls_, "renameDocument", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+            cls, "renameDocument", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
         binding_.mid_move = env->GetMethodID(
-            cls_, "moveDocument",
+            cls, "moveDocument",
             "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+        // Release the local class ref immediately so sessions held by `RegisteredGameTree`
+        // carry no thread-affine local JNI references across `rebind_thread`.
+        env->DeleteLocalRef(cls);
         if (!binding_.mid_delete || !binding_.mid_rename || !binding_.mid_move) {
             (void)clear_if_exception(env);
         }
@@ -506,13 +510,12 @@ public:
         if (bound_backend_ != nullptr) {
             bound_backend_->set_binding(nullptr);
         }
-        if (binding_.env != nullptr && cls_ != nullptr) {
-            binding_.env->DeleteLocalRef(cls_);
-        }
     }
 
     [[nodiscard]] bool valid() const noexcept { return valid_; }
     [[nodiscard]] const std::string& tree_key() const noexcept { return tree_key_; }
+
+    void set_env(JNIEnv* env) noexcept { binding_.env = env; }
 
     void attach(std::shared_ptr<AndroidJniSafBackend>& backend) {
         bound_backend_ = backend.get();
@@ -522,7 +525,6 @@ public:
     }
 
 private:
-    jclass cls_ = nullptr;
     ActiveJniBinding binding_{};
     std::string tree_key_{};
     AndroidJniSafBackend* bound_backend_ = nullptr;
@@ -534,6 +536,47 @@ private:
     wse::core::wse_append_json_string(out, message);
     out.push_back('}');
     return out;
+}
+
+// Attaches `session` to the cached `SafVfs` for its tree URI, rebuilding the index on a miss.
+// Caller must hold `cache.mutex`.
+[[nodiscard]] bool ensure_cached_tree_vfs(SafCacheState& cache,
+                                          ScopedBridgeSession& session,
+                                          std::string& error_out,
+                                          bool* out_cache_hit = nullptr,
+                                          std::int64_t* out_index_ms = nullptr) {
+    if (!session.valid()) {
+        error_out = "failed to bind WseSafBridge JNI methods";
+        return false;
+    }
+    const bool cache_hit = cache.vfs && cache.backend &&
+                           cache.tree_key == session.tree_key() &&
+                           cache.vfs->index_complete();
+    std::int64_t index_ms = 0;
+    if (!cache_hit) {
+        cache.tree_key = session.tree_key();
+        cache.backend = std::make_shared<AndroidJniSafBackend>();
+        cache.vfs = std::make_unique<wse::platform::SafVfs>(cache.backend, false);
+        session.attach(cache.backend);
+        wse::platform::SteadyClock clock;
+        const std::int64_t i0 = clock.ticks();
+        const bool ok = cache.vfs->rebuild_index();
+        const std::int64_t i1 = clock.ticks();
+        index_ms = ((i1 - i0) * 1000) / wse::platform::kTicksPerSecond;
+        if (!ok) {
+            error_out = "failed indexing SAF document tree";
+            return false;
+        }
+    } else {
+        session.attach(cache.backend);
+    }
+    if (out_cache_hit != nullptr) {
+        *out_cache_hit = cache_hit;
+    }
+    if (out_index_ms != nullptr) {
+        *out_index_ms = index_ms;
+    }
+    return true;
 }
 
 }  // namespace
@@ -569,6 +612,8 @@ Java_org_wse2_android_WseSafBridge_nativeScanTree(JNIEnv* env, jobject thiz) {
 
     const std::vector<wse::platform::WarbandModuleInfo> modules =
         wse::platform::scan_warband_modules(*cache.vfs);
+    const std::vector<std::string> languages =
+        wse::platform::list_warband_languages(*cache.vfs, "");
 
     std::string json = "{\"ok\":true,\"index_ms\":";
     json.append(std::to_string(index_ms));
@@ -598,6 +643,15 @@ Java_org_wse2_android_WseSafBridge_nativeScanTree(JNIEnv* env, jobject thiz) {
         wse::core::wse_append_json_string(json, m.compatible_with_warband);
         json.push_back('}');
     }
+    json.append("],\"languages\":[");
+    for (std::size_t i = 0; i < languages.size(); ++i) {
+        if (i != 0U) {
+            json.push_back(',');
+        }
+        json.push_back('"');
+        json.append(wse::platform::json_escape(languages[i]));
+        json.push_back('"');
+    }
     json.append("]}");
     return utf8_to_jstring(env, json);
 }
@@ -615,32 +669,14 @@ Java_org_wse2_android_WseSafBridge_nativeVerifyModule(JNIEnv* env,
     std::lock_guard<std::mutex> lock(cache.mutex);
 
     ScopedBridgeSession session(env, thiz);
-    if (!session.valid()) {
-        return utf8_to_jstring(env, "ERROR: failed to bind WseSafBridge JNI methods");
+    std::string vfs_error;
+    bool cache_hit = false;
+    std::int64_t index_ms = 0;
+    if (!ensure_cached_tree_vfs(cache, session, vfs_error, &cache_hit, &index_ms)) {
+        return utf8_to_jstring(env, "ERROR: " + vfs_error);
     }
 
     wse::platform::SteadyClock clock;
-    std::int64_t index_ms = 0;
-
-    const bool cache_hit = cache.vfs && cache.backend &&
-                           cache.tree_key == session.tree_key() &&
-                           cache.vfs->index_complete();
-    if (!cache_hit) {
-        cache.tree_key = session.tree_key();
-        cache.backend = std::make_shared<AndroidJniSafBackend>();
-        cache.vfs = std::make_unique<wse::platform::SafVfs>(cache.backend, false);
-        session.attach(cache.backend);
-        const std::int64_t i0 = clock.ticks();
-        const bool ok = cache.vfs->rebuild_index();
-        const std::int64_t i1 = clock.ticks();
-        index_ms = ((i1 - i0) * 1000) / wse::platform::kTicksPerSecond;
-        if (!ok) {
-            return utf8_to_jstring(env, "ERROR: failed indexing SAF document tree");
-        }
-    } else {
-        session.attach(cache.backend);
-    }
-
     const std::int64_t p0 = clock.ticks();
     const wse::platform::ModuleScriptsCheckResult res =
         wse::platform::verify_module_scripts(*cache.vfs, module_dir);
@@ -661,6 +697,35 @@ Java_org_wse2_android_WseSafBridge_nativeVerifyModule(JNIEnv* env,
     summary.append(cache_hit ? "cached index, " : ("index " + std::to_string(index_ms) + " ms, "));
     summary.append("parse " + std::to_string(parse_ms) + " ms)");
     return utf8_to_jstring(env, summary);
+}
+
+// Pre-play install check for the launcher (P10.3): returns `install_check_json` JSON.
+JNIEXPORT jstring JNICALL
+Java_org_wse2_android_WseSafBridge_nativeCheckModuleInstall(JNIEnv* env,
+                                                            jobject thiz,
+                                                            jstring module_rel_dir) {
+    const auto error_json = [env](std::string_view reason) -> jstring {
+        return utf8_to_jstring(
+            env, wse::platform::install_check_json({std::string(reason)}));
+    };
+
+    const std::string module_dir = jstring_to_utf8(env, module_rel_dir);
+    if (module_dir.empty()) {
+        return error_json("empty module directory");
+    }
+
+    SafCacheState& cache = get_saf_cache();
+    std::lock_guard<std::mutex> lock(cache.mutex);
+
+    ScopedBridgeSession session(env, thiz);
+    std::string vfs_error;
+    if (!ensure_cached_tree_vfs(cache, session, vfs_error)) {
+        return error_json(vfs_error);
+    }
+
+    return utf8_to_jstring(
+        env, wse::platform::install_check_json(
+                 wse::platform::find_missing_warband_files(*cache.vfs, "", module_dir)));
 }
 
 // `config/performance.json` under the app's private files directory (`configRoot`) is the one
@@ -704,6 +769,44 @@ Java_org_wse2_android_WseSafBridge_nativeSavePerformanceSettings(JNIEnv* env,
     c.gyro_aim_enabled = (gyro_aim_enabled == JNI_TRUE);
     c.pinch_zoom_enabled = (pinch_zoom_enabled == JNI_TRUE);
     return wse::platform::save_launcher_choices(vfs, c) ? JNI_TRUE : JNI_FALSE;
+}
+
+// Merges a partial JSON object of launcher choices onto `config/performance.json` and saves it.
+JNIEXPORT jboolean JNICALL
+Java_org_wse2_android_WseSafBridge_nativeSaveLauncherSettings(JNIEnv* env,
+                                                              jclass clazz,
+                                                              jstring config_root,
+                                                              jstring choices_json) {
+    (void)clazz;
+    const std::string root = jstring_to_utf8(env, config_root);
+    if (root.empty()) {
+        return JNI_FALSE;
+    }
+    wse::platform::HostVfs vfs{std::filesystem::path(root)};
+    const std::string choices = jstring_to_utf8(env, choices_json);
+    return wse::platform::save_launcher_settings_json(vfs, choices) ? JNI_TRUE : JNI_FALSE;
+}
+
+// Ensures `config/performance.json` exists and is valid (seeding first-launch defaults when
+// missing or corrupt), then returns its serialized JSON.
+JNIEXPORT jstring JNICALL
+Java_org_wse2_android_WseSafBridge_nativeEnsureFirstLaunchSettings(JNIEnv* env,
+                                                                   jclass clazz,
+                                                                   jstring config_root) {
+    (void)clazz;
+    const std::string root = jstring_to_utf8(env, config_root);
+    wse::platform::PerformanceSettings s{};
+    bool ok = !root.empty();
+    if (ok) {
+        wse::platform::HostVfs vfs{std::filesystem::path(root)};
+        ok = wse::platform::ensure_first_launch_settings(vfs, s);
+    }
+    if (!ok) {
+        s = wse::platform::PerformanceSettings{};
+        wse::platform::apply_quality_preset(s, wse::platform::kFirstLaunchQualityPreset);
+        wse::platform::sanitize_performance_settings(s);
+    }
+    return utf8_to_jstring(env, wse::platform::serialize_performance_settings_json(s));
 }
 
 // Loads the file into `RuntimePerformanceHub` for the SDL frame loop (called by `WseActivity`).
@@ -939,6 +1042,7 @@ Java_org_wse2_android_WseSafBridge_nativeRegisterGameTree(JNIEnv* env, jobject t
 namespace wse::platform::android_saf {
 
 struct RegisteredGameTree::Impl {
+    JavaVM* vm = nullptr;
     jobject bridge = nullptr;  // own global reference, released with the tree
     JNIEnv* env = nullptr;
     std::unique_ptr<ScopedBridgeSession> session{};
@@ -950,9 +1054,18 @@ struct RegisteredGameTree::Impl {
         if (backend) {
             backend->set_binding(nullptr);
         }
-        session.reset();  // releases its local class reference on `env`
-        if (env != nullptr && bridge != nullptr) {
-            env->DeleteGlobalRef(bridge);
+        session.reset();
+        if (bridge != nullptr) {
+            JNIEnv* del_env = env;
+            void* raw_env = nullptr;
+            if (vm != nullptr &&
+                vm->GetEnv(&raw_env, JNI_VERSION_1_6) == JNI_OK &&
+                raw_env != nullptr) {
+                del_env = static_cast<JNIEnv*>(raw_env);
+            }
+            if (del_env != nullptr) {
+                del_env->DeleteGlobalRef(bridge);
+            }
         }
     }
 };
@@ -961,6 +1074,17 @@ RegisteredGameTree::RegisteredGameTree(std::unique_ptr<Impl> impl) noexcept
     : impl_(std::move(impl)) {}
 
 RegisteredGameTree::~RegisteredGameTree() = default;
+
+void RegisteredGameTree::rebind_thread(void* jni_env) noexcept {
+    if (!impl_) {
+        return;
+    }
+    auto* env = static_cast<JNIEnv*>(jni_env);
+    impl_->env = env;
+    if (impl_->session) {
+        impl_->session->set_env(env);
+    }
+}
 
 Vfs& RegisteredGameTree::vfs() noexcept { return *impl_->vfs; }
 
@@ -981,6 +1105,9 @@ std::unique_ptr<RegisteredGameTree> RegisteredGameTree::open(void* jni_env,
         return fail("no JNIEnv for the calling thread");
     }
     auto impl = std::make_unique<Impl>();
+    if (env->GetJavaVM(&impl->vm) != JNI_OK) {
+        impl->vm = nullptr;
+    }
     {
         GameTreeRegistry& reg = game_tree_registry();
         std::lock_guard<std::mutex> lock(reg.mutex);

@@ -11,6 +11,13 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <span>
+#include <thread>
+#include <vector>
 
 #include "wse/game/headless_runner.h"
 #include "wse/platform/ui_game_shell.h"
@@ -396,6 +403,215 @@ void test_missing_warband_files() {
            "UiGameShell::start refuses a wrong folder with the missing-file message");
 }
 
+// P10.3: the launcher's install check is `find_missing_warband_files` as one JSON object, and
+// the language list comes from the install's `languages/*/` folders.
+void test_launcher_install_check_json() {
+    expect(wse::platform::install_check_json({}) == "{\"ok\":true,\"missing\":[]}",
+           "an empty missing list is ok=true with an empty array");
+    expect(wse::platform::install_check_json({"Modules/X/scripts.txt", "CommonRes"}) ==
+               "{\"ok\":false,\"missing\":[\"Modules/X/scripts.txt\",\"CommonRes\"]}",
+           "missing entries keep their order");
+    expect(wse::platform::install_check_json({"a\"b\\c\n\x01"}) ==
+               "{\"ok\":false,\"missing\":[\"a\\\"b\\\\c\\n\\u0001\"]}",
+           "quotes, backslashes and control characters are escaped");
+
+    wse::platform::MemoryVfs vfs;
+    expect(vfs.write_text("Modules/Native/module.ini", "x") &&
+               vfs.write_text("Modules/Native/scripts.txt", "x"),
+           "seed a partial module for the install check");
+    const std::string json = wse::platform::install_check_json(
+        wse::platform::find_missing_warband_files(vfs, "", "Modules/Native"));
+    expect(json.rfind("{\"ok\":false,\"missing\":[", 0) == 0U &&
+               json.find("troops.txt") != std::string::npos &&
+               json.find("CommonRes") != std::string::npos,
+           "the install check of a partial module lists what is missing");
+}
+
+void test_list_warband_languages() {
+    wse::platform::MemoryVfs none;
+    expect(wse::platform::list_warband_languages(none, "") == std::vector<std::string>{"en"},
+           "an install without languages/ still offers English");
+
+    wse::platform::MemoryVfs vfs;
+    expect(vfs.write_text("languages/zh-CN/game_menus.csv", "x") &&
+               vfs.write_text("languages/de/game_menus.csv", "x") &&
+               vfs.write_text("languages/en/readme.txt", "x") &&
+               vfs.write_text("languages/notes.txt", "x") &&
+               vfs.write_text("Game/languages/fr/game_menus.csv", "x"),
+           "seed language folders");
+    expect(wse::platform::list_warband_languages(vfs, "") ==
+               std::vector<std::string>({"en", "de", "zh-CN"}),
+           "English first, then the language folders sorted; files are skipped; no duplicate en");
+    expect(wse::platform::list_warband_languages(vfs, "Game") ==
+               std::vector<std::string>({"en", "fr"}),
+           "a root prefix is honoured");
+}
+
+// P10.5: a VFS whose reads block until the test opens the gate, standing in for a slow SAF
+// tree. Only `read_file` / `read_text` wait; directory queries pass straight through.
+class GatedVfs final : public wse::platform::Vfs {
+public:
+    explicit GatedVfs(wse::platform::Vfs& inner) : inner_(inner) {}
+
+    void open_gate() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            open_ = true;
+        }
+        cv_.notify_all();
+    }
+    [[nodiscard]] std::size_t reads() const noexcept { return reads_.load(); }
+
+    bool read_file(std::string_view path, std::vector<std::uint8_t>& out) override {
+        wait_for_gate();
+        return inner_.read_file(path, out);
+    }
+    bool read_text(std::string_view path, std::string& out) override {
+        wait_for_gate();
+        return inner_.read_text(path, out);
+    }
+    bool write_file(std::string_view path, std::span<const std::uint8_t> data) override {
+        return inner_.write_file(path, data);
+    }
+    bool remove_file(std::string_view path) override { return inner_.remove_file(path); }
+    bool list_dir(std::string_view path, std::vector<wse::platform::VfsEntry>& out) override {
+        return inner_.list_dir(path, out);
+    }
+    bool is_file(std::string_view path) override { return inner_.is_file(path); }
+    bool is_dir(std::string_view path) override { return inner_.is_dir(path); }
+
+private:
+    void wait_for_gate() {
+        ++reads_;
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [&] { return open_; });
+    }
+
+    wse::platform::Vfs& inner_;
+    std::mutex mutex_{};
+    std::condition_variable cv_{};
+    bool open_ = false;
+    std::atomic<std::size_t> reads_{0U};
+};
+
+// Polls `pred` every millisecond for up to `seconds`.
+template <class Pred>
+bool wait_until(Pred pred, double seconds) {
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::duration<double>(seconds);
+    while (!pred()) {
+        if (std::chrono::steady_clock::now() > deadline) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
+
+void seed_async_shell_module(wse::platform::MemoryVfs& vfs) {
+    seed_minimal_module(vfs, "Modules/AsyncMod", build_minimal_scripts());
+    expect(vfs.write_text(
+               "Data/font_data.xml",
+               "<FontData width=\"64\" height=\"64\" padding=\"0\" font_size=\"32\" "
+               "font_scale=\"100\" line_spacing=\"100\"><FontDetails>"
+               "<character code=\"65\" u=\"0\" v=\"0\" w=\"16\" h=\"16\" postshift=\"16\"/>"
+               "</FontDetails></FontData>\n"),
+           "write synthetic font_data.xml for the async shell");
+}
+
+wse::platform::UiGameShellOptions async_shell_options() {
+    wse::platform::UiGameShellOptions opts{};
+    opts.run.module_dir = "Modules/AsyncMod";
+    opts.run.load_options.require_core_files = false;
+    opts.check_install = false;
+    return opts;
+}
+
+// `UiGameShell::start_async`: the load runs on a worker thread while the host keeps polling
+// (and presenting a loading screen); progress is readable from the host thread; a cancel or a
+// destroyed shell stops the worker without hanging.
+void test_ui_game_shell_start_async() {
+    using wse::platform::UiShellStartState;
+    wse::platform::MemoryVfs mem;
+    seed_async_shell_module(mem);
+
+    {
+        GatedVfs gated(mem);
+        wse::platform::UiGameShell shell;
+        expect(shell.poll_start() == UiShellStartState::idle, "a new shell is idle");
+        expect(shell.start_async(gated, async_shell_options()),
+               "start_async returns at once while reads are blocked");
+        expect(shell.poll_start() == UiShellStartState::loading && !shell.running(),
+               "the shell is loading, not running, while the worker waits");
+        expect(!shell.start_async(gated, async_shell_options()),
+               "a second start_async while loading is refused");
+        expect(wait_until([&] { return gated.reads() > 0U; }, 5.0),
+               "the worker reaches the VFS");
+        const wse::platform::UiShellStartProgress p = shell.start_progress();
+        expect(p.fraction >= 0.0f && p.fraction < 1.0f && !p.stage.empty(),
+               "progress is readable from the host thread during the load");
+        expect(!shell.frame(1.0f / 60.0f, 800U, 600U) && shell.geometry() == nullptr,
+               "frame() does nothing while loading");
+        gated.open_gate();
+        expect(wait_until([&] { return shell.poll_start() != UiShellStartState::loading; }, 10.0),
+               "the load finishes once reads are released");
+        expect(shell.poll_start() == UiShellStartState::ready && shell.running() &&
+                   shell.start_error().empty(),
+               "a finished load leaves the shell ready and running");
+        expect(shell.start_progress().fraction == 1.0f, "progress ends at 1");
+        expect(shell.frame(1.0f / 60.0f, 800U, 600U), "frames run after the async start");
+    }
+
+    {
+        GatedVfs gated(mem);
+        wse::platform::UiGameShell shell;
+        expect(shell.start_async(gated, async_shell_options()), "start a load to cancel");
+        expect(wait_until([&] { return gated.reads() > 0U; }, 5.0),
+               "the cancelled worker reaches the VFS");
+        shell.cancel_start();
+        gated.open_gate();
+        expect(wait_until([&] { return shell.poll_start() != UiShellStartState::loading; }, 10.0),
+               "a cancelled load ends");
+        expect(shell.poll_start() == UiShellStartState::failed && !shell.running() &&
+                   shell.start_error().find("cancel") != std::string::npos,
+               "a cancelled load reports failed with a cancel message");
+    }
+
+    {
+        GatedVfs gated(mem);  // declared first: outlives the shell
+        std::thread opener;
+        {
+            wse::platform::UiGameShell shell;
+            expect(shell.start_async(gated, async_shell_options()), "start a load to abandon");
+            expect(wait_until([&] { return gated.reads() > 0U; }, 5.0),
+                   "the abandoned worker reaches the VFS");
+            opener = std::thread([&] {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                gated.open_gate();
+            });
+        }  // the destructor cancels and joins
+        opener.join();
+        expect(true, "destroying a loading shell joins its worker");
+    }
+
+    {
+        wse::platform::MemoryVfs no_font;
+        seed_minimal_module(no_font, "Modules/AsyncMod", build_minimal_scripts());
+        wse::platform::UiGameShell shell;
+        expect(shell.start_async(no_font, async_shell_options()), "start a load that fails");
+        expect(wait_until([&] { return shell.poll_start() != UiShellStartState::loading; }, 10.0),
+               "a failing load ends");
+        expect(shell.poll_start() == UiShellStartState::failed &&
+                   shell.start_error().find("UI assets") == 0U && !shell.running(),
+               "a failing load reports the same error start() gives");
+        expect(shell.start_async(mem, async_shell_options()) &&
+                   wait_until([&] { return shell.poll_start() != UiShellStartState::loading; },
+                              10.0) &&
+                   shell.poll_start() == UiShellStartState::ready,
+               "the shell can start again after a failed load");
+    }
+}
+
 // `UiGameShell`: loads the font and module, opens the presentation `game_start` queues, routes
 // pointer events into `UiSession::handle_input`, clamps long frames, and renders at the
 // window's aspect ratio capped at `max_render_height`.
@@ -580,6 +796,9 @@ int run_headless_suite(const char* fixture_path) {
     test_headless_module_runner_steps();
     test_ui_game_shell();
     test_missing_warband_files();
+    test_launcher_install_check_json();
+    test_list_warband_languages();
+    test_ui_game_shell_start_async();
 
     if (failures == 0) {
         std::printf("headless tests: PASS\n");

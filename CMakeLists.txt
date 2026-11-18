@@ -509,6 +509,7 @@ if(WSE_BUILD_ANDROID_APP)
         platform/sdl/sdl_selftest_main.cpp
         platform/sdl/sdl_audio.cpp
         platform/sdl/sdl_input.cpp
+        platform/android/perf_hint.cpp
         platform/android/saf_vfs_jni.cpp
     )
     target_link_libraries(wse2 PRIVATE

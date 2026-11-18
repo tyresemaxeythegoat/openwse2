@@ -9,6 +9,8 @@
 
 #include "sdl_audio.h"
 #include "sdl_input.h"
+#include "../android/perf_hint.h"
+#include "wse/game/module_loader_common.h"
 #include "wse/platform/audio_worker.h"
 #include "wse/platform/clock.h"
 #include "wse/platform/performance.h"
@@ -19,6 +21,7 @@
 #ifdef __ANDROID__
 #include <android/native_window.h>
 #include <dlfcn.h>
+#include <jni.h>
 
 #include "../android/saf_game_tree.h"
 #endif
@@ -227,6 +230,239 @@ void apply_display_frame_rate(SDL_Window* window,
 #endif
 }
 
+// Shared per-loop settings / thermal / present-mode / pacing coordinator used by both
+// the self-test UI loop and `run_module_shell`.
+struct PerfLoopState {
+    wse::platform::ThermalPerformanceController perf_ctrl;
+    wse::platform::RuntimeLaunchPerfConfig launch_cfg{};
+    wse::platform::FrameTimeStats frame_stats{};
+    std::uint64_t launch_cfg_rev = 0U;
+    std::uint64_t thermal_rev = 0U;
+    std::int32_t last_applied_fps_cap = -1;
+    std::int32_t last_requested_fps_cap = -1;
+    wse::platform::PresentModePreference last_applied_present_mode =
+        wse::platform::PresentModePreference::Fifo;
+    bool has_applied_display = false;
+
+    void apply_launch_config(const wse::platform::RuntimeLaunchPerfConfig& cfg,
+                             wse::platform::WseInputManager* input_mgr,
+                             wse::platform::SdlInputBackend* sdl_input) {
+        launch_cfg = cfg;
+        if (input_mgr != nullptr) {
+            auto prof = input_mgr->profile();
+            prof.gyro_aim_enabled = cfg.settings.gyro_aim_enabled;
+            prof.pinch_zoom_enabled = cfg.settings.pinch_zoom_enabled;
+            wse::platform::sanitize_input_profile(prof);
+            input_mgr->profile() = prof;
+            if (sdl_input != nullptr) {
+                sdl_input->set_gyro_enabled(prof.gyro_aim_enabled);
+            }
+        } else if (sdl_input != nullptr) {
+            sdl_input->set_gyro_enabled(cfg.settings.gyro_aim_enabled);
+        }
+        perf_ctrl.set_settings(cfg.settings);
+    }
+
+    bool poll_launch_config(wse::platform::WseInputManager* input_mgr,
+                            wse::platform::SdlInputBackend* sdl_input) {
+        if (!wse::platform::RuntimePerformanceHub::global().poll_launch_config(
+                launch_cfg_rev, launch_cfg)) {
+            return false;
+        }
+        apply_launch_config(launch_cfg, input_mgr, sdl_input);
+        return true;
+    }
+
+    // Polls the hub thermal snapshot, updates `frame_pacer` and SDL/Android display
+    // rate + VSync whenever the effective FPS cap or active present mode changes, and
+    // returns the effective FPS target (0 means uncapped).
+    std::int32_t update_thermal(SDL_Window* window,
+                                SDL_Renderer* renderer,
+                                wse::platform::FramePacer& frame_pacer,
+                                bool* target_changed_out = nullptr,
+                                wse::platform::PerformanceAdaptation* adaptation_out = nullptr) {
+        std::uint64_t next_thermal_rev = thermal_rev;
+        const auto therm =
+            wse::platform::RuntimePerformanceHub::global().thermal_snapshot(&next_thermal_rev);
+        if (next_thermal_rev != thermal_rev) {
+            thermal_rev = next_thermal_rev;
+            perf_ctrl.update_thermal(therm);
+        }
+        const auto adapt = perf_ctrl.evaluate();
+        const bool fps_changed = adapt.effective_fps_cap != last_applied_fps_cap;
+        const bool mode_changed =
+            !has_applied_display || adapt.active_present_mode != last_applied_present_mode;
+        // A new launcher/settings choice, not a thermal step-down.
+        const bool user_selected = adapt.requested_fps_cap != last_requested_fps_cap;
+        last_requested_fps_cap = adapt.requested_fps_cap;
+        if (fps_changed) {
+            last_applied_fps_cap = adapt.effective_fps_cap;
+            frame_pacer.set_target_fps(last_applied_fps_cap);
+            frame_stats.reset();
+        }
+        if (fps_changed || mode_changed) {
+            last_applied_present_mode = adapt.active_present_mode;
+            has_applied_display = true;
+            apply_display_frame_rate(window, renderer, adapt.effective_fps_cap,
+                                     adapt.active_present_mode, user_selected);
+        }
+        if (target_changed_out != nullptr) {
+            *target_changed_out = fps_changed;
+        }
+        if (adaptation_out != nullptr) {
+            *adaptation_out = adapt;
+        }
+        return adapt.effective_fps_cap;
+    }
+
+    std::int32_t step(SDL_Window* window,
+                      SDL_Renderer* renderer,
+                      wse::platform::FramePacer& frame_pacer,
+                      wse::platform::WseInputManager* input_mgr,
+                      wse::platform::SdlInputBackend* sdl_input,
+                      bool* target_changed_out = nullptr,
+                      wse::platform::PerformanceAdaptation* adaptation_out = nullptr) {
+        (void)poll_launch_config(input_mgr, sdl_input);
+        return update_thermal(window, renderer, frame_pacer, target_changed_out, adaptation_out);
+    }
+
+    [[nodiscard]] wse::platform::PerformanceAdaptation evaluate() const noexcept {
+        return perf_ctrl.evaluate();
+    }
+};
+
+[[nodiscard]] std::string resolve_install_language(wse::platform::Vfs& vfs,
+                                                   std::string_view module_dir,
+                                                   std::string_view requested) {
+    const std::string lower = wse::platform::ascii_lower(requested);
+    if (lower.empty() || lower == "en") {
+        return "en";
+    }
+    const std::string root_lang_dir = wse::game::vfs_join_path("languages", lower);
+    const std::string mod_langs_dir = wse::game::vfs_join_path(module_dir, "languages");
+    const std::string mod_lang_dir = wse::game::vfs_join_path(mod_langs_dir, lower);
+    if (vfs.is_dir(root_lang_dir) || vfs.is_dir(mod_lang_dir)) {
+        return lower;
+    }
+    return "en";
+}
+
+void log_module_fps_target(const wse::platform::PerformanceAdaptation& adapt) noexcept {
+    const std::string_view tier_sv = wse::platform::thermal_tier_name(adapt.tier);
+    const std::string_view mode_sv = wse::platform::present_mode_name(adapt.active_present_mode);
+    if (adapt.effective_fps_cap > 0) {
+        SDL_Log("[WSE2] module fps target %d Hz (requested %d Hz, tier %.*s, mode %.*s)",
+                adapt.effective_fps_cap, adapt.requested_fps_cap,
+                static_cast<int>(tier_sv.size()), tier_sv.data(),
+                static_cast<int>(mode_sv.size()), mode_sv.data());
+    } else {
+        SDL_Log("[WSE2] module fps target uncapped (requested %d Hz, tier %.*s, mode %.*s)",
+                adapt.requested_fps_cap, static_cast<int>(tier_sv.size()), tier_sv.data(),
+                static_cast<int>(mode_sv.size()), mode_sv.data());
+    }
+}
+
+struct FpsOverlayState {
+    static constexpr std::uint64_t kUpdateIntervalNs = 500000000ULL;  // 500 ms (max 2 Hz)
+    std::uint64_t last_update_ns = 0ULL;
+    std::uint64_t cpu_accum_ns = 0ULL;
+    std::uint32_t cpu_samples = 0U;
+    bool initialized = false;
+    char line1[64]{};
+    char line2[64]{};
+
+    void record_cpu(std::uint64_t cpu_ns) noexcept {
+        cpu_accum_ns += std::min<std::uint64_t>(cpu_ns, 1000000000ULL);
+        ++cpu_samples;
+    }
+
+    [[nodiscard]] bool update_if_due(std::uint64_t now_ns,
+                                     const wse::platform::FrameTimeStats& stats,
+                                     std::int32_t pacer_target_fps,
+                                     wse::platform::ThermalTier tier) noexcept {
+        if (initialized && now_ns - last_update_ns < kUpdateIntervalNs) {
+            return false;
+        }
+        initialized = true;
+        last_update_ns = now_ns;
+
+        const double avg_cpu_ms =
+            cpu_samples > 0U
+                ? static_cast<double>(cpu_accum_ns) / static_cast<double>(cpu_samples) / 1.0e6
+                : -1.0;
+        cpu_accum_ns = 0ULL;
+        cpu_samples = 0U;
+
+        if (stats.sample_count() > 0U && avg_cpu_ms >= 0.0) {
+            std::snprintf(line1, sizeof(line1), "%.1f fps | cpu %.2f ms", stats.average_fps(),
+                          avg_cpu_ms);
+        } else if (stats.sample_count() > 0U) {
+            std::snprintf(line1, sizeof(line1), "%.1f fps | cpu --.- ms", stats.average_fps());
+        } else if (avg_cpu_ms >= 0.0) {
+            std::snprintf(line1, sizeof(line1), "--.- fps | cpu %.2f ms", avg_cpu_ms);
+        } else {
+            std::snprintf(line1, sizeof(line1), "--.- fps | cpu --.- ms");
+        }
+
+        const std::string_view tier_sv = wse::platform::thermal_tier_name(tier);
+        char target_buf[16];
+        if (pacer_target_fps > 0) {
+            std::snprintf(target_buf, sizeof(target_buf), "%dHz", pacer_target_fps);
+        } else {
+            std::snprintf(target_buf, sizeof(target_buf), "uncap");
+        }
+        std::snprintf(line2, sizeof(line2), "cap %s | %.*s", target_buf,
+                      static_cast<int>(tier_sv.size()), tier_sv.data());
+        return true;
+    }
+};
+
+void draw_fps_overlay(SDL_Renderer* renderer,
+                      SDL_Window* window,
+                      int out_w,
+                      int out_h,
+                      const FpsOverlayState& overlay) noexcept {
+    if (renderer == nullptr || out_w <= 0 || out_h <= 0) {
+        return;
+    }
+    int win_w = out_w;
+    int win_h = out_h;
+    if (window != nullptr) {
+        SDL_GetWindowSize(window, &win_w, &win_h);
+    }
+    SDL_Rect safe{0, 0, std::max(win_w, 1), std::max(win_h, 1)};
+    if (window == nullptr || !SDL_GetWindowSafeArea(window, &safe) || safe.w <= 0 ||
+        safe.h <= 0) {
+        safe = {0, 0, std::max(win_w, 1), std::max(win_h, 1)};
+    }
+    const float px_scale_x =
+        win_w > 0 ? static_cast<float>(out_w) / static_cast<float>(win_w) : 1.0f;
+    const float px_scale_y =
+        win_h > 0 ? static_cast<float>(out_h) / static_cast<float>(win_h) : 1.0f;
+    const float safe_x = static_cast<float>(safe.x) * px_scale_x;
+    const float safe_y = static_cast<float>(safe.y) * px_scale_y;
+    const float min_dim = static_cast<float>(std::min(out_w, out_h));
+    const float scale = std::clamp(std::floor(min_dim / 340.0f), 1.0f, 6.0f);
+
+    const std::size_t max_chars =
+        std::max(std::string_view(overlay.line1).size(), std::string_view(overlay.line2).size());
+    const float pad = 4.0f;
+    const float box_w = static_cast<float>(max_chars) * 8.0f + pad * 2.0f;
+    const float box_h = 27.0f;
+    const float x = safe_x / scale + 6.0f;
+    const float y = safe_y / scale + 6.0f;
+
+    SDL_SetRenderScale(renderer, scale, scale);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    draw_filled_rect(renderer, x, y, box_w, box_h, 12, 16, 22, 190);
+    SDL_SetRenderDrawColor(renderer, 120, 230, 140, 255);
+    SDL_RenderDebugText(renderer, x + pad, y + 4.0f, overlay.line1);
+    SDL_SetRenderDrawColor(renderer, 210, 225, 240, 255);
+    SDL_RenderDebugText(renderer, x + pad, y + 15.0f, overlay.line2);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    SDL_SetRenderScale(renderer, 1.0f, 1.0f);
+}
+
 // Draws `GeometryFrame` batches with `SDL_RenderGeometry` on whatever GPU backend the SDL
 // renderer uses (GLES / Vulkan on Android). Textures are copied from the capture device on
 // first use and freed when the UI renderer destroys them.
@@ -340,6 +576,107 @@ static_assert(offsetof(SDL_Vertex, position) == offsetof(wse::platform::Geometry
 static_assert(offsetof(SDL_Vertex, color) == offsetof(wse::platform::GeometryVertex, r));
 static_assert(offsetof(SDL_Vertex, tex_coord) == offsetof(wse::platform::GeometryVertex, u));
 
+[[nodiscard]] std::string module_label_from_dir(std::string_view module_dir) {
+    while (!module_dir.empty() && (module_dir.back() == '/' || module_dir.back() == '\\')) {
+        module_dir.remove_suffix(1);
+    }
+    const std::size_t slash = module_dir.find_last_of("/\\");
+    const std::string_view label =
+        (slash == std::string_view::npos) ? module_dir : module_dir.substr(slash + 1U);
+    return label.empty() ? std::string("Warband") : std::string(label);
+}
+
+void draw_loading_screen(SDL_Renderer* renderer,
+                         int out_w,
+                         int out_h,
+                         const std::string& module_name,
+                         const wse::platform::UiShellStartProgress& progress) {
+    SDL_SetRenderScale(renderer, 1.0f, 1.0f);
+    SDL_SetRenderDrawColor(renderer, 16, 20, 26, 255);
+    SDL_RenderClear(renderer);
+
+    const float safe_w = static_cast<float>(std::max(out_w, 1));
+    const float safe_h = static_cast<float>(std::max(out_h, 1));
+    const float scale = std::clamp(std::floor(safe_w / 340.0f), 1.0f, 6.0f);
+    SDL_SetRenderScale(renderer, scale, scale);
+
+    const float lw = safe_w / scale;
+    const float lh = safe_h / scale;
+    const float bar_w = std::clamp(lw - 48.0f, 80.0f, 260.0f);
+    const float bar_h = 12.0f;
+    const float block_h = 52.0f;
+    const float x0 = std::max(12.0f, (lw - bar_w) * 0.5f);
+    const float y0 = std::max(12.0f, (lh - block_h) * 0.5f);
+
+    std::string title = "Loading " + module_name;
+    if (title.size() > 48U) {
+        title.resize(45U);
+        title += "...";
+    }
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderDebugText(renderer, x0, y0, title.c_str());
+
+    const float bar_y = y0 + 16.0f;
+    draw_filled_rect(renderer, x0, bar_y, bar_w, bar_h, 36, 44, 56);
+    const float frac = std::isfinite(progress.fraction)
+                           ? std::clamp(progress.fraction, 0.0f, 1.0f)
+                           : 0.0f;
+    const float fill_w = (bar_w - 2.0f) * frac;
+    if (fill_w > 0.0f) {
+        draw_filled_rect(renderer, x0 + 1.0f, bar_y + 1.0f, fill_w, bar_h - 2.0f, 72, 152, 232);
+    }
+
+    const char* stage = progress.stage.empty() ? "Starting..." : progress.stage.c_str();
+    char stage_buf[96];
+    std::snprintf(stage_buf, sizeof(stage_buf), "%s (%d%%)", stage,
+                  static_cast<int>(std::lround(static_cast<double>(frac) * 100.0)));
+    SDL_SetRenderDrawColor(renderer, 185, 195, 210, 255);
+    SDL_RenderDebugText(renderer, x0, bar_y + bar_h + 8.0f, stage_buf);
+}
+
+#ifdef __ANDROID__
+[[nodiscard]] JNIEnv* attach_jni_thread(JavaVM* vm, bool& attached_out) noexcept {
+    attached_out = false;
+    if (vm == nullptr) {
+        return nullptr;
+    }
+    void* raw_env = nullptr;
+    const jint rc = vm->GetEnv(&raw_env, JNI_VERSION_1_6);
+    if (rc == JNI_OK) {
+        return static_cast<JNIEnv*>(raw_env);
+    }
+    if (rc == JNI_EDETACHED) {
+        JNIEnv* env = nullptr;
+        if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+            attached_out = true;
+            return env;
+        }
+    }
+    return nullptr;
+}
+
+void detach_jni_thread(JavaVM* vm, bool& attached) noexcept {
+    if (attached && vm != nullptr) {
+        vm->DetachCurrentThread();
+        attached = false;
+    }
+}
+
+struct ScopedJniThread {
+    JavaVM* vm = nullptr;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+
+    explicit ScopedJniThread(JavaVM* java_vm) noexcept
+        : vm(java_vm), env(attach_jni_thread(java_vm, attached)) {}
+
+    ~ScopedJniThread() { detach_jni_thread(vm, attached); }
+
+    ScopedJniThread(const ScopedJniThread&) = delete;
+    ScopedJniThread& operator=(const ScopedJniThread&) = delete;
+};
+#endif
+
 // Module mode (`--module <warband_root> [module_rel_dir]`; on Android the `wse.module_root` /
 // `wse.module` intent extras, `WseActivity.getArguments`): instead of the self-test, load the
 // module from a plain directory (`HostVfs`) and run it through `UiGameShell` every display
@@ -350,56 +687,38 @@ static_assert(offsetof(SDL_Vertex, tex_coord) == offsetof(wse::platform::Geometr
 // after a resize, a render reset or a return to the foreground). When the module stops (a VM
 // error with `stop_on_error`), the last frame stays up with the error on top.
 // With `from_saf` (Android `--saf-module`, launched from `WseLauncherActivity`) the install
-// is the SAF tree `WseActivity` registered, opened on this thread
-// (`android_saf::RegisteredGameTree`); `warband_root` is unused.
+// is the SAF tree `WseActivity` registered, indexed on a JVM-attached worker thread while the
+// SDL loop draws a loading screen, then `UiGameShell::start_async` loads the module on a
+// worker rebound to that thread before rebinding back to the SDL thread for frames.
 int run_module_shell(SDL_Window* window,
                      SDL_Renderer* renderer,
                      wse::platform::SdlInputBackend* sdl_input,
+                     wse::platform::WseInputManager* input_mgr,
                      AppLifecycle& app,
                      wse::platform::FramePacer& frame_pacer,
+                     PerfLoopState& perf,
                      const std::string& warband_root,
                      const std::string& module_dir,
-                     bool from_saf) {
+                     bool from_saf,
+                     bool show_fps_overlay) {
     std::string error;
     const std::uint64_t load_start_ns = SDL_GetTicksNS();
+    const std::string module_name = module_label_from_dir(module_dir);
     // Declared before `shell`, which keeps a reference to the VFS until it is destroyed.
     std::unique_ptr<wse::platform::HostVfs> host_vfs;
 #ifdef __ANDROID__
     std::unique_ptr<wse::platform::android_saf::RegisteredGameTree> saf_tree;
+    JavaVM* jvm = nullptr;
+    bool worker_attached = false;
 #endif
     wse::platform::Vfs* vfs = nullptr;
-    if (from_saf) {
-#ifdef __ANDROID__
-        saf_tree = wse::platform::android_saf::RegisteredGameTree::open(SDL_GetAndroidJNIEnv(),
-                                                                        &error);
-        if (saf_tree) {
-            vfs = &saf_tree->vfs();
-            SDL_Log("[WSE2] SAF tree indexed: %zu files (%llu ms)", saf_tree->file_count(),
-                    static_cast<unsigned long long>((SDL_GetTicksNS() - load_start_ns) /
-                                                    1000000ULL));
-        }
-#else
-        error = "--saf-module is Android-only";
-#endif
-    } else {
-        host_vfs = std::make_unique<wse::platform::HostVfs>(fs::path(warband_root));
-        vfs = host_vfs.get();
-    }
-    wse::platform::UiGameShellOptions opts{};
-    opts.run.module_dir = module_dir;
-    opts.run.load_options.native_dir = "Modules/Native";
-    opts.run.load_options.root_data_dir = "Data";
-    opts.run.load_options.require_core_files = true;
-    opts.run.enable_lua = false;  // the app links no `wse_lua` runtime yet
-    opts.output = wse::platform::UiGameShellOptions::Output::geometry;
 
-    wse::platform::UiGameShell shell;
-    bool running = vfs != nullptr && shell.start(*vfs, opts, &error);
-    SDL_Log("[WSE2] module shell: %s %s (%s, %llu ms)",
-            from_saf ? "(SAF tree)" : warband_root.c_str(), module_dir.c_str(),
-            running ? "started" : error.c_str(),
-            static_cast<unsigned long long>((SDL_GetTicksNS() - load_start_ns) / 1000000ULL));
-    if (!running) {
+    const auto log_load_result = [&](const char* status) {
+        SDL_Log("[WSE2] module shell: %s %s (%s, %llu ms)",
+                from_saf ? "(SAF tree)" : warband_root.c_str(), module_dir.c_str(), status,
+                static_cast<unsigned long long>((SDL_GetTicksNS() - load_start_ns) / 1000000ULL));
+    };
+    const auto show_start_error = [&]() {
         // Missing Warband files (`find_missing_warband_files`), an unreadable SAF tree, or a
         // loader / `game_start` error: say so in a dialog, then return to the launcher.
         const std::string message =
@@ -408,24 +727,257 @@ int run_module_shell(SDL_Window* window,
                                       message.c_str(), window)) {
             SDL_Log("[WSE2] message box failed: %s", SDL_GetError());
         }
-        shell.stop();
+    };
+    SdlGeometryPresenter presenter(renderer);
+    frame_pacer.set_target_fps(30);
+    bool quit = false;
+    bool loading_dirty = true;
+    int loading_out_w = 0;
+    int loading_out_h = 0;
+    float loading_fraction = -1.0f;
+    std::string loading_stage;
+
+    const auto pump_loading_events = [&]() {
+        SDL_Event ev;
+        while (SDL_PollEvent(&ev)) {
+            if (ev.type == SDL_EVENT_QUIT || ev.type == SDL_EVENT_TERMINATING) {
+                quit = true;
+            } else if (ev.type == SDL_EVENT_RENDER_DEVICE_RESET) {
+                presenter.drop_all();
+                loading_dirty = true;
+            } else if (ev.type == SDL_EVENT_RENDER_TARGETS_RESET ||
+                       ev.type == SDL_EVENT_DID_ENTER_FOREGROUND ||
+                       ev.type == SDL_EVENT_WINDOW_EXPOSED) {
+                loading_dirty = true;
+            }
+            if (sdl_input) {
+                sdl_input->push_sdl_event(&ev);
+            }
+        }
+    };
+    const auto present_loading_iteration = [&](const wse::platform::UiShellStartProgress& prog) {
+        int win_w = 1;
+        int win_h = 1;
+        SDL_GetWindowSize(window, &win_w, &win_h);
+        int out_w = win_w;
+        int out_h = win_h;
+        SDL_GetRenderOutputSize(renderer, &out_w, &out_h);
+        const bool frac_changed =
+            (std::isnan(prog.fraction) != std::isnan(loading_fraction)) ||
+            (!std::isnan(prog.fraction) && std::fabs(prog.fraction - loading_fraction) > 1e-4f);
+        if (loading_dirty || out_w != loading_out_w || out_h != loading_out_h || frac_changed ||
+            prog.stage != loading_stage) {
+            draw_loading_screen(renderer, out_w, out_h, module_name, prog);
+            SDL_RenderPresent(renderer);
+            loading_dirty = false;
+            loading_out_w = out_w;
+            loading_out_h = out_h;
+            loading_fraction = prog.fraction;
+            loading_stage = prog.stage;
+        }
+        const std::uint64_t wait_ticks =
+            static_cast<std::uint64_t>(frame_pacer.remaining_wait_ticks());
+        if (wait_ticks > 0U) {
+            SDL_DelayNS(wait_ticks *
+                        static_cast<std::uint64_t>(wse::platform::FramePacer::kNsPerTick));
+        }
+    };
+
+    if (from_saf) {
+#ifdef __ANDROID__
+        auto* sdl_env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+        if (sdl_env == nullptr || sdl_env->GetJavaVM(&jvm) != JNI_OK || jvm == nullptr) {
+            error = "could not obtain JavaVM for SDL thread";
+        } else {
+            std::atomic<bool> saf_open_done{false};
+            std::string saf_open_error;
+            std::thread saf_open_thread([&]() {
+                {
+                    ScopedJniThread jni(jvm);
+                    if (jni.env == nullptr) {
+                        saf_open_error = "could not attach SAF open thread to JVM";
+                    } else {
+                        saf_tree = wse::platform::android_saf::RegisteredGameTree::open(
+                            jni.env, &saf_open_error);
+                    }
+                }
+                saf_open_done.store(true, std::memory_order_release);
+            });
+            const wse::platform::UiShellStartProgress saf_progress{0.02f, "Indexing game files"};
+            while (!saf_open_done.load(std::memory_order_acquire) && !quit &&
+                   !app.terminating.load()) {
+                frame_pacer.begin_frame();
+                pump_loading_events();
+                if (quit || app.terminating.load()) {
+                    break;
+                }
+                present_loading_iteration(saf_progress);
+            }
+            saf_open_thread.join();
+            if (quit || app.terminating.load()) {
+                if (saf_tree) {
+                    saf_tree->rebind_thread(SDL_GetAndroidJNIEnv());
+                }
+                presenter.drop_all();
+                return 0;
+            }
+            if (saf_tree) {
+                vfs = &saf_tree->vfs();
+                SDL_Log("[WSE2] SAF tree indexed: %zu files (%llu ms)", saf_tree->file_count(),
+                        static_cast<unsigned long long>((SDL_GetTicksNS() - load_start_ns) /
+                                                        1000000ULL));
+            } else {
+                error = saf_open_error.empty() ? std::string("failed to open SAF tree")
+                                               : std::move(saf_open_error);
+            }
+        }
+#else
+        error = "--saf-module is Android-only";
+#endif
+    } else {
+        host_vfs = std::make_unique<wse::platform::HostVfs>(fs::path(warband_root));
+        vfs = host_vfs.get();
+    }
+
+    if (vfs == nullptr) {
+        log_load_result(error.c_str());
+        show_start_error();
+        presenter.drop_all();
         return 2;
     }
+
+    (void)perf.poll_launch_config(input_mgr, sdl_input);
+    wse::platform::UiGameShellOptions opts{};
+    opts.run.module_dir = module_dir;
+    opts.run.load_options.native_dir = "Modules/Native";
+    opts.run.load_options.root_data_dir = "Data";
+    opts.run.load_options.require_core_files = true;
+    opts.run.enable_lua = false;  // the app links no `wse_lua` runtime yet
+    opts.language =
+        resolve_install_language(*vfs, module_dir, perf.launch_cfg.settings.language);
+    opts.max_texture_size = perf.launch_cfg.settings.max_texture_size;
+    opts.output = wse::platform::UiGameShellOptions::Output::geometry;
+#ifdef __ANDROID__
+    if (from_saf) {
+        opts.worker_thread_init = [jvm, &saf_tree, &worker_attached]() {
+            JNIEnv* worker_env = attach_jni_thread(jvm, worker_attached);
+            if (saf_tree) {
+                saf_tree->rebind_thread(worker_env);
+            }
+        };
+        opts.worker_thread_exit = [jvm, &saf_tree, &worker_attached]() {
+            if (saf_tree) {
+                saf_tree->rebind_thread(nullptr);
+            }
+            detach_jni_thread(jvm, worker_attached);
+        };
+    }
+#endif
+
+    wse::platform::UiGameShell shell;
+    if (!shell.start_async(*vfs, std::move(opts))) {
+        error = "could not start async module loader";
+        log_load_result(error.c_str());
+        show_start_error();
+        presenter.drop_all();
+        return 2;
+    }
+
+    wse::platform::UiShellStartState start_state = shell.poll_start();
+    while (start_state == wse::platform::UiShellStartState::loading && !quit &&
+           !app.terminating.load()) {
+        frame_pacer.begin_frame();
+        pump_loading_events();
+        if (quit || app.terminating.load()) {
+            break;
+        }
+        start_state = shell.poll_start();
+        if (start_state != wse::platform::UiShellStartState::loading) {
+            break;
+        }
+        present_loading_iteration(shell.start_progress());
+    }
+
+    if (quit || app.terminating.load()) {
+        shell.cancel_start();
+        shell.stop();
+#ifdef __ANDROID__
+        if (saf_tree) {
+            saf_tree->rebind_thread(SDL_GetAndroidJNIEnv());
+        }
+#endif
+        presenter.drop_all();
+        return 0;
+    }
+
+    if (start_state != wse::platform::UiShellStartState::ready) {
+        error = shell.start_error();
+        log_load_result(error.c_str());
+        show_start_error();
+        shell.stop();
+#ifdef __ANDROID__
+        if (saf_tree) {
+            saf_tree->rebind_thread(SDL_GetAndroidJNIEnv());
+        }
+#endif
+        presenter.drop_all();
+        return 2;
+    }
+
+#ifdef __ANDROID__
+    if (saf_tree) {
+        saf_tree->rebind_thread(SDL_GetAndroidJNIEnv());
+    }
+#endif
+    log_load_result("started");
+
 #ifndef __ANDROID__
     SDL_StartTextInput(window);  // desktop keyboards; Android IME is an open item
 #endif
-    frame_pacer.set_target_fps(60);
+    wse::platform::PerformanceAdaptation module_adapt{};
+    bool target_changed = false;
+    (void)perf.step(window, renderer, frame_pacer, input_mgr, sdl_input, &target_changed,
+                    &module_adapt);
+    if (target_changed) {
+        log_module_fps_target(module_adapt);
+    }
 
-    SdlGeometryPresenter presenter(renderer);
     std::uint64_t presented_serial = ~std::uint64_t{0};
     int presented_w = 0;
     int presented_h = 0;
     bool presented_stopped = false;
     std::vector<wse::platform::RawInputEvent> events;
+    if (sdl_input) {
+        sdl_input->poll_events(events);
+        events.clear();
+    }
     std::uint64_t last_ns = SDL_GetTicksNS();
-    bool quit = false;
+    bool running = true;
+    const auto target_ns_for_fps = [](std::int32_t fps) noexcept -> std::int64_t {
+        return fps > 0 ? wse::platform::FramePacer::kNsPerSecond / fps : 0;
+    };
+    std::int32_t perf_target_fps = frame_pacer.target_fps();
+    auto perf_session = wse::platform::android_perf::PerformanceHintSession::create(
+        target_ns_for_fps(perf_target_fps));
+    if (perf_session) {
+        SDL_Log("[WSE2] performance hint session active (target %lld ns)",
+                static_cast<long long>(target_ns_for_fps(perf_target_fps)));
+    } else if (wse::platform::android_perf::raise_current_thread_priority()) {
+        SDL_Log("[WSE2] performance hint unavailable; raised thread priority");
+    } else {
+        SDL_Log("[WSE2] performance hint unavailable; default thread priority");
+    }
+    FpsOverlayState fps_overlay;
     while (!quit && !app.terminating.load()) {
+        bool step_target_changed = false;
+        const std::int32_t effective_fps =
+            perf.step(window, renderer, frame_pacer, input_mgr, sdl_input,
+                      &step_target_changed, &module_adapt);
+        if (step_target_changed) {
+            log_module_fps_target(module_adapt);
+        }
         frame_pacer.begin_frame();
+        const std::uint64_t work_start_ns = SDL_GetTicksNS();
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_EVENT_QUIT || ev.type == SDL_EVENT_TERMINATING) {
@@ -469,8 +1021,14 @@ int run_module_shell(SDL_Window* window,
             }
         }
 
-        const bool changed = presented_serial != shell.frame_serial() || presented_w != out_w ||
-                             presented_h != out_h || presented_stopped != !running;
+        const bool ui_changed = presented_serial != shell.frame_serial() || presented_w != out_w ||
+                                presented_h != out_h || presented_stopped != !running;
+        const std::uint64_t pre_draw_ns = SDL_GetTicksNS();
+        const bool overlay_due =
+            show_fps_overlay && running &&
+            fps_overlay.update_if_due(pre_draw_ns, perf.frame_stats, frame_pacer.target_fps(),
+                                      module_adapt.tier);
+        const bool changed = ui_changed || overlay_due;
         if (changed) {
             const wse::platform::GeometryFrame* frame = shell.geometry();
             if (frame != nullptr && shell.geometry_device() != nullptr) {
@@ -491,16 +1049,45 @@ int run_module_shell(SDL_Window* window,
                 const std::string line =
                     error.size() > 80U ? error.substr(0U, 77U) + "..." : error;
                 SDL_RenderDebugText(renderer, 6.0f, 18.0f, line.c_str());
+            } else if (show_fps_overlay) {
+                draw_fps_overlay(renderer, window, out_w, out_h, fps_overlay);
+            }
+            if (show_fps_overlay) {
+                const std::uint64_t cpu_end_ns = SDL_GetTicksNS();
+                fps_overlay.record_cpu(cpu_end_ns > work_start_ns ? cpu_end_ns - work_start_ns
+                                                                  : 0ULL);
             }
             SDL_RenderPresent(renderer);
             presented_serial = shell.frame_serial();
             presented_w = out_w;
             presented_h = out_h;
             presented_stopped = !running;
+        } else if (show_fps_overlay) {
+            fps_overlay.record_cpu(pre_draw_ns > work_start_ns ? pre_draw_ns - work_start_ns
+                                                               : 0ULL);
         }
+        const std::uint64_t after_present_ns = SDL_GetTicksNS();
+        const std::int32_t current_fps = frame_pacer.target_fps();
+        if (current_fps != perf_target_fps) {
+            perf_target_fps = current_fps;
+            if (perf_session) {
+                perf_session->update_target(target_ns_for_fps(current_fps));
+            } else if (current_fps > 0) {
+                perf_session = wse::platform::android_perf::PerformanceHintSession::create(
+                    target_ns_for_fps(current_fps));
+            }
+        }
+        if (perf_session) {
+            if (after_present_ns > work_start_ns) {
+                const std::uint64_t elapsed_ns = after_present_ns - work_start_ns;
+                perf_session->report_actual(static_cast<std::int64_t>(
+                    std::min<std::uint64_t>(elapsed_ns, 1000000000ULL)));
+            }
+        }
+        perf.frame_stats.record_frame(static_cast<std::int64_t>(after_present_ns));
         const std::uint64_t wait_ticks =
             static_cast<std::uint64_t>(frame_pacer.remaining_wait_ticks());
-        if (wait_ticks > 0U) {
+        if (wait_ticks > 0U && effective_fps > 0) {
             SDL_DelayNS(wait_ticks *
                         static_cast<std::uint64_t>(wse::platform::FramePacer::kNsPerTick));
         }
@@ -541,26 +1128,10 @@ int main(int argc, char* argv[]) {
     }
     wse::platform::SteadyClock pacer_clock;
     wse::platform::FramePacer frame_pacer(pacer_clock);
-    wse::platform::ThermalPerformanceController perf_ctrl;
-    wse::platform::RuntimeLaunchPerfConfig launch_cfg{};
-    std::uint64_t launch_cfg_rev = 0U;
-    std::int32_t last_applied_fps_cap = -1;
-    std::int32_t last_requested_fps_cap = -1;
-    wse::platform::FrameTimeStats frame_stats;
+    PerfLoopState perf;
     // `config/performance.json` is the one saved copy of these settings: on Android
     // `WseActivity` loads it (`nativeApplyPerformanceSettings`) into the hub; elsewhere it is
     // read from SDL's per-user preference directory.
-    const auto apply_launch_cfg = [&](const wse::platform::RuntimeLaunchPerfConfig& cfg) {
-        auto prof = input_mgr.profile();
-        prof.gyro_aim_enabled = cfg.settings.gyro_aim_enabled;
-        prof.pinch_zoom_enabled = cfg.settings.pinch_zoom_enabled;
-        wse::platform::sanitize_input_profile(prof);
-        input_mgr.profile() = prof;
-        perf_ctrl.set_settings(cfg.settings);
-        if (sdl_input) {
-            sdl_input->set_gyro_enabled(prof.gyro_aim_enabled);
-        }
-    };
 #ifndef __ANDROID__
     if (char* pref = SDL_GetPrefPath("wse2", "wse2-android"); pref != nullptr) {
         wse::platform::HostVfs pref_vfs{std::filesystem::path(pref)};
@@ -574,34 +1145,44 @@ int main(int argc, char* argv[]) {
         }
     }
 #endif
-    if (wse::platform::RuntimePerformanceHub::global().poll_launch_config(launch_cfg_rev,
-                                                                           launch_cfg)) {
-        apply_launch_cfg(launch_cfg);
-    }
+    (void)perf.poll_launch_config(&input_mgr, sdl_input.get());
 
-    // `--module <warband_root> [module_rel_dir]` runs a module from a directory and
-    // `--saf-module <module_rel_dir>` one from the SAF tree `WseActivity` registered
-    // (`run_module_shell`); otherwise an optional first argument overrides the self-test
-    // fixture path.
+    // `--module <warband_root> [module_rel_dir]` runs a module from a directory,
+    // `--saf-module <module_rel_dir>` runs one from the SAF tree `WseActivity` registered
+    // (`run_module_shell`), and `--show-fps` enables the module FPS/thermal debug overlay;
+    // otherwise an optional first argument overrides the self-test fixture path.
     std::string cli_fixture;
     std::string module_root;
     std::string module_rel = "Modules/Native";
     bool module_mode = false;
     bool module_from_saf = false;
-    if (argc > 2 && argv[1] && std::string_view(argv[1]) == "--module" && argv[2] &&
-        argv[2][0] != '\0') {
-        module_mode = true;
-        module_root = argv[2];
-        if (argc > 3 && argv[3] && argv[3][0] != '\0') {
-            module_rel = argv[3];
+    bool show_fps_overlay = false;
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i] == nullptr || argv[i][0] == '\0') {
+            continue;
         }
-    } else if (argc > 2 && argv[1] && std::string_view(argv[1]) == "--saf-module" && argv[2] &&
-               argv[2][0] != '\0') {
-        module_mode = true;
-        module_from_saf = true;
-        module_rel = argv[2];
-    } else if (argc > 1 && argv[1] && argv[1][0] != '\0') {
-        cli_fixture = argv[1];
+        const std::string_view arg(argv[i]);
+        if (arg == "--show-fps") {
+            show_fps_overlay = true;
+        } else if (arg == "--module" && i + 1 < argc && argv[i + 1] != nullptr &&
+                   argv[i + 1][0] != '\0') {
+            module_mode = true;
+            module_from_saf = false;
+            module_root = argv[++i];
+            if (i + 1 < argc && argv[i + 1] != nullptr && argv[i + 1][0] != '\0') {
+                const std::string_view next(argv[i + 1]);
+                if (next != "--show-fps" && next != "--module" && next != "--saf-module") {
+                    module_rel = argv[++i];
+                }
+            }
+        } else if (arg == "--saf-module" && i + 1 < argc && argv[i + 1] != nullptr &&
+                   argv[i + 1][0] != '\0') {
+            module_mode = true;
+            module_from_saf = true;
+            module_rel = argv[++i];
+        } else if (!module_mode && cli_fixture.empty()) {
+            cli_fixture = std::string(arg);
+        }
     }
 
     SDL_Window* window = nullptr;
@@ -639,8 +1220,9 @@ int main(int argc, char* argv[]) {
     SDL_AddEventWatch(on_app_event, &app);
 
     if (module_mode) {
-        const int rc = run_module_shell(window, renderer, sdl_input.get(), app, frame_pacer,
-                                        module_root, module_rel, module_from_saf);
+        const int rc = run_module_shell(window, renderer, sdl_input.get(), &input_mgr, app,
+                                        frame_pacer, perf, module_root, module_rel,
+                                        module_from_saf, show_fps_overlay);
         SDL_RemoveEventWatch(on_app_event, &app);
         if (audio_worker) {
             audio_worker->stop();
@@ -760,34 +1342,12 @@ int main(int argc, char* argv[]) {
     // Window points -> logical UI units (the UI is drawn under SDL_SetRenderScale).
     float points_to_logical = 1.0f;
     std::uint64_t last_input_ns = SDL_GetTicksNS();
-    std::uint64_t thermal_rev = 0U;
 
     while (!quit) {
         if (terminating.load()) {
             break;
         }
-        if (wse::platform::RuntimePerformanceHub::global().poll_launch_config(launch_cfg_rev,
-                                                                               launch_cfg)) {
-            apply_launch_cfg(launch_cfg);
-        }
-        std::uint64_t next_thermal_rev = thermal_rev;
-        const auto therm =
-            wse::platform::RuntimePerformanceHub::global().thermal_snapshot(&next_thermal_rev);
-        if (next_thermal_rev != thermal_rev) {
-            thermal_rev = next_thermal_rev;
-            perf_ctrl.update_thermal(therm);
-        }
-        const auto loop_adapt = perf_ctrl.evaluate();
-        if (loop_adapt.effective_fps_cap != last_applied_fps_cap) {
-            last_applied_fps_cap = loop_adapt.effective_fps_cap;
-            frame_pacer.set_target_fps(last_applied_fps_cap);
-            // A new launcher/settings choice, not a thermal step-down.
-            const bool user_selected = loop_adapt.requested_fps_cap != last_requested_fps_cap;
-            last_requested_fps_cap = loop_adapt.requested_fps_cap;
-            apply_display_frame_rate(window, renderer, last_applied_fps_cap,
-                                     loop_adapt.active_present_mode, user_selected);
-            frame_stats.reset();
-        }
+        (void)perf.step(window, renderer, frame_pacer, &input_mgr, sdl_input.get());
         frame_pacer.begin_frame();
         SDL_Event ev;
         bool was_finished = false;
@@ -1024,7 +1584,7 @@ int main(int argc, char* argv[]) {
         SDL_SetRenderClipRect(renderer, nullptr);
 
         // Footer bar + Re-run button (in logical & pixel coordinates)
-        const auto adaptation = perf_ctrl.evaluate();
+        const auto adaptation = perf.evaluate();
         draw_filled_rect(renderer, ox, body_bot, lw, footer_h, 24, 29, 38);
         SDL_SetRenderDrawColor(renderer, 185, 195, 210, 255);
         // Cap, measured rate and its 1% low (what the device actually delivers), and the
@@ -1037,9 +1597,9 @@ int main(int argc, char* argv[]) {
         } else {
             std::snprintf(cap_buf, sizeof(cap_buf), "uncap");
         }
-        if (frame_stats.sample_count() >= 10U) {
+        if (perf.frame_stats.sample_count() >= 10U) {
             std::snprintf(footer_buf, sizeof(footer_buf), "%s %.1ffps 1%%:%.0f %.*s %.2fx",
-                          cap_buf, frame_stats.average_fps(), frame_stats.low_1pct_fps(),
+                          cap_buf, perf.frame_stats.average_fps(), perf.frame_stats.low_1pct_fps(),
                           static_cast<int>(tier_sv.size()), tier_sv.data(),
                           static_cast<double>(adaptation.resolution_scale));
         } else {
@@ -1064,7 +1624,7 @@ int main(int argc, char* argv[]) {
         }
 
         SDL_RenderPresent(renderer);
-        frame_stats.record_frame(static_cast<std::int64_t>(SDL_GetTicksNS()));
+        perf.frame_stats.record_frame(static_cast<std::int64_t>(SDL_GetTicksNS()));
         const std::uint64_t wait_ticks =
             static_cast<std::uint64_t>(frame_pacer.remaining_wait_ticks());
         if (wait_ticks > 0U && adaptation.effective_fps_cap > 0) {

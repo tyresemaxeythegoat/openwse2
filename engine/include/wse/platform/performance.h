@@ -30,6 +30,20 @@
 
 namespace wse::platform {
 
+namespace perf_detail {
+
+[[nodiscard]] constexpr std::string_view trim_ascii_ws(std::string_view text) noexcept {
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t')) {
+        text.remove_suffix(1);
+    }
+    return text;
+}
+
+}  // namespace perf_detail
+
 enum class FrameRateCap : std::uint8_t {
     Uncapped = 0,
     // Battery saver: also the rate `ThermalTier::Critical` falls back to.
@@ -72,13 +86,7 @@ enum class FrameRateCap : std::uint8_t {
 }
 
 [[nodiscard]] inline bool parse_frame_rate_cap(std::string_view text, FrameRateCap& out) {
-    while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) {
-        text.remove_prefix(1);
-    }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t')) {
-        text.remove_suffix(1);
-    }
-    const std::string lower = ascii_lower(text);
+    const std::string lower = ascii_lower(perf_detail::trim_ascii_ws(text));
     if (lower == "30" || lower == "30hz") {
         out = FrameRateCap::Fps30;
         return true;
@@ -147,13 +155,7 @@ enum class PresentModePreference : std::uint8_t {
 
 [[nodiscard]] inline bool parse_present_mode(std::string_view text,
                                              PresentModePreference& out) {
-    while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) {
-        text.remove_prefix(1);
-    }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t')) {
-        text.remove_suffix(1);
-    }
-    const std::string lower = ascii_lower(text);
+    const std::string lower = ascii_lower(perf_detail::trim_ascii_ws(text));
     if (lower == "fifo") {
         out = PresentModePreference::Fifo;
         return true;
@@ -222,6 +224,84 @@ enum class PresentModePreference : std::uint8_t {
     default:
         return 1;
     }
+}
+
+// UI aspect mode stored for P11 launcher/runtime integration (unused by the runtime yet).
+enum class UiAspectMode : std::uint8_t {
+    Ratio4x3 = 0,
+    Ratio16x9 = 1,
+    Stretch = 2,
+};
+
+[[nodiscard]] constexpr std::string_view ui_aspect_mode_key(UiAspectMode mode) noexcept {
+    switch (mode) {
+    case UiAspectMode::Ratio4x3:
+        return "4:3";
+    case UiAspectMode::Ratio16x9:
+        return "16:9";
+    case UiAspectMode::Stretch:
+        return "stretch";
+    }
+    return "4:3";
+}
+
+[[nodiscard]] inline bool parse_ui_aspect_mode(std::string_view text, UiAspectMode& out) {
+    const std::string lower = ascii_lower(perf_detail::trim_ascii_ws(text));
+    if (lower == "4:3") {
+        out = UiAspectMode::Ratio4x3;
+        return true;
+    }
+    if (lower == "16:9") {
+        out = UiAspectMode::Ratio16x9;
+        return true;
+    }
+    if (lower == "stretch") {
+        out = UiAspectMode::Stretch;
+        return true;
+    }
+    return false;
+}
+
+enum class QualityPreset : std::uint8_t {
+    Low = 0,
+    Medium = 1,
+    High = 2,
+    Custom = 3,
+};
+
+[[nodiscard]] constexpr std::string_view quality_preset_key(QualityPreset preset) noexcept {
+    switch (preset) {
+    case QualityPreset::Low:
+        return "low";
+    case QualityPreset::Medium:
+        return "medium";
+    case QualityPreset::High:
+        return "high";
+    case QualityPreset::Custom:
+        return "custom";
+    }
+    return "custom";
+}
+
+[[nodiscard]] inline bool parse_quality_preset(std::string_view text, QualityPreset& out) {
+    const std::string lower = ascii_lower(perf_detail::trim_ascii_ws(text));
+    if (lower == "low") {
+        out = QualityPreset::Low;
+        return true;
+    }
+    if (lower == "medium") {
+        out = QualityPreset::Medium;
+        return true;
+    }
+    if (lower == "high") {
+        out = QualityPreset::High;
+        return true;
+    }
+    if (lower == "custom") {
+        out = QualityPreset::Custom;
+        return true;
+    }
+    return false;
 }
 
 // Matches Android `PowerManager.THERMAL_STATUS_*` (`0..6`).
@@ -313,8 +393,16 @@ struct ThermalSnapshot {
 
 struct PerformanceSettings {
     std::int32_t version = 1;
+    QualityPreset quality_preset = QualityPreset::Custom;
     FrameRateCap frame_rate_cap = FrameRateCap::Fps60;
     PresentModePreference present_mode = PresentModePreference::Fifo;
+    float render_scale = 1.0f;
+    // Maximum texture dimension cap; 0 means no cap.
+    std::uint32_t max_texture_size = 0U;
+    // UI aspect and scale are stored for P11 and not used by the runtime yet.
+    UiAspectMode ui_aspect = UiAspectMode::Ratio4x3;
+    float ui_scale = 1.0f;
+    std::string language = "en";
     bool thermal_throttling_enabled = true;
     bool dynamic_resolution_enabled = true;
     bool lod_bias_scaling_enabled = true;
@@ -329,20 +417,88 @@ struct PerformanceSettings {
     [[nodiscard]] bool operator==(const PerformanceSettings&) const noexcept = default;
 };
 
+namespace perf_detail {
+
+[[nodiscard]] inline bool is_valid_language_tag(std::string_view lang) noexcept {
+    if (lang.empty() || lang.size() > 16U) {
+        return false;
+    }
+    for (const char c : lang) {
+        const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                        (c >= '0' && c <= '9') || c == '_' || c == '-';
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace perf_detail
+
 inline void sanitize_performance_settings(PerformanceSettings& s) noexcept {
     const PerformanceSettings def{};
     const auto finite_or = [](float v, float fallback) noexcept {
         return std::isfinite(v) ? v : fallback;
     };
     s.version = 1;
+    if (static_cast<std::uint8_t>(s.quality_preset) >
+        static_cast<std::uint8_t>(QualityPreset::Custom)) {
+        s.quality_preset = def.quality_preset;
+    }
     s.frame_rate_cap = frame_rate_cap_from_hz(frame_rate_cap_hz(s.frame_rate_cap));
     if (static_cast<std::uint8_t>(s.present_mode) >
         static_cast<std::uint8_t>(PresentModePreference::FifoRelaxed)) {
         s.present_mode = def.present_mode;
     }
+    s.render_scale = std::clamp(finite_or(s.render_scale, def.render_scale), 0.50f, 1.0f);
+    if (s.max_texture_size != 0U) {
+        const std::uint32_t clamped = std::clamp(s.max_texture_size, 256U, 4096U);
+        std::uint32_t pow2 = 256U;
+        while (pow2 <= clamped / 2U) {
+            pow2 *= 2U;
+        }
+        s.max_texture_size = pow2;
+    }
+    if (static_cast<std::uint8_t>(s.ui_aspect) >
+        static_cast<std::uint8_t>(UiAspectMode::Stretch)) {
+        s.ui_aspect = def.ui_aspect;
+    }
+    s.ui_scale = std::clamp(finite_or(s.ui_scale, def.ui_scale), 0.75f, 2.0f);
+    if (!perf_detail::is_valid_language_tag(s.language)) {
+        s.language = def.language;
+    }
     s.min_resolution_scale =
         std::clamp(finite_or(s.min_resolution_scale, def.min_resolution_scale), 0.50f, 1.0f);
     s.max_lod_bias = std::clamp(finite_or(s.max_lod_bias, def.max_lod_bias), 0.0f, 3.0f);
+}
+
+inline constexpr QualityPreset kFirstLaunchQualityPreset = QualityPreset::Medium;
+
+inline void apply_quality_preset(PerformanceSettings& s, QualityPreset preset) noexcept {
+    switch (preset) {
+    case QualityPreset::Low:
+        s.quality_preset = QualityPreset::Low;
+        s.frame_rate_cap = FrameRateCap::Fps30;
+        s.render_scale = 0.75f;
+        s.max_texture_size = 512U;
+        break;
+    case QualityPreset::Medium:
+        s.quality_preset = QualityPreset::Medium;
+        s.frame_rate_cap = FrameRateCap::Fps30;
+        s.render_scale = 0.85f;
+        s.max_texture_size = 1024U;
+        break;
+    case QualityPreset::High:
+        s.quality_preset = QualityPreset::High;
+        s.frame_rate_cap = FrameRateCap::Fps60;
+        s.render_scale = 1.0f;
+        s.max_texture_size = 2048U;
+        break;
+    case QualityPreset::Custom:
+    default:
+        s.quality_preset = QualityPreset::Custom;
+        break;
+    }
 }
 
 namespace perf_detail {
@@ -373,6 +529,19 @@ inline bool parse_int_exact(std::string_view s, std::int32_t& out) noexcept {
     return true;
 }
 
+inline bool parse_uint32_exact(std::string_view s, std::uint32_t& out) noexcept {
+    if (s.empty()) {
+        return false;
+    }
+    std::uint32_t val = 0;
+    const auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+    if (ec != std::errc{} || ptr != s.data() + s.size()) {
+        return false;
+    }
+    out = val;
+    return true;
+}
+
 inline bool parse_bool_exact(std::string_view s, bool& out) noexcept {
     if (s == "true" || s == "1") {
         out = true;
@@ -391,34 +560,11 @@ inline std::string fmt_float(float v) {
     return (ec == std::errc{}) ? std::string(buf, ptr) : std::string("0");
 }
 
-}  // namespace perf_detail
-
-[[nodiscard]] inline std::string performance_settings_vfs_path() {
-    return "config/performance.json";
-}
-
-[[nodiscard]] inline std::string serialize_performance_settings_json(
-    const PerformanceSettings& raw) {
-    PerformanceSettings s = raw;
-    sanitize_performance_settings(s);
-    std::map<std::string, std::string> entries;
-    entries["version"] = "1";
-    entries["frame_rate_cap"] = std::string(frame_rate_cap_key(s.frame_rate_cap));
-    entries["present_mode"] = std::string(present_mode_name(s.present_mode));
-    entries["thermal_throttling_enabled"] = s.thermal_throttling_enabled ? "true" : "false";
-    entries["dynamic_resolution_enabled"] = s.dynamic_resolution_enabled ? "true" : "false";
-    entries["lod_bias_scaling_enabled"] = s.lod_bias_scaling_enabled ? "true" : "false";
-    entries["min_resolution_scale"] = perf_detail::fmt_float(s.min_resolution_scale);
-    entries["max_lod_bias"] = perf_detail::fmt_float(s.max_lod_bias);
-    entries["gyro_aim_enabled"] = s.gyro_aim_enabled ? "true" : "false";
-    entries["pinch_zoom_enabled"] = s.pinch_zoom_enabled ? "true" : "false";
-    return wse::core::wse_serialize_json_object(entries, true);
-}
-
-[[nodiscard]] inline bool deserialize_performance_settings_json(
-    std::string_view json,
-    PerformanceSettings& out,
-    std::string* error_out = nullptr) {
+// Parses a flat settings/choices JSON object and overlays its present keys onto `in_out`.
+// Leaves `in_out` unchanged if the JSON is malformed or any key has an invalid value.
+[[nodiscard]] inline bool overlay_performance_settings_json(std::string_view json,
+                                                            PerformanceSettings& in_out,
+                                                            std::string* error_out) {
     std::map<std::string, std::string> raw;
     if (!wse::core::wse_parse_json_object(json, raw)) {
         if (error_out != nullptr) {
@@ -426,15 +572,26 @@ inline std::string fmt_float(float v) {
         }
         return false;
     }
-    PerformanceSettings s{};
+    PerformanceSettings s = in_out;
     if (auto it = raw.find("version"); it != raw.end()) {
         std::int32_t v = 0;
-        if (!perf_detail::parse_int_exact(it->second, v) || v != 1) {
+        if (!parse_int_exact(it->second, v) || v != 1) {
             if (error_out != nullptr) {
                 *error_out = "unsupported performance settings version";
             }
             return false;
         }
+    }
+    // Apply quality_preset before individual overrides so explicit keys win in the same payload.
+    if (auto it = raw.find("quality_preset"); it != raw.end()) {
+        QualityPreset preset{};
+        if (!parse_quality_preset(it->second, preset)) {
+            if (error_out != nullptr) {
+                *error_out = "invalid quality_preset in performance settings";
+            }
+            return false;
+        }
+        apply_quality_preset(s, preset);
     }
     if (auto it = raw.find("frame_rate_cap"); it != raw.end()) {
         if (!parse_frame_rate_cap(it->second, s.frame_rate_cap)) {
@@ -452,57 +609,102 @@ inline std::string fmt_float(float v) {
             return false;
         }
     }
-    if (auto it = raw.find("thermal_throttling_enabled"); it != raw.end()) {
-        if (!perf_detail::parse_bool_exact(it->second, s.thermal_throttling_enabled)) {
+    if (auto it = raw.find("max_texture_size"); it != raw.end()) {
+        if (!parse_uint32_exact(it->second, s.max_texture_size)) {
             if (error_out != nullptr) {
-                *error_out = "invalid thermal_throttling_enabled";
+                *error_out = "invalid max_texture_size in performance settings";
             }
             return false;
         }
     }
-    if (auto it = raw.find("dynamic_resolution_enabled"); it != raw.end()) {
-        if (!perf_detail::parse_bool_exact(it->second, s.dynamic_resolution_enabled)) {
+    if (auto it = raw.find("ui_aspect"); it != raw.end()) {
+        if (!parse_ui_aspect_mode(it->second, s.ui_aspect)) {
             if (error_out != nullptr) {
-                *error_out = "invalid dynamic_resolution_enabled";
+                *error_out = "invalid ui_aspect in performance settings";
             }
             return false;
         }
     }
-    if (auto it = raw.find("lod_bias_scaling_enabled"); it != raw.end()) {
-        if (!perf_detail::parse_bool_exact(it->second, s.lod_bias_scaling_enabled)) {
+    if (auto it = raw.find("language"); it != raw.end()) {
+        if (!is_valid_language_tag(it->second)) {
             if (error_out != nullptr) {
-                *error_out = "invalid lod_bias_scaling_enabled";
+                *error_out = "invalid language in performance settings";
             }
             return false;
         }
+        s.language = it->second;
     }
-    for (const auto& [key, field] : {std::pair{"gyro_aim_enabled", &s.gyro_aim_enabled},
-                                     std::pair{"pinch_zoom_enabled", &s.pinch_zoom_enabled}}) {
-        if (auto it = raw.find(key); it != raw.end() && !perf_detail::parse_bool_exact(it->second, *field)) {
+    for (const auto& [key, field] : {
+             std::pair{"thermal_throttling_enabled", &s.thermal_throttling_enabled},
+             std::pair{"dynamic_resolution_enabled", &s.dynamic_resolution_enabled},
+             std::pair{"lod_bias_scaling_enabled", &s.lod_bias_scaling_enabled},
+             std::pair{"gyro_aim_enabled", &s.gyro_aim_enabled},
+             std::pair{"pinch_zoom_enabled", &s.pinch_zoom_enabled},
+         }) {
+        if (auto it = raw.find(key); it != raw.end() && !parse_bool_exact(it->second, *field)) {
             if (error_out != nullptr) {
                 *error_out = std::string("invalid ") + key;
             }
             return false;
         }
     }
-    if (auto it = raw.find("min_resolution_scale"); it != raw.end()) {
-        if (!perf_detail::parse_float_exact(it->second, s.min_resolution_scale)) {
+    for (const auto& [key, field] : {
+             std::pair{"render_scale", &s.render_scale},
+             std::pair{"ui_scale", &s.ui_scale},
+             std::pair{"min_resolution_scale", &s.min_resolution_scale},
+             std::pair{"max_lod_bias", &s.max_lod_bias},
+         }) {
+        if (auto it = raw.find(key); it != raw.end() && !parse_float_exact(it->second, *field)) {
             if (error_out != nullptr) {
-                *error_out = "invalid min_resolution_scale";
-            }
-            return false;
-        }
-    }
-    if (auto it = raw.find("max_lod_bias"); it != raw.end()) {
-        if (!perf_detail::parse_float_exact(it->second, s.max_lod_bias)) {
-            if (error_out != nullptr) {
-                *error_out = "invalid max_lod_bias";
+                *error_out = std::string("invalid ") + key;
             }
             return false;
         }
     }
     sanitize_performance_settings(s);
-    out = s;
+    in_out = std::move(s);
+    return true;
+}
+
+}  // namespace perf_detail
+
+[[nodiscard]] inline std::string performance_settings_vfs_path() {
+    return "config/performance.json";
+}
+
+[[nodiscard]] inline std::string serialize_performance_settings_json(
+    const PerformanceSettings& raw) {
+    PerformanceSettings s = raw;
+    sanitize_performance_settings(s);
+    std::map<std::string, std::string> entries;
+    entries["version"] = "1";
+    entries["quality_preset"] = std::string(quality_preset_key(s.quality_preset));
+    entries["frame_rate_cap"] = std::string(frame_rate_cap_key(s.frame_rate_cap));
+    entries["present_mode"] = std::string(present_mode_name(s.present_mode));
+    entries["render_scale"] = perf_detail::fmt_float(s.render_scale);
+    entries["max_texture_size"] = std::to_string(s.max_texture_size);
+    entries["ui_aspect"] = std::string(ui_aspect_mode_key(s.ui_aspect));
+    entries["ui_scale"] = perf_detail::fmt_float(s.ui_scale);
+    entries["language"] = s.language;
+    entries["thermal_throttling_enabled"] = s.thermal_throttling_enabled ? "true" : "false";
+    entries["dynamic_resolution_enabled"] = s.dynamic_resolution_enabled ? "true" : "false";
+    entries["lod_bias_scaling_enabled"] = s.lod_bias_scaling_enabled ? "true" : "false";
+    entries["min_resolution_scale"] = perf_detail::fmt_float(s.min_resolution_scale);
+    entries["max_lod_bias"] = perf_detail::fmt_float(s.max_lod_bias);
+    entries["gyro_aim_enabled"] = s.gyro_aim_enabled ? "true" : "false";
+    entries["pinch_zoom_enabled"] = s.pinch_zoom_enabled ? "true" : "false";
+    return wse::core::wse_serialize_json_object(entries, true);
+}
+
+[[nodiscard]] inline bool deserialize_performance_settings_json(
+    std::string_view json,
+    PerformanceSettings& out,
+    std::string* error_out = nullptr) {
+    PerformanceSettings s{};
+    if (!perf_detail::overlay_performance_settings_json(json, s, error_out)) {
+        return false;
+    }
+    out = std::move(s);
     return true;
 }
 
@@ -603,6 +805,54 @@ inline void apply_launcher_choices(PerformanceSettings& s, const LauncherPerform
         *out = s;
     }
     return save_performance_settings(vfs, s, error_out);
+}
+
+// Ensures `config/performance.json` exists and is valid; missing, unreadable, or corrupt
+// files are replaced with defaults plus `kFirstLaunchQualityPreset`.
+[[nodiscard]] inline bool ensure_first_launch_settings(Vfs& vfs,
+                                                       PerformanceSettings& out,
+                                                       bool* created = nullptr,
+                                                       std::string* error_out = nullptr) {
+    if (created != nullptr) {
+        *created = false;
+    }
+    PerformanceSettings loaded{};
+    if (load_performance_settings(vfs, loaded)) {
+        out = std::move(loaded);
+        return true;
+    }
+    PerformanceSettings defaults{};
+    apply_quality_preset(defaults, kFirstLaunchQualityPreset);
+    sanitize_performance_settings(defaults);
+    if (!save_performance_settings(vfs, defaults, error_out)) {
+        return false;
+    }
+    out = std::move(defaults);
+    if (created != nullptr) {
+        *created = true;
+    }
+    return true;
+}
+
+// Loads (or defaults) `config/performance.json`, overlays a partial JSON object of launcher
+// choices (applying `quality_preset` first when present), sanitizes, and saves. Any invalid
+// value fails without writing.
+[[nodiscard]] inline bool save_launcher_settings_json(Vfs& vfs,
+                                                      std::string_view choices_json,
+                                                      PerformanceSettings* out = nullptr,
+                                                      std::string* error_out = nullptr) {
+    PerformanceSettings s{};
+    (void)load_performance_settings_or_default(vfs, s);
+    if (!perf_detail::overlay_performance_settings_json(choices_json, s, error_out)) {
+        return false;
+    }
+    if (!save_performance_settings(vfs, s, error_out)) {
+        return false;
+    }
+    if (out != nullptr) {
+        *out = s;
+    }
+    return true;
 }
 
 struct PerformanceAdaptation {

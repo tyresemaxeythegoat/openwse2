@@ -58,7 +58,44 @@ struct LoadedUiAssets {
     std::unordered_map<std::string, asset::BrfMaterial> materials{};
     std::unordered_map<std::string, DecodedUiTexture> textures{};
     std::string font_texture_key = "font";
+
+    [[nodiscard]] std::size_t texture_bytes() const noexcept {
+        std::size_t total = 0U;
+        for (const auto& kv : textures) {
+            total += kv.second.rgba8.size();
+        }
+        return total;
+    }
 };
+
+[[nodiscard]] inline bool load_dds_texture_into_map(
+    Vfs& vfs,
+    std::string_view vfs_path,
+    std::string_view key,
+    std::unordered_map<std::string, DecodedUiTexture>& out_textures,
+    std::string* error_out = nullptr,
+    std::uint32_t max_texture_size = 0U) {
+    const std::string lkey = ascii_lower(key);
+    if (out_textures.find(lkey) != out_textures.end()) {
+        return true;
+    }
+    std::vector<std::uint8_t> raw;
+    if (!vfs.read_file(vfs_path, raw)) {
+        if (error_out) *error_out = "failed to read DDS texture: " + std::string(vfs_path);
+        return false;
+    }
+    asset::DdsImageView view{};
+    if (!asset::parse_dds(std::as_bytes(std::span<const std::uint8_t>(raw)), view, error_out)) {
+        return false;
+    }
+    DecodedUiTexture tex{};
+    if (!asset::decode_dds_rgba8_budgeted(view, 0U, max_texture_size, tex.rgba8, tex.width,
+                                          tex.height, error_out)) {
+        return false;
+    }
+    out_textures[lkey] = std::move(tex);
+    return true;
+}
 
 namespace rhi_ui_detail {
 
@@ -158,40 +195,13 @@ inline void index_brf_file(const asset::BrfFile& file,
     }
 }
 
-[[nodiscard]] inline bool load_dds_texture_into_map(Vfs& vfs,
-                                                    std::string_view vfs_path,
-                                                    std::string_view key,
-                                                    std::unordered_map<std::string, DecodedUiTexture>& out_textures,
-                                                    std::string* error_out = nullptr) {
-    const std::string lkey = ascii_lower(key);
-    if (out_textures.find(lkey) != out_textures.end()) {
-        return true;
-    }
-    std::vector<std::uint8_t> raw;
-    if (!vfs.read_file(vfs_path, raw)) {
-        if (error_out) *error_out = "failed to read DDS texture: " + std::string(vfs_path);
-        return false;
-    }
-    asset::DdsImageView view{};
-    if (!asset::parse_dds(std::as_bytes(std::span<const std::uint8_t>(raw)), view, error_out)) {
-        return false;
-    }
-    DecodedUiTexture tex{};
-    tex.width = view.width;
-    tex.height = view.height;
-    if (!asset::decode_dds_mip_rgba8(view, 0U, 0U, tex.rgba8, error_out)) {
-        return false;
-    }
-    out_textures[lkey] = std::move(tex);
-    return true;
-}
-
 inline void try_load_named_texture(Vfs& vfs,
                                    std::string_view warband_root,
                                    std::string_view module_rel_dir,
                                    std::string_view language,
                                    std::string_view tex_name,
-                                   LoadedUiAssets& out) {
+                                   LoadedUiAssets& out,
+                                   std::uint32_t max_texture_size = 0U) {
     if (tex_name.empty() || tex_name == "none") {
         return;
     }
@@ -206,7 +216,8 @@ inline void try_load_named_texture(Vfs& vfs,
     }
     const std::string lower_path = ascii_lower(resolved);
     if (lower_path.size() >= 4U && lower_path.compare(lower_path.size() - 4U, 4U, ".dds") == 0) {
-        (void)load_dds_texture_into_map(vfs, resolved, lkey, out.textures);
+        (void)load_dds_texture_into_map(vfs, resolved, lkey, out.textures, nullptr,
+                                        max_texture_size);
     }
 }
 
@@ -251,7 +262,8 @@ inline void try_load_named_texture(Vfs& vfs,
                                                 std::string_view language,
                                                 LoadedUiAssets& out,
                                                 std::string* error_out = nullptr,
-                                                std::span<const std::string> extra_mesh_names = {}) {
+                                                std::span<const std::string> extra_mesh_names = {},
+                                                std::uint32_t max_texture_size = 0U) {
     out = LoadedUiAssets{};
 
     // 1. Font XML (`Data/font_data.xml`, module override first).
@@ -349,18 +361,21 @@ inline void try_load_named_texture(Vfs& vfs,
     }
 
     // 4. Decode font atlas + textures referenced by UI meshes (`main_menu_nord`,
-    //    `ui_quick_battle`, `warrider_logo`, `interface`, etc.).
+    //    `ui_quick_battle`, `warrider_logo`, `interface`, etc.). The font atlas is never
+    //    downscaled because `font_data.xml` glyph bounds are authored at full atlas pixels.
     rhi_ui_detail::try_load_named_texture(
-        vfs, warband_root, module_rel_dir, language, out.font_texture_key, out);
+        vfs, warband_root, module_rel_dir, language, out.font_texture_key, out, 0U);
+    const std::string font_lkey = ascii_lower(out.font_texture_key);
     for (const std::string& mat_key : ui_materials) {
         const auto mit = out.materials.find(mat_key);
-        if (mit != out.materials.end() && !mit->second.texture_names[0].empty()) {
-            rhi_ui_detail::try_load_named_texture(
-                vfs, warband_root, module_rel_dir, language, mit->second.texture_names[0], out);
-        } else {
-            rhi_ui_detail::try_load_named_texture(
-                vfs, warband_root, module_rel_dir, language, mat_key, out);
-        }
+        const std::string_view tex_name =
+            (mit != out.materials.end() && !mit->second.texture_names[0].empty())
+                ? std::string_view(mit->second.texture_names[0])
+                : std::string_view(mat_key);
+        const std::uint32_t cap =
+            (!font_lkey.empty() && ascii_lower(tex_name) == font_lkey) ? 0U : max_texture_size;
+        rhi_ui_detail::try_load_named_texture(
+            vfs, warband_root, module_rel_dir, language, tex_name, out, cap);
     }
     return true;
 }

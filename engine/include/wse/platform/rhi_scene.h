@@ -352,7 +352,8 @@ public:
 
     [[nodiscard]] SceneMeshId upload_brf_mesh(const wse::asset::BrfMesh& mesh,
                                               const wse::asset::DdsImageView* dds = nullptr,
-                                              std::string* error_out = nullptr) {
+                                              std::string* error_out = nullptr,
+                                              std::uint32_t max_texture_size = 0U) {
         if (rhi_ == nullptr || pipeline_ == 0U || mesh.faces.empty() || mesh.face_corners.empty()) {
             return 0U;
         }
@@ -368,10 +369,13 @@ public:
         bool owns_tex = false;
         if (dds != nullptr) {
             std::vector<std::uint8_t> rgba;
-            if (!wse::asset::decode_dds_mip_rgba8(*dds, 0U, 0U, rgba, error_out)) {
+            std::uint32_t tex_w = 0U;
+            std::uint32_t tex_h = 0U;
+            if (!wse::asset::decode_dds_rgba8_budgeted(*dds, 0U, max_texture_size, rgba, tex_w,
+                                                       tex_h, error_out)) {
                 return 0U;
             }
-            tex = rhi_->create_texture_rgba8(dds->width, dds->height, rgba, error_out);
+            tex = rhi_->create_texture_rgba8(tex_w, tex_h, rgba, error_out);
             if (tex == 0U) {
                 return 0U;
             }

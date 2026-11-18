@@ -158,6 +158,7 @@ class WseSafBridge(
     // (platform/android/saf_game_tree.h); `WseActivity` calls it before SDL starts.
     external fun nativeRegisterGameTree()
     external fun nativeVerifyModule(moduleRelDir: String): String
+    external fun nativeCheckModuleInstall(moduleRelDir: String): String
     external fun nativeProbeVulkanAndRenderMesh(
         driverMode: String,
         customIcdPath: String,
@@ -193,6 +194,15 @@ class WseSafBridge(
             gyroAimEnabled: Boolean,
             pinchZoomEnabled: Boolean
         ): Boolean
+
+        @JvmStatic
+        external fun nativeSaveLauncherSettings(
+            configRoot: String,
+            choicesJson: String
+        ): Boolean
+
+        @JvmStatic
+        external fun nativeEnsureFirstLaunchSettings(configRoot: String): String
 
         @JvmStatic
         external fun nativeApplyPerformanceSettings(configRoot: String)

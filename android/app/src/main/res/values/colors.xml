@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark surfaces -->
+    <color name="wse_bg_window">#0E1116</color>
+    <color name="wse_bg_tab_bar">#13171E</color>
+    <color name="wse_bg_card">#171C24</color>
+    <color name="wse_bg_secondary">#222935</color>
+    <color name="wse_bg_secondary_pressed">#2B3444</color>
+    <color name="wse_bg_secondary_disabled">#1A1F28</color>
+    <color name="wse_bg_row_normal">#1D232E</color>
+    <color name="wse_bg_row_pressed">#262E3D</color>
+    <color name="wse_bg_row_selected">#332718</color>
+    <color name="wse_bg_row_selected_pressed">#42321E</color>
+
+    <!-- Borders & dividers -->
+    <color name="wse_border">#2A3240</color>
+    <color name="wse_border_disabled">#202632</color>
+
+    <!-- Warm Warband amber/gold accent -->
+    <color name="wse_accent">#E59A3C</color>
+    <color name="wse_accent_pressed">#CC8429</color>
+    <color name="wse_accent_disabled">#362B1D</color>
+    <color name="wse_on_accent">#120E08</color>
+    <color name="wse_on_accent_disabled">#ABA090</color>
+
+    <!-- Text -->
+    <color name="wse_text_primary">#F1F4F9</color>
+    <color name="wse_text_secondary">#A8B3C5</color>
+    <color name="wse_text_disabled">#7D889B</color>
+
+    <!-- Ripples -->
+    <color name="wse_ripple_light">#28FFFFFF</color>
+    <color name="wse_ripple_on_accent">#33000000</color>
+</resources>
