@@ -20,9 +20,10 @@ gives 1:1 behaviour and byte-compatible saves by construction. This document own
 
 Pinned to **WSE2 v1.1.5.5** `mb_warband_wse2_x64.exe`: 7,060,992 B, SHA-256
 `d4e97d56…4e29709`, 14,618 `.pdata` entries. Any other build is refused with a clear message.
-**The user's GOG install currently has the older 2026-10-14 build (6,735,360 B,
-`c25b51a4…`): the phone install must carry the v1.1.5.5 exe, PDB and DLLs from the official
-`WSE2.zip`.**
+**The user's GOG install and phone install now have WSE2 v1.1.5.6 (7,066,112 B,
+`fbe9808c…`, PE timestamp 2026-11-15, 14,644 `.pdata` entries; the R0 phone run of
+2026-11-19 refused it): the phone install must carry the v1.1.5.5 exe, PDB and DLLs from the
+official `WSE2.zip`.**
 
 Import surface of v1.1.5.5 (546 functions in 23 DLLs). The C runtime is statically linked, so
 there are no CRT DLLs to replace:
