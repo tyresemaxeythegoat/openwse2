@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
+
 package org.wse2.android.launcher
 
 import androidx.compose.animation.AnimatedVisibilityScope
