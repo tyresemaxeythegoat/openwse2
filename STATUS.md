@@ -183,7 +183,7 @@ Found in the review of `6be524d` and still open after the fixes in §7 ("Slice P
 Each needs a translator choice, the retail PDB/binary, hardware, or a change to pushed history.
 
 1. ~~**No GLSL → SPIR-V translator.**~~ **Resolved (`glslang 16.6.0`):** `emit_placeholder_spirv_module` was removed; `lower_warband_glsl_to_vulkan450` (`wse/asset/shader.h`) + `create_glslang_shader_compiler()` (`wse/asset/shader_compiler.h`, `engine/src/shader/wse_shader_compiler.cpp`) lower Warband GLSL 1.10/1.20 to `#version 450` and compile into Vulkan SPIR-V 1.0, tagged by a Section 7(a) `OpString` checked by `inspect_spirv_module` and by `spirv-val --target-env vulkan1.0` in CI. The lowering itself was reworked after review (§7 "Slice P5 lowering review fixes"; behavior notes in `engine/README.md`). All `271/271` retail Warband techniques compiled at generator `3`; P5 is ticked `[x]` in `ROADMAP.md`.
-2. ~~**Unconfirmed `rglMaterial` decoding.**~~ **Resolved in v1.1.5.5:** `rglMesh::updateRenderOrder`
+2. ~~**Unconfirmed `rglMaterial` decoding.**~~ **Resolved in v1.1.5.6:** `rglMesh::updateRenderOrder`
    (`0x1402ba0c0`, `0x1402ba165`) computes `((flags >> 24) - 8) & 0xF` (+4 bucket when blended),
    confirming signed nibble `-8..+7` for `render_order`. `rglGraphicsContext::createBlendStates`
    (`0x14029f740`) allocates slots `0..4`; values `5..6` have no slot, while `7` (`0x700`)
@@ -195,7 +195,7 @@ Each needs a translator choice, the retail PDB/binary, hardware, or a change to 
    handles gamma in shaders, so `srgb_diffuse = !diffuse_a.empty()` is appropriate for Vulkan
    `R8G8B8A8_SRGB`).
 3. ~~**`make_pipeline_desc` assumes clockwise front faces**~~ **Fixed:** updated
-   `wse/platform/rhi_material.h` to `FrontFace::counter_clockwise` (verified by `v1.1.5.5`
+   `wse/platform/rhi_material.h` to `FrontFace::counter_clockwise` (verified by `v1.1.5.6`
    `0x1402e8fb3`/`0x14025ada0`, retail `CommonRes/shields.brf`, and the CCW orbit-camera
    regression test in `platform_test.cpp`).
 4. ~~**Retail technique count.**~~ **Resolved:** fixed `kWse2SkinMappings[0]` base typo
@@ -211,7 +211,7 @@ Each needs a translator choice, the retail PDB/binary, hardware, or a change to 
    The GPU path with translated shaders replaces this.
 6. **`docs/SYMBOL_MAP.json` churn and date.** `6be524d` re-sorted the `strings` list (a
    17k-line diff for 45 new records) and left `"generated": "2026-11-15"`. Fixing either means
-   regenerating with `tools/build_symbol_map.py`, which needs the v1.1.5.5 PDB/PE not present in
+   regenerating with `tools/build_symbol_map.py`, which needs the v1.1.5.6 PDB/PE not present in
    cloud sessions; never hand-edit the file.
 7. **`6be524d` author `Dev <dev@localhost>`.** The commit is pushed and merged into this branch;
    correcting it would rewrite shared history. Set `git config user.name/user.email` on that
@@ -237,7 +237,7 @@ These remain because they need retail evidence, hardware, or a design decision.
 
 1. **Audio is only partly wired (partly fixed).** `wse_headless --audio` (`HeadlessRunOptions::drive_audio`) attaches a `WorldAudioBridge` before `game_start`, feeds the listener from the camera each frame (`listener_from_camera_transform`), calls `WorldAudioBridge::update`, and pumps `pump_to_latency` into a `CaptureAudioDevice`; `HeadlessReport::audio_stats` / `audio_frames_mixed` report the result. It decodes WAV only unless a caller passes `audio_codecs`. The SDL / Android app now keeps its SDL3 stream open with a mixer on `AudioMixerWorker`, and its lifecycle event watch pauses / resumes it (`SDL_EVENT_WILL_ENTER_BACKGROUND` / `SDL_EVENT_DID_ENTER_FOREGROUND` -> `set_paused`). Still open: the app runs no game world, so no `WorldAudioBridge` or `create_audio_codec_backend()` is attached there; device verification needs hardware.
 2. **Decoding and mixing run on the caller's thread (partly fixed).** `--preload-audio` (`HeadlessRunOptions::preload_audio`) decodes every sample at load, so no play opcode waits on a file read and decode. **Fixed:** `AudioMixerWorker` (`wse/platform/audio_worker.h`) mixes on its own thread behind one mutex; game-thread mixer and bridge calls take the same mutex (`lock()` / `with_mixer`), and channel-end callbacks run on the worker thread under it (`audio_test.cpp` `test_audio_mixer_worker_thread`). A lock-free command queue was not needed at this load; revisit if lock contention shows up on device.
-3. ~~**Unverified retail details.**~~ **Resolved in v1.1.5.5:** `mbAgent::playSound` (`0x140057170`)
+3. ~~**Unverified retail details.**~~ **Resolved in v1.1.5.6:** `mbAgent::playSound` (`0x140057170`)
    hashes `m_no`, `m_troopNo`, and `m_partyNo` (`WseAgent::party_no`), scales `(acc/871 - 0.5f)`
    by `0.3f` (not `0.14f`), applies `1.0f / (1.0f - delta)` for negative `delta < -0.001f`, and
    skips pitch variation for the player agent (`wse/asset/audio.h` and `native_mission_ops.h`
@@ -259,10 +259,10 @@ These remain because they need retail evidence, hardware, or a design decision.
 Found in the review of `4793c11`; the bugs it found are fixed (§7, "Slice P7 review fixes").
 These remain because they need retail evidence, hardware, or a design decision.
 
-1. ~~**Chords do not exclude extra modifiers.**~~ **Resolved in v1.1.5.5:** `mbGameKeyManager::keyDown` (`0x1400eef50`), `keyClicked` (`0x1400eeff0`), and `keyRaised` (`0x1400ef0b0`) loop only over the target slot's `m_numModifiers` without checking or suppressing longer chords on the same main key (`chord_matches` matches retail directly).
-2. ~~**Voice-pitch clamp has no evidence.**~~ **Resolved in v1.1.5.5:** `mbAgent::playSound` (`0x140057170`) computes `delta = (rem / 871.0f - 0.5f) * 0.3f` and branches on `±0.001f` with no `±0.15f` clamp; removed `std::clamp(..., -0.15f, 0.15f)` in `wse/asset/audio.h` (`audio_test.cpp` regression on negative wrapped sum `(-29, 0, -1)` → `0.8615659`).
-3. ~~**Two camera-frame conventions.**~~ **Resolved in v1.1.5.5:** `0x140333730`, `0x1403005c0` (`rglCamera` project), and `0x140300750` (`rglCamera` unproject) confirm Warband's `rglTransform` camera frame is `s` = right, `f` = up, `-u` = forward, and `0x1403005c0` projects into Warband UI coordinates `[0, 1] x [0, 0.75]` (y-up); fixed `position_get_screen_projection` (`750`, `0x1401cbdbc`, `native_world_ops.h`) and `mouse_get_world_projection` (`751`, `native_ui_ops.h`) plus a `750 <-> 751` round-trip test in `native_m5_test.cpp`.
-4. ~~**`omit_key_once` also hides the key from scripts.**~~ **Resolved in v1.1.5.5:** `0x1401c6b35` (`omit_key_once`) marks keys for `rglInputManager::updateOmittedKeys`, which forces `prev[k] = 1` while Warband's default-action handlers run and restores saved `prev` before module scripts execute, whereas `70 key_is_down` (`0x1401c6965`) and `71 key_clicked` (`0x1401c69bf`) read live `cur`/`prev`. Stopped filtering `70`/`71` by `omitted_keys` in `native_world_ops.h` (`72`/`73` game-key ops keep suppression), cleared `suppressed_keys_` on same-frame `KeyUp` + `KeyDown` in `wse/platform/input.h`, and updated `native_world_test.cpp` + `input_test.cpp`.
+1. ~~**Chords do not exclude extra modifiers.**~~ **Resolved in v1.1.5.6:** `mbGameKeyManager::keyDown` (`0x1400eef50`), `keyClicked` (`0x1400eeff0`), and `keyRaised` (`0x1400ef0b0`) loop only over the target slot's `m_numModifiers` without checking or suppressing longer chords on the same main key (`chord_matches` matches retail directly).
+2. ~~**Voice-pitch clamp has no evidence.**~~ **Resolved in v1.1.5.6:** `mbAgent::playSound` (`0x140057170`) computes `delta = (rem / 871.0f - 0.5f) * 0.3f` and branches on `±0.001f` with no `±0.15f` clamp; removed `std::clamp(..., -0.15f, 0.15f)` in `wse/asset/audio.h` (`audio_test.cpp` regression on negative wrapped sum `(-29, 0, -1)` → `0.8615659`).
+3. ~~**Two camera-frame conventions.**~~ **Resolved in v1.1.5.6:** `0x140333730`, `0x1403005c0` (`rglCamera` project), and `0x140300750` (`rglCamera` unproject) confirm Warband's `rglTransform` camera frame is `s` = right, `f` = up, `-u` = forward, and `0x1403005c0` projects into Warband UI coordinates `[0, 1] x [0, 0.75]` (y-up); fixed `position_get_screen_projection` (`750`, `0x1401cbdbc`, `native_world_ops.h`) and `mouse_get_world_projection` (`751`, `native_ui_ops.h`) plus a `750 <-> 751` round-trip test in `native_m5_test.cpp`.
+4. ~~**`omit_key_once` also hides the key from scripts.**~~ **Resolved in v1.1.5.6:** `0x1401c6b35` (`omit_key_once`) marks keys for `rglInputManager::updateOmittedKeys`, which forces `prev[k] = 1` while Warband's default-action handlers run and restores saved `prev` before module scripts execute, whereas `70 key_is_down` (`0x1401c6965`) and `71 key_clicked` (`0x1401c69bf`) read live `cur`/`prev`. Stopped filtering `70`/`71` by `omitted_keys` in `native_world_ops.h` (`72`/`73` game-key ops keep suppression), cleared `suppressed_keys_` on same-frame `KeyUp` + `KeyDown` in `wse/platform/input.h`, and updated `native_world_test.cpp` + `input_test.cpp`.
 5. **SDL backend not run on a device.** Finger cancel, focus loss / background, Android Back → Esc,
    flipped wheel, and per-event window sizing compile against SDL `3.4.20` headers and the core
    logic is host-tested, but nothing has exercised `sdl_input.cpp` on hardware. Gamepad Guide and
@@ -339,7 +339,7 @@ These need a device or a design decision.
 2. **`ANativeWindow_setFrameRateWithChangeStrategy(..., ALWAYS)`** is used for the launcher's
    choice so a 90/120 Hz cap can switch display modes; on some panels that switch blanks the
    screen briefly. Needs a device to judge; thermal step-downs keep `ONLY_IF_SEAMLESS`.
-3. **Zoom bounds resolved in `v1.1.5.5`; live campaign camera still unrendered.** ~~`20` and `[1, 200]` placeholders until `mbBasicGame` `+0x5050` limits are read from the binary.~~ Verified in `v1.1.5.5`: `mbMapWindow::mbMapWindow` (`0x140116ed0`) initializes `+0x2d0` (`m_cameraDistance`) to `5.0f`, and `rglConfig::Campaign::fMapCameraMinZoom` (`0x1406183c0`) / `fMapCameraMaxZoom` (`0x1406183c4`) bound zoom to `[3.5f, 175.0f]`. `WseInputState` and `WorldInputBridge::sync_to_world` now use `5.0f` and `[3.5f, 175.0f]` (`input_test.cpp`); no campaign-map camera renderer reads `map_camera_distance` yet.
+3. **Zoom bounds resolved in `v1.1.5.6`; live campaign camera still unrendered.** ~~`20` and `[1, 200]` placeholders until `mbBasicGame` `+0x5050` limits are read from the binary.~~ Verified in `v1.1.5.6`: `mbMapWindow::mbMapWindow` (`0x140116ed0`) initializes `+0x2d0` (`m_cameraDistance`) to `5.0f`, and `rglConfig::Campaign::fMapCameraMinZoom` (`0x1406183c0`) / `fMapCameraMaxZoom` (`0x1406183c4`) bound zoom to `[3.5f, 175.0f]`. `WseInputState` and `WorldInputBridge::sync_to_world` now use `5.0f` and `[3.5f, 175.0f]` (`input_test.cpp`); no campaign-map camera renderer reads `map_camera_distance` yet.
 4. ~~**Two settings sources.**~~ **Fixed:** `config/performance.json` (under the app's
    `filesDir`) is the one saved copy. The launcher reads and writes it through JNI
    (`nativeLoadPerformanceSettings` / `nativeSavePerformanceSettings`, `save_launcher_choices`),
@@ -351,9 +351,9 @@ These need a device or a design decision.
    refresh-rate filter and gyro label in `WseLauncherActivity`, and `SystemClock.elapsedRealtime`
    polling build only in the `android-apk` job (no Android SDK in cloud sessions).
 
-### Phase 2A savegame review: items resolved in `v1.1.5.5`
+### Phase 2A savegame review: items resolved in `v1.1.5.6`
 
-Found in the review of `9cc4431` (merged as `ca0163a`); all 7 follow-up items are now verified against `v1.1.5.5` and resolved:
+Found in the review of `9cc4431` (merged as `ca0163a`); all 7 follow-up items are now verified against `v1.1.5.6` and resolved:
 
 1. ~~**`mbNotes` per-note fields.**~~ **Verified (`0x1401ba010` / `0x1401ba0b0`):** Disassembly of `mbNotes::readStream` and `mbNotes::writeStream` confirms `m_tableauMaterialNo` (`+0x4c0`) and `m_available` (`+0x4c4`) are scalar object-level fields loaded/written across the 16-entry loop alongside per-note `m_texts[i]` (`+0x40`, stride `0x48`) and `m_dates[i]` (`+0`, stride `4`). `savegame.h`'s `write_notes`/`read_notes` already match retail.
 2. ~~**Pre-1174 body layouts.**~~ **Resolved (`[802..1174]`):** Audited `mbSavegame::readStream` (`0x1400c7510`), `mbGame::loadQuests`..`loadItemKinds`, `mbEvent::readStream` (`0x1400bafd0`), and trigger managers: across `[802..1174]`, all other readers are version-invariant and only four `g_compatibleSavegameVersion` branches exist (`mbGame::readStream` `0x1400c86cd` combat options `> 1136`; `mbParty::readStream` `0x1401bab51` `is_marshall` `(900..999) || >= 1020`, `0x1401baba0` `extra_icon_*` `> 1136`, `0x1401babff` `ignore_with_player_party` `> 1160`). Lowered `kSavegameOldestReconstructedBodyVersion` to `kSavegameMinVersion` (`802`), gated all 4 branches in `savegame.h`, and tested round-trips across `{802, 950, 1000, 1020, 1136, 1160, 1174}` (`savegame_test.cpp`).
@@ -363,9 +363,9 @@ Found in the review of `9cc4431` (merged as `ca0163a`); all 7 follow-up items ar
 6. ~~**Un-renamed troops keep the live name.**~~ **Verified:** `mbLoadingWindow::doStep` (`0x140112790`, `0x1401129f0..0x140112ad8`) calls `mbGame::readSettingsData` (`troops.txt`) before `mbGame::readStream`, resetting module names cleanly prior to `loadTroops` (`0x1400c97b0`).
 7. ~~**Windows host gate not re-run.**~~ **Verified:** Full Windows `engine/build_host.ps1` (`21/21` suites, `selftest_host` `6,402 ms`, zero warnings) + retail `wse_headless.exe` & `wse_brf.exe` PASS (`§7`).
 
-### Phase 2E review (`e6c4d0e`): resolved (all 10 items verified against `v1.1.5.5` and fixed)
+### Phase 2E review (`e6c4d0e`): resolved (all 10 items verified against `v1.1.5.6` and fixed)
 
-Found in the review of `e6c4d0e` (PR #22 / `afab774`); all 10 follow-up items are now verified against `v1.1.5.5` and resolved:
+Found in the review of `e6c4d0e` (PR #22 / `afab774`); all 10 follow-up items are now verified against `v1.1.5.6` and resolved:
 
 1. ~~**Window-queue pop order.**~~ **Verified & Fixed (`0x140118ae7..0x140118be0`, `0x1400ef870`, `0x1400f0db0`):** `mbMapWindow::frameMove` peeks `enqueued_windows.back()` and ONLY pops/opens `0x12` (`mbMenuWindow` 0x12, clearing remaining entries in `mbMenuWindow::open` `0x1401203a0`), `0x0f` (`0x16` presentation, enqueued by `900 start_presentation` `0x1401cc082`), and `0x10` (`0x15` notes, `2053` `0x1401dc288`), leaving all other types unpopped while syncing `g_gameScreen->m_windowStack` (`m5.active_window` and `m6.ui.active_window_id`).
 2. ~~**`mbGame::removeParty` on the main party.**~~ **Verified (`0x1400ddaf0`, `0x1400de390`):** `removeParty` does not block party 0 (matching the SDK corruption warning; our `remove_party` keeps `party_no == main_party_no -> false` as an explicit safety guard), and `addPartyToParty` (`0x1400de390`) tail-calls `0x1400ddaf0` at `0x1400de5e0`, confirming `num_destroyed` increment in `party_join_to_party`.
@@ -664,7 +664,7 @@ Reference material, kept verbatim. Grouped facts for the same subsystem also app
   (`game_start` … `wse_initial_window_start`, `wse_camp_button_clicked`), linear match on `m_id` with the first script in file
   order winning, writes the index or `-1` into `m_mappedScripts` (`0x1406a0afc`), and calls `rglInfo`
   with `"Unable to map script %s"` on failure. All 65 names are transcribed in `script.h` and were
-  verified byte-for-byte against the table pointers in the v1.1.5.5 image.
+  verified byte-for-byte against the table pointers in the v1.1.5.6 image.
 - Module files are whitespace-delimited decimal text, not binary. `mbGame::readTriggers`
   (`0x1400cd080`) and `readSimpleTriggers` (`0x1400cd430`) build `rglInputTextFileStream`
   (vftable `0x140566030`), open `triggers.txt`/`simple_triggers.txt`, discard three header tokens
@@ -734,7 +734,7 @@ Reference material, kept verbatim. Grouped facts for the same subsystem also app
   `FUN_1400b97f0(5)` (QPC seconds since the app-time baseline), converts to float, multiplies by
   `1000.0f` (`0x140577c70`), and rounds through `rglRound64`. `store_cur_mission_template_no`
   (`0x1401ea832`) reads `[0x140620078]+0x9ae8` or yields -1 when the pointer is null.
-- **Script state, timers, RNG, and profiler (`3015`, `3020–3022`, `3027–3028`, `3034`, `3040–3043`, v1.1.5.5 `executeWSE`):**
+- **Script state, timers, RNG, and profiler (`3015`, `3020–3022`, `3027–3028`, `3034`, `3040–3043`, v1.1.5.6 `executeWSE`):**
   `return_values` (`0xbc7`) populates up to 16 slots (`g_returnValues`) and `g_numReturnValues`;
   `mtsrand`/`mtrand` (`0xbcc`/`0xbcd`, helpers `0x1402a2760`/`0x1402a2850`) back `rglMersenneTwister`
   (`0x6556`, 5,000 B), while `set_random_seed` (`0xbda`) updates the C RNG seed; `get_time`
@@ -742,13 +742,13 @@ Reference material, kept verbatim. Grouped facts for the same subsystem also app
   `timer_reset`/`timer_get_elapsed_time` (`0xbd3`/`0xbd4`) convert ticks using `100 kHz` resolution;
   `profiler_{start,stop,is_recording,mark}` (`0xbe0..0xbe3`, `WSEProfiling` `0xaf0a`, 66,072 B)
   control profiling state via `0x140350590`, `0x140350d00`, and `0x140351660`.
-- **Dictionary operations (`3200–3222`) & `try_for_dict_keys` (`0x12`, v1.1.5.5):**
+- **Dictionary operations (`3200–3222`) & `try_for_dict_keys` (`0x12`, v1.1.5.6):**
   `dict_*` (`0xc80..0xc96`) store key/value maps owned by `WSEObjectManager` (`0x1b4d3`, 64 B) with
   LIFO IDs and support `.wsedict` binary, `rglSectionlessIni` (`0x5264`, 16 B) INI, JSON
   (`0x1402a9a60`/`0x1402aa1e0`), and URL-encoded JSON (`0x1402ab110`/`0x1402ab5e0`) plus
   path validation (`0x140071e70`); `core_op::kTryForDictKeys` (`0x12`) iterates sorted dictionary keys
   across `mbStatementBlock::{startLoop,endLoop,canLoop}` (`0x1401f7410`, `0x1401f7a90`, `0x1401f8080`).
-- **Position vector & FP load operations (`4100`, `4102–4104`, `4402–4404`, v1.1.5.5):**
+- **Position vector & FP load operations (`4100`, `4102–4104`, `4402–4404`, v1.1.5.6):**
   `position_get_vector_to_position` (`0x1004`), `position_get_length` (`0x1006`),
   `get_dot_product_of_positions` (`0x1007`), `get_cross_product_of_positions` (`0x1008`), and
   `fld_pos_{x,y,z}` (`0x1132..0x1134`) operate over `rglTransform` (`0x34ac`, 64 B) / `rglVector4`
