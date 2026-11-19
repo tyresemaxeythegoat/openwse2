@@ -155,9 +155,10 @@ std::set<std::uint64_t> entries_of(const Image& m, const ImageView& view, const 
     if (m.img.entry_rva != 0 && entries.insert(m.img.image_base + m.img.entry_rva).second) {
         work.push_back(m.img.image_base + m.img.entry_rva);
     }
-    // Without a PDB, code reached only through a stored pointer (CRT init tables, callbacks,
-    // vtables; leaf functions have no .pdata entry): every relocated pointer into .text.
-    if (publics.empty()) {
+    // Code reached only through a stored pointer (CRT init tables, callbacks, vtables; leaf
+    // functions have no .pdata entry, and the PDB's publics miss static functions such as
+    // dynamic initializers): every relocated pointer into .text.
+    {
         std::size_t added = 0;
         for (const std::uint64_t v : read_pe_dir64_values(m.mapped, m.img.size_of_image)) {
             if (view.in_text(v) && entries.insert(v).second) {
@@ -218,7 +219,22 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
         if ((f & 0x3) != 0 && (f & 0x4) == 0) info.resumable.insert(m.img.image_base + r.begin);
     }
     const std::vector<std::uint64_t> all(entries.begin(), entries.end());
-    const std::size_t n_batches = (all.size() + batch - 1) / batch;
+    // Batches are address windows of `batch` KiB of .text (named by window), so a new entry only
+    // changes its own window's batch; empty windows have no batch.
+    const std::uint64_t window = static_cast<std::uint64_t>(batch) * 1024;
+    std::map<std::uint64_t, std::pair<std::size_t, std::size_t>> windows;  // window -> [first, end) in `all`
+    for (std::size_t i = 0; i < all.size(); ++i) {
+        const std::uint64_t w = (all[i] - text_b) / window;
+        auto [it, fresh] = windows.try_emplace(w, i, i + 1);
+        if (!fresh) it->second.second = i + 1;
+    }
+    std::vector<std::uint64_t> batch_window;
+    std::vector<std::pair<std::size_t, std::size_t>> batch_range;
+    for (const auto& [w, r] : windows) {
+        batch_window.push_back(w);
+        batch_range.push_back(r);
+    }
+    const std::size_t n_batches = batch_window.size();
     std::vector<fs::path> sos(n_batches);
     std::vector<std::size_t> todo;
     // How each function was discovered (jump tables, their targets, unresolved jumps): a batch's
@@ -245,7 +261,7 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
     // hash line is written then.
     auto batch_hash = [&](std::size_t b) {
         std::uint64_t h = 0xCBF29CE484222325ULL;
-        for (std::size_t i = b * batch; i < std::min(all.size(), (b + 1) * batch); ++i) {
+        for (std::size_t i = batch_range[b].first; i < batch_range[b].second; ++i) {
             h = (h ^ all[i]) * 0x100000001B3ULL;
             for (const std::size_t x : sig[all[i]]) h = (h ^ x) * 0x100000001B3ULL;
         }
@@ -254,18 +270,18 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
     // The first hash line (2026-11-20) covered the function list only.
     auto list_hash = [&](std::size_t b) {
         std::uint64_t h = 0xCBF29CE484222325ULL;
-        for (std::size_t i = b * batch; i < std::min(all.size(), (b + 1) * batch); ++i) h = (h ^ all[i]) * 0x100000001B3ULL;
+        for (std::size_t i = batch_range[b].first; i < batch_range[b].second; ++i) h = (h ^ all[i]) * 0x100000001B3ULL;
         return std::to_string(h);
     };
     auto legacy_ok = [&](std::size_t b) {
-        for (std::size_t i = b * batch; i < std::min(all.size(), (b + 1) * batch); ++i) {
+        for (std::size_t i = batch_range[b].first; i < batch_range[b].second; ++i) {
             if (sig[all[i]][3] != 0) return false;
         }
         return true;
     };
     for (std::size_t b = 0; b < n_batches; ++b) {
-        sos[b] = so_dir / (m.tag + "_" + std::to_string(b) + ".so");
-        const fs::path key_file = so_dir / (m.tag + "_" + std::to_string(b) + ".key");
+        sos[b] = so_dir / (m.tag + "_w" + std::to_string(batch_window[b]) + ".so");
+        const fs::path key_file = so_dir / (m.tag + "_w" + std::to_string(batch_window[b]) + ".key");
         std::ifstream in(key_file);
         std::string line;
         std::string fns;
@@ -279,7 +295,7 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
             std::ofstream(key_file) << line << "\n" << batch_hash(b) << "\n";
         }
     }
-    std::printf("%s: %zu functions, %zu resumable, catch continuations in %zu functions; %zu batches of %zu, %zu to translate on %u threads\n",
+    std::printf("%s: %zu functions, %zu resumable, catch continuations in %zu functions; %zu batches (%zu KiB windows), %zu to translate on %u threads\n",
                 m.tag.c_str(), entries.size(), info.resumable.size(), eh.by_function.size(), n_batches, batch, todo.size(), jobs);
     std::atomic<std::size_t> next{0};
     std::atomic<std::size_t> done{0};
@@ -291,8 +307,8 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
         disc.set_function_ranges(&m.img.functions);
         for (std::size_t i = next++; i < todo.size() && !failed; i = next++) {
             const std::size_t b = todo[i];
-            const std::vector<std::uint64_t> vas(all.begin() + static_cast<std::ptrdiff_t>(b * batch),
-                                                 all.begin() + static_cast<std::ptrdiff_t>(std::min(all.size(), (b + 1) * batch)));
+            const std::vector<std::uint64_t> vas(all.begin() + static_cast<std::ptrdiff_t>(batch_range[b].first),
+                                                 all.begin() + static_cast<std::ptrdiff_t>(batch_range[b].second));
             R1Translator tr(info);
             std::string why;
             std::string e = tr.init_error();
@@ -305,7 +321,7 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
             }
             std::vector<char> obj;
             std::string log;
-            const fs::path o = so_dir / (m.tag + "_" + std::to_string(b) + ".o");
+            const fs::path o = so_dir / (m.tag + "_w" + std::to_string(batch_window[b]) + ".o");
             if (e.empty() && !tr.emit_object(opt, obj, nullptr, &e) && e.empty()) e = "emit failed";
             if (e.empty()) {
                 std::ofstream(o, std::ios::binary).write(obj.data(), static_cast<std::streamsize>(obj.size()));
@@ -318,7 +334,7 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
                 failed = true;
                 return;
             }
-            std::ofstream(so_dir / (m.tag + "_" + std::to_string(b) + ".key")) << key << "\n" << batch_hash(b) << "\n";
+            std::ofstream(so_dir / (m.tag + "_w" + std::to_string(batch_window[b]) + ".key")) << key << "\n" << batch_hash(b) << "\n";
             std::printf("  %s batch %zu done (%zu/%zu, %.0f s)\n", m.tag.c_str(), b, ++done, todo.size(), ms_since(t0) / 1000.0);
         }
     };
@@ -380,7 +396,7 @@ int main(int argc, char** argv) {
     fs::path work = "/root/wse/r4";
     bool retranslate = false;
     bool reuse = false;
-    std::size_t batch = 400;
+    std::size_t batch = 64;  // KiB of .text per translated object
     int opt = 2;
     unsigned jobs = 2;
     for (int i = 2; i < argc; ++i) {
