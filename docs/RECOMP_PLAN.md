@@ -227,6 +227,57 @@ and reports matches, mismatches (with PDB names), functions not lifted, and time
 hashes, normalized the same way, and uploads them with the corpus PE; job `recomp-arm64`
 (`ubuntu-24.04-arm`, apt LLVM 18) translates that PE for AArch64 and checks it against the file.
 
+## R3 design (2026-11-19)
+
+Decided with the user: exceptions take the fastest design; memory ordering is correct first;
+CI tests use the corpus plus hand-written SEH routines. Measured on v1.1.5.6: 2,006 functions use
+`__CxxFrameHandler3`, 514 the stack-cookie handlers (`__GSHandlerCheck`, `_EH`, `_SEH`), 72 one
+more handler; the exe imports `RaiseException`, `RtlUnwindEx`, `RtlVirtualUnwind`,
+`RtlLookupFunctionEntry`, `RtlCaptureContext`, `CreateThread`, `TlsAlloc`/`TlsGetValue`,
+`FlsAlloc`, and has a TLS directory; 201 functions use `lock`.
+
+**Exceptions: emulate the Windows layer.** The exe carries its own C++ exception logic
+(`__CxxFrameHandler3` and the rest of the statically linked vcruntime), which R1 translates like
+any other code; the runtime implements only what Windows provides under it: `RaiseException`
+(phase 1: walk guest frames with the exe's `.pdata`/`.xdata`, calling each frame's language
+handler), `RtlUnwindEx` (phase 2: call the handlers again with `EXCEPTION_UNWINDING`, then restore
+the target context), `RtlVirtualUnwind`, `RtlLookupFunctionEntry`, `RtlCaptureContext`. Guest
+frames keep their Win64 layout on the guest stack, so the unwinder works on guest memory exactly
+as Windows does. Chosen for speed: the code that does not throw pays nothing new. After every
+call, translated code already compares the returned `rip` with the call's return address; only
+when they differ does it look at `CpuState::unwind`: if the runtime is unwinding to this frame
+(the call's return address and guest `rsp` match the target), the function jumps to its *resume
+switch* (one case per block, on `rip`) and continues at the catch continuation; otherwise it
+returns at once, so the host stack unwinds through ordinary returns (no host C++ exceptions, no
+`setjmp`). Funclets are `.pdata` functions and are dispatched like any other.
+
+**Memory ordering: correct first.** A guest access whose address is based on `rsp` is a stack
+access and stays plain. Every other 2/4/8-byte load is an acquire load and every store a release
+store (`LDAPR`/`LDAR`, `STLR` on AArch64; plain `mov` on x86, which already is TSO) when the
+address is naturally aligned at run time, else a plain access with a barrier (`dmb ishld` after a
+load, `dmb ish` before a store); byte accesses are always aligned. 16-byte SSE accesses are plain
+with the same barriers. `lock` instructions stay sequentially consistent atomics. The cost is
+measured on the phone, then provably thread-local data is relaxed.
+
+**Imports: the ABI bridge.** The runtime names every IAT slot from the PE import directory
+(`KERNEL32.dll!TlsAlloc`), so shims register by name; a shim reads its Win64 arguments from
+`CpuState` (`rcx rdx r8 r9 xmm0-3`, the rest at `[rsp + 0x28 ...]`), writes `rax`/`xmm0`, and
+returns through `Runtime::return_from_import`. Host code calls back into guest code (window
+procedures, thread entry points) with `call_guest(state, va, args...)`, which builds a Win64 frame
+on the guest stack.
+
+**Threads and TLS.** Each guest thread has its own `CpuState`, a guest stack, and a TEB in guest
+memory (`gs:` reads go through `segment_base`): self pointer at `+0x30`, stack base/limit at
+`+0x8`/`+0x10`, the TLS slot array at `+0x1480` and the static-TLS pointer array at `+0x58` (from
+the exe's TLS directory). `CreateThread` starts a host thread running the guest entry point.
+
+**Tests (CI, synthetic).** The corpus gains assembly functions with `.seh_handler` routines
+written in C: they raise, catch, unwind through several frames and resume, on the x86 and arm64
+runners. The exe's real `__CxxFrameHandler3` is checked by the phone/PC rig.
+
+**Order:** memory ordering → import bridge (names, argument helpers, `call_guest`) → unwinder and
+exception dispatch with the lifter's resume switch → TEB/TLS → threads.
+
 ## What carries over
 
 - P-slices: the launcher (P10/P12), SAF `Vfs`, the Vulkan RHI and GPU path (P4), shader

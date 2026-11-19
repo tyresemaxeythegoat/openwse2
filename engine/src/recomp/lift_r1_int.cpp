@@ -386,12 +386,12 @@ Lifted lift_int(Ctx& c, const DInsn& d) {
         Value* v = B.CreateSExtOrTrunc(c.read(d, 0), B.getInt64Ty());
         Value* rsp = B.CreateSub(c.gpr64(4), B.getInt64(8));
         c.set_gpr64(4, rsp);
-        c.store(rsp, v);
+        c.store(rsp, v, Mem::stack);
         return Lifted::yes;
     }
     case ZYDIS_MNEMONIC_POP: {
         Value* rsp = c.gpr64(4);
-        Value* v = c.load(rsp, 64);
+        Value* v = c.load(rsp, 64, Mem::stack);
         c.set_gpr64(4, B.CreateAdd(rsp, B.getInt64(8)));
         c.write(d, 0, v);  // `pop rsp` ends with the loaded value, as on x86
         return Lifted::yes;
@@ -399,7 +399,7 @@ Lifted lift_int(Ctx& c, const DInsn& d) {
     case ZYDIS_MNEMONIC_LEAVE: {
         c.set_gpr64(4, c.gpr64(5));
         Value* rsp = c.gpr64(4);
-        c.set_gpr64(5, c.load(rsp, 64));
+        c.set_gpr64(5, c.load(rsp, 64, Mem::stack));
         c.set_gpr64(4, B.CreateAdd(rsp, B.getInt64(8)));
         return Lifted::yes;
     }

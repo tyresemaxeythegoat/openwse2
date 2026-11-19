@@ -15,7 +15,9 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <string>
 
+#include <llvm/ADT/StringMap.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -89,8 +91,26 @@ TargetSetup make_target_impl(int opt_level) {
     // AArch64 "generic" has FRINT*, so llvm.floor/roundeven stay inline. On an x86-64 host
     // (CI tests) "generic" lacks ROUNDSS and LLVM would call libm, giving the translated module
     // imports; x86-64-v2 (SSE4.1) keeps it import-free.
+    // On AArch64 the code is translated on the device that runs it, so it targets that CPU:
+    // with RCpc an acquire load is LDAPR instead of the stronger LDAR (R3 memory ordering), and
+    // with LSE `lock` instructions become single atomic instructions instead of LL/SC loops.
     const bool x86_host = t.triple.rfind("x86_64", 0) == 0;
-    t.tm.reset(target->createTargetMachine(t.triple, x86_host ? "x86-64-v2" : "generic", "", options, llvm::Reloc::PIC_,
+    std::string cpu = x86_host ? "x86-64-v2" : "generic";
+    std::string features;
+    if (t.triple.rfind("aarch64", 0) == 0) {
+        cpu = llvm::sys::getHostCPUName().str();
+        llvm::StringMap<bool> host;
+        if (llvm::sys::getHostCPUFeatures(host)) {
+            for (const auto& f : host) {
+                features += (features.empty() ? "" : ",");
+                features += (f.getValue() ? "+" : "-");
+                features += f.getKey().str();
+            }
+        }
+    }
+    t.cpu = cpu;
+    t.features = features;
+    t.tm.reset(target->createTargetMachine(t.triple, cpu, features, options, llvm::Reloc::PIC_,
                                            llvm::CodeModel::Small, level));
     if (!t.tm) {
         t.error = "createTargetMachine failed for " + t.triple;

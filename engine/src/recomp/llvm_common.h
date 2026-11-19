@@ -15,6 +15,8 @@ namespace wse::recomp::llvm_common {
 
 struct TargetSetup {
     std::string triple;
+    std::string cpu;       // the CPU code is generated for (the device's own on AArch64)
+    std::string features;  // its feature string
     std::unique_ptr<llvm::TargetMachine> tm;
     std::string error;
 };

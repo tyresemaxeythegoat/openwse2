@@ -35,6 +35,11 @@ namespace wse::recomp::r1 {
 
 enum class Lifted { yes, not_mine, unsupported };
 
+// How a guest memory access is ordered (`docs/RECOMP_PLAN.md` "R3 design"): `stack` accesses stay
+// plain; `shared` ones keep x86's TSO order on a weak CPU; `automatic` takes the kind from the most
+// recent `address()` (an `rsp`-based operand is `stack`).
+enum class Mem { automatic, stack, shared };
+
 enum Flag : int { CF = 0, PF, AF, ZF, SF, OF, DF, kFlagCount };
 
 class Ctx {
@@ -79,8 +84,9 @@ public:
     // --- operands ------------------------------------------------------------------------
     llvm::Value* address(const DInsn& d, const ZydisDecodedOperand& o);  // i64 effective address
     llvm::Value* host_ptr(llvm::Value* addr64);
-    llvm::Value* load(llvm::Value* addr64, unsigned bits);
-    void store(llvm::Value* addr64, llvm::Value* v);
+    llvm::Value* load(llvm::Value* addr64, unsigned bits, Mem kind = Mem::automatic);
+    void store(llvm::Value* addr64, llvm::Value* v, Mem kind = Mem::automatic);
+    bool last_address_stack = false;  // set by `address()`, read by the next automatic access
     // Operand `i` as an iN of its size (immediates are truncated/sign-extended per Zydis).
     llvm::Value* read(const DInsn& d, int i);
     // Writes `v` (any int width, truncated/extended to the operand's size) to operand `i`.

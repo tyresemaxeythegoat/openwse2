@@ -184,6 +184,8 @@ llvm::Value* Ctx::state_ptr(std::size_t offset) {
 }
 
 llvm::Value* Ctx::address(const DInsn& d, const ZydisDecodedOperand& o) {
+    last_address_stack = o.mem.base == ZYDIS_REGISTER_RSP && o.mem.segment != ZYDIS_REGISTER_FS &&
+                         o.mem.segment != ZYDIS_REGISTER_GS;
     llvm::Value* a = B.getInt64(o.mem.disp.has_displacement ? static_cast<std::uint64_t>(o.mem.disp.value) : 0);
     if (o.mem.base == ZYDIS_REGISTER_RIP) {
         a = B.CreateAdd(a, B.getInt64(d.next()));
@@ -209,15 +211,103 @@ llvm::Value* Ctx::address(const DInsn& d, const ZydisDecodedOperand& o) {
 
 llvm::Value* Ctx::host_ptr(llvm::Value* addr64) { return B.CreateIntToPtr(addr64, ptr()); }
 
-llvm::Value* Ctx::load(llvm::Value* addr64, unsigned bits_in) {
-    llvm::LoadInst* l = B.CreateLoad(ity(bits_in), host_ptr(addr64));
-    l->setAlignment(llvm::Align(1));
-    return l;
+namespace {
+
+bool is_stack(Mem kind, bool last_address_stack) {
+    return kind == Mem::stack || (kind == Mem::automatic && last_address_stack);
 }
 
-void Ctx::store(llvm::Value* addr64, llvm::Value* v) {
-    llvm::StoreInst* s = B.CreateStore(v, host_ptr(addr64));
-    s->setAlignment(llvm::Align(1));
+}  // namespace
+
+// Shared accesses keep x86's order on AArch64 (`docs/RECOMP_PLAN.md` "R3 design"): a naturally
+// aligned 2/4/8-byte load is an acquire load (LDAPR/LDAR) and a store a release store (STLR); bytes
+// are always aligned; a misaligned access, or a wider one (SSE), is plain with a barrier after a
+// load (`dmb ishld`) or before a store (`dmb ish`). On x86 all of this compiles to plain moves.
+llvm::Value* Ctx::load(llvm::Value* addr64, unsigned bits_in, Mem kind) {
+    const bool stack = is_stack(kind, last_address_stack);
+    last_address_stack = false;
+    llvm::Type* t = ity(bits_in);
+    if (stack) {
+        llvm::LoadInst* l = B.CreateLoad(t, host_ptr(addr64));
+        l->setAlignment(llvm::Align(1));
+        return l;
+    }
+    if (bits_in == 8) {
+        llvm::LoadInst* l = B.CreateLoad(t, host_ptr(addr64));
+        l->setAlignment(llvm::Align(1));
+        l->setAtomic(llvm::AtomicOrdering::Acquire);
+        return l;
+    }
+    if (bits_in != 16 && bits_in != 32 && bits_in != 64) {
+        llvm::LoadInst* l = B.CreateLoad(t, host_ptr(addr64));
+        l->setAlignment(llvm::Align(1));
+        B.CreateFence(llvm::AtomicOrdering::Acquire);
+        return l;
+    }
+    llvm::Value* aligned = B.CreateICmpEQ(B.CreateAnd(addr64, B.getInt64(bits_in / 8 - 1)), B.getInt64(0));
+    llvm::BasicBlock* from = B.GetInsertBlock();
+    llvm::BasicBlock* atomic_bb = llvm::BasicBlock::Create(C, "ld_acq", F);
+    llvm::BasicBlock* plain_bb = llvm::BasicBlock::Create(C, "ld_unaligned", F);
+    llvm::BasicBlock* done = llvm::BasicBlock::Create(C, "ld_done", F);
+    B.CreateCondBr(aligned, atomic_bb, plain_bb);
+    (void)from;
+    B.SetInsertPoint(atomic_bb);
+    llvm::LoadInst* a = B.CreateLoad(t, host_ptr(addr64));
+    a->setAlignment(llvm::Align(bits_in / 8));
+    a->setAtomic(llvm::AtomicOrdering::Acquire);
+    B.CreateBr(done);
+    B.SetInsertPoint(plain_bb);
+    llvm::LoadInst* p = B.CreateLoad(t, host_ptr(addr64));
+    p->setAlignment(llvm::Align(1));
+    B.CreateFence(llvm::AtomicOrdering::Acquire);
+    B.CreateBr(done);
+    B.SetInsertPoint(done);
+    llvm::PHINode* phi = B.CreatePHI(t, 2);
+    phi->addIncoming(a, atomic_bb);
+    phi->addIncoming(p, plain_bb);
+    return phi;
+}
+
+void Ctx::store(llvm::Value* addr64, llvm::Value* v, Mem kind) {
+    const bool stack = is_stack(kind, last_address_stack);
+    last_address_stack = false;
+    const unsigned bits_in = v->getType()->getPrimitiveSizeInBits();
+    if (stack || !v->getType()->isIntegerTy()) {
+        if (!stack) {
+            B.CreateFence(llvm::AtomicOrdering::Release);
+        }
+        llvm::StoreInst* s = B.CreateStore(v, host_ptr(addr64));
+        s->setAlignment(llvm::Align(1));
+        return;
+    }
+    if (bits_in == 8) {
+        llvm::StoreInst* s = B.CreateStore(v, host_ptr(addr64));
+        s->setAlignment(llvm::Align(1));
+        s->setAtomic(llvm::AtomicOrdering::Release);
+        return;
+    }
+    if (bits_in != 16 && bits_in != 32 && bits_in != 64) {
+        B.CreateFence(llvm::AtomicOrdering::Release);
+        llvm::StoreInst* s = B.CreateStore(v, host_ptr(addr64));
+        s->setAlignment(llvm::Align(1));
+        return;
+    }
+    llvm::Value* aligned = B.CreateICmpEQ(B.CreateAnd(addr64, B.getInt64(bits_in / 8 - 1)), B.getInt64(0));
+    llvm::BasicBlock* atomic_bb = llvm::BasicBlock::Create(C, "st_rel", F);
+    llvm::BasicBlock* plain_bb = llvm::BasicBlock::Create(C, "st_unaligned", F);
+    llvm::BasicBlock* done = llvm::BasicBlock::Create(C, "st_done", F);
+    B.CreateCondBr(aligned, atomic_bb, plain_bb);
+    B.SetInsertPoint(atomic_bb);
+    llvm::StoreInst* a = B.CreateStore(v, host_ptr(addr64));
+    a->setAlignment(llvm::Align(bits_in / 8));
+    a->setAtomic(llvm::AtomicOrdering::Release);
+    B.CreateBr(done);
+    B.SetInsertPoint(plain_bb);
+    B.CreateFence(llvm::AtomicOrdering::Release);
+    llvm::StoreInst* p = B.CreateStore(v, host_ptr(addr64));
+    p->setAlignment(llvm::Align(1));
+    B.CreateBr(done);
+    B.SetInsertPoint(done);
 }
 
 llvm::Value* Ctx::read(const DInsn& d, int i) {
@@ -394,7 +484,7 @@ template <typename Emit>
 void guest_call(Ctx& c, std::uint64_t ret_va, Emit&& emit_call) {
     llvm::Value* rsp = c.B.CreateSub(c.gpr64(4), c.B.getInt64(8));
     c.set_gpr64(4, rsp);
-    c.store(rsp, c.B.getInt64(ret_va));
+    c.store(rsp, c.B.getInt64(ret_va), r1::Mem::stack);
     c.flush();
     emit_call();
     c.reload();
@@ -471,13 +561,14 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
                 break;
             }
             const DInsn& d = *dp;
+            c.last_address_stack = false;  // `lea` and atomics compute addresses without an access
             const auto cat = d.ins.meta.category;
             const auto mn = d.ins.mnemonic;
             bool terminated = false;
 
             if (cat == ZYDIS_CATEGORY_RET) {
                 llvm::Value* rsp = c.gpr64(4);
-                llvm::Value* ret = c.load(rsp, 64);
+                llvm::Value* ret = c.load(rsp, 64, r1::Mem::stack);
                 std::uint64_t extra = d.ins.operand_count_visible > 0 ? d.ops[0].imm.value.u : 0;
                 c.set_gpr64(4, c.B.CreateAdd(rsp, c.B.getInt64(8 + extra)));
                 c.flush();
