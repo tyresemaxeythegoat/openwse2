@@ -271,8 +271,10 @@ private:
             const bool stepped = step(ctx, unwind::kFlagTerminationHandler, r);
             if (walk.size() < 600) {
                 char line[96];
-                std::snprintf(line, sizeof(line), " [rip %llx est %llx%s]", static_cast<unsigned long long>(frame_ctx.rip),
-                              static_cast<unsigned long long>(r.establisher_frame), r.ok ? "" : " !ok");
+                std::snprintf(line, sizeof(line), " [rip %llx est %llx -> %llx raised %zu%s]",
+                              static_cast<unsigned long long>(frame_ctx.rip),
+                              static_cast<unsigned long long>(r.establisher_frame),
+                              static_cast<unsigned long long>(ctx.rip), raised_.size(), r.ok ? "" : " !ok");
                 walk += line;
             }
             if (!stepped) {
