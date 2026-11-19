@@ -227,8 +227,7 @@ void mix_bytes(std::uint64_t& h, const std::uint8_t* p, std::size_t n) {
 
 void test_corpus(const char* path) {
     if (!kCanRunNative && !g_check_mode) {
-        std::printf("  corpus skipped: not an x86-64 host and no --check results
-");
+        std::printf("  corpus skipped: not an x86-64 host and no --check results\n");
         return;
     }
     std::ifstream in(path, std::ios::binary);
