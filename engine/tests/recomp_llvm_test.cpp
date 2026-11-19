@@ -288,9 +288,11 @@ void test_corpus(const char* path) {
             cxx = e.name == "t_cxx_catch" ? e.va : cxx;
         }
         const auto it = eh.by_function.find(cxx);
-        expect(eh.func_infos == 1 && eh.catch_handlers == 1 && eh.handlers_without == 0 &&
-                   eh.by_function.size() == 1 && it != eh.by_function.end() && it->second.size() == 1,
-               "corpus: the catch funclet names t_cxx_catch's continuation");
+        // Three FuncInfo: t_cxx_catch, t_cxx_rethrow (continuations) and seh_rethrow_inner, whose
+        // catch only rethrows.
+        expect(eh.func_infos == 3 && eh.catch_handlers == 3 && eh.handlers_without == 1 &&
+                   eh.by_function.size() == 2 && it != eh.by_function.end() && it->second.size() == 1,
+               "corpus: the catch funclets name t_cxx_catch's and t_cxx_rethrow's continuations");
         expect(pdata_owner(view, img, cxx + 1) == cxx && pdata_owner(view, img, img.image_base) == 0,
                "corpus: pdata_owner maps an address to its function");
     }

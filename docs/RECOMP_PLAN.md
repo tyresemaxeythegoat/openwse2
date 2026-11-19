@@ -251,6 +251,18 @@ switch* (one case per block, on `rip`) and continues at the catch continuation; 
 returns at once, so the host stack unwinds through ordinary returns (no host C++ exceptions, no
 `setjmp`). Funclets are `.pdata` functions and are dispatched like any other.
 
+**Exceptions inside exception handling (built).** The runtime records each call it makes into
+guest code (a phase-1 handler, a termination handler, a consolidation callback) as a per-thread
+boundary, and a frame walk that unwinds out of one crosses into the frames Windows would find
+there: past a phase-1 handler it continues at that raise's thrower with `EXCEPTION_NESTED_CALL`
+up to and including the frame whose handler raised (a nested exception); past a termination
+handler it examines the frame being unwound again with its saved `ScopeIndex`, adding
+`EXCEPTION_COLLIDED_UNWIND` in phase 2 (a collided unwind); past a consolidation callback (a C++
+catch block) it continues at the catch's frame, so a rethrow from a catch (145 v1.1.5.6 catch
+funclets end in one) reaches the frames above it. The corpus cases (`t_cxx_rethrow`,
+`t_seh_nested_raise`, `t_seh_collided`) were also run natively on Windows (the corpus PE
+loaded as a module, its IAT bound by the test): Windows returns the same results.
+
 **Catch continuations (discovery).** A C++ catch funclet returns the address to continue at
 (`lea rax, [rip + X]`), and nothing else reaches it, so function discovery adds these addresses
 as blocks (`find_eh_continuations` in `engine/src/recomp/discover.h`). Every `.pdata` function

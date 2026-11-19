@@ -8,6 +8,12 @@
 //                           unwind-consolidation callback (how MSVC calls catch blocks), resume
 //   RtlVirtualUnwind, RtlLookupFunctionEntry, RtlCaptureContext   over the exe's .pdata/.xdata
 //
+// Exceptions raised while one is being handled follow Windows: a handler that raises makes a
+// nested exception (EXCEPTION_NESTED_CALL until the walk passes the frame whose handler raised); a
+// raise or unwind from a termination handler collides with that unwind (the frame being unwound
+// is examined again with its ScopeIndex, EXCEPTION_COLLIDED_UNWIND in phase 2); a rethrow from a
+// catch block (an unwind-consolidation callback) walks on into the catch's frame (`Boundary`).
+//
 // Resuming a frame does not use host exceptions or setjmp: the runtime writes the target frame's
 // context into `CpuState`, sets `unwind_rsp`, and returns; translated frames return through
 // ordinary returns until the one whose call-site `rsp` matches resumes (`lift_r1.cpp`
@@ -49,7 +55,9 @@ inline constexpr std::size_t control_pc = 0, image_base = 8, function_entry = 16
 inline constexpr std::uint32_t kNoncontinuable = 1;
 inline constexpr std::uint32_t kUnwinding = 2;
 inline constexpr std::uint32_t kExitUnwind = 4;
+inline constexpr std::uint32_t kNestedCall = 0x10;      // EXCEPTION_NESTED_CALL
 inline constexpr std::uint32_t kTargetUnwind = 0x20;
+inline constexpr std::uint32_t kCollidedUnwind = 0x40;  // EXCEPTION_COLLIDED_UNWIND
 inline constexpr std::uint32_t kStatusUnwind = 0xC0000027U;
 inline constexpr std::uint32_t kStatusUnwindConsolidate = 0x80000029U;
 inline constexpr std::uint32_t kContextFull = 0x10000B;
@@ -185,14 +193,74 @@ private:
         detail::put<std::uint64_t>(dc + dco::handler_data, r.handler_data);
     }
 
-    // Unwinds `ctx` one frame; a host-to-guest callback boundary continues from the context saved
-    // when the exception was raised (the frames above it are the raising code's).
-    bool step(CpuState& ctx, std::uint8_t mask, unwind::Result& r) {
-        r = unwind::virtual_unwind(uimage_, ctx, mask);
-        if (ctx.rip == Runtime::kCallbackReturn && !raised_.empty()) {
-            ctx = raised_.back();  // `r` still describes the frame that returned to the boundary
+    // A host-to-guest call this runtime is making on the current thread (innermost last). A frame
+    // walk that reaches `Runtime::kCallbackReturn` has unwound out of that call and crosses into
+    // the frames Windows would find there (its RtlpExecuteHandlerFor* / consolidation frames):
+    //   dispatch     a phase-1 language handler: continue at that raise's thrower; a phase-1 walk
+    //                is a nested exception (EXCEPTION_NESTED_CALL up to the handler's frame)
+    //   unwind       a termination handler: a collided unwind; continue at the frame being
+    //                unwound, whose handler runs again with its saved ScopeIndex
+    //   consolidate  an unwind-consolidation callback (a C++ catch block): continue at the
+    //                target frame, which the finished unwind left
+    struct Boundary {
+        enum class Kind { dispatch, unwind, consolidate } kind = Kind::dispatch;
+        CpuState next;                  // where the walk continues
+        std::uint64_t establisher = 0;  // dispatch / unwind: the frame whose handler is running
+        std::uint64_t dispatcher = 0;   // unwind: its DISPATCHER_CONTEXT (ScopeIndex)
+    };
+    static std::vector<Boundary>& boundaries() {
+        thread_local std::vector<Boundary> stack;  // guest threads run on their own host threads
+        return stack;
+    }
+    struct Pushed {
+        explicit Pushed(const Boundary& b) { boundaries().push_back(b); }
+        ~Pushed() { boundaries().pop_back(); }
+        Pushed(const Pushed&) = delete;
+        Pushed& operator=(const Pushed&) = delete;
+    };
+
+    // One frame walk (phase 1 or 2) over guest frames and the boundaries below it.
+    struct Walk {
+        CpuState ctx;
+        std::size_t level = 0;            // boundaries not yet crossed: [0, level)
+        std::uint32_t flags = 0;          // EXCEPTION_NESTED_CALL / EXCEPTION_COLLIDED_UNWIND added here
+        std::uint64_t nested_frame = 0;   // phase 1: the nested region ends at this establisher
+        std::uint64_t scope_frame = 0;    // a collided frame: restore its ScopeIndex once
+        std::uint32_t scope = 0;
+    };
+
+    // Advances `w` to the next guest frame: crosses boundaries, then unwinds one frame (`frame` is
+    // the context in that frame, `r` its unwind result). False when the walk ends.
+    bool next_frame(Walk& w, std::uint8_t mask, bool phase1, CpuState& frame, unwind::Result& r) {
+        while (w.ctx.rip == Runtime::kCallbackReturn) {
+            if (w.level == 0) {
+                return false;
+            }
+            const Boundary& b = boundaries()[--w.level];
+            w.ctx = b.next;
+            if (b.kind == Boundary::Kind::dispatch && phase1) {
+                w.flags |= kNestedCall;
+                w.nested_frame = std::max(w.nested_frame, b.establisher);
+            } else if (b.kind == Boundary::Kind::unwind) {
+                if (!phase1) {
+                    w.flags |= kCollidedUnwind;
+                }
+                w.scope_frame = b.establisher;
+                w.scope = detail::get<std::uint32_t>(b.dispatcher + dco::scope);
+            }
         }
-        return r.ok && ctx.rip != 0;
+        frame = w.ctx;
+        r = unwind::virtual_unwind(uimage_, w.ctx, mask);
+        return r.ok && w.ctx.rip != 0;
+    }
+    // Fills the dispatcher context for `frame`, restoring a collided frame's ScopeIndex.
+    void prepare_call(Walk& w, std::uint64_t dc, const CpuState& frame, const unwind::Result& r, std::uint64_t context,
+                      std::uint64_t target_ip) {
+        fill_dispatcher(dc, frame, r, context, target_ip);
+        if (w.scope_frame != 0 && r.establisher_frame == w.scope_frame) {
+            detail::put<std::uint32_t>(dc + dco::scope, w.scope);
+            w.scope_frame = 0;
+        }
     }
 
     // RaiseException(code, flags, nargs, args): phase 1.
@@ -212,32 +280,43 @@ private:
             std::memcpy(reinterpret_cast<void*>(sc.record + er::info), reinterpret_cast<const void*>(args), 8ULL * nargs);
         }
         detail::write_context(sc.context, thrower);
-        raised_.push_back(thrower);
-        CpuState ctx = thrower;
+        Walk w;
+        w.ctx = thrower;
+        w.level = boundaries().size();
         for (int depth = 0; depth < 4096; ++depth) {
-            const CpuState frame_ctx = ctx;
+            CpuState frame_ctx;
             unwind::Result r;
-            if (!step(ctx, unwind::kFlagExceptionHandler, r)) {
+            if (!next_frame(w, unwind::kFlagExceptionHandler, true, frame_ctx, r)) {
                 break;
             }
-            if (r.handler == 0) {
-                continue;
+            if (r.handler != 0) {
+                detail::put<std::uint32_t>(sc.record + er::flags, flags | w.flags);
+                prepare_call(w, sc.dispatcher, frame_ctx, r, sc.context, 0);
+                bool ok = true;
+                std::uint32_t disp = kContinueSearch;
+                {
+                    Boundary b;
+                    b.kind = Boundary::Kind::dispatch;
+                    b.next = thrower;
+                    b.establisher = r.establisher_frame;
+                    const Pushed pushed(b);
+                    disp = call_handler(s, r.handler, sc.record, r.establisher_frame, sc.context, sc.dispatcher, sc.rsp,
+                                        &ok);
+                }
+                if (s.unwind_rsp != 0) {
+                    return;  // a handler unwound to a target frame (or the thread is exiting)
+                }
+                if (disp == kContinueExecution && (flags & kNoncontinuable) == 0) {
+                    detail::read_context(sc.context, s);  // resume where the handler left the context
+                    return;
+                }
             }
-            fill_dispatcher(sc.dispatcher, frame_ctx, r, sc.context, 0);
-            bool ok = true;
-            const std::uint32_t disp =
-                call_handler(s, r.handler, sc.record, r.establisher_frame, sc.context, sc.dispatcher, sc.rsp, &ok);
-            if (s.unwind_rsp != 0) {
-                raised_.pop_back();
-                return;  // a handler unwound to a target frame: the state holds its context
-            }
-            if (disp == kContinueExecution && (flags & kNoncontinuable) == 0) {
-                raised_.pop_back();
-                detail::read_context(sc.context, s);  // resume where the handler left the context
-                return;
+            // The end of a nested region: the frame whose handler raised has been examined.
+            if (w.nested_frame != 0 && r.establisher_frame == w.nested_frame) {
+                w.flags &= ~kNestedCall;
+                w.nested_frame = 0;
             }
         }
-        raised_.pop_back();
         last_unhandled_code = code;
         s.hooks->unsupported(&s, thrower.rip, "unhandled guest exception");
     }
@@ -261,20 +340,22 @@ private:
             flags |= kExitUnwind;
         }
         const std::uint64_t context = context_arg != 0 ? context_arg : sc.context;
-        CpuState ctx = detail::caller_context(s);
+        Walk w;
+        w.ctx = detail::caller_context(s);
+        w.level = boundaries().size();
         CpuState target_ctx;
         bool found = false;
         std::string walk;  // for the "not found" report: rip/establisher of each frame
         for (int depth = 0; depth < 4096; ++depth) {
-            const CpuState frame_ctx = ctx;
+            CpuState frame_ctx;
             unwind::Result r;
-            const bool stepped = step(ctx, unwind::kFlagTerminationHandler, r);
+            const bool stepped = next_frame(w, unwind::kFlagTerminationHandler, false, frame_ctx, r);
             if (walk.size() < 600) {
                 char line[96];
-                std::snprintf(line, sizeof(line), " [rip %llx est %llx -> %llx raised %zu%s]",
+                std::snprintf(line, sizeof(line), " [rip %llx est %llx -> %llx level %zu%s]",
                               static_cast<unsigned long long>(frame_ctx.rip),
                               static_cast<unsigned long long>(r.establisher_frame),
-                              static_cast<unsigned long long>(ctx.rip), raised_.size(), r.ok ? "" : " !ok");
+                              static_cast<unsigned long long>(w.ctx.rip), w.level, r.ok ? "" : " !ok");
                 walk += line;
             }
             if (!stepped) {
@@ -282,12 +363,20 @@ private:
             }
             const bool at_target = r.establisher_frame == target_frame;
             if (r.handler != 0) {
-                detail::put<std::uint32_t>(record + er::flags, flags | (at_target ? kTargetUnwind : 0));
-                fill_dispatcher(sc.dispatcher, frame_ctx, r, context, target_ip);
+                detail::put<std::uint32_t>(record + er::flags, flags | w.flags | (at_target ? kTargetUnwind : 0));
+                prepare_call(w, sc.dispatcher, frame_ctx, r, context, target_ip);
                 bool ok = true;
-                (void)call_handler(s, r.handler, record, r.establisher_frame, context, sc.dispatcher, sc.rsp, &ok);
+                {
+                    Boundary b;
+                    b.kind = Boundary::Kind::unwind;
+                    b.next = frame_ctx;
+                    b.establisher = r.establisher_frame;
+                    b.dispatcher = sc.dispatcher;
+                    const Pushed pushed(b);
+                    (void)call_handler(s, r.handler, record, r.establisher_frame, context, sc.dispatcher, sc.rsp, &ok);
+                }
                 if (s.unwind_rsp != 0) {
-                    return;  // a nested unwind took over
+                    return;  // a nested or collided unwind took over (or the thread is exiting)
                 }
             }
             if (at_target) {
@@ -313,8 +402,16 @@ private:
             const std::uint64_t callback = detail::get<std::uint64_t>(record + er::info);
             CpuState cs = target_ctx;
             cs.hooks = s.hooks;
+            cs.teb = s.teb;
             bool ok = true;
-            resume_ip = rt_.call_guest(cs, callback, {record}, &ok);
+            {
+                // A rethrow from the catch block walks on into the target frame.
+                Boundary b;
+                b.kind = Boundary::Kind::consolidate;
+                b.next = target_ctx;
+                const Pushed pushed(b);
+                resume_ip = rt_.call_guest(cs, callback, {record}, &ok);
+            }
             if (cs.unwind_rsp != 0) {
                 s = cs;  // the callback started another unwind
                 return;
@@ -374,7 +471,6 @@ private:
     Runtime& rt_;
     const PeImage& img_;
     unwind::Image uimage_;
-    std::vector<CpuState> raised_;  // contexts of RaiseException callers, innermost last
 };
 
 }  // namespace wse::recomp::seh

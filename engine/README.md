@@ -893,8 +893,8 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
 - **R3 exceptions (`seh.h`, `lift_r1.cpp`):** an exception nobody handles faults with the raise
   address ("unhandled guest exception") instead of terminating the process through
   `SetUnhandledExceptionFilter`; an unwind whose target frame is not on the guest stack faults and
-  names the frames it walked. Nested exceptions raised inside a handler and collided unwinds are not
-  handled yet. A frame resumes only if its function has a `.pdata` handler (`ImageInfo::resumable`);
+  names the frames it walked. Nested exceptions, collided unwinds and rethrows from a catch block
+  follow Windows (`seh.h` `Boundary`). A frame resumes only if its function has a `.pdata` handler (`ImageInfo::resumable`);
   unwinding into any other frame faults ("unwind into a frame with no exception handler").
   Catch continuations come from the `FuncInfo` try-block maps (`find_eh_continuations`); a
   continuation that a funclet computes some other way than `lea rax, [rip + X]` is not found and
