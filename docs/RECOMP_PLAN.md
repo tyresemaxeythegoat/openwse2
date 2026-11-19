@@ -414,6 +414,21 @@ continue at a `setjmp` call site. Still open in this slice: translating `lua5164
 install (each `setjmp` caller must have a `.pdata` handler to be resumable), and reading the DLLs'
 TLS directories.
 
+**`lua5164` is LuaJIT 2.1** (measured on the shipped DLL, 2026-11-20: version string
+`LuaJIT 2.1.1734355927`, GC64 build, `luaJIT_setmode` exported). Two consequences:
+
+- *The JIT is off.* LuaJIT compiles hot Lua to x86 machine code at run time; nothing can run that
+  here, and translating during play is banned. Every state the exe creates gets
+  `luaJIT_setmode(L, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF)` right after `luaL_newstate`, so Lua
+  runs in LuaJIT's interpreter.
+- *The interpreter's handlers come from its offset table.* LuaJIT's VM is one `.pdata` function
+  (16,161 bytes at its start) whose bytecode handlers jump to each other through a table
+  `lj_dispatch_init` fills at run time from 16-bit offsets (`lj_bc_ofs`, 156 entries). Static
+  discovery finds them from the code that adds those offsets to the VM's start
+  (`find_offset_table_entries` in `discover.h`: a general rule, no LuaJIT names). Handler-to-handler
+  jumps are tail calls in the translation (`musttail` to a function of the module, `tail` through the
+  dispatch hook), so the interpreter runs in constant host stack.
+
 **Bring-up tool (local only).** `tools/r4_run.cpp`: translates the exe and `lua5164` from the
 user's install, maps them, binds every shim, runs the CRT entry point on the main guest thread, and
 logs the first call of each import; a missing import faults with its DLL and name, which is the

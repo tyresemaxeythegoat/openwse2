@@ -522,8 +522,8 @@ void guest_call(Ctx& c, std::uint64_t ret_va, llvm::BasicBlock* resume, Emit&& e
     c.B.SetInsertPoint(ok);
 }
 
-void call_dispatch(Ctx& c, llvm::Value* target) {
-    c.call_hook(offsetof(RuntimeHooks, dispatch), {target}, {c.B.getInt64Ty()});
+llvm::CallInst* call_dispatch(Ctx& c, llvm::Value* target) {
+    return c.call_hook(offsetof(RuntimeHooks, dispatch), {target}, {c.B.getInt64Ty()});
 }
 
 }  // namespace
@@ -596,12 +596,16 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
         }
         c.emit_unsupported(va, what);
     };
+    // A tail jump leaves this frame: the call must not grow the host stack (R4: an interpreter's
+    // handlers jump to each other for as long as it runs, `find_offset_table_entries`). A call to
+    // a function of this module has this one's prototype, so it is `musttail` (guaranteed at every
+    // optimization level); a call through a hook is marked `tail`, which -O1 and up honour.
     auto tail_call = [&](std::uint64_t target) {
         c.flush();
         if (impl_->functions.count(target) != 0) {
-            c.B.CreateCall(impl_->function(target), {c.state});
+            c.B.CreateCall(impl_->function(target), {c.state})->setTailCallKind(llvm::CallInst::TCK_MustTail);
         } else {
-            call_dispatch(c, c.B.getInt64(target));
+            call_dispatch(c, c.B.getInt64(target))->setTailCall();
         }
         c.B.CreateRetVoid();
     };
@@ -694,9 +698,10 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
                         if (o.type == ZYDIS_OPERAND_TYPE_MEMORY && o.mem.base == ZYDIS_REGISTER_RIP &&
                             o.mem.index == ZYDIS_REGISTER_NONE && slot >= impl_->image.iat_begin &&
                             slot < impl_->image.iat_end) {
-                            c.call_hook(offsetof(RuntimeHooks, import_call), {c.B.getInt64(slot)}, {c.B.getInt64Ty()});
+                            c.call_hook(offsetof(RuntimeHooks, import_call), {c.B.getInt64(slot)}, {c.B.getInt64Ty()})
+                                ->setTailCall();
                         } else {
-                            call_dispatch(c, target);
+                            call_dispatch(c, target)->setTailCall();
                         }
                         c.B.CreateRetVoid();
                     }

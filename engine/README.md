@@ -1017,6 +1017,17 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   one pass; `D3DXSaveSurfaceToFileA` writes nothing. DirectInput 8 devices report nothing pressed
   and no buffered events; `EnumDevices` lists nothing. A method outside these and the "recorded"
   names (`Set*`, `Begin*`, `End*`, `Draw*`, `Clear`, `Present`, ...) faults with its name.
+- **R4 code-relative offset tables (`discover.cpp` `find_offset_table_entries`):** a table is
+  recognised only from code that loads a 16-bit value from it and adds a register holding a
+  `.pdata` function's start within 8 instructions (tracked in address order through each
+  function, without data flow across branches); it is read from the lowest address seen until a
+  value falls outside that function, so a table followed by small numbers would contribute a few
+  wrong entries (functions that are never called). Not used by the R1 coverage meter or R2.
+- **R4 tail calls (`lift_r1.cpp`):** a tail jump to a function of the same module is `musttail`; a
+  tail jump through the dispatch or import hook is marked `tail`, which holds at -O1 and up, and
+  `Runtime::hook_dispatch` itself ends in a sibling call only when the runtime is optimized
+  (every gate builds `RelWithDebInfo`). A `Debug` runtime therefore grows the host stack on every
+  indirect tail jump: an interpreter loop (LuaJIT's) would overflow it.
 - **R4 SEH additions (`seh.h`):** `RtlUnwind` is `RtlUnwindEx` without a context record;
   `RtlRestoreContext` resumes at the context through `unwind_rsp` like an unwind, so the target
   must be a block start of a function with a `.pdata` handler. In such a function every call's

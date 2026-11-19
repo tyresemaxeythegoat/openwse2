@@ -584,6 +584,94 @@ EhContinuations find_eh_continuations(const ImageView& view, const PeImage& img,
     return out;
 }
 
+OffsetTables find_offset_table_entries(const ImageView& view, const PeImage& img, const std::set<std::uint64_t>& entries) {
+    OffsetTables out;
+    const std::uint64_t base = img.image_base;
+    // .pdata begins -> end, for "B is a function start" and "B + v stays inside it".
+    std::map<std::uint64_t, std::uint64_t> ranges;
+    for (const PeFunctionRange& r : img.functions) {
+        ranges[base + r.begin] = base + r.end;
+    }
+    std::set<std::pair<std::uint64_t, std::uint64_t>> tables;  // (table, function)
+    Discoverer disc(view);
+    for (const std::uint64_t e : entries) {
+        const DFunction fn = disc.discover(e, entries);
+        std::map<ZydisRegister, std::uint64_t> lea;  // 64-bit register -> rip-relative address it holds
+        ZydisRegister loaded = ZYDIS_REGISTER_NONE;  // destination of the last 16-bit table load
+        std::uint64_t loaded_table = 0;
+        int since_load = 0;
+        for (const auto& [va, d] : fn.insns) {
+            (void)va;
+            const auto mn = d.ins.mnemonic;
+            const ZydisDecodedOperand& o0 = d.ops[0];
+            const ZydisDecodedOperand& o1 = d.ops[1];
+            if (mn == ZYDIS_MNEMONIC_MOVZX && o0.type == ZYDIS_OPERAND_TYPE_REGISTER &&
+                o1.type == ZYDIS_OPERAND_TYPE_MEMORY && o1.size == 16) {
+                std::uint64_t t = 0;
+                if (o1.mem.base == ZYDIS_REGISTER_RIP && o1.mem.index == ZYDIS_REGISTER_NONE) {
+                    t = d.next() + static_cast<std::uint64_t>(o1.mem.disp.value);  // a single entry
+                } else if (const auto it = lea.find(widen(o1.mem.base)); it != lea.end() && o1.mem.disp.value == 0 &&
+                                                                         (o1.mem.index == ZYDIS_REGISTER_NONE || o1.mem.scale == 2)) {
+                    t = it->second;
+                }
+                if (t != 0) {
+                    lea.erase(widen(o0.reg.value));
+                    loaded = widen(o0.reg.value);
+                    loaded_table = t;
+                    since_load = 0;
+                    continue;
+                }
+            }
+            if (mn == ZYDIS_MNEMONIC_ADD && loaded != ZYDIS_REGISTER_NONE && o0.type == ZYDIS_OPERAND_TYPE_REGISTER &&
+                o1.type == ZYDIS_OPERAND_TYPE_REGISTER && widen(o0.reg.value) == loaded) {
+                const auto it = lea.find(widen(o1.reg.value));
+                if (it != lea.end() && ranges.count(it->second) != 0) {
+                    tables.insert({loaded_table, it->second});
+                }
+            }
+            if (++since_load > 8) {
+                loaded = ZYDIS_REGISTER_NONE;
+            }
+            if (mn == ZYDIS_MNEMONIC_LEA && o0.type == ZYDIS_OPERAND_TYPE_REGISTER && o1.mem.base == ZYDIS_REGISTER_RIP &&
+                o1.mem.index == ZYDIS_REGISTER_NONE) {
+                lea[widen(o0.reg.value)] = d.next() + static_cast<std::uint64_t>(o1.mem.disp.value);
+                continue;
+            }
+            // Any other write to a register forgets what it held.
+            for (std::uint8_t k = 0; k < d.ins.operand_count; ++k) {
+                const ZydisDecodedOperand& o = d.ops[k];
+                if (o.type == ZYDIS_OPERAND_TYPE_REGISTER && (o.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0) {
+                    lea.erase(widen(o.reg.value));
+                }
+            }
+        }
+    }
+    // A table whose single entries were read one by one ("movzx [rip + X]") is the same table read
+    // from its start: merge each such entry into the table it lies in.
+    std::map<std::uint64_t, std::set<std::uint64_t>> by_function;
+    for (const auto& [t, f] : tables) {
+        by_function[f].insert(t);
+    }
+    for (const auto& [f, ts] : by_function) {
+        const std::uint64_t start = *ts.begin();  // the lowest address read is the table's start
+        const std::uint64_t size = ranges[f] - f;
+        std::size_t n = 0;
+        for (std::uint64_t at = start; n < 4096; at += 2, ++n) {
+            if (!view.readable(at, 2)) {
+                break;
+            }
+            std::uint16_t v = 0;
+            std::memcpy(&v, view.ptr(at), 2);
+            if (v >= size) {
+                break;  // past the table: the next value does not land in the function
+            }
+            out.entries.insert(f + v);
+        }
+        out.tables.push_back({start, f, n});
+    }
+    return out;
+}
+
 std::pair<std::uint64_t, std::uint64_t> text_range(const PeImage& img) {
     for (const PeSection& s : img.sections) {
         if (s.name == ".text") {

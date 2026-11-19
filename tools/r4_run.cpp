@@ -153,6 +153,15 @@ std::set<std::uint64_t> entries_of(const Image& m, const ImageView& view, const 
     if (m.img.entry_rva != 0 && entries.insert(m.img.image_base + m.img.entry_rva).second) {
         work.push_back(m.img.image_base + m.img.entry_rva);
     }
+    // Code reached only through a run-time table of 16-bit offsets (LuaJIT's bytecode handlers).
+    const OffsetTables ot = find_offset_table_entries(view, m.img, entries);
+    for (const OffsetTables::Table& t : ot.tables) {
+        std::printf("%s: offset table at 0x%llx, %zu entries from 0x%llx\n", m.tag.c_str(), static_cast<unsigned long long>(t.table),
+                    t.count, static_cast<unsigned long long>(t.function));
+    }
+    for (const std::uint64_t e : ot.entries) {
+        if (entries.insert(e).second) work.push_back(e);
+    }
     Discoverer disc(view);
     while (!work.empty()) {
         const std::uint64_t e = work.front();
@@ -198,13 +207,23 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
     const std::size_t n_batches = (all.size() + batch - 1) / batch;
     std::vector<fs::path> sos(n_batches);
     std::vector<std::size_t> todo;
+    // Each batch's key file holds the key, then a hash of the batch's functions: a batch is reused
+    // only when it holds the same functions (`--reuse` waives the key, never the functions; a key
+    // file without the second line, from before it was written, is taken on trust).
+    auto batch_hash = [&](std::size_t b) {
+        std::uint64_t h = 0xCBF29CE484222325ULL;
+        for (std::size_t i = b * batch; i < std::min(all.size(), (b + 1) * batch); ++i) h = (h ^ all[i]) * 0x100000001B3ULL;
+        return std::to_string(h);
+    };
     for (std::size_t b = 0; b < n_batches; ++b) {
         sos[b] = so_dir / (m.tag + "_" + std::to_string(b) + ".so");
         const fs::path key_file = so_dir / (m.tag + "_" + std::to_string(b) + ".key");
         std::ifstream in(key_file);
         std::string line;
+        std::string fns;
         const bool have = std::getline(in, line) && fs::exists(sos[b]);
-        if (retranslate || !have || (line != key && !reuse)) {
+        const bool same_fns = !std::getline(in, fns) || fns == batch_hash(b);
+        if (retranslate || !have || !same_fns || (line != key && !reuse)) {
             todo.push_back(b);
         }
     }
@@ -246,7 +265,7 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
                 failed = true;
                 return;
             }
-            std::ofstream(so_dir / (m.tag + "_" + std::to_string(b) + ".key")) << key << "\n";
+            std::ofstream(so_dir / (m.tag + "_" + std::to_string(b) + ".key")) << key << "\n" << batch_hash(b) << "\n";
             std::printf("  %s batch %zu done (%zu/%zu, %.0f s)\n", m.tag.c_str(), b, ++done, todo.size(), ms_since(t0) / 1000.0);
         }
     };
@@ -392,6 +411,28 @@ int main(int argc, char** argv) {
     std::printf("linked %zu imports across modules%s\n", cross, unresolved.empty() ? "" : "; unresolved:");
     for (const std::string& u : unresolved) std::printf("  %s\n", u.c_str());
     rt.fill_iat();
+    // LuaJIT's JIT compiles Lua to x86 code at run time, which nothing here can run (and translating
+    // during play is not allowed): every state the exe creates gets luaJIT_setmode(L, 0,
+    // LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF) and runs in the interpreter.
+    if (shim::Module* lm = modules.find("lua5164.dll", false)) {
+        const std::uint64_t newstate = modules.proc_address(*lm, "luaL_newstate", 0, 0);
+        const std::uint64_t setmode = modules.proc_address(*lm, "luaJIT_setmode", 0, 0);
+        std::size_t wrapped = 0;
+        for (const PeImport& imp : rt.import_list()) {
+            if (imp.name == "luaL_newstate" && imp.slot_va >= exe.img.image_base &&
+                imp.slot_va < exe.img.image_base + exe.img.size_of_image && newstate != 0 && setmode != 0) {
+                rt.set_import(imp.slot_va, [&rt, newstate, setmode](CpuState& s) {
+                    bool ok = false;
+                    const std::uint64_t L = rt.call_guest(s, newstate, {}, &ok);
+                    if (s.unwind_rsp != 0) return;
+                    if (L != 0) (void)rt.call_guest(s, setmode, {L, 0, 0}, &ok);
+                    if (s.unwind_rsp == 0) win64_return(s, L);
+                });
+                ++wrapped;
+            }
+        }
+        std::printf("LuaJIT: the JIT is switched off in every new state (%zu luaL_newstate imports wrapped)\n", wrapped);
+    }
 
     seh::Exceptions exceptions(rt, exe.img, exe.mapped);
     exceptions.add_image(lua.img, lua.mapped);

@@ -459,4 +459,91 @@ __asm__(
 
     ".section .drectve,\"yn\"\n"
     "  .ascii \" -export:t_mod_seh -export:t_rtl_unwind -export:t_restore_context -export:t_restore_longjump\"\n"
+    "  .ascii \" -export:o_dispatch\"\n"
     ".text\n");
+
+/* An interpreter shaped like LuaJIT's (`find_offset_table_entries`): bytecode handlers inside one
+ * .pdata function, reached only through a dispatch table the program fills at run time from 16-bit
+ * offsets added to that function's start, each handler ending in `jmp [table + op * 8]`.
+ * o_dispatch(n) runs the program {INC, LOOP} n times (n masked to 16 bits, at least 1) and returns
+ * the count: up to 131,070 handler-to-handler jumps in one chain, so a translation whose jumps are
+ * not tail calls runs out of host stack. t_offset_deep makes 46 full-length runs. */
+u64 o_dispatch(u64 n);
+u64 g_vm_table[4]; /* referenced from the assembly only */
+__asm__(
+    ".section .rdata,\"dr\"\n"
+    "vm_program:\n"
+    "  .byte 0, 1\n"
+    ".p2align 1\n"
+    "vm_offsets:\n"
+    "  .short vm_inc - vm_begin, vm_loop - vm_begin, vm_halt - vm_begin\n"
+    "  .short 0xFFFF\n"
+    ".text\n"
+
+    ".def vm_begin; .scl 3; .type 32; .endef\n"
+    ".seh_proc vm_begin\n"
+    "vm_begin:\n"
+    "  .seh_endprologue\n"
+    "vm_inc:\n"
+    "  addq $1, %rax\n"
+    "  movzbl (%rdx), %ecx\n"
+    "  incq %rdx\n"
+    "  jmpq *(%r8,%rcx,8)\n"
+    "vm_loop:\n"
+    "  subq $1, %r11\n"
+    "  jz vm_halt\n"
+    "  leaq vm_program(%rip), %rdx\n"
+    "  movzbl (%rdx), %ecx\n"
+    "  incq %rdx\n"
+    "  jmpq *(%r8,%rcx,8)\n"
+    "vm_halt:\n"
+    "  retq\n"
+    "  .seh_endproc\n"
+
+    /* u64 o_dispatch(u64 n): fill the table (the LuaJIT pattern), then run. */
+    ".globl o_dispatch\n"
+    ".def o_dispatch; .scl 2; .type 32; .endef\n"
+    ".seh_proc o_dispatch\n"
+    "o_dispatch:\n"
+    "  pushq %rbx\n"
+    "  .seh_pushreg %rbx\n"
+    "  subq $32, %rsp\n"
+    "  .seh_stackalloc 32\n"
+    "  .seh_endprologue\n"
+    "  movq %rcx, %r11\n"
+    "  andq $0xFFFF, %r11\n"
+    "  orq $1, %r11\n"
+    "  leaq g_vm_table(%rip), %r8\n"
+    "  leaq vm_offsets(%rip), %r9\n"
+    "  leaq vm_begin(%rip), %r10\n"
+    "  xorl %ebx, %ebx\n"
+    "o_dispatch_fill:\n"
+    "  movzwl (%r9,%rbx,2), %ecx\n"
+    "  addq %r10, %rcx\n"
+    "  movq %rcx, (%r8,%rbx,8)\n"
+    "  incq %rbx\n"
+    "  cmpq $3, %rbx\n"
+    "  jb o_dispatch_fill\n"
+    "  xorl %eax, %eax\n"
+    "  leaq vm_program(%rip), %rdx\n"
+    "  callq vm_enter\n"
+    "  addq $32, %rsp\n"
+    "  popq %rbx\n"
+    "  retq\n"
+    "  .seh_endproc\n"
+
+    /* The first dispatch (the handlers return to its caller through vm_halt). */
+    ".def vm_enter; .scl 3; .type 32; .endef\n"
+    "vm_enter:\n"
+    "  movzbl (%rdx), %ecx\n"
+    "  incq %rdx\n"
+    "  jmpq *(%r8,%rcx,8)\n");
+
+/* 46 runs of 65,535 loops: 3,014,610 handler pairs in all. */
+EXPORT NOINLINE u64 t_offset_deep(void) {
+    u64 total = 0;
+    for (int i = 0; i < 46; ++i) {
+        total += o_dispatch(0xFFFF);  /* 46 x 65535 = 3,014,610 */
+    }
+    return total == 46ULL * 0xFFFF ? 0x600D : 1;
+}

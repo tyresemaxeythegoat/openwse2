@@ -139,6 +139,26 @@ struct EhContinuations {
 EhContinuations find_eh_continuations(const ImageView& view, const PeImage& img,
                                       const std::set<std::uint64_t>& entries);
 
+// R4 (`docs/RECOMP_PLAN.md` "R4 design"): code reached only through a table of 16-bit offsets
+// from a function's start, which the program turns into addresses at run time and jumps through
+// (LuaJIT's interpreter: `lj_dispatch_init` adds each `lj_bc_ofs` entry to the VM's start and fills
+// its dispatch table; the bytecode handlers are reached by no branch). Found from the code that
+// builds the addresses: a 16-bit load from a table (`lea rT, [rip + T]` then `movzx r, word
+// [rT (+ i * 2)]`, or `movzx r, word [rip + X]`) added to a register holding a `.pdata` function's
+// start (`lea rB, [rip + B]`, `add r, rB`) within 8 instructions. Each such table is read from its
+// lowest address until a value no longer lands inside that function; every `B + value` is an entry.
+// Not part of `collect_function_entries` (the R2 selection must stay as the PC recorded it).
+struct OffsetTables {
+    struct Table {
+        std::uint64_t table = 0;     // VA of the first entry
+        std::uint64_t function = 0;  // the base the offsets are added to
+        std::size_t count = 0;
+    };
+    std::vector<Table> tables;
+    std::set<std::uint64_t> entries;
+};
+OffsetTables find_offset_table_entries(const ImageView& view, const PeImage& img, const std::set<std::uint64_t>& entries);
+
 // The primary function entry (VA) whose `.pdata` range holds `va`, following chained unwind info;
 // 0 when no `.pdata` range holds it.
 std::uint64_t pdata_owner(const ImageView& view, const PeImage& img, std::uint64_t va);

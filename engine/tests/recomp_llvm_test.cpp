@@ -254,6 +254,13 @@ bool translate_image(const char* tag, Mapped& m, bool is_exe, const char* work_d
         }
     }
     ImageView view(mapped, img.image_base, img.size_of_image, text_b, text_e);
+    // R4: code reached only through a run-time table of 16-bit offsets (`o_dispatch`'s handlers).
+    const OffsetTables ot = find_offset_table_entries(view, img, entries);
+    entries.insert(ot.entries.begin(), ot.entries.end());
+    if (is_exe) {
+        expect(ot.tables.size() == 1 && ot.tables[0].count == 3 && ot.entries.size() == 3,
+               "corpus: the interpreter's offset table names its three handlers");
+    }
     // R3: catch continuations, reached only through a catch funclet (`t_cxx_catch`).
     const EhContinuations eh = find_eh_continuations(view, img, entries);
     if (is_exe) {
