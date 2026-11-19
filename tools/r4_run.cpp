@@ -53,6 +53,7 @@
 #include "wse/recomp/shim_d3d9.h"
 #include "wse/recomp/shim_d3dx.h"
 #include "wse/recomp/shim_files.h"
+#include "wse/recomp/shim_fmod_steam.h"
 #include "wse/recomp/shim_memory.h"
 #include "wse/recomp/shim_modules.h"
 #include "wse/recomp/shim_net.h"
@@ -469,6 +470,7 @@ int main(int argc, char** argv) {
     shim::Net net(rt);
     shim::D3dxMath d3dx(rt);
     shim::D3d9 d3d9(rt);
+    shim::FmodSteam fmod_steam(rt);
     // D3DX reads texture headers: a guest path in the install ("C:\WSE2\..." or relative).
     d3d9.read_file = [&](const std::string& path, std::vector<std::uint8_t>& bytes) {
         std::string p = path;
@@ -487,7 +489,7 @@ int main(int argc, char** argv) {
     const std::size_t bound = exceptions.install() + process.install() + kern.install() + thr.install() + pool.install() +
                               time_shims.install() + crt.install() + memory.install() + strings.install() +
                               files.install() + modules.install() + advapi.install() + user32.install() + net.install() +
-                              sysdlls.install() + d3dx.install() + d3d9.install();
+                              sysdlls.install() + d3dx.install() + d3d9.install() + fmod_steam.install();
     std::size_t total = 0;
     std::size_t missing = 0;
     std::map<std::string, std::vector<std::string>> missing_by_dll;

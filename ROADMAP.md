@@ -186,6 +186,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-20 | — | Phase 5 R4: silent FMOD Ex and Steam-not-running stubs: all 546 imports of v1.1.5.6 have a shim; LuaJIT handler discovery, guaranteed tail calls, JIT off |
 | 2026-11-20 | — | Phase 5 R4: `tools/r4_run.cpp` startup run (batched, cached translation of the retail exe and `lua5164`); ADVAPI32, USER32, offline network, small system DLLs, D3DX math and the recording D3D9/D3DX/DirectInput device: every static import has a shim |
 | 2026-11-20 | — | Phase 5 R4 slice 1: WSL Ubuntu bring-up; recompiler corpus and all CTest suites pass there (`tools/wsl_gate.sh`) |
 | 2026-11-19 | — | Phase 5 R3 first batch: TSO memory-ordering lowering, device-CPU AArch64 codegen, import bridge, Win64 unwinder, SEH runtime (`RaiseException`, `RtlUnwindEx` with consolidation) and resume switch; SEH corpus green on x86 and arm64 (98/98) |

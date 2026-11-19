@@ -31,6 +31,7 @@
 #include "wse/recomp/shim_d3d9.h"
 #include "wse/recomp/shim_d3dx.h"
 #include "wse/recomp/shim_files.h"
+#include "wse/recomp/shim_fmod_steam.h"
 #include "wse/recomp/shim_memory.h"
 #include "wse/recomp/shim_modules.h"
 #include "wse/recomp/shim_net.h"
@@ -4827,6 +4828,61 @@ void test_d3d9() {
     expect(faults.empty(), "d3d9: no faults");
 }
 
+// --- R4 delay-loaded FMOD Ex and Steam (`shim_fmod_steam.h`), loaded as the exe's helper does ---
+void test_fmod_steam() {
+    using u32_test::call;
+    namespace sh = wse::recomp::shim;
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    sh::Modules mods(rt);
+    sh::FmodSteam fs(rt);
+    (void)mods.install();
+    (void)fs.install();
+    GuestStack stack;
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    alignas(16) static std::uint8_t teb[0x2000];
+    s.teb = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(teb));
+    auto va = [](const void* p) { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); };
+    auto K = [&](const char* name, std::initializer_list<std::uint64_t> args) { return call(rt, s, "KERNEL32.dll", name, args); };
+    // __delayLoadHelper2: LoadLibraryExA, then GetProcAddress by name, then a call through the pointer.
+    const std::uint64_t fmod = K("LoadLibraryExA", {va("fmodex64.dll"), 0, 0});
+    const std::uint64_t create = K("GetProcAddress", {fmod, va("FMOD_System_Create")});
+    const std::uint64_t version = K("GetProcAddress", {fmod, va("?getVersion@System@FMOD@@QEAA?AW4FMOD_RESULT@@PEAI@Z")});
+    expect(fmod != 0 && create != 0 && version != 0, "fmod: the delay-load helper's LoadLibraryExA and GetProcAddress succeed");
+    std::uint64_t system = 0;
+    s.gpr[1] = va(&system);
+    rt_test::push_and_hook(&s, 0x140030000ULL, create, false);
+    const std::uint64_t r_create = s.gpr[0];
+    std::uint32_t v = 0;
+    s.gpr[1] = system;
+    s.gpr[2] = va(&v);
+    rt_test::push_and_hook(&s, 0x140030010ULL, version, false);
+    expect(faults.empty() && r_create == 0 && system != 0 && s.gpr[0] == 0 && v == sh::kFmodVersion,
+           "fmod: FMOD_System_Create hands out a system; getVersion reports FMOD Ex 4.44.64");
+    // playSound(this, index, sound, paused, Channel**) then the channel keeps what is set.
+    const char* play = "?playSound@System@FMOD@@QEAA?AW4FMOD_RESULT@@W4FMOD_CHANNELINDEX@@PEAVSound@2@_NPEAPEAVChannel@2@@Z";
+    std::uint64_t channel = 0;
+    std::uint64_t user = 0;
+    std::uint8_t playing = 1;
+    expect(call(rt, s, "fmodex64.dll", play, {system, 0, 0x7F000100, 0, va(&channel)}) == 0 && channel != 0 &&
+               call(rt, s, "fmodex64.dll", "?setUserData@Channel@FMOD@@QEAA?AW4FMOD_RESULT@@PEAX@Z", {channel, 0xABCD}) == 0 &&
+               call(rt, s, "fmodex64.dll", "?getUserData@Channel@FMOD@@QEAA?AW4FMOD_RESULT@@PEAPEAX@Z", {channel, va(&user)}) == 0 &&
+               user == 0xABCD &&
+               call(rt, s, "fmodex64.dll", "?isPlaying@Channel@FMOD@@QEAA?AW4FMOD_RESULT@@PEA_N@Z", {channel, va(&playing)}) == 0 &&
+               playing == 0,
+           "fmod: a played channel exists, keeps its user data, and is not playing (silent)");
+    // Steam: present but not running.
+    const std::uint64_t steam = K("LoadLibraryExA", {va("steam_api64.dll"), 0, 0});
+    expect(steam != 0 && K("GetProcAddress", {steam, va("SteamAPI_Init")}) != 0 &&
+               call(rt, s, "steam_api64.dll", "SteamAPI_Init", {}) == 0 && call(rt, s, "steam_api64.dll", "SteamAPI_RunCallbacks", {}) == 0 &&
+               call(rt, s, "steam_api64.dll", "SteamInternal_FindOrCreateUserInterface", {0, va("SteamUser021")}) == 0,
+           "steam: the DLL loads, SteamAPI_Init returns false (Steam not running), interfaces are NULL");
+    expect(faults.empty(), "fmod/steam: no faults");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -4869,6 +4925,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_net_system();
     test_d3dx_math();
     test_d3d9();
+    test_fmod_steam();
     test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");
