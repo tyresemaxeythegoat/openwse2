@@ -18,3 +18,17 @@ FlsSetValue
 GetLastError
 SetLastError
 GetCurrentThreadId
+CreateThread
+ExitThread
+ResumeThread
+TerminateThread
+GetExitCodeThread
+WaitForSingleObject
+CloseHandle
+Sleep
+CreateEventW
+SetEvent
+InitializeCriticalSection
+EnterCriticalSection
+LeaveCriticalSection
+DeleteCriticalSection

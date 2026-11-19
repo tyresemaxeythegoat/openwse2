@@ -294,6 +294,25 @@ on `FlsFree` (for every thread's value, on the calling thread) and on thread exi
 TLS callbacks with `DLL_THREAD_DETACH`. `GetLastError`/`SetLastError` use `LastErrorValue`
 (`+0x68`). Thread ids start at `0x1004` in steps of 4; the process id is `0x1000`.
 
+**Threads, handles and sync (built, `threads.h` and `kernel.h`).** Decided with the user: threads
+come with the handle table and the synchronization calls the exe uses, so translated threads
+can coordinate; `TerminateThread` of another thread is deferred. Measured call sites in
+v1.1.5.6: `CreateThread` 4, `ExitThread` 4, `GetExitCodeThread` 13, `TerminateThread` 4,
+`WaitForSingleObject` 19, `CloseHandle` 33, `EnterCriticalSection` 185, `LeaveCriticalSection`
+195, `Sleep` 54, `SetEvent` 30, SList calls 80, condition-variable calls 16. Each guest thread
+runs on a host thread with its own `CpuState`, a guest stack (the requested size, at least
+1 MiB) and a TEB; it runs the TLS callbacks with `DLL_THREAD_ATTACH`, its entry point through
+`call_guest`, then its FLS callbacks and `DLL_THREAD_DETACH`, and its handle signals with the
+exit code. `ExitThread` sets `unwind_rsp` to 1, which matches no frame's call-site `rsp`, so
+every translated frame returns at once. A thread marked by `TerminateThread` exits the next
+time it calls an import (`Runtime::before_import`), waits or sleeps. Kernel objects (thread,
+event, mutex, semaphore, named objects shared) live in one host handle table; one host mutex
+and condition variable serve every wait. A critical section keeps a host lock whose pointer is
+in its `LockSemaphore` field and mirrors `OwningThread`/`RecursionCount`; a condition
+variable's word holds a host object created on first use; SLists keep the x64 16-byte header
+(depth and sequence in word 0, first entry in word 1) under one host lock. Thread-pool timers
+and waits (`CreateThreadpoolTimer`, `RegisterWaitForSingleObject`) are not bound yet.
+
 **Tests (CI, synthetic).** The corpus gains assembly functions with `.seh_handler` routines
 written in C: they raise, catch, unwind through several frames and resume, on the x86 and arm64
 runners. The exe's real `__CxxFrameHandler3` is checked by the phone/PC rig.

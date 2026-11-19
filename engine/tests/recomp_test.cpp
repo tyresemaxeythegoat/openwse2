@@ -6,6 +6,10 @@
 // Build/run: powershell -NoProfile -ExecutionPolicy Bypass -File engine/build_host.ps1
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <thread>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -22,6 +26,7 @@
 #include "wse/recomp/r2_rig.h"
 #include "wse/recomp/runtime.h"
 #include "wse/recomp/teb.h"
+#include "wse/recomp/threads.h"
 #include "wse/recomp/unwind.h"
 #include "wse/recomp/x86_decode.h"
 #include "wse/recomp/x86_interp.h"
@@ -2892,6 +2897,296 @@ void test_thread_environment() {
     expect(!faults.empty() && faults[0].kind == FaultKind::unsupported, "teb: a shim on a thread with no TEB faults");
 }
 
+// --- R3 threads and sync (`threads.h`, `kernel.h`): stand-in guest functions on host threads ----
+namespace thr_test {
+
+constexpr std::uint64_t kSlotBase = 0x140050000ULL;
+const char* const kNames[] = {
+    "CreateThread", "ExitThread", "ResumeThread", "GetExitCodeThread", "OpenThread", "TerminateThread",
+    "SetThreadPriority", "GetThreadPriority", "WaitForSingleObject", "CloseHandle", "DuplicateHandle", "Sleep",
+    "CreateEventA", "CreateEventW", "SetEvent", "ResetEvent", "CreateMutexW", "ReleaseMutex", "CreateSemaphoreA",
+    "ReleaseSemaphore", "InitializeCriticalSection", "EnterCriticalSection", "TryEnterCriticalSection",
+    "LeaveCriticalSection", "DeleteCriticalSection", "SleepConditionVariableCS", "WakeAllConditionVariable",
+    "InitializeSListHead", "InterlockedPushEntrySList", "InterlockedPopEntrySList", "InterlockedFlushSList",
+    "QueryDepthSList", "GetCurrentThreadId", "GetLastError"};
+
+std::uint64_t slot(const char* name) {
+    for (std::size_t i = 0; i < std::size(kNames); ++i) {
+        if (std::strcmp(kNames[i], name) == 0) {
+            return kSlotBase + 8 * i;
+        }
+    }
+    return 0;
+}
+
+// Calls an import as translated code would: Win64 arguments (the 5th and up above the shadow
+// area), the return address pushed, then the import hook. Returns rax; `s.rip` tells whether the
+// shim returned (a thread exit leaves `unwind_rsp` set instead).
+std::uint64_t call(CpuState& s, const char* name, std::initializer_list<std::uint64_t> args) {
+    constexpr std::uint64_t kRet = 0x140031000ULL;
+    const std::uint64_t rsp0 = s.gpr[4];
+    s.gpr[4] = (rsp0 - 0x80) & ~std::uint64_t{15};
+    static constexpr int kArgReg[4] = {1, 2, 8, 9};
+    std::size_t i = 0;
+    for (const std::uint64_t a : args) {
+        if (i < 4) {
+            s.gpr[kArgReg[i]] = a;
+        } else {
+            std::memcpy(reinterpret_cast<void*>(s.gpr[4] + 0x20 + 8 * (i - 4)), &a, 8);
+        }
+        ++i;
+    }
+    s.gpr[4] -= 8;
+    std::memcpy(reinterpret_cast<void*>(s.gpr[4]), &kRet, 8);
+    s.hooks->import_call(&s, slot(name));
+    const std::uint64_t rax = s.gpr[0];
+    if (s.unwind_rsp == 0) {
+        s.gpr[4] = rsp0;
+    }
+    return rax;
+}
+
+constexpr std::uint64_t kDouble = 0x140060000ULL, kExit = 0x140060010ULL, kSleeper = 0x140060020ULL,
+                        kMutexTaker = 0x140060030ULL, kCounter = 0x140060040ULL, kWaiter = 0x140060050ULL;
+std::atomic<int> g_ran{0};
+std::uint64_t g_cs = 0;          // guest address of a CRITICAL_SECTION
+std::uint64_t g_cv = 0;          // guest address of a CONDITION_VARIABLE
+std::uint64_t g_shared = 0;      // incremented under g_cs
+volatile int g_flag = 0;
+std::uint64_t g_mutex = 0;
+
+// rax = 2 * parameter; checks the TEB is attached and names this thread.
+void entry_double(CpuState* s) {
+    const std::uint64_t p = win64_arg(*s, 0);
+    ++g_ran;
+    const std::uint64_t tid = call(*s, "GetCurrentThreadId", {});
+    s->gpr[0] = (s->teb != 0 && tid == wse::recomp::teb::current(*s)->id) ? 2 * p : 0xBAD;
+    rt_test::guest_ret(s);
+}
+void entry_exit(CpuState* s) {
+    (void)call(*s, "ExitThread", {77});
+    if (s->unwind_rsp != 0) {
+        return;  // as translated code: every frame returns at once
+    }
+    s->gpr[0] = 0xBAD;
+    rt_test::guest_ret(s);
+}
+void entry_sleeper(CpuState* s) {
+    ++g_ran;
+    (void)call(*s, "Sleep", {0xFFFFFFFFULL});
+    if (s->unwind_rsp != 0) {
+        return;
+    }
+    s->gpr[0] = 0xBAD;
+    rt_test::guest_ret(s);
+}
+void entry_mutex_taker(CpuState* s) {
+    s->gpr[0] = call(*s, "WaitForSingleObject", {g_mutex, 0xFFFFFFFFULL});  // never released
+    rt_test::guest_ret(s);
+}
+void entry_counter(CpuState* s) {
+    for (int i = 0; i < 2000; ++i) {
+        (void)call(*s, "EnterCriticalSection", {g_cs});
+        g_shared = g_shared + 1;
+        (void)call(*s, "LeaveCriticalSection", {g_cs});
+    }
+    s->gpr[0] = 1;
+    rt_test::guest_ret(s);
+}
+void entry_waiter(CpuState* s) {
+    (void)call(*s, "EnterCriticalSection", {g_cs});
+    while (g_flag == 0) {
+        (void)call(*s, "SleepConditionVariableCS", {g_cv, g_cs, 0xFFFFFFFFULL});
+    }
+    (void)call(*s, "LeaveCriticalSection", {g_cs});
+    s->gpr[0] = 42;
+    rt_test::guest_ret(s);
+}
+
+}  // namespace thr_test
+
+void test_threads_and_sync() {
+    using namespace thr_test;
+    namespace tb = wse::recomp::teb;
+    namespace kn = wse::recomp::kernel;
+    std::vector<std::uint8_t> img(0x1000, 0);
+    img[0x3C] = 0x80;
+    PeImage pe;
+    pe.image_base = 0x150000000ULL;
+    pe.size_of_image = static_cast<std::uint32_t>(img.size());
+    Runtime rt;
+    std::mutex fault_m;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) {
+        std::lock_guard<std::mutex> lock(fault_m);
+        faults.push_back(f);
+    };
+    std::vector<PeImport> named;
+    for (std::size_t i = 0; i < std::size(kNames); ++i) {
+        named.push_back({kSlotBase + 8 * i, "KERNEL32.dll", kNames[i], 0});
+    }
+    rt.name_imports(named);
+    const FnRow rows[] = {{kDouble, &entry_double},        {kExit, &entry_exit},       {kSleeper, &entry_sleeper},
+                          {kMutexTaker, &entry_mutex_taker}, {kCounter, &entry_counter}, {kWaiter, &entry_waiter}};
+    rt.add_table(rows, std::size(rows));
+    std::string err;
+    tb::Process proc(rt, pe, img.data());
+    kn::Kernel kern(rt);
+    wse::recomp::threads::Threads thr(rt, proc, kern);
+    expect(proc.init(&err) && proc.install() >= 2 && kern.install() >= 20 && thr.install() >= 6,
+           "threads: the process, kernel and thread shims bind");
+
+    GuestStack stack(256 * 1024);
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    tb::GuestThread& main_thread = proc.create_thread(0, 0);
+    tb::Process::attach(s, main_thread);
+    const std::uint64_t inf = 0xFFFFFFFFULL;
+
+    alignas(8) std::uint32_t tid = 0;
+    const std::uint64_t h1 = call(s, "CreateThread", {0, 0, kDouble, 21, 0, reinterpret_cast<std::uintptr_t>(&tid)});
+    alignas(8) std::uint32_t code = 0;
+    const auto pcode = reinterpret_cast<std::uintptr_t>(&code);
+    expect(h1 != 0 && tid != 0 && tid != main_thread.id && call(s, "WaitForSingleObject", {h1, inf}) == kn::kWaitObject0 &&
+               call(s, "GetExitCodeThread", {h1, pcode}) == 1 && code == 42,
+           "threads: CreateThread runs the entry on its own thread with its TEB; the handle signals with rax");
+    expect(call(s, "CloseHandle", {h1}) == 1 && call(s, "CloseHandle", {h1}) == 0 &&
+               call(s, "GetLastError", {}) == kn::kErrorInvalidHandle,
+           "threads: CloseHandle once; a closed handle is invalid");
+
+    g_ran = 0;
+    const std::uint64_t h2 = call(s, "CreateThread", {0, 0, kDouble, 1, threads::kCreateSuspended, 0});
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    const bool still = call(s, "GetExitCodeThread", {h2, pcode}) == 1 && code == kn::kStillActive && g_ran == 0;
+    expect(still && call(s, "ResumeThread", {h2}) == 1 && call(s, "WaitForSingleObject", {h2, inf}) == 0 && g_ran == 1,
+           "threads: CREATE_SUSPENDED waits for ResumeThread");
+
+    const std::uint64_t h3 = call(s, "CreateThread", {0, 0, kExit, 0, 0, 0});
+    expect(call(s, "WaitForSingleObject", {h3, inf}) == 0 && call(s, "GetExitCodeThread", {h3, pcode}) == 1 && code == 77,
+           "threads: ExitThread unwinds out of the entry with its code");
+
+    g_ran = 0;
+    const std::uint64_t h4 = call(s, "CreateThread", {0, 0, kSleeper, 0, 0, 0});
+    while (g_ran == 0) {
+        std::this_thread::yield();
+    }
+    expect(call(s, "WaitForSingleObject", {h4, 20}) == kn::kWaitTimeout && call(s, "TerminateThread", {h4, 99}) == 1 &&
+               call(s, "WaitForSingleObject", {h4, inf}) == 0 && call(s, "GetExitCodeThread", {h4, pcode}) == 1 &&
+               code == 99,
+           "threads: TerminateThread ends a sleeping thread at its wait (deferred), with the code");
+
+    // Events, named objects, semaphores, mutexes.
+    const std::uint64_t ev = call(s, "CreateEventW", {0, 0, 0, 0});
+    expect(call(s, "WaitForSingleObject", {ev, 0}) == kn::kWaitTimeout && call(s, "SetEvent", {ev}) == 1 &&
+               call(s, "WaitForSingleObject", {ev, 0}) == 0 && call(s, "WaitForSingleObject", {ev, 0}) == kn::kWaitTimeout,
+           "kernel: an auto-reset event signals one wait");
+    const char name[] = "wse_test_event";
+    const auto pname = reinterpret_cast<std::uintptr_t>(name);
+    const std::uint64_t n1 = call(s, "CreateEventA", {0, 1, 1, pname});
+    const std::uint64_t e1 = call(s, "GetLastError", {});
+    const std::uint64_t n2 = call(s, "CreateEventA", {0, 1, 0, pname});
+    expect(n1 != 0 && n2 != 0 && n1 != n2 && e1 == 0 && call(s, "GetLastError", {}) == kn::kErrorAlreadyExists &&
+               call(s, "ResetEvent", {n1}) == 1 && call(s, "WaitForSingleObject", {n2, 0}) == kn::kWaitTimeout,
+           "kernel: a second CreateEvent with the same name opens the same event (ERROR_ALREADY_EXISTS)");
+    alignas(8) std::int32_t prev = -1;
+    const std::uint64_t sem = call(s, "CreateSemaphoreA", {0, 1, 2, 0});
+    expect(call(s, "ReleaseSemaphore", {sem, 1, reinterpret_cast<std::uintptr_t>(&prev)}) == 1 && prev == 1 &&
+               call(s, "ReleaseSemaphore", {sem, 1, 0}) == 0 && call(s, "GetLastError", {}) == kn::kErrorTooManyPosts &&
+               call(s, "WaitForSingleObject", {sem, 0}) == 0 && call(s, "WaitForSingleObject", {sem, 0}) == 0 &&
+               call(s, "WaitForSingleObject", {sem, 0}) == kn::kWaitTimeout,
+           "kernel: a semaphore counts to its maximum");
+    const std::uint64_t mx = call(s, "CreateMutexW", {0, 1, 0});
+    expect(call(s, "ReleaseMutex", {mx}) == 1 && call(s, "ReleaseMutex", {mx}) == 0, "kernel: ReleaseMutex by the owner only");
+    g_mutex = mx;
+    const std::uint64_t h5 = call(s, "CreateThread", {0, 0, kMutexTaker, 0, 0, 0});
+    expect(call(s, "WaitForSingleObject", {h5, inf}) == 0 && call(s, "WaitForSingleObject", {mx, inf}) == kn::kWaitAbandoned,
+           "kernel: a mutex its owner never released is abandoned when the owner exits");
+    alignas(8) std::uint64_t dup = 0;
+    expect(call(s, "DuplicateHandle", {tb::kCurrentProcess, tb::kCurrentThread, tb::kCurrentProcess,
+                                       reinterpret_cast<std::uintptr_t>(&dup), 0, 0, 0}) == 1 &&
+               dup != 0 && call(s, "GetExitCodeThread", {dup, pcode}) == 1 && code == kn::kStillActive &&
+               call(s, "OpenThread", {0, 0, main_thread.id}) != 0,
+           "kernel: DuplicateHandle of the current-thread pseudo-handle; OpenThread by id");
+
+    // Critical sections: recursion, ownership fields, TryEnter from another thread, mutual exclusion.
+    alignas(16) std::uint8_t cs[40] = {};
+    alignas(16) std::uint8_t cv[8] = {};
+    g_cs = reinterpret_cast<std::uintptr_t>(cs);
+    g_cv = reinterpret_cast<std::uintptr_t>(cv);
+    (void)call(s, "InitializeCriticalSection", {g_cs});
+    (void)call(s, "EnterCriticalSection", {g_cs});
+    (void)call(s, "EnterCriticalSection", {g_cs});
+    std::int32_t rec = 0;
+    std::uint64_t owner = 0;
+    std::memcpy(&rec, cs + 12, 4);
+    std::memcpy(&owner, cs + 16, 8);
+    std::uint64_t other_try = 9;
+    std::thread other([&] {
+        GuestStack st2;
+        CpuState s2;
+        st2.prepare(s2);
+        rt.attach(s2);
+        tb::GuestThread& t2 = proc.create_thread(0, 0);
+        tb::Process::attach(s2, t2);
+        other_try = call(s2, "TryEnterCriticalSection", {g_cs});
+        proc.exit_thread(s2, t2);
+    });
+    other.join();
+    (void)call(s, "LeaveCriticalSection", {g_cs});
+    (void)call(s, "LeaveCriticalSection", {g_cs});
+    expect(rec == 2 && owner == main_thread.id && other_try == 0, "kernel: a critical section is recursive and owned");
+    g_shared = 0;
+    std::uint64_t hs[4];
+    for (std::uint64_t& h : hs) {
+        h = call(s, "CreateThread", {0, 0, kCounter, 0, 0, 0});
+    }
+    for (int i = 0; i < 2000; ++i) {
+        (void)call(s, "EnterCriticalSection", {g_cs});
+        g_shared = g_shared + 1;
+        (void)call(s, "LeaveCriticalSection", {g_cs});
+    }
+    for (const std::uint64_t h : hs) {
+        (void)call(s, "WaitForSingleObject", {h, inf});
+    }
+    expect(g_shared == 5 * 2000, "kernel: EnterCriticalSection excludes (five threads, 10000 increments)");
+
+    // A condition variable (zero-initialized word) with the critical section.
+    g_flag = 0;
+    const std::uint64_t hw = call(s, "CreateThread", {0, 0, kWaiter, 0, 0, 0});
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    (void)call(s, "EnterCriticalSection", {g_cs});
+    g_flag = 1;
+    (void)call(s, "LeaveCriticalSection", {g_cs});
+    (void)call(s, "WakeAllConditionVariable", {g_cv});
+    expect(call(s, "WaitForSingleObject", {hw, inf}) == 0 && call(s, "GetExitCodeThread", {hw, pcode}) == 1 && code == 42,
+           "kernel: SleepConditionVariableCS releases the section and wakes on WakeAll");
+    (void)call(s, "DeleteCriticalSection", {g_cs});
+
+    // SLists: LIFO push / pop / flush and the depth.
+    alignas(16) std::uint8_t head[16] = {};
+    alignas(16) std::uint8_t entries[3][16] = {};
+    const auto ph = reinterpret_cast<std::uintptr_t>(head);
+    (void)call(s, "InitializeSListHead", {ph});
+    for (auto& e : entries) {
+        (void)call(s, "InterlockedPushEntrySList", {ph, reinterpret_cast<std::uintptr_t>(e)});
+    }
+    const std::uint64_t depth3 = call(s, "QueryDepthSList", {ph});
+    const std::uint64_t popped = call(s, "InterlockedPopEntrySList", {ph});
+    const std::uint64_t rest = call(s, "InterlockedFlushSList", {ph});
+    expect(depth3 == 3 && popped == reinterpret_cast<std::uintptr_t>(entries[2]) &&
+               rest == reinterpret_cast<std::uintptr_t>(entries[1]) &&
+               *reinterpret_cast<const std::uint64_t*>(entries[1]) == reinterpret_cast<std::uintptr_t>(entries[0]) &&
+               call(s, "QueryDepthSList", {ph}) == 0 && call(s, "InterlockedPopEntrySList", {ph}) == 0,
+           "kernel: SList push / pop / flush are LIFO with the depth");
+
+    thr.join_all();
+    expect(faults.empty(), "threads: no faults");
+    if (!faults.empty()) {
+        std::printf("  first fault: %s %s\n", fault_name(faults[0].kind), faults[0].what.c_str());
+    }
+}
+
 // --- R3 unwinder (`unwind.h`): hand-built functions, unwind codes and stacks ---------------------
 void test_unwinder() {
     namespace uw = wse::recomp::unwind;
@@ -3027,6 +3322,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_r2_rig();
     test_import_bridge();
     test_thread_environment();
+    test_threads_and_sync();
     test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");

@@ -28,6 +28,7 @@
 #include "wse/recomp/runtime.h"
 #include "wse/recomp/seh.h"
 #include "wse/recomp/teb.h"
+#include "wse/recomp/threads.h"
 #include "wse/recomp/x86_interp.h"
 #include "wse/recomp/x86_synth.h"
 
@@ -406,6 +407,10 @@ void test_corpus(const char* path) {
     expect(process.init(&err) && process.tls_directory().present && process.install() >= 11,
            "corpus: the TLS directory reads and the TEB shims bind");
     teb::GuestThread& main_thread = process.create_thread(0, 0);
+    // R3 threads and sync: translated entry points on host threads (`t_thread_*`).
+    kernel::Kernel kern(rt);
+    threads::Threads thr(rt, process, kern);
+    expect(kern.install() >= 10 && thr.install() >= 4, "corpus: the kernel and thread shims bind");
     {
         GuestStack stack;
         CpuState s;

@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -62,6 +63,11 @@ inline constexpr std::uint32_t kDllThreadDetach = 3;
 inline constexpr std::uint32_t kProcessId = 0x1000;
 inline constexpr std::uint64_t kCurrentProcess = ~std::uint64_t{0};      // (HANDLE)-1
 inline constexpr std::uint64_t kCurrentThread = ~std::uint64_t{0} - 1;   // (HANDLE)-2
+// A thread exit unwinding out of guest code (`begin_thread_exit`): `unwind_rsp` = 1 matches no
+// frame's call-site `rsp`, so every translated frame returns at once (`lift_r1.cpp` `guest_call`),
+// and `rip` is this sentinel.
+inline constexpr std::uint64_t kThreadExitUnwind = 1;
+inline constexpr std::uint64_t kThreadExitRip = 0x7E4D0E417E4D0E40ULL;
 
 namespace detail {
 struct AlignedFree {
@@ -96,7 +102,35 @@ struct GuestThread {
     detail::Block tls_block;   // static TLS: template + zero fill
     detail::Block tls_array;   // ThreadLocalStoragePointer[] (one module: index 0)
     detail::Block tls_expansion;  // TlsExpansionSlots, allocated on the first set of a slot >= 64
+    // R3 threads (`threads.h`): `TerminateThread` from another thread sets these; the thread
+    // exits the next time it calls an import, waits or sleeps.
+    std::atomic<bool> terminate_requested{false};
+    std::atomic<std::uint32_t> exit_code{0};
 };
+
+// The guest thread `s` runs on (null when no TEB is attached).
+inline GuestThread* current(const CpuState& s) noexcept {
+    if (s.teb == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<GuestThread*>(static_cast<std::uintptr_t>(
+        detail::get<std::uint64_t>(s.teb + tebo::host_thread)));
+}
+// SetLastError on `s`'s thread (nothing when no TEB is attached).
+inline void set_error(CpuState& s, std::uint32_t e) noexcept {
+    if (s.teb != 0) {
+        detail::put<std::uint32_t>(s.teb + tebo::last_error, e);
+    }
+}
+// ExitThread(code) on `s`: records the code and leaves the state unwinding out of every guest
+// frame; the host code that started the thread (`threads.h`) sees `unwind_rsp == kThreadExitUnwind`.
+inline void begin_thread_exit(CpuState& s, std::uint32_t code) noexcept {
+    if (GuestThread* t = current(s)) {
+        t->exit_code = code;
+    }
+    s.rip = kThreadExitRip;
+    s.unwind_rsp = kThreadExitUnwind;
+}
 
 class Process {
 public:
@@ -239,8 +273,7 @@ private:
             s.hooks->unsupported(&s, s.rip, what.c_str());
             return nullptr;
         }
-        return reinterpret_cast<GuestThread*>(static_cast<std::uintptr_t>(
-            detail::get<std::uint64_t>(s.teb + tebo::host_thread)));
+        return current(s);
     }
 
     // TLS slot `i` of thread `t` (expansion slots allocated when `create`).

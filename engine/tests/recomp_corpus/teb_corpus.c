@@ -157,6 +157,143 @@ EXPORT NOINLINE u64 t_last_error(u64 a, u64 b, u64 c, u64 d) {
     return GetLastError() == (u32)a ? 0x600D : 1;
 }
 
+/* --- Threads and sync (`wse/recomp/threads.h`, `kernel.h`) -------------------------------------- */
+__declspec(dllimport) u64 CreateThread(void* attributes, u64 stack, u32 (*start)(void*), void* param, u32 flags,
+                                       u32* id);
+__declspec(dllimport) void ExitThread(u32 code);
+__declspec(dllimport) u32 ResumeThread(u64 thread);
+__declspec(dllimport) int TerminateThread(u64 thread, u32 code);
+__declspec(dllimport) int GetExitCodeThread(u64 thread, u32* code);
+__declspec(dllimport) u32 WaitForSingleObject(u64 handle, u32 ms);
+__declspec(dllimport) int CloseHandle(u64 handle);
+__declspec(dllimport) void Sleep(u32 ms);
+__declspec(dllimport) u64 CreateEventW(void* attributes, int manual, int initial, const void* name);
+__declspec(dllimport) int SetEvent(u64 event);
+typedef struct {
+    u64 debug_info;
+    int lock_count, recursion;
+    u64 owner, lock_semaphore, spin_count;
+} CriticalSection;
+__declspec(dllimport) void InitializeCriticalSection(CriticalSection* cs);
+__declspec(dllimport) void EnterCriticalSection(CriticalSection* cs);
+__declspec(dllimport) void LeaveCriticalSection(CriticalSection* cs);
+__declspec(dllimport) void DeleteCriticalSection(CriticalSection* cs);
+
+#define INFINITE 0xFFFFFFFFu
+
+/* A new thread gets a fresh copy of the static TLS template and its own id. */
+EXPORT u32 teb_thread_fresh_tls(void* param) {
+    if (tls_constant != 0x7E57 || tls_counter != 5) {
+        return 1;
+    }
+    tls_counter = (u64)param;
+    return GetCurrentThreadId() != 0 && tls_counter == (u64)param ? 0x600D : 2;
+}
+
+static CriticalSection g_cs;
+static volatile u64 g_shared;
+EXPORT u32 teb_thread_counter(void* param) {
+    (void)param;
+    for (int i = 0; i < 200; ++i) {
+        EnterCriticalSection(&g_cs);
+        g_shared = g_shared + 1;
+        LeaveCriticalSection(&g_cs);
+    }
+    return 0;
+}
+
+EXPORT NOINLINE void teb_exit_deep(u32 code) { ExitThread(code); }
+EXPORT u32 teb_thread_exit(void* param) {
+    teb_exit_deep((u32)(u64)param);
+    return 1; /* not reached */
+}
+
+static volatile u64 g_event;
+EXPORT u32 teb_thread_sleeper(void* param) {
+    (void)param;
+    SetEvent(g_event);
+    for (;;) {
+        Sleep(INFINITE);
+    }
+}
+
+static u32 run_and_wait(u32 (*start)(void*), void* param, u32 flags, u32* code) {
+    const u64 h = CreateThread(0, 0, start, param, flags, 0);
+    if (h == 0) {
+        return 0;
+    }
+    if (flags & 4) { /* CREATE_SUSPENDED */
+        u32 c = 0;
+        if (!GetExitCodeThread(h, &c) || c != 259 || ResumeThread(h) != 1) {
+            return 0;
+        }
+    }
+    if (WaitForSingleObject(h, INFINITE) != 0 || !GetExitCodeThread(h, code) || !CloseHandle(h)) {
+        return 0;
+    }
+    return 1;
+}
+
+/* A thread's static TLS is its own; the creator's value is untouched. */
+EXPORT NOINLINE u64 t_thread_tls(u64 a, u64 b, u64 c, u64 d) {
+    (void)b;
+    (void)c;
+    (void)d;
+    const u64 mine = tls_counter;
+    u32 code = 0;
+    if (!run_and_wait(teb_thread_fresh_tls, (void*)(a | 0x100), 4, &code) || code != 0x600D) {
+        return 1;
+    }
+    return tls_counter == mine ? 0x600D : 2;
+}
+
+/* Four threads and this one increment under one critical section. */
+EXPORT NOINLINE u64 t_thread_cs(u64 a, u64 b, u64 c, u64 d) {
+    (void)a;
+    (void)b;
+    (void)c;
+    (void)d;
+    InitializeCriticalSection(&g_cs);
+    g_shared = 0;
+    u64 h[4];
+    for (int i = 0; i < 4; ++i) {
+        h[i] = CreateThread(0, 0, teb_thread_counter, 0, 0, 0);
+    }
+    teb_thread_counter(0);
+    for (int i = 0; i < 4; ++i) {
+        if (h[i] == 0 || WaitForSingleObject(h[i], INFINITE) != 0) {
+            return 1;
+        }
+        CloseHandle(h[i]);
+    }
+    DeleteCriticalSection(&g_cs);
+    return g_shared == 5 * 200 ? 0x600D : 2;
+}
+
+/* ExitThread from a nested call ends the thread with its code; TerminateThread ends a sleeper. */
+EXPORT NOINLINE u64 t_thread_exit(u64 a, u64 b, u64 c, u64 d) {
+    (void)b;
+    (void)c;
+    (void)d;
+    u32 code = 0;
+    const u32 want = (u32)(a & 0xFFFF) + 1;
+    if (!run_and_wait(teb_thread_exit, (void*)(u64)want, 0, &code) || code != want) {
+        return 1;
+    }
+    g_event = CreateEventW(0, 1, 0, 0);
+    const u64 h = CreateThread(0, 0, teb_thread_sleeper, 0, 0, 0);
+    if (g_event == 0 || h == 0 || WaitForSingleObject(g_event, INFINITE) != 0) {
+        return 2;
+    }
+    if (!TerminateThread(h, 0x5EED) || WaitForSingleObject(h, INFINITE) != 0 || !GetExitCodeThread(h, &code) ||
+        code != 0x5EED) {
+        return 3;
+    }
+    CloseHandle(h);
+    CloseHandle(g_event);
+    return 0x600D;
+}
+
 /* `_tls_used` and the callback pointer are reached by no code: keep them. */
 __asm__(".section .drectve,\"yn\"\n"
         "  .ascii \" -include:_tls_used -include:teb_tls_callback_ptr\"\n"

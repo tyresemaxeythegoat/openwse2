@@ -12,6 +12,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <climits>
 #include <cstddef>
 #include <cstdint>
@@ -208,7 +209,10 @@ public:
     }
 
     std::function<void(const Fault&)> on_fault;
-    std::size_t fault_count = 0;
+    std::atomic<std::size_t> fault_count{0};  // guest threads fault concurrently (R3 `threads.h`)
+    // Runs before every import shim; returning true skips the shim (the state was already set,
+    // e.g. a thread that `TerminateThread` marked starts its exit: `threads.h`).
+    std::function<bool(CpuState&)> before_import;
 
 private:
     static Runtime& of(CpuState* s) noexcept { return *static_cast<Runtime*>(s->hooks->context); }
@@ -248,6 +252,9 @@ private:
     }
     static void hook_import(CpuState* s, std::uint64_t slot_va) {
         Runtime& rt = of(s);
+        if (rt.before_import && rt.before_import(*s)) {
+            return;
+        }
         const auto it = rt.imports_.find(slot_va);
         if (it != rt.imports_.end()) {
             it->second(*s);
