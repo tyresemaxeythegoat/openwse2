@@ -180,6 +180,46 @@ publics. Retail: this PC runs chosen retail
 functions natively and records result hashes (as `tools/r0_pc_reference.cpp` does); the phone
 runs their translations and compares.
 
+## R2 design (2026-11-19)
+
+Decided with the user: the PC records native results and the phone checks its translations
+(this PC has no LLVM and no WSL); self-contained retail functions first; the recorded table is
+committed; CI adds an arm64 runner. Measured on v1.1.5.6: of 14,644 `.pdata` ranges, 3,829 make
+no call and 2,963 of those touch no `rip`-relative or `gs:` memory.
+
+**Selection** (`engine/src/recomp/r2_select.{h,cpp}`, shared by the PC tool and the phone, so both
+pick the same set): entries as in the coverage meter (`collect_function_entries`); a function is
+*self-contained* when its body decoded completely and it has no call, tail call, indirect jump
+other than a resolved jump table, `fs:`/`gs:` operand, write through a `rip`-relative or absolute
+address, trap, `cpuid`, x87, privileged or cpuid-gated instruction. Reads of the image (`.rdata`
+constants, `.data` as loaded) are allowed: both sides map the same file.
+
+**Inputs** (`wse/recomp/r2_rig.h`, header-only): 16 cases per function, each seeded from the VA
+and the case number. Four 64 KiB buffers with guard pages on both sides; every argument register
+(`rcx rdx r8 r9`) and eight stack arguments are, by case, a pointer near the middle of a buffer, a
+small integer or an edge value; `xmm0`-`xmm3` hold finite floats. Buffers are random bytes in which
+every 64th aligned word is a pointer into a buffer, so pointer-chasing code reads real memory.
+
+**Outputs.** `rax`, the low 64 bits of `xmm0`, the four buffers, and whether the call faulted.
+Pointers are side-specific, so any 64-bit value (in `rax` or in an aligned buffer word) that points
+into a buffer or the stack is replaced by `(region, offset)` before hashing. A fault is one result
+(no detail): a wild pointer faults on both sides. One FNV-1a hash per function over all cases.
+
+**PC side** (`tools/r2_pc_record.cpp`, Windows, local only): maps the exe at its base, calls each
+selected function through an assembly thunk that loads every argument register, `xmm0`-`xmm3` and
+the stack arguments; a vectored exception handler turns a fault into a result; a watchdog thread
+records a function that runs over 2 s as skipped and restarts the tool, which resumes. It writes
+`engine/src/recomp/r2_reference_v1156.inc` (`{va, hash}` per function, skipped ones omitted).
+
+**Phone side** (Advanced > "R0 spikes", section "R2 differential"): for the v1.1.5.6 exe, selects
+the same functions, lifts them in batches with `R1Translator`, links and loads each batch, runs the
+same cases with `CpuState` (a `sigsetjmp` guard turns a fault into a result, `SIGALRM` a timeout),
+and reports matches, mismatches (with PDB names), functions not lifted, and timeouts.
+
+**CI.** `recomp_llvm_test --record <file>` (x86 `recomp-host`) writes per-export corpus result
+hashes, normalized the same way, and uploads them with the corpus PE; job `recomp-arm64`
+(`ubuntu-24.04-arm`, apt LLVM 18) translates that PE for AArch64 and checks it against the file.
+
 ## What carries over
 
 - P-slices: the launcher (P10/P12), SAF `Vfs`, the Vulkan RHI and GPU path (P4), shader

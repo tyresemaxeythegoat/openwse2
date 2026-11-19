@@ -19,6 +19,7 @@
 #include "wse/recomp/pdb_reader.h"
 #include "wse/recomp/pe_image.h"
 #include "wse/recomp/r0_inputs.h"
+#include "wse/recomp/r2_rig.h"
 #include "wse/recomp/runtime.h"
 #include "wse/recomp/x86_decode.h"
 #include "wse/recomp/x86_interp.h"
@@ -2604,6 +2605,55 @@ void test_runtime_dispatch() {
     expect((q.gpr[2] >> 29 & 1U) == 1, "runtime: cpuid 0x80000001 advertises long mode");
 }
 
+// --- R2 rig (`r2_rig.h`): the same inputs and hashes on every side ----------------------------
+void test_r2_rig() {
+    namespace r2 = wse::recomp::r2;
+    const r2::CaseInputs a = r2::make_case(0x140001000ULL, 3);
+    const r2::CaseInputs b = r2::make_case(0x140001000ULL, 3);
+    const r2::CaseInputs c = r2::make_case(0x140001000ULL, 4);
+    bool same = std::memcmp(a.xmm, b.xmm, sizeof(a.xmm)) == 0;
+    bool differs = std::memcmp(a.xmm, c.xmm, sizeof(a.xmm)) != 0;
+    for (int i = 0; i < 4; ++i) {
+        same = same && a.gpr[i].buffer == b.gpr[i].buffer && a.gpr[i].offset == b.gpr[i].offset &&
+               a.gpr[i].literal == b.gpr[i].literal;
+    }
+    expect(same && differs, "r2: make_case is deterministic per (va, case) and differs between cases");
+    const r2::Regions rg = r2::fixed_regions();
+    expect(rg.buffer[0] == r2::kRegionBase + r2::kBufferBytes && rg.buffer[3] == r2::kRegionBase + 7 * r2::kBufferBytes &&
+               r2::kRegionBase + r2::kRegionBytes <= r2::kStackBase && r2::kStackBase + r2::kStackBytes <= r2::kReturnVa &&
+               (r2::kGuestRsp + 8) % 16 == 0 && r2::kStackClearLo >= r2::kStackBase,
+           "r2: fixed layout: guarded buffers, then the stack, then the return VA; rsp + 8 is 16-aligned");
+    std::vector<std::uint8_t> store(4 * r2::kBufferBytes);
+    std::vector<std::uint8_t> keep(4 * r2::kBufferBytes);
+    std::uint8_t* bufs[r2::kBuffers];
+    const std::uint8_t* pristine[r2::kBuffers];
+    for (int i = 0; i < r2::kBuffers; ++i) {
+        bufs[i] = store.data() + i * r2::kBufferBytes;
+        pristine[i] = keep.data() + i * r2::kBufferBytes;
+    }
+    r2::fill_buffers(0x140002000ULL, bufs, rg);
+    keep = store;
+    std::uint64_t w0 = 0;
+    std::memcpy(&w0, bufs[1], 8);
+    expect(w0 >= rg.buffer[0] && w0 < rg.buffer[3] + r2::kBufferBytes, "r2: even buffer words hold buffer pointers");
+    const std::uint8_t* const cb[r2::kBuffers] = {bufs[0], bufs[1], bufs[2], bufs[3]};
+    r2::Hasher h1;
+    r2::Hasher h2;
+    r2::Hasher h3;
+    r2::Hasher hf;
+    r2::hash_case(h1, false, 7, 9, cb, pristine, rg);
+    r2::hash_case(h2, false, 7, 9, cb, pristine, rg);
+    bufs[2][100] ^= 1;
+    r2::hash_case(h3, false, 7, 9, cb, pristine, rg);
+    r2::restore_buffers(bufs, pristine);
+    r2::hash_case(hf, true, 7, 9, cb, pristine, rg);
+    expect(h1.h == h2.h && h1.h != h3.h && hf.h != h1.h && store == keep,
+           "r2: hash_case sees a changed byte and faults; restore_buffers undoes the change");
+    expect(r2::normalize(rg.buffer[2] + 24, rg) == (0xB000000000000000ULL | (2ULL << 32) | 24) &&
+               r2::normalize(0x140001000ULL, rg) == 0x140001000ULL,
+           "r2: buffer pointers normalize to (region, offset); image addresses stay");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -2632,6 +2682,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_eval_cond_exhaustive();
     test_register_and_memory_writes();
     test_runtime_dispatch();
+    test_r2_rig();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");
         return 0;

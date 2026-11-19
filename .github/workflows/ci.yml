@@ -88,7 +88,44 @@ jobs:
             -DWSE_REQUIRE_RECOMP_CORPUS=ON
           cmake --build build-recomp -j"$(nproc)" --target recomp_llvm_test recomp_test
           ./build-recomp/recomp_test
-          ./build-recomp/recomp_llvm_test
+          ./build-recomp/recomp_llvm_test --record build-recomp/corpus_results.txt
+          mkdir -p corpus-artifact
+          cp build-recomp/recomp_corpus/corpus.exe build-recomp/corpus_results.txt corpus-artifact/
+
+      # The corpus PE (our own C) and its native x86 results, for the arm64 job.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recomp-corpus
+          path: corpus-artifact/
+          retention-days: 7
+
+  # R2: the corpus translated for AArch64 on GitHub's arm64 runner, checked against the x86 native
+  # results `recomp-host` recorded (`docs/RECOMP_PLAN.md` "R2 design"). Synthetic code only.
+  recomp-arm64:
+    name: Recompiler (Linux arm64, LLVM 18)
+    runs-on: ubuntu-24.04-arm
+    needs: recomp-host
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 18 + LLD development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 llvm-18-dev liblld-18-dev zlib1g-dev libzstd-dev \
+            libxml2-dev libedit-dev libffi-dev libncurses-dev libcurl4-openssl-dev
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: recomp-corpus
+          path: corpus-artifact
+
+      - name: Build and check the translated corpus
+        run: |
+          CXX=clang++-18 cmake -S . -B build-recomp -DWSE_ENABLE_LLVM=ON \
+            -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm -DLLD_DIR=/usr/lib/llvm-18/lib/cmake/lld
+          cmake --build build-recomp -j"$(nproc)" --target recomp_llvm_test recomp_test
+          ./build-recomp/recomp_test
+          ./build-recomp/recomp_llvm_test --check corpus-artifact/corpus.exe corpus-artifact/corpus_results.txt
 
   # LLVM + LLD 18.1.8 for arm64-v8a, AArch64 target only, static, built once and cached.
   # Source: the llvmorg-18.1.8 tag, checked against its commit below.

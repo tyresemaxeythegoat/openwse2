@@ -386,6 +386,116 @@ DFunction Discoverer::discover(std::uint64_t entry, const std::set<std::uint64_t
     return fn;
 }
 
+bool insn_is_trap(const DInsn& d) {
+    const auto mn = d.ins.mnemonic;
+    return mn == ZYDIS_MNEMONIC_INT3 || mn == ZYDIS_MNEMONIC_INT || mn == ZYDIS_MNEMONIC_INT1 ||
+           mn == ZYDIS_MNEMONIC_INTO || mn == ZYDIS_MNEMONIC_UD0 || mn == ZYDIS_MNEMONIC_UD1 ||
+           mn == ZYDIS_MNEMONIC_UD2 || mn == ZYDIS_MNEMONIC_HLT;
+}
+
+const char* insn_gated_ext(const DInsn& d) {
+    switch (d.ins.encoding) {
+    case ZYDIS_INSTRUCTION_ENCODING_VEX: return "AVX";
+    case ZYDIS_INSTRUCTION_ENCODING_EVEX: return "AVX-512";
+    case ZYDIS_INSTRUCTION_ENCODING_XOP: return "XOP";
+    case ZYDIS_INSTRUCTION_ENCODING_3DNOW: return "3DNow!";
+    default: break;
+    }
+    if (d.ins.meta.isa_set == ZYDIS_ISA_SET_SSE42) return "SSE4.2";
+    if (d.ins.meta.isa_set == ZYDIS_ISA_SET_SSE4A) return "SSE4a";
+    if (d.ins.mnemonic == ZYDIS_MNEMONIC_XGETBV) return "OSXSAVE";
+    return nullptr;
+}
+
+bool is_self_contained(const DFunction& f) {
+    if (!f.error.empty() || !f.unresolved_indirect_jumps.empty() || !f.indirect_tail_jumps.empty() ||
+        !f.tail_targets.empty() || !f.call_targets.empty() || !f.noreturn_calls.empty() || f.insns.empty()) {
+        return false;
+    }
+    for (const auto& [va, d] : f.insns) {
+        const auto cat = d.ins.meta.category;
+        const auto mn = d.ins.mnemonic;
+        if (cat == ZYDIS_CATEGORY_CALL || cat == ZYDIS_CATEGORY_SYSTEM || cat == ZYDIS_CATEGORY_SYSCALL ||
+            cat == ZYDIS_CATEGORY_X87_ALU || d.ins.meta.isa_ext == ZYDIS_ISA_EXT_X87 || insn_is_trap(d) ||
+            insn_gated_ext(d) != nullptr || mn == ZYDIS_MNEMONIC_CPUID || mn == ZYDIS_MNEMONIC_RDTSC ||
+            mn == ZYDIS_MNEMONIC_RDTSCP) {
+            return false;
+        }
+        if (cat == ZYDIS_CATEGORY_UNCOND_BR && d.ops[0].type != ZYDIS_OPERAND_TYPE_IMMEDIATE) {
+            bool table = false;
+            for (const JumpTable& t : f.jump_tables) {
+                table = table || t.jmp_va == va;
+            }
+            if (!table) {
+                return false;
+            }
+        }
+        for (unsigned i = 0; i < d.ins.operand_count; ++i) {
+            const ZydisDecodedOperand& o = d.ops[i];
+            if (o.type != ZYDIS_OPERAND_TYPE_MEMORY) {
+                continue;
+            }
+            if (o.mem.segment == ZYDIS_REGISTER_FS || o.mem.segment == ZYDIS_REGISTER_GS) {
+                return false;
+            }
+            const bool writes = (o.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0;
+            const bool absolute = o.mem.base == ZYDIS_REGISTER_NONE && o.mem.index == ZYDIS_REGISTER_NONE;
+            if (writes && (o.mem.base == ZYDIS_REGISTER_RIP || absolute)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+std::pair<std::uint64_t, std::uint64_t> text_range(const PeImage& img) {
+    for (const PeSection& s : img.sections) {
+        if (s.name == ".text") {
+            const std::uint64_t b = img.image_base + s.virtual_address;
+            return {b, b + s.virtual_size};
+        }
+    }
+    return {0, 0};
+}
+
+std::set<std::uint64_t> collect_function_entries(const ImageView& view, const PeImage& img,
+                                                 const std::uint8_t* image,
+                                                 const std::vector<PdbPublic>& publics) {
+    std::set<std::uint64_t> entries;
+    for (const PeFunctionRange& r : img.functions) {
+        // UNWIND_INFO flag 4 (UNW_FLAG_CHAININFO): a fragment of another function.
+        if (r.unwind < img.size_of_image && ((image[r.unwind] >> 3) & 0x4) == 0) {
+            entries.insert(img.image_base + r.begin);
+        }
+    }
+    for (const PdbPublic& p : publics) {
+        if (p.section == 0 || p.section > img.sections.size() || (p.flags & 2U) == 0) {
+            continue;  // flag 2: a function (CVPSF_FUNCTION)
+        }
+        const std::uint64_t va = img.image_base + img.sections[p.section - 1].virtual_address + p.offset;
+        if (view.in_text(va)) {
+            entries.insert(va);
+        }
+    }
+    Discoverer disc(view);
+    std::vector<std::uint64_t> work(entries.begin(), entries.end());
+    std::set<std::uint64_t> seen;
+    while (!work.empty()) {
+        const std::uint64_t e = work.back();
+        work.pop_back();
+        if (!seen.insert(e).second) {
+            continue;
+        }
+        const DFunction f = disc.discover(e, entries);
+        for (const std::uint64_t t : f.call_targets) {
+            if (view.in_text(t) && entries.insert(t).second) {
+                work.push_back(t);
+            }
+        }
+    }
+    return entries;
+}
+
 std::string format_insn(const DInsn& d) {
     static ZydisFormatter fmt = [] {
         ZydisFormatter f;

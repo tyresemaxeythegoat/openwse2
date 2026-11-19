@@ -16,9 +16,13 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
+#include <csetjmp>
+#include <csignal>
 #include <cerrno>
 #include <chrono>
 #include <cstdarg>
@@ -43,6 +47,8 @@
 #include "lift_r1.h"
 #include "wse/recomp/pe_image.h"
 #include "wse/recomp/r0_inputs.h"
+#include "wse/recomp/r2_rig.h"
+#include "wse/recomp/runtime.h"
 #include "wse/recomp/x86_interp.h"
 #include "wse/recomp/x86_synth.h"
 
@@ -346,13 +352,9 @@ struct Workspace {
 };
 
 // Emits, links and loads with `method`. `so_bytes_out` receives the linked file.
-bool build_and_load(Translator& tr, int opt, Workspace& ws, LoadMethod method, LoadedCode& code,
-                    TranslateTimings* timings, double* link_ms, std::size_t* so_bytes,
-                    std::string* err) {
-    std::vector<char> obj;
-    if (!tr.emit_object(opt, obj, timings, err)) {
-        return false;
-    }
+// Links one object into a shared object and loads it with `method`.
+bool link_and_load(const std::vector<char>& obj, Workspace& ws, LoadMethod method, LoadedCode& code,
+                   double* link_ms, std::size_t* so_bytes, std::string* err) {
     const std::string obj_path = ws.next("fn", ".o");
     const std::string so_path = ws.next("fn", ".so");
     if (!write_file(obj_path, obj.data(), obj.size(), err)) {
@@ -389,7 +391,16 @@ bool build_and_load(Translator& tr, int opt, Workspace& ws, LoadMethod method, L
     return false;
 }
 
-using GuestFn = void (*)(CpuState*);
+bool build_and_load(Translator& tr, int opt, Workspace& ws, LoadMethod method, LoadedCode& code,
+                    TranslateTimings* timings, double* link_ms, std::size_t* so_bytes,
+                    std::string* err) {
+    std::vector<char> obj;
+    if (!tr.emit_object(opt, obj, timings, err)) {
+        return false;
+    }
+    return link_and_load(obj, ws, method, code, link_ms, so_bytes, err);
+}
+
 using ProbeFn = std::int32_t (*)(std::int32_t, std::int32_t, std::int32_t);
 
 std::uint64_t run_synthetic(GuestFn fn, const DecodedFunction* reference, const std::uint8_t* buf,
@@ -428,49 +439,299 @@ std::string to_lower(std::string s) {
 // collects entries; the second discovers and lifts each function and drops its body, so the
 // decoded image is never held in memory at once. Lifting goes in batches whose LLVM module is
 // discarded.
-static void run_r1_coverage(Report& rep, const PeImage& img, const std::vector<PdbPublic>& publics,
-                            const std::uint8_t* image) {
-    const auto t0 = std::chrono::steady_clock::now();
-    std::uint64_t text_b = 0;
-    std::uint64_t text_e = 0;
-    for (const PeSection& s : img.sections) {
-        if (s.name == ".text") {
-            text_b = img.image_base + s.virtual_address;
-            text_e = text_b + s.virtual_size;
+namespace {
+
+// --- R2 differential (retail) ---------------------------------------------------------------
+// `docs/RECOMP_PLAN.md` "R2 design": the self-contained functions of the v1.1.5.6 exe, translated
+// here and run on the `r2_rig.h` cases, against the hashes the PC recorded natively
+// (`tools/r2_pc_record.cpp` -> `r2_reference_v1156.inc`).
+
+struct R2Reference {
+    std::uint64_t va;
+    std::uint64_t hash;
+};
+#include "r2_reference_v1156.inc"
+
+sigjmp_buf g_r2_jmp;
+volatile sig_atomic_t g_r2_armed = 0;
+volatile sig_atomic_t g_r2_why = 0;  // 1 fault, 2 timeout
+
+void r2_signal(int sig, siginfo_t*, void*) {
+    if (g_r2_armed != 0) {
+        g_r2_armed = 0;
+        g_r2_why = sig == SIGALRM ? 2 : 1;
+        siglongjmp(g_r2_jmp, 1);
+    }
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+// Installs the fault and timeout handlers on an alternate stack for the lifetime of the object.
+class R2Guard {
+public:
+    R2Guard() : alt_(64 * 1024) {
+        stack_t ss{};
+        ss.ss_sp = alt_.data();
+        ss.ss_size = alt_.size();
+        sigaltstack(&ss, &old_ss_);
+        struct sigaction sa {};
+        sa.sa_sigaction = &r2_signal;
+        sa.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_NODEFER;
+        sigemptyset(&sa.sa_mask);
+        for (int i = 0; i < kCount; ++i) {
+            sigaction(kSignals[i], &sa, &old_[i]);
         }
     }
+    ~R2Guard() {
+        for (int i = 0; i < kCount; ++i) {
+            sigaction(kSignals[i], &old_[i], nullptr);
+        }
+        sigaltstack(&old_ss_, nullptr);
+    }
+    R2Guard(const R2Guard&) = delete;
+    R2Guard& operator=(const R2Guard&) = delete;
+
+private:
+    static constexpr int kCount = 6;
+    static constexpr int kSignals[kCount] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP, SIGALRM};
+    std::vector<std::uint8_t> alt_;
+    stack_t old_ss_{};
+    struct sigaction old_[kCount] {};
+};
+
+// One batch of functions translated into one module (built on a worker thread).
+struct R2Batch {
+    std::vector<std::uint64_t> vas;  // lifted, in this module
+    std::vector<char> object;
+    std::string error;
+    std::size_t not_lifted = 0;
+};
+
+void r2_translate(const PeImage& img, const std::uint8_t* image, const std::set<std::uint64_t>& entries,
+                  const std::vector<std::uint64_t>& vas, R2Batch& out) {
+    const auto [text_b, text_e] = text_range(img);
     ImageView view(image, img.image_base, img.size_of_image, text_b, text_e);
-    std::set<std::uint64_t> entries;
-    for (const PeFunctionRange& r : img.functions) {
-        if (r.unwind < img.size_of_image && ((image[r.unwind] >> 3) & 0x4) == 0) {
-            entries.insert(img.image_base + r.begin);
-        }
-    }
-    for (const PdbPublic& p : publics) {
-        if (p.section == 0 || p.section > img.sections.size() || (p.flags & 2U) == 0) {
-            continue;  // flag 2: a function (CVPSF_FUNCTION)
-        }
-        const std::uint64_t va = img.image_base + img.sections[p.section - 1].virtual_address + p.offset;
-        if (view.in_text(va)) {
-            entries.insert(va);
-        }
-    }
     Discoverer disc(view);
-    std::vector<std::uint64_t> work(entries.begin(), entries.end());
-    std::set<std::uint64_t> seen;
-    while (!work.empty()) {
-        const std::uint64_t e = work.back();
-        work.pop_back();
-        if (!seen.insert(e).second) {
+    ImageInfo info;
+    info.base = img.image_base;
+    R1Translator tr(info);
+    tr.declare(vas);
+    for (const std::uint64_t va : vas) {
+        std::string why;
+        if (tr.lift(disc.discover(va, entries), &why)) {
+            out.vas.push_back(va);
+        } else {
+            ++out.not_lifted;
+        }
+    }
+    if (!tr.emit_object(2, out.object, nullptr, &out.error)) {
+        out.object.clear();
+    }
+}
+
+void run_r2_differential(Report& rep, Workspace& ws, LoadMethod method, const PeImage& img,
+                         const std::vector<PdbPublic>& publics, std::uint8_t* image, unsigned cores) {
+    namespace r2 = wse::recomp::r2;
+    const auto t0 = std::chrono::steady_clock::now();
+    const auto [text_b, text_e] = text_range(img);
+    ImageView view(image, img.image_base, img.size_of_image, text_b, text_e);
+    const std::set<std::uint64_t> entries = collect_function_entries(view, img, image, publics);
+    Discoverer disc(view);
+    std::vector<std::uint64_t> selected;
+    for (const std::uint64_t e : entries) {
+        if (is_self_contained(disc.discover(e, entries))) {
+            selected.push_back(e);
+        }
+    }
+    std::map<std::uint64_t, std::uint64_t> reference;
+    for (const R2Reference& r : kR2V1156Reference) {
+        reference[r.va] = r.hash;
+    }
+    rep.line("  self-contained functions %zu (PC recorded %zu of %zu selected)%s", selected.size(),
+             reference.size(), kR2V1156Selected,
+             selected.size() == kR2V1156Selected ? "" : "  <- selection differs from the PC");
+    std::vector<std::uint64_t> to_run;
+    for (const std::uint64_t va : selected) {
+        if (reference.count(va) != 0) {
+            to_run.push_back(va);
+        }
+    }
+
+    // Fixed buffers, guard regions and guest stack (the PC uses the same addresses).
+    void* region = mmap(reinterpret_cast<void*>(r2::kRegionBase), r2::kRegionBytes, PROT_NONE,
+                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    void* stack = mmap(reinterpret_cast<void*>(r2::kStackBase), r2::kStackBytes, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    if (region != reinterpret_cast<void*>(r2::kRegionBase) || stack != reinterpret_cast<void*>(r2::kStackBase)) {
+        rep.line("  FAILED: the fixed buffer/stack addresses are not free (%s)", errno_text().c_str());
+        if (region != MAP_FAILED) munmap(region, r2::kRegionBytes);
+        if (stack != MAP_FAILED) munmap(stack, r2::kStackBytes);
+        return;
+    }
+    std::uint8_t* buffers[r2::kBuffers];
+    std::vector<std::uint8_t> pristine_buf[r2::kBuffers];
+    const std::uint8_t* pristine[r2::kBuffers];
+    for (int b = 0; b < r2::kBuffers; ++b) {
+        buffers[b] = reinterpret_cast<std::uint8_t*>(r2::buffer_address(b));
+        mprotect(buffers[b], r2::kBufferBytes, PROT_READ | PROT_WRITE);
+        pristine_buf[b].resize(r2::kBufferBytes);
+        pristine[b] = pristine_buf[b].data();
+    }
+    const r2::Regions regions = r2::fixed_regions();
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> image_rw;
+    for (const PeSection& s : img.sections) {
+        if ((s.characteristics & 0x80000000U) != 0) {
+            image_rw.emplace_back(s.virtual_address,
+                                  std::vector<std::uint8_t>(image + s.virtual_address, image + s.virtual_address + s.virtual_size));
+        }
+    }
+
+    // Translate in batches on worker threads, then run each batch here.
+    constexpr std::size_t kBatch = 150;
+    std::vector<R2Batch> batches((to_run.size() + kBatch - 1) / kBatch);
+    {
+        std::atomic<std::size_t> next{0};
+        std::vector<std::thread> workers;
+        const unsigned n = std::max(1U, std::min(cores, 4U));
+        for (unsigned t = 0; t < n; ++t) {
+            workers.emplace_back([&] {
+                for (std::size_t i = next++; i < batches.size(); i = next++) {
+                    const std::size_t lo = i * kBatch;
+                    const std::size_t hi = std::min(to_run.size(), lo + kBatch);
+                    r2_translate(img, image, entries, std::vector<std::uint64_t>(to_run.begin() + lo, to_run.begin() + hi),
+                                 batches[i]);
+                }
+            });
+        }
+        for (std::thread& w : workers) {
+            w.join();
+        }
+    }
+    const double translate_ms = ms_since(t0);
+
+    std::map<std::uint64_t, std::string> names;
+    for (const PdbPublic& p : publics) {
+        if (p.section != 0 && p.section <= img.sections.size()) {
+            names[img.image_base + img.sections[p.section - 1].virtual_address + p.offset] = p.name;
+        }
+    }
+    std::size_t matched = 0;
+    std::size_t not_lifted = 0;
+    std::size_t timeouts = 0;
+    std::size_t batch_errors = 0;
+    std::vector<std::uint64_t> mismatched;
+    const auto t1 = std::chrono::steady_clock::now();
+    R2Guard guard;
+    for (R2Batch& batch : batches) {
+        not_lifted += batch.not_lifted;
+        LoadedCode code;
+        std::string err;
+        if (batch.object.empty() || !link_and_load(batch.object, ws, method, code, nullptr, nullptr, &err)) {
+            ++batch_errors;
+            if (batch_errors == 1) {
+                rep.line("  batch FAILED: %s", (batch.error.empty() ? err : batch.error).substr(0, 200).c_str());
+            }
             continue;
         }
-        const DFunction f = disc.discover(e, entries);
-        for (const std::uint64_t t : f.call_targets) {
-            if (view.in_text(t) && entries.insert(t).second) {
-                work.push_back(t);
+        const auto* rows = static_cast<const FnRow*>(code.sym("wse_fn_table"));
+        const auto* count = static_cast<const std::uint64_t*>(code.sym("wse_fn_table_count"));
+        if (rows == nullptr || count == nullptr) {
+            ++batch_errors;
+            continue;
+        }
+        Runtime rt;
+        std::size_t faults = 0;
+        rt.on_fault = [&](const Fault&) { ++faults; };
+        rt.add_table(rows, static_cast<std::size_t>(*count));
+        for (const std::uint64_t va : batch.vas) {
+            r2::Hasher h;
+            r2::fill_buffers(va, buffers, regions);
+            for (int b = 0; b < r2::kBuffers; ++b) {
+                std::memcpy(pristine_buf[b].data(), buffers[b], r2::kBufferBytes);
+            }
+            bool timed_out = false;
+            for (int k = 0; k < r2::kCases && !timed_out; ++k) {
+                const r2::CaseInputs c = r2::make_case(va, k);
+                std::memset(reinterpret_cast<void*>(r2::kStackClearLo), 0, r2::kStackClearHi - r2::kStackClearLo);
+                std::memcpy(reinterpret_cast<void*>(r2::kGuestRsp), &r2::kReturnVa, 8);
+                for (int i = 0; i < r2::kStackArgs; ++i) {
+                    const std::uint64_t v = r2::materialize(c.stack[i], regions);
+                    std::memcpy(reinterpret_cast<void*>(r2::kGuestRsp + 0x28 + 8 * i), &v, 8);
+                }
+                static CpuState s;  // static: kept out of the frame siglongjmp returns to
+                s = CpuState{};
+                s.gpr[4] = r2::kGuestRsp;
+                const int arg_reg[4] = {1, 2, 8, 9};
+                for (int i = 0; i < 4; ++i) {
+                    s.gpr[arg_reg[i]] = r2::materialize(c.gpr[i], regions);
+                    std::memcpy(s.xmm[i], c.xmm[i], 16);
+                }
+                const std::size_t faults_before = faults;
+                itimerval timer{};
+                timer.it_value.tv_sec = 2;
+                g_r2_why = 0;
+                g_r2_armed = 1;
+                setitimer(ITIMER_REAL, &timer, nullptr);
+                if (sigsetjmp(g_r2_jmp, 1) == 0) {
+                    (void)rt.run(s, va);
+                }
+                g_r2_armed = 0;
+                const int jumped = g_r2_why;
+                itimerval off{};
+                setitimer(ITIMER_REAL, &off, nullptr);
+                if (jumped == 2) {
+                    timed_out = true;
+                    break;
+                }
+                const bool faulted = jumped != 0 || faults != faults_before || s.rip != r2::kReturnVa;
+                std::uint64_t xmm0 = 0;
+                std::memcpy(&xmm0, s.xmm[0], 8);
+                const std::uint8_t* const cb[r2::kBuffers] = {buffers[0], buffers[1], buffers[2], buffers[3]};
+                r2::hash_case(h, faulted, s.gpr[0], xmm0, cb, pristine, regions);
+                r2::restore_buffers(buffers, pristine);
+            }
+            for (auto& [rva, bytes] : image_rw) {
+                if (std::memcmp(image + rva, bytes.data(), bytes.size()) != 0) {
+                    h.add(0x1A6E000ULL + rva);
+                    std::memcpy(image + rva, bytes.data(), bytes.size());
+                }
+            }
+            if (timed_out) {
+                ++timeouts;
+                r2::restore_buffers(buffers, pristine);
+                mismatched.push_back(va);
+            } else if (h.h == reference.at(va)) {
+                ++matched;
+            } else {
+                mismatched.push_back(va);
             }
         }
     }
+    const double run_ms = ms_since(t1);
+    munmap(region, r2::kRegionBytes);
+    munmap(stack, r2::kStackBytes);
+
+    const std::size_t ran = to_run.size() - not_lifted;
+    rep.line("  translated %zu functions in %.0f ms (%zu not lifted, %zu batch failures); ran %d cases each in %.0f ms",
+             to_run.size() - not_lifted, translate_ms, not_lifted, batch_errors, r2::kCases, run_ms);
+    rep.line("  match the PC: %zu/%zu (%.2f%%), mismatched %zu (of which %zu timed out)", matched, ran,
+             ran == 0 ? 0.0 : 100.0 * static_cast<double>(matched) / static_cast<double>(ran), mismatched.size(), timeouts);
+    for (std::size_t i = 0; i < mismatched.size() && i < 25; ++i) {
+        const auto it = names.find(mismatched[i]);
+        rep.line("    0x%llx %s", static_cast<unsigned long long>(mismatched[i]),
+                 it == names.end() ? "" : it->second.substr(0, 90).c_str());
+    }
+}
+
+}  // namespace
+
+static void run_r1_coverage(Report& rep, const PeImage& img, const std::vector<PdbPublic>& publics,
+                            const std::uint8_t* image) {
+    const auto t0 = std::chrono::steady_clock::now();
+    const auto [text_b, text_e] = text_range(img);
+    ImageView view(image, img.image_base, img.size_of_image, text_b, text_e);
+    const std::set<std::uint64_t> entries = collect_function_entries(view, img, image, publics);
+    Discoverer disc(view);
     const double discover_ms = ms_since(t0);
 
     ImageInfo info;
@@ -860,6 +1121,17 @@ R0SpikeResult run_r0_spikes(const R0SpikeInput& input) {
         rep.line("  skipped: %s", !exe_ok ? "no exe with a matching PDB" : "image not mapped");
     } else {
         run_r1_coverage(rep, img, publics, static_cast<const std::uint8_t*>(image));
+    }
+
+    // --- R2 differential ---------------------------------------------------------------------
+    rep.line("");
+    rep.line("R2 differential: self-contained retail functions translated here vs the PC (native)");
+    if (!exe_ok || !result.b_maps || image == nullptr || !result.a_loads) {
+        rep.line("  skipped: %s", !exe_ok ? "no exe with a matching PDB" : (!result.a_loads ? "no load method works" : "image not mapped"));
+    } else if (to_lower(input.exe_sha256) != kWse2V1156ExeSha256) {
+        rep.line("  skipped: the PC results are for v1.1.5.6 (tools/r2_pc_record.cpp)");
+    } else {
+        run_r2_differential(rep, ws, method, img, publics, static_cast<std::uint8_t*>(image), cores);
     }
 
     if (image != nullptr) {

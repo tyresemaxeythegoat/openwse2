@@ -126,8 +126,13 @@ void test_translate_small_functions(const std::string& dir) {
 // Our own C, compiled by clang for Win64 into a PE at 0x140000000 (CMake). The PE is mapped at
 // its base; every export runs natively (ms_abi) and translated on the same inputs.
 
+#if defined(__x86_64__)
 using NativeFn = std::uint64_t(__attribute__((ms_abi)) *)(std::uint64_t, std::uint64_t,
                                                           std::uint64_t, std::uint64_t);
+constexpr bool kCanRunNative = true;
+#else
+constexpr bool kCanRunNative = false;  // arm64 runner: `--check` against x86-recorded results
+#endif
 
 struct Export {
     std::string name;
@@ -199,7 +204,33 @@ std::uint64_t pick(Rng& r) {
     }
 }
 
+// `--record <file>` writes each export's native result hash (x86 CI); `--check <pe> <file>` runs
+// only the translated side and compares with such a file (the arm64 CI runner, which cannot run
+// the x86 code natively).
+const char* g_record_path = nullptr;
+bool g_check_mode = false;
+std::map<std::string, std::uint64_t> g_expected;
+
+void mix(std::uint64_t& h, std::uint64_t v) {
+    h ^= v;
+    h *= 0x100000001B3ULL;
+    h ^= h >> 29;
+}
+
+void mix_bytes(std::uint64_t& h, const std::uint8_t* p, std::size_t n) {
+    for (std::size_t i = 0; i + 8 <= n; i += 8) {
+        std::uint64_t v = 0;
+        std::memcpy(&v, p + i, 8);
+        mix(h, v);
+    }
+}
+
 void test_corpus(const char* path) {
+    if (!kCanRunNative && !g_check_mode) {
+        std::printf("  corpus skipped: not an x86-64 host and no --check results
+");
+        return;
+    }
     std::ifstream in(path, std::ios::binary);
     const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     PeImage img;
@@ -338,13 +369,17 @@ void test_corpus(const char* path) {
     alignas(16) static std::uint8_t buf_trans[4096];
     Rng rng;
     std::size_t checked = 0;
+    std::FILE* record = g_record_path != nullptr ? std::fopen(g_record_path, "w") : nullptr;
     for (const Export& e : exports) {
         if (lifted.count(e.va) == 0) {
             continue;
         }
         const bool is_mem = e.name.rfind("m_", 0) == 0;
         int bad = 0;
-        for (int run = 0; run < kRuns && bad < 3; ++run) {
+        std::uint64_t native_h = 0xCBF29CE484222325ULL;
+        std::uint64_t trans_h = 0xCBF29CE484222325ULL;
+        // Every run happens even after a mismatch, so the input sequence never depends on results.
+        for (int run = 0; run < kRuns; ++run) {
             std::uint64_t arg[4] = {pick(rng), pick(rng), pick(rng), pick(rng)};
             for (std::uint8_t& b : buf_native) {
                 b = static_cast<std::uint8_t>(rng.next());
@@ -353,7 +388,14 @@ void test_corpus(const char* path) {
             if (is_mem) {
                 arg[0] = reinterpret_cast<std::uintptr_t>(buf_native);
             }
-            const std::uint64_t want = reinterpret_cast<NativeFn>(e.va)(arg[0], arg[1], arg[2], arg[3]);
+            std::uint64_t want = 0;
+            if (!g_check_mode) {
+#if defined(__x86_64__)
+                want = reinterpret_cast<NativeFn>(e.va)(arg[0], arg[1], arg[2], arg[3]);
+#endif
+                mix(native_h, want);
+                mix_bytes(native_h, buf_native, sizeof(buf_native));
+            }
 
             GuestStack stack;
             CpuState s;
@@ -373,9 +415,11 @@ void test_corpus(const char* path) {
             const CpuState before = s;
             faults.clear();
             const bool ran = rt.run(s, e.va);
-            const bool same_mem = std::memcmp(buf_native, buf_trans, sizeof(buf_trans)) == 0;
-            bool ok = ran && faults.empty() && s.gpr[0] == want && s.rip == GuestStack::kReturnSentinel &&
-                      s.gpr[4] == before.gpr[4] + 8 && same_mem;
+            mix(trans_h, s.gpr[0]);
+            mix_bytes(trans_h, buf_trans, sizeof(buf_trans));
+            const bool same_mem = g_check_mode || std::memcmp(buf_native, buf_trans, sizeof(buf_trans)) == 0;
+            bool ok = ran && faults.empty() && (g_check_mode || s.gpr[0] == want) &&
+                      s.rip == GuestStack::kReturnSentinel && s.gpr[4] == before.gpr[4] + 8 && same_mem;
             for (const int r : kCalleeSaved) {
                 ok = ok && s.gpr[r] == before.gpr[r];
             }
@@ -383,8 +427,7 @@ void test_corpus(const char* path) {
                 ok = ok && std::memcmp(s.xmm[x], before.xmm[x], 16) == 0;
             }
             ok = ok && !s.df;  // the Win64 ABI returns with DF clear
-            if (!ok) {
-                ++bad;
+            if (!ok && ++bad <= 3) {
                 std::printf("  MISMATCH %s(0x%llx, 0x%llx, 0x%llx, 0x%llx): native 0x%llx translated 0x%llx "
                             "rip 0x%llx faults %zu memory %s\n",
                             e.name.c_str(), static_cast<unsigned long long>(arg[0]),
@@ -398,18 +441,53 @@ void test_corpus(const char* path) {
                 }
             }
         }
+        if (record != nullptr) {
+            std::fprintf(record, "%s %016llx\n", e.name.c_str(), static_cast<unsigned long long>(native_h));
+        }
+        if (g_check_mode) {
+            const auto it = g_expected.find(e.name);
+            if (it == g_expected.end() || it->second != trans_h) {
+                ++bad;
+                std::printf("  MISMATCH %s: translated hash 0x%016llx, recorded %s\n", e.name.c_str(),
+                            static_cast<unsigned long long>(trans_h), it == g_expected.end() ? "none" : "differs");
+            }
+        }
         if (bad == 0) {
             ++checked;
         }
     }
-    std::printf("  differential: %zu/%zu exports match native on %d inputs each\n", checked, exports.size(), kRuns);
+    if (record != nullptr) {
+        std::fclose(record);
+    }
+    std::printf("  differential: %zu/%zu exports match %s on %d inputs each\n", checked, exports.size(),
+                g_check_mode ? "the recorded x86 results" : "native", kRuns);
     expect(checked == exports.size(), "corpus: every export matches native (rax, memory, callee-saved, rsp)");
     dlclose(h);
 }
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    const char* corpus = nullptr;
+#ifdef WSE_RECOMP_CORPUS
+    corpus = WSE_RECOMP_CORPUS;
+#endif
+    for (int i = 1; i < argc; ++i) {
+        const std::string a = argv[i];
+        if (a == "--record" && i + 1 < argc) {
+            g_record_path = argv[++i];
+        } else if (a == "--check" && i + 2 < argc) {
+            corpus = argv[++i];
+            g_check_mode = true;
+            std::ifstream in(argv[++i]);
+            std::string name;
+            std::string hex;
+            while (in >> name >> hex) {
+                g_expected[name] = std::stoull(hex, nullptr, 16);
+            }
+            expect(!g_expected.empty(), "check: the recorded results file is not empty");
+        }
+    }
     char tmpl[] = "/tmp/wse_recomp_llvm_XXXXXX";
     const char* dir = mkdtemp(tmpl);
     if (dir == nullptr) {
@@ -417,11 +495,11 @@ int main() {
         return 1;
     }
     test_translate_small_functions(dir);
-#ifdef WSE_RECOMP_CORPUS
-    test_corpus(WSE_RECOMP_CORPUS);
-#else
-    std::printf("  (no Win64 corpus: clang/lld-link were not found at configure time)\n");
-#endif
+    if (corpus != nullptr) {
+        test_corpus(corpus);
+    } else {
+        std::printf("  (no Win64 corpus: clang/lld-link were not found at configure time)\n");
+    }
 
     R0SpikeInput in;
     in.work_dir = dir;
