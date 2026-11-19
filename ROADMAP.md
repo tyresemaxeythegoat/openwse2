@@ -186,6 +186,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-20 | — | Phase 5 R4 slice 1: WSL Ubuntu bring-up; recompiler corpus and all CTest suites pass there (`tools/wsl_gate.sh`) |
 | 2026-11-19 | — | Phase 5 R3 first batch: TSO memory-ordering lowering, device-CPU AArch64 codegen, import bridge, Win64 unwinder, SEH runtime (`RaiseException`, `RtlUnwindEx` with consolidation) and resume switch; SEH corpus green on x86 and arm64 (98/98) |
 | 2026-11-19 | — | Phase 5 R3: catch continuations discovered from C++ `FuncInfo` try-block maps (33 in 28 retail functions); corpus case `t_cxx_catch` |
 | 2026-11-19 | — | Phase 5 R3: thread environment `teb.h` (TEB/PEB, per-thread `gs:`, static TLS, TLS callbacks, `Tls*`/`Fls*`/last-error shims); TEB corpus |

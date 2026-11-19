@@ -1,0 +1,2 @@
+# Run by bash inside WSL from the Windows checkout: CRLF would break it.
+tools/wsl_gate.sh text eol=lf
