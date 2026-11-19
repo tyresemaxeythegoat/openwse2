@@ -206,6 +206,8 @@ __asm__(
     "  .seh_endprologue\n"
     "  movl $0xE0000001, %ecx\n"
     "  callq seh_raise\n"
+    /* Not an epilog yet: Windows calls no handler for a frame whose pc is in its epilog. */
+    "  movl $1, %eax\n"
     "  addq $40, %rsp\n"
     "  retq\n"
     "  .seh_handler seh_count_handler, @unwind\n"
