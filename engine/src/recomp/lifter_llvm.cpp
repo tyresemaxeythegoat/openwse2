@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -412,6 +413,15 @@ bool optimize_and_emit_impl(llvm::Module& m, llvm::TargetMachine& tm, int opt_le
     m.setTargetTriple(tm.getTargetTriple().str());
     m.setDataLayout(tm.createDataLayout());
     auto t0 = std::chrono::steady_clock::now();
+    // Debugging aid: `WSE_R1_DUMP_FN=<symbol>` prints that function's IR before and after the
+    // optimizer to stderr.
+    const char* dump = std::getenv("WSE_R1_DUMP_FN");
+    llvm::Function* dump_fn = dump != nullptr ? m.getFunction(dump) : nullptr;
+    if (dump_fn != nullptr) {
+        llvm::errs() << "=== " << dump << " before optimization
+";
+        dump_fn->print(llvm::errs());
+    }
     if (opt_level > 0) {
         llvm::LoopAnalysisManager lam;
         llvm::FunctionAnalysisManager fam;
@@ -431,6 +441,11 @@ bool optimize_and_emit_impl(llvm::Module& m, llvm::TargetMachine& tm, int opt_le
         }
         llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(level);
         mpm.run(m, mam);
+    }
+    if (dump_fn != nullptr) {
+        llvm::errs() << "=== " << dump << " after optimization
+";
+        dump_fn->print(llvm::errs());
     }
     if (timings != nullptr) {
         timings->optimize_ms = ms_since(t0);

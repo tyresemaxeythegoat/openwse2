@@ -329,6 +329,13 @@ void test_corpus(const char* path) {
     expect(rep.traps >= 1 && rep.gated.count("AVX") != 0,
            "corpus: int3 and AVX on cold paths lift as run-time faults (cold_paths)");
 
+    if (const char* name = std::getenv("WSE_R1_DUMP_EXPORT")) {
+        for (const Export& e : exports) {
+            if (e.name == name) {
+                setenv("WSE_R1_DUMP_FN", r1_symbol(e.va).c_str(), 1);
+            }
+        }
+    }
     std::vector<char> obj;
     TranslateTimings t;
     expect(tr.emit_object(2, obj, &t, &err) && !obj.empty(), "corpus: emit the O2 object");

@@ -88,7 +88,10 @@ jobs:
             -DWSE_REQUIRE_RECOMP_CORPUS=ON
           cmake --build build-recomp -j"$(nproc)" --target recomp_llvm_test recomp_test
           ./build-recomp/recomp_test
-          ./build-recomp/recomp_llvm_test --record build-recomp/corpus_results.txt
+          ./build-recomp/recomp_llvm_test --record build-recomp/corpus_results.txt || {
+            WSE_R1_DUMP_EXPORT=f64_arith ./build-recomp/recomp_llvm_test 2>&1 | sed -n '/=== wse_fn/,/^}/p' | head -400
+            exit 1
+          }
           mkdir -p corpus-artifact
           cp build-recomp/recomp_corpus/corpus.exe build-recomp/corpus_results.txt corpus-artifact/
 
