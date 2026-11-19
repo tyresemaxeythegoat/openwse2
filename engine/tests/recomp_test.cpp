@@ -21,6 +21,7 @@
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/r2_rig.h"
 #include "wse/recomp/runtime.h"
+#include "wse/recomp/teb.h"
 #include "wse/recomp/unwind.h"
 #include "wse/recomp/x86_decode.h"
 #include "wse/recomp/x86_interp.h"
@@ -2737,6 +2738,160 @@ void test_import_bridge() {
            "call_guest: six Win64 arguments, rax returned, other registers and rsp restored");
 }
 
+// --- R3 thread environment (`teb.h`): TEB, static TLS, TLS/FLS slots, callbacks -------------------
+namespace teb_test {
+
+constexpr std::uint64_t kImgBase = 0x150000000ULL;
+constexpr std::uint64_t kTlsCbVa = kImgBase + 0x1000;  // inside the image, as TLS callbacks are
+constexpr std::uint64_t kFlsCbVa = 0x140022000ULL;
+std::vector<std::uint64_t> g_tls_cb;  // base, reason per call
+std::vector<std::uint64_t> g_fls_cb;  // values
+
+void tls_callback(CpuState* s) {
+    g_tls_cb.push_back(win64_arg(*s, 0));
+    g_tls_cb.push_back(win64_arg(*s, 1));
+    rt_test::guest_ret(s);
+}
+void fls_callback(CpuState* s) {
+    g_fls_cb.push_back(win64_arg(*s, 0));
+    rt_test::guest_ret(s);
+}
+
+}  // namespace teb_test
+
+void test_thread_environment() {
+    using namespace teb_test;
+    namespace tb = wse::recomp::teb;
+    std::vector<std::uint8_t> img(0x3000, 0);
+    auto put32 = [&](std::size_t off, std::uint32_t v) { std::memcpy(img.data() + off, &v, 4); };
+    auto put64 = [&](std::size_t off, std::uint64_t v) { std::memcpy(img.data() + off, &v, 8); };
+    put32(0x3C, 0x80);
+    put32(0x80 + 24 + 112 + 9 * 8, 0x2000);  // TLS directory RVA
+    put32(0x80 + 24 + 112 + 9 * 8 + 4, 40);
+    put64(0x2000, kImgBase + 0x2100);         // StartAddressOfRawData
+    put64(0x2008, kImgBase + 0x2110);         // EndAddressOfRawData
+    put64(0x2010, kImgBase + 0x2200);         // AddressOfIndex
+    put64(0x2018, kImgBase + 0x2300);         // AddressOfCallBacks
+    put32(0x2020, 16);                        // SizeOfZeroFill
+    put32(0x2024, 0x00600000);                // IMAGE_SCN_ALIGN_32BYTES
+    for (int i = 0; i < 16; ++i) {
+        img[0x2100 + i] = static_cast<std::uint8_t>(0xA0 + i);
+    }
+    put32(0x2200, 0xFFFFFFFFU);
+    put64(0x2300, kTlsCbVa);  // one callback, then null
+    PeTls tls;
+    std::string err;
+    expect(read_pe_tls(img.data(), img.size(), kImgBase, tls, &err) && tls.present &&
+               tls.raw_end - tls.raw_begin == 16 && tls.index_va == kImgBase + 0x2200 && tls.zero_fill == 16 &&
+               tls.alignment == 32 && tls.callbacks.size() == 1 && tls.callbacks[0] == kTlsCbVa,
+           "teb: the TLS directory is read (template, index, zero fill, alignment, callbacks)");
+    put64(0x2300, 0x1000);  // a callback outside the image
+    expect(!read_pe_tls(img.data(), img.size(), kImgBase, tls, &err), "teb: a callback outside the image fails");
+    put64(0x2300, kTlsCbVa);
+
+    PeImage pe;
+    pe.image_base = kImgBase;
+    pe.size_of_image = static_cast<std::uint32_t>(img.size());
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    const char* names[] = {"TlsAlloc", "TlsFree", "TlsGetValue", "TlsSetValue", "FlsAlloc", "FlsFree",
+                           "FlsGetValue", "FlsSetValue", "GetLastError", "SetLastError", "GetCurrentThreadId",
+                           "GetCurrentThread"};
+    std::vector<PeImport> named;
+    for (std::size_t i = 0; i < std::size(names); ++i) {
+        named.push_back({0x140040000ULL + 8 * i, "KERNEL32.dll", names[i], 0});
+    }
+    rt.name_imports(named);
+    const FnRow rows[] = {{kTlsCbVa, &tls_callback}, {kFlsCbVa, &fls_callback}};
+    rt.add_table(rows, 2);
+    tb::Process proc(rt, pe, img.data());
+    expect(proc.init(&err) && proc.install() == std::size(names), "teb: the process initializes and binds its shims");
+    std::uint32_t index = 1;
+    std::memcpy(&index, img.data() + 0x2200, 4);
+    expect(index == 0 && *reinterpret_cast<const std::uint64_t*>(proc.peb() + tb::pebo::image_base) == kImgBase,
+           "teb: _tls_index is written 0; the PEB holds the image base");
+
+    GuestStack stack;
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    tb::GuestThread& t1 = proc.create_thread(0x9000, 0x8000);
+    tb::Process::attach(s, t1);
+    auto rd = [](std::uint64_t va) { return *reinterpret_cast<const std::uint64_t*>(va); };
+    const std::uint64_t block = rd(rd(t1.teb + tb::tebo::tls_pointer));
+    bool tmpl = (block & 31) == 0;
+    for (int i = 0; i < 32; ++i) {
+        tmpl = tmpl && reinterpret_cast<const std::uint8_t*>(block)[i] == (i < 16 ? 0xA0 + i : 0);
+    }
+    expect(rd(t1.teb + tb::tebo::self) == t1.teb && rd(t1.teb + tb::tebo::peb) == proc.peb() &&
+               rd(t1.teb + tb::tebo::stack_base) == 0x9000 && rd(t1.teb + tb::tebo::stack_limit) == 0x8000 &&
+               rd(t1.teb + tb::tebo::client_tid) == t1.id && rd(t1.teb + tb::tebo::client_pid) == tb::kProcessId && tmpl,
+           "teb: the TEB fields and the static TLS block (template, zero fill, 32-byte aligned)");
+    expect(rt.hooks()->segment_base(&s, Runtime::kSegGs) == t1.teb && faults.empty(),
+           "teb: gs: is the attached thread's TEB");
+
+    auto call = [&](const char* name, std::uint64_t a0 = 0, std::uint64_t a1 = 0) {
+        std::size_t i = 0;
+        while (std::string(names[i]) != name) {
+            ++i;
+        }
+        s.gpr[1] = a0;
+        s.gpr[2] = a1;
+        rt_test::push_and_hook(&s, 0x140030000ULL, 0x140040000ULL + 8 * i, true);
+        return s.gpr[0];
+    };
+    const std::uint64_t slot0 = call("TlsAlloc");
+    expect(slot0 == 0 && call("TlsSetValue", 0, 0x55) == 1 && call("TlsGetValue", 0) == 0x55 &&
+               rd(t1.teb + tb::tebo::tls_slots) == 0x55 && call("GetLastError") == 0,
+           "teb: TlsAlloc / TlsSetValue / TlsGetValue use the TEB slots");
+    for (int i = 1; i <= 64; ++i) {
+        (void)call("TlsAlloc");
+    }
+    expect(call("TlsSetValue", 64, 0x64) == 1 && call("TlsGetValue", 64) == 0x64 &&
+               rd(rd(t1.teb + tb::tebo::tls_expansion)) == 0x64,
+           "teb: slot 64 lives in the expansion array");
+    tb::GuestThread& t2 = proc.create_thread(0, 0);
+    tb::Process::attach(s, t2);
+    expect(call("TlsGetValue", 0) == 0 && call("GetCurrentThreadId") == t2.id && t2.id != t1.id,
+           "teb: a second thread has its own slots and id");
+    tb::Process::attach(s, t1);
+    expect(call("TlsFree", 0) == 1 && rd(t1.teb + tb::tebo::tls_slots) == 0 && call("TlsFree", 0) == 0 &&
+               call("GetLastError") == tb::kErrorInvalidParameter && call("TlsGetValue", 5000) == 0 &&
+               call("TlsAlloc") == 0,
+           "teb: TlsFree clears the slot; a bad index fails with ERROR_INVALID_PARAMETER; the slot is reused");
+    expect(call("SetLastError", 1234) == 0 && call("GetLastError") == 1234 &&
+               call("GetCurrentThread") == tb::kCurrentThread,
+           "teb: SetLastError / GetLastError and the current-thread pseudo-handle");
+
+    g_fls_cb.clear();
+    const std::uint64_t fls = call("FlsAlloc", kFlsCbVa);
+    tb::Process::attach(s, t2);
+    (void)call("FlsSetValue", fls, 0x88);
+    tb::Process::attach(s, t1);
+    expect(fls == 0 && call("FlsSetValue", fls, 0x77) == 1 && call("FlsGetValue", fls) == 0x77 &&
+               call("FlsFree", fls) == 1 && g_fls_cb.size() == 2 && g_fls_cb[0] + g_fls_cb[1] == 0x77 + 0x88 &&
+               call("FlsGetValue", fls) == 0 && call("GetLastError") == tb::kErrorInvalidParameter,
+           "teb: FlsFree runs the callback for every thread's value, then the slot is invalid");
+
+    // TLS callbacks: process attach, then thread exit.
+    g_tls_cb.clear();
+    g_fls_cb.clear();
+    const std::uint64_t fls2 = call("FlsAlloc", kFlsCbVa);
+    tb::Process::attach(s, t2);
+    (void)call("FlsSetValue", fls2, 0x99);
+    const bool attach_ok = proc.run_tls_callbacks(s, tb::kDllProcessAttach);
+    proc.exit_thread(s, t2);
+    expect(attach_ok && faults.empty() && g_tls_cb.size() == 4 && g_tls_cb[0] == kImgBase &&
+               g_tls_cb[1] == tb::kDllProcessAttach && g_tls_cb[3] == tb::kDllThreadDetach && g_fls_cb.size() == 1 &&
+               g_fls_cb[0] == 0x99,
+           "teb: TLS callbacks get (base, reason); thread exit runs its FLS callbacks, then DLL_THREAD_DETACH");
+
+    s.teb = 0;
+    (void)call("TlsGetValue", 0);
+    expect(!faults.empty() && faults[0].kind == FaultKind::unsupported, "teb: a shim on a thread with no TEB faults");
+}
+
 // --- R3 unwinder (`unwind.h`): hand-built functions, unwind codes and stacks ---------------------
 void test_unwinder() {
     namespace uw = wse::recomp::unwind;
@@ -2871,6 +3026,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_runtime_dispatch();
     test_r2_rig();
     test_import_bridge();
+    test_thread_environment();
     test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");

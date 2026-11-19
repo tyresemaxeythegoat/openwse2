@@ -282,6 +282,18 @@ memory (`gs:` reads go through `segment_base`): self pointer at `+0x30`, stack b
 `+0x8`/`+0x10`, the TLS slot array at `+0x1480` and the static-TLS pointer array at `+0x58` (from
 the exe's TLS directory). `CreateThread` starts a host thread running the guest entry point.
 
+Built (`engine/include/wse/recomp/teb.h`): the `gs:` base is per thread, `CpuState::teb` (offset
+440, in what was padding, so the 448-byte layout and the lifter are unchanged); `segment_base`
+returns it. Measured on v1.1.5.6: only three instructions use a segment, `gs:[0x58]` (static TLS,
+2 functions) and `gs:[0x10]` (stack limit, 1), so the hook call costs nothing that matters and no
+inline `gs:` load was added. The TLS directory holds an 8-byte template and no callbacks. The
+PEB is a zeroed page holding the image base at `+0x10`. `TlsAlloc` slots 0-63 are in the TEB,
+64-1087 in a per-thread expansion array (`+0x1780`) allocated on first use; FLS values are kept
+per thread on the host side (guest code reaches them only through `Fls*`), and their callbacks run
+on `FlsFree` (for every thread's value, on the calling thread) and on thread exit, followed by the
+TLS callbacks with `DLL_THREAD_DETACH`. `GetLastError`/`SetLastError` use `LastErrorValue`
+(`+0x68`). Thread ids start at `0x1004` in steps of 4; the process id is `0x1000`.
+
 **Tests (CI, synthetic).** The corpus gains assembly functions with `.seh_handler` routines
 written in C: they raise, catch, unwind through several frames and resume, on the x86 and arm64
 runners. The exe's real `__CxxFrameHandler3` is checked by the phone/PC rig.

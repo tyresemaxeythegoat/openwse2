@@ -604,10 +604,12 @@ if(WSE_ENABLE_LLVM)
             set(_wse_corpus_flags_string ${_wse_corpus_flags_int})
             # R3 SEH corpus: integer code calling KERNEL32 through an import library.
             set(_wse_corpus_flags_seh ${_wse_corpus_flags_int})
+            # R3 TEB corpus: static TLS, a TLS callback, and the KERNEL32 TLS/FLS calls.
+            set(_wse_corpus_flags_teb ${_wse_corpus_flags_int})
             # SSE corpus: SSE4.1 with the vectorizers on.
             set(_wse_corpus_flags_sse -msse4.1)
             set(_wse_corpus_objs)
-            foreach(_unit int string sse seh)
+            foreach(_unit int string sse seh teb)
                 set(_src "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/${_unit}_corpus.c")
                 if(EXISTS "${_src}")
                     set(_obj "${_wse_corpus_dir}/${_unit}_corpus.obj")

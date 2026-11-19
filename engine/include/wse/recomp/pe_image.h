@@ -279,6 +279,74 @@ inline bool read_pe_imports(const std::uint8_t* image, std::size_t size, std::ui
     return true;
 }
 
+// The TLS directory of a mapped image (IMAGE_TLS_DIRECTORY64, data directory 9; R3 static TLS,
+// `teb.h`). Its fields are VAs (they carry base relocations), not RVAs.
+struct PeTls {
+    bool present = false;
+    std::uint64_t raw_begin = 0;   // the template copied into every thread's block
+    std::uint64_t raw_end = 0;
+    std::uint64_t index_va = 0;    // `_tls_index`: the loader writes this module's slot number
+    std::uint32_t zero_fill = 0;   // bytes after the template, zeroed
+    std::uint32_t alignment = 0;   // block alignment from Characteristics bits 20-23 (0 = default)
+    std::vector<std::uint64_t> callbacks;  // PIMAGE_TLS_CALLBACK list (null-terminated in the image)
+};
+
+// Reads the TLS directory of an image mapped at `base` (`image` holds `size` bytes). A missing
+// directory is not an error (`out.present` stays false); every VA must lie inside the image.
+inline bool read_pe_tls(const std::uint8_t* image, std::size_t size, std::uint64_t base, PeTls& out,
+                        std::string* error) {
+    auto fail = [&](const char* what) {
+        if (error != nullptr) {
+            *error = what;
+        }
+        return false;
+    };
+    using pe_detail::rd32;
+    using pe_detail::rd64;
+    out = PeTls{};
+    std::uint32_t pe = 0;
+    std::uint32_t dir = 0;
+    std::uint32_t dir_size = 0;
+    if (!rd32(image, size, 0x3C, pe) || !rd32(image, size, std::size_t{pe} + 24 + 112 + 9 * 8, dir) ||
+        !rd32(image, size, std::size_t{pe} + 24 + 112 + 9 * 8 + 4, dir_size)) {
+        return fail("truncated headers");
+    }
+    if (dir == 0) {
+        return true;
+    }
+    std::uint64_t callbacks = 0;
+    std::uint32_t characteristics = 0;
+    if (dir_size < 40 || !rd64(image, size, dir, out.raw_begin) || !rd64(image, size, dir + 8ULL, out.raw_end) ||
+        !rd64(image, size, dir + 16ULL, out.index_va) || !rd64(image, size, dir + 24ULL, callbacks) ||
+        !rd32(image, size, dir + 32ULL, out.zero_fill) || !rd32(image, size, dir + 36ULL, characteristics)) {
+        return fail("truncated TLS directory");
+    }
+    auto inside = [&](std::uint64_t va, std::uint64_t n) {
+        return va >= base && va - base <= size && n <= size - (va - base);
+    };
+    if (out.raw_end < out.raw_begin || (out.raw_begin != 0 && !inside(out.raw_begin, out.raw_end - out.raw_begin)) ||
+        (out.index_va != 0 && !inside(out.index_va, 4)) || out.zero_fill > (1U << 24)) {
+        return fail("TLS directory points outside the image");
+    }
+    const std::uint32_t align_code = (characteristics >> 20) & 0xF;
+    out.alignment = align_code == 0 ? 0 : 1U << (align_code - 1);
+    for (std::uint64_t at = callbacks; at != 0; at += 8) {
+        std::uint64_t cb = 0;
+        if (!inside(at, 8) || !rd64(image, size, at - base, cb)) {
+            return fail("TLS callback list runs outside the image");
+        }
+        if (cb == 0) {
+            break;
+        }
+        if (!inside(cb, 1) || out.callbacks.size() >= 256) {
+            return fail("bad TLS callback");
+        }
+        out.callbacks.push_back(cb);
+    }
+    out.present = true;
+    return true;
+}
+
 struct PeCodeView {
     std::array<std::uint8_t, 16> guid{};
     std::uint32_t age = 0;

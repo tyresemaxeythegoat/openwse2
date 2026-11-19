@@ -326,6 +326,7 @@ private:
     static std::uint64_t hook_segment(CpuState* s, int segment) {
         Runtime& rt = of(s);
         if (segment == kSegFs && rt.fs_set_) return rt.fs_base_;
+        if (segment == kSegGs && s->teb != 0) return s->teb;  // this thread's TEB (R3 `teb.h`)
         if (segment == kSegGs && rt.gs_set_) return rt.gs_base_;
         const std::uint64_t rip = s->rip;
         rt.fault(*s, FaultKind::segment, static_cast<std::uint64_t>(segment), {});

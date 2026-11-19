@@ -1,4 +1,4 @@
-; Import library definition for the R3 corpus (`seh_corpus.c`): only the KERNEL32 exports the
+; Import library definition for the R3 corpora (`seh_corpus.c`, `teb_corpus.c`): only the KERNEL32 exports the
 ; corpus calls. Built with `llvm-dlltool -m i386:x86-64 -d kernel32.def -l kernel32.lib`.
 LIBRARY KERNEL32.dll
 EXPORTS
@@ -7,3 +7,14 @@ RtlUnwindEx
 RtlCaptureContext
 RtlLookupFunctionEntry
 RtlVirtualUnwind
+TlsAlloc
+TlsFree
+TlsGetValue
+TlsSetValue
+FlsAlloc
+FlsFree
+FlsGetValue
+FlsSetValue
+GetLastError
+SetLastError
+GetCurrentThreadId

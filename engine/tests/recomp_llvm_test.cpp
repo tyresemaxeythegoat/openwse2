@@ -27,6 +27,7 @@
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/runtime.h"
 #include "wse/recomp/seh.h"
+#include "wse/recomp/teb.h"
 #include "wse/recomp/x86_interp.h"
 #include "wse/recomp/x86_synth.h"
 
@@ -399,6 +400,21 @@ void test_corpus(const char* path) {
     seh::Exceptions exceptions(rt, img, mapped);
     const std::size_t shims = exceptions.install();
     expect(imports.empty() || shims >= 5, "corpus: the SEH shims bind to the corpus imports");
+    // R3 thread environment: the main thread's TEB and static TLS; the TLS callbacks run once
+    // with DLL_PROCESS_ATTACH, as the loader runs them (`t_tls_callback` checks).
+    teb::Process process(rt, img, mapped);
+    expect(process.init(&err) && process.tls_directory().present && process.install() >= 11,
+           "corpus: the TLS directory reads and the TEB shims bind");
+    teb::GuestThread& main_thread = process.create_thread(0, 0);
+    {
+        GuestStack stack;
+        CpuState s;
+        stack.prepare(s);
+        rt.attach(s);
+        teb::Process::attach(s, main_thread);
+        expect(process.run_tls_callbacks(s, teb::kDllProcessAttach) && process.tls_directory().callbacks.size() == 1,
+               "corpus: the TLS callback runs at process attach");
+    }
     std::printf("  translated %zu functions (lift %.1f ms, opt %.1f ms, codegen %.1f ms, %zu B)\n",
                 rt.function_count(), t.lift_ms, t.optimize_ms, t.codegen_ms, obj.size());
 
@@ -411,8 +427,9 @@ void test_corpus(const char* path) {
     std::size_t runnable = 0;
     std::FILE* record = g_record_path != nullptr ? std::fopen(g_record_path, "w") : nullptr;
     for (const Export& e : exports) {
-        // `seh_*` are the SEH corpus's handlers and helpers: they only run inside `t_*` tests.
-        if (e.name.rfind("seh_", 0) == 0) {
+        // `seh_*` / `teb_*` are the R3 corpora's handlers, callbacks and helpers: they only run
+        // inside `t_*` tests.
+        if (e.name.rfind("seh_", 0) == 0 || e.name.rfind("teb_", 0) == 0) {
             continue;
         }
         ++runnable;
@@ -451,6 +468,7 @@ void test_corpus(const char* path) {
             GuestStack stack;
             CpuState s;
             stack.prepare(s);
+            teb::Process::attach(s, main_thread);
             for (int r = 0; r < 16; ++r) {
                 if (r != 4) {
                     s.gpr[r] = rng.next();
