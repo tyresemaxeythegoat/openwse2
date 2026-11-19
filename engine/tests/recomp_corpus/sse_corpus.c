@@ -901,24 +901,28 @@ EXPORT u64 m_sum_floats(u64 a, u64 b, u64 c, u64 d) {
 }
 
 EXPORT u64 m_saxpy_f32(u64 a, u64 b, u64 c, u64 d) {
-    float* x = (float*)a;
-    float* y = x + 512;
-    float alpha = f_of((u32)b);
-    float beta = f_of((u32)c);
+    /* Finite inputs only (see m_sum_floats): two NaN operands may differ in payload. */
+    u32* xb = (u32*)a;
+    float* y = (float*)a + 512;
+    u32* yb = (u32*)a + 512;
+    float alpha = f_of((u32)b & 0xBFFFFFFFU);
+    float beta = f_of((u32)c & 0xBFFFFFFFU);
     u64 n = (d & 511ULL);
     for (u64 i = 0; i < n; ++i) {
-        y[i] = alpha * x[i] + beta * y[i];
+        y[i] = alpha * f_of(xb[i] & 0xBFFFFFFFU) + beta * f_of(yb[i] & 0xBFFFFFFFU);
     }
     return n ? bits_f(y[n - 1ULL]) : 0ULL;
 }
 
 EXPORT u64 m_saxpy_f64(u64 a, u64 b, u64 c, u64 d) {
-    double* x = (double*)a;
-    double* y = x + 256;
-    double alpha = d_of(b);
+    /* Finite inputs only (see m_sum_floats): two NaN operands may differ in payload. */
+    u64* xb = (u64*)a;
+    double* y = (double*)a + 256;
+    u64* yb = (u64*)a + 256;
+    double alpha = d_of(b & 0xBFFFFFFFFFFFFFFFULL);
     u64 n = (c & 255ULL);
     for (u64 i = 0; i < n; ++i) {
-        y[i] = alpha * x[i] + y[i];
+        y[i] = alpha * d_of(xb[i] & 0xBFFFFFFFFFFFFFFFULL) + d_of(yb[i] & 0xBFFFFFFFFFFFFFFFULL);
     }
     return (n + (d & 1ULL)) ? bits_d(y[n ? n - 1ULL : 0ULL]) : 0ULL;
 }

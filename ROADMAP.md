@@ -153,7 +153,7 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
 
 Design: `docs/RECOMP_PLAN.md` (the decompilation plan `docs/GAMEPLAY_PLAN.md` is superseded).
 
-- [ ] **R0 Feasibility spikes:** generated `.so` loads on the user's phone, image at `0x140000000`, LLVM + LLD size and translation speed, one retail function translated and matching the PC (built; CI and phone run pending).
+- [x] **R0 Feasibility spikes:** generated `.so` loads on the user's phone, image at `0x140000000`, LLVM + LLD size and translation speed, one retail function translated and matching the PC (all four passed or measured on the phone, 2026-11-19).
 - [ ] **R1 Lifter:** PE / PDB / `.pdata`, function discovery, x86-64 → LLVM IR, coverage meter (built; CI differential corpus green; retail coverage run on the phone pending).
 - [ ] **R2 Host differential rig:** translated vs original code on the PC CPU; CI on synthetic binaries and an arm64 runner.
 - [ ] **R3 Runtime core:** guest memory, TEB/TLS, threads, dispatch, ABI bridge, memory ordering, Win64 unwinding and C++ EH.
@@ -186,6 +186,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-19 | — | R0 complete on the phone ((d) `rglString::indexOf` through the PDB matches the PC); first retail R1 coverage 10,561/11,254 (93.84%); traps and `cpuid`-gated code now lift as run-time faults, `cpuid` hook, `rsqrt`/`rcp` |
 | 2026-11-19 | — | Phase 5 R1 lifter: Zydis 4.1.0 discovery, LLVM 18 lifter (integer, SSE, string families), `CpuState` v2 + `RuntimeHooks` + `runtime.h` dispatcher, import-free modules (`-z defs`), CI differential corpus (our C for Win64: 99/99 functions lift, 92/92 exports match native), R1 coverage meter in the phone spike run (`STATUS.md` §5) |
 | 2026-11-19 | — | Evidence baseline rebased from WSE2 v1.1.5.5 to v1.1.5.6 with `tools/rebase_build.py` (2,141 cited addresses moved and re-checked against both builds; `SYMBOL_MAP.json` regenerated; native opcode map re-extracted and identical); on-device PDB reader so R0 (d) finds functions by name in any installed build; R0 phone run: (a) PASS, (b) PASS, (c) measured |
 | 2026-11-18 | — | Phase 5 R0 feasibility spikes built (`wse/recomp/`, `recomp` suite, `wse_recomp` LLVM 18 + LLD lifter/`recomp_llvm_test`, `libwse_r0.so` + launcher "R0 spikes" row, local `tools/r0_pc_reference.cpp` verifying `rglString::indexOf` `0x1403103f0`, CI jobs `recomp-host` and `llvm-android` added); Windows host gate PASS (`STATUS.md` §1–§2); CI and phone run pending |

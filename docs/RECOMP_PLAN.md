@@ -150,7 +150,16 @@ its VA.
 instructions as loops honouring DF. x87, AVX and privileged instructions are reported as
 unsupported. Memory ordering stays plain until R3.
 
-R1 deviations (each also noted next to its code): a `lock` operand is assumed naturally aligned
+**Traps and the CPU profile.** `int3` (MSVC emits it after calls that never return), `int 0x29`
+(`__fastfail`), `ud2` and `hlt` are lifted as a call to the `unsupported` hook: reaching one is a
+fault with its address, and the function still counts as lifted. `cpuid` calls the `cpuid` hook,
+which answers from one fixed profile (`Runtime::hook_cpuid`: vendor `WSE2AArch64 `, SSE through
+SSE4.1 and POPCNT; no SSE4.2, AVX, FMA or OSXSAVE). Code that needs a feature the profile does not
+advertise (VEX/EVEX encodings, SSE4.2, `xgetbv`) sits behind a feature check that answers no, so
+it is lifted as a fault too and counted separately by the coverage meter.
+
+R1 deviations (each also noted next to its code): `rsqrt*`/`rcp*` return the exact `1/sqrt(x)` and
+`1/x` (x86 returns an approximation within 1.5 * 2^-12 whose bits differ between vendors); a `lock` operand is assumed naturally aligned
 (AArch64 atomics need it; x86 would bus-lock a misaligned one); `cvtsd2ss`/`cvtpd2ps` round to
 nearest whatever MXCSR.RC says; with two NaN inputs the NaN that propagates may differ from x86
 (LLVM treats `fadd` and friends as commutative); string instructions with a `gs:`/`fs:` override

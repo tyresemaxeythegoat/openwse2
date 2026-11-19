@@ -873,6 +873,11 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
 - **R1 string instructions (`lift_r1_string.cpp`):** `gs:`/`fs:` overrides, `lock` and 16-bit
   addressing are reported unsupported; there is no `memmove`/`memset` fast path (it would import
   libc).
+- **R1 traps and gated code (`lift_r1.cpp`):** `int3`, `int n`, `ud0`-`ud2` and `hlt` lift as a
+  call to the `unsupported` hook (a fault with the address if reached); VEX/EVEX, SSE4.2 and
+  `xgetbv` lift the same way, because `Runtime::hook_cpuid` does not advertise them.
+- **R1 `rsqrt`/`rcp` (`lift_r1_sse.cpp`):** exact `1/sqrt(x)` and `1/x` instead of x86's
+  vendor-specific 12-bit approximation (within its documented error bound).
 - **Import-free modules (`lifter_llvm.cpp`):** translated modules link with `-z defs`; on an
   x86-64 host the target CPU is `x86-64-v2` so `llvm.floor`/`roundeven` stay inline.
 - **R0 (d) input bounds (`r0_inputs.h`):** `make_r0_index_of_cases` keeps `start` in `[0, len]`
