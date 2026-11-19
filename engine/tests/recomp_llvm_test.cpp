@@ -28,6 +28,8 @@
 #include "wse/recomp/runtime.h"
 #include "wse/recomp/seh.h"
 #include "wse/recomp/shim_crt.h"
+#include "wse/recomp/shim_memory.h"
+#include "wse/recomp/shim_strings.h"
 #include "wse/recomp/shim_time.h"
 #include "wse/recomp/teb.h"
 #include "wse/recomp/threadpool.h"
@@ -427,6 +429,12 @@ void test_corpus(const char* path) {
     const std::size_t time_bound = time_shims.install();
     const std::size_t crt_bound = crt_shims.install();
     expect(time_bound >= 6 && crt_bound >= 8, "corpus: the time and CRT shims bind");
+    // R4: strings, locale and memory (`str_corpus.c`).
+    shim::Memory memory_shims(rt);
+    shim::Strings string_shims(rt, memory_shims);
+    const std::size_t memory_bound = memory_shims.install();
+    const std::size_t string_bound = string_shims.install();
+    expect(memory_bound >= 10 && string_bound >= 8, "corpus: the memory and string shims bind");
     {
         GuestStack stack;
         CpuState s;

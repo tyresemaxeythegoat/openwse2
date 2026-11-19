@@ -122,6 +122,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/recomp_test.cpp` | host suite `recomp`: `decode_insn` operands/rejections, `Interpreter` flags, `decode_function`, synthetic R0 (c) model match, `parse_pe`/`map_pe_sections`, and R0 (d) vectors/FNV-1a | synthetic x86-64 bytes + synthetic PE32+ |
 | `include/wse/recomp/cpu_state.h`, `include/wse/recomp/runtime.h` | R1 `CpuState` (448 B: GPRs, `rip`, flags, XMM, MXCSR, hook table) and `RuntimeHooks`; `Runtime`: the `wse_fn_table` dispatcher, `import_call` shims, `bad_return` / `unsupported` / segment faults, `div128` | port infrastructure |
 | `src/recomp/discover.{h,cpp}`, `src/recomp/lift_r1*.{h,cpp}`, `src/recomp/llvm_common.h` | R1: Zydis 4.1.0 function discovery (control flow from each entry, MSVC and clang jump tables, tail calls) and the LLVM 18 lifter (`R1Translator`; families `lift_r1_int.cpp`, `lift_r1_sse.cpp`, `lift_r1_string.cpp`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R1 design") |
+| `include/wse/recomp/shim_strings.h`, `include/wse/recomp/shim_memory.h` | R4 shims: code pages, conversions, case and character types, locale, date/time formats, `FormatMessage` (`shim::Strings`); heaps, Local/Global and virtual memory (`shim::Memory`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R4 design") |
 | `include/wse/recomp/shim_time.h`, `include/wse/recomp/shim_crt.h` | R4 shims: time and counters (`shim::Time`), CRT support, process and system information (`shim::Crt`, `shim::ProcessConfig`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R4 design") |
 | `include/wse/recomp/threadpool.h` | R3 thread-pool timers and waits, `RegisterWaitForSingleObject` (`threadpool::Pool`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R3 design") |
 | `include/wse/recomp/threads.h`, `include/wse/recomp/kernel.h` | R3 threads and sync: `CreateThread` and the thread calls on host threads (`threads::Threads`); the handle table, waits, events, mutexes, semaphores, critical sections, condition variables, SLists, `Sleep` (`kernel::Kernel`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R3 design") |
@@ -927,6 +928,22 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   host CPU has. `ExitProcess` reports the code to the embedder and unwinds the calling thread;
   the embedder stops the others. `GetCurrentProcessorNumber` is always 0. Timer-queue timers
   (`threadpool.h`) get one worker each, like thread-pool timers.
+- **R4 strings and locale (`shim_strings.h`):** en-US with ANSI code page 1252 and OEM code page
+  437, Windows' English defaults, whatever the host is set to (Windows itself can run with 65001
+  everywhere; the user's PC does). The 1252 and 437 tables, case mapping and `CT_CTYPE1` for
+  Latin-1, Latin Extended-A, Greek, Cyrillic and General Punctuation, UTF-8 in both directions
+  (including Windows' replacement of invalid sequences) and the word-sort order of ASCII text
+  were checked against the Windows APIs on the user's PC; other scripts use simple ranges. No
+  best-fit mapping: a character the code page lacks becomes the default character. Sort keys
+  are the code units. `GetLocaleInfo*` answers a fixed en-US table; an unknown `LCTYPE` fails
+  with `ERROR_INVALID_FLAGS`. `FormatMessage` knows a short table of system messages and does
+  not read message tables from modules.
+- **R4 memory (`shim_memory.h`):** heap blocks carry a 16-byte header; freeing or sizing a pointer
+  no heap here allocated fails instead of corrupting memory. `HeapDestroy` does not reclaim the
+  heap's blocks, and `HeapWalk` enumerates nothing. Local/Global memory is fixed (the handle is
+  the pointer). Virtual memory is real host address space, always read-write: protections are
+  recorded for `VirtualQuery`/`VirtualProtect` but not enforced, and a request for a fixed address
+  outside a region reserved earlier fails with `ERROR_INVALID_ADDRESS`.
 - **R3 thread pool (`threadpool.h`):** one worker guest thread per timer or wait object, so one
   object's callbacks never overlap (Windows may run a periodic timer's callbacks concurrently when
   one runs long); a periodic timer's next due time is the previous one plus the period.

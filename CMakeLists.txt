@@ -608,10 +608,12 @@ if(WSE_ENABLE_LLVM)
             set(_wse_corpus_flags_teb ${_wse_corpus_flags_int})
             # R4 corpus: time, CRT support, system information, timer queues.
             set(_wse_corpus_flags_crt ${_wse_corpus_flags_int})
+            # R4 corpus: strings, code pages, locale, memory.
+            set(_wse_corpus_flags_str ${_wse_corpus_flags_int})
             # SSE corpus: SSE4.1 with the vectorizers on.
             set(_wse_corpus_flags_sse -msse4.1)
             set(_wse_corpus_objs)
-            foreach(_unit int string sse seh teb crt)
+            foreach(_unit int string sse seh teb crt str)
                 set(_src "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/${_unit}_corpus.c")
                 if(EXISTS "${_src}")
                     set(_obj "${_wse_corpus_dir}/${_unit}_corpus.obj")

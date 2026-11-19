@@ -26,6 +26,8 @@
 #include "wse/recomp/r2_rig.h"
 #include "wse/recomp/runtime.h"
 #include "wse/recomp/shim_crt.h"
+#include "wse/recomp/shim_memory.h"
+#include "wse/recomp/shim_strings.h"
 #include "wse/recomp/shim_time.h"
 #include "wse/recomp/teb.h"
 #include "wse/recomp/threadpool.h"
@@ -2936,7 +2938,9 @@ const char* const kNames[] = {
     "GetEnvironmentStringsW", "FreeEnvironmentStringsW", "SetEnvironmentVariableA", "InitOnceExecuteOnce",
     "ExitProcess", "GetSystemInfo", "GetLogicalProcessorInformation", "GetVersionExW", "GlobalMemoryStatusEx",
     "SetUnhandledExceptionFilter", "UnhandledExceptionFilter", "CreateTimerQueue", "CreateTimerQueueTimer",
-    "ChangeTimerQueueTimer", "DeleteTimerQueueTimer"};
+    "ChangeTimerQueueTimer", "DeleteTimerQueueTimer", "GetACP", "GetOEMCP", "MultiByteToWideChar",
+    "WideCharToMultiByte", "LCMapStringEx", "CompareStringEx", "GetLocaleInfoEx", "FormatMessageA", "LocalFree",
+    "GetProcessHeap", "HeapAlloc", "HeapFree", "HeapSize", "HeapReAlloc", "VirtualAlloc", "VirtualQuery", "VirtualFree"};
 
 std::uint64_t slot(const char* name) {
     for (std::size_t i = 0; i < std::size(kNames); ++i) {
@@ -3557,6 +3561,80 @@ void test_time_crt_sysinfo() {
     expect(faults.empty(), "crt: no faults");
 }
 
+// --- R4 strings, locale and memory (`shim_strings.h`, `shim_memory.h`) ---------------------------
+void test_strings_memory() {
+    using thr_test::call;
+    namespace tb = wse::recomp::teb;
+    namespace sh = wse::recomp::shim;
+    std::vector<std::uint8_t> img(0x1000, 0);
+    img[0x3C] = 0x80;
+    PeImage pe;
+    pe.image_base = 0x150000000ULL;
+    pe.size_of_image = static_cast<std::uint32_t>(img.size());
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    std::vector<PeImport> named;
+    for (std::size_t i = 0; i < std::size(thr_test::kNames); ++i) {
+        named.push_back({thr_test::kSlotBase + 8 * i, "KERNEL32.dll", thr_test::kNames[i], 0});
+    }
+    rt.name_imports(named);
+    std::string err;
+    tb::Process proc(rt, pe, img.data());
+    sh::Memory mem(rt);
+    sh::Strings str(rt, mem);
+    expect(proc.init(&err) && proc.install() >= 2 && mem.install() >= 7 && str.install() >= 8,
+           "strings: the string, locale and memory shims bind");
+    GuestStack stack(256 * 1024);
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    tb::GuestThread& t = proc.create_thread(0, 0);
+    tb::Process::attach(s, t);
+    auto va = [](const void* p) { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); };
+
+    expect(call(s, "GetACP", {}) == 1252 && call(s, "GetOEMCP", {}) == 437,
+           "strings: the process runs with ANSI code page 1252 and OEM code page 437 (English defaults)");
+    // CP_ACP / CP_OEMCP resolve to those: 0x80 is the euro sign in 1252 and C-cedilla in 437.
+    const char hi[] = {static_cast<char>(0x80), 0};
+    alignas(4) char16_t w[4] = {};
+    const bool acp = call(s, "MultiByteToWideChar", {0, 0, va(hi), 1, va(w), 4}) == 1 && w[0] == 0x20AC;
+    const bool oem = call(s, "MultiByteToWideChar", {1, 0, va(hi), 1, va(w), 4}) == 1 && w[0] == 0xC7;
+    expect(acp && oem, "strings: CP_ACP is 1252 and CP_OEMCP is 437");
+    // A string comparison the corpus also checks against Windows: "_a" < "ab" < "a-b".
+    const char16_t u1[] = u"_a", u2[] = u"ab", u3[] = u"a-b";
+    expect(call(s, "CompareStringEx", {0, 0, va(u1), ~0ULL, va(u2), ~0ULL}) == 1 &&
+               call(s, "CompareStringEx", {0, 0, va(u2), ~0ULL, va(u3), ~0ULL}) == 1,
+           "strings: word-sort order (punctuation first, hyphens ignored until the tie-break)");
+
+    // FormatMessage into a buffer it allocates, freed with LocalFree.
+    alignas(8) std::uint64_t text = 0;
+    const std::uint64_t n = call(s, "FormatMessageA", {0x100 | 0x200 | 0x1000, 0, 5, 0, va(&text), 0, 0});
+    expect(n == 19 && text != 0 &&
+               std::string(reinterpret_cast<const char*>(static_cast<std::uintptr_t>(text))) == "Access is denied.\r\n" &&
+               call(s, "LocalFree", {text}) == 0,
+           "strings: FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER) for error 5, then LocalFree");
+
+    // Heap blocks: a foreign pointer is not freed; growing keeps contents; VirtualQuery.
+    const std::uint64_t heap = call(s, "GetProcessHeap", {});
+    const std::uint64_t p = call(s, "HeapAlloc", {heap, 8, 24});
+    alignas(16) static std::uint8_t foreign[64];
+    const bool freed_foreign = call(s, "HeapFree", {heap, 0, va(foreign + 16)}) != 0;
+    *reinterpret_cast<std::uint8_t*>(static_cast<std::uintptr_t>(p)) = 0x42;
+    const std::uint64_t q = call(s, "HeapReAlloc", {heap, 8, p, 4096});
+    expect(p != 0 && !freed_foreign && q != 0 && call(s, "HeapSize", {heap, 0, q}) == 4096 &&
+               *reinterpret_cast<std::uint8_t*>(static_cast<std::uintptr_t>(q)) == 0x42 &&
+               *reinterpret_cast<std::uint8_t*>(static_cast<std::uintptr_t>(q + 4000)) == 0 && call(s, "HeapFree", {heap, 0, q}) == 1,
+           "memory: HeapReAlloc with HEAP_ZERO_MEMORY keeps contents and zeroes the growth; a foreign pointer is refused");
+    const std::uint64_t v = call(s, "VirtualAlloc", {0, 3 * 65536, 0x3000, 0x04});
+    alignas(8) std::uint64_t mbi[6] = {};
+    const bool q1 = call(s, "VirtualQuery", {v + 0x1234, va(mbi), 48}) == 48 && mbi[0] == v + 0x1000 && mbi[1] == v &&
+                    mbi[3] == 3 * 65536 - 0x1000;
+    expect(v != 0 && (v & 0xFFFF) == 0 && q1 && call(s, "VirtualFree", {v, 0, 0x8000}) == 1,
+           "memory: VirtualAlloc is 64 KiB aligned; VirtualQuery reports the region; VirtualFree releases it");
+    expect(faults.empty(), "strings: no faults");
+}
+
 // --- R3 unwinder (`unwind.h`): hand-built functions, unwind codes and stacks ---------------------
 void test_unwinder() {
     namespace uw = wse::recomp::unwind;
@@ -3695,6 +3773,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_threads_and_sync();
     test_threadpool();
     test_time_crt_sysinfo();
+    test_strings_memory();
     test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");
