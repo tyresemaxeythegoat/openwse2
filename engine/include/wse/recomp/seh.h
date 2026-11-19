@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -263,10 +264,18 @@ private:
         CpuState ctx = detail::caller_context(s);
         CpuState target_ctx;
         bool found = false;
+        std::string walk;  // for the "not found" report: rip/establisher of each frame
         for (int depth = 0; depth < 4096; ++depth) {
             const CpuState frame_ctx = ctx;
             unwind::Result r;
-            if (!step(ctx, unwind::kFlagTerminationHandler, r)) {
+            const bool stepped = step(ctx, unwind::kFlagTerminationHandler, r);
+            if (walk.size() < 600) {
+                char line[96];
+                std::snprintf(line, sizeof(line), " [rip %llx est %llx%s]", static_cast<unsigned long long>(frame_ctx.rip),
+                              static_cast<unsigned long long>(r.establisher_frame), r.ok ? "" : " !ok");
+                walk += line;
+            }
+            if (!stepped) {
                 break;
             }
             const bool at_target = r.establisher_frame == target_frame;
@@ -287,7 +296,11 @@ private:
         }
         detail::put<std::uint32_t>(record + er::flags, flags);
         if (!found) {
-            s.hooks->unsupported(&s, detail::caller_context(s).rip, "RtlUnwindEx: target frame not found");
+            char head[64];
+            std::snprintf(head, sizeof(head), "RtlUnwindEx: target frame %llx not found:",
+                          static_cast<unsigned long long>(target_frame));
+            const std::string what = head + walk;
+            s.hooks->unsupported(&s, detail::caller_context(s).rip, what.c_str());
             return;
         }
         std::uint64_t resume_ip = target_ip;
