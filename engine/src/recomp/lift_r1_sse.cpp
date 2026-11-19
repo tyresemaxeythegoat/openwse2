@@ -56,13 +56,26 @@ Value* x86_nan(Ctx& c, Value* r, Value* a, Value* b = nullptr) {
 // either is NaN or both are zero. LLVM's AArch64 backend turns that select into FMINNM/FMAXNM when
 // `b` is a constant, and those return NaN for a *signaling* NaN `a` where x86 returns `b`. Quieting
 // `a` first (`llvm.canonicalize`) changes nothing x86 can return (a NaN `a` is never returned) and
-// makes the two agree. Found by the arm64 CI corpus check.
+// makes the two agree. Found by the arm64 CI corpus check. (Quieting is done on the integer bits:
+// LLVM 18's x86 backend cannot select `llvm.canonicalize`.)
+Value* quiet_nan(Ctx& c, Value* a) {
+    llvm::Type* ft = a->getType();
+    llvm::Type* et = ft->getScalarType();
+    const unsigned bits = et->getPrimitiveSizeInBits();
+    llvm::Type* it = c.ity(bits);
+    if (auto* vt = llvm::dyn_cast<llvm::FixedVectorType>(ft)) {
+        it = llvm::FixedVectorType::get(c.ity(bits), vt->getNumElements());
+    }
+    Value* ai = c.B.CreateBitCast(a, it);
+    Value* qbit = llvm::ConstantInt::get(it, bits == 64 ? (1ULL << 51) : (1ULL << 22));
+    return c.B.CreateBitCast(c.B.CreateSelect(c.B.CreateFCmpUNO(a, a), c.B.CreateOr(ai, qbit), ai), ft);
+}
 Value* x86_min(Ctx& c, Value* a, Value* b) {
-    Value* qa = c.B.CreateUnaryIntrinsic(llvm::Intrinsic::canonicalize, a);
+    Value* qa = quiet_nan(c, a);
     return c.B.CreateSelect(c.B.CreateFCmpOLT(qa, b), qa, b);
 }
 Value* x86_max(Ctx& c, Value* a, Value* b) {
-    Value* qa = c.B.CreateUnaryIntrinsic(llvm::Intrinsic::canonicalize, a);
+    Value* qa = quiet_nan(c, a);
     return c.B.CreateSelect(c.B.CreateFCmpOGT(qa, b), qa, b);
 }
 
