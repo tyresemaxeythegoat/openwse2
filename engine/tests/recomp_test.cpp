@@ -26,6 +26,7 @@
 #include "wse/recomp/r2_rig.h"
 #include "wse/recomp/runtime.h"
 #include "wse/recomp/teb.h"
+#include "wse/recomp/threadpool.h"
 #include "wse/recomp/threads.h"
 #include "wse/recomp/unwind.h"
 #include "wse/recomp/x86_decode.h"
@@ -2924,7 +2925,9 @@ const char* const kNames[] = {
     "ReleaseSemaphore", "InitializeCriticalSection", "EnterCriticalSection", "TryEnterCriticalSection",
     "LeaveCriticalSection", "DeleteCriticalSection", "SleepConditionVariableCS", "WakeAllConditionVariable",
     "InitializeSListHead", "InterlockedPushEntrySList", "InterlockedPopEntrySList", "InterlockedFlushSList",
-    "QueryDepthSList", "GetCurrentThreadId", "GetLastError"};
+    "QueryDepthSList", "GetCurrentThreadId", "GetLastError", "CreateThreadpoolTimer", "SetThreadpoolTimer",
+    "WaitForThreadpoolTimerCallbacks", "CloseThreadpoolTimer", "CreateThreadpoolWait", "SetThreadpoolWait",
+    "CloseThreadpoolWait", "RegisterWaitForSingleObject", "UnregisterWait", "UnregisterWaitEx"};
 
 std::uint64_t slot(const char* name) {
     for (std::size_t i = 0; i < std::size(kNames); ++i) {
@@ -3203,6 +3206,150 @@ void test_threads_and_sync() {
     }
 }
 
+// --- R3 thread-pool timers and waits (`threadpool.h`) --------------------------------------------
+namespace pool_test {
+
+constexpr std::uint64_t kTimerCb = 0x140070000ULL, kWaitCb = 0x140070010ULL, kRegCb = 0x140070020ULL;
+std::mutex g_m;
+std::vector<std::uint64_t> g_timer;  // context, timer, worker tid per call
+std::vector<std::uint64_t> g_wait;   // context, wait result per call
+std::vector<std::uint64_t> g_reg;    // context, TimerOrWaitFired per call
+
+std::uint64_t tid_of(CpuState* s) {
+    const wse::recomp::teb::GuestThread* t = wse::recomp::teb::current(*s);
+    return t == nullptr ? 0 : t->id;
+}
+void timer_cb(CpuState* s) {  // (instance, context, timer)
+    std::lock_guard<std::mutex> lock(g_m);
+    g_timer.insert(g_timer.end(), {win64_arg(*s, 1), win64_arg(*s, 2), tid_of(s)});
+    rt_test::guest_ret(s);
+}
+void wait_cb(CpuState* s) {  // (instance, context, wait, result)
+    std::lock_guard<std::mutex> lock(g_m);
+    g_wait.insert(g_wait.end(), {win64_arg(*s, 1), win64_arg(*s, 3) & 0xFFFFFFFF});
+    rt_test::guest_ret(s);
+}
+void reg_cb(CpuState* s) {  // (context, timerOrWaitFired)
+    std::lock_guard<std::mutex> lock(g_m);
+    g_reg.insert(g_reg.end(), {win64_arg(*s, 0), win64_arg(*s, 1) & 0xFF});
+    rt_test::guest_ret(s);
+}
+// Polls until `n` entries are in `v` or 2 s pass.
+bool until(const std::vector<std::uint64_t>& v, std::size_t n) {
+    for (int i = 0; i < 400; ++i) {
+        {
+            std::lock_guard<std::mutex> lock(g_m);
+            if (v.size() >= n) {
+                return true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return false;
+}
+std::size_t size_of(const std::vector<std::uint64_t>& v) {
+    std::lock_guard<std::mutex> lock(g_m);
+    return v.size();
+}
+
+}  // namespace pool_test
+
+void test_threadpool() {
+    using namespace pool_test;
+    using thr_test::call;
+    namespace tb = wse::recomp::teb;
+    namespace kn = wse::recomp::kernel;
+    std::vector<std::uint8_t> img(0x1000, 0);
+    img[0x3C] = 0x80;
+    PeImage pe;
+    pe.image_base = 0x150000000ULL;
+    pe.size_of_image = static_cast<std::uint32_t>(img.size());
+    Runtime rt;
+    std::mutex fault_m;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) {
+        std::lock_guard<std::mutex> lock(fault_m);
+        faults.push_back(f);
+    };
+    std::vector<PeImport> named;
+    for (std::size_t i = 0; i < std::size(thr_test::kNames); ++i) {
+        named.push_back({thr_test::kSlotBase + 8 * i, "KERNEL32.dll", thr_test::kNames[i], 0});
+    }
+    rt.name_imports(named);
+    const FnRow rows[] = {{kTimerCb, &timer_cb}, {kWaitCb, &wait_cb}, {kRegCb, &reg_cb}};
+    rt.add_table(rows, std::size(rows));
+    std::string err;
+    tb::Process proc(rt, pe, img.data());
+    kn::Kernel kern(rt);
+    wse::recomp::threadpool::Pool pool(rt, proc, kern);
+    expect(proc.init(&err) && kern.install() >= 10 && pool.install() == 10, "pool: the thread-pool shims bind");
+    GuestStack stack(256 * 1024);
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    tb::GuestThread& main_thread = proc.create_thread(0, 0);
+    tb::Process::attach(s, main_thread);
+
+    // A one-shot timer 10 ms out, then a periodic one, then cancelled.
+    alignas(8) std::int64_t due = -100000;  // 10 ms, relative
+    const auto pdue = reinterpret_cast<std::uintptr_t>(&due);
+    const std::uint64_t t = call(s, "CreateThreadpoolTimer", {kTimerCb, 0xC0, 0});
+    (void)call(s, "SetThreadpoolTimer", {t, pdue, 0, 0});
+    const bool once = until(g_timer, 3);
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    expect(t != 0 && once && size_of(g_timer) == 3 && g_timer[0] == 0xC0 && g_timer[1] == t && g_timer[2] != 0 &&
+               g_timer[2] != main_thread.id,
+           "pool: a one-shot timer calls back once on its own guest thread (context, timer)");
+    (void)call(s, "SetThreadpoolTimer", {t, pdue, 5, 0});
+    const bool periodic = until(g_timer, 3 * 4);
+    (void)call(s, "SetThreadpoolTimer", {t, 0, 0, 0});
+    (void)call(s, "WaitForThreadpoolTimerCallbacks", {t, 1});
+    const std::size_t after_cancel = size_of(g_timer);
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    expect(periodic && size_of(g_timer) == after_cancel, "pool: a periodic timer repeats until a null due time cancels it");
+    (void)call(s, "CloseThreadpoolTimer", {t});
+
+    // A thread-pool wait on an auto-reset event, then one that times out.
+    const std::uint64_t ev = call(s, "CreateEventW", {0, 0, 0, 0});
+    const std::uint64_t w = call(s, "CreateThreadpoolWait", {kWaitCb, 0xD0, 0});
+    (void)call(s, "SetThreadpoolWait", {w, ev, 0});
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const bool none_yet = size_of(g_wait) == 0;
+    (void)call(s, "SetEvent", {ev});
+    const bool fired = until(g_wait, 2);
+    expect(none_yet && fired && g_wait[0] == 0xD0 && g_wait[1] == kn::kWaitObject0 &&
+               call(s, "WaitForSingleObject", {ev, 0}) == kn::kWaitTimeout,
+           "pool: a thread-pool wait fires when the event is set, and consumes the auto-reset event");
+    alignas(8) std::int64_t timeout = -200000;  // 20 ms
+    (void)call(s, "SetThreadpoolWait", {w, ev, reinterpret_cast<std::uintptr_t>(&timeout)});
+    expect(until(g_wait, 4) && g_wait[3] == kn::kWaitTimeout, "pool: a thread-pool wait with a timeout reports WAIT_TIMEOUT");
+    (void)call(s, "CloseThreadpoolWait", {w});
+
+    // RegisterWaitForSingleObject: repeats per signal until unregistered; WT_EXECUTEONLYONCE.
+    alignas(8) std::uint64_t reg = 0;
+    const auto preg = reinterpret_cast<std::uintptr_t>(&reg);
+    const bool registered = call(s, "RegisterWaitForSingleObject", {preg, ev, kRegCb, 0xE0, 0xFFFFFFFFULL, 0}) == 1;
+    (void)call(s, "SetEvent", {ev});
+    const bool r1 = until(g_reg, 2);
+    (void)call(s, "SetEvent", {ev});
+    const bool r2 = until(g_reg, 4);
+    const bool unreg = call(s, "UnregisterWaitEx", {reg, threadpool::kInvalidHandle}) == 1;
+    (void)call(s, "SetEvent", {ev});
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    expect(registered && reg != 0 && r1 && r2 && unreg && size_of(g_reg) == 4 && g_reg[0] == 0xE0 && g_reg[1] == 0 &&
+               g_reg[3] == 0,
+           "pool: a registered wait calls back on every signal until UnregisterWaitEx");
+    (void)call(s, "ResetEvent", {ev});
+    alignas(8) std::uint64_t reg2 = 0;
+    (void)call(s, "RegisterWaitForSingleObject",
+               {reinterpret_cast<std::uintptr_t>(&reg2), ev, kRegCb, 0xE1, 10, threadpool::kExecuteOnlyOnce});
+    const bool timed = until(g_reg, 6);
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    expect(timed && size_of(g_reg) == 6 && g_reg[4] == 0xE1 && g_reg[5] == 1 && call(s, "UnregisterWait", {reg2}) == 1,
+           "pool: WT_EXECUTEONLYONCE with a timeout calls back once with TimerOrWaitFired = TRUE");
+    expect(faults.empty(), "pool: no faults");
+}
+
 // --- R3 unwinder (`unwind.h`): hand-built functions, unwind codes and stacks ---------------------
 void test_unwinder() {
     namespace uw = wse::recomp::unwind;
@@ -3339,6 +3486,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_import_bridge();
     test_thread_environment();
     test_threads_and_sync();
+    test_threadpool();
     test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");

@@ -32,3 +32,13 @@ InitializeCriticalSection
 EnterCriticalSection
 LeaveCriticalSection
 DeleteCriticalSection
+CreateThreadpoolTimer
+SetThreadpoolTimer
+WaitForThreadpoolTimerCallbacks
+CloseThreadpoolTimer
+CreateThreadpoolWait
+SetThreadpoolWait
+CloseThreadpoolWait
+RegisterWaitForSingleObject
+UnregisterWaitEx
+ResetEvent

@@ -156,7 +156,7 @@ Design: `docs/RECOMP_PLAN.md` (the decompilation plan `docs/GAMEPLAY_PLAN.md` is
 - [x] **R0 Feasibility spikes:** generated `.so` loads on the user's phone, image at `0x140000000`, LLVM + LLD size and translation speed, one retail function translated and matching the PC (all four passed or measured on the phone, 2026-11-19).
 - [ ] **R1 Lifter:** PE / PDB / `.pdata`, function discovery, x86-64 → LLVM IR, coverage meter (built; CI differential corpus green; retail coverage run on the phone pending).
 - [ ] **R2 Host differential rig:** translated vs original code on the PC CPU; CI on synthetic binaries and an arm64 runner (built: PC recorder + phone check of 1,623 retail functions, arm64 CI job green; first phone run pending).
-- [ ] **R3 Runtime core:** guest memory, TEB/TLS, threads, dispatch, ABI bridge, memory ordering, Win64 unwinding and C++ EH (memory ordering, import bridge, unwinder, SEH runtime, catch-continuation discovery, TEB/TLS, threads and sync, nested and collided exceptions built and CI-green; thread-pool timers open).
+- [ ] **R3 Runtime core:** guest memory, TEB/TLS, threads, dispatch, ABI bridge, memory ordering, Win64 unwinding and C++ EH (memory ordering, import bridge, unwinder, SEH runtime, catch-continuation discovery, TEB/TLS, threads and sync, nested and collided exceptions, thread-pool timers and waits built and CI-green; phone check pending).
 - [ ] **R4 OS shims:** all 546 imports owned; startup reaches the main loop.
 - [ ] **R5 Graphics:** D3D9 subset + D3DX on the Vulkan RHI, fx_2_0 and SM2/3 → SPIR-V.
 - [ ] **R6 Audio, input, Lua:** translated `fmodex64` / `lua5164` over shims; DInput / XInput from SDL and the touch overlay.
@@ -191,6 +191,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 | 2026-11-19 | — | Phase 5 R3: thread environment `teb.h` (TEB/PEB, per-thread `gs:`, static TLS, TLS callbacks, `Tls*`/`Fls*`/last-error shims); TEB corpus |
 | 2026-11-19 | — | Phase 5 R3: threads (`threads.h`, host thread per guest thread, deferred `TerminateThread`) and kernel objects/sync (`kernel.h`: handles, waits, events, mutexes, semaphores, critical sections, condition variables, SLists) |
 | 2026-11-19 | — | Phase 5 R3: nested exceptions, collided unwinds and rethrow from a catch block (`seh.h` per-thread boundaries); corpus cases checked natively on Windows |
+| 2026-11-19 | — | Phase 5 R3: thread-pool timers and waits, `RegisterWaitForSingleObject` (`threadpool.h`) |
 | 2026-11-19 | — | Phase 5 R2 differential rig: `r2_rig.h`, `tools/r2_pc_record.cpp` (1,623 self-contained v1.1.5.6 functions recorded natively, deterministic), phone "R2 differential" section, CI job `recomp-arm64`; SSE NaN results and min/max now bit-exact on AArch64 (corpus 93/93 on both runners) |
 | 2026-11-19 | — | R0 complete on the phone ((d) `rglString::indexOf` through the PDB matches the PC); first retail R1 coverage 10,561/11,254 (93.84%); traps and `cpuid`-gated code now lift as run-time faults, `cpuid` hook, `rsqrt`/`rcp` |
 | 2026-11-19 | — | Phase 5 R1 lifter: Zydis 4.1.0 discovery, LLVM 18 lifter (integer, SSE, string families), `CpuState` v2 + `RuntimeHooks` + `runtime.h` dispatcher, import-free modules (`-z defs`), CI differential corpus (our C for Win64: 99/99 functions lift, 92/92 exports match native), R1 coverage meter in the phone spike run (`STATUS.md` §5) |

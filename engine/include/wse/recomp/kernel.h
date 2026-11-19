@@ -206,6 +206,17 @@ public:
         std::lock_guard<std::mutex> lock(m_);
         return thread_locked(t);
     }
+    // SetEvent from host code (`threadpool.h` UnregisterWaitEx); false when `h` is not an event.
+    bool signal_event(const CpuState& s, std::uint64_t h) {
+        std::lock_guard<std::mutex> lock(m_);
+        std::shared_ptr<Object> o = resolve_locked(s, h);
+        if (!o || o->kind != Kind::event) {
+            return false;
+        }
+        o->signaled = true;
+        cv_.notify_all();
+        return true;
+    }
     // A thread started by CreateThread (`threads.h`): found by id from now on.
     void register_thread(const std::shared_ptr<Object>& o) {
         std::lock_guard<std::mutex> lock(m_);
@@ -335,41 +346,59 @@ private:
 
     // The wait core: returns the WAIT_* result, or nothing when the thread's exit began.
     bool wait(CpuState& s, std::uint64_t h, std::uint32_t ms, std::uint32_t& result) {
+        return wait_object(s, h, ms, nullptr, result) != WaitEnd::exiting;
+    }
+
+public:
+    enum class WaitEnd { done, stopped, exiting };
+    // The wait core: `result` is the WAIT_* result when `done`. `stop` (read under `mutex()`;
+    // whoever makes it true notifies `changed()`) ends the wait early (`stopped`, nothing
+    // acquired); `exiting` means `s`'s thread was marked by TerminateThread and its exit began.
+    WaitEnd wait_object(CpuState& s, std::uint64_t h, std::uint32_t ms, const std::function<bool()>* stop,
+                        std::uint32_t& result) {
         std::unique_lock<std::mutex> lock(m_);
         std::shared_ptr<Object> o = resolve_locked(s, h);
         if (!o) {
             lock.unlock();
             teb::set_error(s, kErrorInvalidHandle);
             result = kWaitFailed;
-            return true;
+            return WaitEnd::done;
         }
         const std::uint32_t tid = tid_of(s);
         teb::GuestThread* me = teb::current(s);
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
         while (true) {
+            if (stop != nullptr && (*stop)()) {
+                return WaitEnd::stopped;
+            }
             if (try_acquire(*o, tid, result)) {
-                return true;
+                return WaitEnd::done;
             }
             if (me != nullptr && me->terminate_requested) {
                 lock.unlock();
                 teb::begin_thread_exit(s, me->exit_code);
-                return false;
+                return WaitEnd::exiting;
             }
             if (ms == 0) {
                 result = kWaitTimeout;
-                return true;
+                return WaitEnd::done;
             }
             if (ms == kInfinite) {
                 cv_.wait(lock);
             } else if (cv_.wait_until(lock, deadline) == std::cv_status::timeout) {
+                if (stop != nullptr && (*stop)()) {
+                    return WaitEnd::stopped;
+                }
                 if (try_acquire(*o, tid, result)) {
-                    return true;
+                    return WaitEnd::done;
                 }
                 result = kWaitTimeout;
-                return true;
+                return WaitEnd::done;
             }
         }
     }
+
+private:
 
     void wait_shim(CpuState& s) {
         std::uint32_t r = 0;

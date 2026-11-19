@@ -28,6 +28,7 @@
 #include "wse/recomp/runtime.h"
 #include "wse/recomp/seh.h"
 #include "wse/recomp/teb.h"
+#include "wse/recomp/threadpool.h"
 #include "wse/recomp/threads.h"
 #include "wse/recomp/x86_interp.h"
 #include "wse/recomp/x86_synth.h"
@@ -416,6 +417,8 @@ void test_corpus(const char* path) {
     const std::size_t kernel_shims = kern.install();
     const std::size_t thread_shims = thr.install();
     expect(kernel_shims >= 9 && thread_shims >= 5, "corpus: the kernel and thread shims bind");
+    threadpool::Pool pool(rt, process, kern);  // `t_pool_*`, `t_register_wait`
+    expect(pool.install() >= 9, "corpus: the thread-pool shims bind");
     {
         GuestStack stack;
         CpuState s;

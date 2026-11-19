@@ -122,6 +122,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/recomp_test.cpp` | host suite `recomp`: `decode_insn` operands/rejections, `Interpreter` flags, `decode_function`, synthetic R0 (c) model match, `parse_pe`/`map_pe_sections`, and R0 (d) vectors/FNV-1a | synthetic x86-64 bytes + synthetic PE32+ |
 | `include/wse/recomp/cpu_state.h`, `include/wse/recomp/runtime.h` | R1 `CpuState` (448 B: GPRs, `rip`, flags, XMM, MXCSR, hook table) and `RuntimeHooks`; `Runtime`: the `wse_fn_table` dispatcher, `import_call` shims, `bad_return` / `unsupported` / segment faults, `div128` | port infrastructure |
 | `src/recomp/discover.{h,cpp}`, `src/recomp/lift_r1*.{h,cpp}`, `src/recomp/llvm_common.h` | R1: Zydis 4.1.0 function discovery (control flow from each entry, MSVC and clang jump tables, tail calls) and the LLVM 18 lifter (`R1Translator`; families `lift_r1_int.cpp`, `lift_r1_sse.cpp`, `lift_r1_string.cpp`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R1 design") |
+| `include/wse/recomp/threadpool.h` | R3 thread-pool timers and waits, `RegisterWaitForSingleObject` (`threadpool::Pool`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R3 design") |
 | `include/wse/recomp/threads.h`, `include/wse/recomp/kernel.h` | R3 threads and sync: `CreateThread` and the thread calls on host threads (`threads::Threads`); the handle table, waits, events, mutexes, semaphores, critical sections, condition variables, SLists, `Sleep` (`kernel::Kernel`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R3 design") |
 | `include/wse/recomp/teb.h` | R3 thread environment: TEB/PEB in guest memory, static TLS from the TLS directory (`read_pe_tls` in `pe_image.h`), TLS callbacks, and the `Tls*`, `Fls*`, `GetLastError`/`SetLastError`, `GetCurrentThreadId`/`ProcessId`/`Thread`/`Process` shims (`teb::Process`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R3 design") |
 | `include/wse/recomp/unwind.h`, `include/wse/recomp/seh.h` | R3 exceptions: the Win64 virtual unwinder over the exe's own `.pdata`/`.xdata` (`lookup_function`, `virtual_unwind`: partial prologs, epilogs from their instructions, chained info, machine frames) and the Windows layer under the exe's own C++ EH (`seh::Exceptions`: `RaiseException`, `RtlUnwindEx` with unwind consolidation, `RtlVirtualUnwind`, `RtlLookupFunctionEntry`, `RtlCaptureContext`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R3 design") |
@@ -914,8 +915,13 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   owning the section faults. `SetThreadAffinityMask` and `SetThreadPriority` are recorded and
   returned, not applied to the host thread; `GetThreadTimes` reports zeros. Every wait wakes on
   any signal and re-checks (one host condition variable). `Threads` joins its host threads when
-  destroyed (and joins finished ones whenever a thread starts). Thread-pool timers and waits
-  are not bound: calling one faults as a missing import.
+  destroyed (and joins finished ones whenever a thread starts).
+- **R3 thread pool (`threadpool.h`):** one worker guest thread per timer or wait object, so one
+  object's callbacks never overlap (Windows may run a periodic timer's callbacks concurrently when
+  one runs long); a periodic timer's next due time is the previous one plus the period.
+  `UnregisterWaitEx` with an event waits for running callbacks and signals the event before it
+  returns (Windows returns at once and signals later). `WaitForThreadpool*Callbacks` and
+  `UnregisterWaitEx` called from the object's own callback do not wait for themselves.
 - **R3 memory ordering (`lift_r1.cpp` `Ctx::load`/`store`):** shared accesses are acquire/release
   when aligned and barrier-fenced when not; `rsp`-based operands are treated as thread-local stack.
   A stack address passed to another thread would be accessed without ordering (accepted for now).

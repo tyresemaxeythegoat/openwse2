@@ -294,6 +294,126 @@ EXPORT NOINLINE u64 t_thread_exit(u64 a, u64 b, u64 c, u64 d) {
     return 0x600D;
 }
 
+/* --- Thread-pool timers and waits (`wse/recomp/threadpool.h`) ------------------------------------ */
+__declspec(dllimport) u64 CreateThreadpoolTimer(void (*callback)(void*, void*, u64), void* context, void* env);
+__declspec(dllimport) void SetThreadpoolTimer(u64 timer, const long long* due, u32 period, u32 window);
+__declspec(dllimport) void WaitForThreadpoolTimerCallbacks(u64 timer, int cancel);
+__declspec(dllimport) void CloseThreadpoolTimer(u64 timer);
+__declspec(dllimport) u64 CreateThreadpoolWait(void (*callback)(void*, void*, u64, u32), void* context, void* env);
+__declspec(dllimport) void SetThreadpoolWait(u64 wait, u64 handle, const long long* timeout);
+__declspec(dllimport) void CloseThreadpoolWait(u64 wait);
+__declspec(dllimport) int RegisterWaitForSingleObject(u64* wait, u64 handle, void (*callback)(void*, unsigned char),
+                                                      void* context, u32 ms, u32 flags);
+__declspec(dllimport) int UnregisterWaitEx(u64 wait, u64 completion);
+__declspec(dllimport) int ResetEvent(u64 event);
+
+static volatile u64 g_pool_count;
+static volatile u64 g_pool_seen;
+static volatile u64 g_pool_done; /* an event the callbacks set */
+
+EXPORT void teb_timer_callback(void* instance, void* context, u64 timer) {
+    (void)instance;
+    (void)timer;
+    g_pool_seen = (u64)context;
+    if (++g_pool_count == 3) {
+        SetEvent(g_pool_done);
+    }
+}
+
+/* A periodic timer (first due in 1 ms, then every 2 ms) fires three times on a pool thread. */
+EXPORT NOINLINE u64 t_pool_timer(u64 a, u64 b, u64 c, u64 d) {
+    (void)b;
+    (void)c;
+    (void)d;
+    g_pool_count = 0;
+    g_pool_done = CreateEventW(0, 1, 0, 0);
+    const u64 t = CreateThreadpoolTimer(teb_timer_callback, (void*)(a | 1), 0);
+    const long long due = -10000; /* 1 ms */
+    if (t == 0 || g_pool_done == 0) {
+        return 1;
+    }
+    SetThreadpoolTimer(t, &due, 2, 0);
+    if (WaitForSingleObject(g_pool_done, INFINITE) != 0) {
+        return 2;
+    }
+    SetThreadpoolTimer(t, 0, 0, 0);
+    WaitForThreadpoolTimerCallbacks(t, 1);
+    CloseThreadpoolTimer(t);
+    CloseHandle(g_pool_done);
+    return g_pool_count >= 3 && g_pool_seen == (a | 1) ? 0x600D : 3;
+}
+
+static volatile u64 g_wait_result;
+EXPORT void teb_wait_callback(void* instance, void* context, u64 wait, u32 result) {
+    (void)instance;
+    (void)wait;
+    g_pool_seen = (u64)context;
+    g_wait_result = result;
+    SetEvent(g_pool_done);
+}
+
+/* A thread-pool wait fires when its event is set (and consumes the auto-reset event), and once
+ * more with WAIT_TIMEOUT when re-armed with a 1 ms timeout. */
+EXPORT NOINLINE u64 t_pool_wait(u64 a, u64 b, u64 c, u64 d) {
+    (void)b;
+    (void)c;
+    (void)d;
+    g_pool_done = CreateEventW(0, 0, 0, 0);
+    const u64 ev = CreateEventW(0, 0, 0, 0);
+    const u64 w = CreateThreadpoolWait(teb_wait_callback, (void*)(a | 1), 0);
+    if (w == 0 || ev == 0 || g_pool_done == 0) {
+        return 1;
+    }
+    SetThreadpoolWait(w, ev, 0);
+    SetEvent(ev);
+    if (WaitForSingleObject(g_pool_done, INFINITE) != 0 || g_wait_result != 0 || g_pool_seen != (a | 1) ||
+        WaitForSingleObject(ev, 0) != 0x102) {
+        return 2;
+    }
+    const long long timeout = -10000;
+    SetThreadpoolWait(w, ev, &timeout);
+    if (WaitForSingleObject(g_pool_done, INFINITE) != 0 || g_wait_result != 0x102) {
+        return 3;
+    }
+    CloseThreadpoolWait(w);
+    CloseHandle(ev);
+    CloseHandle(g_pool_done);
+    return 0x600D;
+}
+
+EXPORT void teb_registered_callback(void* context, unsigned char timed_out) {
+    g_pool_seen = (u64)context + timed_out;
+    ++g_pool_count;
+    SetEvent(g_pool_done);
+}
+
+/* RegisterWaitForSingleObject calls back on each signal of its event until UnregisterWaitEx. */
+EXPORT NOINLINE u64 t_register_wait(u64 a, u64 b, u64 c, u64 d) {
+    (void)b;
+    (void)c;
+    (void)d;
+    const u64 ctx = (a & ~(u64)0xFF) | 0x10;
+    g_pool_count = 0;
+    g_pool_done = CreateEventW(0, 0, 0, 0);
+    const u64 ev = CreateEventW(0, 0, 0, 0);
+    u64 reg = 0;
+    if (!RegisterWaitForSingleObject(&reg, ev, teb_registered_callback, (void*)ctx, INFINITE, 0) || reg == 0) {
+        return 1;
+    }
+    for (int i = 0; i < 2; ++i) {
+        SetEvent(ev);
+        if (WaitForSingleObject(g_pool_done, INFINITE) != 0) {
+            return 2;
+        }
+    }
+    if (!UnregisterWaitEx(reg, ~(u64)0) || g_pool_count != 2 || g_pool_seen != ctx) {
+        return 3;
+    }
+    CloseHandle(ev);
+    CloseHandle(g_pool_done);
+    return 0x600D;
+}
+
 /* `_tls_used` and the callback pointer are reached by no code: keep them. */
 __asm__(".section .drectve,\"yn\"\n"
         "  .ascii \" -include:_tls_used -include:teb_tls_callback_ptr\"\n"

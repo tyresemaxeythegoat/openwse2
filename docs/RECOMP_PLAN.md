@@ -325,8 +325,15 @@ event, mutex, semaphore, named objects shared) live in one host handle table; on
 and condition variable serve every wait. A critical section keeps a host lock whose pointer is
 in its `LockSemaphore` field and mirrors `OwningThread`/`RecursionCount`; a condition
 variable's word holds a host object created on first use; SLists keep the x64 16-byte header
-(depth and sequence in word 0, first entry in word 1) under one host lock. Thread-pool timers
-and waits (`CreateThreadpoolTimer`, `RegisterWaitForSingleObject`) are not bound yet.
+(depth and sequence in word 0, first entry in word 1) under one host lock.
+
+**Thread-pool timers and waits (built, `threadpool.h`).** `CreateThreadpoolTimer`/`Wait`,
+`SetThreadpoolTimer`/`Wait`, `WaitForThreadpool*Callbacks`, `CloseThreadpool*`,
+`RegisterWaitForSingleObject`, `UnregisterWait(Ex)` (1-3 call sites each in v1.1.5.6). Each object
+has one worker, a guest thread with its own TEB, stack and TLS attach/detach callbacks (as Windows
+pool threads are); it sleeps until the object is due and calls the callback. Waits use the
+kernel's wait, so an auto-reset event is consumed. The corpus cases were also run natively on
+Windows with the same results.
 
 **Tests (CI, synthetic).** The corpus gains assembly functions with `.seh_handler` routines
 written in C: they raise, catch, unwind through several frames and resume, on the x86 and arm64
