@@ -44,12 +44,33 @@ Lifted fail_insn(Ctx& c, const DInsn& d) {
     return Lifted::unsupported;
 }
 
-// x86 SSE returns the negative "real indefinite" QNaN (0xFFC00000 / 0xFFF8000000000000) when an
-// operation makes a NaN from non-NaN inputs (0/0, inf - inf, sqrt(-1); Intel SDM vol. 1 4.8.3.7);
-// AArch64 returns its positive default NaN. Found by the arm64 CI corpus check.
+// The NaN an SSE arithmetic instruction returns (Intel SDM vol. 1, table 4-7): the first source's
+// NaN if it is one, else the second's, quieted either way; else, when the operation itself made a
+// NaN (0/0, inf - inf, sqrt(-1)), the negative "real indefinite" QNaN (0xFFC00000 /
+// 0xFFF8000000000000). LLVM leaves the NaN payload, sign and operand order unspecified (it may
+// commute `fmul`), and AArch64 makes a positive default NaN, so the result is rebuilt from the
+// integer bits. Found by the arm64 CI corpus check.
+llvm::Type* int_like(Ctx& c, llvm::Type* ft) {
+    const unsigned bits = ft->getScalarType()->getPrimitiveSizeInBits();
+    if (auto* vt = llvm::dyn_cast<llvm::FixedVectorType>(ft)) {
+        return llvm::FixedVectorType::get(c.ity(bits), vt->getNumElements());
+    }
+    return c.ity(bits);
+}
+
 Value* x86_nan(Ctx& c, Value* r, Value* a, Value* b = nullptr) {
-    Value* made = c.B.CreateAnd(c.B.CreateFCmpUNO(r, r), c.B.CreateNot(c.B.CreateFCmpUNO(a, b != nullptr ? b : a)));
-    return c.B.CreateSelect(made, llvm::ConstantFP::getQNaN(r->getType(), /*Negative=*/true), r);
+    auto& B = c.B;
+    llvm::Type* ft = r->getType();
+    llvm::Type* it = int_like(c, ft);
+    const bool dbl = ft->getScalarType()->isDoubleTy();
+    Value* qbit = llvm::ConstantInt::get(it, dbl ? (1ULL << 51) : (1ULL << 22));
+    Value* indefinite = llvm::ConstantInt::get(it, dbl ? 0xFFF8000000000000ULL : 0xFFC00000ULL);
+    Value* out = B.CreateSelect(B.CreateFCmpUNO(r, r), indefinite, B.CreateBitCast(r, it));
+    if (b != nullptr) {
+        out = B.CreateSelect(B.CreateFCmpUNO(b, b), B.CreateOr(B.CreateBitCast(b, it), qbit), out);
+    }
+    out = B.CreateSelect(B.CreateFCmpUNO(a, a), B.CreateOr(B.CreateBitCast(a, it), qbit), out);
+    return B.CreateBitCast(out, ft);
 }
 
 // MIN/MAX as x86 defines them: `a < b ? a : b` (`>` for max), so the second operand comes back when
