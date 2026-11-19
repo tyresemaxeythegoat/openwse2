@@ -161,9 +161,16 @@ it is lifted as a fault too and counted separately by the coverage meter.
 R1 deviations (each also noted next to its code): `rsqrt*`/`rcp*` return the exact `1/sqrt(x)` and
 `1/x` (x86 returns an approximation within 1.5 * 2^-12 whose bits differ between vendors); a `lock` operand is assumed naturally aligned
 (AArch64 atomics need it; x86 would bus-lock a misaligned one); `cvtsd2ss`/`cvtpd2ps` round to
-nearest whatever MXCSR.RC says; with two NaN inputs the NaN that propagates may differ from x86
-(LLVM treats `fadd` and friends as commutative); string instructions with a `gs:`/`fs:` override
-and 16-bit addressing are unsupported.
+nearest whatever MXCSR.RC says; string instructions with a `gs:`/`fs:` override and 16-bit
+addressing are unsupported.
+
+**NaN results are x86's** (found by the arm64 corpus job, 2026-11-19): AArch64 makes a positive
+default NaN where x86 makes the negative "real indefinite", LLVM may commute `fadd`/`fmul` and
+leaves NaN payloads unspecified, and its AArch64 backend turns `select(fcmp)` min/max against a
+constant into `fmaxnm`/`fminnm`, which turn a signaling-NaN input into a NaN. So every SSE
+arithmetic result is rebuilt from the integer bits by Intel's rule (first source's NaN quieted,
+else the second's, else real indefinite; SDM vol. 1 table 4-7), and min/max quiet their first
+operand first. Translated AArch64 code now matches the x86 results bit for bit on the corpus.
 
 **Coverage meter.** Per build: how many functions decode, lift and verify, with the top
 unsupported mnemonics. It runs with the phone's R0 report and in CI on the synthetic corpus.

@@ -382,7 +382,7 @@ Lifted lift_scalar_fp_bin(Ctx& c, const DInsn& d, bool is_double) {
     switch (d.ins.mnemonic) {
     case ZYDIS_MNEMONIC_ADDSS:
     case ZYDIS_MNEMONIC_ADDSD:
-        // Note: on two NaN inputs, plain IEEE/ARM64 fadd may pick differently than x86's first-operand NaN rule (accepted per R1 spec).
+        // NaN results: `x86_nan` applies Intel's rule (first source, second, real indefinite).
         r = x86_nan(c, c.B.CreateFAdd(a, b), a, b);
         break;
     case ZYDIS_MNEMONIC_SUBSS:
@@ -425,7 +425,7 @@ Lifted lift_packed_fp_bin(Ctx& c, const DInsn& d, bool is_double) {
     switch (d.ins.mnemonic) {
     case ZYDIS_MNEMONIC_ADDPS:
     case ZYDIS_MNEMONIC_ADDPD:
-        // Note: on two NaN inputs, plain IEEE/ARM64 fadd may pick differently than x86's first-operand NaN rule (accepted per R1 spec).
+        // NaN results: `x86_nan` applies Intel's rule (first source, second, real indefinite).
         r = x86_nan(c, c.B.CreateFAdd(a, b), a, b);
         break;
     case ZYDIS_MNEMONIC_SUBPS:

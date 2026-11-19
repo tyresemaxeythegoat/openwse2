@@ -869,9 +869,11 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   `unsupported` hook with `#DE` in place of raising the exception (Win64 SEH arrives in R3).
 - **R1 aligned `lock` (`lift_r1_int.cpp`):** `lock`-prefixed operands are lowered as naturally
   aligned LLVM atomics; a misaligned one is not atomic-safe on the phone (x86 would bus-lock).
-- **R1 SSE (`lift_r1_sse.cpp`):** `cvtsd2ss`/`cvtpd2ps` round to nearest whatever MXCSR.RC says;
-  with two NaN inputs the propagated NaN may differ from x86. Float-to-int conversions give the
-  x86 "integer indefinite" value out of range instead of LLVM poison.
+- **R1 SSE (`lift_r1_sse.cpp`):** `cvtsd2ss`/`cvtpd2ps` round to nearest whatever MXCSR.RC says.
+  Float-to-int conversions give the x86 "integer indefinite" value out of range instead of LLVM
+  poison. NaN results follow Intel's rule bit for bit (`x86_nan`: first source, second source,
+  then the negative real indefinite), and min/max quiet their first operand so LLVM's AArch64
+  `fmaxnm`/`fminnm` lowering agrees with x86 on signaling NaNs.
 - **R1 string instructions (`lift_r1_string.cpp`):** `gs:`/`fs:` overrides, `lock` and 16-bit
   addressing are reported unsupported; there is no `memmove`/`memset` fast path (it would import
   libc).
