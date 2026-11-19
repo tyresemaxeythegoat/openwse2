@@ -57,8 +57,23 @@ inline void* host_reserve(std::size_t n) noexcept {
 #if defined(_WIN32)
     return VirtualAlloc(nullptr, n, 0x3000, 0x04);  // MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE
 #else
-    void* p = mmap(nullptr, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-    return p == MAP_FAILED ? nullptr : p;
+    // Windows' allocation granularity is 64 KiB and mmap's is the page: reserve one granule more,
+    // then unmap the head and tail around a 64 KiB-aligned block (`n` is a multiple of 64 KiB).
+    constexpr std::size_t kGranule = 65536;
+    void* p = mmap(nullptr, n + kGranule, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (p == MAP_FAILED) {
+        return nullptr;
+    }
+    const auto raw = reinterpret_cast<std::uintptr_t>(p);
+    const std::uintptr_t aligned = (raw + kGranule - 1) & ~static_cast<std::uintptr_t>(kGranule - 1);
+    if (aligned > raw) {
+        (void)munmap(p, aligned - raw);
+    }
+    const std::uintptr_t tail = raw + n + kGranule - (aligned + n);
+    if (tail != 0) {
+        (void)munmap(reinterpret_cast<void*>(aligned + n), tail);
+    }
+    return reinterpret_cast<void*>(aligned);
 #endif
 }
 inline void host_release(void* p, std::size_t n) noexcept {
