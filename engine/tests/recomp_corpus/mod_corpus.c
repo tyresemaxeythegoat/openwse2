@@ -397,10 +397,8 @@ __asm__(
     "  movq $0, mod_restore_count(%rip)\n"
     "  movl $0x1234, %ebx\n"
     "  leaq 0x20(%rsp), %rcx\n"
-    "  cmpq $99, mod_restore_count(%rip)\n" /* never taken: makes the resume point a block */
-    "  je t_restore_context_again\n"
     "  callq *__imp_RtlCaptureContext(%rip)\n"
-    "t_restore_context_again:\n"
+    "t_restore_context_resume:\n" /* the call's return address: no branch reaches it */
     "  incq mod_restore_count(%rip)\n"
     "  cmpq $2, mod_restore_count(%rip)\n"
     "  jae t_restore_context_done\n"
@@ -436,10 +434,8 @@ __asm__(
     "  movq $0, mod_restore_count(%rip)\n"
     "  movl $0x4321, %ebx\n"
     "  leaq 0x20(%rsp), %rcx\n"
-    "  cmpq $99, mod_restore_count(%rip)\n" /* never taken: makes the resume point a block */
-    "  je t_restore_longjump_again\n"
     "  callq *__imp_RtlCaptureContext(%rip)\n"
-    "t_restore_longjump_again:\n"
+    "t_restore_longjump_resume:\n" /* the call's return address: no branch reaches it */
     "  incq mod_restore_count(%rip)\n"
     "  cmpq $2, mod_restore_count(%rip)\n"
     "  jae t_restore_longjump_done\n"

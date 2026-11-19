@@ -550,8 +550,21 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
     }
     c.reload();
 
+    // A function that can resume (R3/R4) also starts a block at every call's return address:
+    // `RtlRestoreContext` continues there (MSVC `longjmp` to a `setjmp` call site, or a context
+    // that `RtlCaptureContext` took), so each one must be a case of the resume switch below.
+    const bool resumable = impl_->image.resumable.count(fn.entry) != 0;
+    std::set<std::uint64_t> starts = fn.block_starts;
+    if (resumable) {
+        for (const auto& kv : fn.insns) {
+            const DInsn& d = kv.second;
+            if (d.ins.meta.category == ZYDIS_CATEGORY_CALL && fn.at(d.next()) != nullptr) {
+                starts.insert(d.next());
+            }
+        }
+    }
     std::map<std::uint64_t, llvm::BasicBlock*> blocks;
-    for (const std::uint64_t b : fn.block_starts) {
+    for (const std::uint64_t b : starts) {
         char name[24];
         std::snprintf(name, sizeof(name), "b%llx", static_cast<unsigned long long>(b));
         blocks[b] = llvm::BasicBlock::Create(*impl_->context, name, f);
@@ -559,9 +572,10 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
     c.B.CreateBr(blocks.at(fn.entry));
 
     // Resume switch (R3): reload the restored context and continue at `rip`, which must be one of
-    // this function's blocks (a catch continuation or `__except` target).
+    // this function's blocks (a catch continuation, an `__except` target, or a call's return
+    // address).
     llvm::BasicBlock* resume = nullptr;
-    if (impl_->image.resumable.count(fn.entry) != 0) {
+    if (resumable) {
         resume = llvm::BasicBlock::Create(*impl_->context, "resume", f);
         llvm::BasicBlock* unknown = llvm::BasicBlock::Create(*impl_->context, "resume_unknown", f);
         c.B.SetInsertPoint(resume);
@@ -592,7 +606,7 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
         c.B.CreateRetVoid();
     };
 
-    for (const std::uint64_t start : fn.block_starts) {
+    for (const std::uint64_t start : starts) {
         c.B.SetInsertPoint(blocks.at(start));
         std::uint64_t va = start;
         while (true) {

@@ -409,8 +409,10 @@ point with `DLL_PROCESS_ATTACH` and a non-null `lpReserved`, dependencies first.
 takes every translated image (`add_image`) and picks the one containing each frame's `rip`. The
 lua5164 SEH entry points: `RtlUnwind` (as `RtlUnwindEx` without a context) and `RtlRestoreContext`
 (resume through `unwind_rsp`; `STATUS_LONGJUMP` takes the nonvolatile registers from the jump
-buffer). Still open in this slice: translating `lua5164` from the user's install, where any
-`setjmp` caller must be resumable, and reading the DLLs' TLS directories.
+buffer). A resumable function's call return addresses are block starts, so such a restore can
+continue at a `setjmp` call site. Still open in this slice: translating `lua5164` from the user's
+install (each `setjmp` caller must have a `.pdata` handler to be resumable), and reading the DLLs'
+TLS directories.
 
 **Bring-up tool (local only).** `tools/r4_run.cpp`: translates the exe and `lua5164` from the
 user's install, maps them, binds every shim, runs the CRT entry point on the main guest thread, and
