@@ -64,7 +64,7 @@ there are no CRT DLLs to replace:
 | **R1 Lifter** | PE + PDB + `.pdata` loader; function discovery (`.pdata`, PDB publics, call targets, jump tables, the no-`.pdata` leaf code); x86-64 decoding (Zydis, MIT); lifting to LLVM IR for integer, flags, SSE/SSE2 and string instructions. A coverage meter reports the share of functions that lift with no unsupported instruction. |
 | **R2 Host differential rig** | The same lifter targets **x86-64 on the PC**, so translated and original code run side by side on the real CPU (as the 2026-11 flag rig did). Every function is checked on generated inputs. CI runs the lifter on synthetic test binaries only (no retail code), and an arm64 CI runner (`ubuntu-24.04-arm`) executes the ARM64 output. |
 | **R3 Runtime core** | Guest memory, TEB/TLS, threads, the dispatch table, the import-thunk ABI bridge, memory-ordering lowering, Win64 unwinding and C++ EH. |
-| **R4 OS shims** | All 546 imports listed with an owner; the startup path (`WinMain`, window, configuration, file I/O) runs to the main loop. |
+| **R4 OS shims** | All 546 imports listed with an owner; the startup path (`WinMain`, window, configuration, file I/O) runs to the main loop on a recording stub D3D9 device, with `lua5164` translated (see "R4 design"). |
 | **R5 Graphics** | D3D9 subset and D3DX on the Vulkan RHI; fx_2_0 and SM2/3 → SPIR-V; the main menu renders. |
 | **R6 Audio, input, Lua** | Translated `fmodex64` and `lua5164` over shims (or the FMOD-API fallback); DInput and XInput from SDL plus the touch overlay. |
 | **R7 PC bring-up** | The whole exe, translated for x86-64, runs on Windows **with our shims only** (no `d3d9.dll`, no FMOD DLL loaded): main menu, campaign, a battle. Savegame oracle: retail saves load, and our saves load in retail. This is where most bugs get found, with a debugger, before the phone. |
@@ -341,6 +341,80 @@ runners. The exe's real `__CxxFrameHandler3` is checked by the phone/PC rig.
 
 **Order:** memory ordering → import bridge (names, argument helpers, `call_guest`) → unwinder and
 exception dispatch with the lifter's resume switch → TEB/TLS → threads.
+
+## R4 design (2026-11-19)
+
+Decided with the user (interview, 2026-11-19):
+
+| Question | Decision |
+| --- | --- |
+| Where bring-up runs | **WSL Ubuntu on the user's PC.** The user installs WSL + Ubuntu (admin rights; the agent changes no system settings); the recompiler builds there exactly as in CI (`WSE_ENABLE_LLVM=ON`, apt LLVM 18) and the retail exe runs locally on Linux x86-64 under gdb. Retail code stays local; CI still sees only synthetic code. |
+| Where R4 stops | **A recording stub D3D9 device**: `Direct3DCreate9` and D3DX return COM objects whose methods succeed and are logged, so startup reaches the main loop and frames tick headless. R5 replaces the stub with the Vulkan-backed device. |
+| Method | **Hybrid**: the high-count families first, each with host tests and corpus cases; then run startup and implement each next missing import in the order it is hit. |
+| Files | **One `Vfs`, two backends**: a host-directory backend (the install, case-insensitive, `\` separators) for bring-up and the SAF backend on the phone; writes (saves, `rgl_config.txt`, logs) go to a per-user writable layer. |
+| Network and Steam | **Offline stubs**: sockets and HTTP fail with their real error codes; `steam_api64` behaves as absent. |
+| Window and messages | **Fake `HWND`, headless**: `CreateWindowExW` returns a fake window whose `WndProc` the shims call; the message queue is ours (fed from SDL events later). |
+| FMOD | **A silent FMOD-API stub** (valid opaque handles, every call succeeds, nothing plays) until R6 translates `fmodex64`. |
+| Lua | **Translate the shipped `lua5164.dll` in R4** (pulled forward from R6): startup initializes Lua. |
+
+**Measured import surface (v1.1.5.6, local census; call sites are instructions that reference
+the import slot).** 482 static imports in 21 DLLs plus 64 delay-loaded (`fmodex64` 54,
+`steam_api64` 10). R3 already shims 72 `KERNEL32` functions.
+
+| DLL | Functions | Call sites | R4 owner |
+| --- | --- | --- | --- |
+| `lua5164` | 103 | 3,800 | translated (697,344 B, base `0x180000000`, 1,552 relocations, 2,257 `.pdata`, 148 exports, no PDB, no TLS; its only imports are 105 `KERNEL32`) |
+| `KERNEL32` | 223 (72 shimmed) | 1,811 | families below |
+| `USER32` | 40 | 71 | window and messages (fake `HWND`), clipboard, cursor, `MessageBoxA` (logged) |
+| `WINMM` | 3 | 70 | `timeGetTime`, `timeBeginPeriod`/`EndPeriod` (time family) |
+| `WS2_32` | 37 (28 by ordinal) | 45 | offline stub |
+| `d3dx9_43` | 17 | 41 | stub device helpers; math functions (`D3DXMatrix*`, `D3DXVec*`) real |
+| `ADVAPI32` | 10 | 15 | registry (an in-memory hive persisted to the writable layer), `Crypt*` hashing (real MD5/SHA-1) |
+| `WINHTTP`, `WININET`, `urlmon` | 13 | 16 | offline stub |
+| `SHELL32`, `SHLWAPI` | 6 | 17 | `SHGetFolderPathA` → writable-layer folders; `ShellExecuteA` logged, fails |
+| `IMM32`, `dbghelp`, `ole32`, `OLEAUT32`, `PSAPI`, `GDI32`, `d3d9`, `DINPUT8`, `XINPUT1_3` | 25 | 26 | IME off; `StackWalk64` and crash dumps report "unavailable"; COM init; `Direct3DCreate9` → stub; `DirectInput8Create` → stub device; XInput "no controller" until R6 |
+
+**`KERNEL32` families still to shim (151 functions).** Each is one header under
+`engine/include/wse/recomp/`, bound by name like R3's:
+
+| Family | Main functions (call sites) | Notes |
+| --- | --- | --- |
+| Time and counters | `QueryPerformanceCounter` 110, `GetSystemTimeAsFileTime` 21, `GetTickCount` 15, `QueryPerformanceFrequency` 7, local/system time conversions, time zone | monotonic host clock; QPC frequency 10 MHz |
+| CRT support | `DecodePointer` 42, `EncodePointer` 35, `IsDebuggerPresent`, `IsProcessorFeaturePresent`, `SetUnhandledExceptionFilter`, `RtlPcToFileHeader`, `InitOnceExecuteOnce`, command line, startup info, environment, `ExitProcess`/`TerminateProcess` | pointers encoded with a per-process cookie as Windows does |
+| Strings and locale | `MultiByteToWideChar` 34, `WideCharToMultiByte` 21, `FormatMessageA/W` 8, code pages (1252 as ACP, 437 as OEM), `LCMapStringEx`, `CompareStringEx`, `GetLocaleInfoEx`, date and time formats | `en-US` locale; UTF-8 code page supported |
+| Files and directories | `FindFirstFileA` 46, `FindClose` 41, `CreateDirectoryA` 22, `ReadFile`/`WriteFile` 16, `DeleteFileA` 7, `GetFullPathNameA` 6, attributes, current directory, temp path, file mapping, locks, std handles and console | through `Vfs` (two backends + writable layer) |
+| Modules and resources | `GetProcAddress` 52, `GetModuleHandleW/A/ExW` 37, `LoadLibrary*` 14, `GetModuleFileNameA/W` 7, `FreeLibrary`, `FindResource*`/`LoadResource`/`LockResource`/`SizeofResource` | a module registry: translated modules (exe, `lua5164`) and synthetic ones (system DLLs, the FMOD and Steam stubs); delay loading needs nothing more (its helper is statically linked) |
+| Memory | `Heap*` (~30), `Global*`/`Local*` 14, `VirtualAlloc`/`Free`/`Protect`/`Query` (lua), `GlobalMemoryStatusEx` | heaps over the host allocator; virtual memory from a reserved guest range |
+| System information | `GetSystemInfo`, `GetNativeSystemInfo`, `GetLogicalProcessorInformation`, `GetProcessAffinityMask`, `GetVersionExW` (Windows 10), `IsWow64Process` | the fixed CPU profile of `Runtime::hook_cpuid` |
+| Timer queues | `CreateTimerQueue(Timer)` 4, `ChangeTimerQueueTimer` 2, `DeleteTimerQueueTimer` 4 | on `threadpool.h` |
+| Process | `CreateProcessA` 1 | fails (logged) |
+
+**Runtime work R4 needs beyond shims.** Several translated modules: each image maps at its
+preferred base when free (relocations otherwise), is translated by its own `R1Translator` batch,
+and adds its table to the one `Runtime`; `seh::Exceptions` looks up `.pdata` across all images;
+`lua5164` adds `RtlRestoreContext` and `RtlUnwind` (C `longjmp` and SEH unwinds) to the SEH layer.
+A translated DLL's `DllMain` (`_DllMainCRTStartup`) runs with `DLL_PROCESS_ATTACH`, and its TLS
+directory is read like the exe's.
+
+**Bring-up tool (local only).** `tools/r4_run.cpp`: translates the exe and `lua5164` from the
+user's install, maps them, binds every shim, runs the CRT entry point on the main guest thread, and
+logs the first call of each import; a missing import faults with its DLL and name, which is the
+next thing to implement. Never run in CI.
+
+**Slices, in order:**
+
+1. **WSL bring-up environment**: WSL Ubuntu + apt LLVM 18 / lld 18 / clang 18; the CI build and
+   all gates pass there; the recompiler gate runs in WSL.
+2. **Multi-module runtime**: module registry, mapping with relocations, `lua5164` translated,
+   cross-module calls and unwinding, `DllMain`, `GetModuleHandle`/`GetProcAddress`/`LoadLibrary`.
+3. **High-count families with tests**: time, CRT support, strings and locale, memory, files and
+   directories (`Vfs` host backend + writable layer), system information, timer queues.
+4. **Startup run**: `tools/r4_run.cpp` on the retail exe; implement each next missing import
+   (USER32 fake window and messages, ADVAPI32 registry, SHELL32 folders, the offline network and
+   Steam stubs, the silent FMOD stub, the recording D3D9/D3DX/DInput stubs).
+5. **Done when**: the retail v1.1.5.6 exe, translated in WSL, starts with Native and runs its
+   main loop for 1,000 frames on the stub device with no fault and no missing import, and the
+   same build runs from the APK's Advanced screen on the phone.
 
 ## What carries over
 
