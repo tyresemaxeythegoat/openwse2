@@ -2741,6 +2741,22 @@ void test_import_bridge() {
     expect(ok && faults.empty() && r == 1 + 20 + 300 + 4000 + 50000 + 600000 && s.gpr[0] == r && s.gpr[1] == 0x1111 &&
                s.gpr[3] == 0x3333 && s.gpr[4] == rsp0,
            "call_guest: six Win64 arguments, rax returned, other registers and rsp restored");
+
+    // fill_iat: a slot in real memory holds its own VA; calling that value through `dispatch`
+    // (an import loaded into a register) runs the import.
+    alignas(8) static std::uint64_t iat_slot = 0x1234;
+    const auto iat_va = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&iat_slot));
+    Runtime rt2;
+    std::vector<Fault> faults2;
+    rt2.on_fault = [&](const Fault& f) { faults2.push_back(f); };
+    rt2.name_imports({PeImport{iat_va, "KERNEL32.dll", "GetTickCount", 0}});
+    (void)rt2.set_import("KERNEL32.dll", "GetTickCount", [](CpuState& st) { win64_return(st, 0x7777); });
+    rt2.fill_iat();
+    stack.prepare(s);
+    rt2.attach(s);
+    rt_test::push_and_hook(&s, 0x140030020ULL, iat_slot, false);
+    expect(iat_slot == iat_va && faults2.empty() && s.gpr[0] == 0x7777 && s.rip == 0x140030020ULL,
+           "imports: fill_iat writes each slot's VA, and an indirect call to it runs the import");
 }
 
 // --- R3 thread environment (`teb.h`): TEB, static TLS, TLS/FLS slots, callbacks -------------------

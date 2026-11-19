@@ -275,7 +275,10 @@ measured on the phone, then provably thread-local data is relaxed.
 `CpuState` (`rcx rdx r8 r9 xmm0-3`, the rest at `[rsp + 0x28 ...]`), writes `rax`/`xmm0`, and
 returns through `Runtime::return_from_import`. Host code calls back into guest code (window
 procedures, thread entry points) with `call_guest(state, va, args...)`, which builds a Win64 frame
-on the guest stack.
+on the guest stack. `Runtime::fill_iat` writes each slot's own VA into it, as the loader writes the
+imported address: compilers load an import into a register and call it later (clang hoists
+`__imp_*` loads out of loops; found by the threads corpus), and such a call reaches `dispatch` with
+the slot VA, which runs the import.
 
 **Threads and TLS.** Each guest thread has its own `CpuState`, a guest stack, and a TEB in guest
 memory (`gs:` reads go through `segment_base`): self pointer at `+0x30`, stack base/limit at

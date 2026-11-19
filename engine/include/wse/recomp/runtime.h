@@ -130,6 +130,15 @@ public:
         }
         return n;
     }
+    // Writes every named IAT slot's own VA into the slot, as the loader writes the imported
+    // function's address: code that loads an import into a register and calls it later reaches
+    // `dispatch` with the slot VA, which runs the import (R3). Guest memory must be mapped at the
+    // slot VAs (the image at its base).
+    void fill_iat() const {
+        for (const PeImport& imp : import_list_) {
+            std::memcpy(reinterpret_cast<void*>(static_cast<std::uintptr_t>(imp.slot_va)), &imp.slot_va, 8);
+        }
+    }
     [[nodiscard]] std::string import_name(std::uint64_t slot_va) const {
         const auto it = import_names_.find(slot_va);
         return it == import_names_.end() ? std::string() : it->second;
@@ -245,6 +254,12 @@ private:
         Runtime& rt = of(s);
         GuestFn fn = rt.find(va);
         if (fn == nullptr) {
+            // An import called through a register (`mov rsi, [rip + IAT]` ... `call rsi`): the
+            // slot holds its own VA (`fill_iat`).
+            if (rt.import_names_.count(va) != 0) {
+                hook_import(s, va);
+                return;
+            }
             rt.fault(*s, FaultKind::missing_function, va, {});
             return;
         }

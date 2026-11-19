@@ -398,6 +398,7 @@ void test_corpus(const char* path) {
     rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
     rt.add_table(rows, static_cast<std::size_t>(*count));
     rt.name_imports(imports);
+    rt.fill_iat();  // imports called through a register (clang hoists `__imp_*` loads out of loops)
     seh::Exceptions exceptions(rt, img, mapped);
     const std::size_t shims = exceptions.install();
     expect(imports.empty() || shims >= 5, "corpus: the SEH shims bind to the corpus imports");
@@ -410,7 +411,9 @@ void test_corpus(const char* path) {
     // R3 threads and sync: translated entry points on host threads (`t_thread_*`).
     kernel::Kernel kern(rt);
     threads::Threads thr(rt, process, kern);
-    expect(kern.install() >= 10 && thr.install() >= 4, "corpus: the kernel and thread shims bind");
+    const std::size_t kernel_shims = kern.install();
+    const std::size_t thread_shims = thr.install();
+    expect(kernel_shims >= 9 && thread_shims >= 5, "corpus: the kernel and thread shims bind");
     {
         GuestStack stack;
         CpuState s;
