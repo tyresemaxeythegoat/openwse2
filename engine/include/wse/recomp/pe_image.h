@@ -2,7 +2,7 @@
 //
 // Reads the user's own exe from memory (it is never bundled). Only what R0 needs: the
 // preferred base and size (the image maps at its preferred base, `docs/RECOMP_PLAN.md`), section
-// copies, and the `.pdata` function ranges used for function discovery. Every offset is
+// copies, the `.pdata` function ranges used for function discovery, and (R3) the import table. Every offset is
 // bounds-checked; a malformed file fails with a message instead of reading out of range.
 
 #pragma once
@@ -193,6 +193,90 @@ inline bool map_pe_sections(const std::uint8_t* f, std::size_t n, const PeImage&
 }
 
 // RSDS record of the debug directory (IMAGE_DEBUG_TYPE_CODEVIEW = 2): GUID, age, PDB path.
+// One import address table slot of a mapped image (R3 "import bridge": shims register by name).
+struct PeImport {
+    std::uint64_t slot_va = 0;   // the IAT slot the exe calls through (`call [rip + slot]`)
+    std::string dll;             // as written in the exe, e.g. "KERNEL32.dll"
+    std::string name;            // empty when imported by ordinal
+    std::uint16_t ordinal = 0;   // by-ordinal imports only
+};
+
+// Reads the import directory of an image mapped at `base` (`image` holds `size` bytes from the
+// base; every read is bounds-checked). Order: descriptor order, then thunk order.
+inline bool read_pe_imports(const std::uint8_t* image, std::size_t size, std::uint64_t base,
+                            std::vector<PeImport>& out, std::string* error) {
+    auto fail = [&](const char* what) {
+        if (error != nullptr) {
+            *error = what;
+        }
+        return false;
+    };
+    using pe_detail::rd32;
+    using pe_detail::rd64;
+    std::uint32_t pe = 0;
+    std::uint32_t dir_rva = 0;
+    std::uint32_t dir_size = 0;
+    if (!rd32(image, size, 0x3C, pe) || !rd32(image, size, std::size_t{pe} + 24 + 112 + 8, dir_rva) ||
+        !rd32(image, size, std::size_t{pe} + 24 + 112 + 12, dir_size)) {
+        return fail("truncated headers");
+    }
+    out.clear();
+    if (dir_rva == 0) {
+        return true;  // no imports
+    }
+    auto c_string = [&](std::uint32_t rva, std::string& s) {
+        s.clear();
+        for (std::size_t i = rva; i < size; ++i) {
+            if (image[i] == 0) {
+                return true;
+            }
+            s.push_back(static_cast<char>(image[i]));
+            if (s.size() > 4096) {
+                return false;
+            }
+        }
+        return false;
+    };
+    for (std::size_t d = dir_rva;; d += 20) {
+        std::uint32_t oft = 0;
+        std::uint32_t name_rva = 0;
+        std::uint32_t ft = 0;
+        if (!rd32(image, size, d, oft) || !rd32(image, size, d + 12, name_rva) || !rd32(image, size, d + 16, ft)) {
+            return fail("truncated import directory");
+        }
+        if (oft == 0 && name_rva == 0 && ft == 0) {
+            break;
+        }
+        std::string dll;
+        if (!c_string(name_rva, dll)) {
+            return fail("bad import DLL name");
+        }
+        const std::uint32_t names = oft != 0 ? oft : ft;
+        for (std::size_t i = 0;; ++i) {
+            std::uint64_t thunk = 0;
+            if (!rd64(image, size, names + 8 * i, thunk)) {
+                return fail("truncated import lookup table");
+            }
+            if (thunk == 0) {
+                break;
+            }
+            PeImport imp;
+            imp.slot_va = base + ft + 8 * i;
+            imp.dll = dll;
+            if ((thunk >> 63) != 0) {
+                imp.ordinal = static_cast<std::uint16_t>(thunk & 0xFFFF);
+            } else if (!c_string(static_cast<std::uint32_t>(thunk & 0x7FFFFFFF) + 2, imp.name)) {
+                return fail("bad import name");
+            }
+            out.push_back(std::move(imp));
+            if (i > 65536) {
+                return fail("import lookup table too long");
+            }
+        }
+    }
+    return true;
+}
+
 struct PeCodeView {
     std::array<std::uint8_t, 16> guid{};
     std::uint32_t age = 0;

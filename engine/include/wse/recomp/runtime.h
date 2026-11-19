@@ -19,10 +19,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <initializer_list>
+#include <map>
 #include <string>
 #include <vector>
 
 #include "wse/recomp/cpu_state.h"
+#include "wse/recomp/pe_image.h"
 
 namespace wse::recomp {
 
@@ -104,8 +107,31 @@ public:
         return it != table_.end() && it->va == va ? it->fn : nullptr;
     }
 
-    void set_import(std::uint64_t slot_va, ImportShim shim) {
-        imports_.push_back({slot_va, std::move(shim)});
+    void set_import(std::uint64_t slot_va, ImportShim shim) { imports_[slot_va] = std::move(shim); }
+
+    // Names every IAT slot (`read_pe_imports`), so shims register by name and a missing one is
+    // reported as "KERNEL32.dll!TlsAlloc" (R3 import bridge).
+    void name_imports(const std::vector<PeImport>& imports) {
+        for (const PeImport& imp : imports) {
+            import_names_[imp.slot_va] = imp.dll + "!" + (imp.name.empty() ? "#" + std::to_string(imp.ordinal) : imp.name);
+            import_list_.push_back(imp);
+        }
+    }
+    // Binds `shim` to every slot importing `name` from `dll` (DLL compared case-insensitively).
+    // Returns the number of slots bound (0 when the exe does not import it).
+    std::size_t set_import(const std::string& dll, const std::string& name, const ImportShim& shim) {
+        std::size_t n = 0;
+        for (const PeImport& imp : import_list_) {
+            if (imp.name == name && same_dll(imp.dll, dll)) {
+                imports_[imp.slot_va] = shim;
+                ++n;
+            }
+        }
+        return n;
+    }
+    [[nodiscard]] std::string import_name(std::uint64_t slot_va) const {
+        const auto it = import_names_.find(slot_va);
+        return it == import_names_.end() ? std::string() : it->second;
     }
     void set_segment_base(int segment, std::uint64_t base) {
         (segment == kSegFs ? fs_base_ : gs_base_) = base;
@@ -136,11 +162,61 @@ public:
         state.rip = ret;
     }
 
+    // Where a host-to-guest call returns (`call_guest`); never executed.
+    static constexpr std::uint64_t kCallbackReturn = 0xCA11BAC000000000ULL;
+
+    // Calls the guest function at `va` from host code (a shim calling a window procedure, a thread
+    // starting at its entry point) with up to 16 integer arguments by the Win64 convention: the
+    // first four in rcx rdx r8 r9, the rest above a 32-byte shadow area. It runs below the guest's
+    // current `rsp` and restores every register but `rax` afterwards, so a shim can call back and
+    // then continue. Returns `rax`; `ok` is false when the call faulted.
+    std::uint64_t call_guest(CpuState& s, std::uint64_t va, std::initializer_list<std::uint64_t> args,
+                             bool* ok = nullptr) {
+        const CpuState saved = s;
+        const std::size_t n = args.size();
+        const std::uint64_t frame = 0x20 + 8 * (n > 4 ? n - 4 : 0);
+        std::uint64_t rsp = (s.gpr[4] - 0x40 - frame) & ~std::uint64_t{15};  // 16-aligned at the call
+        static constexpr int kArgReg[4] = {1, 2, 8, 9};
+        std::size_t i = 0;
+        for (const std::uint64_t a : args) {
+            if (i < 4) {
+                s.gpr[kArgReg[i]] = a;
+            } else {
+                std::memcpy(reinterpret_cast<void*>(rsp + 0x20 + 8 * (i - 4)), &a, 8);
+            }
+            ++i;
+        }
+        rsp -= 8;
+        std::memcpy(reinterpret_cast<void*>(rsp), &kCallbackReturn, 8);
+        s.gpr[4] = rsp;
+        const bool ran = run(s, va) && s.rip == kCallbackReturn;
+        const std::uint64_t rax = s.gpr[0];
+        s = saved;
+        s.gpr[0] = rax;
+        if (ok != nullptr) {
+            *ok = ran;
+        }
+        return rax;
+    }
+
     std::function<void(const Fault&)> on_fault;
     std::size_t fault_count = 0;
 
 private:
     static Runtime& of(CpuState* s) noexcept { return *static_cast<Runtime*>(s->hooks->context); }
+
+    static bool same_dll(const std::string& a, const std::string& b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const auto lower = [](char ch) { return static_cast<char>(ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch); };
+            if (lower(a[i]) != lower(b[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     void fault(CpuState& s, FaultKind kind, std::uint64_t va, std::string what) {
         ++fault_count;
@@ -164,13 +240,12 @@ private:
     }
     static void hook_import(CpuState* s, std::uint64_t slot_va) {
         Runtime& rt = of(s);
-        for (const auto& [slot, shim] : rt.imports_) {
-            if (slot == slot_va) {
-                shim(*s);
-                return;
-            }
+        const auto it = rt.imports_.find(slot_va);
+        if (it != rt.imports_.end()) {
+            it->second(*s);
+            return;
         }
-        rt.fault(*s, FaultKind::missing_import, slot_va, {});
+        rt.fault(*s, FaultKind::missing_import, slot_va, rt.import_name(slot_va));
     }
     static void hook_bad_return(CpuState* s, std::uint64_t expected) {
         Runtime& rt = of(s);
@@ -252,11 +327,40 @@ private:
 
     RuntimeHooks hooks_;
     std::vector<FnRow> table_;
-    std::vector<std::pair<std::uint64_t, ImportShim>> imports_;
+    std::map<std::uint64_t, ImportShim> imports_;
+    std::map<std::uint64_t, std::string> import_names_;
+    std::vector<PeImport> import_list_;
     std::uint64_t fs_base_ = 0;
     std::uint64_t gs_base_ = 0;
     bool fs_set_ = false;
     bool gs_set_ = false;
 };
+
+// Win64 arguments as an import shim sees them: `rsp` points at the return address, so arguments 5
+// and up start at `rsp + 0x28` (after the 32-byte shadow area).
+[[nodiscard]] inline std::uint64_t win64_arg(const CpuState& s, int i) noexcept {
+    static constexpr int kArgReg[4] = {1, 2, 8, 9};
+    if (i < 4) {
+        return s.gpr[kArgReg[i]];
+    }
+    std::uint64_t v = 0;
+    std::memcpy(&v, reinterpret_cast<const void*>(s.gpr[4] + 0x28 + 8 * static_cast<std::uint64_t>(i - 4)), 8);
+    return v;
+}
+[[nodiscard]] inline double win64_arg_f64(const CpuState& s, int i) noexcept {
+    double v = 0;
+    std::memcpy(&v, s.xmm[i], 8);
+    return v;
+}
+[[nodiscard]] inline float win64_arg_f32(const CpuState& s, int i) noexcept {
+    float v = 0;
+    std::memcpy(&v, s.xmm[i], 4);
+    return v;
+}
+// Returns from an import shim with `rax` (a shim returning a float writes `xmm0` first).
+inline void win64_return(CpuState& s, std::uint64_t rax) noexcept {
+    s.gpr[0] = rax;
+    Runtime::return_from_import(s);
+}
 
 }  // namespace wse::recomp

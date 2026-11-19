@@ -21,6 +21,7 @@
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/r2_rig.h"
 #include "wse/recomp/runtime.h"
+#include "wse/recomp/unwind.h"
 #include "wse/recomp/x86_decode.h"
 #include "wse/recomp/x86_interp.h"
 #include "wse/recomp/x86_synth.h"
@@ -2654,6 +2655,189 @@ void test_r2_rig() {
            "r2: buffer pointers normalize to (region, offset); image addresses stay");
 }
 
+// --- R3 import bridge (`read_pe_imports`, `Runtime::set_import` by name, `call_guest`) -------
+namespace bridge_test {
+
+constexpr std::uint64_t kSum6Va = 0x140020000ULL;
+
+// A stand-in guest function: rax = a1 + 2*a2 + ... + 6*a6 (Win64: four registers, two on the stack).
+void sum6(CpuState* s) {
+    std::uint64_t r = 0;
+    for (int i = 0; i < 6; ++i) {
+        r += static_cast<std::uint64_t>(i + 1) * win64_arg(*s, i);
+    }
+    s->gpr[1] = 0xDEAD;  // clobbers a volatile register; call_guest must restore it
+    s->gpr[0] = r;
+    rt_test::guest_ret(s);
+}
+
+}  // namespace bridge_test
+
+void test_import_bridge() {
+    using namespace bridge_test;
+    // A synthetic mapped image: one descriptor, one import by name and one by ordinal.
+    std::vector<std::uint8_t> img(0x2000, 0);
+    auto put32 = [&](std::size_t off, std::uint32_t v) { std::memcpy(img.data() + off, &v, 4); };
+    auto put64 = [&](std::size_t off, std::uint64_t v) { std::memcpy(img.data() + off, &v, 8); };
+    put32(0x3C, 0x80);
+    put32(0x80 + 24 + 112 + 8, 0x1000);   // import directory RVA
+    put32(0x80 + 24 + 112 + 12, 40);
+    put32(0x1000 + 0, 0x1100);            // OriginalFirstThunk
+    put32(0x1000 + 12, 0x1200);           // Name
+    put32(0x1000 + 16, 0x1300);           // FirstThunk
+    put64(0x1100, 0x1400);                // -> hint/name
+    put64(0x1108, 0x8000000000000005ULL); // ordinal 5
+    std::memcpy(img.data() + 0x1200, "KERNEL32.dll", 13);
+    std::memcpy(img.data() + 0x1402, "TlsAlloc", 9);
+    std::vector<PeImport> imps;
+    std::string err;
+    expect(read_pe_imports(img.data(), img.size(), kBase, imps, &err) && imps.size() == 2 &&
+               imps[0].slot_va == kBase + 0x1300 && imps[0].dll == "KERNEL32.dll" && imps[0].name == "TlsAlloc" &&
+               imps[1].slot_va == kBase + 0x1308 && imps[1].name.empty() && imps[1].ordinal == 5,
+           "imports: names, ordinals and IAT slots are read");
+    put32(0x1000 + 12, 0x1FFC);  // a DLL name running off the end of the image
+    std::memcpy(img.data() + 0x1FFC, "ABCD", 4);
+    expect(!read_pe_imports(img.data(), img.size(), kBase, imps, &err), "imports: a name past the image fails");
+
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    std::vector<PeImport> named(2);
+    named[0] = {kBase + 0x1300, "KERNEL32.dll", "TlsAlloc", 0};
+    named[1] = {kBase + 0x1308, "KERNEL32.dll", "", 5};
+    rt.name_imports(named);
+    expect(rt.set_import("kernel32.DLL", "TlsAlloc", [](CpuState& st) { win64_return(st, 7); }) == 1 &&
+               rt.set_import("KERNEL32.dll", "TlsFree", [](CpuState& st) { win64_return(st, 0); }) == 0,
+           "imports: a shim binds by name, case-insensitive DLL; an import the exe lacks binds nothing");
+    GuestStack stack;
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    rt_test::push_and_hook(&s, 0x140030000ULL, kBase + 0x1300, true);
+    expect(faults.empty() && s.gpr[0] == 7 && s.rip == 0x140030000ULL, "imports: the bound shim runs and returns");
+    stack.prepare(s);
+    rt.attach(s);
+    rt_test::push_and_hook(&s, 0x140030010ULL, kBase + 0x1308, true);
+    expect(faults.size() == 1 && faults[0].kind == FaultKind::missing_import && faults[0].what == "KERNEL32.dll!#5",
+           "imports: an unbound import faults with its DLL and name (or ordinal)");
+
+    // call_guest: Win64 arguments in registers and on the stack; registers restored after.
+    const FnRow rows[] = {{kSum6Va, &sum6}};
+    rt.add_table(rows, 1);
+    faults.clear();
+    stack.prepare(s);
+    rt.attach(s);
+    s.gpr[1] = 0x1111;
+    s.gpr[3] = 0x3333;
+    const std::uint64_t rsp0 = s.gpr[4];
+    bool ok = false;
+    const std::uint64_t r = rt.call_guest(s, kSum6Va, {1, 10, 100, 1000, 10000, 100000}, &ok);
+    expect(ok && faults.empty() && r == 1 + 20 + 300 + 4000 + 50000 + 600000 && s.gpr[0] == r && s.gpr[1] == 0x1111 &&
+               s.gpr[3] == 0x3333 && s.gpr[4] == rsp0,
+           "call_guest: six Win64 arguments, rax returned, other registers and rsp restored");
+}
+
+// --- R3 unwinder (`unwind.h`): hand-built functions, unwind codes and stacks ---------------------
+void test_unwinder() {
+    namespace uw = wse::recomp::unwind;
+    std::vector<std::uint8_t> img(0x1000, 0x90);
+    auto put = [&](std::size_t off, std::initializer_list<std::uint8_t> bytes) {
+        std::size_t i = off;
+        for (const std::uint8_t b : bytes) {
+            img[i++] = b;
+        }
+    };
+    // F: push rbx; push rbp; sub rsp, 0x28; ...; add rsp, 0x28; pop rbp; pop rbx; ret
+    put(0x100, {0x53, 0x55, 0x48, 0x83, 0xEC, 0x28});
+    put(0x130, {0x48, 0x83, 0xC4, 0x28, 0x5D, 0x5B, 0xC3});
+    // UNWIND_INFO v1, prolog 6, 3 codes: ALLOC_SMALL 0x28 @6, PUSH rbp @2, PUSH rbx @1
+    put(0x200, {0x01, 6, 3, 0, 0x06, 0x42, 0x02, 0x50, 0x01, 0x30, 0, 0});
+    // G: push rbp; sub rsp, 0x40; mov [rsp+0x30], rsi; lea rbp, [rsp+0x20]; exception handler
+    put(0x300, {0x55, 0x48, 0x83, 0xEC, 0x40, 0x48, 0x89, 0x74, 0x24, 0x30, 0x48, 0x8D, 0x6C, 0x24, 0x20});
+    // UNWIND_INFO v1, EHANDLER, prolog 15, 5 slots, frame rbp offset 2 (0x20):
+    // SET_FPREG @15, SAVE_NONVOL rsi @10 (+6*8), ALLOC_SMALL 0x40 @5, PUSH rbp @1; handler 0x999
+    put(0x280, {0x09, 15, 5, 0x25, 0x0F, 0x03, 0x0A, 0x64, 6, 0, 0x05, 0x72, 0x01, 0x50, 0, 0,
+                0x99, 0x09, 0, 0, 0xAB, 0xCD, 0, 0});
+    // H: a fragment of F (chained UNWIND_INFO pointing at F's RUNTIME_FUNCTION)
+    put(0x500, {0x21, 0, 0, 0, 0x00, 0x01, 0, 0, 0x40, 0x01, 0, 0, 0x00, 0x02, 0, 0});
+    const std::vector<PeFunctionRange> fns = {{0x100, 0x140, 0x200}, {0x300, 0x380, 0x280}, {0x400, 0x420, 0x500}};
+    const uw::Image image{img.data(), img.size(), kBase, &fns};
+
+    expect(uw::lookup_function(image, kBase + 0x13F) == &fns[0] && uw::lookup_function(image, kBase + 0x140) == nullptr &&
+               uw::lookup_function(image, kBase + 0x410) == &fns[2] && uw::lookup_function(image, kBase + 0x50) == nullptr,
+           "unwind: lookup_function finds the containing .pdata entry only");
+
+    std::uint64_t s[16] = {};
+    const auto at = [&](int i) { return reinterpret_cast<std::uint64_t>(&s[i]); };
+    s[5] = 0xB0B0;           // saved rbp
+    s[6] = 0xB1B1;           // saved rbx
+    s[7] = 0x140009999ULL;   // return address
+    auto body = [&] {
+        CpuState c;
+        c.gpr[4] = at(0);
+        c.gpr[3] = 1;
+        c.gpr[5] = 2;
+        return c;
+    };
+    CpuState c = body();
+    c.rip = kBase + 0x110;
+    uw::Result r = uw::virtual_unwind(image, c, uw::kFlagExceptionHandler);
+    expect(r.ok && c.rip == 0x140009999ULL && c.gpr[4] == at(8) && c.gpr[3] == 0xB1B1 && c.gpr[5] == 0xB0B0 &&
+               r.establisher_frame == at(0) && r.handler == 0,
+           "unwind: body of F restores rbx, rbp, rsp and rip");
+
+    c = body();
+    c.gpr[4] = at(6);
+    c.rip = kBase + 0x101;  // only `push rbx` has run
+    r = uw::virtual_unwind(image, c, 0);
+    expect(r.ok && c.rip == 0x140009999ULL && c.gpr[4] == at(8) && c.gpr[3] == 0xB1B1 && c.gpr[5] == 2,
+           "unwind: a partly run prolog undoes only what ran");
+
+    for (const std::uint64_t pc : {0x130ULL, 0x134ULL, 0x135ULL}) {
+        c = body();
+        c.gpr[4] = pc == 0x130 ? at(0) : (pc == 0x134 ? at(5) : at(6));
+        if (pc == 0x135) {
+            c.gpr[5] = 0xB0B0;  // rbp already popped
+        }
+        c.rip = kBase + pc;
+        r = uw::virtual_unwind(image, c, uw::kFlagExceptionHandler);
+        expect(r.ok && c.rip == 0x140009999ULL && c.gpr[4] == at(8) && c.gpr[3] == 0xB1B1 && c.gpr[5] == 0xB0B0,
+               "unwind: inside the epilog it is emulated from the instructions");
+    }
+
+    c = body();
+    c.gpr[4] = at(7);
+    c.rip = kBase + 0x50;  // no .pdata: a leaf
+    r = uw::virtual_unwind(image, c, 0);
+    expect(r.ok && c.rip == 0x140009999ULL && c.gpr[4] == at(8), "unwind: a leaf returns through [rsp]");
+
+    std::uint64_t t[16] = {};
+    const auto tat = [&](int i) { return reinterpret_cast<std::uint64_t>(&t[i]); };
+    t[6] = 0x5151;            // saved rsi at frame + 0x30
+    t[8] = 0xBEEF;            // saved rbp at frame + 0x40
+    t[9] = 0x14000AAAAULL;    // return address
+    c = CpuState{};
+    c.gpr[5] = tat(0) + 0x20;  // rbp = frame + 0x20
+    c.gpr[4] = 0x1234;         // rsp is not trusted past SET_FPREG
+    c.gpr[6] = 7;
+    c.rip = kBase + 0x320;
+    r = uw::virtual_unwind(image, c, uw::kFlagExceptionHandler);
+    expect(r.ok && c.rip == 0x14000AAAAULL && c.gpr[4] == tat(10) && c.gpr[5] == 0xBEEF && c.gpr[6] == 0x5151 &&
+               r.establisher_frame == tat(0) && r.handler == kBase + 0x999 && r.handler_data == kBase + 0x280 + 20,
+           "unwind: frame register, SAVE_NONVOL and the exception handler with its data");
+    c = CpuState{};
+    c.gpr[5] = tat(0) + 0x20;
+    c.rip = kBase + 0x320;
+    r = uw::virtual_unwind(image, c, uw::kFlagTerminationHandler);
+    expect(r.ok && r.handler == 0, "unwind: an exception-only handler is not returned while unwinding");
+
+    c = body();
+    c.rip = kBase + 0x410;
+    r = uw::virtual_unwind(image, c, 0);
+    expect(r.ok && c.rip == 0x140009999ULL && c.gpr[4] == at(8) && c.gpr[3] == 0xB1B1 && c.gpr[5] == 0xB0B0,
+           "unwind: a chained fragment unwinds through its parent's codes");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -2683,6 +2867,8 @@ int run_recomp_suite(const char* fixture_path) {
     test_register_and_memory_writes();
     test_runtime_dispatch();
     test_r2_rig();
+    test_import_bridge();
+    test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");
         return 0;
