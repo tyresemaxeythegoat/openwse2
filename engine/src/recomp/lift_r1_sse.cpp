@@ -754,6 +754,32 @@ Lifted lift_sse(Ctx& c, const DInsn& d) {
         write_scalar_merge(c, dst, B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, s));
         return Lifted::yes;
     }
+    // RSQRT/RCP give hardware approximations (relative error <= 1.5 * 2^-12, Intel SDM; the
+    // exact bits differ between Intel and AMD). R1 deviation: the exact 1/sqrt(x) and 1/x, which
+    // are within that bound; code refining them with a Newton step gets the same result or a
+    // closer one.
+    case ZYDIS_MNEMONIC_RSQRTSS:
+    case ZYDIS_MNEMONIC_RCPSS: {
+        const int dst = Ctx::xmm_index(d.ops[0].reg.value);
+        if (dst < 0) return fail_insn(c, d);
+        bool ok = true;
+        Value* s = read_scalar_fp(c, d, 1, false, &ok);
+        if (!ok) return fail_insn(c, d);
+        Value* den = mn == ZYDIS_MNEMONIC_RSQRTSS ? B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, s) : s;
+        write_scalar_merge(c, dst, B.CreateFDiv(llvm::ConstantFP::get(B.getFloatTy(), 1.0), den));
+        return Lifted::yes;
+    }
+    case ZYDIS_MNEMONIC_RSQRTPS:
+    case ZYDIS_MNEMONIC_RCPPS: {
+        const int dst = Ctx::xmm_index(d.ops[0].reg.value);
+        if (dst < 0) return fail_insn(c, d);
+        bool ok = true;
+        Value* s = read_vec(c, d, 1, v4f_ty(c), &ok);
+        if (!ok) return fail_insn(c, d);
+        Value* den = mn == ZYDIS_MNEMONIC_RSQRTPS ? B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, s) : s;
+        c.set_xmm(dst, B.CreateFDiv(llvm::ConstantFP::get(v4f_ty(c), 1.0), den));
+        return Lifted::yes;
+    }
     case ZYDIS_MNEMONIC_COMISS:
     case ZYDIS_MNEMONIC_UCOMISS:
         return lift_comi(c, d, false);

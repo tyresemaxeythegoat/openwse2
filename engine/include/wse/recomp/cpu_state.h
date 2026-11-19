@@ -31,6 +31,9 @@ struct RuntimeHooks {
     // and returns 0 on #DE (quotient overflow). Kept out of translated code because LLVM lowers
     // a 128-bit division to a compiler-rt call, and translated modules import nothing.
     int (*div128)(CpuState* state, std::uint64_t divisor, int is_signed) = nullptr;
+    // CPUID with leaf eax / sub-leaf ecx: writes eax ebx ecx edx from the runtime's fixed CPU
+    // profile (`Runtime::hook_cpuid`), so guest feature checks see the same answer everywhere.
+    void (*cpuid)(CpuState* state) = nullptr;
     // Owner of this table (`wse::recomp::Runtime` in `runtime.h`); translated code never reads it.
     void* context = nullptr;
 };

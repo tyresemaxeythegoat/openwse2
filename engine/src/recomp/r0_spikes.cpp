@@ -508,6 +508,10 @@ static void run_r1_coverage(Report& rep, const PeImage& img, const std::vector<P
     rep.line("  lifted %zu/%zu (%.2f%%) in %.0f ms", r.lifted, r.attempted,
              r.attempted == 0 ? 0.0 : 100.0 * static_cast<double>(r.lifted) / static_cast<double>(r.attempted),
              tr.total_lift_ms());
+    rep.line("  lifted as run-time faults: %zu traps (int3, int 0x29, ud2)", r.traps);
+    for (const auto& [ext, n] : r.gated) {
+        rep.line("    %-10s %zu instructions behind a cpuid check the runtime answers no to", ext.c_str(), n);
+    }
     std::vector<std::pair<std::size_t, std::string>> top;
     for (const auto& [what, n] : r.unsupported) {
         top.emplace_back(n, what);

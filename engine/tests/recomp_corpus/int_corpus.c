@@ -189,6 +189,18 @@ EXPORT u64 div_wide(u64 a, u64 b, u64 c, u64 d) {
     return r + (u64)sq * 3 + (u64)sr * 5 + (u64)wq * 7 + (u64)wr * 11;
 }
 
+/* Traps and cpuid-gated code on paths never taken: the function must still lift (the trap and
+ * the AVX instruction become run-time faults) and match native on every other path. */
+EXPORT u64 cold_paths(u64 a, u64 b, u64 c, u64 d) {
+    if (a == 0x0123456789ABCDEFULL && b == ~a) {
+        __builtin_debugtrap(); /* int3 */
+    }
+    if (c == 0xFEDCBA9876543210ULL && d == ~c) {
+        __asm__ volatile("vxorps %%xmm1, %%xmm1, %%xmm1" ::: "xmm1"); /* VEX: AVX */
+    }
+    return (a ^ b) + (c ^ d) * 3;
+}
+
 /* --- control flow --------------------------------------------------------------------------- */
 
 EXPORT u64 switch_dense(u64 a, u64 b, u64 c, u64 d) {

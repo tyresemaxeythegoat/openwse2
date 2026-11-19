@@ -73,6 +73,7 @@ public:
         hooks_.unsupported = &Runtime::hook_unsupported;
         hooks_.segment_base = &Runtime::hook_segment;
         hooks_.div128 = &Runtime::hook_div128;
+        hooks_.cpuid = &Runtime::hook_cpuid;
         hooks_.context = this;
         on_fault = [](const Fault& f) {
             std::fprintf(stderr, "wse recomp: %s at 0x%llx (rip 0x%llx)%s%s\n", fault_name(f.kind),
@@ -180,6 +181,40 @@ private:
     }
     static void hook_unsupported(CpuState* s, std::uint64_t va, const char* what) {
         of(s).fault(*s, FaultKind::unsupported, va, what != nullptr ? what : "");
+    }
+    // The CPU translated code is told it runs on: what the R1 lifter supports and nothing more,
+    // so code behind a feature check (AVX, FMA, SSE4.2: lifted as faults) is never taken.
+    // Vendor "WSE2AArch64 ", family 6; leaf 1 advertises SSE SSE2 SSE3 SSSE3 SSE4.1 POPCNT CMOV
+    // FPU; extended leaf 0x80000001 advertises long mode and NX. Every other leaf reads zero.
+    static void hook_cpuid(CpuState* s) {
+        const auto leaf = static_cast<std::uint32_t>(s->gpr[0]);
+        std::uint32_t r[4] = {0, 0, 0, 0};  // eax ebx ecx edx
+        switch (leaf) {
+        case 0:
+            r[0] = 1;  // highest basic leaf
+            r[1] = 0x32455357U;  // "WSE2"
+            r[3] = 0x63724141U;  // "AArc"
+            r[2] = 0x20343668U;  // "h64 "
+            break;
+        case 1:
+            r[0] = 0x00000600U;  // family 6, model 0, stepping 0
+            r[1] = 0x00010800U;  // 1 logical processor, CLFLUSH line 8 * 8 bytes
+            r[2] = (1U << 0) | (1U << 9) | (1U << 19) | (1U << 23);  // SSE3 SSSE3 SSE4.1 POPCNT
+            r[3] = (1U << 0) | (1U << 15) | (1U << 25) | (1U << 26);  // FPU CMOV SSE SSE2
+            break;
+        case 0x80000000U:
+            r[0] = 0x80000001U;
+            break;
+        case 0x80000001U:
+            r[3] = (1U << 20) | (1U << 29);  // NX, long mode
+            break;
+        default:
+            break;
+        }
+        s->gpr[0] = r[0];
+        s->gpr[3] = r[1];
+        s->gpr[1] = r[2];
+        s->gpr[2] = r[3];
     }
     static int hook_div128(CpuState* s, std::uint64_t divisor, int is_signed) {
         if (divisor == 0) {

@@ -404,6 +404,27 @@ void guest_call(Ctx& c, std::uint64_t ret_va, Emit&& emit_call) {
     c.B.SetInsertPoint(ok);
 }
 
+bool is_trap(ZydisMnemonic mn) {
+    return mn == ZYDIS_MNEMONIC_INT3 || mn == ZYDIS_MNEMONIC_INT || mn == ZYDIS_MNEMONIC_INT1 ||
+           mn == ZYDIS_MNEMONIC_INTO || mn == ZYDIS_MNEMONIC_UD0 || mn == ZYDIS_MNEMONIC_UD1 ||
+           mn == ZYDIS_MNEMONIC_UD2 || mn == ZYDIS_MNEMONIC_HLT;
+}
+
+// The extension an instruction needs when the runtime's CPU profile does not advertise it.
+const char* gated_ext(const DInsn& d) {
+    switch (d.ins.encoding) {
+    case ZYDIS_INSTRUCTION_ENCODING_VEX: return "AVX";
+    case ZYDIS_INSTRUCTION_ENCODING_EVEX: return "AVX-512";
+    case ZYDIS_INSTRUCTION_ENCODING_XOP: return "XOP";
+    case ZYDIS_INSTRUCTION_ENCODING_3DNOW: return "3DNow!";
+    default: break;
+    }
+    if (d.ins.meta.isa_set == ZYDIS_ISA_SET_SSE42) return "SSE4.2";
+    if (d.ins.meta.isa_set == ZYDIS_ISA_SET_SSE4A) return "SSE4a";
+    if (d.ins.mnemonic == ZYDIS_MNEMONIC_XGETBV) return "OSXSAVE";
+    return nullptr;
+}
+
 void call_dispatch(Ctx& c, llvm::Value* target) {
     c.call_hook(offsetof(RuntimeHooks, dispatch), {target}, {c.B.getInt64Ty()});
 }
@@ -570,9 +591,22 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
                     llvm::Value* target = c.B.CreateZExt(c.read(d, 0), c.B.getInt64Ty());
                     guest_call(c, ret_va, [&] { call_dispatch(c, target); });
                 }
-            } else if (mn == ZYDIS_MNEMONIC_INT3 || mn == ZYDIS_MNEMONIC_UD2 || mn == ZYDIS_MNEMONIC_HLT) {
-                fail(d.va, ZydisMnemonicGetString(mn));
+            } else if (is_trap(mn)) {
+                // A deliberate stop (MSVC puts `int3` after no-return calls; `int 0x29` is
+                // __fastfail): reaching it at run time is a fault with its address, not missing work.
+                ++impl_->report.traps;
+                c.emit_unsupported(d.va, ZydisMnemonicGetString(mn));
                 break;
+            } else if (const char* ext = gated_ext(d)) {
+                // Only reachable when `cpuid` advertises the feature, which the runtime's fixed
+                // CPU profile does not (`Runtime::hook_cpuid`): a run-time fault if it is reached.
+                impl_->report.gated[ext]++;
+                c.emit_unsupported(d.va, std::string("needs ") + ext + " (not advertised by cpuid)");
+                break;
+            } else if (mn == ZYDIS_MNEMONIC_CPUID) {
+                c.flush();
+                c.call_hook(offsetof(RuntimeHooks, cpuid), {}, {});
+                c.reload();
             } else {
                 Lifted r = r1::lift_int(c, d);
                 if (r == Lifted::not_mine) {

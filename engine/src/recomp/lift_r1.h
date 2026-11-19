@@ -29,6 +29,11 @@ struct LiftReport {
     std::size_t lifted = 0;
     // mnemonic (or reason) -> number of functions that failed on it first
     std::map<std::string, std::size_t> unsupported;
+    // Instructions lifted as a run-time fault rather than failures: traps (`int3` after a
+    // no-return call, `int 0x29` fast-fail, `ud2`, `hlt`) and code the fixed CPU profile does
+    // not advertise (AVX/FMA/SSE4.2, behind a `cpuid` check), by reason.
+    std::size_t traps = 0;
+    std::map<std::string, std::size_t> gated;
 };
 
 // One module of translated functions. Each function `F` at VA `v` becomes the external symbol

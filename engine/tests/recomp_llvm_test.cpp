@@ -293,6 +293,10 @@ void test_corpus(const char* path) {
         std::printf("    unsupported %-32s %zu\n", what.c_str(), n);
     }
     expect(rep.lifted == fns.size(), "corpus: every corpus function lifts");
+    std::printf("  lifted as run-time faults: %zu traps, %zu AVX instructions\n", rep.traps,
+                rep.gated.count("AVX") != 0 ? rep.gated.at("AVX") : 0);
+    expect(rep.traps >= 1 && rep.gated.count("AVX") != 0,
+           "corpus: int3 and AVX on cold paths lift as run-time faults (cold_paths)");
 
     std::vector<char> obj;
     TranslateTimings t;

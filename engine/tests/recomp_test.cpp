@@ -2577,6 +2577,31 @@ void test_runtime_dispatch() {
     q.gpr[0] = 0x8000000000000000ULL;  // -2^63
     expect(q.hooks->div128(&q, static_cast<std::uint64_t>(-1), 1) == 0,
            "runtime: div128 signed INT64_MIN / -1 overflows (#DE)");
+
+    // cpuid: the fixed profile (vendor, SSE..SSE4.1 + POPCNT, no AVX / SSE4.2 / OSXSAVE).
+    auto cpuid = [&](std::uint32_t leaf) {
+        q.gpr[0] = leaf;
+        q.gpr[1] = 0;
+        q.hooks->cpuid(&q);
+    };
+    cpuid(0);
+    char vendor[13] = {};
+    std::memcpy(vendor, &q.gpr[3], 4);
+    std::memcpy(vendor + 4, &q.gpr[2], 4);
+    std::memcpy(vendor + 8, &q.gpr[1], 4);
+    expect(q.gpr[0] == 1 && std::string(vendor) == "WSE2AArch64 ", "runtime: cpuid 0 vendor and max leaf");
+    cpuid(1);
+    const auto ecx = static_cast<std::uint32_t>(q.gpr[1]);
+    const auto edx = static_cast<std::uint32_t>(q.gpr[2]);
+    expect((edx >> 25 & 1U) == 1 && (edx >> 26 & 1U) == 1 && (ecx & 1U) == 1 && (ecx >> 9 & 1U) == 1 &&
+               (ecx >> 19 & 1U) == 1 && (ecx >> 23 & 1U) == 1,
+           "runtime: cpuid 1 advertises SSE SSE2 SSE3 SSSE3 SSE4.1 POPCNT");
+    expect((ecx >> 20 & 1U) == 0 && (ecx >> 27 & 1U) == 0 && (ecx >> 28 & 1U) == 0 && (ecx >> 12 & 1U) == 0,
+           "runtime: cpuid 1 hides SSE4.2, OSXSAVE, AVX and FMA");
+    cpuid(7);
+    expect(q.gpr[0] == 0 && q.gpr[3] == 0 && q.gpr[1] == 0 && q.gpr[2] == 0, "runtime: cpuid 7 (AVX2, BMI) reads zero");
+    cpuid(0x80000001U);
+    expect((q.gpr[2] >> 29 & 1U) == 1, "runtime: cpuid 0x80000001 advertises long mode");
 }
 
 }  // namespace
