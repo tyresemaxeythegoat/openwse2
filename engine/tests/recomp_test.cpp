@@ -8,6 +8,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <mutex>
 #include <thread>
 #include <cstdint>
@@ -25,12 +26,18 @@
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/r2_rig.h"
 #include "wse/recomp/runtime.h"
+#include "wse/recomp/shim_advapi.h"
 #include "wse/recomp/shim_crt.h"
+#include "wse/recomp/shim_d3d9.h"
+#include "wse/recomp/shim_d3dx.h"
 #include "wse/recomp/shim_files.h"
 #include "wse/recomp/shim_memory.h"
 #include "wse/recomp/shim_modules.h"
+#include "wse/recomp/shim_net.h"
 #include "wse/recomp/shim_strings.h"
+#include "wse/recomp/shim_system.h"
 #include "wse/recomp/shim_time.h"
+#include "wse/recomp/shim_user32.h"
 #include "wse/recomp/teb.h"
 #include "wse/recomp/threadpool.h"
 #include "wse/recomp/threads.h"
@@ -4224,6 +4231,602 @@ void test_modules() {
     expect(faults.empty(), "modules: no faults");
 }
 
+// --- R4 ADVAPI32 (`shim_advapi.h`): the registry hive and Crypt* hashes ------------------------
+namespace adv_test {
+
+std::uint64_t call(Runtime& rt, CpuState& s, const char* name, std::initializer_list<std::uint64_t> args) {
+    constexpr std::uint64_t kRet = 0x140031000ULL;
+    const std::uint64_t rsp0 = s.gpr[4];
+    s.gpr[4] = (rsp0 - 0x80) & ~std::uint64_t{15};
+    static constexpr int kArgReg[4] = {1, 2, 8, 9};
+    std::size_t i = 0;
+    for (const std::uint64_t a : args) {
+        if (i < 4) {
+            s.gpr[kArgReg[i]] = a;
+        } else {
+            std::memcpy(reinterpret_cast<void*>(s.gpr[4] + 0x20 + 8 * (i - 4)), &a, 8);
+        }
+        ++i;
+    }
+    s.gpr[4] -= 8;
+    std::memcpy(reinterpret_cast<void*>(s.gpr[4]), &kRet, 8);
+    const Runtime::ImportShim* shim = rt.named_shim("ADVAPI32.dll", name);
+    s.gpr[0] = 0xBADBADBAD;
+    if (shim != nullptr) {
+        (*shim)(s);
+    }
+    s.gpr[4] = rsp0;
+    return s.gpr[0];
+}
+
+std::string hex(const std::vector<std::uint8_t>& v) {
+    std::string out;
+    for (const std::uint8_t b : v) {
+        char x[3];
+        std::snprintf(x, sizeof(x), "%02x", b);
+        out += x;
+    }
+    return out;
+}
+
+}  // namespace adv_test
+
+void test_advapi() {
+    using adv_test::call;
+    using adv_test::hex;
+    namespace sh = wse::recomp::shim;
+    const std::vector<std::uint8_t> abc = {'a', 'b', 'c'};
+    std::vector<std::uint8_t> million(1000000, 'a');
+    expect(hex(sh::md5({})) == "d41d8cd98f00b204e9800998ecf8427e" && hex(sh::md5(abc)) == "900150983cd24fb0d6963f7d28e17f72" &&
+               hex(sh::sha1(abc)) == "a9993e364706816aba3e25717850c26c9cd0d89d" &&
+               hex(sh::sha1(million)) == "34aa973cd4c4daa4f61eeb2bdbad27316534016f" &&
+               hex(sh::sha256(abc)) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" &&
+               hex(sh::sha256({})) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+           "advapi: MD5, SHA-1 and SHA-256 match the RFC 1321 / FIPS 180 test vectors");
+
+    Runtime rt;
+    wse::platform::MemoryVfs user;
+    GuestStack stack;
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    alignas(16) static std::uint8_t teb[0x2000];
+    s.teb = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(teb));
+    auto va = [](const void* p) { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); };
+    auto last_error = [&]() {
+        std::uint32_t e = 0;
+        std::memcpy(&e, teb + 0x68, 4);
+        return e;
+    };
+    {
+        sh::Advapi adv(rt, &user);
+        (void)adv.install();
+        std::uint64_t key = 0;
+        std::uint32_t disp = 0;
+        expect(call(rt, s, "RegCreateKeyExA", {sh::kHkeyCurrentUser, va("Software\\WSE2\\Test"), 0, 0, 0, 0xF003F, 0, va(&key), va(&disp)}) == 0 &&
+                   key != 0 && disp == sh::kRegCreatedNewKey,
+               "registry: RegCreateKeyExA creates the key path");
+        std::uint64_t key2 = 0;
+        expect(call(rt, s, "RegCreateKeyExA", {sh::kHkeyCurrentUser, va("software\\wse2\\TEST"), 0, 0, 0, 0xF003F, 0, va(&key2), va(&disp)}) == 0 &&
+                   disp == sh::kRegOpenedExistingKey,
+               "registry: key names compare case-insensitively");
+        const char text[] = "hello";
+        const std::uint32_t dword = 0x12345678;
+        expect(call(rt, s, "RegSetValueExA", {key, va("Greeting"), 0, sh::kRegSz, va(text), sizeof(text)}) == 0 &&
+                   call(rt, s, "RegSetValueExA", {key2, va("Count"), 0, sh::kRegDword, va(&dword), 4}) == 0,
+               "registry: RegSetValueExA stores string and DWORD values");
+        char buf[16] = {};
+        std::uint32_t type = 0;
+        std::uint32_t size = sizeof(buf);
+        expect(call(rt, s, "RegQueryValueExA", {key2, va("GREETING"), 0, va(&type), va(buf), va(&size)}) == 0 && type == sh::kRegSz &&
+                   size == 6 && std::strcmp(buf, "hello") == 0,
+               "registry: RegQueryValueExA reads a value back (name case-insensitive)");
+        size = 3;
+        expect(call(rt, s, "RegQueryValueExA", {key, va("Greeting"), 0, 0, va(buf), va(&size)}) == sh::kErrorMoreData && size == 6,
+               "registry: a short buffer gets ERROR_MORE_DATA and the size needed");
+        size = 0;
+        expect(call(rt, s, "RegQueryValueExA", {key, va("Count"), 0, va(&type), 0, va(&size)}) == 0 && size == 4 && type == sh::kRegDword &&
+                   call(rt, s, "RegQueryValueExA", {key, va("Missing"), 0, 0, 0, va(&size)}) == 2,
+               "registry: a NULL buffer asks the size; a missing value is ERROR_FILE_NOT_FOUND");
+        expect(call(rt, s, "RegCloseKey", {key}) == 0 && call(rt, s, "RegCloseKey", {key}) == 6 &&
+                   call(rt, s, "RegCloseKey", {sh::kHkeyLocalMachine}) == 0 &&
+                   call(rt, s, "RegQueryValueExA", {key, va("Count"), 0, 0, 0, va(&size)}) == 6,
+               "registry: RegCloseKey closes once; a closed handle is ERROR_INVALID_HANDLE");
+
+        // Crypt* over the same hashes.
+        std::uint64_t prov = 0;
+        std::uint64_t hash = 0;
+        expect(call(rt, s, "CryptAcquireContextA", {va(&prov), 0, 0, 1, 0xF0000000}) == 1 &&
+                   call(rt, s, "CryptCreateHash", {prov, sh::kCalgMd5, 0, 0, va(&hash)}) == 1 &&
+                   call(rt, s, "CryptHashData", {hash, va("ab"), 2, 0}) == 1 && call(rt, s, "CryptHashData", {hash, va("c"), 1, 0}) == 1,
+               "crypt: acquire, create an MD5 hash, hash data in two parts");
+        std::uint8_t digest[32] = {};
+        std::uint32_t len = 0;
+        expect(call(rt, s, "CryptGetHashParam", {hash, sh::kHpHashVal, 0, va(&len), 0}) == 1 && len == 16 &&
+                   call(rt, s, "CryptGetHashParam", {hash, sh::kHpHashVal, va(digest), va(&len), 0}) == 1 &&
+                   hex(std::vector<std::uint8_t>(digest, digest + 16)) == "900150983cd24fb0d6963f7d28e17f72",
+               "crypt: CryptGetHashParam(HP_HASHVAL) gives the size, then the MD5 of the data");
+        expect(call(rt, s, "CryptHashData", {hash, va("x"), 1, 0}) == 0 && last_error() == 0x8009000BU &&
+                   call(rt, s, "CryptDestroyHash", {hash}) == 1 && call(rt, s, "CryptDestroyHash", {hash}) == 0,
+               "crypt: a finished hash takes no more data (NTE_BAD_HASH_STATE); destroy once");
+        std::uint64_t h2 = 0;
+        len = 4;
+        expect(call(rt, s, "CryptCreateHash", {prov, sh::kCalgSha1, 0, 0, va(&h2)}) == 1 &&
+                   call(rt, s, "CryptGetHashParam", {h2, sh::kHpHashSize, va(digest), va(&len), 0}) == 1 && digest[0] == 20 &&
+                   call(rt, s, "CryptCreateHash", {prov, 0x6610, 0, 0, va(&h2)}) == 0 && last_error() == sh::kNteBadAlgid &&
+                   call(rt, s, "CryptReleaseContext", {prov, 0}) == 1,
+               "crypt: HP_HASHSIZE of SHA-1 is 20; an unknown algorithm is NTE_BAD_ALGID");
+    }
+    // The hive persists in the writable layer and loads into a new instance.
+    sh::Advapi again(rt, &user);
+    std::uint32_t type = 0;
+    std::vector<std::uint8_t> data;
+    expect(user.is_file(sh::Advapi::kHiveFile) && again.get_value("HKCU\\Software\\WSE2\\Test", "count", type, data) &&
+               type == sh::kRegDword && data.size() == 4 && data[0] == 0x78 && data[3] == 0x12 &&
+               again.get_value("HKEY_CURRENT_USER\\software\\wse2\\test", "Greeting", type, data) && data.size() == 6,
+           "registry: the hive is written to NTUSER.DAT and read back");
+}
+
+// --- R4 USER32 (`shim_user32.h`): classes, fake windows, message queues --------------------------
+namespace u32_test {
+
+constexpr std::uint64_t kProcVa = 0x140070000ULL;
+struct Seen {
+    std::uint64_t hwnd, msg, w, l;
+};
+std::vector<Seen> g_seen;
+std::uint64_t g_cs_cx = 0;
+std::uint64_t g_cs_param = 0;
+
+void wndproc(CpuState* s) {  // LRESULT proc(hwnd, msg, wParam, lParam)
+    const Seen e{s->gpr[1], s->gpr[2] & 0xFFFFFFFF, s->gpr[8], s->gpr[9]};
+    g_seen.push_back(e);
+    if (e.msg == wse::recomp::shim::kWmCreate) {
+        std::int32_t cx = 0;
+        std::memcpy(&cx, reinterpret_cast<const void*>(e.l + 36), 4);
+        g_cs_cx = static_cast<std::uint64_t>(cx);
+        std::memcpy(&g_cs_param, reinterpret_cast<const void*>(e.l), 8);
+    }
+    s->gpr[0] = e.msg == wse::recomp::shim::kWmNcCreate ? 1 : (e.msg == wse::recomp::shim::kWmUser ? 0x55 : 0);
+    rt_test::guest_ret(s);
+}
+
+std::uint64_t call(Runtime& rt, CpuState& s, const char* dll, const char* name, std::initializer_list<std::uint64_t> args) {
+    constexpr std::uint64_t kRet = 0x140031000ULL;
+    const std::uint64_t rsp0 = s.gpr[4];
+    s.gpr[4] = (rsp0 - 0x100) & ~std::uint64_t{15};
+    static constexpr int kArgReg[4] = {1, 2, 8, 9};
+    std::size_t i = 0;
+    for (const std::uint64_t a : args) {
+        if (i < 4) {
+            s.gpr[kArgReg[i]] = a;
+        } else {
+            std::memcpy(reinterpret_cast<void*>(s.gpr[4] + 0x20 + 8 * (i - 4)), &a, 8);
+        }
+        ++i;
+    }
+    s.gpr[4] -= 8;
+    std::memcpy(reinterpret_cast<void*>(s.gpr[4]), &kRet, 8);
+    const Runtime::ImportShim* shim = rt.named_shim(dll, name);
+    s.gpr[0] = 0xBADBADBAD;
+    if (shim != nullptr) {
+        (*shim)(s);
+    }
+    s.gpr[4] = rsp0;
+    return s.gpr[0];
+}
+
+}  // namespace u32_test
+
+void test_user32() {
+    using namespace u32_test;
+    namespace sh = wse::recomp::shim;
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    const FnRow rows[] = {{kProcVa, &wndproc}};
+    rt.add_table(rows, 1);
+    sh::User32 user(rt);
+    (void)user.install();
+    GuestStack stack(256 * 1024);
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    alignas(16) static std::uint8_t teb[0x2000];
+    s.teb = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(teb));
+    auto va = [](const void* p) { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); };
+    auto last_error = [&]() {
+        std::uint32_t e = 0;
+        std::memcpy(&e, teb + 0x68, 4);
+        return e;
+    };
+    auto U = [&](const char* name, std::initializer_list<std::uint64_t> args) { return call(rt, s, "USER32.dll", name, args); };
+
+    alignas(8) std::uint8_t wc[80] = {};
+    const std::uint32_t wc_size = 80;
+    std::memcpy(wc, &wc_size, 4);
+    std::memcpy(wc + 8, &kProcVa, 8);
+    const std::uint64_t cname = va(u"WSE2Test");
+    std::memcpy(wc + 64, &cname, 8);
+    const std::uint64_t atom = U("RegisterClassExW", {va(wc)});
+    expect(atom >= 0xC000 && U("RegisterClassExW", {va(wc)}) == 0 && last_error() == sh::kErrorClassAlreadyExists,
+           "user32: RegisterClassExW returns an atom; registering the name twice fails");
+    g_seen.clear();
+    const std::uint64_t hwnd = U("CreateWindowExW", {0, va(u"wse2test"), va(u"Mount&Blade"), 0x00CF0000, sh::kCwUseDefault, 0,
+                                                     sh::kCwUseDefault, 0, 0, 0, 0, 0x1234});
+    expect(hwnd != 0 && g_seen.size() == 2 && g_seen[0].msg == sh::kWmNcCreate && g_seen[1].msg == sh::kWmCreate &&
+               g_seen[1].hwnd == hwnd && g_cs_cx == 1920 && g_cs_param == 0x1234 && faults.empty(),
+           "user32: CreateWindowExW sends WM_NCCREATE and WM_CREATE with the CREATESTRUCT (default size: the screen)");
+    expect(U("CreateWindowExW", {0, va(u"NoSuchClass"), 0, 0, 0, 0, 10, 10, 0, 0, 0, 0}) == 0 &&
+               last_error() == sh::kErrorCannotFindWndClass,
+           "user32: an unknown class fails with ERROR_CANNOT_FIND_WND_CLASS");
+    g_seen.clear();
+    expect(U("ShowWindow", {hwnd, 1}) == 0 && g_seen.size() == 2 && g_seen[0].msg == sh::kWmShowWindow &&
+               g_seen[1].msg == sh::kWmSize && g_seen[1].l == (1920U | (1080U << 16)) && U("ShowWindow", {hwnd, 1}) == 1 &&
+               g_seen.size() == 2,
+           "user32: ShowWindow sends WM_SHOWWINDOW and WM_SIZE once, and returns the previous visibility");
+    std::int32_t r[4] = {};
+    g_seen.clear();
+    expect(U("SetWindowPos", {hwnd, 0, 10, 20, 800, 600, 0}) == 1 && g_seen.size() == 1 && g_seen[0].msg == sh::kWmSize &&
+               U("GetClientRect", {hwnd, va(r)}) == 1 && r[0] == 0 && r[2] == 800 && r[3] == 600 &&
+               U("GetWindowRect", {hwnd, va(r)}) == 1 && r[0] == 10 && r[1] == 20 && r[2] == 810 && r[3] == 620,
+           "user32: SetWindowPos moves and resizes (WM_SIZE); the client rect is the window's size");
+    std::int32_t pt[2] = {5, 6};
+    expect(U("ClientToScreen", {hwnd, va(pt)}) == 1 && pt[0] == 15 && pt[1] == 26 && U("ScreenToClient", {hwnd, va(pt)}) == 1 &&
+               pt[0] == 5 && pt[1] == 6,
+           "user32: ClientToScreen and ScreenToClient offset by the window position");
+    expect(U("SetWindowLongA", {hwnd, static_cast<std::uint64_t>(-21), 0xABCD}) == 0 &&
+               U("GetWindowLongA", {hwnd, static_cast<std::uint64_t>(-21)}) == 0xABCD &&
+               U("GetWindowLongA", {hwnd, static_cast<std::uint64_t>(-16)}) == 0x00CF0000,
+           "user32: window longs (GWL_USERDATA, GWL_STYLE)");
+
+    // Messages: queued by the embedder, peeked, removed and dispatched to the procedure.
+    alignas(8) std::uint8_t msg[48] = {};
+    expect(user.post(hwnd, sh::kWmKeyDown, 0x41, 0x1E0001) && U("PeekMessageW", {va(msg), 0, 0, 0, 0}) == 1 &&
+               U("PeekMessageW", {va(msg), 0, 0, 0, sh::kPmRemove}) == 1 && U("PeekMessageW", {va(msg), 0, 0, 0, sh::kPmRemove}) == 0,
+           "user32: PeekMessageW without PM_REMOVE leaves the message; with it, takes it once");
+    U("PeekMessageW", {va(msg), 0, 0, 0, 0});
+    user.post(hwnd, sh::kWmKeyDown, 0x42, 7);
+    std::uint32_t mtype = 0;
+    (void)U("PeekMessageW", {va(msg), 0, 0, 0, sh::kPmRemove});
+    std::memcpy(&mtype, msg + 8, 4);
+    g_seen.clear();
+    expect(mtype == sh::kWmKeyDown && U("DispatchMessageW", {va(msg)}) == 0 && g_seen.size() == 1 && g_seen[0].w == 0x42 &&
+               g_seen[0].l == 7,
+           "user32: DispatchMessageW calls the window procedure with the message");
+    expect(U("SendMessageA", {hwnd, sh::kWmUser, 1, 2}) == 0x55, "user32: SendMessageA returns the procedure's result");
+    user.post(hwnd, sh::kWmMouseMove, 0, 0);
+    user.post(hwnd, sh::kWmKeyDown, 0, 0);
+    expect(U("PeekMessageW", {va(msg), 0, sh::kWmKeyDown, sh::kWmKeyDown, sh::kPmRemove}) == 1 &&
+               std::memcmp(msg + 8, &sh::kWmKeyDown, 4) == 0 && U("PeekMessageW", {va(msg), 0, 0, 0, sh::kPmRemove}) == 1 &&
+               std::memcmp(msg + 8, &sh::kWmMouseMove, 4) == 0,
+           "user32: a message range filter picks a later message and leaves the others in order");
+    // GetMessageW blocks until another thread posts, and returns 0 for WM_QUIT.
+    std::thread poster([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        user.post(hwnd, sh::kWmUser + 1, 9, 0);
+    });
+    const std::uint64_t got = U("GetMessageW", {va(msg), 0, 0, 0});
+    poster.join();
+    std::uint64_t wparam = 0;
+    std::memcpy(&wparam, msg + 16, 8);
+    expect(got == 1 && wparam == 9, "user32: GetMessageW waits for a message posted from another thread");
+    U("PostQuitMessage", {7});
+    expect(U("GetMessageW", {va(msg), 0, 0, 0}) == 0 && std::memcmp(msg + 8, &sh::kWmQuit, 4) == 0 && msg[16] == 7,
+           "user32: PostQuitMessage makes GetMessageW return 0 with the exit code");
+
+    // Metrics, cursor, clipboard, message box, IMM32.
+    std::string boxed;
+    user.on_message_box = [&](const std::string& c, const std::string& t) { boxed = c + ": " + t; };
+    std::int32_t cur[2] = {};
+    expect(U("GetSystemMetrics", {0}) == 1920 && U("GetSystemMetrics", {1}) == 1080 && U("SetCursorPos", {100, 200}) == 1 &&
+               U("GetCursorPos", {va(cur)}) == 1 && cur[0] == 100 && cur[1] == 200 &&
+               U("MessageBoxA", {hwnd, va("text"), va("Caption"), 0}) == 1 && boxed == "Caption: text",
+           "user32: screen metrics, the cursor position, MessageBoxA (reported, IDOK)");
+    char clip[] = "copied";
+    expect(U("OpenClipboard", {hwnd}) == 1 && U("EmptyClipboard", {}) == 1 && U("SetClipboardData", {1, va(clip)}) == va(clip) &&
+               U("IsClipboardFormatAvailable", {1}) == 1 && U("IsClipboardFormatAvailable", {13}) == 0 &&
+               std::strcmp(reinterpret_cast<const char*>(static_cast<std::uintptr_t>(U("GetClipboardData", {1}))), "copied") == 0 &&
+               U("CloseClipboard", {}) == 1,
+           "user32: text through the clipboard");
+    expect(call(rt, s, "IMM32.dll", "ImmGetContext", {hwnd}) == 0 && call(rt, s, "IMM32.dll", "ImmAssociateContextEx", {hwnd, 0, 0}) == 1 &&
+               call(rt, s, "GDI32.dll", "GetStockObject", {4}) != 0,
+           "user32: no IME context; GDI stock objects are handles");
+    g_seen.clear();
+    expect(U("DestroyWindow", {hwnd}) == 1 && g_seen.size() == 2 && g_seen[0].msg == sh::kWmDestroy &&
+               g_seen[1].msg == sh::kWmNcDestroy && U("GetClientRect", {hwnd, va(r)}) == 0 &&
+               last_error() == sh::kErrorInvalidWindowHandle,
+           "user32: DestroyWindow sends WM_DESTROY and WM_NCDESTROY; the handle is then invalid");
+    expect(faults.empty(), "user32: no faults");
+}
+
+// --- R4 offline network and small system DLLs (`shim_net.h`, `shim_system.h`) ------------------
+void test_net_system() {
+    using u32_test::call;
+    namespace sh = wse::recomp::shim;
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    // Imports by ordinal bind to shims registered as "#n" (WS2_32 htons is ordinal 9).
+    alignas(8) static std::uint64_t slots[2] = {0, 0};
+    const auto slot0 = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&slots[0]));
+    rt.name_imports({PeImport{slot0, "WS2_32.dll", "", 9}, PeImport{slot0 + 8, "OLEAUT32.dll", "", 2}});
+    sh::Net net(rt);
+    sh::SystemDlls sys(rt);
+    expect(net.install() >= 1 && sys.install() >= 1, "net/system: imports by ordinal bind to shims registered as \"#n\"");
+    GuestStack stack;
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    alignas(16) static std::uint8_t teb[0x2000];
+    s.teb = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(teb));
+    auto va = [](const void* p) { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); };
+    s.gpr[1] = 0x1234;
+    rt_test::push_and_hook(&s, 0x140030000ULL, slot0, true);
+    expect(faults.empty() && s.gpr[0] == 0x3412, "net: htons through an import by ordinal");
+    auto W = [&](const char* name, std::initializer_list<std::uint64_t> args) { return call(rt, s, "WS2_32.dll", name, args); };
+    alignas(8) std::uint8_t wsa[408] = {};
+    expect(W("WSAStartup", {0x0202, va(wsa)}) == 0 && wsa[0] == 2 && wsa[1] == 2 && W("socket", {2, 1, 6}) == sh::kInvalidSocket &&
+               W("WSAGetLastError", {}) == sh::kWsaeNetDown && W("connect", {5, 0, 16}) == sh::kSocketError &&
+               W("WSAGetLastError", {}) == sh::kWsaeNotSock && W("gethostbyname", {va("example.com")}) == 0 &&
+               W("WSAGetLastError", {}) == sh::kWsaHostNotFound && W("WSACleanup", {}) == 0 && W("WSACleanup", {}) == sh::kSocketError,
+           "net: Winsock starts, but sockets and lookups fail with WSAENETDOWN / WSAENOTSOCK / WSAHOST_NOT_FOUND");
+    const std::uint64_t addr = W("inet_addr", {va("192.168.1.20")});
+    std::uint32_t pton = 0;
+    char ntop[16] = {};
+    const std::uint32_t loop = 0x0100007FU;
+    expect(addr == 0x1401A8C0U && W("inet_addr", {va("1.2.3")}) == 0xFFFFFFFFU && W("inet_addr", {va("256.1.1.1")}) == 0xFFFFFFFFU &&
+               std::strcmp(reinterpret_cast<const char*>(static_cast<std::uintptr_t>(W("inet_ntoa", {addr}))), "192.168.1.20") == 0 &&
+               W("inet_pton", {2, va("10.0.0.1"), va(&pton)}) == 1 && pton == 0x0100000AU &&
+               W("inet_ntop", {2, va(&loop), va(ntop), sizeof(ntop)}) == va(ntop) && std::strcmp(ntop, "127.0.0.1") == 0 &&
+               W("htonl", {0x11223344}) == 0x44332211U,
+           "net: inet_addr / inet_ntoa / inet_pton / inet_ntop / htonl are real");
+    expect(call(rt, s, "WINHTTP.dll", "WinHttpOpen", {0, 0, 0, 0, 0}) != 0 &&
+               call(rt, s, "WINHTTP.dll", "WinHttpSendRequest", {1, 0, 0, 0, 0, 0, 0}) == 0 &&
+               call(rt, s, "urlmon.dll", "URLDownloadToFileA", {0, va("http://x"), va("f"), 0, 0}) == sh::kInetEResourceNotFound,
+           "net: WinHTTP handles exist but a request fails; URLDownloadToFileA fails");
+
+    // OLEAUT32 BSTRs (#2 SysAllocString, #149 SysStringByteLen, #6 SysFreeString), SHLWAPI, COM, XInput.
+    const std::uint64_t bstr = call(rt, s, "OLEAUT32.dll", "#2", {va(u"abc")});
+    std::uint16_t c0 = 0;
+    std::memcpy(&c0, reinterpret_cast<const void*>(static_cast<std::uintptr_t>(bstr)), 2);
+    expect(bstr != 0 && c0 == u'a' && call(rt, s, "OLEAUT32.dll", "#149", {bstr}) == 6 && call(rt, s, "OLEAUT32.dll", "#6", {bstr}) == 0,
+           "system: BSTRs carry their byte length and free once");
+    char p1[] = "C:\\dir.x\\file.txt";
+    char p2[] = "C:\\dir\\name.ext";
+    char url[64] = {};
+    std::uint32_t n = sizeof(url);
+    call(rt, s, "SHLWAPI.dll", "PathRemoveExtensionA", {va(p1)});
+    call(rt, s, "SHLWAPI.dll", "PathStripPathA", {va(p2)});
+    expect(std::strcmp(p1, "C:\\dir.x\\file") == 0 && std::strcmp(p2, "name.ext") == 0 &&
+               call(rt, s, "SHLWAPI.dll", "UrlUnescapeA", {va("a%20b%2Fc"), va(url), va(&n), 0}) == 0 && std::strcmp(url, "a b/c") == 0 &&
+               n == 5,
+           "system: PathRemoveExtensionA, PathStripPathA, UrlUnescapeA");
+    std::uint64_t obj = 1;
+    expect(call(rt, s, "ole32.dll", "CoInitializeEx", {0, 2}) == 0 && call(rt, s, "ole32.dll", "CoInitializeEx", {0, 2}) == 1 &&
+               call(rt, s, "ole32.dll", "CoCreateInstance", {0, 0, 1, 0, va(&obj)}) == sh::kRegdbEClassNotReg && obj == 0 &&
+               call(rt, s, "XINPUT1_3.dll", "#2", {0, va(wsa)}) == sh::kErrorDeviceNotConnected,
+           "system: COM starts but creates nothing; no XInput controller");
+    expect(faults.empty(), "net/system: no faults");
+}
+
+// --- R4 D3DX math (`shim_d3dx.h`; also compared with d3dx9_43.dll on Windows) ---------------------
+void test_d3dx_math() {
+    namespace dx = wse::recomp::shim::d3dx;
+    auto near = [](const float* a, const float* b, int n) {
+        for (int i = 0; i < n; ++i) {
+            if (std::fabs(a[i] - b[i]) > 1e-5F * std::fmax(1.0F, std::fabs(b[i]))) return false;
+        }
+        return true;
+    };
+    const float m[16] = {2, 0, 0, 0, 0, 4, 0, 0, 0, 0, 8, 0, 1, 2, 3, 1};  // scale then translate
+    const float want_inv[16] = {0.5F, 0, 0, 0, 0, 0.25F, 0, 0, 0, 0, 0.125F, 0, -0.5F, -0.5F, -0.375F, 1};
+    float inv[16];
+    float det = 7;
+    float id[16];
+    const float ident[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    expect(dx::inverse(inv, &det, m) && det == 64.0F && near(inv, want_inv, 16), "d3dx: inverse of scale+translate, determinant");
+    dx::multiply(id, m, inv);
+    expect(near(id, ident, 16), "d3dx: M * inverse(M) = I (output may alias)");
+    const float sing[16] = {1, 2, 3, 4, 2, 4, 6, 8, 0, 1, 0, 0, 0, 0, 1, 0};
+    det = 5;
+    expect(!dx::inverse(inv, &det, sing) && det == 5, "d3dx: a singular matrix gives NULL and leaves the determinant");
+    float t[16];
+    dx::transpose(t, m);
+    expect(t[3] == 1 && t[7] == 2 && t[11] == 3 && t[12] == 0, "d3dx: transpose");
+    float o[16];
+    dx::ortho_off_center_rh(o, 0, 800, 600, 0, 0, 1);  // a 2D screen projection
+    const float v[3] = {800, 600, 0};
+    float out[4];
+    dx::transform(out, v, 3, o);
+    expect(near(out, std::array<float, 4>{1, -1, 0, 1}.data(), 4), "d3dx: OrthoOffCenterRH maps the screen corner to (1, -1)");
+    float p[16];
+    dx::perspective_off_center_rh(p, -1, 1, -1, 1, 1, 100);
+    const float far_pt[3] = {0, 0, -100};
+    dx::transform(out, far_pt, 3, p);
+    expect(std::fabs(out[2] / out[3] - 1.0F) < 1e-5F && out[3] == 100.0F, "d3dx: PerspectiveOffCenterRH maps the far plane to z = 1");
+    const float vv[4] = {3, 0, 4, 9};
+    float n3[3];
+    float pl[4];
+    dx::normalize(n3, vv, 3, 3);
+    dx::normalize(pl, vv, 4, 3);
+    expect(near(n3, std::array<float, 3>{0.6F, 0, 0.8F}.data(), 3) && near(pl, std::array<float, 4>{0.6F, 0, 0.8F, 1.8F}.data(), 4),
+           "d3dx: Vec3Normalize and PlaneNormalize (by |(a,b,c)|)");
+}
+
+// --- R4 recording D3D9 device, D3DX objects, DirectInput (`shim_d3d9.h`) ------------------------
+namespace d3d_test {
+
+// Calls method `name` of COM object `obj` as translated code does: the vtable slot through dispatch.
+std::uint64_t com(CpuState& s, std::uint64_t obj, const wse::recomp::com::Interface& iface, const char* name,
+                  std::initializer_list<std::uint64_t> args) {
+    std::size_t index = iface.count;
+    for (std::size_t i = 0; i < iface.count; ++i) {
+        if (std::strcmp(iface.methods[i], name) == 0) index = i;
+    }
+    if (index == iface.count) return 0xDEADDEAD;
+    std::uint64_t vtbl = 0;
+    std::uint64_t fn = 0;
+    std::memcpy(&vtbl, reinterpret_cast<const void*>(static_cast<std::uintptr_t>(obj)), 8);
+    std::memcpy(&fn, reinterpret_cast<const void*>(static_cast<std::uintptr_t>(vtbl + 8 * index)), 8);
+    constexpr std::uint64_t kRet = 0x140031000ULL;
+    const std::uint64_t rsp0 = s.gpr[4];
+    s.gpr[4] = (rsp0 - 0x100) & ~std::uint64_t{15};
+    static constexpr int kArgReg[4] = {1, 2, 8, 9};
+    std::size_t i = 0;
+    for (const std::uint64_t a : std::initializer_list<std::uint64_t>{obj}) s.gpr[kArgReg[i++]] = a;
+    for (const std::uint64_t a : args) {
+        if (i < 4) {
+            s.gpr[kArgReg[i]] = a;
+        } else {
+            std::memcpy(reinterpret_cast<void*>(s.gpr[4] + 0x20 + 8 * (i - 4)), &a, 8);
+        }
+        ++i;
+    }
+    s.gpr[4] -= 8;
+    std::memcpy(reinterpret_cast<void*>(s.gpr[4]), &kRet, 8);
+    s.gpr[0] = 0xBADBADBAD;
+    s.hooks->dispatch(&s, fn);
+    s.gpr[4] = rsp0;
+    return s.gpr[0] & 0xFFFFFFFFFFFFFFFFULL;
+}
+
+}  // namespace d3d_test
+
+void test_d3d9() {
+    using d3d_test::com;
+    using u32_test::call;
+    namespace sh = wse::recomp::shim;
+    namespace ci = wse::recomp::com;
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    sh::D3d9 d3d(rt);
+    std::vector<std::string> recorded;
+    d3d.on_first_call = [&](const std::string& m) { recorded.push_back(m); };
+    (void)d3d.install();
+    GuestStack stack(256 * 1024);
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    auto va = [](const void* p) { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); };
+    auto lo = [](std::uint64_t v) { return static_cast<std::uint32_t>(v); };
+
+    const std::uint64_t d9 = call(rt, s, "d3d9.dll", "Direct3DCreate9", {32});
+    std::uint32_t mode[4] = {};
+    alignas(8) std::uint8_t caps[304] = {};
+    expect(d9 != 0 && com(s, d9, ci::kIDirect3D9, "GetAdapterCount", {}) == 1 &&
+               com(s, d9, ci::kIDirect3D9, "GetAdapterModeCount", {0, sh::kD3dFmtX8R8G8B8}) == 8 &&
+               com(s, d9, ci::kIDirect3D9, "EnumAdapterModes", {0, sh::kD3dFmtX8R8G8B8, 7, va(mode)}) == 0 && mode[0] == 1920 &&
+               mode[1] == 1080 && lo(com(s, d9, ci::kIDirect3D9, "EnumAdapterModes", {0, sh::kD3dFmtX8R8G8B8, 8, va(mode)})) == sh::kD3dErrInvalidCall &&
+               com(s, d9, ci::kIDirect3D9, "GetDeviceCaps", {0, 1, va(caps)}) == 0,
+           "d3d9: Direct3DCreate9, adapter count, display modes, caps");
+    std::uint32_t vs_version = 0;
+    std::memcpy(&vs_version, caps + 196, 4);
+    expect(vs_version == 0xFFFE0300U, "d3d9: caps report vertex shader 3.0 at D3DCAPS9.VertexShaderVersion");
+    // D3DPRESENT_PARAMETERS: 800 x 600, auto depth D24S8.
+    alignas(8) std::uint8_t pp[64] = {};
+    const std::uint32_t w = 800, h = 600, one = 1, d24 = sh::kD3dFmtD24S8;
+    std::memcpy(pp, &w, 4);
+    std::memcpy(pp + 4, &h, 4);
+    std::memcpy(pp + 44, &one, 4);
+    std::memcpy(pp + 48, &d24, 4);
+    std::uint64_t device = 0;
+    expect(com(s, d9, ci::kIDirect3D9, "CreateDevice", {0, 1, 0x10012, 0x40, va(pp), va(&device)}) == 0 && device != 0,
+           "d3d9: CreateDevice");
+    std::uint64_t bb = 0;
+    std::uint32_t desc[8] = {};
+    expect(com(s, device, ci::kIDirect3DDevice9, "GetBackBuffer", {0, 0, 0, va(&bb)}) == 0 && bb != 0 &&
+               com(s, bb, ci::kIDirect3DSurface9, "GetDesc", {va(desc)}) == 0 && desc[6] == 800 && desc[7] == 600,
+           "d3d9: the back buffer is the size the device was created with");
+    std::uint64_t tex = 0;
+    expect(com(s, device, ci::kIDirect3DDevice9, "CreateTexture", {256, 128, 0, 0, sh::kD3dFmtA8R8G8B8, 1, va(&tex), 0}) == 0 &&
+               com(s, tex, ci::kIDirect3DTexture9, "GetLevelCount", {}) == 9 &&
+               com(s, tex, ci::kIDirect3DTexture9, "GetLevelDesc", {1, va(desc)}) == 0 && desc[6] == 128 && desc[7] == 64,
+           "d3d9: CreateTexture with a full mip chain; level sizes halve");
+    alignas(8) std::uint8_t lr[16] = {};
+    alignas(8) std::uint8_t lr2[16] = {};
+    std::uint64_t surf = 0;
+    std::int32_t pitch = 0;
+    std::uint64_t bits = 0;
+    std::uint64_t bits2 = 0;
+    expect(com(s, tex, ci::kIDirect3DTexture9, "LockRect", {0, va(lr), 0, 0}) == 0 &&
+               com(s, tex, ci::kIDirect3DTexture9, "GetSurfaceLevel", {0, va(&surf)}) == 0 &&
+               com(s, surf, ci::kIDirect3DSurface9, "LockRect", {va(lr2), 0, 0}) == 0,
+           "d3d9: a texture level locks, directly and through its surface");
+    std::memcpy(&pitch, lr, 4);
+    std::memcpy(&bits, lr + 8, 8);
+    std::memcpy(&bits2, lr2 + 8, 8);
+    expect(pitch == 1024 && bits != 0 && bits == bits2, "d3d9: the lock gives the level's pitch and the same memory both ways");
+    std::uint32_t value = 0;
+    std::uint64_t vb = 0;
+    std::uint64_t vbmem = 0;
+    expect(com(s, device, ci::kIDirect3DDevice9, "SetRenderState", {7, 1}) == 0 &&
+               com(s, device, ci::kIDirect3DDevice9, "GetRenderState", {7, va(&value)}) == 0 && value == 1 &&
+               com(s, device, ci::kIDirect3DDevice9, "CreateVertexBuffer", {1024, 0, 0, 0, va(&vb), 0}) == 0 &&
+               com(s, vb, ci::kIDirect3DVertexBuffer9, "Lock", {0, 0, va(&vbmem), 0}) == 0 && vbmem != 0 &&
+               com(s, vb, ci::kIDirect3DVertexBuffer9, "Unlock", {}) == 0,
+           "d3d9: render state is stored; vertex buffers lock to real memory");
+    recorded.clear();
+    expect(com(s, device, ci::kIDirect3DDevice9, "BeginScene", {}) == 0 &&
+               com(s, device, ci::kIDirect3DDevice9, "DrawPrimitive", {4, 0, 2}) == 0 &&
+               com(s, device, ci::kIDirect3DDevice9, "EndScene", {}) == 0 &&
+               com(s, device, ci::kIDirect3DDevice9, "Present", {0, 0, 0, 0}) == 0 && d3d.frames() == 1 && recorded.size() == 3 &&
+               recorded[1] == "IDirect3DDevice9::DrawPrimitive" && faults.empty(),
+           "d3d9: drawing is recorded; Present counts frames");
+    std::uint64_t self = 0;
+    const unsigned char bogus[16] = {1, 2, 3};
+    expect(com(s, device, ci::kIDirect3DDevice9, "QueryInterface", {va(ci::kIDirect3DDevice9.iid), va(&self)}) == 0 && self == device &&
+               lo(com(s, device, ci::kIDirect3DDevice9, "QueryInterface", {va(bogus), va(&self)})) == sh::kENoInterface && self == 0,
+           "d3d9: QueryInterface answers its own IID and refuses others");
+    (void)com(s, device, ci::kIDirect3DDevice9, "GetLight", {0, 0});
+    expect(faults.size() == 1 && faults[0].kind == FaultKind::unsupported &&
+               faults[0].what.find("IDirect3DDevice9::GetLight") != std::string::npos,
+           "d3d9: a method the recording device lacks faults with its name");
+    faults.clear();
+
+    // D3DX: an effect, and a texture sized from a DDS header (64 x 32, DXT5, 3 levels).
+    std::uint64_t effect = 0;
+    std::uint32_t passes = 0;
+    expect(call(rt, s, "d3dx9_43.dll", "D3DXCreateEffectFromFileA", {device, va("x.fx"), 0, 0, 0, 0, va(&effect), 0}) == 0 &&
+               effect != 0 && com(s, effect, ci::kID3DXEffect, "GetParameterByName", {0, va("world")}) != 0 &&
+               com(s, effect, ci::kID3DXEffect, "Begin", {va(&passes), 0}) == 0 && passes == 1 &&
+               com(s, effect, ci::kID3DXEffect, "SetMatrix", {1, va(caps)}) == 0,
+           "d3dx: effects give parameter handles, one pass, and accept values");
+    std::uint8_t dds[128] = {'D', 'D', 'S', ' '};
+    const std::uint32_t dh = 32, dw = 64, mips = 3, fourcc = 4, dxt5 = 0x35545844U;
+    std::memcpy(dds + 12, &dh, 4);
+    std::memcpy(dds + 16, &dw, 4);
+    std::memcpy(dds + 28, &mips, 4);
+    std::memcpy(dds + 80, &fourcc, 4);
+    std::memcpy(dds + 84, &dxt5, 4);
+    std::uint32_t info[7] = {};
+    std::uint64_t ftex = 0;
+    expect(call(rt, s, "d3dx9_43.dll", "D3DXCreateTextureFromFileInMemoryEx",
+                {device, va(dds), sizeof(dds), sh::kD3dxDefault, sh::kD3dxDefault, 0xFFFFFFFEU, 0, 0, 1, sh::kD3dxDefault,
+                 sh::kD3dxDefault, 0, va(info), 0, va(&ftex)}) == 0 &&
+               info[0] == 64 && info[1] == 32 && info[3] == 3 && info[4] == dxt5 &&
+               com(s, ftex, ci::kIDirect3DTexture9, "GetLevelCount", {}) == 3 &&
+               com(s, ftex, ci::kIDirect3DTexture9, "LockRect", {0, va(lr), 0, 0}) == 0,
+           "d3dx: a texture from a DDS file in memory takes its size, format and levels");
+    std::memcpy(&pitch, lr, 4);
+    expect(pitch == 16 * 16, "d3d9: a DXT5 level's pitch is per 4x4 block row (16 blocks x 16 bytes)");
+
+    // DirectInput 8: a keyboard with nothing pressed.
+    std::uint64_t di = 0;
+    std::uint64_t kbd = 0;
+    std::uint8_t keys[256];
+    std::memset(keys, 0xFF, sizeof(keys));
+    expect(call(rt, s, "DINPUT8.dll", "DirectInput8Create", {0, 0x800, va(ci::kIDirectInput8A.iid), va(&di), 0}) == 0 && di != 0 &&
+               com(s, di, ci::kIDirectInput8A, "CreateDevice", {va(bogus), va(&kbd), 0}) == 0 &&
+               com(s, kbd, ci::kIDirectInputDevice8A, "SetCooperativeLevel", {0x10012, 6}) == 0 &&
+               com(s, kbd, ci::kIDirectInputDevice8A, "Acquire", {}) == 0 &&
+               com(s, kbd, ci::kIDirectInputDevice8A, "GetDeviceState", {256, va(keys)}) == 0 && keys[0] == 0 && keys[255] == 0 &&
+               lo(call(rt, s, "DINPUT8.dll", "DirectInput8Create", {0, 0x800, va(bogus), va(&di), 0})) == sh::kENoInterface,
+           "dinput: DirectInput8Create (A), a device with nothing pressed; an unknown IID is refused");
+    expect(faults.empty(), "d3d9: no faults");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -4261,6 +4864,11 @@ int run_recomp_suite(const char* fixture_path) {
     test_strings_memory();
     test_files();
     test_modules();
+    test_advapi();
+    test_user32();
+    test_net_system();
+    test_d3dx_math();
+    test_d3d9();
     test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");

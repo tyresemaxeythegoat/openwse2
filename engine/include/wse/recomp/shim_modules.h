@@ -261,8 +261,8 @@ public:
     std::uint64_t proc_address(Module& m, const std::string& name, std::uint16_t ordinal, int depth) {
         const std::lock_guard<std::recursive_mutex> lock(m_);
         if (!m.translated) {
-            if (name.empty()) {
-                return 0;  // system DLLs export by name only here
+            if (name.empty()) {  // by ordinal: a shim registered as "#n"
+                return ordinal != 0 ? proc_address(m, "#" + std::to_string(ordinal), 0, depth) : 0;
             }
             const auto it = m.thunks.find(name);
             if (it != m.thunks.end()) {

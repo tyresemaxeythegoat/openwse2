@@ -577,6 +577,16 @@ if(WSE_ENABLE_LLVM)
     target_link_libraries(wse_recomp PUBLIC wse_engine PRIVATE wse_zydis lldELF lldCommon ${_wse_llvm_libs} ${CMAKE_DL_LIBS})
     wse_apply_strict_warnings(wse_recomp)
 
+    if(NOT ANDROID)
+        # R4 bring-up run (`docs/RECOMP_PLAN.md` "R4 design"): local only, on the user's install;
+        # CI builds it so it keeps compiling, and never runs it.
+        add_executable(r4_run tools/r4_run.cpp)
+        target_link_libraries(r4_run PRIVATE wse_recomp wse_zydis ${CMAKE_DL_LIBS})
+        # Translated batches are cached against the translator library, not r4_run itself.
+        target_compile_definitions(r4_run PRIVATE "WSE_RECOMP_LIB=\"$<TARGET_FILE:wse_recomp>\"")
+        wse_apply_strict_warnings(r4_run)
+    endif()
+
     if(WSE_BUILD_TESTS AND BUILD_TESTING AND NOT ANDROID)
         add_executable(recomp_llvm_test engine/tests/recomp_llvm_test.cpp)
         target_link_libraries(recomp_llvm_test PRIVATE wse_recomp wse_zydis ${CMAKE_DL_LIBS})

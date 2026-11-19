@@ -117,22 +117,21 @@ public:
         for (const PeImport& imp : imports) {
             import_names_[imp.slot_va] = imp.dll + "!" + (imp.name.empty() ? "#" + std::to_string(imp.ordinal) : imp.name);
             import_list_.push_back(imp);
-            if (!imp.name.empty()) {
-                const auto it = named_.find(shim_key(imp.dll, imp.name));
-                if (it != named_.end()) {
-                    imports_[imp.slot_va] = it->second;
-                }
+            const auto it = named_.find(shim_key(imp.dll, import_key(imp)));
+            if (it != named_.end()) {
+                imports_[imp.slot_va] = it->second;
             }
         }
     }
-    // Registers `shim` as `dll!name` and binds it to every named slot importing it (DLL compared
-    // case-insensitively). Returns the number of slots bound now (0 when no image imports it yet;
-    // `name_imports` binds later slots, and `named_shim` finds it for `GetProcAddress`).
+    // Registers `shim` as `dll!name` and binds it to every slot importing it (DLL compared
+    // case-insensitively; a `name` of "#n" is the export with ordinal n, for imports by ordinal).
+    // Returns the number of slots bound now (0 when no image imports it yet; `name_imports` binds
+    // later slots, and `named_shim` finds it for `GetProcAddress`).
     std::size_t set_import(const std::string& dll, const std::string& name, const ImportShim& shim) {
         named_[shim_key(dll, name)] = shim;
         std::size_t n = 0;
         for (const PeImport& imp : import_list_) {
-            if (imp.name == name && same_dll(imp.dll, dll)) {
+            if (import_key(imp) == name && same_dll(imp.dll, dll)) {
                 imports_[imp.slot_va] = shim;
                 ++n;
             }
@@ -157,6 +156,10 @@ public:
         imports_[slot_va] = [target](CpuState& s) { s.hooks->dispatch(&s, target); };
         iat_values_[slot_va] = target;
     }
+    // Makes `va` (host memory no image or table uses) run `shim` when guest code calls it through a
+    // pointer: the COM methods of the R4 recording devices (`shim_d3d9.h`), whose vtables hold
+    // such addresses. Register before guest threads run: lookups take no lock.
+    void add_callable(std::uint64_t va, ImportShim shim) { callables_[va] = std::move(shim); }
     [[nodiscard]] const std::vector<PeImport>& import_list() const noexcept { return import_list_; }
     // Writes every named IAT slot's value into the slot, as the loader writes the imported
     // function's address: the slot's own VA for a shim (code that loads an import into a register
@@ -258,6 +261,9 @@ public:
     // pointer). Returns true when it ran the call; false faults as before. Set before guest code
     // runs; it must be safe to call from every guest thread.
     std::function<bool(CpuState&, std::uint64_t)> dispatch_fallback;
+    // Called with the IAT slot before every import (bring-up tracing, `tools/r4_run.cpp`); empty in
+    // normal runs. It runs on whichever guest thread makes the call.
+    std::function<void(std::uint64_t)> trace_import;
 
 private:
     static Runtime& of(CpuState* s) noexcept { return *static_cast<Runtime*>(s->hooks->context); }
@@ -269,6 +275,9 @@ private:
         return s;
     }
     static std::string shim_key(const std::string& dll, const std::string& name) { return lower(dll) + "!" + name; }
+    static std::string import_key(const PeImport& imp) {
+        return imp.name.empty() ? "#" + std::to_string(imp.ordinal) : imp.name;
+    }
     static bool same_dll(const std::string& a, const std::string& b) { return lower(a) == lower(b); }
 
     void fault(CpuState& s, FaultKind kind, std::uint64_t va, std::string what) {
@@ -292,6 +301,10 @@ private:
                 hook_import(s, va);
                 return;
             }
+            if (const auto c = rt.callables_.find(va); c != rt.callables_.end()) {
+                c->second(*s);
+                return;
+            }
             if (rt.dispatch_fallback && rt.dispatch_fallback(*s, va)) {
                 return;
             }
@@ -302,6 +315,9 @@ private:
     }
     static void hook_import(CpuState* s, std::uint64_t slot_va) {
         Runtime& rt = of(s);
+        if (rt.trace_import) {
+            rt.trace_import(slot_va);
+        }
         if (rt.before_import && rt.before_import(*s)) {
             return;
         }
@@ -398,6 +414,7 @@ private:
     std::vector<PeImport> import_list_;
     std::map<std::string, ImportShim> named_;           // "kernel32.dll!TlsAlloc" -> shim
     std::map<std::uint64_t, std::uint64_t> iat_values_;  // slot -> translated export (`bind_import_to`)
+    std::map<std::uint64_t, ImportShim> callables_;     // COM method thunks (`add_callable`)
     std::uint64_t fs_base_ = 0;
     std::uint64_t gs_base_ = 0;
     bool fs_set_ = false;
