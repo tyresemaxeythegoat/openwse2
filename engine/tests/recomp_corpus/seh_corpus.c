@@ -81,6 +81,41 @@ EXPORT u32 seh_test_handler(ExRecord* rec, void* frame, void* ctx, DispatcherCon
     }
 }
 
+/* MSVC C++ exceptions, reduced to their shape (`find_eh_continuations` in `discover.h`): the
+ * handler data is the RVA of a FuncInfo (magic 0x19930522); the handler unwinds with consolidation
+ * and the callback runs the first catch funclet of the first try block with the establisher frame
+ * in rdx, as `__CxxFrameHandler3` does through `_CallSettingFrame`. The funclet returns the
+ * continuation, which no branch reaches. */
+EXPORT NOINLINE u64 seh_call_catch(ExRecord* rec) {
+    typedef u64 (*Funclet)(u64, u64);
+    return ((Funclet)rec->info[1])(0, rec->info[2]);
+}
+
+EXPORT u32 seh_cxx_handler(ExRecord* rec, void* frame, void* ctx, DispatcherContext* dc) {
+    if ((rec->flags & UNWINDING) || rec->code != 0xE0000004u) {
+        return CONTINUE_SEARCH;
+    }
+    const u8* base = (const u8*)dc->image_base;
+    const u32* fi = (const u32*)(base + *(const u32*)dc->handler_data);
+    if (fi[0] != 0x19930522u || fi[3] == 0) {
+        return CONTINUE_SEARCH;
+    }
+    const u32* try0 = (const u32*)(base + fi[4]);   /* TryBlockMapEntry */
+    const u32* catch0 = (const u32*)(base + try0[4]); /* HandlerType */
+    ExRecord r;
+    r.flags = rec->flags;
+    r.record = 0;
+    r.address = rec->address;
+    r.pad = 0;
+    r.code = 0x80000029u; /* STATUS_UNWIND_CONSOLIDATE */
+    r.nparams = 3;
+    r.info[0] = (u64)&seh_call_catch;
+    r.info[1] = dc->image_base + catch0[3];
+    r.info[2] = (u64)frame;
+    RtlUnwindEx(frame, 0, &r, 0, ctx, 0);
+    return CONTINUE_SEARCH; /* not reached */
+}
+
 /* A termination handler: counts how often an unwind passes through its frame. */
 EXPORT u32 seh_count_handler(ExRecord* rec, void* frame, void* ctx, DispatcherContext* dc) {
     (void)frame;
@@ -247,7 +282,65 @@ __asm__(
     "  .text\n"
     "  .seh_endproc\n"
 
+    /* A C++-shaped catch: the funclet writes the frame's local through the establisher frame and
+     * returns the continuation, which follows an unconditional jump (no branch reaches it). */
+    ".globl t_cxx_catch\n"
+    ".def t_cxx_catch; .scl 2; .type 32; .endef\n"
+    ".seh_proc t_cxx_catch\n"
+    "t_cxx_catch:\n"
+    "  pushq %rbx\n"
+    "  .seh_pushreg %rbx\n"
+    "  subq $48, %rsp\n"
+    "  .seh_stackalloc 48\n"
+    "  .seh_endprologue\n"
+    "  movq $0xBAD2, 32(%rsp)\n"
+    "  movl $0xE0000004, %ecx\n"
+    "  callq seh_raise\n"
+    "  movl $0xBAD, %eax\n"
+    "  jmp t_cxx_catch_out\n"
+    "t_cxx_catch_cont:\n"
+    "  movq 32(%rsp), %rax\n"
+    "t_cxx_catch_out:\n"
+    "  addq $48, %rsp\n"
+    "  popq %rbx\n"
+    "  retq\n"
+    "  .seh_handler seh_cxx_handler, @except\n"
+    "  .seh_handlerdata\n"
+    "  .long t_cxx_funcinfo@IMGREL\n"
+    "  .text\n"
+    "  .seh_endproc\n"
+
+    ".globl seh_cxx_funclet\n"
+    ".def seh_cxx_funclet; .scl 2; .type 32; .endef\n"
+    ".seh_proc seh_cxx_funclet\n"
+    "seh_cxx_funclet:\n"
+    "  movq %rdx, 16(%rsp)\n"
+    "  pushq %rbp\n"
+    "  .seh_pushreg %rbp\n"
+    "  subq $32, %rsp\n"
+    "  .seh_stackalloc 32\n"
+    "  .seh_endprologue\n"
+    "  movq %rdx, %rbp\n"
+    "  movq $0x600D, 32(%rbp)\n"
+    "  leaq t_cxx_catch_cont(%rip), %rax\n"
+    "  addq $32, %rsp\n"
+    "  popq %rbp\n"
+    "  retq\n"
+    "  .seh_endproc\n"
+
+    /* FuncInfo (magic, maxState, dispUnwindMap, nTryBlocks, dispTryBlockMap, ...), one try block
+     * (tryLow, tryHigh, catchHigh, nCatches, dispHandlerArray), one catch-all handler
+     * (adjectives, dispType, dispCatchObj, dispOfHandler, dispFrame). */
+    ".section .rdata,\"dr\"\n"
+    ".p2align 2\n"
+    "t_cxx_funcinfo:\n"
+    "  .long 0x19930522, 1, 0, 1, t_cxx_trymap@IMGREL, 0, 0, 0, 0, 0\n"
+    "t_cxx_trymap:\n"
+    "  .long 0, 0, 1, 1, t_cxx_catches@IMGREL\n"
+    "t_cxx_catches:\n"
+    "  .long 0x40, 0, 0, seh_cxx_funclet@IMGREL, 0\n"
+
     ".section .drectve,\"yn\"\n"
     "  .ascii \" -export:t_seh_unwind -export:t_seh_consolidate -export:t_seh_continue\"\n"
-    "  .ascii \" -export:t_seh_nested -export:seh_middle\"\n"
+    "  .ascii \" -export:t_seh_nested -export:seh_middle -export:t_cxx_catch -export:seh_cxx_funclet\"\n"
     ".text\n");

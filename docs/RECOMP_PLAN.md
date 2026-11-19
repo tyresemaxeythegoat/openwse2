@@ -251,6 +251,17 @@ switch* (one case per block, on `rip`) and continues at the catch continuation; 
 returns at once, so the host stack unwinds through ordinary returns (no host C++ exceptions, no
 `setjmp`). Funclets are `.pdata` functions and are dispatched like any other.
 
+**Catch continuations (discovery).** A C++ catch funclet returns the address to continue at
+(`lea rax, [rip + X]`), and nothing else reaches it, so function discovery adds these addresses
+as blocks (`find_eh_continuations` in `engine/src/recomp/discover.h`). Every `.pdata` function
+whose handler data starts with the RVA of a `FuncInfo` (magic `0x19930520`-`22`) contributes its
+try-block map; each catch funclet is discovered and its `lea rax, [rip + X]` targets that lie
+inside a `.pdata` function (not at an entry) become blocks of that function (chained fragments
+resolve to their primary). The handler routine is not identified by name, so the rule needs no
+PDB. Measured on v1.1.5.6: 1,921 `FuncInfo`, 180 catch funclets; 35 return a continuation
+(33 distinct, in 28 functions) and the other 145 all end in a rethrow or a no-return call; no
+body that decoded before fails with the new blocks.
+
 **Memory ordering: correct first.** A guest access whose address is based on `rsp` is a stack
 access and stays plain. Every other 2/4/8-byte load is an acquire load and every store a release
 store (`LDAPR`/`LDAR`, `STLR` on AArch64; plain `mov` on x86, which already is TSO) when the

@@ -291,11 +291,19 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
     return !out.targets.empty();
 }
 
-DFunction Discoverer::discover(std::uint64_t entry, const std::set<std::uint64_t>& entries) const {
+DFunction Discoverer::discover(std::uint64_t entry, const std::set<std::uint64_t>& entries,
+                               const std::set<std::uint64_t>* extra_starts) const {
     DFunction fn;
     fn.entry = entry;
     fn.block_starts.insert(entry);
     std::vector<std::uint64_t> work{entry};
+    if (extra_starts != nullptr) {
+        for (const std::uint64_t x : *extra_starts) {
+            if (x != entry && fn.block_starts.insert(x).second) {
+                work.push_back(x);
+            }
+        }
+    }
     std::size_t budget = 400000;  // instructions; bounds pathological inputs
     while (!work.empty()) {
         std::uint64_t va = work.back();
@@ -448,6 +456,134 @@ bool is_self_contained(const DFunction& f) {
     return true;
 }
 
+namespace {
+
+// UNWIND_INFO: byte 0 = version | flags << 3, byte 2 = count of 2-byte unwind codes (padded to an
+// even count), then the handler RVA and its data (UNW_FLAG_EHANDLER 1 / UHANDLER 2) or a chained
+// RUNTIME_FUNCTION (UNW_FLAG_CHAININFO 4).
+std::uint64_t unwind_tail(const ImageView& view, std::uint64_t info, std::uint8_t& flags) {
+    std::uint8_t b0 = 0;
+    std::uint8_t count = 0;
+    if (!view.read8(info, b0) || !view.read8(info + 2, count)) {
+        return 0;
+    }
+    flags = static_cast<std::uint8_t>(b0 >> 3);
+    return info + 4 + 2ULL * ((count + 1U) & ~1U);
+}
+
+const PeFunctionRange* range_at(const PeImage& img, std::uint32_t rva) {
+    const auto it = std::upper_bound(img.functions.begin(), img.functions.end(), rva,
+                                     [](std::uint32_t v, const PeFunctionRange& r) { return v < r.begin; });
+    if (it == img.functions.begin()) {
+        return nullptr;
+    }
+    const PeFunctionRange& r = *(it - 1);
+    return rva < r.end ? &r : nullptr;
+}
+
+constexpr std::uint32_t kMaxEhEntries = 1U << 16;  // bounds a corrupt FuncInfo
+
+}  // namespace
+
+std::uint64_t pdata_owner(const ImageView& view, const PeImage& img, std::uint64_t va) {
+    if (va < img.image_base || va - img.image_base >= img.size_of_image) {
+        return 0;
+    }
+    const PeFunctionRange* r = range_at(img, static_cast<std::uint32_t>(va - img.image_base));
+    for (int depth = 0; r != nullptr && depth < 32; ++depth) {
+        std::uint8_t flags = 0;
+        const std::uint64_t tail = unwind_tail(view, img.image_base + r->unwind, flags);
+        if (tail == 0) {
+            return 0;
+        }
+        if ((flags & 0x4) == 0) {
+            return img.image_base + r->begin;
+        }
+        std::uint32_t parent = 0;  // the chained RUNTIME_FUNCTION's BeginAddress
+        if (!view.read32(tail, parent)) {
+            return 0;
+        }
+        r = range_at(img, parent);
+    }
+    return 0;
+}
+
+EhContinuations find_eh_continuations(const ImageView& view, const PeImage& img,
+                                      const std::set<std::uint64_t>& entries) {
+    EhContinuations out;
+    const std::uint64_t base = img.image_base;
+    std::set<std::uint32_t> func_infos;
+    for (const PeFunctionRange& r : img.functions) {
+        std::uint8_t flags = 0;
+        const std::uint64_t tail = unwind_tail(view, base + r.unwind, flags);
+        std::uint32_t fi = 0;
+        // Handler data follows the handler RVA; its first word is the FuncInfo RVA.
+        if (tail == 0 || (flags & 0x3) == 0 || (flags & 0x4) != 0 || !view.read32(tail + 4, fi)) {
+            continue;
+        }
+        std::uint32_t magic = 0;
+        if (fi == 0 || !view.read32(base + fi, magic) || magic < 0x19930520U || magic > 0x19930522U) {
+            continue;
+        }
+        func_infos.insert(fi);
+    }
+    out.func_infos = func_infos.size();
+
+    std::set<std::uint64_t> funclets;
+    for (const std::uint32_t fi : func_infos) {
+        // FuncInfo (x64): magic, maxState, dispUnwindMap, nTryBlocks, dispTryBlockMap, ...
+        std::uint32_t n_try = 0;
+        std::uint32_t try_map = 0;
+        if (!view.read32(base + fi + 12, n_try) || !view.read32(base + fi + 16, try_map) ||
+            n_try > kMaxEhEntries) {
+            continue;
+        }
+        for (std::uint32_t t = 0; t < n_try; ++t) {
+            // TryBlockMapEntry (20 bytes): tryLow, tryHigh, catchHigh, nCatches, dispHandlerArray.
+            const std::uint64_t e = base + try_map + 20ULL * t;
+            std::uint32_t n_catch = 0;
+            std::uint32_t handlers = 0;
+            if (!view.read32(e + 12, n_catch) || !view.read32(e + 16, handlers) || n_catch > kMaxEhEntries) {
+                break;
+            }
+            for (std::uint32_t h = 0; h < n_catch; ++h) {
+                // HandlerType (20 bytes): adjectives, dispType, dispCatchObj, dispOfHandler, dispFrame.
+                std::uint32_t funclet = 0;
+                if (view.read32(base + handlers + 20ULL * h + 12, funclet) && funclet != 0 &&
+                    view.in_text(base + funclet)) {
+                    funclets.insert(base + funclet);
+                }
+            }
+        }
+    }
+
+    Discoverer disc(view);
+    for (const std::uint64_t f : funclets) {
+        ++out.catch_handlers;
+        const DFunction fn = disc.discover(f, entries);
+        bool found = false;
+        for (const auto& [va, d] : fn.insns) {
+            if (d.ins.mnemonic != ZYDIS_MNEMONIC_LEA || d.ops[0].type != ZYDIS_OPERAND_TYPE_REGISTER ||
+                d.ops[0].reg.value != ZYDIS_REGISTER_RAX || d.ops[1].mem.base != ZYDIS_REGISTER_RIP) {
+                continue;
+            }
+            const std::uint64_t x = d.next() + static_cast<std::uint64_t>(d.ops[1].mem.disp.value);
+            if (!view.in_text(x) || entries.count(x) != 0) {
+                continue;
+            }
+            const std::uint64_t owner = pdata_owner(view, img, x);
+            if (owner != 0 && entries.count(owner) != 0) {
+                out.by_function[owner].insert(x);
+                found = true;
+            }
+        }
+        if (!found) {
+            ++out.handlers_without;
+        }
+    }
+    return out;
+}
+
 std::pair<std::uint64_t, std::uint64_t> text_range(const PeImage& img) {
     for (const PeSection& s : img.sections) {
         if (s.name == ".text") {
@@ -477,6 +613,8 @@ std::set<std::uint64_t> collect_function_entries(const ImageView& view, const Pe
             entries.insert(va);
         }
     }
+    // Catch continuations are code too: their calls name more entries (R3).
+    const EhContinuations eh = find_eh_continuations(view, img, entries);
     Discoverer disc(view);
     std::vector<std::uint64_t> work(entries.begin(), entries.end());
     std::set<std::uint64_t> seen;
@@ -486,7 +624,8 @@ std::set<std::uint64_t> collect_function_entries(const ImageView& view, const Pe
         if (!seen.insert(e).second) {
             continue;
         }
-        const DFunction f = disc.discover(e, entries);
+        const auto cont = eh.by_function.find(e);
+        const DFunction f = disc.discover(e, entries, cont == eh.by_function.end() ? nullptr : &cont->second);
         for (const std::uint64_t t : f.call_targets) {
             if (view.in_text(t) && entries.insert(t).second) {
                 work.push_back(t);

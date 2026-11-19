@@ -278,6 +278,20 @@ void test_corpus(const char* path) {
         }
     }
     ImageView view(mapped, img.image_base, img.size_of_image, text_b, text_e);
+    // R3: catch continuations, reached only through a catch funclet (`t_cxx_catch`).
+    const EhContinuations eh = find_eh_continuations(view, img, entries);
+    {
+        std::uint64_t cxx = 0;
+        for (const Export& e : exports) {
+            cxx = e.name == "t_cxx_catch" ? e.va : cxx;
+        }
+        const auto it = eh.by_function.find(cxx);
+        expect(eh.func_infos == 1 && eh.catch_handlers == 1 && eh.handlers_without == 0 &&
+                   eh.by_function.size() == 1 && it != eh.by_function.end() && it->second.size() == 1,
+               "corpus: the catch funclet names t_cxx_catch's continuation");
+        expect(pdata_owner(view, img, cxx + 1) == cxx && pdata_owner(view, img, img.image_base) == 0,
+               "corpus: pdata_owner maps an address to its function");
+    }
     Discoverer disc(view);
     std::map<std::uint64_t, DFunction> fns;
     std::vector<std::uint64_t> work(entries.begin(), entries.end());
@@ -287,7 +301,8 @@ void test_corpus(const char* path) {
         if (fns.count(e) != 0) {
             continue;
         }
-        DFunction f = disc.discover(e, entries);
+        const auto cont = eh.by_function.find(e);
+        DFunction f = disc.discover(e, entries, cont == eh.by_function.end() ? nullptr : &cont->second);
         for (const std::uint64_t t : f.call_targets) {
             if (view.in_text(t) && entries.insert(t).second) {
                 work.push_back(t);

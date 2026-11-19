@@ -7,7 +7,8 @@
 //
 // Collects function entries (non-chained `.pdata` begins, PDB publics in `.text`, direct call
 // targets, repeated to a fixed point), follows control flow from each with `discover.h`, and
-// reports how many bodies decode completely, jump tables, tail calls, and the mnemonics used.
+// reports how many bodies decode completely, jump tables, tail calls, catch continuations (R3), and
+// the mnemonics used.
 
 #include <algorithm>
 #include <cstdint>
@@ -83,6 +84,13 @@ int main(int argc, char** argv) {
         }
     }
 
+    // R3: catch continuations (reached only through catch funclets).
+    const EhContinuations eh = find_eh_continuations(view, img, entries);
+    std::size_t eh_conts = 0;
+    for (const auto& [fn_va, xs] : eh.by_function) {
+        (void)fn_va;
+        eh_conts += xs.size();
+    }
     Discoverer disc(view);
     std::map<std::uint64_t, DFunction> fns;
     std::vector<std::uint64_t> work(entries.begin(), entries.end());
@@ -93,7 +101,8 @@ int main(int argc, char** argv) {
         if (fns.count(e) != 0) {
             continue;
         }
-        DFunction f = disc.discover(e, entries);
+        const auto cont = eh.by_function.find(e);
+        DFunction f = disc.discover(e, entries, cont == eh.by_function.end() ? nullptr : &cont->second);
         for (const std::uint64_t t : f.call_targets) {
             if (view.in_text(t) && entries.insert(t).second) {
                 ++from_calls;
@@ -134,6 +143,8 @@ int main(int argc, char** argv) {
                 jt_fns, unresolved, unresolved_fns);
     std::printf("tail calls: %zu, calls treated as noreturn: %zu, distinct mnemonics: %zu\n", tails, noret,
                 mnemonics.size());
+    std::printf("EH: %zu FuncInfo, %zu catch funclets (%zu with no continuation), %zu continuations in %zu functions\n",
+                eh.func_infos, eh.catch_handlers, eh.handlers_without, eh_conts, eh.by_function.size());
     for (const auto& [k, v] : errors) {
         std::printf("  error %-40s %zu\n", k.c_str(), v);
     }

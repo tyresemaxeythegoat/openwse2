@@ -731,11 +731,18 @@ static void run_r1_coverage(Report& rep, const PeImage& img, const std::vector<P
     const auto [text_b, text_e] = text_range(img);
     ImageView view(image, img.image_base, img.size_of_image, text_b, text_e);
     const std::set<std::uint64_t> entries = collect_function_entries(view, img, image, publics);
+    const EhContinuations eh = find_eh_continuations(view, img, entries);
     Discoverer disc(view);
     const double discover_ms = ms_since(t0);
 
     ImageInfo info;
     info.base = img.image_base;
+    for (const PeFunctionRange& r : img.functions) {
+        // UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER on a primary entry: the function gets a resume switch.
+        if (r.unwind < img.size_of_image && ((image[r.unwind] >> 3) & 0x3) != 0 && ((image[r.unwind] >> 3) & 0x4) == 0) {
+            info.resumable.insert(img.image_base + r.begin);
+        }
+    }
     R1Translator tr(info);
     const std::vector<std::uint64_t> all(entries.begin(), entries.end());
     constexpr std::size_t kBatch = 400;
@@ -747,7 +754,8 @@ static void run_r1_coverage(Report& rep, const PeImage& img, const std::vector<P
             tr.discard();
             tr.declare(all);
         }
-        const DFunction f = disc.discover(all[i], entries);
+        const auto cont = eh.by_function.find(all[i]);
+        const DFunction f = disc.discover(all[i], entries, cont == eh.by_function.end() ? nullptr : &cont->second);
         insns += f.insns.size();
         if (!f.error.empty()) {
             discover_errors[f.error.substr(0, f.error.find(" at "))]++;
@@ -763,6 +771,14 @@ static void run_r1_coverage(Report& rep, const PeImage& img, const std::vector<P
     const LiftReport& r = tr.report();
     rep.line("  functions %zu, bodies complete %zu, instructions %llu (discovery %.0f ms)", all.size(), complete,
              static_cast<unsigned long long>(insns), discover_ms);
+    std::size_t eh_conts = 0;
+    for (const auto& [fn_va, xs] : eh.by_function) {
+        (void)fn_va;
+        eh_conts += xs.size();
+    }
+    rep.line("  catch continuations %zu in %zu functions (%zu FuncInfo, %zu catch funclets, %zu rethrow); %zu resumable",
+             eh_conts, eh.by_function.size(), eh.func_infos, eh.catch_handlers, eh.handlers_without,
+             info.resumable.size());
     for (const auto& [what, n] : discover_errors) {
         rep.line("    not decoded: %-30s %zu", what.c_str(), n);
     }

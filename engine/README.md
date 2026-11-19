@@ -894,6 +894,9 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   names the frames it walked. Nested exceptions raised inside a handler and collided unwinds are not
   handled yet. A frame resumes only if its function has a `.pdata` handler (`ImageInfo::resumable`);
   unwinding into any other frame faults ("unwind into a frame with no exception handler").
+  Catch continuations come from the `FuncInfo` try-block maps (`find_eh_continuations`); a
+  continuation that a funclet computes some other way than `lea rax, [rip + X]` is not found and
+  faults at the resume ("unwind continuation is not a block of this function").
 - **R3 memory ordering (`lift_r1.cpp` `Ctx::load`/`store`):** shared accesses are acquire/release
   when aligned and barrier-fenced when not; `rsp`-based operands are treated as thread-local stack.
   A stack address passed to another thread would be accessed without ordering (accepted for now).

@@ -83,8 +83,11 @@ public:
     bool decode(std::uint64_t va, DInsn& out) const;
 
     // Follows control flow from `entry`. `entries` is the set of known function entries: a
-    // direct `jmp` to one of them (other than `entry`) is a tail call.
-    DFunction discover(std::uint64_t entry, const std::set<std::uint64_t>& entries) const;
+    // direct `jmp` to one of them (other than `entry`) is a tail call. `extra_starts` (R3) are
+    // more blocks of this function that no branch reaches, such as catch continuations
+    // (`find_eh_continuations`); they are followed like branch targets.
+    DFunction discover(std::uint64_t entry, const std::set<std::uint64_t>& entries,
+                       const std::set<std::uint64_t>* extra_starts = nullptr) const;
 
 private:
     bool resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpTable& out) const;
@@ -116,6 +119,29 @@ std::set<std::uint64_t> collect_function_entries(const ImageView& view, const Pe
 // absolute address, trap, `cpuid`/`rdtsc`, x87, system or cpuid-gated instruction. The PC recorder
 // and the phone use this one rule, so both pick the same set.
 bool is_self_contained(const DFunction& f);
+
+// R3 (`docs/RECOMP_PLAN.md` "R3 design"): the catch continuations of an image. MSVC C++ `catch`
+// blocks are funclets (their own `.pdata` functions) that return the address to continue at
+// (`lea rax, [rip + continuation]`); the continuation is reached by no branch, only by the unwind
+// (`RtlUnwindEx` consolidation), so function discovery would never decode it. Every `.pdata`
+// function whose handler data starts with the RVA of a C++ `FuncInfo` (magic 0x19930520-22, as
+// `__CxxFrameHandler3` and `__GSHandlerCheck_EH` read it) contributes its try-block map; each
+// catch handler is discovered and every `lea rax, [rip + X]` in it whose X lies inside a
+// `.pdata` function (not at an entry) names a continuation of that function (chained fragments
+// resolve to their primary function). The handler routine is not identified by name, so the
+// rule works for any build.
+struct EhContinuations {
+    std::map<std::uint64_t, std::set<std::uint64_t>> by_function;  // function entry -> continuations
+    std::size_t func_infos = 0;        // distinct FuncInfo records read
+    std::size_t catch_handlers = 0;    // distinct catch funclets scanned
+    std::size_t handlers_without = 0;  // catch funclets in which no continuation was found
+};
+EhContinuations find_eh_continuations(const ImageView& view, const PeImage& img,
+                                      const std::set<std::uint64_t>& entries);
+
+// The primary function entry (VA) whose `.pdata` range holds `va`, following chained unwind info;
+// 0 when no `.pdata` range holds it.
+std::uint64_t pdata_owner(const ImageView& view, const PeImage& img, std::uint64_t va);
 
 // The `.text` range of a parsed image as {begin VA, end VA} (zeros when there is none).
 std::pair<std::uint64_t, std::uint64_t> text_range(const PeImage& img);
