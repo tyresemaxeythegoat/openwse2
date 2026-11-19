@@ -539,6 +539,43 @@ __asm__(
     "  incq %rdx\n"
     "  jmpq *(%r8,%rcx,8)\n");
 
+/* An MSVC jump table that no compare bounds (the CRT's memset indexes by size >> 4): read while its
+ * entries land inside the function (`Discoverer::set_function_ranges`). o_unbounded_switch(x)
+ * returns 10, 21, 32 or 43 for (x & 0x3F) >> 4. */
+__asm__(
+    ".globl o_unbounded_switch\n"
+    ".def o_unbounded_switch; .scl 2; .type 32; .endef\n"
+    ".seh_proc o_unbounded_switch\n"
+    "o_unbounded_switch:\n"
+    "  .seh_endprologue\n"
+    "  andl $0x3F, %ecx\n"
+    "  shrl $4, %ecx\n"
+    "  leaq __ImageBase(%rip), %r10\n"
+    "  movl ob_table@IMGREL(%r10,%rcx,4), %r11d\n"
+    "  addq %r10, %r11\n"
+    "  jmpq *%r11\n"
+    "ob_c0:\n"
+    "  movl $10, %eax\n"
+    "  retq\n"
+    "ob_c1:\n"
+    "  movl $21, %eax\n"
+    "  retq\n"
+    "ob_c2:\n"
+    "  movl $32, %eax\n"
+    "  retq\n"
+    "ob_c3:\n"
+    "  movl $43, %eax\n"
+    "  retq\n"
+    "  .seh_endproc\n"
+    ".section .rdata,\"dr\"\n"
+    ".p2align 2\n"
+    "ob_table:\n"
+    "  .long ob_c0@IMGREL, ob_c1@IMGREL, ob_c2@IMGREL, ob_c3@IMGREL\n"
+    "  .long 0\n"
+    ".section .drectve,\"yn\"\n"
+    "  .ascii \" -export:o_unbounded_switch\"\n"
+    ".text\n");
+
 /* 46 runs of 65,535 loops: 3,014,610 handler pairs in all. */
 EXPORT NOINLINE u64 t_offset_deep(void) {
     u64 total = 0;

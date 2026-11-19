@@ -1031,6 +1031,14 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   function, without data flow across branches); it is read from the lowest address seen until a
   value falls outside that function, so a table followed by small numbers would contribute a few
   wrong entries (functions that are never called). Not used by the R1 coverage meter or R2.
+- **R4 discovery for the startup run (`discover.cpp`, `pe_image.h`, `tools/r4_run.cpp`):** an image
+  without a PDB (`lua5164`) also takes every DIR64 relocation that points into `.text` as a
+  function entry (a stored code pointer: CRT init tables, callbacks, vtables; leaf functions have no
+  `.pdata` entry), 123 in `lua5164`. An MSVC jump table that no `cmp`/`ja` or mask bounds (the CRT's
+  `memset`/`memcpy` index by `size >> 4`) is read while its entries land inside the `.pdata`
+  function holding the `jmp` (`Discoverer::set_function_ranges`; at most 256 entries, at least two),
+  so a following table that also points into the function would be read as part of it. Both are off
+  in the R1 coverage meter and the R2 selection.
 - **R4 tail calls (`lift_r1.cpp`):** a tail jump to a function of the same module is `musttail`; a
   tail jump through the dispatch or import hook is marked `tail`, which holds at -O1 and up, and
   `Runtime::hook_dispatch` itself ends in a sibling call only when the runtime is optimized

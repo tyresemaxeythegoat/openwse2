@@ -278,6 +278,7 @@ bool translate_image(const char* tag, Mapped& m, bool is_exe, const char* work_d
                "corpus: pdata_owner maps an address to its function");
     }
     Discoverer disc(view);
+    disc.set_function_ranges(&img.functions);  // R4: jump tables bounded by their function (`o_unbounded_switch`)
     std::map<std::uint64_t, DFunction> fns;
     std::vector<std::uint64_t> work(entries.begin(), entries.end());
     while (!work.empty()) {

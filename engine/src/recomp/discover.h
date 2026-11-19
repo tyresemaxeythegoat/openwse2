@@ -31,6 +31,7 @@ struct DInsn {
 struct JumpTable {
     std::uint64_t jmp_va = 0;                 // the indirect `jmp`
     std::vector<std::uint64_t> targets;       // in table order (duplicates kept)
+    bool by_function_range = false;           // bounded by the .pdata function, not a compare (R4)
 };
 
 struct DFunction {
@@ -89,11 +90,18 @@ public:
     DFunction discover(std::uint64_t entry, const std::set<std::uint64_t>& entries,
                        const std::set<std::uint64_t>* extra_starts = nullptr) const;
 
+    // R4: the image's `.pdata` ranges (sorted by begin). With them, an MSVC jump table that no
+    // `cmp`/`ja` or mask bounds (the CRT's `memset`/`memcpy` index by `size >> 4`) is read while
+    // its entries land inside the `.pdata` function holding the `jmp` (`JumpTable::by_function_range`).
+    // Off by default: the R1 coverage meter and the R2 selection keep their recorded rule.
+    void set_function_ranges(const std::vector<PeFunctionRange>* ranges) { ranges_ = ranges; }
+
 private:
     bool resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpTable& out) const;
 
     const ImageView& view_;
     ZydisDecoder decoder_{};
+    const std::vector<PeFunctionRange>* ranges_ = nullptr;
 };
 
 // Short Intel-syntax text of an instruction (diagnostics).

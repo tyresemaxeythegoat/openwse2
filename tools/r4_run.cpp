@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -154,6 +155,18 @@ std::set<std::uint64_t> entries_of(const Image& m, const ImageView& view, const 
     if (m.img.entry_rva != 0 && entries.insert(m.img.image_base + m.img.entry_rva).second) {
         work.push_back(m.img.image_base + m.img.entry_rva);
     }
+    // Without a PDB, code reached only through a stored pointer (CRT init tables, callbacks,
+    // vtables; leaf functions have no .pdata entry): every relocated pointer into .text.
+    if (publics.empty()) {
+        std::size_t added = 0;
+        for (const std::uint64_t v : read_pe_dir64_values(m.mapped, m.img.size_of_image)) {
+            if (view.in_text(v) && entries.insert(v).second) {
+                work.push_back(v);
+                ++added;
+            }
+        }
+        std::printf("%s: %zu entries from relocated pointers into .text\n", m.tag.c_str(), added);
+    }
     // Code reached only through a run-time table of 16-bit offsets (LuaJIT's bytecode handlers).
     const OffsetTables ot = find_offset_table_entries(view, m.img, entries);
     for (const OffsetTables::Table& t : ot.tables) {
@@ -208,13 +221,47 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
     const std::size_t n_batches = (all.size() + batch - 1) / batch;
     std::vector<fs::path> sos(n_batches);
     std::vector<std::size_t> todo;
-    // Each batch's key file holds the key, then a hash of the batch's functions: a batch is reused
-    // only when it holds the same functions (`--reuse` waives the key, never the functions; a key
-    // file without the second line, from before it was written, is taken on trust).
+    // How each function was discovered (jump tables, their targets, unresolved jumps): a batch's
+    // translation depends on it as much as on which functions the batch holds.
+    std::map<std::uint64_t, std::array<std::size_t, 4>> sig;  // tables, targets, unresolved, function-bounded tables
+    {
+        Discoverer d0(view);
+        d0.set_function_ranges(&m.img.functions);
+        for (const std::uint64_t e : all) {
+            const auto cont = eh.by_function.find(e);
+            const DFunction f = d0.discover(e, entries, cont == eh.by_function.end() ? nullptr : &cont->second);
+            std::array<std::size_t, 4> v{f.jump_tables.size(), 0, f.unresolved_indirect_jumps.size(), 0};
+            for (const JumpTable& jt : f.jump_tables) {
+                v[1] += jt.targets.size();
+                v[3] += jt.by_function_range ? 1 : 0;
+            }
+            sig[e] = v;
+        }
+    }
+    // Each batch's key file holds the key, then a hash of the batch's functions and how they were
+    // discovered: a batch is reused only when both match (`--reuse` waives the key, never the
+    // functions). A key file without the second line (written before it existed) is kept unless the
+    // batch has a jump table bounded by its function (`Discoverer::set_function_ranges`), and its
+    // hash line is written then.
     auto batch_hash = [&](std::size_t b) {
+        std::uint64_t h = 0xCBF29CE484222325ULL;
+        for (std::size_t i = b * batch; i < std::min(all.size(), (b + 1) * batch); ++i) {
+            h = (h ^ all[i]) * 0x100000001B3ULL;
+            for (const std::size_t x : sig[all[i]]) h = (h ^ x) * 0x100000001B3ULL;
+        }
+        return std::to_string(h);
+    };
+    // The first hash line (2026-11-20) covered the function list only.
+    auto list_hash = [&](std::size_t b) {
         std::uint64_t h = 0xCBF29CE484222325ULL;
         for (std::size_t i = b * batch; i < std::min(all.size(), (b + 1) * batch); ++i) h = (h ^ all[i]) * 0x100000001B3ULL;
         return std::to_string(h);
+    };
+    auto legacy_ok = [&](std::size_t b) {
+        for (std::size_t i = b * batch; i < std::min(all.size(), (b + 1) * batch); ++i) {
+            if (sig[all[i]][3] != 0) return false;
+        }
+        return true;
     };
     for (std::size_t b = 0; b < n_batches; ++b) {
         sos[b] = so_dir / (m.tag + "_" + std::to_string(b) + ".so");
@@ -223,9 +270,13 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
         std::string line;
         std::string fns;
         const bool have = std::getline(in, line) && fs::exists(sos[b]);
-        const bool same_fns = !std::getline(in, fns) || fns == batch_hash(b);
+        const bool legacy = have && (!std::getline(in, fns) || fns == list_hash(b));
+        const bool same_fns = legacy ? legacy_ok(b) : fns == batch_hash(b);
         if (retranslate || !have || !same_fns || (line != key && !reuse)) {
             todo.push_back(b);
+        } else if (legacy) {
+            in.close();
+            std::ofstream(key_file) << line << "\n" << batch_hash(b) << "\n";
         }
     }
     std::printf("%s: %zu functions, %zu resumable, catch continuations in %zu functions; %zu batches of %zu, %zu to translate on %u threads\n",
@@ -237,6 +288,7 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const fs::path& 
     std::mutex print_m;
     auto worker = [&]() {
         Discoverer disc(view);
+        disc.set_function_ranges(&m.img.functions);
         for (std::size_t i = next++; i < todo.size() && !failed; i = next++) {
             const std::size_t b = todo[i];
             const std::vector<std::uint64_t> vas(all.begin() + static_cast<std::ptrdiff_t>(b * batch),
@@ -495,7 +547,8 @@ int main(int argc, char** argv) {
     std::map<std::string, std::vector<std::string>> missing_by_dll;
     for (const PeImport& imp : rt.import_list()) {
         ++total;
-        if (rt.named_shim(imp.dll, imp.name) == nullptr && imp.dll != "lua5164.dll") {
+        const std::string key = imp.name.empty() ? "#" + std::to_string(imp.ordinal) : imp.name;
+        if (rt.named_shim(imp.dll, key) == nullptr && imp.dll != "lua5164.dll") {
             ++missing;
             missing_by_dll[imp.dll].push_back(imp.name.empty() ? "#" + std::to_string(imp.ordinal) : imp.name);
         }

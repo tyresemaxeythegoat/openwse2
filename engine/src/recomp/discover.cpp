@@ -253,6 +253,28 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
             break;
         }
     }
+    if (limit < 0 && ranges_ != nullptr && !table_relative && byte_table == 0) {
+        // R4: no bound in the code. Read entries while each lands inside the .pdata function
+        // that holds the jmp (at most 256); a table must have two entries to count.
+        const auto rva = static_cast<std::uint32_t>(jmp.va - base);
+        const auto it2 = std::upper_bound(ranges_->begin(), ranges_->end(), rva,
+                                          [](std::uint32_t v, const PeFunctionRange& r) { return v < r.begin; });
+        if (it2 == ranges_->begin() || rva >= std::prev(it2)->end) {
+            return false;
+        }
+        const std::uint64_t lo = base + std::prev(it2)->begin;
+        const std::uint64_t hi = base + std::prev(it2)->end;
+        out.jmp_va = jmp.va;
+        for (std::uint32_t k = 0; k < 256; ++k) {
+            std::uint32_t e = 0;
+            if (!view_.read32(table + 4ULL * k, e) || base + e < lo || base + e >= hi) {
+                break;
+            }
+            out.targets.push_back(base + e);
+        }
+        out.by_function_range = true;
+        return out.targets.size() >= 2;
+    }
     if (limit < 0 || limit > 65535) {
         return false;
     }

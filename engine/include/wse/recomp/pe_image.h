@@ -628,6 +628,38 @@ inline bool apply_pe_relocations(std::uint8_t* image, std::size_t size, std::uin
     return true;
 }
 
+// The values of every DIR64 base relocation of a mapped image (after `apply_pe_relocations`): the
+// absolute addresses the image stores in its data (function-pointer tables, vtables, CRT init
+// tables, callbacks). R4 function discovery takes those inside `.text` as function entries when no
+// PDB names the functions. Empty when the image has no relocations.
+inline std::vector<std::uint64_t> read_pe_dir64_values(const std::uint8_t* image, std::size_t size) {
+    using pe_detail::rd16;
+    using pe_detail::rd32;
+    using pe_detail::rd64;
+    std::vector<std::uint64_t> out;
+    std::uint32_t dir = 0;
+    std::uint32_t dir_size = 0;
+    if (!pe_detail::data_directory(image, size, 5, dir, dir_size) || dir == 0) {
+        return out;
+    }
+    for (std::size_t block = dir; block + 8 <= std::size_t{dir} + dir_size;) {
+        std::uint32_t page = 0;
+        std::uint32_t block_size = 0;
+        if (!rd32(image, size, block, page) || !rd32(image, size, block + 4, block_size) || block_size < 8) {
+            break;
+        }
+        for (std::size_t e = block + 8; e + 2 <= block + block_size; e += 2) {
+            std::uint16_t entry = 0;
+            std::uint64_t v = 0;
+            if (rd16(image, size, e, entry) && (entry >> 12) == 10 && rd64(image, size, std::size_t{page} + (entry & 0xFFFU), v)) {
+                out.push_back(v);
+            }
+        }
+        block += block_size;
+    }
+    return out;
+}
+
 // A resource type, name or language key: an integer ID, or a string (compared case-insensitively,
 // as `FindResource` compares: resource compilers store names upper-case).
 struct PeResourceKey {
