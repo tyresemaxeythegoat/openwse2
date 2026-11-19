@@ -122,6 +122,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/recomp_test.cpp` | host suite `recomp`: `decode_insn` operands/rejections, `Interpreter` flags, `decode_function`, synthetic R0 (c) model match, `parse_pe`/`map_pe_sections`, and R0 (d) vectors/FNV-1a | synthetic x86-64 bytes + synthetic PE32+ |
 | `include/wse/recomp/cpu_state.h`, `include/wse/recomp/runtime.h` | R1 `CpuState` (448 B: GPRs, `rip`, flags, XMM, MXCSR, hook table) and `RuntimeHooks`; `Runtime`: the `wse_fn_table` dispatcher, `import_call` shims, `bad_return` / `unsupported` / segment faults, `div128` | port infrastructure |
 | `src/recomp/discover.{h,cpp}`, `src/recomp/lift_r1*.{h,cpp}`, `src/recomp/llvm_common.h` | R1: Zydis 4.1.0 function discovery (control flow from each entry, MSVC and clang jump tables, tail calls) and the LLVM 18 lifter (`R1Translator`; families `lift_r1_int.cpp`, `lift_r1_sse.cpp`, `lift_r1_string.cpp`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R1 design") |
+| `include/wse/recomp/shim_files.h` | R4 shims: files, directories, searches, paths, file mappings, standard handles, `SHGetFolderPath` over `Vfs` mounts (`shim::Files`, `shim::FilesConfig`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R4 design") |
 | `include/wse/recomp/shim_strings.h`, `include/wse/recomp/shim_memory.h` | R4 shims: code pages, conversions, case and character types, locale, date/time formats, `FormatMessage` (`shim::Strings`); heaps, Local/Global and virtual memory (`shim::Memory`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R4 design") |
 | `include/wse/recomp/shim_time.h`, `include/wse/recomp/shim_crt.h` | R4 shims: time and counters (`shim::Time`), CRT support, process and system information (`shim::Crt`, `shim::ProcessConfig`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R4 design") |
 | `include/wse/recomp/threadpool.h` | R3 thread-pool timers and waits, `RegisterWaitForSingleObject` (`threadpool::Pool`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R3 design") |
@@ -938,6 +939,17 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   are the code units. `GetLocaleInfo*` answers a fixed en-US table; an unknown `LCTYPE` fails
   with `ERROR_INVALID_FLAGS`. `FormatMessage` knows a short table of system messages and does
   not read message tables from modules.
+- **R4 files (`shim_files.h`):** guest paths map to three mounts: `C:\WSE2` (the install, read
+  through an overlay whose changes go to the writable layer under `install/`; deleting an install
+  file only hides it, for the session), `C:\Users\Player` and `C:\ProgramData` (the writable layer);
+  anything else is `ERROR_PATH_NOT_FOUND`, and the mounts' ancestors (`C:\`, `C:\Users`) are
+  read-only directories. An open file holds the file's bytes, read at open and written back on
+  flush or when its last handle closes, so two handles on one file do not see each other's
+  unflushed writes. Directory handles and overlapped I/O are not supported (`ERROR_ACCESS_DENIED`).
+  Every file reports the same time (2020-01-01); attributes are `DIRECTORY` or `ARCHIVE`. Locks
+  always succeed (one process). File mappings copy the file; a writable view goes back to the file
+  on `FlushViewOfFile`/`UnmapViewOfFile`, and views are 64 KiB-aligned. Like the GUI exe the
+  process has no console: the standard handles are null unless the embedder asks for one.
 - **R4 memory (`shim_memory.h`):** heap blocks carry a 16-byte header; freeing or sizing a pointer
   no heap here allocated fails instead of corrupting memory. `HeapDestroy` does not reclaim the
   heap's blocks, and `HeapWalk` enumerates nothing. Local/Global memory is fixed (the handle is

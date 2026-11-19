@@ -1,4 +1,4 @@
-; Import library definition for the R3 corpora (`seh_corpus.c`, `teb_corpus.c`, `crt_corpus.c`, `str_corpus.c`): only the KERNEL32 exports the
+; Import library definition for the R3 corpora (`seh_corpus.c`, `teb_corpus.c`, `crt_corpus.c`, `str_corpus.c`, `file_corpus.c`): only the KERNEL32 exports the
 ; corpus calls. Built with `llvm-dlltool -m i386:x86-64 -d kernel32.def -l kernel32.lib`.
 LIBRARY KERNEL32.dll
 EXPORTS
@@ -85,3 +85,27 @@ VirtualAlloc
 VirtualFree
 VirtualProtect
 VirtualQuery
+CreateFileA
+ReadFile
+WriteFile
+SetFilePointer
+GetFileSize
+SetEndOfFile
+DeleteFileA
+GetFileAttributesA
+GetFileAttributesExA
+CreateDirectoryA
+RemoveDirectoryA
+FindFirstFileA
+FindNextFileA
+FindClose
+GetTempPathA
+GetCurrentDirectoryA
+SetCurrentDirectoryA
+GetFullPathNameA
+CopyFileA
+MoveFileExA
+CreateFileMappingA
+OpenFileMappingA
+MapViewOfFile
+UnmapViewOfFile

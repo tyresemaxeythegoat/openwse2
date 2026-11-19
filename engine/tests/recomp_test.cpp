@@ -26,6 +26,7 @@
 #include "wse/recomp/r2_rig.h"
 #include "wse/recomp/runtime.h"
 #include "wse/recomp/shim_crt.h"
+#include "wse/recomp/shim_files.h"
 #include "wse/recomp/shim_memory.h"
 #include "wse/recomp/shim_strings.h"
 #include "wse/recomp/shim_time.h"
@@ -2940,7 +2941,9 @@ const char* const kNames[] = {
     "SetUnhandledExceptionFilter", "UnhandledExceptionFilter", "CreateTimerQueue", "CreateTimerQueueTimer",
     "ChangeTimerQueueTimer", "DeleteTimerQueueTimer", "GetACP", "GetOEMCP", "MultiByteToWideChar",
     "WideCharToMultiByte", "LCMapStringEx", "CompareStringEx", "GetLocaleInfoEx", "FormatMessageA", "LocalFree",
-    "GetProcessHeap", "HeapAlloc", "HeapFree", "HeapSize", "HeapReAlloc", "VirtualAlloc", "VirtualQuery", "VirtualFree"};
+    "GetProcessHeap", "HeapAlloc", "HeapFree", "HeapSize", "HeapReAlloc", "VirtualAlloc", "VirtualQuery", "VirtualFree",
+    "CreateFileA", "ReadFile", "WriteFile", "DeleteFileA", "GetFileAttributesA", "FindFirstFileA", "FindNextFileA",
+    "FindClose", "GetCurrentDirectoryA", "GetTempPathA", "CreateDirectoryA"};
 
 std::uint64_t slot(const char* name) {
     for (std::size_t i = 0; i < std::size(kNames); ++i) {
@@ -3635,6 +3638,111 @@ void test_strings_memory() {
     expect(faults.empty(), "strings: no faults");
 }
 
+// --- R4 files (`shim_files.h`): mounts, the install overlay, virtual directories ------------------
+void test_files() {
+    using thr_test::call;
+    namespace tb = wse::recomp::teb;
+    namespace sh = wse::recomp::shim;
+    std::vector<std::uint8_t> img(0x1000, 0);
+    img[0x3C] = 0x80;
+    PeImage pe;
+    pe.image_base = 0x150000000ULL;
+    pe.size_of_image = static_cast<std::uint32_t>(img.size());
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    std::vector<PeImport> named;
+    for (std::size_t i = 0; i < std::size(thr_test::kNames); ++i) {
+        named.push_back({thr_test::kSlotBase + 8 * i, "KERNEL32.dll", thr_test::kNames[i], 0});
+    }
+    named.push_back({thr_test::kSlotBase + 8 * std::size(thr_test::kNames), "SHELL32.dll", "SHGetFolderPathA", 0});
+    rt.name_imports(named);
+    const std::uint64_t sh_slot = thr_test::kSlotBase + 8 * std::size(thr_test::kNames);
+    std::string err;
+    tb::Process proc(rt, pe, img.data());
+    wse::recomp::kernel::Kernel kern(rt);
+    wse::platform::MemoryVfs install;
+    wse::platform::MemoryVfs user;
+    (void)install.write_text("Modules/Native/module.ini", "native");
+    (void)install.write_text("Modules/Native/Data/old.txt", "old");
+    sh::FilesConfig cfg;
+    cfg.install = &install;
+    cfg.user = &user;
+    sh::Files files(rt, kern, cfg);
+    expect(proc.init(&err) && proc.install() >= 2 && kern.install() >= 10 && files.install() >= 11,
+           "files: the file shims bind");
+    GuestStack stack(256 * 1024);
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    tb::GuestThread& t = proc.create_thread(0, 0);
+    tb::Process::attach(s, t);
+    auto va = [](const void* p) { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); };
+
+    char cwd[64] = {};
+    expect(call(s, "GetCurrentDirectoryA", {64, va(cwd)}) == 7 && std::string(cwd) == "C:\\WSE2" &&
+               files.canonical("modules\\.\\native\\..\\Native\\module.ini.") == "C:\\WSE2\\modules\\Native\\module.ini",
+           "files: the process starts in C:\\WSE2; paths are made absolute and canonical (trailing dot dropped)");
+
+    // Reading from the install (case-insensitively), writing to the layer, the install untouched.
+    const char ini[] = "MODULES\\NATIVE\\Module.INI";
+    const std::uint64_t h = call(s, "CreateFileA", {va(ini), 0xC0000000ULL, 0, 0, 3, 0x80, 0});
+    char buf[16] = {};
+    alignas(4) std::uint32_t n = 0;
+    const bool read = h != ~0ULL && call(s, "ReadFile", {h, va(buf), 16, va(&n), 0}) == 1 && n == 6 &&
+                      std::string(buf, 6) == "native";
+    const char more[] = "!";
+    (void)call(s, "WriteFile", {h, va(more), 1, va(&n), 0});
+    (void)call(s, "CloseHandle", {h});
+    std::string layer;
+    std::string original;
+    expect(read && user.read_text("install/Modules/Native/module.ini", layer) && layer == "native!" &&
+               install.read_text("Modules/Native/module.ini", original) && original == "native",
+           "files: an install file reads through the overlay; a change goes to the writable layer only");
+
+    // Deleting an install file hides it; the install still has it.
+    const char old[] = "C:\\WSE2\\Modules\\Native\\Data\\old.txt";
+    expect(call(s, "DeleteFileA", {va(old)}) == 1 && call(s, "GetFileAttributesA", {va(old)}) == 0xFFFFFFFFU &&
+               install.is_file("Modules/Native/Data/old.txt"),
+           "files: deleting an install file hides it from the guest without touching the install");
+
+    // Ancestors of mounts are read-only directories that list the mounts below them.
+    alignas(4) std::uint8_t fd[320] = {};
+    const char users[] = "C:\\Users\\*";
+    const std::uint64_t f = call(s, "FindFirstFileA", {va(users), va(fd)});
+    std::vector<std::string> names;
+    if (f != ~0ULL) {
+        do {
+            names.emplace_back(reinterpret_cast<const char*>(fd + 44));
+        } while (call(s, "FindNextFileA", {f, va(fd)}) == 1);
+        (void)call(s, "FindClose", {f});
+    }
+    const char root[] = "C:\\";
+    const char newdir[] = "C:\\NewTop";
+    expect(names == std::vector<std::string>{".", "..", "Player"} && (call(s, "GetFileAttributesA", {va(root)}) & 0x10) != 0 &&
+               call(s, "CreateDirectoryA", {va(newdir), 0}) == 0,
+           "files: C:\\Users lists the profile; C:\\ is a directory; nothing can be created outside the mounts");
+
+    // SHGetFolderPathA(CSIDL_PERSONAL) names the layer's Documents, which then exists.
+    char docs[260] = {};
+    s.gpr[1] = 0;
+    s.gpr[2] = 5;
+    s.gpr[8] = 0;
+    s.gpr[9] = 0;
+    {
+        // Five arguments: the fifth (the buffer) above the shadow area, as `thr_test::call` lays out.
+        const std::uint64_t rsp0 = s.gpr[4];
+        s.gpr[4] = (rsp0 - 0x80) & ~std::uint64_t{15};
+        const std::uint64_t buf_va = va(docs);
+        std::memcpy(reinterpret_cast<void*>(s.gpr[4] + 0x20), &buf_va, 8);
+        rt_test::push_and_hook(&s, 0x140031000ULL, sh_slot, true);
+        s.gpr[4] = rsp0;
+    }
+    expect(s.gpr[0] == 0 && std::string(docs) == "C:\\Users\\Player\\Documents" && user.is_dir("Documents"),
+           "files: SHGetFolderPathA(CSIDL_PERSONAL) is the profile's Documents in the writable layer");
+    expect(faults.empty(), "files: no faults");
+}
+
 // --- R3 unwinder (`unwind.h`): hand-built functions, unwind codes and stacks ---------------------
 void test_unwinder() {
     namespace uw = wse::recomp::unwind;
@@ -3774,6 +3882,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_threadpool();
     test_time_crt_sysinfo();
     test_strings_memory();
+    test_files();
     test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");

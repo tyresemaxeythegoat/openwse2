@@ -60,7 +60,8 @@ inline constexpr std::size_t debug_info = 0, lock_count = 8, recursion = 12, own
                              spin_count = 32;
 }
 
-enum class Kind { thread, event, mutex, semaphore, process };
+// `file` and `mapping` objects are created by `shim_files.h` (their state is in `payload`).
+enum class Kind { thread, event, mutex, semaphore, process, file, mapping };
 
 struct Object {
     Kind kind = Kind::event;
@@ -83,6 +84,9 @@ struct Object {
     std::int32_t priority = 0;
     std::uint64_t affinity = 0;
     std::vector<std::uint8_t> stack;  // the guest stack of a thread started by CreateThread
+    // file / mapping: the owner's state, released (and a dirty file written back) with the
+    // last handle
+    std::shared_ptr<void> payload;
 };
 
 namespace detail {
@@ -206,6 +210,22 @@ public:
         std::lock_guard<std::mutex> lock(m_);
         return thread_locked(t);
     }
+    // A named object for other shims (`shim_files.h` file mappings): as CreateEvent does, an
+    // existing object of the same kind is opened (ERROR_ALREADY_EXISTS) and `fresh` dropped.
+    std::uint64_t add_named_handle(CpuState& s, const std::u16string& name, std::shared_ptr<Object> fresh) {
+        return create_named(s, name, std::move(fresh));
+    }
+    // The live named object of `kind`, or null.
+    std::shared_ptr<Object> find_named(const std::u16string& name, Kind kind) {
+        std::lock_guard<std::mutex> lock(m_);
+        const auto it = names_.find(name);
+        if (it == names_.end()) {
+            return nullptr;
+        }
+        std::shared_ptr<Object> o = it->second.lock();
+        return o && o->kind == kind ? o : nullptr;
+    }
+
     // SetEvent from host code (`threadpool.h` UnregisterWaitEx); false when `h` is not an event.
     bool signal_event(const CpuState& s, std::uint64_t h) {
         std::lock_guard<std::mutex> lock(m_);
@@ -340,6 +360,9 @@ private:
             return o.exited;
         case Kind::process:
             return false;
+        case Kind::file:     // no overlapped I/O: a file handle is always signaled
+        case Kind::mapping:  // not waitable on Windows; never blocks here
+            return true;
         }
         return false;
     }

@@ -127,6 +127,16 @@ public:
         return false;
     }
 
+    // The size of a file in bytes. False when missing. The default reads the
+    // whole file; HostVfs and MemoryVfs answer without reading it (R4 file
+    // shims list directories with sizes).
+    virtual bool file_size(std::string_view path, std::uint64_t& size) {
+        std::vector<std::uint8_t> bytes;
+        if (!read_file(path, bytes)) return false;
+        size = bytes.size();
+        return true;
+    }
+
     // Same as `read_file`, into a string. Implementations override this to
     // fill `out` directly; the default pays one extra copy.
     virtual bool read_text(std::string_view path, std::string& out) {
@@ -169,6 +179,15 @@ public:
 // `write_file` creates missing parent directories.
 class MemoryVfs final : public Vfs {
 public:
+    bool file_size(std::string_view path, std::uint64_t& size) override {
+        const auto key = normalize_path(path);
+        if (!key) return false;
+        const auto it = files_.find(*key);
+        if (it == files_.end()) return false;
+        size = it->second.data.size();
+        return true;
+    }
+
     bool read_file(std::string_view path, std::vector<std::uint8_t>& out) override {
         const auto key = normalize_path(path);
         if (!key) return false;
@@ -402,6 +421,17 @@ public:
         const auto real = resolve(path, false);
         std::error_code ec;
         return real && std::filesystem::is_regular_file(*real, ec) && !ec;
+    }
+
+    bool file_size(std::string_view path, std::uint64_t& size) override {
+        const auto real = resolve(path, false);
+        if (!real) return false;
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(*real, ec) || ec) return false;
+        const auto n = std::filesystem::file_size(*real, ec);
+        if (ec) return false;
+        size = n;
+        return true;
     }
 
     bool is_dir(std::string_view path) override {

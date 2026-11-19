@@ -27,7 +27,9 @@
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/runtime.h"
 #include "wse/recomp/seh.h"
+#include "wse/platform/vfs.h"
 #include "wse/recomp/shim_crt.h"
+#include "wse/recomp/shim_files.h"
 #include "wse/recomp/shim_memory.h"
 #include "wse/recomp/shim_strings.h"
 #include "wse/recomp/shim_time.h"
@@ -435,6 +437,14 @@ void test_corpus(const char* path) {
     const std::size_t memory_bound = memory_shims.install();
     const std::size_t string_bound = string_shims.install();
     expect(memory_bound >= 10 && string_bound >= 8, "corpus: the memory and string shims bind");
+    // R4: files (`file_corpus.c`): an empty install and an in-memory writable layer.
+    wse::platform::MemoryVfs install_vfs;
+    wse::platform::MemoryVfs user_vfs;
+    shim::FilesConfig files_cfg;
+    files_cfg.install = &install_vfs;
+    files_cfg.user = &user_vfs;
+    shim::Files file_shims(rt, kern, files_cfg);
+    expect(file_shims.install() >= 20, "corpus: the file shims bind");
     {
         GuestStack stack;
         CpuState s;
