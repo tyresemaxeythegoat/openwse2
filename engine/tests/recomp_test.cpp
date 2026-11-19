@@ -2760,7 +2760,7 @@ void test_unwinder() {
                 0x99, 0x09, 0, 0, 0xAB, 0xCD, 0, 0});
     // H: a fragment of F (chained UNWIND_INFO pointing at F's RUNTIME_FUNCTION)
     put(0x500, {0x21, 0, 0, 0, 0x00, 0x01, 0, 0, 0x40, 0x01, 0, 0, 0x00, 0x02, 0, 0});
-    const std::vector<PeFunctionRange> fns = {{0x100, 0x140, 0x200}, {0x300, 0x380, 0x280}, {0x400, 0x420, 0x500}};
+    const std::vector<PeFunctionRange> fns = {{0x100, 0x140, 0x200, 0}, {0x300, 0x380, 0x280, 0}, {0x400, 0x420, 0x500, 0}};
     const uw::Image image{img.data(), img.size(), kBase, &fns};
 
     expect(uw::lookup_function(image, kBase + 0x13F) == &fns[0] && uw::lookup_function(image, kBase + 0x140) == nullptr &&

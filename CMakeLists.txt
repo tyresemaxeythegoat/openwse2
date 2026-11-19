@@ -590,7 +590,8 @@ if(WSE_ENABLE_LLVM)
         option(WSE_REQUIRE_RECOMP_CORPUS "Fail configuration when the R1 Win64 corpus cannot be built" OFF)
         find_program(WSE_CORPUS_CLANG NAMES clang-18 clang HINTS "${LLVM_TOOLS_BINARY_DIR}")
         find_program(WSE_CORPUS_LLD_LINK NAMES lld-link-18 lld-link HINTS "${LLVM_TOOLS_BINARY_DIR}")
-        if(WSE_CORPUS_CLANG AND WSE_CORPUS_LLD_LINK)
+        find_program(WSE_CORPUS_DLLTOOL NAMES llvm-dlltool-18 llvm-dlltool HINTS "${LLVM_TOOLS_BINARY_DIR}")
+        if(WSE_CORPUS_CLANG AND WSE_CORPUS_LLD_LINK AND WSE_CORPUS_DLLTOOL)
             set(_wse_corpus_dir "${CMAKE_CURRENT_BINARY_DIR}/recomp_corpus")
             set(_wse_corpus_exe "${_wse_corpus_dir}/corpus.exe")
             file(MAKE_DIRECTORY "${_wse_corpus_dir}")
@@ -599,10 +600,12 @@ if(WSE_ENABLE_LLVM)
             # Integer and string corpora: no SSE, so every instruction is integer or string.
             set(_wse_corpus_flags_int -mno-sse -mno-sse2 -mno-mmx -fno-vectorize -fno-slp-vectorize)
             set(_wse_corpus_flags_string ${_wse_corpus_flags_int})
+            # R3 SEH corpus: integer code calling KERNEL32 through an import library.
+            set(_wse_corpus_flags_seh ${_wse_corpus_flags_int})
             # SSE corpus: SSE4.1 with the vectorizers on.
             set(_wse_corpus_flags_sse -msse4.1)
             set(_wse_corpus_objs)
-            foreach(_unit int string sse)
+            foreach(_unit int string sse seh)
                 set(_src "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/${_unit}_corpus.c")
                 if(EXISTS "${_src}")
                     set(_obj "${_wse_corpus_dir}/${_unit}_corpus.obj")
@@ -620,14 +623,23 @@ if(WSE_ENABLE_LLVM)
                 OUTPUT "${_wse_corpus_exe}"
                 COMMAND "${WSE_CORPUS_LLD_LINK}" -nologo "-out:${_wse_corpus_exe}" -entry:corpus_entry
                         -subsystem:console -fixed -base:0x140000000 -nodefaultlib ${_wse_corpus_objs}
-                DEPENDS ${_wse_corpus_objs}
+                        "${_wse_corpus_dir}/kernel32.lib"
+                DEPENDS ${_wse_corpus_objs} "${_wse_corpus_dir}/kernel32.lib"
                 COMMENT "R1 corpus: linking the Win64 PE"
+                VERBATIM)
+            add_custom_command(
+                OUTPUT "${_wse_corpus_dir}/kernel32.lib"
+                COMMAND "${WSE_CORPUS_DLLTOOL}" -m i386:x86-64
+                        -d "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/kernel32.def"
+                        -l "${_wse_corpus_dir}/kernel32.lib"
+                DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/kernel32.def"
+                COMMENT "R3 corpus: KERNEL32 import library"
                 VERBATIM)
             add_custom_target(wse_recomp_corpus DEPENDS "${_wse_corpus_exe}")
             add_dependencies(recomp_llvm_test wse_recomp_corpus)
             target_compile_definitions(recomp_llvm_test PRIVATE "WSE_RECOMP_CORPUS=\"${_wse_corpus_exe}\"")
         elseif(WSE_REQUIRE_RECOMP_CORPUS)
-            message(FATAL_ERROR "R1 corpus: clang (${WSE_CORPUS_CLANG}) or lld-link (${WSE_CORPUS_LLD_LINK}) not found")
+            message(FATAL_ERROR "R1 corpus: clang (${WSE_CORPUS_CLANG}), lld-link (${WSE_CORPUS_LLD_LINK}) or llvm-dlltool (${WSE_CORPUS_DLLTOOL}) not found")
         endif()
     endif()
 

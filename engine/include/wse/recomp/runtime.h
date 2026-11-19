@@ -190,6 +190,14 @@ public:
         std::memcpy(reinterpret_cast<void*>(rsp), &kCallbackReturn, 8);
         s.gpr[4] = rsp;
         const bool ran = run(s, va) && s.rip == kCallbackReturn;
+        if (s.unwind_rsp != 0) {
+            // An exception is unwinding past this call (R3): leave the target's context in place
+            // and let the host caller return too.
+            if (ok != nullptr) {
+                *ok = false;
+            }
+            return 0;
+        }
         const std::uint64_t rax = s.gpr[0];
         s = saved;
         s.gpr[0] = rax;

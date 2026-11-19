@@ -480,18 +480,42 @@ using r1::Lifted;
 
 // Pushes `ret_va`, runs `emit_call` (which must leave the state flushed and call the target),
 // reloads, and reports a callee that did not return to `ret_va`.
+// A guest call: pushes `ret_va`, calls, and checks the callee came back to `ret_va`. When it did
+// not, either the runtime is unwinding (`CpuState::unwind_rsp`): this frame resumes through
+// `resume` when the target `rsp` is its call-site `rsp` (a function without a resume switch
+// faults there), and otherwise returns at once so the unwind continues outward; or it is a real
+// bad return, reported to the hook. The code that does not throw pays only the existing compare.
 template <typename Emit>
-void guest_call(Ctx& c, std::uint64_t ret_va, Emit&& emit_call) {
-    llvm::Value* rsp = c.B.CreateSub(c.gpr64(4), c.B.getInt64(8));
+void guest_call(Ctx& c, std::uint64_t ret_va, llvm::BasicBlock* resume, Emit&& emit_call) {
+    llvm::Value* site_rsp = c.gpr64(4);
+    llvm::Value* rsp = c.B.CreateSub(site_rsp, c.B.getInt64(8));
     c.set_gpr64(4, rsp);
     c.store(rsp, c.B.getInt64(ret_va), r1::Mem::stack);
     c.flush();
     emit_call();
     c.reload();
     llvm::Value* rip = c.B.CreateLoad(c.B.getInt64Ty(), c.state_ptr(cpu_offset::rip));
+    llvm::BasicBlock* off_path = llvm::BasicBlock::Create(c.C, "ret_elsewhere", c.F);
+    llvm::BasicBlock* unwinding = llvm::BasicBlock::Create(c.C, "unwinding", c.F);
+    llvm::BasicBlock* here = llvm::BasicBlock::Create(c.C, "unwind_here", c.F);
+    llvm::BasicBlock* outward = llvm::BasicBlock::Create(c.C, "unwind_outward", c.F);
     llvm::BasicBlock* bad = llvm::BasicBlock::Create(c.C, "bad_ret", c.F);
     llvm::BasicBlock* ok = llvm::BasicBlock::Create(c.C, "ret_ok", c.F);
-    c.B.CreateCondBr(c.B.CreateICmpEQ(rip, c.B.getInt64(ret_va)), ok, bad);
+    c.B.CreateCondBr(c.B.CreateICmpEQ(rip, c.B.getInt64(ret_va)), ok, off_path);
+    c.B.SetInsertPoint(off_path);
+    llvm::Value* target = c.B.CreateLoad(c.B.getInt64Ty(), c.state_ptr(cpu_offset::unwind_rsp));
+    c.B.CreateCondBr(c.B.CreateICmpNE(target, c.B.getInt64(0)), unwinding, bad);
+    c.B.SetInsertPoint(unwinding);
+    c.B.CreateCondBr(c.B.CreateICmpEQ(target, site_rsp), here, outward);
+    c.B.SetInsertPoint(outward);
+    c.B.CreateRetVoid();  // the state already holds the target's context: just return
+    c.B.SetInsertPoint(here);
+    c.B.CreateStore(c.B.getInt64(0), c.state_ptr(cpu_offset::unwind_rsp));
+    if (resume != nullptr) {
+        c.B.CreateBr(resume);
+    } else {
+        c.emit_unsupported(ret_va, "unwind into a frame with no exception handler");
+    }
     c.B.SetInsertPoint(bad);
     c.call_hook(offsetof(RuntimeHooks, bad_return), {c.B.getInt64(ret_va)}, {c.B.getInt64Ty()});
     c.B.CreateBr(ok);
@@ -533,6 +557,23 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
         blocks[b] = llvm::BasicBlock::Create(*impl_->context, name, f);
     }
     c.B.CreateBr(blocks.at(fn.entry));
+
+    // Resume switch (R3): reload the restored context and continue at `rip`, which must be one of
+    // this function's blocks (a catch continuation or `__except` target).
+    llvm::BasicBlock* resume = nullptr;
+    if (impl_->image.resumable.count(fn.entry) != 0) {
+        resume = llvm::BasicBlock::Create(*impl_->context, "resume", f);
+        llvm::BasicBlock* unknown = llvm::BasicBlock::Create(*impl_->context, "resume_unknown", f);
+        c.B.SetInsertPoint(resume);
+        c.reload();
+        llvm::Value* rip = c.B.CreateLoad(c.B.getInt64Ty(), c.state_ptr(cpu_offset::rip));
+        llvm::SwitchInst* sw = c.B.CreateSwitch(rip, unknown, static_cast<unsigned>(blocks.size()));
+        for (const auto& [va, bb] : blocks) {
+            sw->addCase(c.B.getInt64(va), bb);
+        }
+        c.B.SetInsertPoint(unknown);
+        c.emit_unsupported(fn.entry, "unwind continuation is not a block of this function");
+    }
 
     std::string first_failure;
     auto fail = [&](std::uint64_t va, const std::string& what) {
@@ -630,9 +671,19 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
                         c.emit_unsupported(d.va, "jump table target outside the table");
                     } else {
                         // Indirect tail call (or a switch whose table was not found: the
-                        // dispatcher aborts with its VA if the target is no function).
+                        // dispatcher aborts with its VA if the target is no function). A tail
+                        // jump through an import slot (`jmp [rip + __imp_X]`) is an import call:
+                        // the return address on the stack is the caller's, as the shim expects.
+                        const ZydisDecodedOperand& o = d.ops[0];
+                        const std::uint64_t slot = d.next() + static_cast<std::uint64_t>(o.mem.disp.value);
                         c.flush();
-                        call_dispatch(c, target);
+                        if (o.type == ZYDIS_OPERAND_TYPE_MEMORY && o.mem.base == ZYDIS_REGISTER_RIP &&
+                            o.mem.index == ZYDIS_REGISTER_NONE && slot >= impl_->image.iat_begin &&
+                            slot < impl_->image.iat_end) {
+                            c.call_hook(offsetof(RuntimeHooks, import_call), {c.B.getInt64(slot)}, {c.B.getInt64Ty()});
+                        } else {
+                            call_dispatch(c, target);
+                        }
                         c.B.CreateRetVoid();
                     }
                 }
@@ -643,7 +694,7 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
                 if (o.type == ZYDIS_OPERAND_TYPE_IMMEDIATE) {
                     ZyanU64 target = 0;
                     ZydisCalcAbsoluteAddress(&d.ins, &o, d.va, &target);
-                    guest_call(c, ret_va, [&] {
+                    guest_call(c, ret_va, resume, [&] {
                         if (impl_->functions.count(target) != 0) {
                             c.B.CreateCall(impl_->function(target), {c.state});
                         } else {
@@ -654,16 +705,16 @@ bool R1Translator::lift(const DFunction& fn, std::string* why) {
                            o.mem.index == ZYDIS_REGISTER_NONE) {
                     const std::uint64_t slot = d.next() + static_cast<std::uint64_t>(o.mem.disp.value);
                     if (slot >= impl_->image.iat_begin && slot < impl_->image.iat_end) {
-                        guest_call(c, ret_va, [&] {
+                        guest_call(c, ret_va, resume, [&] {
                             c.call_hook(offsetof(RuntimeHooks, import_call), {c.B.getInt64(slot)}, {c.B.getInt64Ty()});
                         });
                     } else {
                         llvm::Value* target = c.read(d, 0);
-                        guest_call(c, ret_va, [&] { call_dispatch(c, target); });
+                        guest_call(c, ret_va, resume, [&] { call_dispatch(c, target); });
                     }
                 } else {
                     llvm::Value* target = c.B.CreateZExt(c.read(d, 0), c.B.getInt64Ty());
-                    guest_call(c, ret_va, [&] { call_dispatch(c, target); });
+                    guest_call(c, ret_va, resume, [&] { call_dispatch(c, target); });
                 }
             } else if (insn_is_trap(d)) {
                 // A deliberate stop (MSVC puts `int3` after no-return calls; `int 0x29` is

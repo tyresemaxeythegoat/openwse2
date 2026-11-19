@@ -22,6 +22,9 @@ struct ImageInfo {
     std::uint64_t base = 0;
     std::uint64_t iat_begin = 0;  // import address table range (calls through it are imports)
     std::uint64_t iat_end = 0;
+    // Functions that can catch (a `.pdata` exception or termination handler): they get a resume
+    // switch so an unwind can continue them at any of their blocks (`docs/RECOMP_PLAN.md` "R3").
+    std::set<std::uint64_t> resumable;
 };
 
 struct LiftReport {

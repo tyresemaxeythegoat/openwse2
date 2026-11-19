@@ -54,7 +54,10 @@ struct alignas(16) CpuState {
     std::uint32_t mxcsr = 0x1F80;                // 416: all exceptions masked, round to nearest
     std::uint32_t pad2 = 0;
     const RuntimeHooks* hooks = nullptr;         // 424
-    std::uint64_t pad3 = 0;
+    // 432: R3 exception unwinding. Non-zero while the runtime unwinds to the frame whose guest
+    // `rsp` (at its call site, before the call pushed its return address) equals this value; the
+    // registers already hold that frame's restored context and `rip` the address to resume at.
+    std::uint64_t unwind_rsp = 0;
 };
 
 namespace cpu_offset {
@@ -70,6 +73,7 @@ inline constexpr std::size_t df = 142;
 inline constexpr std::size_t xmm = 160;
 inline constexpr std::size_t mxcsr = 416;
 inline constexpr std::size_t hooks = 424;
+inline constexpr std::size_t unwind_rsp = 432;
 }  // namespace cpu_offset
 
 static_assert(offsetof(CpuState, gpr) == cpu_offset::gpr);
@@ -81,6 +85,7 @@ static_assert(offsetof(CpuState, df) == cpu_offset::df);
 static_assert(offsetof(CpuState, xmm) == cpu_offset::xmm);
 static_assert(offsetof(CpuState, mxcsr) == cpu_offset::mxcsr);
 static_assert(offsetof(CpuState, hooks) == cpu_offset::hooks);
+static_assert(offsetof(CpuState, unwind_rsp) == cpu_offset::unwind_rsp);
 static_assert(sizeof(CpuState) == 448);
 
 }  // namespace wse::recomp

@@ -26,6 +26,7 @@
 #include "wse/recomp/pe_image.h"
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/runtime.h"
+#include "wse/recomp/seh.h"
 #include "wse/recomp/x86_interp.h"
 #include "wse/recomp/x86_synth.h"
 
@@ -304,8 +305,20 @@ void test_corpus(const char* path) {
     }
     expect(complete == fns.size(), "corpus: every function body decodes completely");
 
+    // R3: imports (the SEH corpus calls KERNEL32), and the functions that can catch.
+    std::vector<PeImport> imports;
+    expect(read_pe_imports(mapped, img.size_of_image, img.image_base, imports, &err), "corpus: the import table reads");
     ImageInfo info;
     info.base = img.image_base;
+    for (const PeImport& imp : imports) {
+        info.iat_begin = info.iat_begin == 0 ? imp.slot_va : std::min(info.iat_begin, imp.slot_va);
+        info.iat_end = std::max(info.iat_end, imp.slot_va + 8);
+    }
+    for (const PeFunctionRange& r : img.functions) {
+        if (((mapped[r.unwind] >> 3) & 0x3) != 0) {  // UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER
+            info.resumable.insert(img.image_base + r.begin);
+        }
+    }
     R1Translator tr(info);
     expect(tr.init_error().empty(), "corpus: the R1 translator initializes");
     tr.declare(std::vector<std::uint64_t>(entries.begin(), entries.end()));
@@ -367,6 +380,10 @@ void test_corpus(const char* path) {
     std::vector<Fault> faults;
     rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
     rt.add_table(rows, static_cast<std::size_t>(*count));
+    rt.name_imports(imports);
+    seh::Exceptions exceptions(rt, img, mapped);
+    const std::size_t shims = exceptions.install();
+    expect(imports.empty() || shims >= 5, "corpus: the SEH shims bind to the corpus imports");
     std::printf("  translated %zu functions (lift %.1f ms, opt %.1f ms, codegen %.1f ms, %zu B)\n",
                 rt.function_count(), t.lift_ms, t.optimize_ms, t.codegen_ms, obj.size());
 
@@ -376,12 +393,20 @@ void test_corpus(const char* path) {
     alignas(16) static std::uint8_t buf_trans[4096];
     Rng rng;
     std::size_t checked = 0;
+    std::size_t runnable = 0;
     std::FILE* record = g_record_path != nullptr ? std::fopen(g_record_path, "w") : nullptr;
     for (const Export& e : exports) {
+        // `seh_*` are the SEH corpus's handlers and helpers: they only run inside `t_*` tests.
+        if (e.name.rfind("seh_", 0) == 0) {
+            continue;
+        }
+        ++runnable;
         if (lifted.count(e.va) == 0) {
             continue;
         }
         const bool is_mem = e.name.rfind("m_", 0) == 0;
+        // `t_*` call KERNEL32 (no native run on Linux): self-checking, 0x600D means correct.
+        const bool self_check = e.name.rfind("t_", 0) == 0;
         int bad = 0;
         const auto expected = g_expected.find(e.name);
         int check_bad = 0;
@@ -395,8 +420,8 @@ void test_corpus(const char* path) {
             if (is_mem) {
                 arg[0] = reinterpret_cast<std::uintptr_t>(buf_native);
             }
-            std::uint64_t want = 0;
-            if (!g_check_mode) {
+            std::uint64_t want = self_check ? 0x600D : 0;
+            if (!g_check_mode && !self_check) {
 #if defined(__x86_64__)
                 want = reinterpret_cast<NativeFn>(e.va)(arg[0], arg[1], arg[2], arg[3]);
 #endif
@@ -426,7 +451,7 @@ void test_corpus(const char* path) {
             const CpuState before = s;
             faults.clear();
             const bool ran = rt.run(s, e.va);
-            if (g_check_mode) {
+            if (g_check_mode && !self_check) {
                 std::uint64_t mh = 0xCBF29CE484222325ULL;
                 mix_bytes(mh, buf_trans, sizeof(buf_trans));
                 const bool have = expected != g_expected.end() && static_cast<std::size_t>(run) < expected->second.size();
@@ -445,7 +470,7 @@ void test_corpus(const char* path) {
                 }
             }
             const bool same_mem = g_check_mode || std::memcmp(buf_native, buf_trans, sizeof(buf_trans)) == 0;
-            bool ok = ran && faults.empty() && (g_check_mode || s.gpr[0] == want) &&
+            bool ok = ran && faults.empty() && ((g_check_mode && !self_check) || s.gpr[0] == want) &&
                       s.rip == GuestStack::kReturnSentinel && s.gpr[4] == before.gpr[4] + 8 && same_mem;
             for (const int r : kCalleeSaved) {
                 ok = ok && s.gpr[r] == before.gpr[r];
@@ -476,9 +501,9 @@ void test_corpus(const char* path) {
     if (record != nullptr) {
         std::fclose(record);
     }
-    std::printf("  differential: %zu/%zu exports match %s on %d inputs each\n", checked, exports.size(),
+    std::printf("  differential: %zu/%zu exports match %s on %d inputs each\n", checked, runnable,
                 g_check_mode ? "the recorded x86 results" : "native", kRuns);
-    expect(checked == exports.size(), "corpus: every export matches native (rax, memory, callee-saved, rsp)");
+    expect(checked == runnable, "corpus: every export matches native (rax, memory, callee-saved, rsp)");
     dlclose(h);
 }
 

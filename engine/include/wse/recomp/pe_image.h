@@ -29,6 +29,7 @@ struct PeFunctionRange {
     std::uint32_t begin = 0;  // RVA
     std::uint32_t end = 0;    // RVA, exclusive
     std::uint32_t unwind = 0; // RVA of UNWIND_INFO
+    std::uint32_t entry = 0;  // RVA of this RUNTIME_FUNCTION in `.pdata` (0 when synthetic)
 };
 
 struct PeImage {
@@ -163,6 +164,7 @@ inline bool parse_pe(const std::uint8_t* f, std::size_t n, PeImage& out, std::st
             std::memcpy(&r.begin, p + off, 4);
             std::memcpy(&r.end, p + off + 4, 4);
             std::memcpy(&r.unwind, p + off + 8, 4);
+            r.entry = exc_rva + off;
             if (r.end > r.begin) {
                 out.functions.push_back(r);
             }
