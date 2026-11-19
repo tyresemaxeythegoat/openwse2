@@ -595,7 +595,9 @@ if(WSE_ENABLE_LLVM)
             set(_wse_corpus_dir "${CMAKE_CURRENT_BINARY_DIR}/recomp_corpus")
             set(_wse_corpus_exe "${_wse_corpus_dir}/corpus.exe")
             file(MAKE_DIRECTORY "${_wse_corpus_dir}")
-            set(_wse_corpus_common --target=x86_64-pc-windows-msvc -O2 -ffreestanding -fno-builtin
+            # -fasynchronous-unwind-tables: .pdata/.xdata for every function, as MSVC emits (the R3
+            # exception tests unwind through C frames).
+            set(_wse_corpus_common --target=x86_64-pc-windows-msvc -O2 -ffreestanding -fno-builtin -fasynchronous-unwind-tables
                 -fno-stack-protector -Wall -Wextra -Werror)
             # Integer and string corpora: no SSE, so every instruction is integer or string.
             set(_wse_corpus_flags_int -mno-sse -mno-sse2 -mno-mmx -fno-vectorize -fno-slp-vectorize)
