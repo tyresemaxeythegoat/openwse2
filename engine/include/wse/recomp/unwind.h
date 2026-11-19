@@ -221,9 +221,11 @@ inline Result virtual_unwind(const Image& img, CpuState& ctx, std::uint8_t handl
             return r;
         }
         const std::uint8_t* codes = u + 4;
-        // In an epilog of the primary function: emulate it (no handler runs there).
+        // In an epilog of the primary function: emulate it (no handler runs there). The
+        // establisher frame is the frame's `rsp` before the epilog runs, not after.
+        const std::uint64_t frame_rsp = ctx.gpr[4];
         if (first && offset >= prolog && detail::unwind_epilog(img, ctx.rip, *fn, frame_reg, ctx)) {
-            r.establisher_frame = ctx.gpr[4];
+            r.establisher_frame = frame_rsp;
             r.ok = true;
             return r;
         }

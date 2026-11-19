@@ -2800,9 +2800,12 @@ void test_unwinder() {
             c.gpr[5] = 0xB0B0;  // rbp already popped
         }
         c.rip = kBase + pc;
+        const std::uint64_t frame_rsp = c.gpr[4];
         r = uw::virtual_unwind(image, c, uw::kFlagExceptionHandler);
         expect(r.ok && c.rip == 0x140009999ULL && c.gpr[4] == at(8) && c.gpr[3] == 0xB1B1 && c.gpr[5] == 0xB0B0,
                "unwind: inside the epilog it is emulated from the instructions");
+        expect(r.establisher_frame == frame_rsp && r.handler == 0,
+               "unwind: in an epilog the establisher is the frame's rsp before it runs, and no handler");
     }
 
     c = body();
