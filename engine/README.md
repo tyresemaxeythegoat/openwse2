@@ -974,8 +974,10 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   applied; any other type fails the load.
 - **R4 SEH additions (`seh.h`):** `RtlUnwind` is `RtlUnwindEx` without a context record;
   `RtlRestoreContext` resumes at the context through `unwind_rsp` like an unwind, so the target
-  must be a block of a function with a `.pdata` handler (an MSVC `setjmp` caller without one would
-  fault at the resume); `STATUS_LONGJUMP` takes rbx, rsp, rbp, rsi, rdi, r12-r15, rip, MXCSR and
+  must be a block start of a function with a `.pdata` handler. A call's return address is not a
+  block start by itself (found by CI: the corpus marks it with a never-taken branch), so an MSVC
+  `setjmp` caller faults at the resume until the lifter makes return sites of resumable functions
+  resumable; `STATUS_LONGJUMP` takes rbx, rsp, rbp, rsi, rdi, r12-r15, rip, MXCSR and
   xmm6-xmm15 from the `_JUMP_BUFFER` (FpCsr is ignored: no x87 state). Each translated image's
   `.pdata` is used for the frames inside it (`Exceptions::add_image`).
 - **R3 thread pool (`threadpool.h`):** one worker guest thread per timer or wait object, so one
