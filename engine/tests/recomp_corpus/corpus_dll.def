@@ -1,0 +1,6 @@
+; Exports of the R4 corpus DLL (`dll_corpus.c`) beyond its __declspec(dllexport) ones: a forwarder
+; and an export by ordinal only. Linked with `lld-link -dll -def:corpus_dll.def`.
+LIBRARY corpus_dll.dll
+EXPORTS
+d_fwd = KERNEL32.GetCurrentThreadId
+dt_by_ordinal @42 NONAME

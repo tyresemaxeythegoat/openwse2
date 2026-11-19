@@ -90,9 +90,11 @@ jobs:
           ./build-recomp/recomp_test
           ./build-recomp/recomp_llvm_test --record build-recomp/corpus_results.txt
           mkdir -p corpus-artifact
-          cp build-recomp/recomp_corpus/corpus.exe build-recomp/corpus_results.txt corpus-artifact/
+          cp build-recomp/recomp_corpus/corpus.exe build-recomp/recomp_corpus/corpus_dll.dll \
+            build-recomp/corpus_results.txt corpus-artifact/
 
-      # The corpus PE (our own C) and its native x86 results, for the arm64 job.
+      # The corpus PEs (our own C; the harness loads the DLL from beside the exe) and their native
+      # x86 results, for the arm64 job.
       - uses: actions/upload-artifact@v4
         with:
           name: recomp-corpus

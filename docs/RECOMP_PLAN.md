@@ -396,6 +396,22 @@ and adds its table to the one `Runtime`; `seh::Exceptions` looks up `.pdata` acr
 A translated DLL's `DllMain` (`_DllMainCRTStartup`) runs with `DLL_PROCESS_ATTACH`, and its TLS
 directory is read like the exe's.
 
+**Slice 2 as built (2026-11-19, `wse/recomp/shim_modules.h`).** One `shim::Modules` registry per
+process. A translated module's handle is its base; a system DLL (KERNEL32, KERNELBASE, ntdll,
+every DLL an image imports, and any DLL `LoadLibrary` names that has shims) is a 64 KiB fake image
+with headers only, and `GetProcAddress` on it hands out an address inside it per shimmed function,
+which `Runtime::dispatch_fallback` runs (under the registry's lock only for the lookup, so any guest
+thread may call it). Shims register by name (`Runtime::set_import` keeps `dll!name`), so an image
+added later binds when it is named. `link` binds each import from another translated module to the
+export (`Runtime::bind_import_to`: the IAT slot holds the export's VA, and a call through it
+dispatches there), following forwarders. `attach_dlls` calls each statically imported DLL's entry
+point with `DLL_PROCESS_ATTACH` and a non-null `lpReserved`, dependencies first. `seh::Exceptions`
+takes every translated image (`add_image`) and picks the one containing each frame's `rip`. The
+lua5164 SEH entry points: `RtlUnwind` (as `RtlUnwindEx` without a context) and `RtlRestoreContext`
+(resume through `unwind_rsp`; `STATUS_LONGJUMP` takes the nonvolatile registers from the jump
+buffer). Still open in this slice: translating `lua5164` from the user's install, where any
+`setjmp` caller must be resumable, and reading the DLLs' TLS directories.
+
 **Bring-up tool (local only).** `tools/r4_run.cpp`: translates the exe and `lua5164` from the
 user's install, maps them, binds every shim, runs the CRT entry point on the main guest thread, and
 logs the first call of each import; a missing import faults with its DLL and name, which is the

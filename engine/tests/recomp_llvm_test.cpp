@@ -31,6 +31,7 @@
 #include "wse/recomp/shim_crt.h"
 #include "wse/recomp/shim_files.h"
 #include "wse/recomp/shim_memory.h"
+#include "wse/recomp/shim_modules.h"
 #include "wse/recomp/shim_strings.h"
 #include "wse/recomp/shim_time.h"
 #include "wse/recomp/teb.h"
@@ -145,37 +146,230 @@ constexpr bool kCanRunNative = false;  // arm64 runner: `--check` against x86-re
 #endif
 
 struct Export {
-    std::string name;
+    std::string name;  // "#42" for an export by ordinal only
     std::uint64_t va = 0;
 };
 
-std::uint32_t rd32m(const std::uint8_t* p, std::size_t off) {
-    std::uint32_t v = 0;
-    std::memcpy(&v, p + off, 4);
-    return v;
-}
-
+// The image's exported code (forwarders, which name another DLL's function, are left out).
 std::vector<Export> read_exports(const std::uint8_t* mapped, std::size_t size, std::uint64_t base) {
     std::vector<Export> out;
-    const std::uint32_t pe = rd32m(mapped, 0x3C);
-    const std::uint32_t dir = rd32m(mapped, pe + 24 + 112);  // PE32+ data directory 0
-    if (dir == 0 || dir + 40 > size) {
+    PeExports ex;
+    std::string err;
+    if (!read_pe_exports(mapped, size, ex, &err)) {
+        std::printf("  exports: %s\n", err.c_str());
         return out;
     }
-    const std::uint32_t n_names = rd32m(mapped, dir + 0x18);
-    const std::uint32_t funcs = rd32m(mapped, dir + 0x1C);
-    const std::uint32_t names = rd32m(mapped, dir + 0x20);
-    const std::uint32_t ords = rd32m(mapped, dir + 0x24);
-    for (std::uint32_t i = 0; i < n_names; ++i) {
-        const std::uint32_t name_rva = rd32m(mapped, names + 4 * i);
-        std::uint16_t ord = 0;
-        std::memcpy(&ord, mapped + ords + 2 * i, 2);
-        Export e;
-        e.name = reinterpret_cast<const char*>(mapped + name_rva);
-        e.va = base + rd32m(mapped, funcs + 4U * ord);
-        out.push_back(e);
+    for (const PeExport& e : ex.entries) {
+        if (e.forwarder.empty()) {
+            out.push_back({e.name.empty() ? "#" + std::to_string(e.ordinal) : e.name, base + e.rva});
+        }
     }
     return out;
+}
+
+// One mapped PE image of the corpus.
+struct Mapped {
+    PeImage img;
+    std::uint8_t* mapped = nullptr;
+    std::size_t map_size = 0;
+    std::vector<Export> exports;
+    Mapped() = default;
+    Mapped(const Mapped&) = delete;
+    Mapped& operator=(const Mapped&) = delete;
+    ~Mapped() {
+        if (mapped != nullptr) {
+            munmap(mapped, map_size);  // R0 (b) maps 0x140000000 again later in this process
+        }
+    }
+};
+
+// Reads `path` and maps it at `base` (0: its preferred base), applying base relocations when it
+// moves. False (after reporting) when the file is missing or the range is taken.
+bool map_image(const std::string& path, std::uint64_t base, Mapped& m, std::size_t* relocations) {
+    std::ifstream in(path, std::ios::binary);
+    const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string err;
+    if (file.empty() || !parse_pe(file.data(), file.size(), m.img, &err)) {
+        std::printf("  corpus %s: %s\n", path.c_str(), file.empty() ? "missing" : err.c_str());
+        return false;
+    }
+    const std::uint64_t at_base = base != 0 ? base : m.img.image_base;
+    m.map_size = (m.img.size_of_image + 0xFFFU) & ~static_cast<std::size_t>(0xFFF);
+    void* at = mmap(reinterpret_cast<void*>(at_base), m.map_size, PROT_READ | PROT_WRITE | PROT_EXEC,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    if (at != reinterpret_cast<void*>(at_base)) {
+        if (at != MAP_FAILED) {
+            munmap(at, m.map_size);
+        }
+        std::printf("  corpus %s: 0x%llx is not free\n", path.c_str(), static_cast<unsigned long long>(at_base));
+        return false;
+    }
+    m.mapped = static_cast<std::uint8_t*>(at);
+    if (!map_pe_sections(file.data(), file.size(), m.img, m.mapped) ||
+        !apply_pe_relocations(m.mapped, m.img.size_of_image, at_base, relocations, &err)) {
+        std::printf("  corpus %s: %s\n", path.c_str(), err.c_str());
+        return false;
+    }
+    m.img.image_base = at_base;
+    m.exports = read_exports(m.mapped, m.img.size_of_image, at_base);
+    return true;
+}
+
+// One image translated into a loaded shared object.
+struct Translated {
+    void* handle = nullptr;
+    const FnRow* rows = nullptr;
+    std::size_t count = 0;
+    std::set<std::uint64_t> lifted;
+    TranslateTimings t;
+    std::size_t obj_size = 0;
+};
+
+// Discovers, lifts, emits and links one mapped image (`tag` names its files and checks). The exe
+// also gets the checks that only its corpus units satisfy (catch continuations, run-time faults).
+bool translate_image(const char* tag, Mapped& m, bool is_exe, const char* work_dir, Translated& out) {
+    const PeImage& img = m.img;
+    std::uint8_t* mapped = m.mapped;
+    std::string err;
+    std::uint64_t text_b = 0;
+    std::uint64_t text_e = 0;
+    for (const PeSection& s : img.sections) {
+        if (s.name == ".text") {
+            text_b = img.image_base + s.virtual_address;
+            text_e = text_b + s.virtual_size;
+        }
+    }
+    // Entries: exports, the entry point, non-chained .pdata begins, then direct call targets to a
+    // fixed point.
+    std::set<std::uint64_t> entries;
+    for (const Export& e : m.exports) {
+        entries.insert(e.va);
+    }
+    if (img.entry_rva != 0) {
+        entries.insert(img.image_base + img.entry_rva);
+    }
+    for (const PeFunctionRange& r : img.functions) {
+        if (((mapped[r.unwind] >> 3) & 0x4) == 0) {
+            entries.insert(img.image_base + r.begin);
+        }
+    }
+    ImageView view(mapped, img.image_base, img.size_of_image, text_b, text_e);
+    // R3: catch continuations, reached only through a catch funclet (`t_cxx_catch`).
+    const EhContinuations eh = find_eh_continuations(view, img, entries);
+    if (is_exe) {
+        std::uint64_t cxx = 0;
+        for (const Export& e : m.exports) {
+            cxx = e.name == "t_cxx_catch" ? e.va : cxx;
+        }
+        const auto it = eh.by_function.find(cxx);
+        // Three FuncInfo: t_cxx_catch, t_cxx_rethrow (continuations) and seh_rethrow_inner, whose
+        // catch only rethrows.
+        expect(eh.func_infos == 3 && eh.catch_handlers == 3 && eh.handlers_without == 1 &&
+                   eh.by_function.size() == 2 && it != eh.by_function.end() && it->second.size() == 1,
+               "corpus: the catch funclets name t_cxx_catch's and t_cxx_rethrow's continuations");
+        expect(pdata_owner(view, img, cxx + 1) == cxx && pdata_owner(view, img, img.image_base) == 0,
+               "corpus: pdata_owner maps an address to its function");
+    }
+    Discoverer disc(view);
+    std::map<std::uint64_t, DFunction> fns;
+    std::vector<std::uint64_t> work(entries.begin(), entries.end());
+    while (!work.empty()) {
+        const std::uint64_t e = work.back();
+        work.pop_back();
+        if (fns.count(e) != 0) {
+            continue;
+        }
+        const auto cont = eh.by_function.find(e);
+        DFunction f = disc.discover(e, entries, cont == eh.by_function.end() ? nullptr : &cont->second);
+        for (const std::uint64_t t : f.call_targets) {
+            if (view.in_text(t) && entries.insert(t).second) {
+                work.push_back(t);
+            }
+        }
+        fns.emplace(e, std::move(f));
+    }
+    std::size_t complete = 0;
+    for (const auto& [va, f] : fns) {
+        if (f.error.empty() && f.unresolved_indirect_jumps.empty()) {
+            ++complete;
+        } else {
+            std::printf("  discover %s 0x%llx: %s\n", tag, static_cast<unsigned long long>(va), f.error.c_str());
+        }
+    }
+    expect(complete == fns.size(), "corpus: every function body decodes completely");
+
+    // R3: imports (the corpus calls KERNEL32), and the functions that can catch.
+    std::vector<PeImport> imports;
+    expect(read_pe_imports(mapped, img.size_of_image, img.image_base, imports, &err), "corpus: the import table reads");
+    ImageInfo info;
+    info.base = img.image_base;
+    for (const PeImport& imp : imports) {
+        info.iat_begin = info.iat_begin == 0 ? imp.slot_va : std::min(info.iat_begin, imp.slot_va);
+        info.iat_end = std::max(info.iat_end, imp.slot_va + 8);
+    }
+    for (const PeFunctionRange& r : img.functions) {
+        if (((mapped[r.unwind] >> 3) & 0x3) != 0) {  // UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER
+            info.resumable.insert(img.image_base + r.begin);
+        }
+    }
+    R1Translator tr(info);
+    expect(tr.init_error().empty(), "corpus: the R1 translator initializes");
+    tr.declare(std::vector<std::uint64_t>(entries.begin(), entries.end()));
+    for (const auto& [va, f] : fns) {
+        std::string why;
+        if (tr.lift(f, &why)) {
+            out.lifted.insert(va);
+        } else {
+            std::printf("  lift %s 0x%llx: %s\n", tag, static_cast<unsigned long long>(va), why.c_str());
+        }
+    }
+    const LiftReport rep = tr.report();
+    std::printf("  %s coverage: %zu/%zu functions lifted\n", tag, rep.lifted, rep.attempted);
+    for (const auto& [what, n] : rep.unsupported) {
+        std::printf("    unsupported %-32s %zu\n", what.c_str(), n);
+    }
+    expect(rep.lifted == fns.size(), "corpus: every corpus function lifts");
+    if (is_exe) {
+        std::printf("  lifted as run-time faults: %zu traps, %zu AVX instructions\n", rep.traps,
+                    rep.gated.count("AVX") != 0 ? rep.gated.at("AVX") : 0);
+        expect(rep.traps >= 1 && rep.gated.count("AVX") != 0,
+               "corpus: int3 and AVX on cold paths lift as run-time faults (cold_paths)");
+    }
+
+    if (const char* name = std::getenv("WSE_R1_DUMP_EXPORT")) {
+        for (const Export& e : m.exports) {
+            if (e.name == name) {
+                setenv("WSE_R1_DUMP_FN", r1_symbol(e.va).c_str(), 1);
+            }
+        }
+    }
+    std::vector<char> obj;
+    expect(tr.emit_object(2, obj, &out.t, &err) && !obj.empty(), "corpus: emit the O2 object");
+    if (obj.empty()) {
+        std::printf("  emit %s: %s\n", tag, err.c_str());
+        return false;
+    }
+    out.obj_size = obj.size();
+    const std::string o = std::string(work_dir) + "/" + tag + ".o";
+    const std::string so = std::string(work_dir) + "/" + tag + ".so";
+    std::ofstream(o, std::ios::binary).write(obj.data(), static_cast<std::streamsize>(obj.size()));
+    std::string log;
+    expect(link_shared_object({o}, so, &log), "corpus: LLD links the translated module");
+    out.handle = dlopen(so.c_str(), RTLD_NOW | RTLD_LOCAL);
+    expect(out.handle != nullptr, "corpus: dlopen the translated module");
+    if (out.handle == nullptr) {
+        std::printf("  link %s: %s dlopen: %s\n", tag, log.c_str(), dlerror());
+        return false;
+    }
+    out.rows = static_cast<const FnRow*>(dlsym(out.handle, "wse_fn_table"));
+    const auto* count = static_cast<const std::uint64_t*>(dlsym(out.handle, "wse_fn_table_count"));
+    expect(out.rows != nullptr && count != nullptr && *count == out.lifted.size(),
+           "corpus: the module exports its dispatch table (defined functions only)");
+    if (out.rows == nullptr || count == nullptr) {
+        return false;
+    }
+    out.count = static_cast<std::size_t>(*count);
+    return true;
 }
 
 struct Rng {
@@ -236,181 +430,71 @@ void mix_bytes(std::uint64_t& h, const std::uint8_t* p, std::size_t n) {
     }
 }
 
+// The corpus DLL maps here, not at its preferred 0x180000000, so its base relocations apply (and
+// the x86 recording and the arm64 check see the same addresses).
+constexpr std::uint64_t kCorpusDllBase = 0x190000000ULL;
+
 void test_corpus(const char* path) {
     if (!kCanRunNative && !g_check_mode) {
         std::printf("  corpus skipped: not an x86-64 host and no --check results\n");
         return;
     }
-    std::ifstream in(path, std::ios::binary);
-    const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    PeImage img;
-    std::string err;
-    expect(!file.empty() && parse_pe(file.data(), file.size(), img, &err), "corpus: the Win64 PE parses");
-    if (file.empty() || img.size_of_image == 0) {
-        std::printf("  corpus %s: %s\n", path, err.c_str());
+    Mapped exe;
+    expect(map_image(path, 0, exe, nullptr), "corpus: the Win64 PE maps at its base");
+    if (exe.mapped == nullptr) {
         return;
     }
-    const std::size_t map_size = (img.size_of_image + 0xFFFU) & ~static_cast<std::size_t>(0xFFF);
-    void* at = mmap(reinterpret_cast<void*>(img.image_base), map_size, PROT_READ | PROT_WRITE | PROT_EXEC,
-                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
-    expect(at == reinterpret_cast<void*>(img.image_base), "corpus: the PE maps at its base");
-    if (at != reinterpret_cast<void*>(img.image_base)) {
+    expect(exe.exports.size() >= 30, "corpus: exports are found");
+    // R4: the DLL the exe imports, from beside it (`dll_corpus.c`).
+    std::string dll_path = path;
+    const std::size_t slash = dll_path.find_last_of('/');
+    dll_path = (slash == std::string::npos ? std::string() : dll_path.substr(0, slash + 1)) + "corpus_dll.dll";
+    Mapped dll;
+    std::size_t relocations = 0;
+    expect(map_image(dll_path, kCorpusDllBase, dll, &relocations) && relocations >= 4,
+           "corpus: corpus_dll.dll maps at another base and its relocations apply");
+    if (dll.mapped == nullptr) {
         return;
     }
-    struct Unmap {  // R0 (b) maps 0x140000000 again later in this process
-        void* p;
-        std::size_t n;
-        ~Unmap() { munmap(p, n); }
-    } unmap{at, map_size};
-    auto* mapped = static_cast<std::uint8_t*>(at);
-    expect(map_pe_sections(file.data(), file.size(), img, mapped), "corpus: sections copy");
-
-    std::uint64_t text_b = 0;
-    std::uint64_t text_e = 0;
-    for (const PeSection& s : img.sections) {
-        if (s.name == ".text") {
-            text_b = img.image_base + s.virtual_address;
-            text_e = text_b + s.virtual_size;
-        }
-    }
-    const std::vector<Export> exports = read_exports(mapped, img.size_of_image, img.image_base);
-    expect(exports.size() >= 30, "corpus: exports are found");
-
-    // Entries: exports, non-chained .pdata begins, then direct call targets to a fixed point.
-    std::set<std::uint64_t> entries;
-    for (const Export& e : exports) {
-        entries.insert(e.va);
-    }
-    for (const PeFunctionRange& r : img.functions) {
-        if (((mapped[r.unwind] >> 3) & 0x4) == 0) {
-            entries.insert(img.image_base + r.begin);
-        }
-    }
-    ImageView view(mapped, img.image_base, img.size_of_image, text_b, text_e);
-    // R3: catch continuations, reached only through a catch funclet (`t_cxx_catch`).
-    const EhContinuations eh = find_eh_continuations(view, img, entries);
-    {
-        std::uint64_t cxx = 0;
-        for (const Export& e : exports) {
-            cxx = e.name == "t_cxx_catch" ? e.va : cxx;
-        }
-        const auto it = eh.by_function.find(cxx);
-        // Three FuncInfo: t_cxx_catch, t_cxx_rethrow (continuations) and seh_rethrow_inner, whose
-        // catch only rethrows.
-        expect(eh.func_infos == 3 && eh.catch_handlers == 3 && eh.handlers_without == 1 &&
-                   eh.by_function.size() == 2 && it != eh.by_function.end() && it->second.size() == 1,
-               "corpus: the catch funclets name t_cxx_catch's and t_cxx_rethrow's continuations");
-        expect(pdata_owner(view, img, cxx + 1) == cxx && pdata_owner(view, img, img.image_base) == 0,
-               "corpus: pdata_owner maps an address to its function");
-    }
-    Discoverer disc(view);
-    std::map<std::uint64_t, DFunction> fns;
-    std::vector<std::uint64_t> work(entries.begin(), entries.end());
-    while (!work.empty()) {
-        const std::uint64_t e = work.back();
-        work.pop_back();
-        if (fns.count(e) != 0) {
-            continue;
-        }
-        const auto cont = eh.by_function.find(e);
-        DFunction f = disc.discover(e, entries, cont == eh.by_function.end() ? nullptr : &cont->second);
-        for (const std::uint64_t t : f.call_targets) {
-            if (view.in_text(t) && entries.insert(t).second) {
-                work.push_back(t);
-            }
-        }
-        fns.emplace(e, std::move(f));
-    }
-    std::size_t complete = 0;
-    for (const auto& [va, f] : fns) {
-        if (f.error.empty() && f.unresolved_indirect_jumps.empty()) {
-            ++complete;
-        } else {
-            std::printf("  discover 0x%llx: %s\n", static_cast<unsigned long long>(va), f.error.c_str());
-        }
-    }
-    expect(complete == fns.size(), "corpus: every function body decodes completely");
-
-    // R3: imports (the SEH corpus calls KERNEL32), and the functions that can catch.
-    std::vector<PeImport> imports;
-    expect(read_pe_imports(mapped, img.size_of_image, img.image_base, imports, &err), "corpus: the import table reads");
-    ImageInfo info;
-    info.base = img.image_base;
-    for (const PeImport& imp : imports) {
-        info.iat_begin = info.iat_begin == 0 ? imp.slot_va : std::min(info.iat_begin, imp.slot_va);
-        info.iat_end = std::max(info.iat_end, imp.slot_va + 8);
-    }
-    for (const PeFunctionRange& r : img.functions) {
-        if (((mapped[r.unwind] >> 3) & 0x3) != 0) {  // UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER
-            info.resumable.insert(img.image_base + r.begin);
-        }
-    }
-    R1Translator tr(info);
-    expect(tr.init_error().empty(), "corpus: the R1 translator initializes");
-    tr.declare(std::vector<std::uint64_t>(entries.begin(), entries.end()));
-    std::set<std::uint64_t> lifted;
-    for (const auto& [va, f] : fns) {
-        std::string why;
-        if (tr.lift(f, &why)) {
-            lifted.insert(va);
-        } else {
-            std::printf("  lift 0x%llx: %s\n", static_cast<unsigned long long>(va), why.c_str());
-        }
-    }
-    const LiftReport rep = tr.report();
-    std::printf("  coverage: %zu/%zu functions lifted\n", rep.lifted, rep.attempted);
-    for (const auto& [what, n] : rep.unsupported) {
-        std::printf("    unsupported %-32s %zu\n", what.c_str(), n);
-    }
-    expect(rep.lifted == fns.size(), "corpus: every corpus function lifts");
-    std::printf("  lifted as run-time faults: %zu traps, %zu AVX instructions\n", rep.traps,
-                rep.gated.count("AVX") != 0 ? rep.gated.at("AVX") : 0);
-    expect(rep.traps >= 1 && rep.gated.count("AVX") != 0,
-           "corpus: int3 and AVX on cold paths lift as run-time faults (cold_paths)");
-
-    if (const char* name = std::getenv("WSE_R1_DUMP_EXPORT")) {
-        for (const Export& e : exports) {
-            if (e.name == name) {
-                setenv("WSE_R1_DUMP_FN", r1_symbol(e.va).c_str(), 1);
-            }
-        }
-    }
-    std::vector<char> obj;
-    TranslateTimings t;
-    expect(tr.emit_object(2, obj, &t, &err) && !obj.empty(), "corpus: emit the O2 object");
     char tmpl[] = "/tmp/wse_r1_corpus_XXXXXX";
     const char* dir = mkdtemp(tmpl);
-    if (dir == nullptr || obj.empty()) {
-        std::printf("  emit: %s\n", err.c_str());
+    if (dir == nullptr) {
         return;
     }
-    const std::string o = std::string(dir) + "/corpus.o";
-    const std::string so = std::string(dir) + "/corpus.so";
-    std::ofstream(o, std::ios::binary).write(obj.data(), static_cast<std::streamsize>(obj.size()));
-    std::string log;
-    expect(link_shared_object({o}, so, &log), "corpus: LLD links the translated module");
-    void* h = dlopen(so.c_str(), RTLD_NOW | RTLD_LOCAL);
-    expect(h != nullptr, "corpus: dlopen the translated module");
-    if (h == nullptr) {
-        std::printf("  link: %s dlopen: %s\n", log.c_str(), dlerror());
+    Translated tx;
+    Translated td;
+    if (!translate_image("corpus", exe, true, dir, tx) || !translate_image("corpus_dll", dll, false, dir, td)) {
         return;
     }
-    const auto* rows = static_cast<const FnRow*>(dlsym(h, "wse_fn_table"));
-    const auto* count = static_cast<const std::uint64_t*>(dlsym(h, "wse_fn_table_count"));
-    expect(rows != nullptr && count != nullptr && *count == lifted.size(),
-           "corpus: the module exports its dispatch table (defined functions only)");
-    if (rows == nullptr || count == nullptr) {
-        return;
-    }
+    const PeImage& img = exe.img;
+    std::uint8_t* mapped = exe.mapped;
+    const std::vector<Export>& exports = exe.exports;
+    std::set<std::uint64_t> lifted = tx.lifted;
+    lifted.insert(td.lifted.begin(), td.lifted.end());
+    std::string err;
+
     Runtime rt;
     std::vector<Fault> faults;
     rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
-    rt.add_table(rows, static_cast<std::size_t>(*count));
-    rt.name_imports(imports);
+    rt.add_table(tx.rows, tx.count);
+    rt.add_table(td.rows, td.count);
+    // R4: the module registry names both images' imports and links the exe's corpus_dll imports
+    // to the DLL's code.
+    shim::Modules modules(rt);
+    expect(modules.add_image("C:\\WSE2\\corpus.exe", img, mapped, true, &err) != nullptr &&
+               modules.add_image("C:\\WSE2\\corpus_dll.dll", dll.img, dll.mapped, false, &err) != nullptr,
+           "corpus: both images register as modules");
+    std::vector<std::string> unresolved;
+    const std::size_t cross = modules.link(&unresolved);
+    expect(cross >= 5 && unresolved.empty(), "corpus: the exe's corpus_dll imports bind to the DLL's exports");
+    for (const std::string& u : unresolved) {
+        std::printf("  unresolved import %s\n", u.c_str());
+    }
     rt.fill_iat();  // imports called through a register (clang hoists `__imp_*` loads out of loops)
     seh::Exceptions exceptions(rt, img, mapped);
+    exceptions.add_image(dll.img, dll.mapped);
     const std::size_t shims = exceptions.install();
-    expect(imports.empty() || shims >= 5, "corpus: the SEH shims bind to the corpus imports");
+    expect(shims >= 7, "corpus: the SEH shims bind to the corpus imports (both modules)");
     // R3 thread environment: the main thread's TEB and static TLS; the TLS callbacks run once
     // with DLL_PROCESS_ATTACH, as the loader runs them (`t_tls_callback` checks).
     teb::Process process(rt, img, mapped);
@@ -445,6 +529,8 @@ void test_corpus(const char* path) {
     files_cfg.user = &user_vfs;
     shim::Files file_shims(rt, kern, files_cfg);
     expect(file_shims.install() >= 20, "corpus: the file shims bind");
+    // R4: modules and resources (`mod_corpus.c`).
+    expect(modules.install() >= 15, "corpus: the module shims bind");
     {
         GuestStack stack;
         CpuState s;
@@ -453,9 +539,23 @@ void test_corpus(const char* path) {
         teb::Process::attach(s, main_thread);
         expect(process.run_tls_callbacks(s, teb::kDllProcessAttach) && process.tls_directory().callbacks.size() == 1,
                "corpus: the TLS callback runs at process attach");
+        // The loader's order: DLLs attach before the exe runs; a static load passes lpReserved != NULL.
+        std::string failed;
+        expect(modules.attach_dlls(s, &failed) && faults.empty(), "corpus: corpus_dll's DllMain runs at process attach");
+        std::uint64_t info_va = 0;
+        for (const Export& e : dll.exports) {
+            info_va = e.name == "dt_attach_info" ? e.va : info_va;
+        }
+        bool ok = false;
+        const std::uint64_t info = rt.call_guest(s, info_va, {}, &ok);
+        expect(ok && info == 0x1111, "corpus: DllMain saw its handle, DLL_PROCESS_ATTACH, once, static load");
+        if (info != 0x1111) {
+            std::printf("  dt_attach_info 0x%llx (%s)\n", static_cast<unsigned long long>(info), failed.c_str());
+        }
     }
-    std::printf("  translated %zu functions (lift %.1f ms, opt %.1f ms, codegen %.1f ms, %zu B)\n",
-                rt.function_count(), t.lift_ms, t.optimize_ms, t.codegen_ms, obj.size());
+    std::printf("  translated %zu functions (corpus: lift %.1f ms, opt %.1f ms, codegen %.1f ms, %zu B; "
+                "corpus_dll: %zu B)\n",
+                rt.function_count(), tx.t.lift_ms, tx.t.optimize_ms, tx.t.codegen_ms, tx.obj_size, td.obj_size);
 
     constexpr int kRuns = 200;
     constexpr int kCalleeSaved[] = {3, 5, 6, 7, 12, 13, 14, 15};
@@ -465,10 +565,18 @@ void test_corpus(const char* path) {
     std::size_t checked = 0;
     std::size_t runnable = 0;
     std::FILE* record = g_record_path != nullptr ? std::fopen(g_record_path, "w") : nullptr;
-    for (const Export& e : exports) {
-        // `seh_*` / `teb_*` are the R3 corpora's handlers, callbacks and helpers: they only run
-        // inside `t_*` tests.
-        if (e.name.rfind("seh_", 0) == 0 || e.name.rfind("teb_", 0) == 0) {
+    // The exe's exports, then the DLL's `d_*` (pure code at the relocated base; its `dt_*` run only
+    // inside the exe's `t_mod_*` tests).
+    std::vector<Export> runs = exports;
+    for (const Export& e : dll.exports) {
+        if (e.name.rfind("d_", 0) == 0) {
+            runs.push_back(e);
+        }
+    }
+    for (const Export& e : runs) {
+        // `seh_*` / `teb_*` / `mod_*` are the R3/R4 corpora's handlers, callbacks and helpers: they
+        // only run inside `t_*` tests.
+        if (e.name.rfind("seh_", 0) == 0 || e.name.rfind("teb_", 0) == 0 || e.name.rfind("mod_", 0) == 0) {
             continue;
         }
         ++runnable;
@@ -576,7 +684,8 @@ void test_corpus(const char* path) {
     std::printf("  differential: %zu/%zu exports match %s on %d inputs each\n", checked, runnable,
                 g_check_mode ? "the recorded x86 results" : "native", kRuns);
     expect(checked == runnable, "corpus: every export matches native (rax, memory, callee-saved, rsp)");
-    dlclose(h);
+    dlclose(td.handle);
+    dlclose(tx.handle);
 }
 
 }  // namespace

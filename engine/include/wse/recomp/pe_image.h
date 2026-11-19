@@ -2,8 +2,9 @@
 //
 // Reads the user's own exe from memory (it is never bundled). Only what R0 needs: the
 // preferred base and size (the image maps at its preferred base, `docs/RECOMP_PLAN.md`), section
-// copies, the `.pdata` function ranges used for function discovery, and (R3) the import table. Every offset is
-// bounds-checked; a malformed file fails with a message instead of reading out of range.
+// copies, the `.pdata` function ranges used for function discovery, (R3) the import and TLS
+// directories, and (R4) exports, base relocations and resources. Every offset is bounds-checked; a
+// malformed file fails with a message instead of reading out of range.
 
 #pragma once
 
@@ -414,6 +415,335 @@ inline bool read_pe_codeview(const std::uint8_t* file, std::size_t size, const P
         return true;
     }
     return fail("no CodeView entry in PE debug directory");
+}
+
+// --- R4 multi-module runtime (`docs/RECOMP_PLAN.md` "R4 design", slice 2) ----------------------
+// Readers over a *mapped* image (`image` holds `size` bytes from its base), like `read_pe_imports`.
+
+namespace pe_detail {
+
+// Data directory `index` of a mapped image (RVA and size); false when the headers are truncated.
+inline bool data_directory(const std::uint8_t* image, std::size_t size, unsigned index, std::uint32_t& rva,
+                           std::uint32_t& dir_size) noexcept {
+    std::uint32_t pe = 0;
+    std::uint32_t ndirs = 0;
+    rva = 0;
+    dir_size = 0;
+    if (!rd32(image, size, 0x3C, pe) || !rd32(image, size, std::size_t{pe} + 24 + 108, ndirs)) {
+        return false;
+    }
+    if (index >= ndirs) {
+        return true;
+    }
+    return rd32(image, size, std::size_t{pe} + 24 + 112 + 8 * std::size_t{index}, rva) &&
+           rd32(image, size, std::size_t{pe} + 24 + 112 + 8 * std::size_t{index} + 4, dir_size);
+}
+
+inline bool c_string(const std::uint8_t* image, std::size_t size, std::uint32_t rva, std::string& s) {
+    s.clear();
+    for (std::size_t i = rva; i < size; ++i) {
+        if (image[i] == 0) {
+            return true;
+        }
+        s.push_back(static_cast<char>(image[i]));
+        if (s.size() > 4096) {
+            return false;
+        }
+    }
+    return false;
+}
+
+}  // namespace pe_detail
+
+// One exported function (export address table entry). `name` is empty for an ordinal-only export;
+// `forwarder` ("NTDLL.RtlUnwind") is set when the entry points into the export directory itself.
+struct PeExport {
+    std::string name;
+    std::uint16_t ordinal = 0;  // biased (the number `GetProcAddress(h, MAKEINTRESOURCE(n))` takes)
+    std::uint32_t rva = 0;
+    std::string forwarder;
+};
+
+struct PeExports {
+    std::string dll_name;  // the directory's Name field
+    std::vector<PeExport> entries;  // address-table order; an entry with several names appears once per name
+};
+
+// Reads the export directory (data directory 0). A missing directory is not an error.
+inline bool read_pe_exports(const std::uint8_t* image, std::size_t size, PeExports& out, std::string* error) {
+    using pe_detail::rd16;
+    using pe_detail::rd32;
+    auto fail = [&](const char* what) {
+        if (error != nullptr) {
+            *error = what;
+        }
+        return false;
+    };
+    out = PeExports{};
+    std::uint32_t dir = 0;
+    std::uint32_t dir_size = 0;
+    if (!pe_detail::data_directory(image, size, 0, dir, dir_size)) {
+        return fail("truncated headers");
+    }
+    if (dir == 0) {
+        return true;
+    }
+    std::uint32_t name_rva = 0;
+    std::uint32_t ord_base = 0;
+    std::uint32_t n_funcs = 0;
+    std::uint32_t n_names = 0;
+    std::uint32_t funcs = 0;
+    std::uint32_t names = 0;
+    std::uint32_t ords = 0;
+    if (!rd32(image, size, std::size_t{dir} + 0x0C, name_rva) || !rd32(image, size, std::size_t{dir} + 0x10, ord_base) ||
+        !rd32(image, size, std::size_t{dir} + 0x14, n_funcs) || !rd32(image, size, std::size_t{dir} + 0x18, n_names) ||
+        !rd32(image, size, std::size_t{dir} + 0x1C, funcs) || !rd32(image, size, std::size_t{dir} + 0x20, names) ||
+        !rd32(image, size, std::size_t{dir} + 0x24, ords)) {
+        return fail("truncated export directory");
+    }
+    if (n_funcs > 65536 || n_names > 65536) {
+        return fail("export directory too large");
+    }
+    if (name_rva != 0 && !pe_detail::c_string(image, size, name_rva, out.dll_name)) {
+        return fail("bad export DLL name");
+    }
+    std::vector<std::vector<std::string>> named(n_funcs);
+    for (std::uint32_t i = 0; i < n_names; ++i) {
+        std::uint32_t nr = 0;
+        std::uint16_t index = 0;
+        std::string nm;
+        if (!rd32(image, size, std::size_t{names} + 4 * std::size_t{i}, nr) ||
+            !rd16(image, size, std::size_t{ords} + 2 * std::size_t{i}, index) ||
+            !pe_detail::c_string(image, size, nr, nm)) {
+            return fail("bad export name");
+        }
+        if (index >= n_funcs) {
+            return fail("export name ordinal out of range");
+        }
+        named[index].push_back(std::move(nm));
+    }
+    for (std::uint32_t i = 0; i < n_funcs; ++i) {
+        PeExport e;
+        if (!rd32(image, size, std::size_t{funcs} + 4 * std::size_t{i}, e.rva)) {
+            return fail("truncated export address table");
+        }
+        if (e.rva == 0) {
+            continue;  // an unused ordinal
+        }
+        e.ordinal = static_cast<std::uint16_t>(ord_base + i);
+        if (e.rva >= dir && e.rva - dir < dir_size && !pe_detail::c_string(image, size, e.rva, e.forwarder)) {
+            return fail("bad export forwarder");
+        }
+        if (named[i].empty()) {
+            out.entries.push_back(e);
+        }
+        for (std::string& nm : named[i]) {
+            e.name = std::move(nm);
+            out.entries.push_back(e);
+        }
+    }
+    return true;
+}
+
+// Moves a mapped image to `new_base`: applies its base relocations (data directory 5; types
+// ABSOLUTE, HIGHLOW and DIR64, the only ones an x64 linker emits) and rewrites the header's
+// ImageBase, as the Windows loader does. A move of an image with relocations stripped
+// (IMAGE_FILE_RELOCS_STRIPPED, e.g. `lld-link -fixed`) fails; `applied` counts the fixups.
+inline bool apply_pe_relocations(std::uint8_t* image, std::size_t size, std::uint64_t new_base, std::size_t* applied,
+                                 std::string* error) {
+    using pe_detail::rd16;
+    using pe_detail::rd32;
+    using pe_detail::rd64;
+    auto fail = [&](const char* what) {
+        if (error != nullptr) {
+            *error = what;
+        }
+        return false;
+    };
+    if (applied != nullptr) {
+        *applied = 0;
+    }
+    std::uint32_t pe = 0;
+    std::uint16_t characteristics = 0;
+    std::uint64_t old_base = 0;
+    if (!rd32(image, size, 0x3C, pe) || !rd16(image, size, std::size_t{pe} + 22, characteristics) ||
+        !rd64(image, size, std::size_t{pe} + 24 + 24, old_base)) {
+        return fail("truncated headers");
+    }
+    const std::uint64_t delta = new_base - old_base;
+    if (delta == 0) {
+        return true;
+    }
+    std::uint32_t dir = 0;
+    std::uint32_t dir_size = 0;
+    if (!pe_detail::data_directory(image, size, 5, dir, dir_size)) {
+        return fail("truncated headers");
+    }
+    if ((characteristics & 1U) != 0) {
+        return fail("the image has its relocations stripped and cannot move");
+    }
+    std::size_t n = 0;
+    for (std::size_t block = dir; dir != 0 && block + 8 <= std::size_t{dir} + dir_size;) {
+        std::uint32_t page = 0;
+        std::uint32_t block_size = 0;
+        if (!rd32(image, size, block, page) || !rd32(image, size, block + 4, block_size)) {
+            return fail("truncated relocation block");
+        }
+        if (block_size < 8 || block + block_size > std::size_t{dir} + dir_size) {
+            return fail("bad relocation block size");
+        }
+        for (std::size_t e = block + 8; e + 2 <= block + block_size; e += 2) {
+            std::uint16_t entry = 0;
+            (void)rd16(image, size, e, entry);
+            const unsigned type = entry >> 12;
+            const std::size_t at = std::size_t{page} + (entry & 0xFFFU);
+            if (type == 0) {
+                continue;  // IMAGE_REL_BASED_ABSOLUTE: padding
+            }
+            if (type == 3) {  // IMAGE_REL_BASED_HIGHLOW
+                std::uint32_t v = 0;
+                if (!rd32(image, size, at, v)) {
+                    return fail("relocation outside the image");
+                }
+                v += static_cast<std::uint32_t>(delta);
+                std::memcpy(image + at, &v, 4);
+            } else if (type == 10) {  // IMAGE_REL_BASED_DIR64
+                std::uint64_t v = 0;
+                if (!rd64(image, size, at, v)) {
+                    return fail("relocation outside the image");
+                }
+                v += delta;
+                std::memcpy(image + at, &v, 8);
+            } else {
+                return fail("unsupported relocation type");
+            }
+            ++n;
+        }
+        block += block_size;
+    }
+    std::memcpy(image + pe + 24 + 24, &new_base, 8);
+    if (applied != nullptr) {
+        *applied = n;
+    }
+    return true;
+}
+
+// A resource type, name or language key: an integer ID, or a string (compared case-insensitively,
+// as `FindResource` compares: resource compilers store names upper-case).
+struct PeResourceKey {
+    std::uint32_t id = 0;
+    std::u16string name;  // empty: the key is `id`
+};
+
+enum class PeResourceMiss { none, no_directory, type, name, language };
+
+namespace pe_detail {
+
+inline char16_t upper16(char16_t c) noexcept {
+    return c >= u'a' && c <= u'z' ? static_cast<char16_t>(c - u'a' + u'A') : c;
+}
+
+// One level of the resource tree: the entry whose key matches; returns its OffsetToData (with the
+// subdirectory bit) or 0.
+inline std::uint32_t resource_entry(const std::uint8_t* image, std::size_t size, std::uint32_t root,
+                                    std::uint32_t table, const PeResourceKey* key, std::uint32_t* first_id) {
+    std::uint16_t n_named = 0;
+    std::uint16_t n_id = 0;
+    if (!rd16(image, size, std::size_t{table} + 12, n_named) || !rd16(image, size, std::size_t{table} + 14, n_id)) {
+        return 0;
+    }
+    const unsigned total = unsigned{n_named} + n_id;
+    for (unsigned i = 0; i < total && i < 4096; ++i) {
+        const std::size_t e = std::size_t{table} + 16 + 8 * std::size_t{i};
+        std::uint32_t name = 0;
+        std::uint32_t data = 0;
+        if (!rd32(image, size, e, name) || !rd32(image, size, e + 4, data)) {
+            return 0;
+        }
+        if (key == nullptr) {  // the first entry
+            if (first_id != nullptr) {
+                *first_id = (name & 0x80000000U) != 0 ? 0 : name;
+            }
+            return data;
+        }
+        if ((name & 0x80000000U) != 0) {
+            if (key->name.empty()) {
+                continue;
+            }
+            const std::size_t s = std::size_t{root} + (name & 0x7FFFFFFFU);
+            std::uint16_t len = 0;
+            if (!rd16(image, size, s, len) || len != key->name.size() || s + 2 + 2 * std::size_t{len} > size) {
+                continue;
+            }
+            bool same = true;
+            for (std::size_t k = 0; k < len && same; ++k) {
+                std::uint16_t ch = 0;
+                (void)rd16(image, size, s + 2 + 2 * k, ch);
+                same = upper16(static_cast<char16_t>(ch)) == upper16(key->name[k]);
+            }
+            if (same) {
+                return data;
+            }
+        } else if (key->name.empty() && name == key->id) {
+            return data;
+        }
+    }
+    return 0;
+}
+
+}  // namespace pe_detail
+
+// `FindResourceExW` over the resource directory (data directory 2): the RVA of the
+// IMAGE_RESOURCE_DATA_ENTRY for `type` / `name` / `language`, or 0 with `miss` saying which level
+// failed. `language` < 0 asks for `FindResource`'s choice: neutral (0), then en-US (0x409), then the
+// first language present (the runtime's locale is en-US: `shim_strings.h`).
+inline std::uint32_t find_pe_resource(const std::uint8_t* image, std::size_t size, const PeResourceKey& type,
+                                      const PeResourceKey& name, int language, PeResourceMiss* miss) {
+    auto missed = [&](PeResourceMiss m) {
+        if (miss != nullptr) {
+            *miss = m;
+        }
+        return std::uint32_t{0};
+    };
+    std::uint32_t root = 0;
+    std::uint32_t root_size = 0;
+    if (!pe_detail::data_directory(image, size, 2, root, root_size) || root == 0) {
+        return missed(PeResourceMiss::no_directory);
+    }
+    const std::uint32_t t = pe_detail::resource_entry(image, size, root, root, &type, nullptr);
+    if ((t & 0x80000000U) == 0) {
+        return missed(PeResourceMiss::type);
+    }
+    const std::uint32_t nm = pe_detail::resource_entry(image, size, root, root + (t & 0x7FFFFFFFU), &name, nullptr);
+    if ((nm & 0x80000000U) == 0) {
+        return missed(PeResourceMiss::name);
+    }
+    const std::uint32_t langs = root + (nm & 0x7FFFFFFFU);
+    std::uint32_t leaf = 0;
+    if (language >= 0) {
+        PeResourceKey k;
+        k.id = static_cast<std::uint32_t>(language);
+        leaf = pe_detail::resource_entry(image, size, root, langs, &k, nullptr);
+    } else {
+        for (const std::uint32_t want : {0U, 0x409U}) {
+            PeResourceKey k;
+            k.id = want;
+            leaf = pe_detail::resource_entry(image, size, root, langs, &k, nullptr);
+            if (leaf != 0) {
+                break;
+            }
+        }
+        if (leaf == 0) {
+            leaf = pe_detail::resource_entry(image, size, root, langs, nullptr, nullptr);
+        }
+    }
+    if (leaf == 0 || (leaf & 0x80000000U) != 0 || std::size_t{root} + leaf + 16 > size) {
+        return missed(PeResourceMiss::language);
+    }
+    if (miss != nullptr) {
+        *miss = PeResourceMiss::none;
+    }
+    return root + leaf;
 }
 
 }  // namespace wse::recomp

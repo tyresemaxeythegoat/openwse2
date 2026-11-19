@@ -28,6 +28,7 @@
 #include "wse/recomp/shim_crt.h"
 #include "wse/recomp/shim_files.h"
 #include "wse/recomp/shim_memory.h"
+#include "wse/recomp/shim_modules.h"
 #include "wse/recomp/shim_strings.h"
 #include "wse/recomp/shim_time.h"
 #include "wse/recomp/teb.h"
@@ -3847,6 +3848,382 @@ void test_unwinder() {
            "unwind: a chained fragment unwinds through its parent's codes");
 }
 
+// --- R4 modules (`pe_image.h` exports, relocations, resources; `runtime.h` late binding;
+// `shim_modules.h`): synthetic images in host memory, plain C++ functions for their code ----------
+namespace mod_test {
+
+// A mapped image in host memory, 64 KiB-aligned: PE32+ headers with 16 empty data directories.
+struct Img {
+    static constexpr std::uint32_t kSize = 0x4000;
+    std::vector<std::uint8_t> raw;
+    std::uint8_t* p = nullptr;
+    std::uint64_t base = 0;
+    explicit Img(std::uint64_t preferred) : raw(kSize + 0x10000, 0) {
+        const auto a = reinterpret_cast<std::uintptr_t>(raw.data());
+        base = (static_cast<std::uint64_t>(a) + 0xFFFF) & ~std::uint64_t{0xFFFF};
+        p = reinterpret_cast<std::uint8_t*>(static_cast<std::uintptr_t>(base));
+        put16(0, 0x5A4D);
+        put32(0x3C, 0x80);
+        put32(0x80, 0x4550);
+        put16(0x84, 0x8664);
+        put16(0x80 + 20, 0xF0);
+        put16(0x80 + 24, 0x20B);
+        put64(0x80 + 24 + 24, preferred);
+        put32(0x80 + 24 + 56, kSize);
+        put32(0x80 + 24 + 108, 16);
+    }
+    void put16(std::size_t off, std::uint16_t v) { std::memcpy(p + off, &v, 2); }
+    void put32(std::size_t off, std::uint32_t v) { std::memcpy(p + off, &v, 4); }
+    void put64(std::size_t off, std::uint64_t v) { std::memcpy(p + off, &v, 8); }
+    [[nodiscard]] std::uint64_t get64(std::size_t off) const {
+        std::uint64_t v = 0;
+        std::memcpy(&v, p + off, 8);
+        return v;
+    }
+    [[nodiscard]] std::uint32_t get32(std::size_t off) const {
+        std::uint32_t v = 0;
+        std::memcpy(&v, p + off, 4);
+        return v;
+    }
+    void dir(unsigned i, std::uint32_t rva, std::uint32_t size) {
+        put32(0x80 + 24 + 112 + 8 * std::size_t{i}, rva);
+        put32(0x80 + 24 + 112 + 8 * std::size_t{i} + 4, size);
+    }
+    void str(std::size_t off, const char* s) { std::memcpy(p + off, s, std::strlen(s) + 1); }
+    [[nodiscard]] PeImage pe(std::uint32_t entry_rva = 0) const {
+        PeImage i;
+        i.image_base = base;
+        i.size_of_image = kSize;
+        i.entry_rva = entry_rva;
+        return i;
+    }
+};
+
+std::uint64_t g_main_args[4];
+int g_main_calls = 0;
+void mod_alpha(CpuState* s) {
+    s->gpr[0] = 77;
+    rt_test::guest_ret(s);
+}
+void mod_six(CpuState* s) {
+    s->gpr[0] = 6;
+    rt_test::guest_ret(s);
+}
+void mod_dllmain(CpuState* s) {  // DllMain(h, reason, reserved) -> TRUE
+    g_main_args[0] = s->gpr[1];
+    g_main_args[1] = s->gpr[2];
+    g_main_args[2] = s->gpr[8];
+    ++g_main_calls;
+    s->gpr[0] = 1;
+    rt_test::guest_ret(s);
+}
+
+// Calls the shim registered as KERNEL32.dll!`name` as translated code would (Win64 arguments, the
+// return address pushed). Returns rax; `returned` is false when the shim did not return.
+std::uint64_t call(Runtime& rt, CpuState& s, const char* name, std::initializer_list<std::uint64_t> args,
+                   bool* returned = nullptr) {
+    constexpr std::uint64_t kRet = 0x140031000ULL;
+    const std::uint64_t rsp0 = s.gpr[4];
+    s.gpr[4] = (rsp0 - 0x80) & ~std::uint64_t{15};
+    static constexpr int kArgReg[4] = {1, 2, 8, 9};
+    std::size_t i = 0;
+    for (const std::uint64_t a : args) {
+        if (i < 4) {
+            s.gpr[kArgReg[i]] = a;
+        } else {
+            std::memcpy(reinterpret_cast<void*>(s.gpr[4] + 0x20 + 8 * (i - 4)), &a, 8);
+        }
+        ++i;
+    }
+    s.gpr[4] -= 8;
+    std::memcpy(reinterpret_cast<void*>(s.gpr[4]), &kRet, 8);
+    const Runtime::ImportShim* shim = rt.named_shim("KERNEL32.dll", name);
+    if (shim != nullptr) {
+        (*shim)(s);
+    }
+    if (returned != nullptr) {
+        *returned = shim != nullptr && s.rip == kRet;
+    }
+    s.gpr[4] = rsp0;
+    return s.gpr[0];
+}
+
+std::uint64_t va(const void* p) { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); }
+
+}  // namespace mod_test
+
+void test_modules() {
+    using namespace mod_test;
+    namespace sh = wse::recomp::shim;
+    std::string err;
+
+    // --- PE readers -------------------------------------------------------------------------
+    // The DLL: exports alpha/alias (ordinal 5), an ordinal-only 6, a forwarder fwd (ordinal 7).
+    Img dll(0x180000000ULL);
+    dll.dir(0, 0x1000, 0x100);
+    dll.put32(0x100C, 0x1080);  // Name
+    dll.str(0x1080, "TEST.dll");
+    dll.put32(0x1010, 5);  // Base
+    dll.put32(0x1014, 4);  // NumberOfFunctions
+    dll.put32(0x1018, 3);  // NumberOfNames
+    dll.put32(0x101C, 0x1040);
+    dll.put32(0x1020, 0x1060);
+    dll.put32(0x1024, 0x1070);
+    dll.put32(0x1040, 0x2000);
+    dll.put32(0x1044, 0x2010);
+    dll.put32(0x1048, 0x10C0);  // inside the export directory: a forwarder
+    dll.put32(0x104C, 0);
+    dll.put32(0x1060, 0x10A0);
+    dll.put32(0x1064, 0x10A8);
+    dll.put32(0x1068, 0x10B0);
+    dll.put16(0x1070, 0);
+    dll.put16(0x1072, 0);
+    dll.put16(0x1074, 2);
+    dll.str(0x10A0, "alias");
+    dll.str(0x10A8, "alpha");
+    dll.str(0x10B0, "fwd");
+    dll.str(0x10C0, "KERNEL32.GetTickCount");
+    PeExports ex;
+    expect(read_pe_exports(dll.p, Img::kSize, ex, &err) && ex.dll_name == "TEST.dll" && ex.entries.size() == 4 &&
+               ex.entries[0].name == "alias" && ex.entries[1].name == "alpha" && ex.entries[1].ordinal == 5 &&
+               ex.entries[1].rva == 0x2000 && ex.entries[2].name.empty() && ex.entries[2].ordinal == 6 &&
+               ex.entries[3].name == "fwd" && ex.entries[3].forwarder == "KERNEL32.GetTickCount",
+           "exports: names, ordinals, an ordinal-only entry and a forwarder are read");
+    // Base relocations: a DIR64 and a HIGHLOW, moving the DLL from 0x180000000 to where it is.
+    dll.dir(5, 0x1400, 0x10);
+    dll.put32(0x1400, 0x2000);
+    dll.put32(0x1404, 0x10);
+    dll.put16(0x1408, static_cast<std::uint16_t>((10U << 12) | 0x100));
+    dll.put16(0x140A, static_cast<std::uint16_t>((3U << 12) | 0x108));
+    dll.put64(0x2100, 0x180002000ULL);
+    dll.put32(0x2108, 0x11223344U);
+    const std::uint64_t delta = dll.base - 0x180000000ULL;
+    std::size_t applied = 0;
+    expect(apply_pe_relocations(dll.p, Img::kSize, dll.base, &applied, &err) && applied == 2 &&
+               dll.get64(0x2100) == dll.base + 0x2000 &&
+               dll.get32(0x2108) == static_cast<std::uint32_t>(0x11223344U + delta) && dll.get64(0x80 + 24 + 24) == dll.base,
+           "relocations: DIR64 and HIGHLOW move by the delta, and the header's ImageBase follows");
+    expect(apply_pe_relocations(dll.p, Img::kSize, dll.base, &applied, &err) && applied == 0,
+           "relocations: an image already at its base is left alone");
+    {
+        Img bad(0x180000000ULL);
+        bad.dir(5, 0x1400, 0x0C);
+        bad.put32(0x1400, 0x2000);
+        bad.put32(0x1404, 0x0C);
+        bad.put16(0x1408, static_cast<std::uint16_t>((4U << 12) | 0x10));
+        expect(!apply_pe_relocations(bad.p, Img::kSize, bad.base, &applied, &err), "relocations: an unknown type fails");
+        bad.put16(0x80 + 22, 1);  // IMAGE_FILE_RELOCS_STRIPPED
+        expect(!apply_pe_relocations(bad.p, Img::kSize, bad.base, &applied, &err) &&
+                   err.find("stripped") != std::string::npos,
+               "relocations: an image with relocations stripped cannot move");
+    }
+
+    // The exe: imports TEST.dll!alpha, TEST.dll!#6, TEST.dll!missing and KERNEL32.dll!GetTickCount;
+    // resources: type 256 { "ABC" (0x409), 7 (0x407 "de", 0x409 "en") }.
+    Img exe(0x140000000ULL);
+    exe.dir(1, 0x1000, 60);
+    exe.put32(0x1000, 0x1100);
+    exe.put32(0x100C, 0x1200);
+    exe.put32(0x1010, 0x1300);
+    exe.put32(0x1014, 0x1140);
+    exe.put32(0x1020, 0x1210);
+    exe.put32(0x1024, 0x1340);
+    exe.str(0x1200, "TEST.dll");
+    exe.str(0x1210, "KERNEL32.dll");
+    exe.put64(0x1100, 0x1400);
+    exe.put64(0x1108, 0x8000000000000006ULL);
+    exe.put64(0x1110, 0x1420);
+    exe.put64(0x1140, 0x1410);
+    exe.str(0x1402, "alpha");
+    exe.str(0x1412, "GetTickCount");
+    exe.str(0x1422, "missing");
+    for (const std::size_t slot : {std::size_t{0x1300}, std::size_t{0x1308}, std::size_t{0x1310}, std::size_t{0x1340}}) {
+        exe.put64(slot, 0xDEAD);  // the loader overwrites these
+    }
+    exe.dir(2, 0x2000, 0x300);
+    exe.put16(0x2000 + 14, 1);  // root: one ID entry
+    exe.put32(0x2010, 256);
+    exe.put32(0x2014, 0x80000000U | 0x18);
+    exe.put16(0x2018 + 12, 1);  // type 256: one named, one ID entry
+    exe.put16(0x2018 + 14, 1);
+    exe.put32(0x2028, 0x80000000U | 0x100);
+    exe.put32(0x202C, 0x80000000U | 0x40);
+    exe.put32(0x2030, 7);
+    exe.put32(0x2034, 0x80000000U | 0x60);
+    exe.put16(0x2040 + 14, 1);  // "ABC": 0x409
+    exe.put32(0x2050, 0x409);
+    exe.put32(0x2054, 0xA0);
+    exe.put16(0x2060 + 14, 2);  // 7: 0x407, 0x409
+    exe.put32(0x2070, 0x407);
+    exe.put32(0x2074, 0xB0);
+    exe.put32(0x2078, 0x409);
+    exe.put32(0x207C, 0xC0);
+    exe.put32(0x20A0, 0x2200);
+    exe.put32(0x20A4, 3);
+    exe.put32(0x20B0, 0x2210);
+    exe.put32(0x20B4, 2);
+    exe.put32(0x20C0, 0x2220);
+    exe.put32(0x20C4, 2);
+    exe.put16(0x2100, 3);
+    exe.put16(0x2102, u'A');
+    exe.put16(0x2104, u'B');
+    exe.put16(0x2106, u'C');
+    exe.str(0x2200, "abc");
+    exe.str(0x2210, "de");
+    exe.str(0x2220, "en");
+    PeResourceKey t256;
+    t256.id = 256;
+    PeResourceKey k7;
+    k7.id = 7;
+    PeResourceKey abc;
+    abc.name = u"abc";
+    PeResourceMiss miss = PeResourceMiss::none;
+    expect(find_pe_resource(exe.p, Img::kSize, t256, k7, -1, &miss) == 0x20C0 &&
+               find_pe_resource(exe.p, Img::kSize, t256, k7, 0x407, &miss) == 0x20B0 &&
+               find_pe_resource(exe.p, Img::kSize, t256, abc, -1, &miss) == 0x20A0 && miss == PeResourceMiss::none,
+           "resources: by ID and by case-insensitive name; no neutral language picks en-US, or the language asked");
+    PeResourceKey k8;
+    k8.id = 8;
+    PeResourceKey t9;
+    t9.id = 9;
+    expect(find_pe_resource(exe.p, Img::kSize, t256, k7, 0x40C, &miss) == 0 && miss == PeResourceMiss::language &&
+               find_pe_resource(exe.p, Img::kSize, t256, k8, -1, &miss) == 0 && miss == PeResourceMiss::name &&
+               find_pe_resource(exe.p, Img::kSize, t9, k7, -1, &miss) == 0 && miss == PeResourceMiss::type &&
+               find_pe_resource(dll.p, Img::kSize, t256, k7, -1, &miss) == 0 && miss == PeResourceMiss::no_directory,
+           "resources: a missing language, name, type or directory says which");
+
+    // --- the registry -------------------------------------------------------------------------
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    const FnRow rows[] = {{dll.base + 0x2000, &mod_alpha}, {dll.base + 0x2010, &mod_six}, {dll.base + 0x2200, &mod_dllmain}};
+    rt.add_table(rows, 3);
+    // Late binding: a shim registered before any image imports it binds when the image is named.
+    expect(rt.set_import("KERNEL32.dll", "GetTickCount", [](CpuState& st) { win64_return(st, 1234); }) == 0 &&
+               rt.has_shims_for("kernel32.DLL") && !rt.has_shims_for("user32.dll"),
+           "late binding: a shim registers by name before any image imports it");
+    sh::Modules mods(rt);
+    expect(mods.add_image("C:\\WSE2\\game.exe", exe.pe(), exe.p, true, &err) != nullptr &&
+               mods.add_image("C:\\WSE2\\TEST.DLL", dll.pe(0x2200), dll.p, false, &err) != nullptr,
+           "modules: the exe and a DLL register");
+    std::vector<std::string> unresolved;
+    expect(mods.link(&unresolved) == 2 && unresolved.size() == 1 && unresolved[0] == "TEST.dll!missing",
+           "modules: imports from a translated DLL bind to its exports (by name and ordinal); a missing one is listed");
+    rt.fill_iat();
+    expect(exe.get64(0x1300) == dll.base + 0x2000 && exe.get64(0x1308) == dll.base + 0x2010 &&
+               exe.get64(0x1340) == exe.base + 0x1340,
+           "modules: the IAT holds the DLL's code for its imports and the slot itself for a shim");
+    (void)mods.install();  // binds no slot here (the exe imports none): the shims register by name
+    expect(rt.named_shim("KERNEL32.dll", "GetProcAddress") != nullptr &&
+               rt.named_shim("KERNELBASE.dll", "LoadLibraryExW") != nullptr &&
+               rt.named_shim("ntdll.dll", "RtlPcToFileHeader") != nullptr,
+           "modules: the module shims register (KERNEL32, KERNELBASE, ntdll spellings)");
+    GuestStack stack;
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    alignas(16) static std::uint8_t teb[0x2000];
+    s.teb = va(teb);
+    auto last_error = [&]() {
+        std::uint32_t e = 0;
+        std::memcpy(&e, teb + 0x68, 4);
+        return e;
+    };
+    rt_test::push_and_hook(&s, 0x140030000ULL, exe.base + 0x1300, true);
+    const std::uint64_t r_alpha = s.gpr[0];
+    rt_test::push_and_hook(&s, 0x140030010ULL, exe.base + 0x1340, true);
+    expect(faults.empty() && r_alpha == 77 && s.gpr[0] == 1234 && s.rip == 0x140030010ULL,
+           "modules: a call through the IAT reaches the DLL's code, and a late-bound shim");
+    g_main_calls = 0;
+    expect(mods.attach_dlls(s) && g_main_calls == 1 && g_main_args[0] == dll.base && g_main_args[1] == 1 &&
+               g_main_args[2] != 0 && mods.attach_dlls(s) && g_main_calls == 1,
+           "modules: DllMain runs once with (handle, DLL_PROCESS_ATTACH, non-null for a static load)");
+
+    // GetModuleHandle*
+    const std::uint64_t k32 = call(rt, s, "GetModuleHandleA", {va("kernel32.dll")});
+    expect(call(rt, s, "GetModuleHandleA", {va("test")}) == dll.base &&
+               call(rt, s, "GetModuleHandleA", {va("TEST.DLL")}) == dll.base &&
+               call(rt, s, "GetModuleHandleW", {va(u"Test")}) == dll.base && call(rt, s, "GetModuleHandleA", {0}) == exe.base &&
+               k32 != 0 && (k32 & 0xFFFF) == 0 &&
+               call(rt, s, "GetModuleHandleA", {va("api-ms-win-core-synch-l1-2-0")}) == k32 &&
+               call(rt, s, "GetModuleHandleA", {va("C:\\Windows\\System32\\KERNEL32.DLL")}) == k32,
+           "GetModuleHandle: by name (case, extension, path), NULL is the exe, API sets are KERNEL32");
+    expect(call(rt, s, "GetModuleHandleA", {va("nope.dll")}) == 0 && last_error() == 126,
+           "GetModuleHandle: an unloaded module fails with ERROR_MOD_NOT_FOUND");
+    std::uint64_t h = 1;
+    expect(call(rt, s, "GetModuleHandleExW", {4, dll.base + 0x2005, va(&h)}) == 1 && h == dll.base &&
+               call(rt, s, "GetModuleHandleExW", {0, 0, va(&h)}) == 1 && h == exe.base &&
+               call(rt, s, "GetModuleHandleExW", {0, va(u"nope"), va(&h)}) == 0 && h == 0 && last_error() == 126,
+           "GetModuleHandleEx: from an address, NULL, a missing name (handle NULL, ERROR_MOD_NOT_FOUND)");
+    std::uint64_t pc_base = 1;
+    expect(call(rt, s, "RtlPcToFileHeader", {dll.base + 0x2005, va(&pc_base)}) == dll.base && pc_base == dll.base &&
+               call(rt, s, "RtlPcToFileHeader", {0x10, va(&pc_base)}) == 0 && pc_base == 0,
+           "RtlPcToFileHeader: the module containing the address, or NULL");
+
+    // GetProcAddress
+    const std::uint64_t tick = call(rt, s, "GetProcAddress", {k32, va("GetTickCount")});
+    expect(call(rt, s, "GetProcAddress", {dll.base, va("alpha")}) == dll.base + 0x2000 &&
+               call(rt, s, "GetProcAddress", {dll.base, va("alias")}) == dll.base + 0x2000 &&
+               call(rt, s, "GetProcAddress", {dll.base, 6}) == dll.base + 0x2010 &&
+               call(rt, s, "GetProcAddress", {dll.base, 5}) == dll.base + 0x2000 && tick > k32 && tick < k32 + 0x10000 &&
+               call(rt, s, "GetProcAddress", {dll.base, va("fwd")}) == tick &&
+               call(rt, s, "GetProcAddress", {k32, va("GetTickCount")}) == tick,
+           "GetProcAddress: by name, alias, ordinal; a forwarder and KERNEL32 give the same shim address");
+    expect(call(rt, s, "GetProcAddress", {dll.base, va("Alpha")}) == 0 && last_error() == 127 &&
+               call(rt, s, "GetProcAddress", {k32, va("WseNoSuchExport")}) == 0 && last_error() == 127 &&
+               call(rt, s, "GetProcAddress", {dll.base, 9}) == 0,
+           "GetProcAddress: names are case-sensitive; a missing export fails with ERROR_PROC_NOT_FOUND");
+    s.gpr[0] = 0;
+    rt_test::push_and_hook(&s, 0x140030020ULL, tick, false);
+    expect(faults.empty() && s.gpr[0] == 1234 && s.rip == 0x140030020ULL,
+           "GetProcAddress: calling a system export through a pointer runs its shim");
+    rt_test::push_and_hook(&s, 0x140030030ULL, k32 + 0x1000 + 16 * 500, false);
+    expect(faults.size() == 1 && faults[0].kind == FaultKind::missing_function,
+           "modules: a call into a system module where no export was handed out faults");
+    faults.clear();
+
+    // LoadLibrary / FreeLibrary
+    expect(call(rt, s, "LoadLibraryA", {va("user32.dll")}) == 0 && last_error() == 126,
+           "LoadLibrary: a DLL with no shims is not found");
+    (void)rt.set_import("USER32.dll", "GetFocus", [](CpuState& st) { win64_return(st, 0); });
+    const std::uint64_t u32 = call(rt, s, "LoadLibraryExW", {va(u"USER32"), 0, 0});
+    expect(u32 != 0 && u32 != k32 && call(rt, s, "GetProcAddress", {u32, va("GetFocus")}) != 0 &&
+               call(rt, s, "LoadLibraryA", {va("TEST.dll")}) == dll.base && g_main_calls == 1 &&
+               call(rt, s, "FreeLibrary", {dll.base}) == 1 && call(rt, s, "FreeLibrary", {0x10}) == 0,
+           "LoadLibrary: a DLL with shims loads; a loaded DLL returns its handle without a second DllMain");
+
+    // GetModuleFileName
+    char buf[64];
+    char16_t wbuf[64];
+    expect(call(rt, s, "GetModuleFileNameA", {dll.base, va(buf), 64}) == 16 && std::strcmp(buf, "C:\\WSE2\\TEST.DLL") == 0,
+           "GetModuleFileName: the path the module was registered with");
+    expect(call(rt, s, "GetModuleFileNameA", {dll.base, va(buf), 4}) == 4 && std::strcmp(buf, "C:\\") == 0 &&
+               last_error() == 122,
+           "GetModuleFileName: a short buffer truncates, returns its size and sets ERROR_INSUFFICIENT_BUFFER");
+    expect(call(rt, s, "GetModuleFileNameW", {0, va(wbuf), 64}) == 16 && std::u16string(wbuf) == u"C:\\WSE2\\game.exe" &&
+               call(rt, s, "GetModuleFileNameA", {k32, va(buf), 64}) == 32 &&
+               std::strcmp(buf, "C:\\Windows\\System32\\KERNEL32.dll") == 0,
+           "GetModuleFileName: NULL is the exe (wide); a system DLL is in System32");
+
+    // Resources
+    const std::uint64_t r7 = call(rt, s, "FindResourceA", {exe.base, 7, 256});
+    expect(r7 == exe.base + 0x20C0 && call(rt, s, "LoadResource", {exe.base, r7}) == exe.base + 0x2220 &&
+               call(rt, s, "SizeofResource", {exe.base, r7}) == 2 &&
+               call(rt, s, "LockResource", {exe.base + 0x2220}) == exe.base + 0x2220 &&
+               call(rt, s, "FindResourceA", {0, va("#7"), va("#256")}) == r7 &&
+               call(rt, s, "FindResourceW", {exe.base, va(u"abc"), 256}) == exe.base + 0x20A0 &&
+               call(rt, s, "FindResourceExW", {exe.base, 256, 7, 0x407}) == exe.base + 0x20B0 &&
+               call(rt, s, "FindResourceExW", {exe.base, 256, 7, 0}) == r7,
+           "FindResource: by ID, \"#n\", name; FindResourceEx by language (0: the default choice)");
+    expect(call(rt, s, "FindResourceExW", {exe.base, 256, 7, 0x40C}) == 0 && last_error() == 1815 &&
+               call(rt, s, "FindResourceA", {exe.base, 8, 256}) == 0 && last_error() == 1814 &&
+               call(rt, s, "FindResourceA", {exe.base, 7, 257}) == 0 && last_error() == 1813 &&
+               call(rt, s, "FindResourceA", {dll.base, 7, 256}) == 0 && last_error() == 1812 &&
+               call(rt, s, "FindResourceA", {k32, 7, 256}) == 0 && last_error() == 1812,
+           "FindResource: language, name, type missing; no resources (DLL, system DLL)");
+    expect(faults.empty(), "modules: no faults");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -3883,6 +4260,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_time_crt_sysinfo();
     test_strings_memory();
     test_files();
+    test_modules();
     test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");

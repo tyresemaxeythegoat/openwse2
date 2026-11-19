@@ -583,17 +583,21 @@ if(WSE_ENABLE_LLVM)
         wse_apply_strict_warnings(recomp_llvm_test)
         add_test(NAME recomp_llvm COMMAND recomp_llvm_test)
 
-        # R1 differential corpus: our own C compiled for Win64 into one PE at 0x140000000 with no
-        # relocations or imports (`engine/tests/recomp_corpus/*_corpus.c`; `corpus_entry` is in
-        # `int_corpus.c`). CI requires it
+        # R1 differential corpus: our own C compiled for Win64 into one fixed PE at 0x140000000 that
+        # imports KERNEL32 (an import library from `kernel32.def`) and, from R4, `corpus_dll.dll`
+        # (`engine/tests/recomp_corpus/*_corpus.c`; `corpus_entry` is in `int_corpus.c`). CI requires it
         # (-DWSE_REQUIRE_RECOMP_CORPUS=ON); elsewhere the test skips it when the tools are missing.
         option(WSE_REQUIRE_RECOMP_CORPUS "Fail configuration when the R1 Win64 corpus cannot be built" OFF)
         find_program(WSE_CORPUS_CLANG NAMES clang-18 clang HINTS "${LLVM_TOOLS_BINARY_DIR}")
         find_program(WSE_CORPUS_LLD_LINK NAMES lld-link-18 lld-link HINTS "${LLVM_TOOLS_BINARY_DIR}")
         find_program(WSE_CORPUS_DLLTOOL NAMES llvm-dlltool-18 llvm-dlltool HINTS "${LLVM_TOOLS_BINARY_DIR}")
-        if(WSE_CORPUS_CLANG AND WSE_CORPUS_LLD_LINK AND WSE_CORPUS_DLLTOOL)
+        find_program(WSE_CORPUS_RC NAMES llvm-rc-18 llvm-rc HINTS "${LLVM_TOOLS_BINARY_DIR}")
+        if(WSE_CORPUS_CLANG AND WSE_CORPUS_LLD_LINK AND WSE_CORPUS_DLLTOOL AND WSE_CORPUS_RC)
             set(_wse_corpus_dir "${CMAKE_CURRENT_BINARY_DIR}/recomp_corpus")
             set(_wse_corpus_exe "${_wse_corpus_dir}/corpus.exe")
+            # R4: a second module, `corpus_dll.dll` (relocatable, preferred base 0x180000000), which
+            # the exe imports (`mod_corpus.c`); the harness loads it from beside the exe.
+            set(_wse_corpus_dll "${_wse_corpus_dir}/corpus_dll.dll")
             file(MAKE_DIRECTORY "${_wse_corpus_dir}")
             # -fasynchronous-unwind-tables: .pdata/.xdata for every function, as MSVC emits (the R3
             # exception tests unwind through C frames).
@@ -612,10 +616,39 @@ if(WSE_ENABLE_LLVM)
             set(_wse_corpus_flags_str ${_wse_corpus_flags_int})
             # R4 corpus: files, directories, file mappings.
             set(_wse_corpus_flags_file ${_wse_corpus_flags_int})
+            # R4 corpus: modules, resources, RtlUnwind / RtlRestoreContext; and the DLL it imports.
+            set(_wse_corpus_flags_mod ${_wse_corpus_flags_int})
+            set(_wse_corpus_flags_dll ${_wse_corpus_flags_int})
             # SSE corpus: SSE4.1 with the vectorizers on.
             set(_wse_corpus_flags_sse -msse4.1)
             set(_wse_corpus_objs)
-            foreach(_unit int string sse seh teb crt str file)
+            set(_wse_corpus_dll_obj "${_wse_corpus_dir}/dll_corpus.obj")
+            add_custom_command(
+                OUTPUT "${_wse_corpus_dll_obj}"
+                COMMAND "${WSE_CORPUS_CLANG}" ${_wse_corpus_common} ${_wse_corpus_flags_dll}
+                        -c "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/dll_corpus.c" -o "${_wse_corpus_dll_obj}"
+                DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/dll_corpus.c"
+                COMMENT "R4 corpus: dll_corpus.c for Win64"
+                VERBATIM)
+            add_custom_command(
+                OUTPUT "${_wse_corpus_dll}" "${_wse_corpus_dir}/corpus_dll.lib"
+                COMMAND "${WSE_CORPUS_LLD_LINK}" -nologo -dll "-out:${_wse_corpus_dll}" -entry:dt_main
+                        -base:0x180000000 -nodefaultlib
+                        "-def:${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/corpus_dll.def"
+                        "-implib:${_wse_corpus_dir}/corpus_dll.lib" "${_wse_corpus_dll_obj}"
+                        "${_wse_corpus_dir}/kernel32.lib"
+                DEPENDS "${_wse_corpus_dll_obj}" "${_wse_corpus_dir}/kernel32.lib"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/corpus_dll.def"
+                COMMENT "R4 corpus: linking corpus_dll.dll"
+                VERBATIM)
+            add_custom_command(
+                OUTPUT "${_wse_corpus_dir}/corpus.res"
+                COMMAND "${WSE_CORPUS_RC}" -no-preprocess "-fo${_wse_corpus_dir}/corpus.res"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/corpus.rc"
+                DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/corpus.rc"
+                COMMENT "R4 corpus: resources"
+                VERBATIM)
+            foreach(_unit int string sse seh teb crt str file mod)
                 set(_src "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/${_unit}_corpus.c")
                 if(EXISTS "${_src}")
                     set(_obj "${_wse_corpus_dir}/${_unit}_corpus.obj")
@@ -633,8 +666,10 @@ if(WSE_ENABLE_LLVM)
                 OUTPUT "${_wse_corpus_exe}"
                 COMMAND "${WSE_CORPUS_LLD_LINK}" -nologo "-out:${_wse_corpus_exe}" -entry:corpus_entry
                         -subsystem:console -fixed -base:0x140000000 -nodefaultlib ${_wse_corpus_objs}
-                        "${_wse_corpus_dir}/kernel32.lib"
-                DEPENDS ${_wse_corpus_objs} "${_wse_corpus_dir}/kernel32.lib"
+                        "${_wse_corpus_dir}/corpus.res" "${_wse_corpus_dir}/kernel32.lib"
+                        "${_wse_corpus_dir}/corpus_dll.lib"
+                DEPENDS ${_wse_corpus_objs} "${_wse_corpus_dir}/kernel32.lib" "${_wse_corpus_dir}/corpus_dll.lib"
+                        "${_wse_corpus_dir}/corpus.res"
                 COMMENT "R1 corpus: linking the Win64 PE"
                 VERBATIM)
             add_custom_command(
@@ -645,11 +680,11 @@ if(WSE_ENABLE_LLVM)
                 DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/engine/tests/recomp_corpus/kernel32.def"
                 COMMENT "R3 corpus: KERNEL32 import library"
                 VERBATIM)
-            add_custom_target(wse_recomp_corpus DEPENDS "${_wse_corpus_exe}")
+            add_custom_target(wse_recomp_corpus DEPENDS "${_wse_corpus_exe}" "${_wse_corpus_dll}")
             add_dependencies(recomp_llvm_test wse_recomp_corpus)
             target_compile_definitions(recomp_llvm_test PRIVATE "WSE_RECOMP_CORPUS=\"${_wse_corpus_exe}\"")
         elseif(WSE_REQUIRE_RECOMP_CORPUS)
-            message(FATAL_ERROR "R1 corpus: clang (${WSE_CORPUS_CLANG}), lld-link (${WSE_CORPUS_LLD_LINK}) or llvm-dlltool (${WSE_CORPUS_DLLTOOL}) not found")
+            message(FATAL_ERROR "R1 corpus: clang (${WSE_CORPUS_CLANG}), lld-link (${WSE_CORPUS_LLD_LINK}), llvm-dlltool (${WSE_CORPUS_DLLTOOL}) or llvm-rc (${WSE_CORPUS_RC}) not found")
         endif()
     endif()
 

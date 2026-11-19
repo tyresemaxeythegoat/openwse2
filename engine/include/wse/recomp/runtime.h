@@ -111,16 +111,25 @@ public:
     void set_import(std::uint64_t slot_va, ImportShim shim) { imports_[slot_va] = std::move(shim); }
 
     // Names every IAT slot (`read_pe_imports`), so shims register by name and a missing one is
-    // reported as "KERNEL32.dll!TlsAlloc" (R3 import bridge).
+    // reported as "KERNEL32.dll!TlsAlloc" (R3 import bridge). A slot whose name already has a shim
+    // (`set_import` ran first, e.g. for a module added later: R4 `modules.h`) is bound at once.
     void name_imports(const std::vector<PeImport>& imports) {
         for (const PeImport& imp : imports) {
             import_names_[imp.slot_va] = imp.dll + "!" + (imp.name.empty() ? "#" + std::to_string(imp.ordinal) : imp.name);
             import_list_.push_back(imp);
+            if (!imp.name.empty()) {
+                const auto it = named_.find(shim_key(imp.dll, imp.name));
+                if (it != named_.end()) {
+                    imports_[imp.slot_va] = it->second;
+                }
+            }
         }
     }
-    // Binds `shim` to every slot importing `name` from `dll` (DLL compared case-insensitively).
-    // Returns the number of slots bound (0 when the exe does not import it).
+    // Registers `shim` as `dll!name` and binds it to every named slot importing it (DLL compared
+    // case-insensitively). Returns the number of slots bound now (0 when no image imports it yet;
+    // `name_imports` binds later slots, and `named_shim` finds it for `GetProcAddress`).
     std::size_t set_import(const std::string& dll, const std::string& name, const ImportShim& shim) {
+        named_[shim_key(dll, name)] = shim;
         std::size_t n = 0;
         for (const PeImport& imp : import_list_) {
             if (imp.name == name && same_dll(imp.dll, dll)) {
@@ -130,13 +139,35 @@ public:
         }
         return n;
     }
-    // Writes every named IAT slot's own VA into the slot, as the loader writes the imported
-    // function's address: code that loads an import into a register and calls it later reaches
-    // `dispatch` with the slot VA, which runs the import (R3). Guest memory must be mapped at the
-    // slot VAs (the image at its base).
+    // The shim registered as `dll!name`, or null.
+    [[nodiscard]] const ImportShim* named_shim(const std::string& dll, const std::string& name) const {
+        const auto it = named_.find(shim_key(dll, name));
+        return it == named_.end() ? nullptr : &it->second;
+    }
+    // True when any shim is registered for `dll` (lower-case comparison).
+    [[nodiscard]] bool has_shims_for(const std::string& dll) const {
+        const std::string prefix = lower(dll) + "!";
+        const auto it = named_.lower_bound(prefix);
+        return it != named_.end() && it->first.compare(0, prefix.size(), prefix) == 0;
+    }
+    // Binds an IAT slot to translated code at `target` (an export of another translated module,
+    // R4): the slot holds `target`, and a call through it dispatches there (the return address is
+    // already pushed, as for a real call through the IAT).
+    void bind_import_to(std::uint64_t slot_va, std::uint64_t target) {
+        imports_[slot_va] = [target](CpuState& s) { s.hooks->dispatch(&s, target); };
+        iat_values_[slot_va] = target;
+    }
+    [[nodiscard]] const std::vector<PeImport>& import_list() const noexcept { return import_list_; }
+    // Writes every named IAT slot's value into the slot, as the loader writes the imported
+    // function's address: the slot's own VA for a shim (code that loads an import into a register
+    // and calls it later reaches `dispatch` with the slot VA, which runs the import: R3), or the
+    // export's VA for a slot bound to translated code (`bind_import_to`). Guest memory must be
+    // mapped at the slot VAs (the image at its base).
     void fill_iat() const {
         for (const PeImport& imp : import_list_) {
-            std::memcpy(reinterpret_cast<void*>(static_cast<std::uintptr_t>(imp.slot_va)), &imp.slot_va, 8);
+            const auto it = iat_values_.find(imp.slot_va);
+            const std::uint64_t v = it != iat_values_.end() ? it->second : imp.slot_va;
+            std::memcpy(reinterpret_cast<void*>(static_cast<std::uintptr_t>(imp.slot_va)), &v, 8);
         }
     }
     [[nodiscard]] std::string import_name(std::uint64_t slot_va) const {
@@ -222,22 +253,23 @@ public:
     // Runs before every import shim; returning true skips the shim (the state was already set,
     // e.g. a thread that `TerminateThread` marked starts its exit: `threads.h`).
     std::function<bool(CpuState&)> before_import;
+    // Consulted when `dispatch` reaches a VA that is neither a translated function nor an import
+    // slot (R4 `modules.h`: a system DLL export that `GetProcAddress` returned, called through a
+    // pointer). Returns true when it ran the call; false faults as before. Set before guest code
+    // runs; it must be safe to call from every guest thread.
+    std::function<bool(CpuState&, std::uint64_t)> dispatch_fallback;
 
 private:
     static Runtime& of(CpuState* s) noexcept { return *static_cast<Runtime*>(s->hooks->context); }
 
-    static bool same_dll(const std::string& a, const std::string& b) {
-        if (a.size() != b.size()) {
-            return false;
+    static std::string lower(std::string s) {
+        for (char& ch : s) {
+            ch = static_cast<char>(ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch);
         }
-        for (std::size_t i = 0; i < a.size(); ++i) {
-            const auto lower = [](char ch) { return static_cast<char>(ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch); };
-            if (lower(a[i]) != lower(b[i])) {
-                return false;
-            }
-        }
-        return true;
+        return s;
     }
+    static std::string shim_key(const std::string& dll, const std::string& name) { return lower(dll) + "!" + name; }
+    static bool same_dll(const std::string& a, const std::string& b) { return lower(a) == lower(b); }
 
     void fault(CpuState& s, FaultKind kind, std::uint64_t va, std::string what) {
         ++fault_count;
@@ -258,6 +290,9 @@ private:
             // slot holds its own VA (`fill_iat`).
             if (rt.import_names_.count(va) != 0) {
                 hook_import(s, va);
+                return;
+            }
+            if (rt.dispatch_fallback && rt.dispatch_fallback(*s, va)) {
                 return;
             }
             rt.fault(*s, FaultKind::missing_function, va, {});
@@ -361,6 +396,8 @@ private:
     std::map<std::uint64_t, ImportShim> imports_;
     std::map<std::uint64_t, std::string> import_names_;
     std::vector<PeImport> import_list_;
+    std::map<std::string, ImportShim> named_;           // "kernel32.dll!TlsAlloc" -> shim
+    std::map<std::uint64_t, std::uint64_t> iat_values_;  // slot -> translated export (`bind_import_to`)
     std::uint64_t fs_base_ = 0;
     std::uint64_t gs_base_ = 0;
     bool fs_set_ = false;

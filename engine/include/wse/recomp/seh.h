@@ -6,7 +6,11 @@
 //   RaiseException          phase 1: walk guest frames, call each frame's exception handler
 //   RtlUnwindEx             phase 2: call termination handlers up to the target frame, run an
 //                           unwind-consolidation callback (how MSVC calls catch blocks), resume
-//   RtlVirtualUnwind, RtlLookupFunctionEntry, RtlCaptureContext   over the exe's .pdata/.xdata
+//   RtlUnwind               the same without a context record (R4: `lua5164`)
+//   RtlRestoreContext       resume at a CONTEXT; STATUS_LONGJUMP takes the nonvolatile registers
+//                           from a jump buffer, STATUS_UNWIND_CONSOLIDATE runs the callback first
+//   RtlVirtualUnwind, RtlLookupFunctionEntry, RtlCaptureContext   over every translated image's
+//                           .pdata/.xdata (the exe, then each DLL added with `add_image`, R4)
 //
 // Exceptions raised while one is being handled follow Windows: a handler that raises makes a
 // nested exception (EXCEPTION_NESTED_CALL until the walk passes the frame whose handler raised); a
@@ -26,6 +30,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -60,6 +65,7 @@ inline constexpr std::uint32_t kTargetUnwind = 0x20;
 inline constexpr std::uint32_t kCollidedUnwind = 0x40;  // EXCEPTION_COLLIDED_UNWIND
 inline constexpr std::uint32_t kStatusUnwind = 0xC0000027U;
 inline constexpr std::uint32_t kStatusUnwindConsolidate = 0x80000029U;
+inline constexpr std::uint32_t kStatusLongJump = 0x80000026U;
 inline constexpr std::uint32_t kContextFull = 0x10000B;
 inline constexpr std::uint32_t kContinueExecution = 0;
 inline constexpr std::uint32_t kContinueSearch = 1;
@@ -120,15 +126,25 @@ inline CpuState caller_context(const CpuState& s) noexcept {
 
 class Exceptions {
 public:
-    Exceptions(Runtime& rt, const PeImage& img, const std::uint8_t* image)
-        : rt_(rt), img_(img), uimage_{image, img.size_of_image, img.image_base, &img_.functions} {}
+    Exceptions(Runtime& rt, const PeImage& img, const std::uint8_t* image) : rt_(rt) { add_image(img, image); }
+
+    // Adds another translated image mapped at `img.image_base` (R4: a DLL). Frames are looked up in
+    // the image that contains their `rip`. Call before guest code runs.
+    void add_image(const PeImage& img, const std::uint8_t* image) {
+        auto m = std::make_unique<Image>();
+        m->pe = img;
+        m->u = unwind::Image{image, img.size_of_image, img.image_base, &m->pe.functions};
+        images_.push_back(std::move(m));
+    }
 
     // Binds the shims to the exe's imports (by name; KERNEL32 or ntdll spellings).
     std::size_t install() {
         std::size_t n = 0;
         for (const char* dll : {"KERNEL32.dll", "ntdll.dll"}) {
             n += rt_.set_import(dll, "RaiseException", [this](CpuState& s) { raise(s); });
-            n += rt_.set_import(dll, "RtlUnwindEx", [this](CpuState& s) { unwind_ex(s); });
+            n += rt_.set_import(dll, "RtlUnwindEx", [this](CpuState& s) { unwind_ex(s, true); });
+            n += rt_.set_import(dll, "RtlUnwind", [this](CpuState& s) { unwind_ex(s, false); });
+            n += rt_.set_import(dll, "RtlRestoreContext", [this](CpuState& s) { restore_context(s); });
             n += rt_.set_import(dll, "RtlVirtualUnwind", [this](CpuState& s) { virtual_unwind(s); });
             n += rt_.set_import(dll, "RtlLookupFunctionEntry", [this](CpuState& s) { lookup(s); });
             n += rt_.set_import(dll, "RtlCaptureContext", [this](CpuState& s) { capture(s); });
@@ -163,9 +179,24 @@ private:
         return sc;
     }
 
+    struct Image {
+        PeImage pe;
+        unwind::Image u;
+    };
+    // The image containing `pc`; the first image when none does (its lookup then finds no
+    // function, and the frame unwinds as a leaf).
+    const Image& image_for(std::uint64_t pc) const noexcept {
+        for (const auto& m : images_) {
+            if (pc >= m->u.base && pc - m->u.base < m->u.size) {
+                return *m;
+            }
+        }
+        return *images_.front();
+    }
     std::uint64_t function_entry_va(std::uint64_t pc) const noexcept {
-        const PeFunctionRange* f = unwind::lookup_function(uimage_, pc);
-        return f != nullptr && f->entry != 0 ? img_.image_base + f->entry : 0;
+        const Image& m = image_for(pc);
+        const PeFunctionRange* f = unwind::lookup_function(m.u, pc);
+        return f != nullptr && f->entry != 0 ? m.pe.image_base + f->entry : 0;
     }
 
     // Calls a language handler (`EXCEPTION_DISPOSITION h(record, frame, context, dispatcher)`).
@@ -184,7 +215,7 @@ private:
                          std::uint64_t target_ip) const noexcept {
         std::memset(reinterpret_cast<void*>(dc), 0, dco::size);
         detail::put<std::uint64_t>(dc + dco::control_pc, frame_ctx.rip);
-        detail::put<std::uint64_t>(dc + dco::image_base, img_.image_base);
+        detail::put<std::uint64_t>(dc + dco::image_base, image_for(frame_ctx.rip).pe.image_base);
         detail::put<std::uint64_t>(dc + dco::function_entry, function_entry_va(frame_ctx.rip));
         detail::put<std::uint64_t>(dc + dco::establisher, r.establisher_frame);
         detail::put<std::uint64_t>(dc + dco::target_ip, target_ip);
@@ -250,7 +281,7 @@ private:
             }
         }
         frame = w.ctx;
-        r = unwind::virtual_unwind(uimage_, w.ctx, mask);
+        r = unwind::virtual_unwind(image_for(w.ctx.rip).u, w.ctx, mask);
         return r.ok && w.ctx.rip != 0;
     }
     // Fills the dispatcher context for `frame`, restoring a collided frame's ScopeIndex.
@@ -321,13 +352,14 @@ private:
         s.hooks->unsupported(&s, thrower.rip, "unhandled guest exception");
     }
 
-    // RtlUnwindEx(TargetFrame, TargetIp, ExceptionRecord, ReturnValue, ContextRecord, HistoryTable).
-    void unwind_ex(CpuState& s) {
+    // RtlUnwindEx(TargetFrame, TargetIp, ExceptionRecord, ReturnValue, ContextRecord, HistoryTable);
+    // RtlUnwind(TargetFrame, TargetIp, ExceptionRecord, ReturnValue) when `has_context` is false.
+    void unwind_ex(CpuState& s, bool has_context) {
         const std::uint64_t target_frame = win64_arg(s, 0);
         const std::uint64_t target_ip = win64_arg(s, 1);
         std::uint64_t record = win64_arg(s, 2);
         const std::uint64_t return_value = win64_arg(s, 3);
-        const std::uint64_t context_arg = win64_arg(s, 4);
+        const std::uint64_t context_arg = has_context ? win64_arg(s, 4) : 0;
         const Scratch sc = carve(s.gpr[4]);
         if (record == 0) {
             record = sc.record;
@@ -438,7 +470,7 @@ private:
         CpuState c;
         detail::read_context(context, c);
         c.rip = pc;
-        const unwind::Result r = unwind::virtual_unwind(uimage_, c, type);
+        const unwind::Result r = unwind::virtual_unwind(image_for(pc).u, c, type);
         std::memcpy(reinterpret_cast<void*>(context + ctxo::gpr), c.gpr, sizeof(c.gpr));
         detail::put<std::uint64_t>(context + ctxo::rip, c.rip);
         std::memcpy(reinterpret_cast<void*>(context + ctxo::xmm), c.xmm, sizeof(c.xmm));
@@ -457,9 +489,53 @@ private:
         const std::uint64_t base_out = win64_arg(s, 1);
         const std::uint64_t entry = function_entry_va(pc);
         if (base_out != 0) {
-            detail::put<std::uint64_t>(base_out, entry != 0 ? img_.image_base : 0);
+            detail::put<std::uint64_t>(base_out, entry != 0 ? image_for(pc).pe.image_base : 0);
         }
         win64_return(s, entry);
+    }
+
+    // RtlRestoreContext(ContextRecord, ExceptionRecord): continues at the context. With
+    // STATUS_LONGJUMP the nonvolatile registers, rsp and rip come from the _JUMP_BUFFER in
+    // ExceptionInformation[0] (how MSVC's longjmp ends); with STATUS_UNWIND_CONSOLIDATE the callback
+    // in ExceptionInformation[0] runs on the context's stack and returns where to continue. Like
+    // RtlUnwindEx, the target frame resumes through `unwind_rsp`.
+    void restore_context(CpuState& s) {
+        const std::uint64_t context = win64_arg(s, 0);
+        const std::uint64_t record = win64_arg(s, 1);
+        CpuState c = s;
+        detail::read_context(context, c);
+        const std::uint32_t code = record != 0 ? detail::get<std::uint32_t>(record + er::code) : 0;
+        if (code == kStatusLongJump) {
+            // _JUMP_BUFFER (x64): Frame, Rbx, Rsp, Rbp, Rsi, Rdi, R12-R15, Rip, MxCsr, FpCsr, Spare,
+            // Xmm6-Xmm15.
+            const std::uint64_t jb = detail::get<std::uint64_t>(record + er::info);
+            static constexpr int kRegs[] = {3, 4, 5, 6, 7, 12, 13, 14, 15};
+            for (std::size_t i = 0; i < sizeof(kRegs) / sizeof(kRegs[0]); ++i) {
+                c.gpr[kRegs[i]] = detail::get<std::uint64_t>(jb + 8 + 8 * i);
+            }
+            c.rip = detail::get<std::uint64_t>(jb + 0x50);
+            c.mxcsr = detail::get<std::uint32_t>(jb + 0x58);
+            std::memcpy(c.xmm[6], reinterpret_cast<const void*>(jb + 0x60), 10 * 16);
+        } else if (code == kStatusUnwindConsolidate) {
+            const std::uint64_t callback = detail::get<std::uint64_t>(record + er::info);
+            CpuState cs = c;
+            bool ok = true;
+            Boundary b;
+            b.kind = Boundary::Kind::consolidate;
+            b.next = c;
+            {
+                const Pushed pushed(b);
+                c.rip = rt_.call_guest(cs, callback, {record}, &ok);
+            }
+            if (cs.unwind_rsp != 0) {
+                s = cs;  // the callback started another unwind
+                return;
+            }
+        }
+        c.hooks = s.hooks;
+        c.teb = s.teb;
+        s = c;
+        s.unwind_rsp = c.gpr[4];
     }
 
     // RtlCaptureContext(ContextRecord): the caller's context as if this call had returned.
@@ -469,8 +545,7 @@ private:
     }
 
     Runtime& rt_;
-    const PeImage& img_;
-    unwind::Image uimage_;
+    std::vector<std::unique_ptr<Image>> images_;
 };
 
 }  // namespace wse::recomp::seh
