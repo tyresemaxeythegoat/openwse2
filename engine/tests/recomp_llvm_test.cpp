@@ -209,7 +209,8 @@ std::uint64_t pick(Rng& r) {
 // the x86 code natively).
 const char* g_record_path = nullptr;
 bool g_check_mode = false;
-std::map<std::string, std::uint64_t> g_expected;
+// Per export, per run: {rax, memory hash} recorded natively on x86.
+std::map<std::string, std::vector<std::pair<std::uint64_t, std::uint64_t>>> g_expected;
 
 void mix(std::uint64_t& h, std::uint64_t v) {
     h ^= v;
@@ -375,8 +376,8 @@ void test_corpus(const char* path) {
         }
         const bool is_mem = e.name.rfind("m_", 0) == 0;
         int bad = 0;
-        std::uint64_t native_h = 0xCBF29CE484222325ULL;
-        std::uint64_t trans_h = 0xCBF29CE484222325ULL;
+        const auto expected = g_expected.find(e.name);
+        int check_bad = 0;
         // Every run happens even after a mismatch, so the input sequence never depends on results.
         for (int run = 0; run < kRuns; ++run) {
             std::uint64_t arg[4] = {pick(rng), pick(rng), pick(rng), pick(rng)};
@@ -392,8 +393,12 @@ void test_corpus(const char* path) {
 #if defined(__x86_64__)
                 want = reinterpret_cast<NativeFn>(e.va)(arg[0], arg[1], arg[2], arg[3]);
 #endif
-                mix(native_h, want);
-                mix_bytes(native_h, buf_native, sizeof(buf_native));
+                if (record != nullptr) {
+                    std::uint64_t mh = 0xCBF29CE484222325ULL;
+                    mix_bytes(mh, buf_native, sizeof(buf_native));
+                    std::fprintf(record, "%s %d %016llx %016llx\n", e.name.c_str(), run,
+                                 static_cast<unsigned long long>(want), static_cast<unsigned long long>(mh));
+                }
             }
 
             GuestStack stack;
@@ -414,8 +419,24 @@ void test_corpus(const char* path) {
             const CpuState before = s;
             faults.clear();
             const bool ran = rt.run(s, e.va);
-            mix(trans_h, s.gpr[0]);
-            mix_bytes(trans_h, buf_trans, sizeof(buf_trans));
+            if (g_check_mode) {
+                std::uint64_t mh = 0xCBF29CE484222325ULL;
+                mix_bytes(mh, buf_trans, sizeof(buf_trans));
+                const bool have = expected != g_expected.end() && static_cast<std::size_t>(run) < expected->second.size();
+                if (!have || expected->second[static_cast<std::size_t>(run)].first != s.gpr[0] ||
+                    expected->second[static_cast<std::size_t>(run)].second != mh) {
+                    if (++check_bad <= 3) {
+                        std::printf("  MISMATCH %s run %d (0x%llx, 0x%llx, 0x%llx, 0x%llx): x86 rax 0x%llx memory %s, "
+                                    "translated rax 0x%llx\n",
+                                    e.name.c_str(), run, static_cast<unsigned long long>(arg[0]),
+                                    static_cast<unsigned long long>(arg[1]), static_cast<unsigned long long>(arg[2]),
+                                    static_cast<unsigned long long>(arg[3]),
+                                    static_cast<unsigned long long>(have ? expected->second[static_cast<std::size_t>(run)].first : 0),
+                                    !have ? "missing" : (expected->second[static_cast<std::size_t>(run)].second == mh ? "same" : "differs"),
+                                    static_cast<unsigned long long>(s.gpr[0]));
+                    }
+                }
+            }
             const bool same_mem = g_check_mode || std::memcmp(buf_native, buf_trans, sizeof(buf_trans)) == 0;
             bool ok = ran && faults.empty() && (g_check_mode || s.gpr[0] == want) &&
                       s.rip == GuestStack::kReturnSentinel && s.gpr[4] == before.gpr[4] + 8 && same_mem;
@@ -440,17 +461,7 @@ void test_corpus(const char* path) {
                 }
             }
         }
-        if (record != nullptr) {
-            std::fprintf(record, "%s %016llx\n", e.name.c_str(), static_cast<unsigned long long>(native_h));
-        }
-        if (g_check_mode) {
-            const auto it = g_expected.find(e.name);
-            if (it == g_expected.end() || it->second != trans_h) {
-                ++bad;
-                std::printf("  MISMATCH %s: translated hash 0x%016llx, recorded %s\n", e.name.c_str(),
-                            static_cast<unsigned long long>(trans_h), it == g_expected.end() ? "none" : "differs");
-            }
-        }
+        bad += check_bad;
         if (bad == 0) {
             ++checked;
         }
@@ -480,9 +491,15 @@ int main(int argc, char** argv) {
             g_check_mode = true;
             std::ifstream in(argv[++i]);
             std::string name;
-            std::string hex;
-            while (in >> name >> hex) {
-                g_expected[name] = std::stoull(hex, nullptr, 16);
+            int run = 0;
+            std::string rax;
+            std::string mem;
+            while (in >> name >> run >> rax >> mem) {
+                auto& v = g_expected[name];
+                if (static_cast<std::size_t>(run) >= v.size()) {
+                    v.resize(static_cast<std::size_t>(run) + 1);
+                }
+                v[static_cast<std::size_t>(run)] = {std::stoull(rax, nullptr, 16), std::stoull(mem, nullptr, 16)};
             }
             expect(!g_expected.empty(), "check: the recorded results file is not empty");
         }
