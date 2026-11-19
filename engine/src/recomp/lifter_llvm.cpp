@@ -418,8 +418,7 @@ bool optimize_and_emit_impl(llvm::Module& m, llvm::TargetMachine& tm, int opt_le
     const char* dump = std::getenv("WSE_R1_DUMP_FN");
     llvm::Function* dump_fn = dump != nullptr ? m.getFunction(dump) : nullptr;
     if (dump_fn != nullptr) {
-        llvm::errs() << "=== " << dump << " before optimization
-";
+        llvm::errs() << "=== " << dump << " before optimization\n";
         dump_fn->print(llvm::errs());
     }
     if (opt_level > 0) {
@@ -443,8 +442,7 @@ bool optimize_and_emit_impl(llvm::Module& m, llvm::TargetMachine& tm, int opt_le
         mpm.run(m, mam);
     }
     if (dump_fn != nullptr) {
-        llvm::errs() << "=== " << dump << " after optimization
-";
+        llvm::errs() << "=== " << dump << " after optimization\n";
         dump_fn->print(llvm::errs());
     }
     if (timings != nullptr) {
