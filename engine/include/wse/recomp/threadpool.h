@@ -4,6 +4,8 @@
 //   CreateThreadpoolTimer SetThreadpoolTimer WaitForThreadpoolTimerCallbacks CloseThreadpoolTimer
 //   CreateThreadpoolWait SetThreadpoolWait WaitForThreadpoolWaitCallbacks CloseThreadpoolWait
 //   RegisterWaitForSingleObject UnregisterWait UnregisterWaitEx
+//   CreateTimerQueue CreateTimerQueueTimer ChangeTimerQueueTimer DeleteTimerQueueTimer
+//   DeleteTimerQueue DeleteTimerQueueEx      (timer queues: R4 "Timer queues")
 //
 // Each timer or wait object has one worker: a guest thread (its own TEB, stack and TLS attach /
 // detach callbacks, as Windows pool threads are) on a host thread, which sleeps until the object
@@ -54,7 +56,7 @@ inline Clock::time_point due_from_filetime(std::int64_t ft) {
 }
 
 struct Item {
-    enum class Kind { timer, wait, registered } kind = Kind::timer;
+    enum class Kind { timer, wait, registered, queue_timer } kind = Kind::timer;
     std::uint64_t callback = 0;
     std::uint64_t context = 0;
     std::uint64_t self = 0;  // the PTP_TIMER / PTP_WAIT / wait handle the guest holds
@@ -124,6 +126,17 @@ public:
         bind("RegisterWaitForSingleObject", [this](CpuState& s) { register_wait(s); });
         bind("UnregisterWait", [this](CpuState& s) { unregister(s, 0, false); });
         bind("UnregisterWaitEx", [this](CpuState& s) { unregister(s, win64_arg(s, 1), true); });
+        // Timer queues: one queue object per call (the timers do not depend on it).
+        bind("CreateTimerQueue", [this](CpuState& s) {
+            std::lock_guard<std::mutex> lock(kernel_.mutex());
+            next_queue_ += 16;
+            win64_return(s, next_queue_);
+        });
+        bind("DeleteTimerQueue", [](CpuState& s) { win64_return(s, 1); });
+        bind("DeleteTimerQueueEx", [](CpuState& s) { win64_return(s, 1); });
+        bind("CreateTimerQueueTimer", [this](CpuState& s) { create_queue_timer(s); });
+        bind("ChangeTimerQueueTimer", [this](CpuState& s) { change_queue_timer(s); });
+        bind("DeleteTimerQueueTimer", [this](CpuState& s) { delete_queue_timer(s); });
         return n;
     }
 
@@ -177,7 +190,7 @@ private:
                 continue;
             }
             std::uint32_t wait_result = kernel::kWaitObject0;
-            if (item->kind == Item::Kind::timer) {
+            if (item->kind == Item::Kind::timer || item->kind == Item::Kind::queue_timer) {
                 if (Clock::now() < item->due) {
                     kernel_.changed().wait_until(lock, item->due);
                     continue;
@@ -214,6 +227,8 @@ private:
             if (item->kind == Item::Kind::registered) {
                 // WAITORTIMERCALLBACK(context, TimerOrWaitFired): TRUE when the wait timed out.
                 (void)rt_.call_guest(s, item->callback, {item->context, wait_result == kernel::kWaitTimeout ? 1U : 0U}, &ok);
+            } else if (item->kind == Item::Kind::queue_timer) {
+                (void)rt_.call_guest(s, item->callback, {item->context, 1U}, &ok);  // a timer always "fired"
             } else if (item->kind == Item::Kind::wait) {
                 (void)rt_.call_guest(s, item->callback, {instance, item->context, item->self, wait_result}, &ok);
             } else {
@@ -325,14 +340,61 @@ private:
         win64_return(s, 1);
     }
 
+    // CreateTimerQueueTimer(*newTimer, queue, callback, parameter, dueMs, periodMs, flags).
+    void create_queue_timer(CpuState& s) {
+        const std::uint64_t out = win64_arg(s, 0);
+        if (out == 0) {
+            teb::set_error(s, teb::kErrorInvalidParameter);
+            win64_return(s, 0);
+            return;
+        }
+        auto item = std::make_shared<Item>();
+        item->kind = Item::Kind::queue_timer;
+        item->callback = win64_arg(s, 2);
+        item->context = win64_arg(s, 3);
+        item->due = Clock::now() + std::chrono::milliseconds(static_cast<std::uint32_t>(win64_arg(s, 4)));
+        item->period_ms = static_cast<std::uint32_t>(win64_arg(s, 5));
+        item->once = (win64_arg(s, 6) & kExecuteOnlyOnce) != 0;
+        if (item->once) {
+            item->period_ms = 0;
+        }
+        item->armed = true;
+        kernel::detail::put<std::uint64_t>(out, start(item));
+        win64_return(s, 1);
+    }
+
+    // ChangeTimerQueueTimer(queue, timer, dueMs, periodMs).
+    void change_queue_timer(CpuState& s) {
+        std::lock_guard<std::mutex> lock(kernel_.mutex());
+        std::shared_ptr<Item> t = find_locked(win64_arg(s, 1));
+        if (!t || t->kind != Item::Kind::queue_timer) {
+            teb::set_error(s, kernel::kErrorInvalidHandle);
+            win64_return(s, 0);
+            return;
+        }
+        ++t->generation;
+        t->due = Clock::now() + std::chrono::milliseconds(static_cast<std::uint32_t>(win64_arg(s, 2)));
+        t->period_ms = static_cast<std::uint32_t>(win64_arg(s, 3));
+        t->armed = true;
+        kernel_.changed().notify_all();
+        win64_return(s, 1);
+    }
+
+    // DeleteTimerQueueTimer(queue, timer, completionEvent): like UnregisterWaitEx, except that a
+    // null event reports ERROR_IO_PENDING while a callback still runs.
+    void delete_queue_timer(CpuState& s) { remove(s, win64_arg(s, 1), win64_arg(s, 2), Item::Kind::queue_timer, true); }
+
     // UnregisterWait(wait) / UnregisterWaitEx(wait, completionEvent): INVALID_HANDLE_VALUE waits
     // for running callbacks, an event is signaled once they are done (here: before returning),
     // null returns at once (ERROR_IO_PENDING while a callback is still running).
     void unregister(CpuState& s, std::uint64_t completion, bool ex) {
-        const std::uint64_t h = win64_arg(s, 0);
+        remove(s, win64_arg(s, 0), completion, Item::Kind::registered, !ex);
+    }
+
+    void remove(CpuState& s, std::uint64_t h, std::uint64_t completion, Item::Kind kind, bool pending_if_running) {
         std::unique_lock<std::mutex> lock(kernel_.mutex());
         std::shared_ptr<Item> it = find_locked(h);
-        if (!it || it->kind != Item::Kind::registered) {
+        if (!it || it->kind != kind) {
             lock.unlock();
             teb::set_error(s, kernel::kErrorInvalidHandle);
             win64_return(s, 0);
@@ -342,7 +404,7 @@ private:
         items_.erase(h);
         kernel_.changed().notify_all();
         const bool from_callback = it->worker_tid == tid_of(s);
-        const bool block = ex && completion != 0 && !from_callback;
+        const bool block = completion != 0 && !from_callback;
         if (block) {
             kernel_.changed().wait(lock, [&] { return it->running == 0; });
         }
@@ -351,7 +413,12 @@ private:
         if (block && completion != kInvalidHandle) {
             (void)kernel_.signal_event(s, completion);
         }
-        if (!ex && still_running) {
+        if ((pending_if_running || completion == 0) && still_running && kind == Item::Kind::queue_timer) {
+            teb::set_error(s, kErrorIoPending);
+            win64_return(s, 0);
+            return;
+        }
+        if (pending_if_running && still_running) {
             teb::set_error(s, kErrorIoPending);
             win64_return(s, 0);
             return;
@@ -372,6 +439,7 @@ private:
     teb::Process& process_;
     kernel::Kernel& kernel_;
     std::map<std::uint64_t, std::shared_ptr<Item>> items_;  // guarded by the kernel mutex
+    std::uint64_t next_queue_ = 0x7E0000;                   // CreateTimerQueue handles
     std::mutex hosts_m_;
     std::vector<Host> hosts_;
 };

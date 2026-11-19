@@ -193,6 +193,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 | 2026-11-19 | — | Phase 5 R3: nested exceptions, collided unwinds and rethrow from a catch block (`seh.h` per-thread boundaries); corpus cases checked natively on Windows |
 | 2026-11-19 | — | Phase 5 R3: thread-pool timers and waits, `RegisterWaitForSingleObject` (`threadpool.h`) |
 | 2026-11-19 | — | Phase 5 R4 planned with the user (`docs/RECOMP_PLAN.md` "R4 design") |
+| 2026-11-19 | — | Phase 5 R4: time, CRT support, system information and timer-queue shims; corpus checked natively on Windows |
 | 2026-11-19 | — | Phase 5 R2 differential rig: `r2_rig.h`, `tools/r2_pc_record.cpp` (1,623 self-contained v1.1.5.6 functions recorded natively, deterministic), phone "R2 differential" section, CI job `recomp-arm64`; SSE NaN results and min/max now bit-exact on AArch64 (corpus 93/93 on both runners) |
 | 2026-11-19 | — | R0 complete on the phone ((d) `rglString::indexOf` through the PDB matches the PC); first retail R1 coverage 10,561/11,254 (93.84%); traps and `cpuid`-gated code now lift as run-time faults, `cpuid` hook, `rsqrt`/`rcp` |
 | 2026-11-19 | — | Phase 5 R1 lifter: Zydis 4.1.0 discovery, LLVM 18 lifter (integer, SSE, string families), `CpuState` v2 + `RuntimeHooks` + `runtime.h` dispatcher, import-free modules (`-z defs`), CI differential corpus (our C for Win64: 99/99 functions lift, 92/92 exports match native), R1 coverage meter in the phone spike run (`STATUS.md` §5) |

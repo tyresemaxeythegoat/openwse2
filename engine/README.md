@@ -122,6 +122,7 @@ The core engine headers under `include/wse/` remain header-only; the Lua runtime
 | `tests/recomp_test.cpp` | host suite `recomp`: `decode_insn` operands/rejections, `Interpreter` flags, `decode_function`, synthetic R0 (c) model match, `parse_pe`/`map_pe_sections`, and R0 (d) vectors/FNV-1a | synthetic x86-64 bytes + synthetic PE32+ |
 | `include/wse/recomp/cpu_state.h`, `include/wse/recomp/runtime.h` | R1 `CpuState` (448 B: GPRs, `rip`, flags, XMM, MXCSR, hook table) and `RuntimeHooks`; `Runtime`: the `wse_fn_table` dispatcher, `import_call` shims, `bad_return` / `unsupported` / segment faults, `div128` | port infrastructure |
 | `src/recomp/discover.{h,cpp}`, `src/recomp/lift_r1*.{h,cpp}`, `src/recomp/llvm_common.h` | R1: Zydis 4.1.0 function discovery (control flow from each entry, MSVC and clang jump tables, tail calls) and the LLVM 18 lifter (`R1Translator`; families `lift_r1_int.cpp`, `lift_r1_sse.cpp`, `lift_r1_string.cpp`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R1 design") |
+| `include/wse/recomp/shim_time.h`, `include/wse/recomp/shim_crt.h` | R4 shims: time and counters (`shim::Time`), CRT support, process and system information (`shim::Crt`, `shim::ProcessConfig`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R4 design") |
 | `include/wse/recomp/threadpool.h` | R3 thread-pool timers and waits, `RegisterWaitForSingleObject` (`threadpool::Pool`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R3 design") |
 | `include/wse/recomp/threads.h`, `include/wse/recomp/kernel.h` | R3 threads and sync: `CreateThread` and the thread calls on host threads (`threads::Threads`); the handle table, waits, events, mutexes, semaphores, critical sections, condition variables, SLists, `Sleep` (`kernel::Kernel`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R3 design") |
 | `include/wse/recomp/teb.h` | R3 thread environment: TEB/PEB in guest memory, static TLS from the TLS directory (`read_pe_tls` in `pe_image.h`), TLS callbacks, and the `Tls*`, `Fls*`, `GetLastError`/`SetLastError`, `GetCurrentThreadId`/`ProcessId`/`Thread`/`Process` shims (`teb::Process`) | port infrastructure (design in `docs/RECOMP_PLAN.md` "R3 design") |
@@ -916,6 +917,16 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   returned, not applied to the host thread; `GetThreadTimes` reports zeros. Every wait wakes on
   any signal and re-checks (one host condition variable). `Threads` joins its host threads when
   destroyed (and joins finished ones whenever a thread starts).
+- **R4 time (`shim_time.h`):** the performance counter runs at 10 MHz (Windows' frequency depends
+  on the machine; programs read it); the local time zone is a fixed offset from the host (or
+  the embedder) with no daylight-saving rules, and `GetTimeZoneInformation` reports
+  `TIME_ZONE_ID_UNKNOWN` with that bias.
+- **R4 CRT support and system information (`shim_crt.h`):** `GetVersionExW` reports 6.2 build
+  9200, what Windows reports to an exe that declares no supported OS. `IsProcessorFeaturePresent`
+  answers from the fixed CPU profile (SSE to SSE4.1 yes; SSE4.2, AVX and later no), whatever the
+  host CPU has. `ExitProcess` reports the code to the embedder and unwinds the calling thread;
+  the embedder stops the others. `GetCurrentProcessorNumber` is always 0. Timer-queue timers
+  (`threadpool.h`) get one worker each, like thread-pool timers.
 - **R3 thread pool (`threadpool.h`):** one worker guest thread per timer or wait object, so one
   object's callbacks never overlap (Windows may run a periodic timer's callbacks concurrently when
   one runs long); a periodic timer's next due time is the previous one plus the period.

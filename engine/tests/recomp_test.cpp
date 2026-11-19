@@ -25,6 +25,8 @@
 #include "wse/recomp/r0_inputs.h"
 #include "wse/recomp/r2_rig.h"
 #include "wse/recomp/runtime.h"
+#include "wse/recomp/shim_crt.h"
+#include "wse/recomp/shim_time.h"
 #include "wse/recomp/teb.h"
 #include "wse/recomp/threadpool.h"
 #include "wse/recomp/threads.h"
@@ -2927,7 +2929,14 @@ const char* const kNames[] = {
     "InitializeSListHead", "InterlockedPushEntrySList", "InterlockedPopEntrySList", "InterlockedFlushSList",
     "QueryDepthSList", "GetCurrentThreadId", "GetLastError", "CreateThreadpoolTimer", "SetThreadpoolTimer",
     "WaitForThreadpoolTimerCallbacks", "CloseThreadpoolTimer", "CreateThreadpoolWait", "SetThreadpoolWait",
-    "CloseThreadpoolWait", "RegisterWaitForSingleObject", "UnregisterWait", "UnregisterWaitEx"};
+    "CloseThreadpoolWait", "RegisterWaitForSingleObject", "UnregisterWait", "UnregisterWaitEx",
+    "QueryPerformanceCounter", "QueryPerformanceFrequency", "GetTickCount", "GetSystemTimeAsFileTime",
+    "SystemTimeToFileTime", "FileTimeToSystemTime", "GetTimeZoneInformation", "SystemTimeToTzSpecificLocalTime",
+    "EncodePointer", "DecodePointer", "IsProcessorFeaturePresent", "GetCommandLineA", "GetCommandLineW",
+    "GetEnvironmentStringsW", "FreeEnvironmentStringsW", "SetEnvironmentVariableA", "InitOnceExecuteOnce",
+    "ExitProcess", "GetSystemInfo", "GetLogicalProcessorInformation", "GetVersionExW", "GlobalMemoryStatusEx",
+    "SetUnhandledExceptionFilter", "UnhandledExceptionFilter", "CreateTimerQueue", "CreateTimerQueueTimer",
+    "ChangeTimerQueueTimer", "DeleteTimerQueueTimer"};
 
 std::uint64_t slot(const char* name) {
     for (std::size_t i = 0; i < std::size(kNames); ++i) {
@@ -3282,7 +3291,7 @@ void test_threadpool() {
     tb::Process proc(rt, pe, img.data());
     kn::Kernel kern(rt);
     wse::recomp::threadpool::Pool pool(rt, proc, kern);
-    expect(proc.init(&err) && kern.install() >= 10 && pool.install() == 10, "pool: the thread-pool shims bind");
+    expect(proc.init(&err) && kern.install() >= 10 && pool.install() >= 10, "pool: the thread-pool shims bind");
     GuestStack stack(256 * 1024);
     CpuState s;
     stack.prepare(s);
@@ -3348,6 +3357,204 @@ void test_threadpool() {
     expect(timed && size_of(g_reg) == 6 && g_reg[4] == 0xE1 && g_reg[5] == 1 && call(s, "UnregisterWait", {reg2}) == 1,
            "pool: WT_EXECUTEONLYONCE with a timeout calls back once with TimerOrWaitFired = TRUE");
     expect(faults.empty(), "pool: no faults");
+}
+
+// --- R4 time, CRT support, system information, timer queues (`shim_time.h`, `shim_crt.h`) -------
+namespace crt_test {
+
+constexpr std::uint64_t kInitFn = 0x140080000ULL, kFilter = 0x140080010ULL, kQueueCb = 0x140080020ULL;
+std::atomic<int> g_init_calls{0};
+std::mutex g_m;
+std::vector<std::uint64_t> g_queue;  // parameter, fired per call
+
+void init_fn(CpuState* s) {  // BOOL CALLBACK (once, param, ctx)
+    ++g_init_calls;
+    s->gpr[0] = win64_arg(*s, 1) == 0x77 ? 1 : 0;
+    rt_test::guest_ret(s);
+}
+void filter(CpuState* s) {  // LONG (EXCEPTION_POINTERS*)
+    s->gpr[0] = win64_arg(*s, 0) == 0x1234 ? 1 : 0;  // EXCEPTION_EXECUTE_HANDLER
+    rt_test::guest_ret(s);
+}
+void queue_cb(CpuState* s) {  // (parameter, TimerOrWaitFired)
+    std::lock_guard<std::mutex> lock(g_m);
+    g_queue.insert(g_queue.end(), {win64_arg(*s, 0), win64_arg(*s, 1) & 0xFF});
+    rt_test::guest_ret(s);
+}
+
+}  // namespace crt_test
+
+void test_time_crt_sysinfo() {
+    using namespace crt_test;
+    using thr_test::call;
+    namespace tb = wse::recomp::teb;
+    namespace sh = wse::recomp::shim;
+    std::vector<std::uint8_t> img(0x1000, 0);
+    img[0x3C] = 0x80;
+    PeImage pe;
+    pe.image_base = 0x150000000ULL;
+    pe.size_of_image = static_cast<std::uint32_t>(img.size());
+    Runtime rt;
+    std::vector<Fault> faults;
+    std::mutex fault_m;
+    rt.on_fault = [&](const Fault& f) {
+        std::lock_guard<std::mutex> lock(fault_m);
+        faults.push_back(f);
+    };
+    std::vector<PeImport> named;
+    for (std::size_t i = 0; i < std::size(thr_test::kNames); ++i) {
+        named.push_back({thr_test::kSlotBase + 8 * i, "KERNEL32.dll", thr_test::kNames[i], 0});
+    }
+    rt.name_imports(named);
+    const FnRow rows[] = {{kInitFn, &init_fn}, {kFilter, &filter}, {kQueueCb, &queue_cb}};
+    rt.add_table(rows, std::size(rows));
+    std::string err;
+    tb::Process proc(rt, pe, img.data());
+    wse::recomp::kernel::Kernel kern(rt);
+    wse::recomp::threadpool::Pool pool(rt, proc, kern);
+    sh::Time tm(rt);
+    sh::ProcessConfig cfg;
+    cfg.command_line = "mb_warband_wse2_x64.exe --module Native";
+    cfg.environment["WSE_A"] = "1";
+    cfg.environment["Path"] = "C:\\Windows";
+    cfg.processors = 4;
+    sh::Crt crt(rt, cfg);
+    expect(proc.init(&err) && proc.install() >= 2 && kern.install() >= 10 && pool.install() >= 13 && tm.install() >= 8 &&
+               crt.install() >= 16,
+           "crt: the time, CRT and system-information shims bind");
+    GuestStack stack(256 * 1024);
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    tb::GuestThread& main_thread = proc.create_thread(0, 0);
+    tb::Process::attach(s, main_thread);
+    auto va = [](const void* p) { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); };
+
+    // Counters: 10 MHz, monotonic, and consistent with GetTickCount.
+    alignas(8) std::int64_t f = 0, c0 = 0, c1 = 0;
+    (void)call(s, "QueryPerformanceFrequency", {va(&f)});
+    (void)call(s, "QueryPerformanceCounter", {va(&c0)});
+    const std::uint64_t t0 = call(s, "GetTickCount", {});
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    (void)call(s, "QueryPerformanceCounter", {va(&c1)});
+    const std::uint64_t t1 = call(s, "GetTickCount", {});
+    expect(f == 10000000 && c1 - c0 >= 200000 && c1 - c0 < 50000000 && t1 - t0 >= 20 && t1 - t0 < 5000,
+           "time: QueryPerformanceFrequency is 10 MHz; the counter and GetTickCount advance with real time");
+
+    // SYSTEMTIME <-> FILETIME: 2000-01-01 00:00:00 UTC is 125911584000000000 and a Saturday.
+    alignas(8) std::uint16_t st[8] = {2000, 1, 0, 1, 0, 0, 0, 0};
+    alignas(8) std::uint64_t ft = 0;
+    const bool to_ft = call(s, "SystemTimeToFileTime", {va(st), va(&ft)}) == 1;
+    alignas(8) std::uint16_t back[8] = {};
+    ft += 10000ULL * (((13 * 60 + 45) * 60 + 30) * 1000ULL + 123) + 864000000000ULL * 59;  // 2000-02-29 13:45:30.123
+    const bool to_st = call(s, "FileTimeToSystemTime", {va(&ft), va(back)}) == 1;
+    alignas(8) std::uint16_t bad[8] = {2023, 2, 0, 29, 0, 0, 0, 0};
+    alignas(8) std::uint64_t dummy = 0;
+    expect(to_ft && to_st && back[0] == 2000 && back[1] == 2 && back[3] == 29 && back[2] == 2 && back[4] == 13 &&
+               back[5] == 45 && back[6] == 30 && back[7] == 123 && call(s, "SystemTimeToFileTime", {va(bad), va(&dummy)}) == 0 &&
+               call(s, "GetLastError", {}) == tb::kErrorInvalidParameter,
+           "time: SystemTimeToFileTime / FileTimeToSystemTime (2000-01-01 is 125911584000000000; Feb 29 2023 fails)");
+    {
+        alignas(8) std::uint64_t ft2000 = 0;
+        alignas(8) std::uint16_t y2k[8] = {2000, 1, 0, 1, 0, 0, 0, 0};
+        (void)call(s, "SystemTimeToFileTime", {va(y2k), va(&ft2000)});
+        alignas(8) std::uint64_t now = 0;
+        (void)call(s, "GetSystemTimeAsFileTime", {va(&now)});
+        expect(ft2000 == 125911584000000000ULL && now > 133000000000000000ULL, "time: the FILETIME epoch and the current time");
+    }
+    tm.utc_offset_minutes = 120;
+    alignas(8) std::uint8_t tz[172] = {};
+    alignas(8) std::uint16_t utc[8] = {2024, 12, 0, 31, 23, 30, 0, 0};
+    alignas(8) std::uint16_t local[8] = {};
+    std::int32_t bias = 0;
+    const std::uint64_t tz_id = call(s, "GetTimeZoneInformation", {va(tz)});
+    std::memcpy(&bias, tz, 4);
+    expect(tz_id == sh::kTimeZoneIdUnknown && bias == -120 &&
+               call(s, "SystemTimeToTzSpecificLocalTime", {0, va(utc), va(local)}) == 1 && local[0] == 2025 &&
+               local[1] == 1 && local[3] == 1 && local[4] == 1 && local[5] == 30 && local[2] == 3,
+           "time: a +2 h zone: Bias -120, 2024-12-31 23:30 UTC is 2025-01-01 01:30 (a Wednesday)");
+
+    // Pointer encoding, processor features, command line, environment.
+    bool encodes = true;
+    for (const std::uint64_t p : {0ULL, 1ULL, 0x140001234ULL, ~0ULL}) {
+        const std::uint64_t e = call(s, "EncodePointer", {p});
+        encodes = encodes && e != p && call(s, "DecodePointer", {e}) == p;
+    }
+    expect(encodes && call(s, "IsProcessorFeaturePresent", {10}) == 1 && call(s, "IsProcessorFeaturePresent", {37}) == 1 &&
+               call(s, "IsProcessorFeaturePresent", {38}) == 0 && call(s, "IsProcessorFeaturePresent", {39}) == 0,
+           "crt: EncodePointer / DecodePointer round-trip; features match the CPU profile (SSE4.1 yes, SSE4.2 and AVX no)");
+    const auto* cmd_a = reinterpret_cast<const char*>(static_cast<std::uintptr_t>(call(s, "GetCommandLineA", {})));
+    const auto* cmd_w = reinterpret_cast<const char16_t*>(static_cast<std::uintptr_t>(call(s, "GetCommandLineW", {})));
+    expect(std::string(cmd_a) == cfg.command_line && std::u16string(cmd_w) == u"mb_warband_wse2_x64.exe --module Native",
+           "crt: GetCommandLineA / W");
+    const char unset[] = "wse_a";
+    (void)call(s, "SetEnvironmentVariableA", {va(unset), 0});
+    const char name[] = "NEW";
+    const char value[] = "x";
+    (void)call(s, "SetEnvironmentVariableA", {va(name), va(value)});
+    const std::uint64_t block = call(s, "GetEnvironmentStringsW", {});
+    std::u16string all;
+    for (const auto* p = reinterpret_cast<const char16_t*>(static_cast<std::uintptr_t>(block)); *p != 0;) {
+        const std::u16string entry(p);
+        all += entry + u";";
+        p += entry.size() + 1;
+    }
+    expect(all == u"NEW=x;Path=C:\\Windows;" && call(s, "FreeEnvironmentStringsW", {block}) == 1 &&
+               call(s, "FreeEnvironmentStringsW", {block}) == 0,
+           "crt: SetEnvironmentVariableA (case-insensitive delete) and the environment block");
+
+    // InitOnceExecuteOnce runs its callback once; the top-level exception filter.
+    alignas(8) std::uint64_t once = 0;
+    g_init_calls = 0;
+    const bool i1 = call(s, "InitOnceExecuteOnce", {va(&once), kInitFn, 0x77, 0}) == 1;
+    const bool i2 = call(s, "InitOnceExecuteOnce", {va(&once), kInitFn, 0x77, 0}) == 1;
+    expect(i1 && i2 && g_init_calls == 1 && once == 2, "crt: InitOnceExecuteOnce runs the callback once");
+    expect(call(s, "UnhandledExceptionFilter", {0x1234}) == 0 && call(s, "SetUnhandledExceptionFilter", {kFilter}) == 0 &&
+               call(s, "SetUnhandledExceptionFilter", {kFilter}) == kFilter && call(s, "UnhandledExceptionFilter", {0x1234}) == 1,
+           "crt: UnhandledExceptionFilter calls the filter SetUnhandledExceptionFilter installed");
+
+    // System information.
+    alignas(8) std::uint8_t si[48] = {};
+    (void)call(s, "GetSystemInfo", {va(si)});
+    std::uint32_t page = 0, cpus = 0;
+    std::memcpy(&page, si + 4, 4);
+    std::memcpy(&cpus, si + 32, 4);
+    alignas(8) std::uint32_t len = 8;
+    alignas(8) std::uint8_t lpi[4 * 32] = {};
+    const bool small = call(s, "GetLogicalProcessorInformation", {va(lpi), va(&len)}) == 0 &&
+                       call(s, "GetLastError", {}) == sh::kErrorInsufficientBuffer && len == 128;
+    const bool full = call(s, "GetLogicalProcessorInformation", {va(lpi), va(&len)}) == 1 && lpi[32] == 2;
+    alignas(8) std::uint8_t ver[276] = {};
+    ver[0] = 20;  // 276 = 0x114
+    ver[1] = 1;
+    alignas(8) std::uint8_t mem[64] = {64};
+    const bool v = call(s, "GetVersionExW", {va(ver)}) == 1 && ver[4] == 6 && ver[8] == 2 && ver[12] == 0xF0 && ver[13] == 0x23;
+    const bool m = call(s, "GlobalMemoryStatusEx", {va(mem)}) == 1 && mem[8 + 4] == 2;  // 8 GiB = 2 << 32
+    expect(page == 4096 && cpus == 4 && small && full && v && m,
+           "sysinfo: GetSystemInfo, GetLogicalProcessorInformation (sizes), GetVersionExW 6.2.9200, GlobalMemoryStatusEx");
+
+    // Timer queues: a one-shot timer, then a periodic one deleted with INVALID_HANDLE_VALUE.
+    const std::uint64_t q = call(s, "CreateTimerQueue", {});
+    alignas(8) std::uint64_t t = 0;
+    const bool made = call(s, "CreateTimerQueueTimer", {va(&t), q, kQueueCb, 0xF0, 5, 0, 0}) == 1 && t != 0;
+    const bool fired = pool_test::until(g_queue, 2);
+    alignas(8) std::uint64_t t2 = 0;
+    (void)call(s, "CreateTimerQueueTimer", {va(&t2), q, kQueueCb, 0xF1, 1, 2, 0});
+    const bool periodic = pool_test::until(g_queue, 8);
+    const bool deleted = call(s, "DeleteTimerQueueTimer", {q, t2, threadpool::kInvalidHandle}) == 1;
+    const std::size_t after = pool_test::size_of(g_queue);
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    expect(made && fired && g_queue[0] == 0xF0 && g_queue[1] == 1 && periodic && deleted &&
+               pool_test::size_of(g_queue) == after && call(s, "DeleteTimerQueueTimer", {q, t, 0}) == 1,
+           "timer queues: one-shot and periodic CreateTimerQueueTimer; DeleteTimerQueueTimer stops it");
+
+    // ExitProcess: the exit callback gets the code and the thread unwinds out.
+    std::uint32_t exit_seen = 0;
+    crt.on_exit = [&](std::uint32_t code) { exit_seen = code; };
+    (void)call(s, "ExitProcess", {3});
+    expect(exit_seen == 3 && crt.exited() && crt.exit_code() == 3 && s.unwind_rsp == tb::kThreadExitUnwind,
+           "crt: ExitProcess reports the code and unwinds the calling thread");
+    expect(faults.empty(), "crt: no faults");
 }
 
 // --- R3 unwinder (`unwind.h`): hand-built functions, unwind codes and stacks ---------------------
@@ -3487,6 +3694,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_thread_environment();
     test_threads_and_sync();
     test_threadpool();
+    test_time_crt_sysinfo();
     test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");
