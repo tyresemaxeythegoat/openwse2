@@ -44,6 +44,28 @@ Lifted fail_insn(Ctx& c, const DInsn& d) {
     return Lifted::unsupported;
 }
 
+// x86 SSE returns the negative "real indefinite" QNaN (0xFFC00000 / 0xFFF8000000000000) when an
+// operation makes a NaN from non-NaN inputs (0/0, inf - inf, sqrt(-1); Intel SDM vol. 1 4.8.3.7);
+// AArch64 returns its positive default NaN. Found by the arm64 CI corpus check.
+Value* x86_nan(Ctx& c, Value* r, Value* a, Value* b = nullptr) {
+    Value* made = c.B.CreateAnd(c.B.CreateFCmpUNO(r, r), c.B.CreateNot(c.B.CreateFCmpUNO(a, b != nullptr ? b : a)));
+    return c.B.CreateSelect(made, llvm::ConstantFP::getQNaN(r->getType(), /*Negative=*/true), r);
+}
+
+// MIN/MAX as x86 defines them: `a < b ? a : b` (`>` for max), so the second operand comes back when
+// either is NaN or both are zero. LLVM's AArch64 backend turns that select into FMINNM/FMAXNM when
+// `b` is a constant, and those return NaN for a *signaling* NaN `a` where x86 returns `b`. Quieting
+// `a` first (`llvm.canonicalize`) changes nothing x86 can return (a NaN `a` is never returned) and
+// makes the two agree. Found by the arm64 CI corpus check.
+Value* x86_min(Ctx& c, Value* a, Value* b) {
+    Value* qa = c.B.CreateUnaryIntrinsic(llvm::Intrinsic::canonicalize, a);
+    return c.B.CreateSelect(c.B.CreateFCmpOLT(qa, b), qa, b);
+}
+Value* x86_max(Ctx& c, Value* a, Value* b) {
+    Value* qa = c.B.CreateUnaryIntrinsic(llvm::Intrinsic::canonicalize, a);
+    return c.B.CreateSelect(c.B.CreateFCmpOGT(qa, b), qa, b);
+}
+
 Value* splat_vec(Ctx& c, Value* scalar, unsigned n) {
     auto* vty = llvm::FixedVectorType::get(scalar->getType(), n);
     Value* v = c.B.CreateInsertElement(llvm::PoisonValue::get(vty), scalar, std::uint64_t{0});
@@ -327,28 +349,28 @@ Lifted lift_scalar_fp_bin(Ctx& c, const DInsn& d, bool is_double) {
     case ZYDIS_MNEMONIC_ADDSS:
     case ZYDIS_MNEMONIC_ADDSD:
         // Note: on two NaN inputs, plain IEEE/ARM64 fadd may pick differently than x86's first-operand NaN rule (accepted per R1 spec).
-        r = c.B.CreateFAdd(a, b);
+        r = x86_nan(c, c.B.CreateFAdd(a, b), a, b);
         break;
     case ZYDIS_MNEMONIC_SUBSS:
     case ZYDIS_MNEMONIC_SUBSD:
-        r = c.B.CreateFSub(a, b);
+        r = x86_nan(c, c.B.CreateFSub(a, b), a, b);
         break;
     case ZYDIS_MNEMONIC_MULSS:
     case ZYDIS_MNEMONIC_MULSD:
-        r = c.B.CreateFMul(a, b);
+        r = x86_nan(c, c.B.CreateFMul(a, b), a, b);
         break;
     case ZYDIS_MNEMONIC_DIVSS:
     case ZYDIS_MNEMONIC_DIVSD:
-        r = c.B.CreateFDiv(a, b);
+        r = x86_nan(c, c.B.CreateFDiv(a, b), a, b);
         break;
     case ZYDIS_MNEMONIC_MINSS:
     case ZYDIS_MNEMONIC_MINSD:
         // Intel SDM: a < b ? a : b (second operand returned on NaN or +/-0.0).
-        r = c.B.CreateSelect(c.B.CreateFCmpOLT(a, b), a, b);
+        r = x86_min(c, a, b);
         break;
     case ZYDIS_MNEMONIC_MAXSS:
     case ZYDIS_MNEMONIC_MAXSD:
-        r = c.B.CreateSelect(c.B.CreateFCmpOGT(a, b), a, b);
+        r = x86_max(c, a, b);
         break;
     default:
         return fail_insn(c, d);
@@ -370,27 +392,27 @@ Lifted lift_packed_fp_bin(Ctx& c, const DInsn& d, bool is_double) {
     case ZYDIS_MNEMONIC_ADDPS:
     case ZYDIS_MNEMONIC_ADDPD:
         // Note: on two NaN inputs, plain IEEE/ARM64 fadd may pick differently than x86's first-operand NaN rule (accepted per R1 spec).
-        r = c.B.CreateFAdd(a, b);
+        r = x86_nan(c, c.B.CreateFAdd(a, b), a, b);
         break;
     case ZYDIS_MNEMONIC_SUBPS:
     case ZYDIS_MNEMONIC_SUBPD:
-        r = c.B.CreateFSub(a, b);
+        r = x86_nan(c, c.B.CreateFSub(a, b), a, b);
         break;
     case ZYDIS_MNEMONIC_MULPS:
     case ZYDIS_MNEMONIC_MULPD:
-        r = c.B.CreateFMul(a, b);
+        r = x86_nan(c, c.B.CreateFMul(a, b), a, b);
         break;
     case ZYDIS_MNEMONIC_DIVPS:
     case ZYDIS_MNEMONIC_DIVPD:
-        r = c.B.CreateFDiv(a, b);
+        r = x86_nan(c, c.B.CreateFDiv(a, b), a, b);
         break;
     case ZYDIS_MNEMONIC_MINPS:
     case ZYDIS_MNEMONIC_MINPD:
-        r = c.B.CreateSelect(c.B.CreateFCmpOLT(a, b), a, b);
+        r = x86_min(c, a, b);
         break;
     case ZYDIS_MNEMONIC_MAXPS:
     case ZYDIS_MNEMONIC_MAXPD:
-        r = c.B.CreateSelect(c.B.CreateFCmpOGT(a, b), a, b);
+        r = x86_max(c, a, b);
         break;
     default:
         return fail_insn(c, d);
@@ -560,7 +582,7 @@ Lifted lift_horiz_fp(Ctx& c, const DInsn& d, bool is_double, bool sub) {
                             : c.B.CreateShuffleVector(a, b, llvm::ArrayRef<int>{0, 2, 4, 6});
     Value* odd = is_double ? c.B.CreateShuffleVector(a, b, llvm::ArrayRef<int>{1, 3})
                            : c.B.CreateShuffleVector(a, b, llvm::ArrayRef<int>{1, 3, 5, 7});
-    c.set_xmm(dst, sub ? c.B.CreateFSub(even, odd) : c.B.CreateFAdd(even, odd));
+    c.set_xmm(dst, x86_nan(c, sub ? c.B.CreateFSub(even, odd) : c.B.CreateFAdd(even, odd), even, odd));
     return Lifted::yes;
 }
 
@@ -751,7 +773,7 @@ Lifted lift_sse(Ctx& c, const DInsn& d) {
         bool ok = true;
         Value* s = read_scalar_fp(c, d, 1, is_d, &ok);
         if (!ok) return fail_insn(c, d);
-        write_scalar_merge(c, dst, B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, s));
+        write_scalar_merge(c, dst, x86_nan(c, B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, s), s));
         return Lifted::yes;
     }
     // RSQRT/RCP give hardware approximations (relative error <= 1.5 * 2^-12, Intel SDM; the
@@ -766,7 +788,7 @@ Lifted lift_sse(Ctx& c, const DInsn& d) {
         Value* s = read_scalar_fp(c, d, 1, false, &ok);
         if (!ok) return fail_insn(c, d);
         Value* den = mn == ZYDIS_MNEMONIC_RSQRTSS ? B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, s) : s;
-        write_scalar_merge(c, dst, B.CreateFDiv(llvm::ConstantFP::get(B.getFloatTy(), 1.0), den));
+        write_scalar_merge(c, dst, x86_nan(c, B.CreateFDiv(llvm::ConstantFP::get(B.getFloatTy(), 1.0), den), s));
         return Lifted::yes;
     }
     case ZYDIS_MNEMONIC_RSQRTPS:
@@ -777,7 +799,7 @@ Lifted lift_sse(Ctx& c, const DInsn& d) {
         Value* s = read_vec(c, d, 1, v4f_ty(c), &ok);
         if (!ok) return fail_insn(c, d);
         Value* den = mn == ZYDIS_MNEMONIC_RSQRTPS ? B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, s) : s;
-        c.set_xmm(dst, B.CreateFDiv(llvm::ConstantFP::get(v4f_ty(c), 1.0), den));
+        c.set_xmm(dst, x86_nan(c, B.CreateFDiv(llvm::ConstantFP::get(v4f_ty(c), 1.0), den), s));
         return Lifted::yes;
     }
     case ZYDIS_MNEMONIC_COMISS:
@@ -824,7 +846,7 @@ Lifted lift_sse(Ctx& c, const DInsn& d) {
         bool ok = true;
         Value* s = read_vec(c, d, 1, vty, &ok);
         if (!ok) return fail_insn(c, d);
-        c.set_xmm(dst, B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, s));
+        c.set_xmm(dst, x86_nan(c, B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, s), s));
         return Lifted::yes;
     }
     case ZYDIS_MNEMONIC_CMPPS:
@@ -928,8 +950,8 @@ Lifted lift_sse(Ctx& c, const DInsn& d) {
         Value* a = read_vec(c, d, 0, vty, &ok);
         Value* b = read_vec(c, d, 1, vty, &ok);
         if (!ok) return fail_insn(c, d);
-        Value* sub = B.CreateFSub(a, b);
-        Value* add = B.CreateFAdd(a, b);
+        Value* sub = x86_nan(c, B.CreateFSub(a, b), a, b);
+        Value* add = x86_nan(c, B.CreateFAdd(a, b), a, b);
         c.set_xmm(dst, is_d ? B.CreateShuffleVector(sub, add, llvm::ArrayRef<int>{0, 3})
                             : B.CreateShuffleVector(sub, add, llvm::ArrayRef<int>{0, 5, 2, 7}));
         return Lifted::yes;
@@ -946,7 +968,7 @@ Lifted lift_sse(Ctx& c, const DInsn& d) {
         Value* b = read_vec(c, d, 1, vty, &ok);
         if (!ok) return fail_insn(c, d);
         const unsigned imm = static_cast<unsigned>(d.ops[2].imm.value.u);
-        Value* prod = B.CreateFMul(a, b);
+        Value* prod = x86_nan(c, B.CreateFMul(a, b), a, b);
         Value* zero = llvm::ConstantFP::get(vty, 0.0);
         std::array<int, 4> in_mask{};
         std::array<int, 4> out_mask{};
@@ -957,8 +979,9 @@ Lifted lift_sse(Ctx& c, const DInsn& d) {
         Value* masked = B.CreateShuffleVector(prod, zero, llvm::ArrayRef<int>(in_mask.data(), n));
         Value* sum = nullptr;
         if (is_d) {
-            sum = B.CreateFAdd(B.CreateExtractElement(masked, std::uint64_t{0}),
-                               B.CreateExtractElement(masked, std::uint64_t{1}));
+            Value* m0 = B.CreateExtractElement(masked, std::uint64_t{0});
+            Value* m1 = B.CreateExtractElement(masked, std::uint64_t{1});
+            sum = x86_nan(c, B.CreateFAdd(m0, m1), m0, m1);
         } else {
             Value* s01 = B.CreateFAdd(B.CreateExtractElement(masked, std::uint64_t{0}),
                                       B.CreateExtractElement(masked, std::uint64_t{1}));
