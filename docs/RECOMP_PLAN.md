@@ -473,8 +473,17 @@ startup on the phone:
 - **Cache.** Batches in `filesDir/recomp/r4/so`, keyed like `r4_run`'s by the image, the options and
   the translator id (the size and an FNV-1a hash of `libwse_r0.so`, so a new APK retranslates);
   an interrupted translation resumes. `progress.txt` holds the current image and its batches done.
-- **Translation.** All cores but one, `-O2` (as verified in WSL); the screen is kept on while it
-  runs.
+- **Translation.** All cores but one, `-O2` (as verified in WSL).
+- **In the background (decided with the user, 2026-11-21).** The run goes on when the user leaves
+  the app, turns the screen off, or swipes the app from Recents. `R4ForegroundService` (a
+  `specialUse` foreground service in the launcher's own process, which holds the binding to
+  `:recomp`) keeps that process, and through the binding the worker, alive and holds a partial wake
+  lock (at most 3 h). Its notification shows the status line and has Stop, which ends the worker
+  (cached batches are kept, so the next run resumes). `R4StartupRunner` is one per launcher
+  process, so the run outlives the activity. Every ending reaches the launcher as the binding dying,
+  so it always posts a result notification ("PASS: …" / "Stopped: …"), which opens Advanced with
+  the report, read again from `report.txt` if the launcher process was restarted. Android 13+ asks
+  for the notification permission when the run starts; denied, the run still goes on, silently.
 - **Loading.** Batches load from a `memfd` (`android_dlopen_ext`), else with our own ELF loader
   (`code_loader.h`, shared with the R0 spikes): on the phone `dlopen` of a read-only app-data file
   failed in R0 run 2. Guest images are mapped read-write only (translated code runs, guest bytes

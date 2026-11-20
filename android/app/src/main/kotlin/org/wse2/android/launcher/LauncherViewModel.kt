@@ -118,9 +118,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private val _r4State = MutableStateFlow(R4UiState())
     val r4State: StateFlow<R4UiState> = _r4State.asStateFlow()
-    private val r4Runner = R4StartupRunner(application) { s ->
-        if (!isCleared.get()) _r4State.value = s
-    }
+    // Shared by every screen of this process: the run outlives the activity (R4ForegroundService).
+    private val r4Runner = R4StartupRunner.get(application)
+    private val r4Listener: (R4UiState) -> Unit = { s -> if (!isCleared.get()) _r4State.value = s }
 
     private val _events = Channel<LauncherEvent>(Channel.UNLIMITED)
     val events: Flow<LauncherEvent> = _events.receiveAsFlow()
@@ -144,10 +144,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         )
 
         restorePreferences()
+        r4Runner.addListener(r4Listener)
     }
 
     override fun onCleared() {
         isCleared.set(true)
+        r4Runner.removeListener(r4Listener)
         scanGeneration.incrementAndGet()
         finishProbe(null)
         executor.shutdownNow()
@@ -347,6 +349,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun setR4UseCopy(useCopy: Boolean) = r4Runner.setUseCopy(useCopy)
 
     fun dismissR4Report() = r4Runner.dismissReport()
+
+    // The result notification was tapped: open Advanced with the last report.
+    fun showR4Report() {
+        selectTab(LauncherTab.ADVANCED)
+        r4Runner.showLastReport()
+    }
 
     fun selectDriver(index: Int) {
         val current = _driverState.value

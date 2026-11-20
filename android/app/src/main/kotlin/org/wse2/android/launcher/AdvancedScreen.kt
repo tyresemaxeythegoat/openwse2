@@ -18,7 +18,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,7 +25,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -228,7 +226,7 @@ fun AdvancedScreen(
                     title = "R4 startup run",
                     supporting = if (r4State.running) {
                         r4State.status.ifEmpty { "Running" } +
-                            "\nKeep the app open: the first run translates the game (minutes)."
+                            "\nYou can leave the app: it runs in the background (Stop is in the notification)."
                     } else {
                         "Translates mb_warband_wse2_x64.exe and lua5164.dll from the selected " +
                             "folder (kept for later runs), starts Native on a recording device " +
@@ -307,13 +305,6 @@ fun AdvancedScreen(
             },
             onDismissRequest = onDismissR0Report
         )
-    }
-
-    // Translation and the run take minutes: keep the screen (and so the app) awake meanwhile.
-    val view = LocalView.current
-    DisposableEffect(r4State.running) {
-        view.keepScreenOn = r4State.running
-        onDispose { view.keepScreenOn = false }
     }
 
     r4State.report?.let { report ->

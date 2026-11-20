@@ -68,7 +68,9 @@ fun LauncherApp(
     viewModel: LauncherViewModel,
     onChooseFolder: () -> Unit,
     onImportDriver: () -> Unit,
-    onLaunchGame: (LauncherEvent.LaunchGame) -> Unit
+    onLaunchGame: (LauncherEvent.LaunchGame) -> Unit,
+    // The activity asks for the notification permission first (the run's progress and result).
+    onRunR4Startup: () -> Unit = viewModel::runR4Startup
 ) {
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val installFolder by viewModel.installFolder.collectAsStateWithLifecycle()
@@ -153,7 +155,7 @@ fun LauncherApp(
         onRunR0Spikes = viewModel::runR0Spikes,
         onDismissR0Report = viewModel::dismissR0Report,
         r4State = r4State,
-        onRunR4Startup = viewModel::runR4Startup,
+        onRunR4Startup = onRunR4Startup,
         onR4UseCopyChange = viewModel::setR4UseCopy,
         onDismissR4Report = viewModel::dismissR4Report
     )

@@ -14,8 +14,10 @@ import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
 import android.provider.DocumentsContract
+import org.wse2.android.R4ForegroundService
 import org.wse2.android.R4StartupService
 import java.io.File
+import java.util.concurrent.CopyOnWriteArraySet
 
 // Phase 5 R4 startup run on the phone (docs/RECOMP_PLAN.md "R4 design", "Phone run"): optionally
 // copies the install into app storage, then runs R4StartupService in its own ":recomp" process,
@@ -23,15 +25,50 @@ import java.io.File
 // on the recording D3D9 device and ends after FRAME_LIMIT frames or the first fault. While it runs,
 // `status` follows filesDir/recomp/r4/progress.txt and the report's last line; when the process
 // ends, the report (filesDir/recomp/r4/report.txt) is shown.
-class R4StartupRunner(
-    private val app: Application,
-    private val publish: (R4UiState) -> Unit
-) {
+//
+// One runner per launcher process (`get`), not per screen: the run goes on in the background, with
+// the screen off, or after the app is swiped from Recents, kept alive by R4ForegroundService (its
+// notification shows the status and has Stop). Screens subscribe with `addListener`. Every ending
+// of the worker (frame limit, fault, crash, being killed) reaches this process as the binding
+// dying, so the result notification is always posted here.
+class R4StartupRunner private constructor(private val app: Application) {
     private val main = Handler(Looper.getMainLooper())
     @Volatile
     private var state = R4UiState()
+    private val listeners = CopyOnWriteArraySet<(R4UiState) -> Unit>()
     private var connection: ServiceConnection? = null
     private var finished = false
+    @Volatile
+    private var stopRequested = false
+
+    fun addListener(listener: (R4UiState) -> Unit) {
+        listeners.add(listener)
+        val now = state
+        main.post { listener(now) }
+    }
+
+    fun removeListener(listener: (R4UiState) -> Unit) {
+        listeners.remove(listener)
+    }
+
+    fun isRunning(): Boolean = state.running
+
+    // The notification's Stop: ends the worker process (translated batches stay cached).
+    fun stop() {
+        if (!state.running || stopRequested) return
+        stopRequested = true
+        // While copying, the copy thread sees the flag and finishes; otherwise end the worker now.
+        if (connection != null) main.post { finish(STOPPED) }
+    }
+
+    // The result notification was tapped: show the last report, even if this process was
+    // restarted since the run (the report is in app storage).
+    fun showLastReport() {
+        if (state.running || state.report != null) return
+        val file = File(r4Dir, "report.txt")
+        if (!file.isFile) return
+        update(state.copy(report = reportText(null)))
+    }
 
     private val workDir: File get() = File(app.filesDir, "recomp")
     private val r4Dir: File get() = File(workDir, "r4")
@@ -40,7 +77,9 @@ class R4StartupRunner(
     private val poll = object : Runnable {
         override fun run() {
             if (!state.running) return
-            update(state.copy(status = statusLine()))
+            val status = statusLine()
+            update(state.copy(status = status))
+            R4ForegroundService.showProgress(app, status)
             main.postDelayed(this, 1000L)
         }
     }
@@ -65,7 +104,10 @@ class R4StartupRunner(
         File(r4Dir, "report.txt").delete()
         File(r4Dir, "progress.txt").delete()
         finished = false
+        stopRequested = false
+        R4ForegroundService.clearResult(app)
         update(state.copy(running = true, status = "Starting", report = null))
+        R4ForegroundService.start(app)
         if (!state.useCopy) {
             bind(treeUri, "")
             return
@@ -78,7 +120,9 @@ class R4StartupRunner(
                 t.message ?: t.javaClass.simpleName
             }
             main.post {
-                if (error != null) {
+                if (stopRequested) {
+                    finish(STOPPED)
+                } else if (error != null) {
                     finish("R4 startup run: copying the install failed: $error")
                 } else {
                     bind(treeUri, copyDir.absolutePath)
@@ -143,6 +187,13 @@ class R4StartupRunner(
         }
         connection = null
         main.removeCallbacks(poll)
+        val report = reportText(error)
+        update(state.copy(running = false, status = "", report = report))
+        R4ForegroundService.finish(app, report.substringBefore("\n\n"))
+    }
+
+    // The headline (the given error, or the report's RESULT line) and the report.
+    private fun reportText(error: String?): String {
         val text = try {
             File(r4Dir, "report.txt").readText()
         } catch (_: Throwable) {
@@ -155,7 +206,7 @@ class R4StartupRunner(
             result.startsWith("pass") -> "PASS: $result"
             else -> "Stopped: $result"
         }
-        update(state.copy(running = false, status = "", report = "$headline\n\n$text"))
+        return "$headline\n\n$text"
     }
 
     private fun statusLine(): String {
@@ -181,7 +232,7 @@ class R4StartupRunner(
     @Synchronized
     private fun update(next: R4UiState) {
         state = next
-        main.post { publish(next) }
+        main.post { for (l in listeners) l(next) }
     }
 
     // Everything under the folder except the other modules in Modules/: root files, CommonRes,
@@ -206,6 +257,7 @@ class R4StartupRunner(
                 }
             }
             for (e in entries) {
+                if (stopRequested) return
                 val id = e[0] as String? ?: continue
                 val name = e[1] as String? ?: continue
                 val isDir = e[2] == DocumentsContract.Document.MIME_TYPE_DIR
@@ -239,5 +291,12 @@ class R4StartupRunner(
     companion object {
         const val MODULE = "Native"
         const val FRAME_LIMIT = 1000L
+        private const val STOPPED = "Stopped by you. Translated batches are kept: the next run resumes."
+
+        @Volatile
+        private var instance: R4StartupRunner? = null
+
+        fun get(app: Application): R4StartupRunner =
+            instance ?: synchronized(this) { instance ?: R4StartupRunner(app).also { instance = it } }
     }
 }

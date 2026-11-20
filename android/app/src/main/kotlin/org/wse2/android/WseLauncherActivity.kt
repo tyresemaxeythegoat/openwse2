@@ -1,6 +1,8 @@
 package org.wse2.android
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -65,6 +67,34 @@ class WseLauncherActivity : ComponentActivity() {
         viewModel.importDriverPackage(driverUri)
     }
 
+    // Android 13+: the R4 run's progress and result notifications need this; the run starts
+    // whatever the answer (denied, the run still goes on in the background, silently).
+    private val notificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { viewModel.runR4Startup() }
+
+    private fun runR4Startup() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.runR4Startup()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        showR4ReportIfAsked(intent)
+    }
+
+    private fun showR4ReportIfAsked(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_SHOW_R4_REPORT, false) != true) return
+        intent.removeExtra(EXTRA_SHOW_R4_REPORT)
+        viewModel.showR4Report()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
@@ -79,6 +109,7 @@ class WseLauncherActivity : ComponentActivity() {
             viewModel.selectTab(LauncherTab.entries[savedTab])
         }
         viewModel.updateMaxDisplayRefreshHz(maxDisplayRefreshHz())
+        if (savedInstanceState == null) showR4ReportIfAsked(intent)
 
         setContent {
             val seedColor by viewModel.seedColorArgb.collectAsStateWithLifecycle()
@@ -87,7 +118,8 @@ class WseLauncherActivity : ComponentActivity() {
                     viewModel = viewModel,
                     onChooseFolder = { openWarbandFolderPicker() },
                     onImportDriver = { openDriverPackagePicker() },
-                    onLaunchGame = { event -> launchWseActivity(event) }
+                    onLaunchGame = { event -> launchWseActivity(event) },
+                    onRunR4Startup = { runR4Startup() }
                 )
             }
         }
@@ -158,5 +190,7 @@ class WseLauncherActivity : ComponentActivity() {
         const val EXTRA_MODULE_NAME = "wse2.extra.MODULE_NAME"
         const val EXTRA_GPU_DRIVER = "wse2.extra.GPU_DRIVER"
         const val EXTRA_RUN_MODULE = "wse2.extra.RUN_MODULE"
+        // Set by R4ForegroundService's result notification.
+        const val EXTRA_SHOW_R4_REPORT = "wse2.extra.SHOW_R4_REPORT"
     }
 }
