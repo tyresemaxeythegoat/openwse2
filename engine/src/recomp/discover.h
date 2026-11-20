@@ -167,6 +167,16 @@ struct OffsetTables {
 };
 OffsetTables find_offset_table_entries(const ImageView& view, const PeImage& img, const std::set<std::uint64_t>& entries);
 
+// R4: code whose address the program takes with `lea r, [rip + X]` and stores or calls later
+// (a callback or a hand-filled table of function pointers: a v1.1.5.6 startup function takes a
+// leaf comparator's address this way and calls it through a table). Discovers every function from `entries`
+// (and each new entry, to a fixed point); X counts when it lies in `.text`, inside no `.pdata`
+// function, outside the span of the function holding the `lea` (a table or label of its own),
+// and is no known entry. Direct call targets of the new functions are returned too. Not part of
+// `collect_function_entries` (the R1 meter and the R2 selection keep their recorded rule).
+std::set<std::uint64_t> find_code_address_entries(const ImageView& view, const PeImage& img,
+                                                  const std::set<std::uint64_t>& entries);
+
 // The primary function entry (VA) whose `.pdata` range holds `va`, following chained unwind info;
 // 0 when no `.pdata` range holds it.
 std::uint64_t pdata_owner(const ImageView& view, const PeImage& img, std::uint64_t va);

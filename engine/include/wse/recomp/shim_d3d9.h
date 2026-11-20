@@ -532,6 +532,9 @@ private:
     std::set<std::string> seen_;
     std::uint64_t frames_ = 0;
     std::uint64_t next_handle_ = 0x7E000000;
+    // Effect parameter handles: the name each was looked up by (stable storage: the guest reads
+    // D3DXPARAMETER_DESC::Name through a pointer into it).
+    std::map<std::uint64_t, std::string> handle_names_;
 };
 
 // The implemented methods, interface by interface.
@@ -550,47 +553,26 @@ inline void D3d9::build_vtables() {
     };
     static constexpr int kModes[][2] = {{640, 480}, {800, 600}, {1024, 768}, {1280, 720}, {1280, 1024}, {1366, 768}, {1600, 900}, {1920, 1080}};
     static constexpr std::uint32_t kModeCount = sizeof(kModes) / sizeof(kModes[0]);
+    // D3DCAPS9 (304 bytes) exactly as a shader-model-3.0 D3D9 HAL device reports it
+    // (GetDeviceCaps(0, D3DDEVTYPE_HAL) on Windows 10.0.19045). The engine's device check
+    // (VertexShaderVersion and PixelShaderVersion >= 2.0, MaxStreams >= 16,
+    // DevCaps2 & D3DDEVCAPS2_STREAMOFFSET, else rglError "HLSL support is required") passes.
+    // Notable fields: DevCaps2 0x51 (STREAMOFFSET | CAN_STRETCHRECT_FROM_TEXTURES |
+    // VERTEXELEMENTSCANSHARESTREAMOFFSET), NumberOfAdaptersInGroup 1, 8192 textures, 16 streams.
+    static constexpr std::uint32_t kCaps[76] = {
+        0x00000001, 0x00000000, 0x00020000, 0xe0020000, 0x00000320, 0x8000000f, 0x00000001, 0x0019ae50,
+        0x002fccf2, 0x0f736191, 0x000000ff, 0x00003fff, 0x000027ff, 0x000000ff, 0x00084208, 0x0021ec45,
+        0x07030700, 0x07030700, 0x07030700, 0x0000003f, 0x0000003f, 0x0000001f, 0x00002000, 0x00002000,
+        0x00000800, 0x00002000, 0x00002000, 0x00000010, 0x501502f9, 0xc7000000, 0xc7000000, 0x47000000,
+        0x47000000, 0x00000000, 0x000001ff, 0x00180008, 0x03ffffff, 0x00000008, 0x00000008, 0x0000017b,
+        0x00000008, 0x00000006, 0x00000004, 0x00000000, 0x43800000, 0x007fffff, 0x00ffffff, 0x00000010,
+        0x000000ff, 0xfffe0300, 0x00000100, 0xffff0300, 0x7f7fffff, 0x00000051, 0x00000000, 0x00000000,
+        0x00000000, 0x00000000, 0x00000001, 0x0000037f, 0x00000004, 0x03000300, 0x00000001, 0x00000018,
+        0x00000020, 0x00000004, 0x0000001f, 0x00000018, 0x00000020, 0x00000004, 0x00000200, 0x03030300,
+        0xffffffff, 0xffffffff, 0x00008000, 0x00008000};
     auto caps = [](std::uint64_t p) {
         if (p == 0) return;
-        auto* c = reinterpret_cast<std::uint8_t*>(static_cast<std::uintptr_t>(p));
-        std::memset(c, 0, 304);
-        auto u = [&](std::size_t off, std::uint32_t v) { std::memcpy(c + off, &v, 4); };
-        auto fl = [&](std::size_t off, float v) { std::memcpy(c + off, &v, 4); };
-        u(0, 1);                    // DeviceType: D3DDEVTYPE_HAL
-        u(20, 0x80000001U);         // PresentationIntervals: IMMEDIATE | ONE
-        u(28, 0x00110000U | 0x00080000U);  // DevCaps: HWTRANSFORMANDLIGHT | PUREDEVICE | HWRASTERIZATION
-        u(60, 0x00000004U | 0x00000800U);  // TextureCaps: ALPHA | MIPMAP
-        u(64, 0x03030303U);         // texture filter caps: point/linear min, mag, mip
-        u(68, 0x03030303U);
-        u(76, 0x3FU);               // TextureAddressCaps: all modes
-        u(88, 8192);                // MaxTextureWidth
-        u(92, 8192);                // MaxTextureHeight
-        u(96, 2048);                // MaxVolumeExtent
-        u(100, 8192);
-        u(104, 8192);
-        u(108, 16);                 // MaxAnisotropy
-        fl(112, 1e10F);             // MaxVertexW
-        u(148, 8);                  // MaxTextureBlendStages
-        u(152, 8);                  // MaxSimultaneousTextures
-        u(160, 8);                  // MaxActiveLights
-        u(164, 6);                  // MaxUserClipPlanes
-        fl(176, 256.0F);            // MaxPointSize
-        u(180, 0xFFFFFF);           // MaxPrimitiveCount
-        u(184, 0xFFFFFF);           // MaxVertexIndex
-        u(188, 16);                 // MaxStreams
-        u(192, 255);                // MaxStreamStride
-        u(196, 0xFFFE0300U);        // VertexShaderVersion 3.0
-        u(200, 256);                // MaxVertexShaderConst
-        u(204, 0xFFFF0300U);        // PixelShaderVersion 3.0
-        fl(208, 65504.0F);          // PixelShader1xMaxValue
-        u(236, 0x3FFU);             // DeclTypes
-        u(240, 4);                  // NumSimultaneousRTs
-        u(244, 0x03000300U);        // StretchRectFilterCaps
-        u(256, 32);                 // VS20Caps.NumTemps
-        u(272, 32);                 // PS20Caps.NumTemps
-        u(280, 512);                // PS20Caps.NumInstructionSlots
-        u(296, 32768);              // MaxVertexShader30InstructionSlots
-        u(300, 32768);              // MaxPixelShader30InstructionSlots
+        std::memcpy(reinterpret_cast<void*>(static_cast<std::uintptr_t>(p)), kCaps, sizeof(kCaps));
     };
 
     // IDirect3D9
@@ -1054,10 +1036,31 @@ inline void D3d9::build_vtables() {
         next_handle_ += 0x10;
         ret(s, next_handle_);
     };
+    // GetParameterByName / BySemantic(hParent, name): a new handle that remembers the name.
+    auto named_handle = [this, ret](CpuState& s, Obj&, std::uint64_t) {
+        const std::uint64_t name = win64_arg(s, 2);
+        const std::lock_guard<std::mutex> lock(m_);
+        next_handle_ += 0x10;
+        handle_names_[next_handle_] = name != 0 ? crt_detail::guest_string(name) : std::string();
+        ret(s, next_handle_);
+    };
     make_table(Kind::effect, 0, com::kID3DXEffect, {
         {"GetDevice", get_device},
-        {"GetParameterByName", handle},
-        {"GetParameterBySemantic", handle},
+        {"GetParameterByName", named_handle},
+        {"GetParameterBySemantic", named_handle},
+        // GetParameterDesc(handle, D3DXPARAMETER_DESC*): the stub knows no parameter's class, type
+        // or size (the .fxo is not read before R5), so the 56-byte desc is zero apart from Name;
+        // Elements 0 makes array-sized engine settings (lights per shader) 0. A handle this
+        // device never returned is D3DERR_INVALIDCALL.
+        {"GetParameterDesc", [this, ret](CpuState& s, Obj&, std::uint64_t) {
+             const std::uint64_t h = win64_arg(s, 1), desc = win64_arg(s, 2);
+             const std::lock_guard<std::mutex> lock(m_);
+             const auto it = handle_names_.find(h);
+             if (desc == 0 || it == handle_names_.end()) return ret(s, kD3dErrInvalidCall);
+             std::memset(reinterpret_cast<void*>(static_cast<std::uintptr_t>(desc)), 0, 56);
+             crt_detail::put<std::uint64_t>(desc, static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(it->second.c_str())));
+             ret(s, 0);
+         }},
         {"GetParameter", handle},
         {"GetTechniqueByName", handle},
         {"GetTechnique", handle},

@@ -185,6 +185,11 @@ std::set<std::uint64_t> entries_of(const Image& m, const ImageView& view, const 
             if (view.in_text(t) && entries.insert(t).second) work.push_back(t);
         }
     }
+    // Code whose address a function takes with a rip-relative `lea` (callbacks, tables filled at
+    // run time) and that no .pdata range covers.
+    const std::set<std::uint64_t> taken = find_code_address_entries(view, m.img, entries);
+    entries.insert(taken.begin(), taken.end());
+    std::printf("%s: %zu entries from code addresses taken with lea\n", m.tag.c_str(), taken.size());
     return entries;
 }
 
@@ -368,6 +373,7 @@ std::deque<std::uint64_t> g_recent;
 std::atomic<std::uint64_t> g_calls{0};
 Runtime* g_rt = nullptr;
 bool g_quiet = false;
+std::string g_last_raise;  // the last RaiseException's report (under g_trace_m)
 
 void print_recent() {
     std::printf("last imports called (oldest first):\n");
@@ -452,6 +458,9 @@ int main(int argc, char** argv) {
         std::printf("\nFAULT: %s at 0x%llx (rip 0x%llx)%s%s\n", fault_name(f.kind), static_cast<unsigned long long>(f.va),
                     static_cast<unsigned long long>(f.rip), f.what.empty() ? "" : ": ", f.what.c_str());
         const std::lock_guard<std::mutex> lock(g_trace_m);
+        if (f.what == "unhandled guest exception" && !g_last_raise.empty()) {
+            std::printf("%s", g_last_raise.c_str());
+        }
         print_recent();
         std::fflush(stdout);
         std::_Exit(2);
@@ -571,11 +580,98 @@ int main(int argc, char** argv) {
     }
     std::printf("%zu import slots bound to shims (%zu slots, %zu with no shim yet in %zu DLLs)\n", bound, total, missing,
                 missing_by_dll.size());
+    if (missing <= 32) {
+        for (const auto& [dll, names] : missing_by_dll) {
+            for (const std::string& n : names) std::printf("  no shim: %s!%s\n", dll.c_str(), n.c_str());
+        }
+    }
+
+    // Diagnostics for a guest exception nobody handles: RaiseException records its code and
+    // parameters, the exe return addresses on the guest stack (named by the nearest PDB public),
+    // and the printable strings in the raising frames; on_fault prints them.
+    std::uint64_t main_stack_top = 0;  // set once the main stack is prepared
+    std::map<std::uint64_t, std::string> names;
+    for (const PdbPublic& p : publics) {
+        if (p.section >= 1 && p.section <= exe.img.sections.size()) {
+            names[exe.img.image_base + exe.img.sections[p.section - 1].virtual_address + p.offset] = p.name;
+        }
+    }
+    const std::uint64_t exe_text_b = text_range(exe.img).first;
+    const std::uint64_t exe_text_e = text_range(exe.img).second;
+    auto name_of = [&](std::uint64_t va) {
+        auto it = names.upper_bound(va);
+        if (it == names.begin()) return std::string("?");
+        --it;
+        char off[24];
+        std::snprintf(off, sizeof(off), "+0x%llx", static_cast<unsigned long long>(va - it->first));
+        return it->first == va ? it->second : it->second + off;
+    };
+    if (const Runtime::ImportShim* raise = rt.named_shim("KERNEL32.dll", "RaiseException")) {
+        const Runtime::ImportShim original = *raise;
+        rt.set_import("KERNEL32.dll", "RaiseException", [&, original](CpuState& st) {
+            std::string r;
+            char line[512];
+            const std::uint64_t args = win64_arg(st, 3);
+            const auto nargs = static_cast<std::uint32_t>(win64_arg(st, 2));
+            std::snprintf(line, sizeof(line), "last RaiseException: code 0x%08llx flags 0x%llx, %u parameters",
+                          static_cast<unsigned long long>(win64_arg(st, 0) & 0xFFFFFFFFULL),
+                          static_cast<unsigned long long>(win64_arg(st, 1)), nargs);
+            r += line;
+            for (std::uint32_t i = 0; i < nargs && i < 4 && args != 0; ++i) {
+                std::uint64_t v = 0;
+                std::memcpy(&v, reinterpret_cast<const void*>(args + 8ULL * i), 8);
+                std::snprintf(line, sizeof(line), " 0x%llx", static_cast<unsigned long long>(v));
+                r += line;
+            }
+            r += "\n  guest stack (exe return addresses):\n";
+            const std::uint64_t rsp = st.gpr[4];
+            // The scan stays inside the thread's stack: the TEB's StackBase (guest threads), else
+            // the main stack's top; with neither above rsp, nothing is read.
+            std::uint64_t top = 0;
+            if (st.teb != 0) std::memcpy(&top, reinterpret_cast<const void*>(st.teb + teb::tebo::stack_base), 8);
+            if (top <= rsp) top = main_stack_top > rsp ? main_stack_top : rsp;
+            int shown = 0;
+            for (std::uint64_t q = rsp; q + 8 <= top && q < rsp + 0x8000 && shown < 24; q += 8) {
+                std::uint64_t v = 0;
+                std::memcpy(&v, reinterpret_cast<const void*>(q), 8);
+                if (v < exe_text_b + 6 || v >= exe_text_e) continue;
+                const std::uint8_t* c = exe.mapped + (v - exe.img.image_base);
+                const bool after_call = c[-5] == 0xE8 || (c[-6] == 0xFF && (c[-5] & 0x38) == 0x10) ||
+                                        (c[-2] == 0xFF && (c[-1] & 0x38) == 0x10) || (c[-3] == 0xFF && (c[-2] & 0x38) == 0x10);
+                if (!after_call) continue;
+                std::snprintf(line, sizeof(line), "    [rsp+0x%llx] 0x%llx %s\n", static_cast<unsigned long long>(q - rsp),
+                              static_cast<unsigned long long>(v), name_of(v).c_str());
+                r += line;
+                ++shown;
+            }
+            r += "  strings in the raising frames:\n";
+            std::string run;
+            int strings = 0;
+            for (std::uint64_t q = rsp; q < top && q < rsp + 0x4000 && strings < 12; ++q) {
+                const char ch = *reinterpret_cast<const char*>(q);
+                if (ch >= 0x20 && ch < 0x7F) {
+                    run += ch;
+                    continue;
+                }
+                if (run.size() >= 12) {
+                    r += "    \"" + run.substr(0, 300) + "\"\n";
+                    ++strings;
+                }
+                run.clear();
+            }
+            {
+                const std::lock_guard<std::mutex> lock(g_trace_m);
+                g_last_raise = r;
+            }
+            original(st);
+        });
+    }
 
     for (const int sig : {SIGSEGV, SIGBUS, SIGILL, SIGFPE}) signal(sig, &on_signal);
     GuestStack stack(8 * 1024 * 1024);
     CpuState s;
     stack.prepare(s);
+    main_stack_top = s.gpr[4] + 8;  // prepare leaves rsp 8 below the aligned top
     rt.attach(s);
     teb::GuestThread& main_thread = process.create_thread(0, 0);
     teb::Process::attach(s, main_thread);
@@ -587,6 +683,23 @@ int main(int argc, char** argv) {
         return 1;
     }
     const auto t0 = std::chrono::steady_clock::now();
+    // Heartbeat: a steady-state loop prints no first calls, so every 20 s report the call count,
+    // the frames presented and the latest imports (a stall shows what it waits on).
+    std::thread([&]() {
+        std::uint64_t last_calls = 0;
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::seconds(20));
+            const std::lock_guard<std::mutex> lock(g_trace_m);
+            const std::uint64_t calls = g_calls.load();
+            std::printf("\n[%.0f s] %llu import calls (+%llu), %llu frames presented; latest:", ms_since(t0) / 1000.0,
+                        static_cast<unsigned long long>(calls), static_cast<unsigned long long>(calls - last_calls),
+                        static_cast<unsigned long long>(d3d9.frames()));
+            for (const std::uint64_t slot : g_recent) std::printf(" %s", g_rt->import_name(slot).c_str());
+            std::printf("\n");
+            std::fflush(stdout);
+            last_calls = calls;
+        }
+    }).detach();
     const bool ran = rt.run(s, exe.img.image_base + exe.img.entry_rva);
     std::printf("\nentry point returned (%s) rax 0x%llx after %.1f s, %llu frames presented\n", ran ? "ok" : "fault",
                 static_cast<unsigned long long>(s.gpr[0]), ms_since(t0) / 1000.0, static_cast<unsigned long long>(d3d9.frames()));

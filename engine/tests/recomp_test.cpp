@@ -3549,6 +3549,42 @@ void test_time_crt_sysinfo() {
     expect(page == 4096 && cpus == 4 && small && full && v && m,
            "sysinfo: GetSystemInfo, GetLogicalProcessorInformation (sizes), GetVersionExW 6.2.9200, GlobalMemoryStatusEx");
 
+    // ntdll!RtlGetVersion (reached through GetProcAddress): 10.0.19045 whatever the size, and the
+    // EX fields only for exactly 284, as on Windows 10.0.19045.
+    auto rtl_get_version = [&](std::uint8_t* buf) {
+        const Runtime::ImportShim* shim = rt.named_shim("ntdll.dll", "RtlGetVersion");
+        if (shim == nullptr) {
+            return std::uint64_t{0xBADBADBAD};
+        }
+        constexpr std::uint64_t kRet = 0x140031000ULL;
+        const std::uint64_t rsp0 = s.gpr[4];
+        s.gpr[4] = ((rsp0 - 0x80) & ~std::uint64_t{15}) - 8;
+        std::memcpy(reinterpret_cast<void*>(s.gpr[4]), &kRet, 8);
+        s.gpr[1] = va(buf);
+        s.gpr[0] = 0xBADBADBAD;
+        (*shim)(s);
+        s.gpr[4] = rsp0;
+        return s.gpr[0];
+    };
+    auto u32_at = [](const std::uint8_t* b, std::size_t off) {
+        std::uint32_t x = 0;
+        std::memcpy(&x, b + off, 4);
+        return x;
+    };
+    alignas(8) std::uint8_t rv[300];
+    bool rtl = true;
+    for (const std::uint32_t size : {276U, 284U, 100U, 300U}) {
+        std::memset(rv, 0xCC, sizeof rv);
+        std::memcpy(rv, &size, 4);
+        const bool ex = size == 284;
+        rtl = rtl && rtl_get_version(rv) == 0 && u32_at(rv, 4) == 10 && u32_at(rv, 8) == 0 &&
+              u32_at(rv, 12) == 19045 && u32_at(rv, 16) == 2 && rv[20] == 0 && rv[21] == 0 && rv[22] == 0xCC &&
+              (ex ? (rv[276] == 0 && rv[278] == 0 && rv[280] == 0 && rv[281] == 1 && rv[282] == 1)
+                  : (rv[276] == 0xCC && rv[282] == 0xCC)) &&
+              rv[283] == 0xCC;
+    }
+    expect(rtl, "sysinfo: RtlGetVersion 10.0.19045 for any size, EX fields only at 284 (as on Windows)");
+
     // Timer queues: a one-shot timer, then a periodic one deleted with INVALID_HANDLE_VALUE.
     const std::uint64_t q = call(s, "CreateTimerQueue", {});
     alignas(8) std::uint64_t t = 0;
@@ -4586,6 +4622,16 @@ void test_net_system() {
                call(rt, s, "WINHTTP.dll", "WinHttpSendRequest", {1, 0, 0, 0, 0, 0, 0}) == 0 &&
                call(rt, s, "urlmon.dll", "URLDownloadToFileA", {0, va("http://x"), va("f"), 0, 0}) == sh::kInetEResourceNotFound,
            "net: WinHTTP handles exist but a request fails; URLDownloadToFileA fails");
+    {
+        alignas(4) std::uint32_t code = 0xDEADBEEF;
+        std::uint32_t err = 0;
+        const bool cur = call(rt, s, "KERNEL32.dll", "GetExitCodeProcess", {~std::uint64_t{0}, va(&code)}) == 1 && code == 259;
+        code = 0xDEADBEEF;
+        const bool bad = call(rt, s, "KERNEL32.dll", "GetExitCodeProcess", {0, va(&code)}) == 0 && code == 0xDEADBEEF;
+        std::memcpy(&err, teb + 0x68, 4);
+        expect(cur && bad && err == 6,
+               "system: GetExitCodeProcess is STILL_ACTIVE for the current process, ERROR_INVALID_HANDLE otherwise");
+    }
 
     // OLEAUT32 BSTRs (#2 SysAllocString, #149 SysStringByteLen, #6 SysFreeString), SHLWAPI, COM, XInput.
     const std::uint64_t bstr = call(rt, s, "OLEAUT32.dll", "#2", {va(u"abc")});
@@ -4722,9 +4768,16 @@ void test_d3d9() {
                mode[1] == 1080 && lo(com(s, d9, ci::kIDirect3D9, "EnumAdapterModes", {0, sh::kD3dFmtX8R8G8B8, 8, va(mode)})) == sh::kD3dErrInvalidCall &&
                com(s, d9, ci::kIDirect3D9, "GetDeviceCaps", {0, 1, va(caps)}) == 0,
            "d3d9: Direct3DCreate9, adapter count, display modes, caps");
-    std::uint32_t vs_version = 0;
-    std::memcpy(&vs_version, caps + 196, 4);
-    expect(vs_version == 0xFFFE0300U, "d3d9: caps report vertex shader 3.0 at D3DCAPS9.VertexShaderVersion");
+    auto cap = [&](std::size_t off) {
+        std::uint32_t v = 0;
+        std::memcpy(&v, caps + off, 4);
+        return v;
+    };
+    // The engine's device check: VertexShaderVersion, PixelShaderVersion >= 2.0, MaxStreams >= 16,
+    // DevCaps2 & D3DDEVCAPS2_STREAMOFFSET.
+    expect(cap(196) == 0xFFFE0300U && cap(204) == 0xFFFF0300U && cap(188) >= 16 && (cap(212) & 1) != 0 &&
+               cap(232) == 1 && cap(0) == 1,
+           "d3d9: caps report shader model 3.0, 16 streams, STREAMOFFSET, one adapter in the group");
     // D3DPRESENT_PARAMETERS: 800 x 600, auto depth D24S8.
     alignas(8) std::uint8_t pp[64] = {};
     const std::uint32_t w = 800, h = 600, one = 1, d24 = sh::kD3dFmtD24S8;
@@ -4794,6 +4847,20 @@ void test_d3d9() {
                com(s, effect, ci::kID3DXEffect, "Begin", {va(&passes), 0}) == 0 && passes == 1 &&
                com(s, effect, ci::kID3DXEffect, "SetMatrix", {1, va(caps)}) == 0,
            "d3dx: effects give parameter handles, one pass, and accept values");
+    {
+        const std::uint64_t h = com(s, effect, ci::kID3DXEffect, "GetParameterByName", {0, va("iLightIndices")});
+        alignas(8) std::uint8_t desc[56];
+        std::memset(desc, 0xCC, sizeof desc);
+        std::uint64_t name = 0;
+        std::uint32_t elements = 0xCC;
+        const bool ok = com(s, effect, ci::kID3DXEffect, "GetParameterDesc", {h, va(desc)}) == 0;
+        std::memcpy(&name, desc, 8);
+        std::memcpy(&elements, desc + 32, 4);
+        expect(ok && name != 0 && std::strcmp(reinterpret_cast<const char*>(static_cast<std::uintptr_t>(name)), "iLightIndices") == 0 &&
+                   elements == 0 && desc[55] == 0 &&
+                   lo(com(s, effect, ci::kID3DXEffect, "GetParameterDesc", {0x1234, va(desc)})) == sh::kD3dErrInvalidCall,
+               "d3dx: GetParameterDesc names the parameter, zero elsewhere; an unknown handle is D3DERR_INVALIDCALL");
+    }
     std::uint8_t dds[128] = {'D', 'D', 'S', ' '};
     const std::uint32_t dh = 32, dw = 64, mips = 3, fourcc = 4, dxt5 = 0x35545844U;
     std::memcpy(dds + 12, &dh, 4);

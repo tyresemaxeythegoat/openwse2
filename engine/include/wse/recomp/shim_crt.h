@@ -9,7 +9,7 @@
 //   ExitProcess TerminateProcess OutputDebugStringA OutputDebugStringW FlushProcessWriteBuffers
 //   GetSystemInfo GetNativeSystemInfo GetLogicalProcessorInformation GetProcessAffinityMask
 //   GetVersionExW IsWow64Process GetNumaHighestNodeNumber GetCurrentProcessorNumber
-//   GlobalMemoryStatusEx SetProcessWorkingSetSize
+//   GlobalMemoryStatusEx SetProcessWorkingSetSize, and ntdll's RtlGetVersion
 //
 // The process is described by `ProcessConfig` (command line, environment, processor count,
 // memory size). System answers match the fixed CPU profile of `Runtime::hook_cpuid` (SSE up to
@@ -285,6 +285,28 @@ public:
                 put<std::uint8_t>(v + 282, 1);  // wProductType VER_NT_WORKSTATION
             }
             win64_return(s, 1);
+        });
+        // RtlGetVersion ignores the manifest: Windows 10 22H2 (10.0.19045). Checked on Windows
+        // 10.0.19045: it never fails whatever dwOSVersionInfoSize says, writes the version,
+        // platform and an empty szCSDVersion (its first WCHAR only), and the service pack, suite
+        // (VER_SUITE_SINGLEUSERTS) and product type only when the size is exactly 284; wReserved
+        // is never written. v1.1.5.6 finds it with GetProcAddress and calls the result without a
+        // null check.
+        n += rt_.set_import("ntdll.dll", "RtlGetVersion", [](CpuState& s) {
+            const std::uint64_t v = win64_arg(s, 0);
+            const auto size = get<std::uint32_t>(v);
+            put<std::uint32_t>(v + 4, 10);      // major
+            put<std::uint32_t>(v + 8, 0);       // minor
+            put<std::uint32_t>(v + 12, 19045);  // build
+            put<std::uint32_t>(v + 16, 2);      // VER_PLATFORM_WIN32_NT
+            put<std::uint16_t>(v + 20, 0);      // szCSDVersion = L""
+            if (size == 284) {
+                put<std::uint16_t>(v + 276, 0);      // wServicePackMajor
+                put<std::uint16_t>(v + 278, 0);      // wServicePackMinor
+                put<std::uint16_t>(v + 280, 0x100);  // wSuiteMask
+                put<std::uint8_t>(v + 282, 1);       // wProductType VER_NT_WORKSTATION
+            }
+            win64_return(s, 0);  // STATUS_SUCCESS
         });
         bind("IsWow64Process", [](CpuState& s) {
             if (const std::uint64_t p = win64_arg(s, 1)) put<std::uint32_t>(p, 0);

@@ -1041,6 +1041,24 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   function holding the `jmp` (`Discoverer::set_function_ranges`; at most 256 entries, at least two),
   so a following table that also points into the function would be read as part of it. Both are off
   in the R1 coverage meter and the R2 selection.
+- **Jump tables bounded by a taken branch (`discover.cpp` `resolve_jump_table`):** with no
+  `cmp idx, N ; ja` before the `jmp`, a `cmp idx, N ; jbe L` (or `jb L`, bound N - 1) also counts
+  when `L` lies forward of the branch, at or before the table load, and nothing between `L` and the
+  load writes the index. A mask (`and idx, 2^k - 1`) on another path into the same dispatch then
+  raises the bound only if larger. The CRT's `memcpy`/`memmove` need this: counts up to 16 jump
+  straight to an inline 17-entry table, while the 8-byte-loop path masks the rest with `and r8, 7`,
+  which alone had bounded the table at 8 entries (corpus `o_jbe_switch`). The check is by address
+  range, not data flow, so a branch from elsewhere into that range could break the bound. It is on
+  everywhere, including the R1 meter and R2.
+- **R4 code addresses taken with `lea` (`discover.cpp` `find_code_address_entries`,
+  `tools/r4_run.cpp`):** a leaf with no `.pdata` entry whose address is only taken by a
+  rip-relative `lea` (stored in a table filled at run time, or passed as a callback) has no
+  relocation, so the relocated-pointer rule misses it (v1.1.5.6 startup calls such a comparator
+  through a table). After the call-target fixed point, every function is decoded again, and each
+  `lea r, [rip + X]` with X in `.text`, inside no `.pdata` range, outside the span of the function
+  holding the `lea`, and not yet an entry, becomes one (with its call targets, to a fixed point).
+  A `lea` of a data label placed in `.text` outside every function would add a junk entry that
+  fails to lift; nothing calls it. Corpus `o_lea_callback`. Off in the R1 meter and R2.
 - **R4 tail calls (`lift_r1.cpp`):** a tail jump to a function of the same module is `musttail`; a
   tail jump through the dispatch or import hook is marked `tail`, which holds at -O1 and up, and
   `Runtime::hook_dispatch` itself ends in a sibling call only when the runtime is optimized

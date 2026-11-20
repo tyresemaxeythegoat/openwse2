@@ -576,6 +576,71 @@ __asm__(
     "  .ascii \" -export:o_unbounded_switch\"\n"
     ".text\n");
 
+/* A leaf with no .pdata entry (no .seh_proc), not exported, whose address a function takes with
+ * `lea` and jumps through (`find_code_address_entries`): o_lea_callback(x) returns 3x + 7. */
+__asm__(
+    ".text\n"
+    "ol_leaf:\n"
+    "  leal 7(%rcx,%rcx,2), %eax\n"
+    "  retq\n"
+    ".globl o_lea_callback\n"
+    ".def o_lea_callback; .scl 2; .type 32; .endef\n"
+    ".seh_proc o_lea_callback\n"
+    "o_lea_callback:\n"
+    "  .seh_endprologue\n"
+    "  leaq ol_leaf(%rip), %rax\n"
+    "  jmpq *%rax\n"
+    "  .seh_endproc\n"
+    ".section .drectve,\"yn\"\n"
+    "  .ascii \" -export:o_lea_callback\"\n"
+    ".text\n");
+
+/* The CRT memcpy/memmove shape: `cmp idx, 16 ; jbe dispatch` sends small indexes straight to a
+ * table placed inline after the `jmp`, and another path masks the index with `and idx, 7` and
+ * falls into the same dispatch. The table has 17 entries; the mask alone would bound it at 8.
+ * o_jbe_switch(x) returns 100 + 3k for k = x & 0x1F when k <= 16, else for k = x & 7. */
+__asm__(
+    ".globl o_jbe_switch\n"
+    ".def o_jbe_switch; .scl 2; .type 32; .endef\n"
+    ".seh_proc o_jbe_switch\n"
+    "o_jbe_switch:\n"
+    "  .seh_endprologue\n"
+    "  andl $0x1F, %ecx\n"
+    "  cmpq $16, %rcx\n"
+    "  jbe oj_dispatch\n"
+    "  andq $7, %rcx\n"
+    "oj_dispatch:\n"
+    "  leaq __ImageBase(%rip), %r9\n"
+    "  movl oj_table@IMGREL(%r9,%rcx,4), %eax\n"
+    "  addq %r9, %rax\n"
+    "  jmpq *%rax\n"
+    "  .p2align 2\n"
+    "oj_table:\n"
+    "  .long oj_c0@IMGREL, oj_c1@IMGREL, oj_c2@IMGREL, oj_c3@IMGREL, oj_c4@IMGREL, oj_c5@IMGREL\n"
+    "  .long oj_c6@IMGREL, oj_c7@IMGREL, oj_c8@IMGREL, oj_c9@IMGREL, oj_c10@IMGREL, oj_c11@IMGREL\n"
+    "  .long oj_c12@IMGREL, oj_c13@IMGREL, oj_c14@IMGREL, oj_c15@IMGREL, oj_c16@IMGREL\n"
+    "oj_c0:\n  movl $100, %eax\n  retq\n"
+    "oj_c1:\n  movl $103, %eax\n  retq\n"
+    "oj_c2:\n  movl $106, %eax\n  retq\n"
+    "oj_c3:\n  movl $109, %eax\n  retq\n"
+    "oj_c4:\n  movl $112, %eax\n  retq\n"
+    "oj_c5:\n  movl $115, %eax\n  retq\n"
+    "oj_c6:\n  movl $118, %eax\n  retq\n"
+    "oj_c7:\n  movl $121, %eax\n  retq\n"
+    "oj_c8:\n  movl $124, %eax\n  retq\n"
+    "oj_c9:\n  movl $127, %eax\n  retq\n"
+    "oj_c10:\n  movl $130, %eax\n  retq\n"
+    "oj_c11:\n  movl $133, %eax\n  retq\n"
+    "oj_c12:\n  movl $136, %eax\n  retq\n"
+    "oj_c13:\n  movl $139, %eax\n  retq\n"
+    "oj_c14:\n  movl $142, %eax\n  retq\n"
+    "oj_c15:\n  movl $145, %eax\n  retq\n"
+    "oj_c16:\n  movl $148, %eax\n  retq\n"
+    "  .seh_endproc\n"
+    ".section .drectve,\"yn\"\n"
+    "  .ascii \" -export:o_jbe_switch\"\n"
+    ".text\n");
+
 /* 46 runs of 65,535 loops: 3,014,610 handler pairs in all. */
 EXPORT NOINLINE u64 t_offset_deep(void) {
     u64 total = 0;

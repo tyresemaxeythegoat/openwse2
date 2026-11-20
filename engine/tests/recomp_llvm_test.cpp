@@ -277,6 +277,20 @@ bool translate_image(const char* tag, Mapped& m, bool is_exe, const char* work_d
         expect(pdata_owner(view, img, cxx + 1) == cxx && pdata_owner(view, img, img.image_base) == 0,
                "corpus: pdata_owner maps an address to its function");
     }
+    // R4: code reached only through an address taken with `lea` (`o_lea_callback`'s leaf).
+    const std::set<std::uint64_t> taken = find_code_address_entries(view, img, entries);
+    entries.insert(taken.begin(), taken.end());
+    if (is_exe) {
+        std::uint64_t cb = 0;
+        for (const Export& e : m.exports) {
+            cb = e.name == "o_lea_callback" ? e.va : cb;
+        }
+        bool leaf = false;
+        for (const std::uint64_t t : taken) {
+            leaf = leaf || (t < cb && cb - t <= 16 && pdata_owner(view, img, t) == 0);
+        }
+        expect(leaf, "corpus: o_lea_callback's leaf (no .pdata) is an entry from its lea");
+    }
     Discoverer disc(view);
     disc.set_function_ranges(&img.functions);  // R4: jump tables bounded by their function (`o_unbounded_switch`)
     std::map<std::uint64_t, DFunction> fns;

@@ -157,7 +157,7 @@ Design: `docs/RECOMP_PLAN.md` (the decompilation plan `docs/GAMEPLAY_PLAN.md` is
 - [ ] **R1 Lifter:** PE / PDB / `.pdata`, function discovery, x86-64 → LLVM IR, coverage meter (built; CI differential corpus green; retail coverage run on the phone pending).
 - [ ] **R2 Host differential rig:** translated vs original code on the PC CPU; CI on synthetic binaries and an arm64 runner (built: PC recorder + phone check of 1,623 retail functions, arm64 CI job green; first phone run pending).
 - [ ] **R3 Runtime core:** guest memory, TEB/TLS, threads, dispatch, ABI bridge, memory ordering, Win64 unwinding and C++ EH (memory ordering, import bridge, unwinder, SEH runtime, catch-continuation discovery, TEB/TLS, threads and sync, nested and collided exceptions, thread-pool timers and waits built and CI-green; phone check pending).
-- [ ] **R4 OS shims:** all 546 imports owned; startup reaches the main loop (plan in `docs/RECOMP_PLAN.md` "R4 design": WSL bring-up, multi-module runtime with `lua5164` translated, high-count families with tests, then startup-driven shims and stub D3D9/FMOD/network).
+- [ ] **R4 OS shims:** all 546 imports owned; startup reaches the main loop (both met in WSL 2026-11-20; the phone run is left) (plan in `docs/RECOMP_PLAN.md` "R4 design": WSL bring-up, multi-module runtime with `lua5164` translated, high-count families with tests, then startup-driven shims and stub D3D9/FMOD/network).
 - [ ] **R5 Graphics:** D3D9 subset + D3DX on the Vulkan RHI, fx_2_0 and SM2/3 → SPIR-V.
 - [ ] **R6 Audio, input, Lua:** translated `fmodex64` / `lua5164` over shims; DInput / XInput from SDL and the touch overlay.
 - [ ] **R7 PC bring-up:** whole exe translated for x86-64 running on Windows with our shims only; savegame oracle.
@@ -186,6 +186,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-20 | — | Phase 5 R4: the retail exe reaches its main loop in WSL and presents 1,000+ frames on the recording D3D9 device (memmove jump tables, `lea`-taken entries, `RtlGetVersion`, real D3DCAPS9) |
 | 2026-11-20 | — | Phase 5 R4: silent FMOD Ex and Steam-not-running stubs: all 546 imports of v1.1.5.6 have a shim; LuaJIT handler discovery, guaranteed tail calls, JIT off |
 | 2026-11-20 | — | Phase 5 R4: `tools/r4_run.cpp` startup run (batched, cached translation of the retail exe and `lua5164`); ADVAPI32, USER32, offline network, small system DLLs, D3DX math and the recording D3D9/D3DX/DirectInput device: every static import has a shim |
 | 2026-11-20 | — | Phase 5 R4 slice 1: WSL Ubuntu bring-up; recompiler corpus and all CTest suites pass there (`tools/wsl_gate.sh`) |

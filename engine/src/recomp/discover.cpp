@@ -237,6 +237,40 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
         }
     }
     if (limit < 0) {
+        // `cmp idx, N ; jbe dispatch` (or `jb`, N - 1): the taken edge jumps forward to the table
+        // load with no write to the index on the way (the CRT's memcpy/memmove send counts up to 16
+        // straight to an inline table). Other paths into the dispatch may bound the
+        // index by a mask (below); the larger bound covers both.
+        for (auto r = fn.insns.rbegin(); r != fn.insns.rend(); ++r) {
+            const DInsn& d = r->second;
+            if (d.va >= entry_load_va || d.ins.mnemonic != ZYDIS_MNEMONIC_CMP ||
+                d.ops[0].type != ZYDIS_OPERAND_TYPE_REGISTER || widen(d.ops[0].reg.value) != bound_reg ||
+                d.ops[1].type != ZYDIS_OPERAND_TYPE_IMMEDIATE || d.ops[1].imm.value.s < 0) {
+                continue;
+            }
+            const DInsn* nx = fn.at(d.next());
+            if (nx == nullptr || (nx->ins.mnemonic != ZYDIS_MNEMONIC_JBE && nx->ins.mnemonic != ZYDIS_MNEMONIC_JB)) {
+                continue;
+            }
+            std::uint64_t to = 0;
+            if (!ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&nx->ins, &nx->ops[0], nx->va, &to)) || to <= nx->va ||
+                to > entry_load_va) {
+                continue;
+            }
+            bool written = false;
+            for (auto w = fn.insns.lower_bound(to); w != fn.insns.end() && w->first < entry_load_va; ++w) {
+                const DInsn& q = w->second;
+                if (q.ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER && widen(q.ops[0].reg.value) == bound_reg &&
+                    (q.ops[0].actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0) {
+                    written = true;
+                    break;
+                }
+            }
+            if (!written) {
+                limit = d.ops[1].imm.value.s - (nx->ins.mnemonic == ZYDIS_MNEMONIC_JB ? 1 : 0);
+                break;
+            }
+        }
         // No `cmp`/`ja`: an index masked by `and idx, 2^k - 1` (clang lowers `switch (x & 7)`
         // this way) is bounded by the mask. It must be the last write to the index register
         // before the table load, possibly in an earlier block (threaded switches reuse it).
@@ -248,7 +282,7 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
             }
             if (p->ins.mnemonic == ZYDIS_MNEMONIC_AND && p->ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE &&
                 p->ops[1].imm.value.s >= 0) {
-                limit = p->ops[1].imm.value.s;
+                limit = std::max(limit, p->ops[1].imm.value.s);
             }
             break;
         }
@@ -528,6 +562,46 @@ std::uint64_t pdata_owner(const ImageView& view, const PeImage& img, std::uint64
         r = range_at(img, parent);
     }
     return 0;
+}
+
+std::set<std::uint64_t> find_code_address_entries(const ImageView& view, const PeImage& img,
+                                                  const std::set<std::uint64_t>& entries) {
+    std::set<std::uint64_t> known = entries;
+    std::set<std::uint64_t> out;
+    std::vector<std::uint64_t> work(entries.begin(), entries.end());
+    Discoverer disc(view);
+    while (!work.empty()) {
+        const std::uint64_t e = work.back();
+        work.pop_back();
+        const DFunction f = disc.discover(e, known);
+        if (f.insns.empty()) {
+            continue;
+        }
+        const std::uint64_t lo = f.insns.begin()->first;
+        const std::uint64_t hi = f.insns.rbegin()->second.next();
+        auto add = [&](std::uint64_t t) {
+            if (view.in_text(t) && known.insert(t).second) {
+                out.insert(t);
+                work.push_back(t);
+            }
+        };
+        for (const auto& [va, d] : f.insns) {
+            if (d.ins.mnemonic != ZYDIS_MNEMONIC_LEA || d.ops[1].type != ZYDIS_OPERAND_TYPE_MEMORY ||
+                d.ops[1].mem.base != ZYDIS_REGISTER_RIP) {
+                continue;
+            }
+            std::uint64_t t = 0;
+            if (!ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&d.ins, &d.ops[1], d.va, &t)) || !view.in_text(t) ||
+                (t >= lo && t < hi) || range_at(img, static_cast<std::uint32_t>(t - img.image_base)) != nullptr) {
+                continue;
+            }
+            add(t);
+        }
+        for (const std::uint64_t t : f.call_targets) {
+            add(t);
+        }
+    }
+    return out;
 }
 
 EhContinuations find_eh_continuations(const ImageView& view, const PeImage& img,

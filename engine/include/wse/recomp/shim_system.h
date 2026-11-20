@@ -9,7 +9,8 @@
 //   SHLWAPI   PathRemoveExtensionA PathStripPathA UrlEscapeA UrlUnescapeA
 //   SHELL32   ShellExecuteA                   PSAPI GetProcessMemoryInfo
 //   XINPUT1_3 XInputGetState(#2) XInputSetState(#3) XInputEnable(#5)
-//   KERNEL32  CreateProcessA WriteProcessMemory FreeLibraryWhenCallbackReturns
+//   KERNEL32  CreateProcessA WriteProcessMemory FreeLibraryWhenCallbackReturns, and
+//             GetExitCodeProcess (imported by lua5164)
 //
 // Stack walks and crash dumps report "unavailable" (the symbol functions fail with
 // ERROR_NOT_SUPPORTED); COM starts but creates no objects (REGDB_E_CLASSNOTREG); BSTRs are real
@@ -160,6 +161,20 @@ public:
             if (on_launch) on_launch(crt_detail::guest_string(win64_arg(s, 0)) + " " + crt_detail::guest_string(win64_arg(s, 1)));
             teb::set_error(s, kErrorNotSupported);
             win64_return(s, 0);
+        });
+        // GetExitCodeProcess (lua5164's CRT, behind io.popen): no child process ever exists, so only
+        // the current process answers (STILL_ACTIVE). As on Windows 10.0.19045: other handles,
+        // NULL included, fail with ERROR_INVALID_HANDLE and leave *lpExitCode unwritten.
+        bind("KERNEL32.dll", "GetExitCodeProcess", [](CpuState& s) {
+            if (win64_arg(s, 0) != teb::kCurrentProcess) {
+                teb::set_error(s, 6);  // ERROR_INVALID_HANDLE
+                return win64_return(s, 0);
+            }
+            if (const std::uint64_t p = win64_arg(s, 1)) {
+                const std::uint32_t still_active = 259;
+                std::memcpy(reinterpret_cast<void*>(p), &still_active, 4);
+            }
+            win64_return(s, 1);
         });
         bind("KERNEL32.dll", "WriteProcessMemory", fails(kErrorNotSupported));
         bind("KERNEL32.dll", "FreeLibraryWhenCallbackReturns", [](CpuState& s) { win64_return(s, 0); });  // modules never unload
