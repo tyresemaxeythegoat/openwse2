@@ -572,6 +572,11 @@ one across script-visible execution:
 - `convert_to_fixed_point` (2130) wraps on overflow; `convert_from_fixed_point` (2131) reports
   `"Division by zero"` if a host zeroes `fixedPointMultiplier` (scripts cannot set it below 1).
 - `HostVfs` resolves symbolic links and refuses any path whose target lies outside its root.
+  A path's parent directory is resolved and checked once per Vfs spelling and cached (dropped
+  after every mutating call); each lookup then stats only the last component, and runs the full
+  root check only when that component is a symbolic link. Canonicalising every full path cost a
+  `readlink` per component and dominated the R4 startup run's loading over WSL's `/mnt/c`
+  (Native reached its main loop at ~430 s before, ~280 s after).
 - Party and troop counters saturate instead of wrapping: `troop_add_xp` clamps `WseTroop::xp` at
   `INT32_MAX`, and `party_add_members`, `party_add_leader`, and `WseParty::add_members` clamp
   `num_troops` the same way (`saturating_add_i32`). `party_add_prisoners` (1611) then stores the

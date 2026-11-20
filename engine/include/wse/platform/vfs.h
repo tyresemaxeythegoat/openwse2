@@ -497,28 +497,62 @@ private:
 
     // Maps a Vfs path to a host path. With `for_create`, the final component
     // may be absent (its spelling is then taken from the request).
+    //
+    // The parent directory is resolved and checked against the root once per
+    // Vfs spelling and cached (`dir_resolve_cache_`, dropped with the listings
+    // after every mutating call); each call then stats only the last
+    // component. Canonicalising every full path cost one `readlink` per
+    // component, which dominated loading on slow volumes (WSL's /mnt/c). A
+    // last component that is a symbolic link still gets the full root check.
     std::optional<std::filesystem::path> resolve(std::string_view path, bool for_create) const {
         const auto parts = split_path(path);
         if (!parts) return std::nullopt;
-        std::filesystem::path current = root_;
-        for (std::size_t i = 0; i < parts->size(); ++i) {
-            const std::string& part = (*parts)[i];
-            std::error_code ec;
-            std::filesystem::path exact = current / part;
-            if (std::filesystem::exists(exact, ec) && !ec) {
-                current = std::move(exact);
-                continue;
+        if (parts->empty()) {
+            return inside_root(root_) ? std::optional(root_) : std::nullopt;
+        }
+        std::string parent_key;
+        for (std::size_t i = 0; i + 1 < parts->size(); ++i) {
+            parent_key += (*parts)[i];
+            parent_key += '/';
+        }
+        std::filesystem::path dir;
+        if (const auto hit = dir_resolve_cache_.find(parent_key); hit != dir_resolve_cache_.end()) {
+            dir = hit->second;
+        } else {
+            dir = root_;
+            for (std::size_t i = 0; i + 1 < parts->size(); ++i) {
+                const std::string& part = (*parts)[i];
+                std::error_code ec;
+                std::filesystem::path exact = dir / part;
+                if (std::filesystem::exists(exact, ec) && !ec) {
+                    dir = std::move(exact);
+                    continue;
+                }
+                if (auto match = find_case_insensitive(dir, part)) {
+                    dir = std::move(*match);
+                    continue;
+                }
+                return std::nullopt;
             }
-            if (auto match = find_case_insensitive(current, part)) {
-                current = std::move(*match);
-                continue;
-            }
-            if (for_create && i + 1 == parts->size()) {
-                return inside_root(exact) ? std::optional(exact) : std::nullopt;
-            }
+            if (!inside_root(dir)) return std::nullopt;
+            dir_resolve_cache_.emplace(parent_key, dir);
+        }
+        const std::string& last = parts->back();
+        std::filesystem::path exact = dir / last;
+        std::error_code ec;
+        auto st = std::filesystem::symlink_status(exact, ec);
+        std::filesystem::path current;
+        if (!ec && std::filesystem::exists(st)) {
+            current = std::move(exact);
+        } else if (auto match = find_case_insensitive(dir, last)) {
+            current = std::move(*match);
+            st = std::filesystem::symlink_status(current, ec);
+        } else if (for_create) {
+            return exact;  // an absent name in a directory inside the root
+        } else {
             return std::nullopt;
         }
-        if (!inside_root(current)) return std::nullopt;
+        if ((ec || std::filesystem::is_symlink(st)) && !inside_root(current)) return std::nullopt;
         return current;
     }
 
@@ -627,12 +661,17 @@ private:
     // change it made (resolve() inside the call may have cached the old state).
     struct CacheReset {
         const HostVfs& vfs;
-        ~CacheReset() { vfs.dir_cache_.clear(); }
+        ~CacheReset() {
+            vfs.dir_cache_.clear();
+            vfs.dir_resolve_cache_.clear();
+        }
     };
 
     // Keyed by the ASCII-folded host path; see `cache_key`.
     mutable std::unordered_map<std::filesystem::path::string_type, DirListing> dir_cache_;
     mutable std::size_t directory_scans_ = 0;
+    // Vfs parent spelling ("a/b/") -> its host directory, already checked to be inside the root.
+    mutable std::unordered_map<std::string, std::filesystem::path> dir_resolve_cache_;
 };
 
 }  // namespace wse::platform
