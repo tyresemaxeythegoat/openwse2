@@ -77,6 +77,9 @@ public:
     std::function<bool(const std::string& path, std::vector<std::uint8_t>& bytes)> read_file;
     // The first time each recorded method is called (bring-up log).
     std::function<void(const std::string& method)> on_first_call;
+    // After each Present (device or swap chain), with the frame count so far: the R4 startup
+    // runner stops after a set number of frames.
+    std::function<void(std::uint64_t frames)> on_present;
 
     [[nodiscard]] std::uint64_t frames() const noexcept { return frames_; }
     [[nodiscard]] std::size_t objects() const {
@@ -677,6 +680,7 @@ inline void D3d9::build_vtables() {
          }},
         {"Present", [this, ret](CpuState& s, Obj&, std::uint64_t) {
              ++frames_;
+             if (on_present) on_present(frames_);
              ret(s, 0);
          }},
         // GetBackBuffer(iSwapChain, iBackBuffer, Type, ppBackBuffer)
@@ -875,7 +879,11 @@ inline void D3d9::build_vtables() {
 
     // IDirect3DSwapChain9
     make_table(Kind::swapchain, 0, com::kIDirect3DSwapChain9, {
-        {"Present", [this, ret](CpuState& s, Obj&, std::uint64_t) { ++frames_; ret(s, 0); }},
+        {"Present", [this, ret](CpuState& s, Obj&, std::uint64_t) {
+             ++frames_;
+             if (on_present) on_present(frames_);
+             ret(s, 0);
+         }},
         {"GetBackBuffer", [this, ret](CpuState& s, Obj& o, std::uint64_t) { put_ref(*this, win64_arg(s, 3), dev(o.parent)->backbuffer); ret(s, 0); }},
         {"GetDisplayMode", [this, ret, mode](CpuState& s, Obj&, std::uint64_t) { mode(win64_arg(s, 1), cfg_.width, cfg_.height); ret(s, 0); }},
         {"GetPresentParameters", [this, ret](CpuState& s, Obj& o, std::uint64_t) {

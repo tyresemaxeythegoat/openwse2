@@ -31,6 +31,12 @@
             android:name=".WseVulkanProbeService"
             android:exported="false"
             android:process=":vkprobe" />
+        <!-- Phase 5 R4 startup run: maps the translated game at fixed addresses and ends its
+             process when done, so it runs isolated from the launcher. -->
+        <service
+            android:name=".R4StartupService"
+            android:exported="false"
+            android:process=":recomp" />
     </application>
 
 </manifest>

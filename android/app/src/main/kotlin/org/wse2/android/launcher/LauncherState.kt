@@ -314,6 +314,15 @@ data class R0UiState(
     val report: String? = null
 )
 
+// Phase 5 R4 startup run (`R4StartupRunner`): `status` while it runs, `report` in a dialog when
+// set. `useCopy` reads the install from a copy in app storage instead of the folder.
+data class R4UiState(
+    val running: Boolean = false,
+    val useCopy: Boolean = false,
+    val status: String = "",
+    val report: String? = null
+)
+
 data class AdvancedUiState(
     val installFolder: InstallFolderState = InstallFolderState(),
     val scanState: ScanState = ScanState(),

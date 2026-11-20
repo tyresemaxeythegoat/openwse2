@@ -561,6 +561,7 @@ if(WSE_ENABLE_LLVM)
     add_library(wse_recomp STATIC
         engine/src/recomp/lifter_llvm.cpp
         engine/src/recomp/r0_spikes.cpp
+        engine/src/recomp/r4_startup.cpp
         engine/src/recomp/discover.cpp
         engine/src/recomp/lift_r1.cpp
         engine/src/recomp/lift_r1_int.cpp
@@ -699,7 +700,9 @@ if(WSE_ENABLE_LLVM)
     endif()
 
     if(WSE_BUILD_ANDROID_APP)
-        add_library(wse_r0 SHARED platform/android/r0_jni.cpp)
+        # The translator on the phone: Advanced > "R0 spikes" (`r0_jni.cpp`) and "R4 startup run"
+        # (`r4_jni.cpp`, run by R4StartupService in its own `:recomp` process).
+        add_library(wse_r0 SHARED platform/android/r0_jni.cpp platform/android/r4_jni.cpp)
         target_link_libraries(wse_r0 PRIVATE wse_recomp log)
         target_link_options(wse_r0 PRIVATE "-Wl,--gc-sections" "-Wl,--exclude-libs,ALL")
         wse_apply_strict_warnings(wse_r0)

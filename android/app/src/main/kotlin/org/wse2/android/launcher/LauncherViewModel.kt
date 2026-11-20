@@ -116,6 +116,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val _r0State = MutableStateFlow(R0UiState())
     val r0State: StateFlow<R0UiState> = _r0State.asStateFlow()
 
+    private val _r4State = MutableStateFlow(R4UiState())
+    val r4State: StateFlow<R4UiState> = _r4State.asStateFlow()
+    private val r4Runner = R4StartupRunner(application) { s ->
+        if (!isCleared.get()) _r4State.value = s
+    }
+
     private val _events = Channel<LauncherEvent>(Channel.UNLIMITED)
     val events: Flow<LauncherEvent> = _events.receiveAsFlow()
 
@@ -334,6 +340,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun dismissR0Report() {
         _r0State.value = _r0State.value.copy(report = null)
     }
+
+    // Phase 5 R4: translate and start the exe in R4StartupService's own process (R4StartupRunner).
+    fun runR4Startup() = r4Runner.start(_installFolder.value.treeUri)
+
+    fun setR4UseCopy(useCopy: Boolean) = r4Runner.setUseCopy(useCopy)
+
+    fun dismissR4Report() = r4Runner.dismissReport()
 
     fun selectDriver(index: Int) {
         val current = _driverState.value

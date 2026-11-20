@@ -449,6 +449,37 @@ next thing to implement. Never run in CI.
    main loop for 1,000 frames on the stub device with no fault and no missing import, and the
    same build runs from the APK's Advanced screen on the phone.
 
+**Phone run (decided with the user, 2026-11-21).** Advanced > "R4 startup run" runs the same
+startup on the phone:
+
+- **One runner.** `engine/src/recomp/r4_startup.{h,cpp}` (`run_startup`, in `wse_recomp`) does what
+  `r4_run` did: discovery, batched translation with the batch cache, mapping, linking, shims,
+  diagnostics, the run. `tools/r4_run.cpp` (WSL) and `platform/android/r4_jni.cpp` (in
+  `libwse_r0.so`) only build its inputs: the exe, `lua5164.dll` and PDB bytes, an install `Vfs`, a
+  writable `Vfs`, and a translator id.
+- **Its own process.** `R4StartupService` runs in `android:process=":recomp"` (as the Vulkan probe
+  does): the images map at fixed addresses (possible once per process), guest threads cannot be
+  stopped, and a crash in translated code must not take the launcher down. The run ends the process
+  (`_Exit`); the launcher sees the binding die and reads `filesDir/recomp/r4/report.txt`, whose last
+  `RESULT` line says how it ended (`pass N frames`, `fault`, `host-signal`, `exit-process`,
+  `returned`).
+- **Scope.** Native (seeded as `last_module_warband`, as the launcher does), stop after 1,000
+  frames or the first fault, then a report with Copy / Share.
+- **Install files, two ways.** The SAF folder through `WseSafBridge` (a backend that attaches each
+  guest thread to the JVM, behind a lock: `SafVfs` is not thread-safe), or, with the switch "R4:
+  use a copy of the install", a copy in `filesDir/recomp/r4/install` (everything except the other
+  modules in `Modules/`; a file already copied with the same size is kept) read as plain files. The
+  writable layer is `filesDir/recomp/r4/user`.
+- **Cache.** Batches in `filesDir/recomp/r4/so`, keyed like `r4_run`'s by the image, the options and
+  the translator id (the size and an FNV-1a hash of `libwse_r0.so`, so a new APK retranslates);
+  an interrupted translation resumes. `progress.txt` holds the current image and its batches done.
+- **Translation.** All cores but one, `-O2` (as verified in WSL); the screen is kept on while it
+  runs.
+- **Loading.** Batches load from a `memfd` (`android_dlopen_ext`), else with our own ELF loader
+  (`code_loader.h`, shared with the R0 spikes): on the phone `dlopen` of a read-only app-data file
+  failed in R0 run 2. Guest images are mapped read-write only (translated code runs, guest bytes
+  never execute).
+
 ## What carries over
 
 - P-slices: the launcher (P10/P12), SAF `Vfs`, the Vulkan RHI and GPU path (P4), shader

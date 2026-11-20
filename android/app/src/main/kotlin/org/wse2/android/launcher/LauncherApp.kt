@@ -81,6 +81,7 @@ fun LauncherApp(
     val moduleArt by viewModel.moduleArt.collectAsStateWithLifecycle()
     val heroArt by viewModel.heroArt.collectAsStateWithLifecycle()
     val r0State by viewModel.r0State.collectAsStateWithLifecycle()
+    val r4State by viewModel.r4State.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var activeDialog by remember { mutableStateOf<LauncherDialogState?>(null) }
@@ -150,7 +151,11 @@ fun LauncherApp(
         onLaunchSelfTest = viewModel::onLaunchSelfTestClicked,
         r0State = r0State,
         onRunR0Spikes = viewModel::runR0Spikes,
-        onDismissR0Report = viewModel::dismissR0Report
+        onDismissR0Report = viewModel::dismissR0Report,
+        r4State = r4State,
+        onRunR4Startup = viewModel::runR4Startup,
+        onR4UseCopyChange = viewModel::setR4UseCopy,
+        onDismissR4Report = viewModel::dismissR4Report
     )
 
     when (val dialog = activeDialog) {
@@ -247,7 +252,11 @@ fun LauncherAppContent(
     onLaunchSelfTest: () -> Unit,
     r0State: R0UiState = R0UiState(),
     onRunR0Spikes: () -> Unit = {},
-    onDismissR0Report: () -> Unit = {}
+    onDismissR0Report: () -> Unit = {},
+    r4State: R4UiState = R4UiState(),
+    onRunR4Startup: () -> Unit = {},
+    onR4UseCopyChange: (Boolean) -> Unit = {},
+    onDismissR4Report: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
@@ -356,7 +365,11 @@ fun LauncherAppContent(
                 topContentPadding = topPadding,
                 r0State = r0State,
                 onRunR0Spikes = onRunR0Spikes,
-                onDismissR0Report = onDismissR0Report
+                onDismissR0Report = onDismissR0Report,
+                r4State = r4State,
+                onRunR4Startup = onRunR4Startup,
+                onR4UseCopyChange = onR4UseCopyChange,
+                onDismissR4Report = onDismissR4Report
             )
         }
     }

@@ -18,6 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -52,7 +54,11 @@ fun AdvancedScreen(
     topContentPadding: Dp = 0.dp,
     r0State: R0UiState = R0UiState(),
     onRunR0Spikes: () -> Unit = {},
-    onDismissR0Report: () -> Unit = {}
+    onDismissR0Report: () -> Unit = {},
+    r4State: R4UiState = R4UiState(),
+    onRunR4Startup: () -> Unit = {},
+    onR4UseCopyChange: (Boolean) -> Unit = {},
+    onDismissR4Report: () -> Unit = {}
 ) {
     val colors = LocalWseColors.current
     val treeUri = state.installFolder.treeUri
@@ -214,9 +220,42 @@ fun AdvancedScreen(
                     } else {
                         null
                     },
-                    showDivider = false,
-                    enabled = !r0State.running,
+                    showDivider = true,
+                    enabled = !r0State.running && !r4State.running,
                     onClick = onRunR0Spikes
+                )
+                WseListRow(
+                    title = "R4 startup run",
+                    supporting = if (r4State.running) {
+                        r4State.status.ifEmpty { "Running" } +
+                            "\nKeep the app open: the first run translates the game (minutes)."
+                    } else {
+                        "Translates mb_warband_wse2_x64.exe and lua5164.dll from the selected " +
+                            "folder (kept for later runs), starts Native on a recording device " +
+                            "that draws nothing, and stops after 1,000 frames or the first fault."
+                    },
+                    trailing = if (r4State.running) {
+                        {
+                            CircularProgressIndicator(
+                                color = colors.accent,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    showDivider = true,
+                    enabled = !r4State.running && !r0State.running,
+                    onClick = onRunR4Startup
+                )
+                SwitchListItem(
+                    headline = "R4: use a copy of the install",
+                    supporting = "Copies the folder (without other modules) into app storage " +
+                        "and reads it there; needs that much free space",
+                    checked = r4State.useCopy,
+                    enabled = !r4State.running,
+                    onCheckedChange = onR4UseCopyChange
                 )
             }
 
@@ -267,6 +306,37 @@ fun AdvancedScreen(
                 onDismissR0Report()
             },
             onDismissRequest = onDismissR0Report
+        )
+    }
+
+    // Translation and the run take minutes: keep the screen (and so the app) awake meanwhile.
+    val view = LocalView.current
+    DisposableEffect(r4State.running) {
+        view.keepScreenOn = r4State.running
+        onDispose { view.keepScreenOn = false }
+    }
+
+    r4State.report?.let { report ->
+        val context = LocalContext.current
+        WseDialog(
+            title = "R4 startup run",
+            text = report,
+            confirm = WseDialogAction("Copy") {
+                val clipboard =
+                    context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                clipboard?.setPrimaryClip(ClipData.newPlainText("WSE2 R4 startup run", report))
+                onDismissR4Report()
+            },
+            dismiss = WseDialogAction("Share") {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "WSE2 R4 startup run")
+                    putExtra(Intent.EXTRA_TEXT, report)
+                }
+                context.startActivity(Intent.createChooser(send, "Share R4 report"))
+                onDismissR4Report()
+            },
+            onDismissRequest = onDismissR4Report
         )
     }
 
