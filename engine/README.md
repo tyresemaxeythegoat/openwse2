@@ -1031,10 +1031,12 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   function, without data flow across branches); it is read from the lowest address seen until a
   value falls outside that function, so a table followed by small numbers would contribute a few
   wrong entries (functions that are never called). Not used by the R1 coverage meter or R2.
-- **R4 discovery for the startup run (`discover.cpp`, `pe_image.h`, `tools/r4_run.cpp`):** an image
-  without a PDB (`lua5164`) also takes every DIR64 relocation that points into `.text` as a
-  function entry (a stored code pointer: CRT init tables, callbacks, vtables; leaf functions have no
-  `.pdata` entry), 123 in `lua5164`. An MSVC jump table that no `cmp`/`ja` or mask bounds (the CRT's
+- **R4 discovery for the startup run (`discover.cpp`, `pe_image.h`, `tools/r4_run.cpp`):** every
+  image also takes each DIR64 relocation that points into `.text` as a function entry (a stored
+  code pointer: CRT init tables, callbacks, vtables; leaf functions have no `.pdata` entry, and a
+  PDB's publics do not name static functions such as dynamic initializers): 123 more in
+  `lua5164`, 206 in the exe. Translated batches are 64 KiB windows of `.text`, so a new entry
+  retranslates only its window. An MSVC jump table that no `cmp`/`ja` or mask bounds (the CRT's
   `memset`/`memcpy` index by `size >> 4`) is read while its entries land inside the `.pdata`
   function holding the `jmp` (`Discoverer::set_function_ranges`; at most 256 entries, at least two),
   so a following table that also points into the function would be read as part of it. Both are off
