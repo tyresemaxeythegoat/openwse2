@@ -277,8 +277,11 @@ bool translate_image(const char* tag, Mapped& m, bool is_exe, const char* work_d
         expect(pdata_owner(view, img, cxx + 1) == cxx && pdata_owner(view, img, img.image_base) == 0,
                "corpus: pdata_owner maps an address to its function");
     }
-    // R4: code reached only through an address taken with `lea` (`o_lea_callback`'s leaf).
-    const std::set<std::uint64_t> taken = find_code_address_entries(view, img, entries);
+    // R4: code reached only through an address taken with `lea` (`o_lea_callback`'s leaf, and
+    // `o_vm_cont`'s label inside the interpreter, which has an offset table).
+    std::set<std::uint64_t> interpreters;
+    for (const OffsetTables::Table& t : ot.tables) interpreters.insert(t.function);
+    const std::set<std::uint64_t> taken = find_code_address_entries(view, img, entries, &interpreters);
     entries.insert(taken.begin(), taken.end());
     if (is_exe) {
         std::uint64_t cb = 0;

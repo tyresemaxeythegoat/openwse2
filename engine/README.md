@@ -980,7 +980,15 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   Only the four predefined roots exist until something creates keys below them; there are no
   security descriptors, and `samDesired` is ignored. `Crypt*` hashing supports MD5, SHA-1 and
   SHA-256 (checked against the RFC 1321 / FIPS 180 vectors); any other algorithm fails with
-  `NTE_BAD_ALGID`, and a hash takes no more data once its value has been read.
+  `NTE_BAD_ALGID`, and a hash takes no more data once its value has been read. A predefined root
+  is recognised by its low 32 bits, as Windows does (a Win64 program passes `HKEY_CURRENT_USER`
+  sign-extended, `0xFFFFFFFF80000001`; the first version accepted only `0x80000001`, so the exe's
+  `RegCreateKeyExA` failed with `ERROR_INVALID_HANDLE` and it never read `last_module_warband`).
+- **R4 startup module (`tools/r4_run.cpp --module <name>`, default `Native`):** v1.1.5.6 takes its
+  module from `HKCU\Software\MountAndBladeWarbandKeys\last_module_warband`, which the launcher
+  writes; `r4_run` seeds that value (and passes `--module <name>` on the command line, which this
+  build does not use for the choice: with the registry unreadable it loaded another installed
+  module). `r4_run` logs the first 40 files opened under `Modules\` and the first 30 registry calls.
 - **R4 USER32 (`shim_user32.h`):** headless. A window has no non-client area: its client size is its
   size and `AdjustWindowRect` leaves the rectangle as it is. Nothing is painted (`UpdateWindow`
   sends no `WM_PAINT`), `TranslateMessage` produces no `WM_CHAR` (no keyboard layout yet), and
@@ -1050,6 +1058,13 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   which alone had bounded the table at 8 entries (corpus `o_jbe_switch`). The check is by address
   range, not data flow, so a branch from elsewhere into that range could break the bound. It is on
   everywhere, including the R1 meter and R2.
+- **Jump-table base register (`resolve_jump_table`):** the image-base load is the nearest write to
+  the base register before the table load, by address; a write that runs straight into `ret` (no
+  branch, no other block start on the way) is skipped, since it cannot reach the load. `lua5164`'s
+  CRT `memcpy` needs this: one case of its first table reuses `r10` and returns, ahead of three
+  later tables that all use `r10` as the image base (corpus `o_case_base`). On everywhere.
+  A byte index table may name the image base as either register of `[rI + rB + t]` (scale 1);
+  `lua5164`'s lexer switch puts it in the index position (corpus `o_byte_index`).
 - **R4 code addresses taken with `lea` (`discover.cpp` `find_code_address_entries`,
   `tools/r4_run.cpp`):** a leaf with no `.pdata` entry whose address is only taken by a
   rip-relative `lea` (stored in a table filled at run time, or passed as a callback) has no
@@ -1059,6 +1074,9 @@ Phase 5 R0 recompiler (`wse/recomp/`, `src/recomp/`):
   holding the `lea`, and not yet an entry, becomes one (with its call targets, to a fixed point).
   A `lea` of a data label placed in `.text` outside every function would add a junk entry that
   fails to lift; nothing calls it. Corpus `o_lea_callback`. Off in the R1 meter and R2.
+  A target inside a `.pdata` function also counts when that function has an offset table (an
+  interpreter, already entered at interior points): LuaJIT's C code stores VM continuation labels
+  (the "next instruction" sequence after a C call) in stack frames this way. Corpus `o_vm_cont`.
 - **R4 tail calls (`lift_r1.cpp`):** a tail jump to a function of the same module is `musttail`; a
   tail jump through the dispatch or import hook is marked `tail`, which holds at -O1 and up, and
   `Runtime::hook_dispatch` itself ends in a sibling call only when the runtime is optimized

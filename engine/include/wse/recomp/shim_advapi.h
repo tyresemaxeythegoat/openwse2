@@ -5,6 +5,7 @@
 //   RegCreateKeyExA RegQueryValueExA RegSetValueExA RegCloseKey
 //   CryptAcquireContextA CryptReleaseContext CryptCreateHash CryptHashData CryptGetHashParam
 //   CryptDestroyHash
+//   SystemFunction036 (RtlGenRandom; lua5164 reaches it through GetProcAddress)
 //
 // The registry is one in-memory tree under the four predefined roots (HKCR, HKCU, HKLM, HKU),
 // names compared case-insensitively. Every change is written to `NTUSER.DAT` at the root of the
@@ -16,6 +17,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -24,6 +26,7 @@
 #include <cstring>
 #include <map>
 #include <mutex>
+#include <random>
 #include <set>
 #include <span>
 #include <string>
@@ -37,8 +40,11 @@
 
 namespace wse::recomp::shim {
 
-inline constexpr std::uint64_t kHkeyClassesRoot = 0x80000000ULL, kHkeyCurrentUser = 0x80000001ULL,
-                               kHkeyLocalMachine = 0x80000002ULL, kHkeyUsers = 0x80000003ULL;
+// The predefined keys as a Win64 program passes them: `(HKEY)(LONG)0x8000000n`, sign-extended.
+// Windows compares only the low 32 bits (checked on 10.0.19045: 0xFFFFFFFF80000001,
+// 0x0000000080000001 and 0x0000000180000001 all open HKCU), so `is_root` does too.
+inline constexpr std::uint64_t kHkeyClassesRoot = 0xFFFFFFFF80000000ULL, kHkeyCurrentUser = 0xFFFFFFFF80000001ULL,
+                               kHkeyLocalMachine = 0xFFFFFFFF80000002ULL, kHkeyUsers = 0xFFFFFFFF80000003ULL;
 inline constexpr std::uint32_t kRegSz = 1, kRegExpandSz = 2, kRegBinary = 3, kRegDword = 4;
 inline constexpr std::uint32_t kRegCreatedNewKey = 1, kRegOpenedExistingKey = 2;
 inline constexpr std::uint32_t kErrorMoreData = 234;
@@ -295,6 +301,19 @@ public:
         });
 
         // CryptAcquireContextA(phProv, szContainer, szProvider, dwProvType, dwFlags)
+        // SystemFunction036 (RtlGenRandom)(buffer, length) -> BOOLEAN: lua5164 (LuaJIT 2.1) finds it
+        // with LoadLibraryExA("advapi32.dll") + GetProcAddress to seed its PRNG, and luaL_newstate
+        // returns NULL when it is missing. Filled from the host's random source; always TRUE.
+        bind("SystemFunction036", [](CpuState& s) {
+            const std::uint64_t buf = win64_arg(s, 0);
+            const auto len = static_cast<std::uint32_t>(win64_arg(s, 1));
+            std::random_device rd;
+            for (std::uint32_t i = 0; i < len && buf != 0; i += 4) {
+                const std::uint32_t r = rd();
+                std::memcpy(reinterpret_cast<void*>(buf + i), &r, std::min<std::uint32_t>(4, len - i));
+            }
+            win64_return(s, 1);
+        });
         bind("CryptAcquireContextA", [this](CpuState& s) {
             const std::uint64_t out = win64_arg(s, 0);
             if (out == 0) return fail(s, teb::kErrorInvalidParameter);
@@ -399,7 +418,10 @@ private:
         for (char& c : s) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
         return s;
     }
-    static bool is_root(std::uint64_t h) { return h >= kHkeyClassesRoot && h <= kHkeyUsers; }
+    static bool is_root(std::uint64_t h) {
+        const std::uint32_t low = static_cast<std::uint32_t>(h);
+        return low >= 0x80000000U && low <= 0x80000003U;
+    }
     static std::vector<std::string> split(const std::string& sub) {
         std::vector<std::string> parts;
         std::string cur;
@@ -430,7 +452,7 @@ private:
     bool path_of(std::uint64_t h, std::string& path) const {
         static const char* const kRoots[] = {"HKEY_CLASSES_ROOT", "HKEY_CURRENT_USER", "HKEY_LOCAL_MACHINE", "HKEY_USERS"};
         if (is_root(h)) {
-            path = kRoots[h - kHkeyClassesRoot];
+            path = kRoots[static_cast<std::uint32_t>(h) - 0x80000000U];
             return true;
         }
         const auto it = handles_.find(h);

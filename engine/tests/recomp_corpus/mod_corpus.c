@@ -498,6 +498,11 @@ __asm__(
     "  jmpq *(%r8,%rcx,8)\n"
     "vm_halt:\n"
     "  retq\n"
+    /* A continuation label inside the interpreter that only code outside it reaches, through an
+     * address taken with lea (LuaJIT's C code stores such labels in stack frames): o_vm_cont. */
+    "vm_cont:\n"
+    "  addq $100, %rax\n"
+    "  retq\n"
     "  .seh_endproc\n"
 
     /* u64 o_dispatch(u64 n): fill the table (the LuaJIT pattern), then run. */
@@ -537,7 +542,21 @@ __asm__(
     "vm_enter:\n"
     "  movzbl (%rdx), %ecx\n"
     "  incq %rdx\n"
-    "  jmpq *(%r8,%rcx,8)\n");
+    "  jmpq *(%r8,%rcx,8)\n"
+
+    /* u64 o_vm_cont(u64 x): x + 100, through the interpreter's continuation label. */
+    ".globl o_vm_cont\n"
+    ".def o_vm_cont; .scl 2; .type 32; .endef\n"
+    ".seh_proc o_vm_cont\n"
+    "o_vm_cont:\n"
+    "  .seh_endprologue\n"
+    "  movq %rcx, %rax\n"
+    "  leaq vm_cont(%rip), %r10\n"
+    "  jmpq *%r10\n"
+    "  .seh_endproc\n"
+    ".section .drectve,\"yn\"\n"
+    "  .ascii \" -export:o_vm_cont\"\n"
+    ".text\n");
 
 /* An MSVC jump table that no compare bounds (the CRT's memset indexes by size >> 4): read while its
  * entries land inside the function (`Discoverer::set_function_ranges`). o_unbounded_switch(x)
@@ -574,6 +593,76 @@ __asm__(
     "  .long 0\n"
     ".section .drectve,\"yn\"\n"
     "  .ascii \" -export:o_unbounded_switch\"\n"
+    ".text\n");
+
+/* lua5164's lexer switch shape: a byte index table addressed with the image base as the index
+ * register (`movzx eax, byte [rax + rB + bytes]`), feeding a dword table. o_byte_index(x):
+ * v = x & 0xF; v > 9 -> 99; else 7, 8 or 9 by the byte table. */
+__asm__(
+    ".globl o_byte_index\n"
+    ".def o_byte_index; .scl 2; .type 32; .endef\n"
+    ".seh_proc o_byte_index\n"
+    "o_byte_index:\n"
+    "  .seh_endprologue\n"
+    "  movl %ecx, %eax\n"
+    "  andl $0xF, %eax\n"
+    "  cmpl $9, %eax\n"
+    "  ja obi_default\n"
+    "  leaq __ImageBase(%rip), %r9\n"
+    "  movzbl obi_bytes@IMGREL(%rax,%r9), %eax\n"
+    "  movl obi_t@IMGREL(%r9,%rax,4), %ecx\n"
+    "  addq %r9, %rcx\n"
+    "  jmpq *%rcx\n"
+    "obi_c0:\n  movl $7, %eax\n  retq\n"
+    "obi_c1:\n  movl $8, %eax\n  retq\n"
+    "obi_c2:\n  movl $9, %eax\n  retq\n"
+    "obi_default:\n  movl $99, %eax\n  retq\n"
+    "  .seh_endproc\n"
+    ".section .rdata,\"dr\"\n"
+    ".p2align 2\n"
+    "obi_t:\n  .long obi_c0@IMGREL, obi_c1@IMGREL, obi_c2@IMGREL\n"
+    "obi_bytes:\n  .byte 0, 0, 1, 1, 2, 2, 0, 1, 2, 0\n"
+    ".section .drectve,\"yn\"\n"
+    "  .ascii \" -export:o_byte_index\"\n"
+    ".text\n");
+
+/* lua5164's CRT memcpy shape: a first switch whose case block reuses the table base register and
+ * returns, then a second table (bounded only by its function) on the same base register. The base
+ * search must skip the case block's write, which never reaches the second load. o_case_base(x):
+ * v = x & 0x3F; v <= 1 -> 5 or 6 (the second clobbers r10); else 10, 21, 32 or 43 for v >> 4. */
+__asm__(
+    ".globl o_case_base\n"
+    ".def o_case_base; .scl 2; .type 32; .endef\n"
+    ".seh_proc o_case_base\n"
+    "o_case_base:\n"
+    "  .seh_endprologue\n"
+    "  leaq __ImageBase(%rip), %r10\n"
+    "  andl $0x3F, %ecx\n"
+    "  movl %ecx, %eax\n"
+    "  cmpq $1, %rcx\n"
+    "  ja oc_second\n"
+    "  movl oc_t1@IMGREL(%r10,%rcx,4), %r11d\n"
+    "  addq %r10, %r11\n"
+    "  jmpq *%r11\n"
+    "oc_a:\n  movl $5, %eax\n  retq\n"
+    "oc_b:\n  xorl %r10d, %r10d\n  movl $6, %eax\n  retq\n"
+    "oc_second:\n"
+    "  shrl $4, %eax\n"
+    "  movl oc_t2@IMGREL(%r10,%rax,4), %r11d\n"
+    "  addq %r10, %r11\n"
+    "  jmpq *%r11\n"
+    "oc_c0:\n  movl $10, %eax\n  retq\n"
+    "oc_c1:\n  movl $21, %eax\n  retq\n"
+    "oc_c2:\n  movl $32, %eax\n  retq\n"
+    "oc_c3:\n  movl $43, %eax\n  retq\n"
+    "  .seh_endproc\n"
+    ".section .rdata,\"dr\"\n"
+    ".p2align 2\n"
+    "oc_t1:\n  .long oc_a@IMGREL, oc_b@IMGREL\n"
+    "oc_t2:\n  .long oc_c0@IMGREL, oc_c1@IMGREL, oc_c2@IMGREL, oc_c3@IMGREL\n"
+    "  .long 0\n"
+    ".section .drectve,\"yn\"\n"
+    "  .ascii \" -export:o_case_base\"\n"
     ".text\n");
 
 /* A leaf with no .pdata entry (no .seh_proc), not exported, whose address a function takes with

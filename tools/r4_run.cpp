@@ -16,6 +16,7 @@
 
 #include <dlfcn.h>
 #include <signal.h>
+#include <ucontext.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -187,7 +188,9 @@ std::set<std::uint64_t> entries_of(const Image& m, const ImageView& view, const 
     }
     // Code whose address a function takes with a rip-relative `lea` (callbacks, tables filled at
     // run time) and that no .pdata range covers.
-    const std::set<std::uint64_t> taken = find_code_address_entries(view, m.img, entries);
+    std::set<std::uint64_t> interpreters;  // functions with an offset table: entered at interior labels
+    for (const OffsetTables::Table& t : ot.tables) interpreters.insert(t.function);
+    const std::set<std::uint64_t> taken = find_code_address_entries(view, m.img, entries, &interpreters);
     entries.insert(taken.begin(), taken.end());
     std::printf("%s: %zu entries from code addresses taken with lea\n", m.tag.c_str(), taken.size());
     return entries;
@@ -383,8 +386,28 @@ void print_recent() {
     std::printf("%llu import calls, %zu distinct\n", static_cast<unsigned long long>(g_calls.load()), g_first.size());
 }
 
-void on_signal(int sig) {
-    std::printf("\nhost signal %d in translated code or a shim\n", sig);
+// A host fault: the address, the host pc and the function holding it (translated functions are
+// exported as wse_fn_<guest VA>, so dladdr names the guest function). Diagnostics only: printf in a
+// signal handler is not async-signal-safe, which is acceptable at the point of a crash.
+void on_signal(int sig, siginfo_t* info, void* uctx) {
+    std::uint64_t pc = 0;
+#if defined(__x86_64__)
+    pc = static_cast<std::uint64_t>(static_cast<ucontext_t*>(uctx)->uc_mcontext.gregs[REG_RIP]);
+#elif defined(__aarch64__)
+    pc = static_cast<std::uint64_t>(static_cast<ucontext_t*>(uctx)->uc_mcontext.pc);
+#else
+    (void)uctx;
+#endif
+    std::printf("\nhost signal %d in translated code or a shim: address 0x%llx, host pc 0x%llx", sig,
+                static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(info->si_addr)),
+                static_cast<unsigned long long>(pc));
+    Dl_info dl{};
+    if (pc != 0 && dladdr(reinterpret_cast<void*>(static_cast<std::uintptr_t>(pc)), &dl) != 0) {
+        std::printf(" = %s+0x%llx in %s", dl.dli_sname != nullptr ? dl.dli_sname : "?",
+                    static_cast<unsigned long long>(pc - reinterpret_cast<std::uintptr_t>(dl.dli_saddr)),
+                    dl.dli_fname != nullptr ? dl.dli_fname : "?");
+    }
+    std::printf("\n");
     print_recent();
     std::fflush(stdout);
     std::_Exit(3);
@@ -394,7 +417,7 @@ void on_signal(int sig) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: %s <install dir> [--work <dir>] [--retranslate] [--batch <n>] [--opt <0-3>] [--jobs <n>] [--reuse] [--quiet]\n",
+        std::fprintf(stderr, "usage: %s <install dir> [--work <dir>] [--retranslate] [--batch <n>] [--opt <0-3>] [--jobs <n>] [--reuse] [--quiet] [--module <name>]\n",
                      argv[0]);
         return 2;
     }
@@ -405,6 +428,7 @@ int main(int argc, char** argv) {
     std::size_t batch = 64;  // KiB of .text per translated object
     int opt = 2;
     unsigned jobs = 2;
+    std::string module = "Native";  // passed to the exe as `--module <name>`, as the WSE2 launcher does
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--work" && i + 1 < argc) work = argv[++i];
@@ -414,6 +438,7 @@ int main(int argc, char** argv) {
         else if (a == "--jobs" && i + 1 < argc) jobs = static_cast<unsigned>(std::max(1, std::atoi(argv[++i])));
         else if (a == "--reuse") reuse = true;
         else if (a == "--quiet") g_quiet = true;
+        else if (a == "--module" && i + 1 < argc) module = argv[++i];
     }
     fs::create_directories(work / "so");
     fs::create_directories(work / "user");
@@ -523,7 +548,10 @@ int main(int argc, char** argv) {
     threads::Threads thr(rt, process, kern);
     threadpool::Pool pool(rt, process, kern);
     shim::Time time_shims(rt);
-    shim::Crt crt(rt, shim::ProcessConfig{});
+    shim::ProcessConfig process_config;
+    process_config.command_line = "mb_warband_wse2_x64.exe --module \"" + module + "\"";
+    std::printf("command line: %s\n", process_config.command_line.c_str());
+    shim::Crt crt(rt, process_config);
     crt.on_exit = [](std::uint32_t code) {
         std::printf("\nExitProcess(%u)\n", code);
         print_recent();
@@ -540,6 +568,13 @@ int main(int argc, char** argv) {
     files_cfg.user = &user_vfs;
     shim::Files files(rt, kern, files_cfg);
     shim::Advapi advapi(rt, &user_vfs);
+    // The module, as the Warband launcher records it: the exe reads last_module_warband (REG_SZ)
+    // from this key at startup (on the user's PC it holds the module last chosen in the launcher).
+    {
+        std::vector<std::uint8_t> sz(module.begin(), module.end());
+        sz.push_back(0);
+        advapi.set_value("HKEY_CURRENT_USER\\Software\\MountAndBladeWarbandKeys", "last_module_warband", 1, std::move(sz));
+    }
     shim::User32 user32(rt);
     user32.on_message_box = [](const std::string& caption, const std::string& text) {
         std::printf("  MessageBox [%s] %s\n", caption.c_str(), text.c_str());
@@ -667,7 +702,72 @@ int main(int argc, char** argv) {
         });
     }
 
-    for (const int sig : {SIGSEGV, SIGBUS, SIGILL, SIGFPE}) signal(sig, &on_signal);
+    // Which module the game loads: the first distinct paths under Modules\ that CreateFile and
+    // FindFirstFile are given (narrow and wide spellings).
+    auto module_paths = std::make_shared<std::set<std::string>>();
+    for (const char* fn : {"CreateFileA", "CreateFileW", "FindFirstFileA", "FindFirstFileW", "FindFirstFileExW"}) {
+        const Runtime::ImportShim* orig = rt.named_shim("KERNEL32.dll", fn);
+        if (orig == nullptr) continue;
+        const bool wide = fn[std::strlen(fn) - 1] == 'W';
+        rt.set_import("KERNEL32.dll", fn, [original = *orig, wide, module_paths](CpuState& st) {
+            std::string p;
+            if (const std::uint64_t a = win64_arg(st, 0)) {
+                if (wide) {
+                    for (auto* w = reinterpret_cast<const char16_t*>(a); *w != 0 && p.size() < 400; ++w) {
+                        p += *w < 0x80 ? static_cast<char>(*w) : '?';
+                    }
+                } else {
+                    p = reinterpret_cast<const char*>(a);
+                }
+            }
+            std::string low = p;
+            for (char& c : low) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (low.find("modules") != std::string::npos) {
+                const std::lock_guard<std::mutex> lock(g_trace_m);
+                if (module_paths->size() < 40 && module_paths->insert(p).second) std::printf("  module file: %s\n", p.c_str());
+            }
+            original(st);
+        });
+    }
+
+    // Registry reads: the first 30 key / value names and results (the module choice is one).
+    auto reg_count = std::make_shared<int>(0);
+    for (const char* fn : {"RegOpenKeyExA", "RegOpenKeyExW", "RegQueryValueExA", "RegQueryValueExW", "RegCreateKeyExA",
+                           "RegCreateKeyExW", "RegGetValueA", "RegGetValueW"}) {
+        const Runtime::ImportShim* orig = rt.named_shim("ADVAPI32.dll", fn);
+        if (orig == nullptr) continue;
+        const bool wide = fn[std::strlen(fn) - 1] == 'W';
+        const std::string fname = fn;
+        rt.set_import("ADVAPI32.dll", fn, [original = *orig, wide, fname, reg_count](CpuState& st) {
+            auto text = [&](std::uint64_t a) {
+                std::string p;
+                if (a == 0) return std::string("(null)");
+                if (wide) {
+                    for (auto* w = reinterpret_cast<const char16_t*>(a); *w != 0 && p.size() < 200; ++w) p += *w < 0x80 ? static_cast<char>(*w) : '?';
+                } else {
+                    p = reinterpret_cast<const char*>(a);
+                }
+                return p;
+            };
+            const std::uint64_t hkey = win64_arg(st, 0);
+            const std::string name = text(win64_arg(st, 1));
+            const std::string extra = fname.rfind("RegGetValue", 0) == 0 ? " / " + text(win64_arg(st, 2)) : "";
+            original(st);
+            const std::lock_guard<std::mutex> lock(g_trace_m);
+            if ((*reg_count)++ < 30) {
+                std::printf("  registry: %s(0x%llx, %s%s) = %llu\n", fname.c_str(), static_cast<unsigned long long>(hkey),
+                            name.c_str(), extra.c_str(), static_cast<unsigned long long>(st.gpr[0]));
+            }
+        });
+    }
+
+    for (const int sig : {SIGSEGV, SIGBUS, SIGILL, SIGFPE}) {
+        struct sigaction sa {};
+        sa.sa_sigaction = &on_signal;
+        sa.sa_flags = SA_SIGINFO;
+        sigemptyset(&sa.sa_mask);
+        sigaction(sig, &sa, nullptr);
+    }
     GuestStack stack(8 * 1024 * 1024);
     CpuState s;
     stack.prepare(s);

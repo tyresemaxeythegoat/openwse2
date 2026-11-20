@@ -4347,6 +4347,18 @@ void test_advapi() {
         expect(call(rt, s, "RegCreateKeyExA", {sh::kHkeyCurrentUser, va("software\\wse2\\TEST"), 0, 0, 0, 0xF003F, 0, va(&key2), va(&disp)}) == 0 &&
                    disp == sh::kRegOpenedExistingKey,
                "registry: key names compare case-insensitively");
+        std::uint64_t key3 = 0;
+        expect(sh::kHkeyCurrentUser == 0xFFFFFFFF80000001ULL &&
+                   call(rt, s, "RegCreateKeyExA", {0x80000001ULL, va("Software\\WSE2\\Test"), 0, 0, 0, 0xF003F, 0, va(&key3), va(&disp)}) == 0 &&
+                   disp == sh::kRegOpenedExistingKey && call(rt, s, "RegCloseKey", {key3}) == 0,
+               "registry: HKCU is the sign-extended Win64 value; only the low 32 bits count, as on Windows");
+        alignas(8) std::uint8_t rnd[19];
+        std::memset(rnd, 0, sizeof rnd);
+        const bool filled = call(rt, s, "SystemFunction036", {va(rnd), 18}) == 1 && call(rt, s, "SystemFunction036", {va(rnd), 0}) == 1;
+        int nonzero = 0;
+        for (int i = 0; i < 18; ++i) nonzero += rnd[i] != 0;
+        expect(filled && nonzero >= 8 && rnd[18] == 0,
+               "advapi: SystemFunction036 (RtlGenRandom) fills exactly the buffer and returns TRUE (LuaJIT's PRNG seed)");
         const char text[] = "hello";
         const std::uint32_t dword = 0x12345678;
         expect(call(rt, s, "RegSetValueExA", {key, va("Greeting"), 0, sh::kRegSz, va(text), sizeof(text)}) == 0 &&

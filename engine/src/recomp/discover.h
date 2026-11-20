@@ -174,8 +174,12 @@ OffsetTables find_offset_table_entries(const ImageView& view, const PeImage& img
 // function, outside the span of the function holding the `lea` (a table or label of its own),
 // and is no known entry. Direct call targets of the new functions are returned too. Not part of
 // `collect_function_entries` (the R1 meter and the R2 selection keep their recorded rule).
+// `open_functions` (optional): `.pdata` functions entered at interior points anyway, such as an
+// interpreter found by `find_offset_table_entries` (LuaJIT's VM, whose continuation labels the C
+// code takes with `lea` and stores in stack frames); a target inside one of them counts too.
 std::set<std::uint64_t> find_code_address_entries(const ImageView& view, const PeImage& img,
-                                                  const std::set<std::uint64_t>& entries);
+                                                  const std::set<std::uint64_t>& entries,
+                                                  const std::set<std::uint64_t>* open_functions = nullptr);
 
 // The primary function entry (VA) whose `.pdata` range holds `va`, following chained unwind info;
 // 0 when no `.pdata` range holds it.

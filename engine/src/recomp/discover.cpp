@@ -146,6 +146,21 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
     // (the register may be reused between the `add` and the `jmp`).
     bool base_ok = false;
     bool table_relative = false;  // clang shape: entries are offsets from the table
+    // A write that runs straight into `ret` (no branch, no other block start on the way) cannot
+    // reach the table load: another switch's case block (`lua5164`'s CRT memcpy reuses the base
+    // register in one case of its first table, ahead of three later tables).
+    auto dead_end = [&](std::uint64_t va) {
+        for (auto w = fn.insns.find(va); w != fn.insns.end(); ++w) {
+            const DInsn& q = w->second;
+            if (q.va != va && fn.block_starts.count(q.va) != 0) return false;
+            const auto c = q.ins.meta.category;
+            if (c == ZYDIS_CATEGORY_RET) return true;
+            if (c == ZYDIS_CATEGORY_COND_BR || c == ZYDIS_CATEGORY_UNCOND_BR || c == ZYDIS_CATEGORY_CALL) return false;
+            const auto nx = std::next(w);
+            if (nx == fn.insns.end() || nx->first != q.next()) return false;
+        }
+        return false;
+    };
     for (auto r = fn.insns.rbegin(); r != fn.insns.rend(); ++r) {
         const DInsn* p = &r->second;
         if (p->va >= entry_load_va) {
@@ -153,6 +168,11 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
         }
         if (p->ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER && widen(p->ops[0].reg.value) == base_reg &&
             (p->ops[0].actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0) {
+            const bool loads_base = p->ins.mnemonic == ZYDIS_MNEMONIC_LEA ||
+                                    (p->ins.mnemonic == ZYDIS_MNEMONIC_MOV && p->ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE);
+            if (!loads_base && dead_end(p->va)) {
+                continue;
+            }
             std::uint64_t v = 0;
             if (p->ins.mnemonic == ZYDIS_MNEMONIC_LEA &&
                 ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&p->ins, &p->ops[1], p->va, &v))) {
@@ -181,11 +201,15 @@ bool Discoverer::resolve_jump_table(const DFunction& fn, const DInsn& jmp, JumpT
     std::size_t alias_from = 0;  // copies are searched before this position in `prev`
     for (std::size_t k = 0; k < prev.size(); ++k) {
         const DInsn* p = prev[k];
+        // The image base may be the memory operand's base (`[rB + rI + t]`) or, scale 1, its index
+        // (`[rI + rB + t]`: lua5164's lexer switch).
         if (!table_relative && p->ins.mnemonic == ZYDIS_MNEMONIC_MOVZX && p->ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER &&
             widen(p->ops[0].reg.value) == index_reg && p->ops[1].type == ZYDIS_OPERAND_TYPE_MEMORY &&
-            p->ops[1].size == 8 && widen(p->ops[1].mem.base) == base_reg) {
+            p->ops[1].size == 8 &&
+            (widen(p->ops[1].mem.base) == base_reg ||
+             (widen(p->ops[1].mem.index) == base_reg && p->ops[1].mem.scale <= 1))) {
             byte_table = base + static_cast<std::uint64_t>(p->ops[1].mem.disp.value);
-            bound_reg = widen(p->ops[1].mem.index);
+            bound_reg = widen(p->ops[1].mem.base) == base_reg ? widen(p->ops[1].mem.index) : widen(p->ops[1].mem.base);
             alias_from = k + 1;  // the movzx itself rewrites the register; look before it
             break;
         }
@@ -565,7 +589,13 @@ std::uint64_t pdata_owner(const ImageView& view, const PeImage& img, std::uint64
 }
 
 std::set<std::uint64_t> find_code_address_entries(const ImageView& view, const PeImage& img,
-                                                  const std::set<std::uint64_t>& entries) {
+                                                  const std::set<std::uint64_t>& entries,
+                                                  const std::set<std::uint64_t>* open_functions) {
+    // Inside a .pdata function that is not open: a label of that function, not an entry.
+    auto closed_interior = [&](std::uint64_t t) {
+        const PeFunctionRange* r = range_at(img, static_cast<std::uint32_t>(t - img.image_base));
+        return r != nullptr && (open_functions == nullptr || open_functions->count(img.image_base + r->begin) == 0);
+    };
     std::set<std::uint64_t> known = entries;
     std::set<std::uint64_t> out;
     std::vector<std::uint64_t> work(entries.begin(), entries.end());
@@ -592,7 +622,7 @@ std::set<std::uint64_t> find_code_address_entries(const ImageView& view, const P
             }
             std::uint64_t t = 0;
             if (!ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&d.ins, &d.ops[1], d.va, &t)) || !view.in_text(t) ||
-                (t >= lo && t < hi) || range_at(img, static_cast<std::uint32_t>(t - img.image_base)) != nullptr) {
+                (t >= lo && t < hi) || closed_interior(t)) {
                 continue;
             }
             add(t);
