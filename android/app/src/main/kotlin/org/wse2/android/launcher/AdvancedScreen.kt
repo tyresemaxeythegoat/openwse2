@@ -1,9 +1,13 @@
 package org.wse2.android.launcher
 
+import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -248,6 +252,30 @@ fun AdvancedScreen(
                     showDivider = true,
                     enabled = !r4State.running && !r0State.running,
                     onClick = onRunR4Startup
+                )
+                // Saves the report as a file the player picks, during a run too (the user's
+                // request, 2026-11-21: keep the phone's report when finishing on the PC).
+                val saveContext = LocalContext.current
+                val saveReport = rememberLauncherForActivityResult(
+                    ActivityResultContracts.CreateDocument("text/plain")
+                ) { uri ->
+                    if (uri != null) {
+                        val runner = R4StartupRunner.get(saveContext.applicationContext as Application)
+                        val text = runner.reportToSave()
+                        val saved = text != null && runner.saveReport(uri, text)
+                        Toast.makeText(
+                            saveContext,
+                            if (saved) "Report saved." else "There is no report to save yet.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+                WseListRow(
+                    title = "Save the game test report",
+                    supporting = "Saves what the game test has written so far as a text file, even " +
+                        "while it is running.",
+                    showDivider = true,
+                    onClick = { saveReport.launch("wse2-game-test-report.txt") }
                 )
                 SwitchListItem(
                     headline = "Work from a copy of the game folder",

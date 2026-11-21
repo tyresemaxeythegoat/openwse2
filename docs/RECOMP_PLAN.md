@@ -536,6 +536,11 @@ their own machine for their own phone: nothing is bundled or shared, and the zip
   folder's root and copies its `.so` / `.key` files into the batch cache (once per zip: name, size
   and time are remembered). Each imported batch is checked against its key like any cached one,
   so a zip from another exe or translator version is translated again on the phone, not used.
+  A batch's `.so` and `.key` are installed together, the old `.key` removed first and the new one
+  written last, so an import stopped part-way never leaves a key vouching for other code; a batch
+  whose key is already there unchanged is skipped (review fix, 2026-11-21).
+- **Saving the report:** Advanced > "Save the game test report" writes the report (during a run:
+  what it has written so far, under its status) to a file the player picks.
   No USB debugging, adb or button is needed.
 
 ## R5 census (2026-11-21)

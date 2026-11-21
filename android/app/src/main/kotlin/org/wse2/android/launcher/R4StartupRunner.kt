@@ -99,6 +99,33 @@ class R4StartupRunner private constructor(private val app: Application) {
         update(state.copy(report = reportText(null)))
     }
 
+    // The report to save as a file (Advanced > "Save the game test report"), during a run too:
+    // the finished report, else what the running test has written so far under its status.
+    // Null when there is no report yet.
+    fun reportToSave(): String? {
+        state.report?.let { return it }
+        val file = File(r4Dir, "report.txt")
+        if (!file.isFile) return null
+        val text = try {
+            file.readText()
+        } catch (_: Throwable) {
+            return null
+        }
+        val headline = if (state.running) {
+            "The game test is still running. " + state.status.ifEmpty { "Working…" }
+        } else {
+            reportText(null).substringBefore("\n\n")
+        }
+        return "$headline\n\nDetails for the developers:\n$text"
+    }
+
+    // Writes `text` to the document the player picked (ACTION_CREATE_DOCUMENT). False on failure.
+    fun saveReport(uri: Uri, text: String): Boolean = try {
+        app.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) } != null
+    } catch (_: Throwable) {
+        false
+    }
+
     private val workDir: File get() = File(app.filesDir, "recomp")
     private val r4Dir: File get() = File(workDir, "r4")
     private val copyDir: File get() = File(r4Dir, "install")
@@ -247,25 +274,56 @@ class R4StartupRunner private constructor(private val app: Application) {
         var parts = 0
         val doc = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
         app.contentResolver.openInputStream(doc)?.use { input ->
-            java.util.zip.ZipInputStream(input.buffered(1 shl 16)).use { zip ->
-                while (true) {
-                    if (stopRequested) return parts
-                    val entry = zip.nextEntry ?: break
-                    val name = entry.name.substringAfterLast('/').substringAfterLast('\\')
-                    if (entry.isDirectory || !PREPARED_PART.matches(name)) continue
-                    val tmp = File(soDir, "$name.import")
-                    tmp.outputStream().use { zip.copyTo(it, 1 shl 16) }
-                    val dest = File(soDir, name)
-                    dest.delete()
-                    if (!tmp.renameTo(dest)) {
-                        tmp.delete()
-                        throw IllegalStateException("cannot write $name")
-                    }
-                    if (name.endsWith(".so")) {
-                        ++parts
-                        if (parts % 10 == 0) update(state.copy(status = "Importing the game files prepared on your PC: $parts parts"))
+            // A part is its .so and its .key. They are installed together, the .key last and only
+            // after the old .key is gone: a stop or a failure part-way never leaves a key that
+            // vouches for code it was not made with (the run would load that code). A part whose
+            // key is already here unchanged is skipped.
+            val keys = HashMap<String, ByteArray>()
+            val staged = HashMap<String, File>()
+            fun install(part: String) {
+                val key = keys[part] ?: return
+                val so = staged[part] ?: return
+                keys.remove(part)
+                staged.remove(part)
+                val destKey = File(soDir, "$part.key")
+                val destSo = File(soDir, "$part.so")
+                if (destSo.isFile && destKey.isFile && destKey.readBytes().contentEquals(key)) {
+                    so.delete()
+                    return
+                }
+                destKey.delete()
+                destSo.delete()
+                val keyTmp = File(soDir, "$part.key.import")
+                keyTmp.writeBytes(key)
+                if (!so.renameTo(destSo) || !keyTmp.renameTo(destKey)) {
+                    so.delete()
+                    keyTmp.delete()
+                    destSo.delete()
+                    throw IllegalStateException("cannot write $part")
+                }
+                ++parts
+                if (parts % 10 == 0) update(state.copy(status = "Importing the game files prepared on your PC: $parts parts"))
+            }
+            try {
+                java.util.zip.ZipInputStream(input.buffered(1 shl 16)).use { zip ->
+                    while (true) {
+                        if (stopRequested) return parts
+                        val entry = zip.nextEntry ?: break
+                        val name = entry.name.substringAfterLast('/').substringAfterLast('\\')
+                        if (entry.isDirectory || !PREPARED_PART.matches(name)) continue
+                        val part = name.substringBeforeLast('.')
+                        if (name.endsWith(".key")) {
+                            keys[part] = zip.readBytes()
+                        } else {
+                            val tmp = File(soDir, "$name.import")
+                            tmp.outputStream().use { zip.copyTo(it, 1 shl 16) }
+                            staged[part] = tmp
+                        }
+                        install(part)
                     }
                 }
+            } finally {
+                staged.values.forEach { it.delete() }  // a .so whose .key never came
             }
         } ?: return 0
         prefs.edit().putString(PREF_IMPORTED, stamp).apply()
