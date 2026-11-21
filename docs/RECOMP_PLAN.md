@@ -14,7 +14,7 @@ gives 1:1 behaviour and byte-compatible saves by construction. This document own
 | Compiler backend | **Embedded LLVM** (AArch64 target only) plus LLD as a library. x86-64 is lifted to LLVM IR and optimized, ARM64 is emitted, then linked into cached `.so` batches. |
 | Clean-room engine | **Hybrid.** Retail code runs the game. Our platform layer (SAF `Vfs`, Vulkan RHI, shader translation, `WseAudioMixer`, input and touch overlay, launcher) becomes the backend of the API shims. The reconstructed VM, loaders and savegame codecs become test oracles and fallbacks. |
 | API layers | **Native shims allowed** for exactly the system DLLs the exe imports. Still banned: Wine, Box64, Dynarmic, QEMU, translating code during play (JIT), and bundling or committing anything retail. Lifted code is generated on the device (or on the player's own PC for their own phone) and never distributed. |
-| Target devices & v1 bar | **`arm64-v8a` Android 10+ phones with ARMv8.2-A (LSE + RCpc), Vulkan and at least 6 GB RAM, tiered by chip and GPU, not by RAM.** Reference phone: the user's **OPPO Reno 11, 12 GB RAM, Mali-G68** (a mid-range GPU; PanVK and System Vulkan); also mid-range Adreno/Turnip. Out of scope: pre-ARMv8.2-A CPUs or under 6 GB RAM. **v1 playable bar:** `Native` end-to-end (main menu, campaign map, scenes, battles, saves); heavy WSE2 mods follow in R9 (decided with the user, 2026-11-21). |
+| Target devices & v1 bar | **`arm64-v8a` Android 10+ phones with ARMv8.2-A (LSE + RCpc), Vulkan and at least 6 GB RAM, tiered by chip and GPU, not by RAM.** Reference phone: the user's **OPPO Reno 11, 12 GB RAM, Mali-G68** (a mid-range GPU; PanVK and System Vulkan); also mid-range Adreno/Turnip. Out of scope: pre-ARMv8.2-A CPUs or under 6 GB RAM. **v1 playable bar:** `Native` end-to-end (main menu, campaign map, scenes, battles with shadows + FSR/CAS + FXAA, saves + auto-sync mirror, Desktop Mode, combat haptics, live quick-settings, per-module profiles) plus a `Phantasy Calradia` heavy-mod smoke check; full multi-mod hardening follows in R9 (decided with the user, 2026-11-21 / 2026-11-22). |
 | Sustained performance target | **Mid-range GPU tier (the reference phone, Mali-G68 class):** 30 FPS sustained for 30+ minutes in 100-troop battles at ~720p / 85% render scale, and 60 FPS in menus/map. **Flagship GPU tier (Snapdragon 8 Gen 2+ / Dimensity 9000+ class):** playable **1,000+ troop WSE2 battles** at ≥ 30 FPS sustained. **Every supported phone:** 1,000+ troop battles load and run with no OOM and no buffer/descriptor cap failures; on the reference phone their frame rate is measured and recorded, not gated (decided with the user, 2026-11-21; tiers by chip after the user's 12 GB Mali-G68 phone fit neither RAM tier). |
 | Audio (`fmodex64`) | **Shim the 54 delay-loaded FMOD Ex exports directly onto `WseAudioMixer` + SDL3 audio** (P6) rather than translating `fmodex64.dll` (decided with the user, 2026-11-21). |
 | Multiplayer | **Planned for R12 (post-v1):** offline stubs through R8–R11 so single-player ships cleanly; R12 implements real `WS2_32` BSD sockets and Android TLS `WINHTTP`/`WININET` for Wi-Fi LAN, direct-IP hosts, and non-Steam WSE2 community servers (`steam_api64` stays stubbed, no DRM bypass; decided with the user, 2026-11-22). |
@@ -69,13 +69,13 @@ there are no CRT DLLs to replace:
 | **R2 Host differential rig** | The same lifter targets **x86-64 on the PC**, so translated and original code run side by side on the real CPU (as the 2026-11 flag rig did). Every function is checked on generated inputs. CI runs the lifter on synthetic test binaries only (no retail code), and an arm64 CI runner (`ubuntu-24.04-arm`) executes the ARM64 output. |
 | **R3 Runtime core** | Guest memory, TEB/TLS, threads, the dispatch table, the import-thunk ABI bridge, memory-ordering lowering, Win64 unwinding and C++ EH. |
 | **R4 OS shims** | All 546 imports listed with an owner; the startup path (`WinMain`, window, configuration, file I/O) runs to the main loop on a recording stub D3D9 device, with `lua5164` translated (see "R4 design"). |
-| **R5 Graphics** | D3D9 subset + D3DX over Vulkan (`R5a` System Vulkan + P5 `GLShaders` → SPIR-V + base forward rendering; `R5b` cached ETC2/ASTC texture transcoding + `fx_2_0` SM2/3 → SPIR-V for custom mod effects; `R5c` PanVK/Turnip `AHardwareBuffer` + `ASurfaceControl` bridge); HDR/DOF/MSAA advertised unavailable until post-v1. |
-| **R6 Audio, input, touch** | 54 `fmodex64` exports shimmed onto P6 `WseAudioMixer` + SDL3 audio (`lua5164` already translated in R4); DInput/XInput from SDL; Vulkan touch overlay inside `Present()` with per-scene context switching (`ShowCursor` + PDB `g_gameScreen`), soft keyboard `WM_CHAR`, and gamepad auto-hide. |
+| **R5 Graphics** | D3D9 subset + D3DX over Vulkan (`R5a` System Vulkan + P5 `GLShaders` → SPIR-V + base forward rendering; `R5b` cached ETC2/ASTC texture transcoding, `fx_2_0` SM2/3 → SPIR-V for custom mod effects, real-time `R16F`/`R32F` shadow maps, Vulkan FSR 1.0/CAS spatial upscaling + FXAA, and live thermal dynamic resolution; `R5c` PanVK/Turnip `AHardwareBuffer` + `ASurfaceControl` bridge); HDR/DOF/water reflections/HDR10 follow in `R11`. |
+| **R6 Audio, input, touch & Desktop Mode** | 54 `fmodex64` exports shimmed onto P6 `WseAudioMixer` + SDL3 audio (`lua5164` already translated in R4); DInput/XInput from SDL; Vulkan touch overlay inside `Present()` with per-scene context switching (`ShowCursor` + PDB `g_gameScreen`), combat haptics, soft keyboard `WM_CHAR`, gamepad auto-hide, and raw Pointer Capture mouse + full keyboard support for Desktop Mode / external displays. |
 | **R7 WSL x86-64 bring-up & save oracle** | Whole exe translated for x86-64 running in **WSL Ubuntu** with our shims only (Vulkan via WSLg or Lavapipe frame-dump + scripted input): main menu, campaign map, scene, battle. Savegame oracle: retail Windows saves load, and our saves load in retail Windows Warband. |
-| **R8 Phone bring-up (v1 playable `Native`)** | On-phone translation proven against OOM stalls (the batch memory fix itself lands in the next native update, before R5; cold `-O1` test) plus PC-zip import; permanent `filesDir/wse2/user/` writable layer + Launcher Save Manager (`docs/PLATFORM_PLAN.md` "P14"); `Native` playable end-to-end on the reference phone (OPPO Reno 11, 12 GB, Mali-G68/PanVK + System Vulkan) hitting 30 FPS sustained for 30+ min in 100-troop battles (~720p / 85% scale) and 60 FPS in menus/map. |
-| **R9 Performance, hardening & PC-parity mods** | Compiler & GPU acceleration for 1,000+ troop battles: register-passing ARM64 ABI + cross-batch inlining/ThinLTO, on-device PGO (hot ~5% at `-O3` + big-core tuning, cold ~95% at `-O1`), selective TSO relaxation & 128-bit SSE→NEON vectorization, indirect/instanced draw batching in D3D9→Vulkan; PDB-symbolized crash reports; `Native`, `Phantasy Calradia`, and `FiveDynastiesAndTenKingdoms` played end-to-end at PC mod parity. |
+| **R8 Phone bring-up (ambitious v1: `Native` + heavy-mod smoke)** | On-phone translation proven against OOM stalls (the batch memory fix itself lands in the next native update, before R5; cold `-O1` test) + PC-zip import; cross-batch direct call linking + unscalarized 128-bit SSE→NEON; permanent `filesDir/wse2/user/` + Save Manager with auto-sync SAF mirror, live quick-settings drawer, per-module profiles, and branded cache pre-warm loading screen (`docs/PLATFORM_PLAN.md` "P14"); `Native` playable end-to-end on the reference phone (OPPO Reno 11, 12 GB, Mali-G68/PanVK + System Vulkan) hitting 30 FPS sustained for 30+ min in 100-troop battles (~720p/85% + FSR/CAS) and 60 FPS in menus/map, plus `Phantasy Calradia` booting to campaign/battle. |
+| **R9 Performance, hardening & PC-parity mods** | Deep compiler & GPU acceleration for 1,000+ troop battles: register-passing ARM64 ABI + cross-batch inlining/ThinLTO, on-device PGO (hot ~5% at `-O3` + big-core tuning, cold ~95% at `-O1`), selective TSO relaxation, and indirect/instanced draw batching in D3D9→Vulkan; PDB-symbolized crash reports; `Native`, `Phantasy Calradia`, and `FiveDynastiesAndTenKingdoms` played end-to-end at PC mod parity. |
 | **R10 WSE2 updates & player distribution** | Automatic pruning of stale `.so` caches on exe/translator change; plain missing-PDB / unshimmed-import diagnostics; GitHub Releases APK signed with a private release keystore (never `debug.keystore`; no Google Play) + standalone prebuilt Windows/Linux PC prep CLI zip (no WSL/compiler required). |
-| **R11 Full PC visuals, modern mobile graphics & high refresh rate** | Full PC D3D9 parity (real-time shadow maps `R16F`/`R32F`, HDR tone-mapping + auto-exposure `A16B16G16R16F`, Depth of Field, water reflections); Vulkan spatial upscaling/sharpening (FSR 1.0 / CAS) and post-process AA (FXAA/SMAA); 90 Hz / 120 Hz sustained gameplay on flagship GPUs; Android HDR10 / Wide-Color swapchain output. |
+| **R11 Extended PC visuals, HDR10 & high refresh rate** | HDR tone-mapping + auto-exposure (`A16B16G16R16F`), Depth of Field, planar water reflections, and SMAA; 90 Hz / 120 Hz sustained gameplay on flagship GPUs; Android HDR10 / Wide-Color swapchain output. |
 | **R12 Native multiplayer (LAN, direct-IP & WSE2 servers)** | Real `WS2_32` POSIX/BSD non-blocking UDP/TCP sockets and Android TLS `WINHTTP`/`WININET` for Wi-Fi LAN, direct-IP hosts, and non-Steam WSE2 community servers (`steam_api64` remains stubbed). |
 
 ## R0 implementation (2026-11-18)
@@ -793,9 +793,10 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
 ### R5 — Graphics (D3D9 + D3DX → Vulkan)
 
 - **Goal:** Replace the R4 recording stub (`shim_d3d9.h`) with a Vulkan-backed D3D9/D3DX
-  implementation that renders the base forward pipeline (UI, campaign map, scenes, skinned battles,
-  basic shadows) at mobile-friendly frame times.
-- **Sub-slices:**
+  implementation that delivers crisp, PC-grade forward rendering (UI, campaign map, scenes, skinned
+  battles, real-time shadow maps, FSR 1.0/CAS spatial upscaling, FXAA, and live thermal dynamic
+  resolution) in v1.
+- **Sub-slices (ambitious v1 scope, decided with the user, 2026-11-22):**
   - **R5a (System Vulkan + P5 shader bridge + base draws):** Wire `shim_d3d9.h` onto `VulkanRhiDevice`
     using System Vulkan (`VK_KHR_android_surface` swapchain) first to minimize variables. Implement
     `IDirect3DStateBlock9` capture/apply, growable dynamic vertex/index and effect constant ring
@@ -807,48 +808,59 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     when `textureCompressionBC` is present, or temporary RGBA8 + P10.7 mip-budget capping during R5a
     bring-up. Advertise HDR (`A16B16G16R16F`), DOF, and MSAA (`CheckDeviceMultiSampleType`, `666`
     probes) as unavailable via `CheckDeviceFormat`/`CheckDeviceMultiSampleType` until R11.
-  - **R5b (Cached ETC2/ASTC transcoding + `fx_2_0` SM2/3 → SPIR-V):** Add one-time DXT1/3/5 →
-    ETC2/ASTC transcoding cached on disk (replacing the temporary RGBA8 fallback on drivers without
-    native BC) and add a `fx_2_0` (`.fxo`) parser + SM2/3 shader-bytecode → SPIR-V translator so
-    custom mod `.fxo` effects run at PC parity.
+  - **R5b (Cached ETC2/ASTC, `fx_2_0` SM2/3 → SPIR-V, shadows, FSR/CAS + FXAA & dynamic resolution):**
+    Add one-time DXT1/3/5 → ETC2/ASTC transcoding cached on disk (replacing the temporary RGBA8
+    fallback on drivers without native BC); add the `fx_2_0` (`.fxo`) parser + SM2/3 bytecode →
+    SPIR-V translator so custom mod `.fxo` effects run in v1; enable real-time shadow maps
+    (`R16F`/`R32F` depth render targets with PCF filtering); and add a Vulkan post-pass providing
+    **FSR 1.0 / CAS spatial upscaling**, lightweight **FXAA**, and live **P8 thermal dynamic
+    resolution scaling** so 75–85% render scale stays native-sharp while protecting sustained
+    thermals.
   - **R5c (PanVK / Turnip custom-ICD presentation):** Wire the `offscreen_hardware_buffer_bridge`
     (`AHardwareBuffer` + `ASurfaceControl`, `docs/PLATFORM_PLAN.md`) so direct-loaded PanVK (Mali-G68)
-    and Turnip (Adreno) present frames cleanly alongside System Vulkan.
+    and Turnip (Adreno) present frames cleanly alongside System Vulkan, including clean swapchain
+    recreation on rotation, folding, and app resume.
 - **Depends on:** R4 green on phone; P4 `VulkanRhiDevice` GPU path; P5 `wse_shader` +
   `SpirvShaderCache`.
 - **Done when:**
-  - Host synthetic D3D9→Vulkan tests pass in CI (`host-linux` + `android-arm64`).
+  - Host synthetic D3D9→Vulkan tests pass in CI (`host-linux` + `android-arm64`), including shadow
+    render-target, FSR/CAS, and FXAA passes.
   - On the user's phone (System Vulkan in R5a, PanVK in R5c), `Native` renders the main menu,
-    campaign map, and a quick battle with correct textures, skinning, alpha-test/blend, and zero
-    validation/fault crashes; main menu holds **60 FPS** and steady-state shader/texture caches hit
-    with zero mid-frame recompiles.
+    campaign map, and a quick battle with correct textures, skinning, real-time shadows,
+    alpha-test/blend, FSR/CAS upscaling + FXAA, and zero validation/fault crashes; main menu holds
+    **60 FPS** and steady-state shader/texture caches hit with zero mid-frame recompiles.
 - **Risks:**
   - `ID3DXEffect` technique/parameter naming differences between `.fxo` and `GLShaders` XML pairs
     (mitigated by R5a's census list of 480 techniques + 164 parameters and R5b's `.fxo` SM2/3 path).
+  - Shadow-map pass bandwidth on mid-range Mali-G68 (mitigated by keeping shadow resolution and
+    toggle configurable in Settings and the live drawer, with conservative mid-range defaults).
   - `AHardwareBuffer` sync-fence / swapchain latency quirks across PanVK and Turnip versions
     (mitigated by proving System Vulkan first in R5a and isolating custom-ICD presentation in R5c).
   - VRAM spikes on 6 GB phones if RGBA8 fallback runs on large battles (mitigated by P10.7 mip-cap
     in R5a and replacing RGBA8 with cached ETC2/ASTC in R5b).
 
-### R6 — Audio, Input & Touch Controls
+### R6 — Audio, Input, Touch Controls & Desktop Mode
 
-- **Goal:** Give the recompiled game full audio playback and first-class mobile controls (touch,
-  gamepad, keyboard/mouse, soft keyboard).
-- **Design:**
+- **Goal:** Give the recompiled game full audio playback, console-grade mobile touch controls +
+  combat haptics, and out-of-the-box Desktop Mode (external display + mouse/keyboard) in v1.
+- **Design (expanded v1 scope, decided with the user, 2026-11-22):**
   - **Audio:** Shim the 54 delay-loaded `fmodex64.dll` exports (`FMOD::System`, `Sound`, `Channel`,
     `ChannelGroup`, 2D/3D positions, looping, volume/pitch, streaming) directly onto P6's
     `WseAudioMixer` + `AudioMixerWorker` + `SDL_OpenAudioDeviceStream` (`wse_audio` WAV/OGG/MP3
     decoders). No `fmodex64.dll` translation and no `WINMM`/`MSACM32` audio shims are required.
-  - **Input:** Feed `USER32` (`WndProc`), `DINPUT8` (`GetDeviceState`/`GetDeviceData`), and
-    `XINPUT1_3` from SDL3 keyboard, mouse, touch, and gamepad events.
-  - **Touch overlay & QoL:** Draw the P11/P14 touch overlay as a final Vulkan pass inside
-    `IDirect3DDevice9::Present()` (works identically on System Vulkan and custom-ICD
+  - **Input & Desktop Mode:** Feed `USER32` (`WndProc`), `DINPUT8` (`GetDeviceState`/`GetDeviceData`),
+    and `XINPUT1_3` from SDL3 keyboard, mouse, touch, and gamepad events. Support Android Pointer
+    Capture (`SDL_SetWindowRelativeMouseMode`) and external display / Samsung DeX window resizing in
+    v1 so plugging in a monitor + mouse/keyboard plays like PC Warband with zero touch chrome.
+  - **Touch overlay, combat haptics & QoL:** Draw the P11/P14 touch overlay as a final Vulkan pass
+    inside `IDirect3DDevice9::Present()` (works identically on System Vulkan and custom-ICD
     `AHardwareBuffer` with exact touch coordinates). Auto-switch control scenes (Battle, Campaign
     Map, Trade/Inventory, Party, Dialog, Menu) via a hybrid detector: `ShowCursor` / pointer-capture
     as the universal menu-vs-3D fallback, refined by reading `g_gameScreen` (via matching PDB symbol
-    lookup) when available, plus a small corner manual override button. Full touch QoL layout,
-    buttons, soft-keyboard `WM_CHAR` injection, auto-pause on background, and layout editor specs
-    live in `docs/PLATFORM_PLAN.md` ("P14").
+    lookup) when available, plus a small corner manual override button. Include opt-in subtle
+    **combat haptics** (`VibrationEffect` on shield block, hit impact, and lance couch) in v1. Full
+    touch QoL layout, live quick-settings drawer, soft-keyboard `WM_CHAR` injection, auto-pause on
+    background, and layout editor specs live in `docs/PLATFORM_PLAN.md` ("P14").
   - **Note on `lua5164`:** Already translated and verified in R4; R6 verifies Lua scripts stay
     working under live input and audio.
 - **Depends on:** R5a (for Vulkan overlay pass in `Present()`); P6 `WseAudioMixer`; P7/P11 input &
@@ -858,8 +870,9 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     `WM_CHAR` event injection.
   - On the phone, `Native` plays music and 3D battle sound effects cleanly (pausing on background and
     resuming without glitches), all per-scene touch controls appear only in their matching scene,
-    soft keyboard enters character/save names, and attaching a Bluetooth/USB gamepad hides the touch
-    overlay automatically.
+    combat haptics pulse cleanly and toggle off, soft keyboard enters character/save names, and
+    attaching a gamepad or mouse/keyboard (including external display / DeX) hides the touch overlay
+    and engages raw relative mouse look automatically.
 - **Risks:**
   - A mod or future WSE2 build calling an unshimmed FMOD DSP/reverb export (mitigated by logging
     unsupported optional DSP calls as clean no-ops and faulting loudly only on unshimmed lifecycle
@@ -891,42 +904,50 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
   - WSLg GPU/Vulkan driver limitations on Intel HD 520 (mitigated by Lavapipe fallback for
     frame-dump/correctness verification).
 
-### R8 — Phone Bring-Up & Playable v1 (`Native`)
+### R8 — Phone Bring-Up & Ambitious v1 (`Native` + Heavy-Mod Smoke)
 
-- **Goal:** Deliver playable v1 `Native` end-to-end on the user's phone with reliable first-time
-  translation, permanent save storage, and sustained performance.
-- **Design:**
+- **Goal:** Deliver a polished, fast v1 `Native` release end-to-end on the user's phone — with
+  reliable first-time translation, zero-risk CPU wins, seamless save sync, per-module profiles, and
+  early heavy-mod proof.
+- **Design (expanded v1 scope, decided with the user, 2026-11-22):**
   - **Fix on-phone translation reliability & speed:** R4 measured ~163 s/batch (~3.5–4+ h total) and
     stalled at `77/80` on the 3 largest batches (each 3–3.5× average size), most likely out of memory:
     a PC run in WSL (3.8 GB) hung on the same batches the same night. **Pulled forward (2026-11-21):**
     the memory fix (largest batches first, split oversized batches, a per-thread memory budget) lands
     in the next native update, before R5, because every native update until R8 retranslates on the
-    phone and on the PC. Split oversized
-    batches by instruction/function cap (instead of fixed 64 KiB windows alone) so peak worker RSS
-    stays bounded, enforce per-worker memory budgets, and benchmark `-O1` on cold batches (functions
-    outside hot startup/battle paths) to cut first-time phone translation time without hurting battle
-    FPS. Keep PC preparation (`--for-phone` zip import) working as an optional fast path sharing the
-    same `portable_android_target()` cache key.
-  - **Permanent user storage & Save Manager:** Migrate the writable layer from `filesDir/recomp/r4/user/`
-    to permanent `filesDir/wse2/user/` (with one-time migration of existing `rgl_config.txt` / saves),
-    wired to the Launcher Save Manager (`docs/PLATFORM_PLAN.md` "P14") for SAF/Downloads `.sav`
-    export and import.
-  - **Launcher Play path:** Wire the launcher's main `Play` button directly to the `:recomp`
-    recompiled game runtime (replacing the P9 clean-room preview shell as the primary launch path).
+    phone and on the PC. Benchmark `-O1` on cold batches (functions outside hot startup/battle paths)
+    to cut first-time phone translation time without hurting battle FPS. Keep PC preparation
+    (`--for-phone` zip import) working as an optional fast path sharing the same
+    `portable_android_target()` cache key.
+  - **Early zero-risk CPU wins pulled into v1:** Link known direct cross-batch call edges directly
+    (cutting `Runtime::dispatch` overhead on hot calls without altering SEH frames) and keep packed
+    128-bit SSE arithmetic/shuffles lowered directly to ARM64 NEON vectors without unnecessary
+    scalarization.
+  - **Permanent user storage, Save Manager & Auto-Sync Mirror:** Migrate the writable layer from
+    `filesDir/recomp/r4/user/` to permanent `filesDir/wse2/user/` (with one-time migration of
+    existing `rgl_config.txt` / saves), wired to the Launcher Save Manager and optional auto-sync
+    SAF save mirror (`docs/PLATFORM_PLAN.md` "P14") for instant PC ↔ Android cross-progression and
+    uninstall protection.
+  - **Launcher Play path, per-module profiles & loading screen:** Wire the launcher's main `Play`
+    button directly to the `:recomp` recompiled game runtime with a branded pre-warm loading screen
+    (`.so` load + SPIR-V/ETC2 cache status, no black-screen hangs), per-module `rgl_config.txt` /
+    touch / spare-hotkey profiles, and the live in-game quick-settings drawer (`P14`).
 - **Depends on:** R5c, R6, R7, and `docs/PLATFORM_PLAN.md` "P14".
 - **Done when:**
   - A fresh on-phone translation of `mb_warband_wse2_x64.exe` + `lua5164.dll` finishes end-to-end on
     the user's phone with zero manual intervention and zero OOM stalls, AND importing a PC-prepared
     zip skips on-phone translation cleanly.
   - On OPPO Reno 11 (Mali-G68, PanVK and System Vulkan), `Native` is playable end-to-end: main menu,
-    character creation, campaign map, scenes, 100-troop battle, saving/reloading, and exporting a
-    `.sav` that loads in retail PC Warband.
+    character creation, campaign map, scenes, 100-troop battle with real-time shadows + FSR/CAS +
+    FXAA, saving/reloading, and auto-mirroring a `.sav` that loads in retail PC Warband.
+  - **Heavy-mod smoke check:** `Phantasy Calradia` boots cleanly to campaign map and a quick battle
+    in v1 (full multi-mod end-to-end hardening follows in R9).
   - **Measured sustained performance:** **≥ 30 FPS sustained at minute 30** of a 100-troop battle at
-    ~720p / 85% render scale (frame-time HUD + thermal log recorded), and **60 FPS** in menus and on
-    the campaign map.
+    ~720p / 85% render scale with live dynamic resolution + FSR/CAS (frame-time HUD + thermal log
+    recorded), and **60 FPS** in menus and on the campaign map.
 - **Risks:**
-  - Thermal throttling past minute 15–20 on Mali-G68 (mitigated by R5b ETC2/ASTC texture cache, ADPF
-    hint sessions, and P8 hysteretic thermal scaling).
+  - Thermal throttling past minute 15–20 on Mali-G68 (mitigated by R5b ETC2/ASTC texture cache,
+    live dynamic resolution + FSR/CAS, ADPF hint sessions, and P8 hysteretic thermal scaling).
   - Uncovered ARM64-only weak-memory or alignment bugs not seen on x86-64 WSL (mitigated by R3's
     conservative TSO ordering remaining on until R9 proves safe relaxations).
 
@@ -939,17 +960,16 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     argument and return registers (`rcx/rdx/r8/r9/rax/xmm0-3`) through `CpuState*` on every direct
     call between translated functions: pass them directly in ARM64 hardware registers (`x0–x7`,
     `v0–v7`) for direct calls, keep thin `CpuState*` thunks only for indirect dispatch / SEH entry,
-    and enable cross-batch direct linking + inlining (or ThinLTO) for tiny hot leaf helpers (vector,
-    matrix, string, and Bullet math).
+    and enable cross-batch inlining (or ThinLTO) for tiny hot leaf helpers (vector, matrix, string,
+    and Bullet math).
   - **On-device Profile-Guided Optimization (PGO):** Add a lightweight profiling run mode that
     samples a 2-minute real battle/campaign session to rank the top ~5% hottest functions (Bullet
     physics, agent AI, pathfinding, skinning, script VM), then re-translates only those hot
     functions at `-O3` with big-core CPU scheduling (`cortex-a78` / `cortex-x3` / `cortex-x4`) while
     keeping the cold ~95% at `-O1` (cuts total translation time while raising sustained battle FPS).
-  - **Selective TSO relaxation & 128-bit SSE→NEON vectorization:** Measure R3 `LDAPR`/`STLR` and
-    misaligned-barrier overhead on hot gameplay loops; relax ordering only on memory proven
-    single-thread-owned (validated under multi-threaded battle stress runs) and keep packed 128-bit
-    SSE arithmetic/shuffles lowered directly to ARM64 NEON vectors without unnecessary scalarization.
+  - **Selective TSO relaxation:** Measure R3 `LDAPR`/`STLR` and misaligned-barrier overhead on hot
+    gameplay loops; relax ordering only on memory proven single-thread-owned (validated under
+    multi-threaded battle stress runs).
   - **Indirect / instanced draw batching in D3D9→Vulkan:** Detect repeated mesh/material draws per
     frame (flora, arrows, shields, identical troop equipment) in the D3D9→Vulkan shim and merge them
     into instanced / indirect Vulkan draws to cut CPU draw-call overhead in 1,000+ troop battles.
@@ -972,7 +992,7 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     overflows, zero audio dropouts, and zero crashes on every supported phone, sustaining **≥ 30 FPS**
     on the flagship GPU tier (with full CPU/GPU frame-time breakdown recorded).
   - Before/after phone frame-time logs are recorded in `STATUS.md` for every compiler and GPU
-    optimization kept (register ABI, PGO, TSO relaxation, NEON vectorization, draw batching).
+    optimization kept (register ABI, cross-batch inlining/ThinLTO, PGO, TSO relaxation, draw batching).
 - **Risks:**
   - Register-passing ABI interacting with Win64 SEH frame unwinding or indirect calls (mitigated by
     keeping the Win64 guest stack frame layout untouched, using `CpuState*` entry thunks for
@@ -1012,20 +1032,14 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
   - Future WSE2 releases adding new Windows/D3D9 imports (mitigated by clear import-name diagnostics
     and `translator_fingerprint()` keeping shim-only APK updates from forcing retranslation).
 
-### R11 — Full PC Visual Parity, Modern Mobile Graphics & High Refresh Rate (decided with the user, 2026-11-22)
+### R11 — Extended PC Visuals, HDR10 & High Refresh Rate (decided with the user, 2026-11-22)
 
-- **Goal:** Close the remaining D3D9 visual gaps from R5a and add modern mobile-native graphics
-  features so Warband looks as sharp or sharper than PC while holding high frame rates on flagship
-  phones.
+- **Goal:** Complete the high-end visual passes beyond v1's R5b shadows/FSR/FXAA — adding full HDR
+  post-processing, DOF, water reflections, SMAA, HDR10 display output, and 90–120 Hz flagship pacing.
 - **Design:**
-  - **Full PC D3D9 visual parity:** Enable real-time shadow maps (`R16F`/`R32F` depth/shadow render
-    targets with PCF filtering), HDR post-processing and auto-exposure (`A16B16G16R16F` render
-    targets + `postFX.fxo`), Depth of Field, and planar water reflections (advertising them via
-    `CheckDeviceFormat` when enabled in Settings).
-  - **Modern mobile upscaling & post-process AA:** Add an optional Vulkan-native spatial upscaler +
-    sharpening pass (FSR 1.0 / CAS) so 75–85% render scale stays crisp at native 1080p/1440p, plus
-    lightweight post-process anti-aliasing (FXAA / SMAA) as a tile-GPU-friendly alternative to heavy
-    MSAA.
+  - **Extended PC D3D9 post-processing:** Enable HDR post-processing and auto-exposure
+    (`A16B16G16R16F` render targets + `postFX.fxo`), Depth of Field, planar water reflections, and
+    higher-quality SMAA (advertising HDR/DOF via `CheckDeviceFormat` when enabled in Settings).
   - **High-refresh-rate gameplay (90 Hz / 120 Hz):** Tune frame pacing (`ANativeWindow_setFrameRate*`,
     `FramePacer`, mailbox/FIFO present modes) to sustain 90 Hz / 120 Hz on flagship GPUs in menus,
     campaign map, and mid-size battles.
@@ -1034,8 +1048,8 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     swapchain with proper PQ tone-mapping.
 - **Depends on:** R5b/R5c, R8, R9.
 - **Done when:**
-  - On-device verification shows working shadow maps, HDR auto-exposure, DOF, water reflections,
-    FSR 1.0/CAS upscaling, and FXAA/SMAA with toggles in Settings and the live in-game drawer (`P15`).
+  - On-device verification shows working HDR auto-exposure, DOF, water reflections, and SMAA with
+    toggles in Settings and the live in-game drawer (`P14`).
   - Flagship GPU tier sustains **90–120 FPS** in menus/campaign map and mid-size battles; HDR10
     output verifies on an HDR-capable display without clipping or black-crush.
 - **Risks:**
