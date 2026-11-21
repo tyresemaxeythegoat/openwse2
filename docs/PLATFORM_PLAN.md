@@ -76,6 +76,7 @@ Each slice is one milestone. "Done when" is the acceptance test, not a descripti
 | P12 *(complete)* | Launcher redesign *(Phase 4)* | Jetpack Compose + Material 3 launcher with the install's own module art, dynamic colour, motion, and screenshot tests in CI; details in "P12 — Launcher redesign" below | The screenshot artifact and the user's phone check both look right |
 | P13 *(CI screenshots reviewed; phone check pending)* | Launcher art direction *(Phase 4)* | Bundled OFL fonts (Cinzel + Manrope), refined obsidian-and-brass palette, custom component kit, `rgl_config.txt` editor, Warband adaptive launcher icon, and CI Roborazzi screenshots; details in "P13 — Launcher art direction" below | Screenshots reviewed and phone check passes |
 | P14 *(planned)* | Phase 5 launcher, save manager, and touch QoL *(Phase 4 / Phase 5)* | Permanent `filesDir/wse2/user/` migration + Launcher Save Manager (SAF/Downloads export & import), clean-room per-scene context-gated touch controls & QoL drawn inside Vulkan `Present()`, frame-time/thermal HUD, and translation/cache management UX; details in "P14" below | Device acceptance list in "P14" passes on the user's phone during R6/R8 |
+| P15 *(planned, post-v1)* | Companion QoL, Desktop Mode & modding ecosystem *(Phase 4 / Phase 5)* | Live in-game quick-settings drawer, auto-sync SAF save mirror, one-tap `.zip`/`.7z` mod importer with background shader/texture cache pre-warming, per-module complete profiles, external display / DeX desktop mode with raw mouse capture, opt-in on-device voice battle orders + combat haptics, and in-app modder diagnostics console; details in "P15" below | Device acceptance list in "P15" passes on phone + external display |
 
 **Order.** P0 → P1 → P2 are strict. P3 is host-only and can run beside P1/P2. P4 needs P1; P5
 needs P3 + P4. P6, P7, P8 need only P1 and can interleave. P9 needs Phase 2E and 2H progress.
@@ -404,6 +405,29 @@ screens into the player-facing shell for real gameplay on `arm64-v8a` phones (An
 - Backgrounding the app pauses the game cleanly; returning resumes audio and rendering without
   desync.
 - Save Manager round-trips a `.sav` between the phone and retail Windows Warband without adb.
+
+## P15 — Companion QoL, Desktop Mode & modding ecosystem (planned, decided with the user, 2026-11-22)
+
+**Why.** Once `Native` is playable in R8/P14, P15 turns the Android app into a full Warband/WSE2
+companion platform that rivals PC convenience for players and modders alike — without blocking v1.
+
+**Work units (decided with the user, 2026-11-22):**
+
+| Unit | What | Depends on | Done when |
+| --- | --- | --- | --- |
+| P15.1 | **Live In-Game Quick-Settings Drawer & Auto-Sync Save Mirror:** swipe/hotkey pause drawer inside the game to adjust render scale, FPS cap, upscaler/AA (`R11`), touch opacity, gyro sensitivity, or control profiles without restarting; optional automatic mirror of `filesDir/wse2/user/` `.sav` files to a user-picked SAF folder (e.g. Syncthing / Drive / SD card) after each save | P14.3, R8 | Changing render scale, FPS cap, or touch opacity applies live with zero restart; saving in-game mirrors the `.sav` into the chosen SAF folder within 2 s |
+| P15.2 | **One-Tap Mod Importer & Per-Module Complete Profiles:** import `.zip`/`.7z` Warband mods directly in the launcher, validate `module.ini`/BRF/shader dependencies, pre-warm SPIR-V and ETC2/ASTC caches in the background before first play, and store separate `rgl_config.txt` overrides, touch layouts, and spare hotkeys per module | R5b, R9, P14.2 | Importing a large mod archive installs cleanly, pre-warms caches off the UI thread, and switching modules swaps `rgl_config.txt` overrides and touch profiles automatically |
+| P15.3 | **External Display / Desktop Mode (DeX / USB-C HDMI + Keyboard & Mouse):** handle secondary displays / desktop window resizing cleanly, engage Android Pointer Capture (`SDL_SetWindowRelativeMouseMode`) for raw relative mouse look, hide touch overlay, and forward full PC keyboard shortcuts | R6, R8 | Plugging the phone into an HDMI/USB-C monitor with USB/BT mouse + keyboard plays a full battle with raw 360° camera look and zero touch chrome |
+| P15.4 | **Opt-In On-Device Voice Battle Orders & Combat Haptics:** on-device Android `SpeechRecognizer` (offline capable, no cloud upload required) mapping spoken battle commands (*"Infantry, hold!"*, *"Cavalry, charge!"*, *"Archers, fire at will!"*) to Warband `F1–F9` order keys, plus subtle haptic feedback (`VibrationEffect`) on shield block, hit, and lance couch | R6, R8 | Spoken commands trigger the matching `F1–F9` order sequence in battle with <400 ms latency and zero audio-stream interruption; haptics toggle cleanly on/off |
+| P15.5 | **In-App Modder & Diagnostics Console:** Advanced live viewer for `rgl_log.txt` and `wse2_log.txt`, PDB-symbolized crash-trace decoder (`R9`), and per-subsystem CPU/GPU frame-time profiler graphs for mod authors testing directly on Android | R9, P14.4 | Modders can inspect live logs, symbolized faults, and per-frame CPU/GPU timings directly on the phone without adb |
+
+**Device acceptance (decided with the user, 2026-11-22):**
+- Live drawer changes apply immediately during a battle without losing state; save mirror keeps a
+  PC-synced SAF folder up to date automatically.
+- External display + mouse/keyboard plays with raw pointer capture and full Warband hotkeys.
+- Importing a `.zip` mod archive and switching between `Native` and a heavy mod isolates settings,
+  touch layouts, and spare hotkeys cleanly.
+- Opt-in voice orders and combat haptics work offline with zero impact when disabled.
 
 ## Risks decided up front
 

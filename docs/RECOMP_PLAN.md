@@ -17,8 +17,8 @@ gives 1:1 behaviour and byte-compatible saves by construction. This document own
 | Target devices & v1 bar | **`arm64-v8a` Android 10+ phones with ARMv8.2-A (LSE + RCpc), Vulkan and at least 6 GB RAM, tiered by chip and GPU, not by RAM.** Reference phone: the user's **OPPO Reno 11, 12 GB RAM, Mali-G68** (a mid-range GPU; PanVK and System Vulkan); also mid-range Adreno/Turnip. Out of scope: pre-ARMv8.2-A CPUs or under 6 GB RAM. **v1 playable bar:** `Native` end-to-end (main menu, campaign map, scenes, battles, saves); heavy WSE2 mods follow in R9 (decided with the user, 2026-11-21). |
 | Sustained performance target | **Mid-range GPU tier (the reference phone, Mali-G68 class):** 30 FPS sustained for 30+ minutes in 100-troop battles at ~720p / 85% render scale, and 60 FPS in menus/map. **Flagship GPU tier (Snapdragon 8 Gen 2+ / Dimensity 9000+ class):** playable **1,000+ troop WSE2 battles** at ≥ 30 FPS sustained. **Every supported phone:** 1,000+ troop battles load and run with no OOM and no buffer/descriptor cap failures; on the reference phone their frame rate is measured and recorded, not gated (decided with the user, 2026-11-21; tiers by chip after the user's 12 GB Mali-G68 phone fit neither RAM tier). |
 | Audio (`fmodex64`) | **Shim the 54 delay-loaded FMOD Ex exports directly onto `WseAudioMixer` + SDL3 audio** (P6) rather than translating `fmodex64.dll` (decided with the user, 2026-11-21). |
-| Multiplayer | **Parked for post-v1** (offline stubs through R8/R9; Steam stays stubbed; direct-IP/LAN over BSD sockets revisited only after v1 ships; decided with the user, 2026-11-21). |
-| Distribution | **GitHub Releases** signed with a dedicated private release keystore (never `android/debug.keystore`), plus a standalone prebuilt Windows/Linux PC preparation CLI zip. Play Store and F-Droid are parked for post-v1 (decided with the user, 2026-11-21). |
+| Multiplayer | **Planned for R12 (post-v1):** offline stubs through R8–R11 so single-player ships cleanly; R12 implements real `WS2_32` BSD sockets and Android TLS `WINHTTP`/`WININET` for Wi-Fi LAN, direct-IP hosts, and non-Steam WSE2 community servers (`steam_api64` stays stubbed, no DRM bypass; decided with the user, 2026-11-22). |
+| Distribution | **GitHub Releases only** (no Google Play Store): signed release APKs with a dedicated private release keystore (never `android/debug.keystore`), plus a standalone prebuilt Windows/Linux PC preparation CLI zip (decided with the user, 2026-11-21 / 2026-11-22). |
 
 ## The target
 
@@ -39,7 +39,7 @@ there are no CRT DLLs to replace:
 | Core OS | `KERNEL32` (223), `USER32` (40), `ADVAPI32` (10), `GDI32`, `SHELL32`, `SHLWAPI`, `IMM32`, `ole32`, `OLEAUT32`, `PSAPI`, `dbghelp` (8) | Native shims: files go through the SAF `Vfs` (case-insensitive, `\` separators) with a permanent app-private writable layer (`filesDir/wse2/user/`); threads, synchronization, time, memory and TLS are emulated; windows and messages are a fake `HWND` fed from SDL events (including soft-keyboard `WM_CHAR`/`WM_KEYDOWN`) into the exe's own `WndProc`. |
 | Graphics | `d3d9` (1 + COM vtables), `d3dx9_43` (17) | Our own D3D9 subset over the Vulkan RHI (P4 GPU path). Two-step shaders (decided with the user, 2026-11-21): R5a maps `ID3DXEffect` technique/parameter names onto P5's `GLShaders` → SPIR-V pipeline; R5b adds `fx_2_0` / SM2–3 bytecode → SPIR-V for custom mod `.fxo` effects. Textures use native Vulkan BC when supported, else one-time cached ETC2/ASTC transcoding (RGBA8 + mip-cap as temporary R5a bring-up fallback). |
 | Input | `DINPUT8`, `XINPUT1_3` (3), `WINMM` (3) | SDL keyboard, mouse and gamepad; context-gated touch overlay drawn in Vulkan inside `Present()` (`docs/PLATFORM_PLAN.md` "P14"). |
-| Network | `WS2_32` (37), `WINHTTP` (11), `WININET`, `urlmon`, `steam_api64` (10) | Offline stubs through v1 (multiplayer parked post-v1; direct-IP/LAN over BSD sockets revisited only after v1; decided with the user, 2026-11-21). |
+| Network | `WS2_32` (37), `WINHTTP` (11), `WININET`, `urlmon`, `steam_api64` (10) | Offline stubs through v1 (R4–R11); R12 wires `WS2_32` onto POSIX/BSD sockets and `WINHTTP`/`WININET` onto Android TLS for LAN, direct-IP, and non-Steam WSE2 community servers (`steam_api64` stays stubbed; decided with the user, 2026-11-22). |
 
 ## Runtime model
 
@@ -73,8 +73,10 @@ there are no CRT DLLs to replace:
 | **R6 Audio, input, touch** | 54 `fmodex64` exports shimmed onto P6 `WseAudioMixer` + SDL3 audio (`lua5164` already translated in R4); DInput/XInput from SDL; Vulkan touch overlay inside `Present()` with per-scene context switching (`ShowCursor` + PDB `g_gameScreen`), soft keyboard `WM_CHAR`, and gamepad auto-hide. |
 | **R7 WSL x86-64 bring-up & save oracle** | Whole exe translated for x86-64 running in **WSL Ubuntu** with our shims only (Vulkan via WSLg or Lavapipe frame-dump + scripted input): main menu, campaign map, scene, battle. Savegame oracle: retail Windows saves load, and our saves load in retail Windows Warband. |
 | **R8 Phone bring-up (v1 playable `Native`)** | On-phone translation proven against OOM stalls (the batch memory fix itself lands in the next native update, before R5; cold `-O1` test) plus PC-zip import; permanent `filesDir/wse2/user/` writable layer + Launcher Save Manager (`docs/PLATFORM_PLAN.md` "P14"); `Native` playable end-to-end on the reference phone (OPPO Reno 11, 12 GB, Mali-G68/PanVK + System Vulkan) hitting 30 FPS sustained for 30+ min in 100-troop battles (~720p / 85% scale) and 60 FPS in menus/map. |
-| **R9 Performance, hardening & PC-parity mods** | Phone profiling (big-core CPU tuning benchmarked against `portable_android_target()`, TSO relaxation on thread-local memory, cross-batch direct calls); crash reports listing missing targets/imports; `Native`, `Phantasy Calradia`, and `FiveDynastiesAndTenKingdoms` played end-to-end at PC mod parity (Module System, Lua, custom `.fxo` shaders, large texture packs). |
-| **R10 WSE2 updates & player distribution** | Automatic pruning of stale `.so` caches on exe/translator change; clear errors on missing PDB or new unshimmed WSE2 imports; GitHub Releases APK signed with a private release keystore (never `debug.keystore`) + standalone prebuilt Windows/Linux PC prep CLI zip (no WSL/compiler required). |
+| **R9 Performance, hardening & PC-parity mods** | Compiler & GPU acceleration for 1,000+ troop battles: register-passing ARM64 ABI + cross-batch inlining/ThinLTO, on-device PGO (hot ~5% at `-O3` + big-core tuning, cold ~95% at `-O1`), selective TSO relaxation & 128-bit SSE→NEON vectorization, indirect/instanced draw batching in D3D9→Vulkan; PDB-symbolized crash reports; `Native`, `Phantasy Calradia`, and `FiveDynastiesAndTenKingdoms` played end-to-end at PC mod parity. |
+| **R10 WSE2 updates & player distribution** | Automatic pruning of stale `.so` caches on exe/translator change; plain missing-PDB / unshimmed-import diagnostics; GitHub Releases APK signed with a private release keystore (never `debug.keystore`; no Google Play) + standalone prebuilt Windows/Linux PC prep CLI zip (no WSL/compiler required). |
+| **R11 Full PC visuals, modern mobile graphics & high refresh rate** | Full PC D3D9 parity (real-time shadow maps `R16F`/`R32F`, HDR tone-mapping + auto-exposure `A16B16G16R16F`, Depth of Field, water reflections); Vulkan spatial upscaling/sharpening (FSR 1.0 / CAS) and post-process AA (FXAA/SMAA); 90 Hz / 120 Hz sustained gameplay on flagship GPUs; Android HDR10 / Wide-Color swapchain output. |
+| **R12 Native multiplayer (LAN, direct-IP & WSE2 servers)** | Real `WS2_32` POSIX/BSD non-blocking UDP/TCP sockets and Android TLS `WINHTTP`/`WININET` for Wi-Fi LAN, direct-IP hosts, and non-Steam WSE2 community servers (`steam_api64` remains stubbed). |
 
 ## R0 implementation (2026-11-18)
 
@@ -740,7 +742,8 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
   30+ minutes** in 100-troop battles at ~720p / 85% render scale, and **60 FPS** in menus and on the
   campaign map.
 - **Flagship GPU tier (Snapdragon 8 Gen 2+ / Dimensity 9000+ class):** playable **1,000+ troop WSE2
-  battles** at ≥ 30 FPS sustained.
+  battles** at ≥ 30 FPS sustained (R9), and **90 Hz / 120 Hz sustained** in menus, campaign map, and
+  mid-size battles (R11; decided with the user, 2026-11-22).
 - **Every supported phone:** 1,000+ troop battles load and run with zero OOM and zero fixed-size GPU
   buffer/descriptor overflows; on the reference phone their frame rate is measured and recorded, not
   gated. Designing for 1,000+ agents from R5 onward avoids hard bottlenecks later:
@@ -785,7 +788,7 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
 - **Measuring.** Extend the FPS overlay into a per-frame CPU/GPU frame-time and thermal-tier view
   (`docs/PLATFORM_PLAN.md` "P14").
 
-## Post-R4 slice designs (R5–R10, decided with the user, 2026-11-21)
+## Post-R4 slice designs (R5–R12, decided with the user, 2026-11-21 / 2026-11-22)
 
 ### R5 — Graphics (D3D9 + D3DX → Vulkan)
 
@@ -803,7 +806,7 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     compiler (`wse_shader` + `SpirvShaderCache`). Decode DXT textures via `dds.h` with native BC
     when `textureCompressionBC` is present, or temporary RGBA8 + P10.7 mip-budget capping during R5a
     bring-up. Advertise HDR (`A16B16G16R16F`), DOF, and MSAA (`CheckDeviceMultiSampleType`, `666`
-    probes) as unavailable via `CheckDeviceFormat`/`CheckDeviceMultiSampleType` until post-v1.
+    probes) as unavailable via `CheckDeviceFormat`/`CheckDeviceMultiSampleType` until R11.
   - **R5b (Cached ETC2/ASTC transcoding + `fx_2_0` SM2/3 → SPIR-V):** Add one-time DXT1/3/5 →
     ETC2/ASTC transcoding cached on disk (replacing the temporary RGBA8 fallback on drivers without
     native BC) and add a `fx_2_0` (`.fxo`) parser + SM2/3 shader-bytecode → SPIR-V translator so
@@ -929,17 +932,31 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
 
 ### R9 — Performance, Hardening & Mods (PC Parity)
 
-- **Goal:** Tune hot paths from real phone profiles, harden crash reporting, and verify PC-parity
-  support for heavy WSE2 mods.
-- **Design:**
-  - **Profiling & runtime tuning:** Measure dispatcher overhead, TSO load/store barrier cost, and
-    big-core CPU scheduling (`cortex-a78`/`cortex-x1` vs `portable_android_target()` `generic`).
-    Link hot cross-batch direct calls, relax TSO only on proven thread-local accesses, and add an
-    optional on-phone "Optimize for this device" mode only if big-core tuning delivers **>10%**
-    measured battle FPS gain.
+- **Goal:** Push translated ARM64 CPU and Vulkan GPU throughput close to native for 1,000+ troop
+  battles, harden crash reporting, and verify PC-parity support for heavy WSE2 mods.
+- **Design (expanded with the user, 2026-11-22):**
+  - **Register-passing native ARM64 ABI & cross-batch inlining/ThinLTO:** Stop spilling Win64
+    argument and return registers (`rcx/rdx/r8/r9/rax/xmm0-3`) through `CpuState*` on every direct
+    call between translated functions: pass them directly in ARM64 hardware registers (`x0–x7`,
+    `v0–v7`) for direct calls, keep thin `CpuState*` thunks only for indirect dispatch / SEH entry,
+    and enable cross-batch direct linking + inlining (or ThinLTO) for tiny hot leaf helpers (vector,
+    matrix, string, and Bullet math).
+  - **On-device Profile-Guided Optimization (PGO):** Add a lightweight profiling run mode that
+    samples a 2-minute real battle/campaign session to rank the top ~5% hottest functions (Bullet
+    physics, agent AI, pathfinding, skinning, script VM), then re-translates only those hot
+    functions at `-O3` with big-core CPU scheduling (`cortex-a78` / `cortex-x3` / `cortex-x4`) while
+    keeping the cold ~95% at `-O1` (cuts total translation time while raising sustained battle FPS).
+  - **Selective TSO relaxation & 128-bit SSE→NEON vectorization:** Measure R3 `LDAPR`/`STLR` and
+    misaligned-barrier overhead on hot gameplay loops; relax ordering only on memory proven
+    single-thread-owned (validated under multi-threaded battle stress runs) and keep packed 128-bit
+    SSE arithmetic/shuffles lowered directly to ARM64 NEON vectors without unnecessary scalarization.
+  - **Indirect / instanced draw batching in D3D9→Vulkan:** Detect repeated mesh/material draws per
+    frame (flora, arrows, shields, identical troop equipment) in the D3D9→Vulkan shim and merge them
+    into instanced / indirect Vulkan draws to cut CPU draw-call overhead in 1,000+ troop battles.
   - **Crash & diagnostic reporting:** Any unhandled fault, unknown indirect target VA, or unshimmed
-    import writes a shareable crash report (guest VA, PDB symbol name if present, batch/module,
-    Android device + Vulkan driver info) shown in the launcher on next start.
+    import writes a shareable PDB-symbolized crash report (guest VA, symbol name if present,
+    batch/module, Android device + Vulkan driver info) viewable in the launcher and modder console
+    (`docs/PLATFORM_PLAN.md` "P15").
   - **PC-parity mod support:** Full parity with PC WSE2 mods — Module System scripts, WSE2 Lua,
     custom `.fxo` shaders (R5b), and multi-GB `.dds` texture packs kept within a 6 GB phone's RAM via
     on-demand textures, mip-cap, and cached ETC2/ASTC. If a mod attempts `LoadLibrary` on an extra
@@ -951,15 +968,20 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     (main menu, campaign map, battle, save/load, WSE2 Lua features, custom shaders) without OOM
     kills on 6 GB phones and within the v1 sustained FPS target on `Native` (with documented timings
     for heavy mods).
-  - **1,000+ troop stress benchmark:** a 1,000-troop WSE2 battle runs without GPU buffer/descriptor
-    overflows, audio dropouts, or crashes, with CPU/GPU frame-time breakdown recorded on a high-end
-    `arm64-v8a` phone (target ≥ 30 FPS sustained) and profiling gaps documented.
-  - Before/after phone frame-time logs are recorded in `STATUS.md` for every R9 optimization kept.
+  - **1,000+ troop stress benchmark:** a 1,000-troop WSE2 battle runs with zero GPU buffer/descriptor
+    overflows, zero audio dropouts, and zero crashes on every supported phone, sustaining **≥ 30 FPS**
+    on the flagship GPU tier (with full CPU/GPU frame-time breakdown recorded).
+  - Before/after phone frame-time logs are recorded in `STATUS.md` for every compiler and GPU
+    optimization kept (register ABI, PGO, TSO relaxation, NEON vectorization, draw batching).
 - **Risks:**
+  - Register-passing ABI interacting with Win64 SEH frame unwinding or indirect calls (mitigated by
+    keeping the Win64 guest stack frame layout untouched, using `CpuState*` entry thunks for
+    indirect targets, and verifying every SEH corpus case on CI x86 + arm64 before touching retail).
+  - TSO relaxation introducing rare ARM64 weak-memory races (mitigated by relaxing only proven
+    single-thread loops and running multi-hour battle stress tests with a toggle to revert to strict
+    TSO).
   - Large mod texture packs exhausting storage or RAM during ETC2/ASTC transcoding (mitigated by
     streaming transcode with bounded disk cache and P10.7 mip cap).
-  - Mod-specific Lua or WSE2 edge cases invoking rarely used Win32/D3D9 paths (mitigated by crash
-    reports naming the exact VA/import).
 
 ### R10 — WSE2 Updates & Player Distribution
 
@@ -972,8 +994,10 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     automatically prune stale `.so`/`.key` batches from app storage so old caches do not consume
     gigabytes. If a user supplies an exe with a missing/mismatched PDB or a newer WSE2 build calls an
     unshimmed import, show a plain-language error naming the missing PDB or DLL!import.
-  - **Release signing & GitHub Releases:** Ship signed release APKs on GitHub Releases using a
-    separate private release keystore (never `android/debug.keystore`, `AGENTS.md` §3).
+  - **Release signing & GitHub Releases (no Google Play):** Ship signed release APKs on GitHub
+    Releases using a separate private release keystore (never `android/debug.keystore`, `AGENTS.md`
+    §3). Google Play Store distribution is explicitly out of scope (decided with the user,
+    2026-11-22).
   - **Standalone PC prep tool:** Package a prebuilt standalone Windows + Linux PC preparation CLI zip
     alongside each GitHub Release APK so players who want fast PC translation can run it directly
     without installing WSL, clang, CMake, or LLVM.
@@ -981,27 +1005,88 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
 - **Done when:**
   - Switching between two WSE2 builds or upgrading the APK cleanly prunes stale batches and
     retranslates only what changed.
-  - A fresh user on a non-developer Windows PC and an Android 10+ phone at the device floor can install the
-    release APK from GitHub Releases, optionally run the standalone PC prep zip (no WSL), and play
+  - A fresh user on a non-developer Windows PC and an Android 10+ phone at the device floor can install
+    the release APK from GitHub Releases, optionally run the standalone PC prep zip (no WSL), and play
     `Native` from start to battle.
 - **Risks:**
   - Future WSE2 releases adding new Windows/D3D9 imports (mitigated by clear import-name diagnostics
     and `translator_fingerprint()` keeping shim-only APK updates from forcing retranslation).
 
-## Parked for post-v1 (decided with the user, 2026-11-21)
+### R11 — Full PC Visual Parity, Modern Mobile Graphics & High Refresh Rate (decided with the user, 2026-11-22)
 
-Explicitly out of scope for R5–R10 / v1 so single-player ships cleanly:
-- **Multiplayer** (Steam, online server browser, and LAN/direct-IP over `WS2_32` BSD sockets) —
-  revisit direct-IP/LAN only after v1 ships.
-- **HDR (`A16B16G16R16F`), DOF, and MSAA** — advertised unavailable in R5; revisit once sustained
-  30 FPS in 100-troop battles is proven with thermal headroom to spare.
-- **Google Play Store and F-Droid distribution** — revisit after GitHub Releases v1 is stable.
-- **Weaker / older phones** (<6 GB RAM or pre-ARMv8.2-A CPUs lacking LSE/RCpc) — out of scope.
+- **Goal:** Close the remaining D3D9 visual gaps from R5a and add modern mobile-native graphics
+  features so Warband looks as sharp or sharper than PC while holding high frame rates on flagship
+  phones.
+- **Design:**
+  - **Full PC D3D9 visual parity:** Enable real-time shadow maps (`R16F`/`R32F` depth/shadow render
+    targets with PCF filtering), HDR post-processing and auto-exposure (`A16B16G16R16F` render
+    targets + `postFX.fxo`), Depth of Field, and planar water reflections (advertising them via
+    `CheckDeviceFormat` when enabled in Settings).
+  - **Modern mobile upscaling & post-process AA:** Add an optional Vulkan-native spatial upscaler +
+    sharpening pass (FSR 1.0 / CAS) so 75–85% render scale stays crisp at native 1080p/1440p, plus
+    lightweight post-process anti-aliasing (FXAA / SMAA) as a tile-GPU-friendly alternative to heavy
+    MSAA.
+  - **High-refresh-rate gameplay (90 Hz / 120 Hz):** Tune frame pacing (`ANativeWindow_setFrameRate*`,
+    `FramePacer`, mailbox/FIFO present modes) to sustain 90 Hz / 120 Hz on flagship GPUs in menus,
+    campaign map, and mid-size battles.
+  - **Android HDR10 / Wide-Color output:** When the display supports `VK_COLOR_SPACE_HDR10_ST2084_EXT`
+    (or `BT709`/DCI-P3 wide color) and HDR postFX is enabled, present directly to an HDR10 Vulkan
+    swapchain with proper PQ tone-mapping.
+- **Depends on:** R5b/R5c, R8, R9.
+- **Done when:**
+  - On-device verification shows working shadow maps, HDR auto-exposure, DOF, water reflections,
+    FSR 1.0/CAS upscaling, and FXAA/SMAA with toggles in Settings and the live in-game drawer (`P15`).
+  - Flagship GPU tier sustains **90–120 FPS** in menus/campaign map and mid-size battles; HDR10
+    output verifies on an HDR-capable display without clipping or black-crush.
+- **Risks:**
+  - Multiple offscreen render targets (`A16B16G16R16F`, shadow maps, water reflection pass) hurting
+    tile-GPU bandwidth on mid-range Mali-G68 (mitigated by making every R11 pass independently
+    toggleable with conservative presets for the mid-range tier).
+  - `AHardwareBuffer` HDR10 dataspace plumbing across PanVK/Turnip custom ICDs (mitigated by
+    gating HDR10 output on runtime swapchain/dataspace capability probes, falling back cleanly to
+    SDR).
+
+### R12 — Native Multiplayer: LAN, Direct-IP & WSE2 Community Servers (decided with the user, 2026-11-22)
+
+- **Goal:** Bring Warband & WSE2 multiplayer to Android over Wi-Fi LAN, direct-IP connections, and
+  non-Steam WSE2 community servers while remaining 100% BYOA and clean-room.
+- **Design:**
+  - **Real `WS2_32` over POSIX/BSD sockets:** Replace the R4 offline `shim_net.h` stubs with real
+    non-blocking UDP/TCP BSD sockets (`WSAStartup`, `socket`, `bind`, `connect`, `sendto`, `recvfrom`,
+    `select`/`WSAPoll`, `ioctlsocket`, `setsockopt`, `getaddrinfo`, proper `WSAGetLastError`
+    mapping) supporting Warband's UDP game protocol and LAN broadcast discovery.
+  - **Real `WINHTTP` / `WININET` over Android TLS:** Route WSE2 server-list / master-server HTTP(S)
+    queries through Android's native TLS stack (or JNI `HttpURLConnection`) so non-Steam WSE2
+    community server lists populate cleanly.
+  - **Clean-room boundary:** `steam_api64` remains stubbed; no Steam DRM circumvention or fake
+    Steam tickets. Only standard Warband/WSE2 LAN, direct-IP, and non-Steam community servers are
+    supported.
+- **Depends on:** R8 (v1 single-player playable).
+- **Done when:**
+  - Host tests verify `WS2_32` UDP/TCP loopback, non-blocking `select`, and `WSAGetLastError`
+    semantics against Windows behavior.
+  - On the phone, two devices (or a phone + PC running retail WSE2) connect over Wi-Fi LAN and
+    direct-IP, join a multiplayer battle, and play to round end without packet-loss disconnects or
+    desyncs; non-Steam WSE2 server lists load cleanly.
+- **Risks:**
+  - Android Doze/background socket throttling or multicast/broadcast permission quirks on some Wi-Fi
+    routers (mitigated by holding `WifiManager.MulticastLock` only while on the LAN browser screen
+    and supporting direct-IP entry).
+  - Windows `SOCKET` handle values vs POSIX fd numbers if guest code mixes `WS2_32` and `KERNEL32`
+    calls (mitigated by isolating socket handles cleanly in `shim_net.h`).
+
+## Out of scope (decided with the user, 2026-11-21 / 2026-11-22)
+
+- **Google Play Store distribution:** GitHub Releases is the sole official distribution channel;
+  no Google Play Store submission or AAB/Play-policy compromises.
+- **Steam DRM / Steam-authenticated multiplayer:** `steam_api64` stays stubbed (`AGENTS.md` §1 BYOA
+  and no-DRM-bypass rule).
+- **Weaker / older phones:** devices under 6 GB RAM or pre-ARMv8.2-A CPUs lacking LSE/RCpc.
 
 ## What carries over
 
-- P-slices: the launcher (P10/P12/P13/P14), SAF `Vfs`, the Vulkan RHI and GPU path (P4), shader
-  translation (P5), the audio mixer (P6), input and the touch overlay (P7/P11/P14), and the
+- P-slices: the launcher (P10/P12/P13/P14/P15), SAF `Vfs`, the Vulkan RHI and GPU path (P4), shader
+  translation (P5), the audio mixer (P6), input and the touch overlay (P7/P11/P14/P15), and the
   performance hub (P8/P10) all become shim backends. P11.1 (UI aspect modes for our own UI
   renderer) matters less, because the retail renderer handles widescreen itself.
 - The reconstructed engine: savegame codecs (round-trip oracle), loaders and the VM (behaviour
