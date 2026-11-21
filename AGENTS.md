@@ -82,7 +82,7 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
   - Retail `.exe`, `.pdb`, or game asset files.
   - PanVK `.so` binaries or local NDK/SDK artifacts.
   - Uncommitted PanVK work in `runtime/android/` unless explicitly requested by the user.
-  - Tokens, credentials, or scratch dumps outside `repo/`.
+  - Tokens, credentials, or scratch dumps outside `repo/`. (The one exception is `android/debug.keystore`, a debug-only key with the standard `android` passwords, committed on 2026-11-21 so every CI APK has the same signature and installs over the last one, keeping app data such as the R4 translation cache. Never use it to sign a release, and never replace it, because a new key forces users to uninstall.)
 - Do not merge a pull request while any `Engine CI` job is failing; fix the job or the code first.
 - Always inspect `git diff --cached --name-only` and `git status --short` before committing.
 - Preserve legacy static-recompilation CPU/ABI docs (`README.md` historical section, `analysis/*`, `proof/*`, `runtime/README.md`) as historical reference unless explicitly instructed otherwise.

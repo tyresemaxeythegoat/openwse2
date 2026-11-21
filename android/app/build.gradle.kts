@@ -203,9 +203,23 @@ android {
         }
     }
 
+    // One debug key for every build (android/debug.keystore, the standard debug passwords), so a
+    // CI APK installs over the previous one and keeps the app's data (the R4 translation cache).
+    // Without it each CI runner signs with a new throwaway key and an update needs an uninstall.
+    // Debug-only: never sign a release with it.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
         release {
             isMinifyEnabled = false
