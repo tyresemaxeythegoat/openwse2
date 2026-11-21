@@ -568,6 +568,11 @@ inline void reset_module_world_state(WseWorldState& world) {
             return load_item_modifiers(vfs, p, bundle.item_modifiers);
         });
     if (!err.ok) return err;
+    for (std::size_t i = 0;
+         i < bundle.item_modifiers.size() && i < ctx.world.item_modifiers.size(); ++i) {
+        ctx.world.item_modifiers[i].price_multiplier = bundle.item_modifiers[i].price_multiplier;
+        ctx.world.item_modifiers[i].rarity_multiplier = bundle.item_modifiers[i].rarity_multiplier;
+    }
 
     err = detail::load_data_step(
         vfs, module_dir, options.root_data_dir, "flora_kinds.txt", bundle,

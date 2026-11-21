@@ -104,7 +104,7 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `wse_dict_test.cpp` | 3 |
 | `wse_array_test.cpp` | 2 |
 | `wse_world_test.cpp` | 5 |
-| `block_vm_test.cpp` | 22 |
+| `block_vm_test.cpp` | 23 |
 | `native_world_test.cpp` | 7 |
 | `native_m5_test.cpp` | 5 |
 | `wse_m6_test.cpp` | 7 |
@@ -131,7 +131,7 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 
 ## 5. Next concrete tasks (ordered)
 
-1. **Remaining Phase 2 work (`ROADMAP.md` §Phase 2):** Phase 2A whole-savegame framing & `[802..1174]` versioned section codecs (`wse/game/savegame.h`, `wse/io/binary_stream.h`), Phase 2C `mbSimpleTriggerManager::execute` early-out + `jump_to_menu`/`consume_campaign_queued_window` lifecycle (`wse/vm/block_vm.h`), Phase 2E live `party`/`agent`/`mission_object`/`player` containers and lifetimes (`wse/game/world_state.h`), Phase 2F Lua 5.1 (`WSELuaManager` + stock Lua 5.1.5), Phase 2G shared `RglString` (`wse/core/rgl_string.h`) + `.brf`/`.dds` decoders (`wse/asset/{brf,dds}.h`), and Phase 2H headless `Native` execution are complete on host. Remaining Phase 2 core items are the broader `2D` WSE/engine-backed subfamilies and remaining standalone module format coverage under `2A`.
+1. **Remaining Phase 2 work (`ROADMAP.md` §Phase 2):** All `440/440` WSE extended opcodes (`2D`), all `1,053/1,053` live native opcodes (`2B`), Phase 2A module/scene/data loaders & `[802..1174]` savegame codecs (`wse/game/savegame.h`, `wse/io/binary_stream.h`), Phase 2C `mbSimpleTriggerManager::execute` early-out + `jump_to_menu`/`consume_campaign_queued_window` lifecycle (`wse/vm/block_vm.h`), Phase 2E live `party`/`agent`/`mission_object`/`player` containers and lifetimes (`wse/game/world_state.h`), Phase 2F Lua 5.1 (`WSELuaManager` + stock Lua 5.1.5), Phase 2G shared `RglString` (`wse/core/rgl_string.h`) + `.brf`/`.dds` decoders (`wse/asset/{brf,dds}.h`), and Phase 2H headless `Native` execution are complete on host. On 2026-11-21 the 12-handler Milestone 3 campaign, inventory, equipment, and XP approximation family (`1064`, `1080`, `1100`, `1510`–`1513`, `1533`, `1670`, `1673`–`1675`) was reconstructed against v1.1.5.6 (`engine/README.md`), leaving only `agent_deliver_damage_to_agent` (`1722`) as a simplified placeholder in `engine/README.md`.
 
 Platform track, in parallel (`docs/PLATFORM_PLAN.md`):
 

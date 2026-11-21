@@ -2551,6 +2551,307 @@ void test_native_campaign_ops() {
            "M3 campaign opcodes produce exact verified state and outputs");
 }
 
+// Reconstructed v1.1.5.6 campaign / inventory / equipment / XP helpers:
+// 1080 set_party_creation_random_limits, 1675 party_add_template (0x1400de710/0x1400de9c0),
+// 1510 troop_ensure_inventory_space (0x1400e2420), 1511 troop_sort_inventory (0x140247900),
+// 1512/1513 troop_add_merchandise* (0x1400e2520), 1533 troop_equip_items (0x140246a80),
+// 1064 add_xp_as_reward (0x1400e6380), 1670/1673/1674 party XP & upgrades (0x1400e05f0/0x1400df0e0).
+void test_v1156_campaign_inventory_and_xp_helpers() {
+    using namespace wse::vm;
+    using namespace wse::game;
+
+    // 1. set_party_creation_random_limits (1080) + party_add_template (1675)
+    {
+        VmContext ctx;
+        ctx.failOnUnimplemented = true;
+        auto& w = ctx.world;
+        w.has_game = true;
+        w.troops.resize(3);
+        w.parties.resize(3);
+        w.party_templates.resize(1);
+        w.party_templates[0].stacks[0] = {1, 10, 20, 0U};  // regular [10, 20]
+        w.party_templates[0].stacks[1] = {2, 2, 4, 1U};    // prisoner [2, 4]
+
+        StatementBlock b;
+        b.statements = {
+            make_stmt(1080U, {0, 0}),      // min=0, max=0 -> min_troops
+            make_stmt(1675U, {0, 0, 0}),   // party 0
+            make_stmt(1080U, {100, 100}),  // min=100, max=100 -> max_troops
+            make_stmt(1675U, {1, 0, 0}),   // party 1
+            make_stmt(1080U, {25, 25}),    // delta=10*0.25=2.5 (half-down -> 2 -> 12)
+            make_stmt(1675U, {2, 0, 1}),   // reverse_prisoner=1
+        };
+        expect(execute_statement_block(b, ctx) && ctx.errorCount == 0,
+               "1080+1675 execute cleanly");
+        expect(party_count_troops(w.parties[0], 1, false) == 10 &&
+                   party_count_troops(w.parties[0], 2, true) == 2,
+               "1080(0,0) + 1675 spawns min_troops");
+        expect(party_count_troops(w.parties[1], 1, false) == 20 &&
+                   party_count_troops(w.parties[1], 2, true) == 4,
+               "1080(100,100) + 1675 spawns max_troops");
+        expect(party_count_troops(w.parties[2], 1, true) == 12 &&
+                   party_count_troops(w.parties[2], 2, false) == 2,
+               "1080(25,25) + 1675 applies retail half-down rounding and reverse_prisoner");
+    }
+
+    // 2. troop_ensure_inventory_space (1510) + troop_sort_inventory (1511)
+    {
+        VmContext ctx;
+        ctx.failOnUnimplemented = true;
+        ctx.randSeed = 12345;
+        auto& w = ctx.world;
+        w.has_game = true;
+        w.troops.resize(1);
+        w.items.resize(4);
+        w.items[0].value = 100;
+        w.items[0].properties = (1ULL << 12U);  // itp_unique
+        w.items[1].value = 500;
+        w.items[2].value = 100;
+        w.items[3].value = 300;
+        w.item_modifiers[20].price_multiplier = 10.0f;  // mod 20 -> 100 * 10 = 1000
+        w.item_modifiers[1].price_multiplier = 0.5f;
+
+        // Fill all 30 cargo slots: 2 unique items (0) + 28 normal items (1, 2).
+        auto& tr = w.troops[0];
+        tr.inventory[kNumTroopEquipmentSlots + 0].item_no = 0;  // unique
+        tr.inventory[kNumTroopEquipmentSlots + 1].item_no = 0;  // unique
+        for (std::int32_t i = 2; i < 30; ++i) {
+            tr.inventory[static_cast<std::size_t>(kNumTroopEquipmentSlots + i)].item_no =
+                (i % 2 == 0) ? 1 : 2;
+        }
+
+        StatementBlock ensure;
+        ensure.statements = {make_stmt(1510U, {0, 29})};  // asks for 29 free out of 30
+        expect(execute_statement_block(ensure, ctx), "1510 runs cleanly");
+        expect(troop_count_items(w, 0, 0, false) == 2,
+               "1510 never discards itp_unique items");
+        expect(troop_free_inventory_capacity(w, 0) <= 28 &&
+                   troop_free_inventory_capacity(w, 0) >= 20,
+               "1510 frees non-unique items and stops at 200 attempts");
+        // compactSort packs valid items at the front descending by item_no.
+        expect(!tr.inventory[kNumTroopEquipmentSlots].is_empty() &&
+                   tr.inventory[kNumTroopEquipmentSlots].item_no >=
+                       tr.inventory[kNumTroopEquipmentSlots + 1].item_no,
+               "1510 finishes with compactSort");
+
+        // Sort inventory with item modifier multiplier: item 2 (mod 20 -> 1000) > item 1 (500) > item 3 (300) > item 2 plain (100).
+        tr.clear_inventory();
+        tr.inventory[kNumTroopEquipmentSlots + 0] = {2, 0, 0, 0};
+        tr.inventory[kNumTroopEquipmentSlots + 2] = {1, 0, 0, 0};
+        tr.inventory[kNumTroopEquipmentSlots + 4] = {2, 20, 0, 0};
+        tr.inventory[kNumTroopEquipmentSlots + 6] = {3, 0, 0, 0};
+        StatementBlock sort_b;
+        sort_b.statements = {make_stmt(1511U, {0})};
+        expect(execute_statement_block(sort_b, ctx), "1511 runs cleanly");
+        expect(tr.inventory[kNumTroopEquipmentSlots + 0].item_no == 2 &&
+                   tr.inventory[kNumTroopEquipmentSlots + 0].modifier == 20 &&
+                   tr.inventory[kNumTroopEquipmentSlots + 1].item_no == 1 &&
+                   tr.inventory[kNumTroopEquipmentSlots + 2].item_no == 3 &&
+                   tr.inventory[kNumTroopEquipmentSlots + 3].item_no == 2 &&
+                   tr.inventory[kNumTroopEquipmentSlots + 3].modifier == 0 &&
+                   tr.inventory[kNumTroopEquipmentSlots + 4].is_empty(),
+               "1511 sorts cargo by modifier-adjusted value descending and packs empty slots");
+    }
+
+    // 3. troop_add_merchandise (1512) + troop_add_merchandise_with_faction (1513)
+    {
+        VmContext ctx;
+        ctx.failOnUnimplemented = true;
+        ctx.randSeed = 42;
+        auto& w = ctx.world;
+        w.has_game = true;
+        w.troops.resize(2);
+        w.factions.resize(2);
+        w.items.resize(5);
+        constexpr std::uint64_t kMerch = (1ULL << 16U);
+        constexpr std::uint64_t kUnique = (1ULL << 12U);
+        // item 0: non-merchandise sword (excluded)
+        w.items[0].properties = 2ULL;
+        w.items[0].abundance = 100;
+        // item 1: unique merchandise sword (excluded)
+        w.items[1].properties = 2ULL | kMerch | kUnique;
+        w.items[1].abundance = 100;
+        // item 2: faction-0 only merchandise sword
+        w.items[2].properties = 2ULL | kMerch;
+        w.items[2].factions = {0};
+        w.items[2].abundance = 100;
+        w.items[2].modifiers = (1ULL << 5U);
+        // item 3: faction-1 only merchandise sword, zero abundance (weight 0)
+        w.items[3].properties = 2ULL | kMerch;
+        w.items[3].factions = {1};
+        w.items[3].abundance = 0;
+        // item 4: all-faction merchandise sword (empty factions)
+        w.items[4].properties = 2ULL | kMerch;
+        w.items[4].abundance = 100;
+
+        StatementBlock m;
+        m.statements = {
+            make_stmt(1513U, {0, 1, 2, 6}),   // faction 1: only item 4 has positive weight (item 2 wrong faction, 0/1 excluded)
+            make_stmt(1513U, {1, 99, 2, 6}),  // invalid faction -> rejected
+            make_stmt(1512U, {1, 2, 4}),      // any faction: items 2 and 4 eligible
+        };
+        expect(execute_statement_block(m, ctx), "1512/1513 execute cleanly");
+        expect(troop_count_items(w, 0, 4, false) == 6 &&
+                   troop_count_items(w, 0, 0, false) == 0 &&
+                   troop_count_items(w, 0, 1, false) == 0 &&
+                   troop_count_items(w, 0, 2, false) == 0,
+               "1513 filters by itp_merchandise, !itp_unique, faction, and abundance weight");
+        const std::int32_t t1_valid =
+            troop_count_items(w, 1, 2, false) + troop_count_items(w, 1, 4, false);
+        expect(t1_valid == 4 && troop_count_items(w, 1, 0, false) == 0 &&
+                   troop_count_items(w, 1, 1, false) == 0,
+               "1512 ignores faction filter while rejecting invalid faction in 1513");
+    }
+
+    // 4. troop_equip_items (1533)
+    {
+        VmContext ctx;
+        ctx.failOnUnimplemented = true;
+        auto& w = ctx.world;
+        w.has_game = true;
+        w.troops.resize(2);
+        // Hero troop 0: STR 10, PowerDraw 4, Riding 3, Shield 2
+        w.troops[0].flags = 0x10ULL;  // tf_hero
+        w.troops[0].attributes = {10, 10, 10, 10};
+        w.troops[0].set_skill_raw(kSkillRiding, 3);
+        w.troops[0].set_skill_raw(kSkillShield, 2);
+        w.troops[0].set_skill_raw(kSkillPowerDraw, 4);
+        // Inactive troop 1: tf_inactive (0x20) must be skipped
+        w.troops[1].flags = 0x20ULL;
+
+        w.items.resize(9);
+        w.items[0].properties = 12ULL;  // head armor (cheap, already equipped)
+        w.items[0].value = 50;
+        w.items[1].properties = 12ULL;  // head armor (better, STR 10)
+        w.items[1].value = 400;
+        w.items[1].difficulty = 10;
+        w.items[2].properties = 12ULL;  // head armor (too heavy: STR 12)
+        w.items[2].value = 900;
+        w.items[2].difficulty = 12;
+        w.items[3].properties = 8ULL;   // bow (PowerDraw 4)
+        w.items[3].value = 300;
+        w.items[3].difficulty = 4;
+        w.items[4].properties = 5ULL;   // arrows
+        w.items[4].value = 60;
+        w.items[5].properties = 2ULL;   // 1h sword (STR 10, not two-handed -> triggers shield)
+        w.items[5].value = 250;
+        w.items[5].difficulty = 10;
+        w.items[6].properties = 7ULL;   // shield (Shield 2)
+        w.items[6].value = 180;
+        w.items[6].difficulty = 2;
+        w.items[7].properties = 1ULL;   // horse (Riding 4, but with mod 33 -> diff 3!)
+        w.items[7].value = 600;
+        w.items[7].difficulty = 4;
+        w.items[8].properties = 2ULL;   // sword with STR 10 + mod 19 (+2 => 12, unequippable!)
+        w.items[8].value = 999;
+        w.items[8].difficulty = 10;
+
+        auto& h = w.troops[0];
+        h.inventory[4] = {0, 0, 0, 0};  // old cheap helmet must return to cargo, not be deleted
+        h.inventory[kNumTroopEquipmentSlots + 0] = {1, 0, 0, 0};
+        h.inventory[kNumTroopEquipmentSlots + 1] = {2, 0, 0, 0};
+        h.inventory[kNumTroopEquipmentSlots + 2] = {3, 0, 0, 0};
+        h.inventory[kNumTroopEquipmentSlots + 3] = {4, 0, 0, 0};
+        h.inventory[kNumTroopEquipmentSlots + 4] = {5, 0, 0, 0};
+        h.inventory[kNumTroopEquipmentSlots + 5] = {6, 0, 0, 0};
+        h.inventory[kNumTroopEquipmentSlots + 6] = {7, 33, 0, 0};
+        h.inventory[kNumTroopEquipmentSlots + 7] = {8, 19, 0, 0};
+        w.troops[1].inventory[kNumTroopEquipmentSlots + 0] = {0, 0, 0, 0};
+
+        StatementBlock eq;
+        eq.statements = {make_stmt(1533U, {0}), make_stmt(1533U, {1})};
+        expect(execute_statement_block(eq, ctx), "1533 executes cleanly");
+        expect(h.inventory[4].item_no == 1,
+               "1533 picks best helmet hero meets STR for (skips STR 12)");
+        expect(troop_count_items(w, 0, 0, false) == 1,
+               "1533 unequips old helmet into cargo instead of destroying it");
+        expect(h.inventory[8].item_no == 7 && h.inventory[8].modifier == 33,
+               "1533 applies horse mod-33 difficulty discount (-1)");
+        expect(h.inventory[0].item_no == 3 && h.inventory[1].item_no == 4 &&
+                   h.inventory[2].item_no == 5 && h.inventory[3].item_no == 6,
+               "1533 equips bow + arrows + 1h sword (skipping mod-19 +2 diff) + shield");
+        expect(w.troops[1].inventory[4].is_empty() &&
+                   w.troops[1].inventory[kNumTroopEquipmentSlots + 0].item_no == 0,
+               "1533 skips tf_inactive troops");
+    }
+
+    // 5. XP & upgrade helpers (1064, 1670, 1673, 1674) + game_get_upgrade_xp (0x2b)
+    {
+        VmContext ctx;
+        ctx.failOnUnimplemented = true;
+        auto& w = ctx.world;
+        w.has_game = true;
+        w.troops.resize(6);
+        w.troops[0].flags = 0x10ULL;  // player hero
+        w.troops[1].flags = 0x10ULL;  // companion hero
+        w.troops[2].flags = 0x10ULL;  // prisoner hero (must NOT receive 1064 reward)
+        w.troops[3].upgrade_troop_nos = {4, 5};
+        w.troops[4].upgrade_troop_nos = {0, 0};  // retail 0 = no upgrade
+        w.troops[5].upgrade_troop_nos = {0, 0};
+
+        w.parties.resize(2);
+        w.main_party_no = 0;
+        w.player_troop_no = 0;
+        w.parties[0].stacks = {
+            {0, 1, 0, 0U},
+            {1, 1, 0, 0U},
+            {2, 1, 0, 1U},  // prisoner hero
+        };
+
+        StatementBlock rew;
+        rew.statements = {make_stmt(1064U, {200})};
+        expect(execute_statement_block(rew, ctx) && w.troops[0].xp == 200 &&
+                   w.troops[1].xp == 200 && w.troops[2].xp == 0,
+               "1064 add_xp_as_reward awards player and companion heroes, stopping at prisoners");
+
+        // game_get_upgrade_xp (mapped slot 0x2b) overrides threshold to 50 XP.
+        ScriptManager scripts;
+        scripts.scripts.resize(1);
+        scripts.scripts[0].block.statements = {make_stmt(2075U, {50})};
+        scripts.mappedScripts[kMappedGetUpgradeXp] = 0;
+        ctx.scripts = &scripts;
+
+        w.parties[1].stacks = {{3, 4, 3, 0U}};  // 4 troops, 3 wounded (1 unwounded)
+        StatementBlock stack_xp;
+        stack_xp.statements = {make_stmt(1670U, {1, 0, 120})};  // 120 / 50 = 2 upgradeable
+        expect(execute_statement_block(stack_xp, ctx) &&
+                   w.parties[1].stacks[0].num_upgradeable == 2,
+               "1670 uses game_get_upgrade_xp mapped script threshold");
+
+        // Upgrade 2 troops via 1673 (path 2 -> troop 5): 2 - 1 unwounded = 1 wounded carried over!
+        w.parties[1].stacks = {{3, 4, 3, 0U}};
+        ctx.randSeed = 777;
+        StatementBlock upg_b;
+        upg_b.statements = {make_stmt(1673U, {1, 100, 2})};  // ~100 * [0.75,1.25) -> 1 or 2 upg
+        expect(execute_statement_block(upg_b, ctx), "1673 executes cleanly");
+        const std::int32_t upg_cnt = party_count_troops(w.parties[1], 5, false);
+        expect(upg_cnt >= 1 && upg_cnt <= 2,
+               "1673 path 2 upgrades along upgrade_troop_nos[1]");
+        // Verify wounded carry-over invariant: total wounded across party remains 3.
+        std::int32_t total_wounded = 0;
+        for (const auto& s : w.parties[1].stacks) {
+            total_wounded += s.num_wounded_troops;
+        }
+        expect(total_wounded == 3,
+               "1673 preserves wounded count across upgraded and remaining stacks");
+
+        // Path 0 (random) selects both path 0 and path 1 across seeds.
+        bool saw_path0 = false;
+        bool saw_path1 = false;
+        for (std::int32_t seed = 1; seed <= 32 && !(saw_path0 && saw_path1); ++seed) {
+            ctx.randSeed = seed;
+            w.parties[1].stacks = {{3, 2, 0, 0U}};
+            StatementBlock rand_upg;
+            rand_upg.statements = {make_stmt(1673U, {1, 500, 0})};
+            (void)execute_statement_block(rand_upg, ctx);
+            if (party_count_troops(w.parties[1], 4, false) > 0) saw_path0 = true;
+            if (party_count_troops(w.parties[1], 5, false) > 0) saw_path1 = true;
+        }
+        expect(saw_path0 && saw_path1,
+               "1673 with path 0 randomly selects both upgrade paths across seeds");
+    }
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -2578,6 +2879,7 @@ int run_block_vm_suite(const char* fixture_path) {
     test_script_mutation_safety();
     test_locals_zeroing_default();
     test_native_campaign_ops();
+    test_v1156_campaign_inventory_and_xp_helpers();
     test_party_limits_and_skill_modifier();
     test_native_campaign_safety_deviations();
 

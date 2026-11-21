@@ -1213,6 +1213,7 @@ inline bool execute_mapped_script(game::ScriptManager& manager,
 inline constexpr std::size_t kMappedGetPartyCompanionLimit = 0x15U;
 inline constexpr std::size_t kMappedGetPartyPrisonerLimit = 0x16U;
 inline constexpr std::size_t kMappedGetSkillModifierForTroop = 0x1bU;
+inline constexpr std::size_t kMappedGetUpgradeXp = 0x2bU;
 
 // `mbGame::getTroopSkill(troop, skill, true)` (`0x1400dcd50`): the troop's level capped by the
 // skill's maximum, plus whatever `game_get_skill_modifier_for_troop` (troop, skill) leaves in
@@ -1277,6 +1278,30 @@ inline constexpr std::size_t kMappedGetSkillModifierForTroop = 0x1bU;
     const std::int32_t leader = game::party_leader_troop(world, party);
     return game::party_max_prisoners(world, party,
                                      leader >= 0 ? troop_skill_level(ctx, leader, 2) : -1);
+}
+
+// `mbGame::getUpgradeExperience` (`0x1400e05f0`): returns 1000 for negative troop_no; otherwise
+// pre-seeds `trigger_result = 1000` and invokes mapped script `game_get_upgrade_xp` (slot 0x2b,
+// param0 = troop_no) when present, falling back to `troop_upgrade_xp_threshold`.
+[[nodiscard]] inline std::int32_t troop_upgrade_xp(VmContext& ctx, std::int32_t troop_no) {
+    game::WseWorldState& world = ctx.world;
+    if (troop_no < 0) {
+        return 1000;
+    }
+    if (ctx.scripts != nullptr) {
+        world.trigger_result = 1000;
+        const std::array<std::int64_t, 2> params{troop_no, 0};
+        if (execute_mapped_script(*ctx.scripts, kMappedGetUpgradeXp, ctx, params)) {
+            return static_cast<std::int32_t>(std::clamp<std::int64_t>(
+                world.trigger_result, std::numeric_limits<std::int32_t>::min(),
+                std::numeric_limits<std::int32_t>::max()));
+        }
+    }
+    if (!world.is_valid_troop(troop_no)) {
+        return 1000;
+    }
+    return game::troop_upgrade_xp_threshold(
+        world.troops[static_cast<std::size_t>(troop_no)]);
 }
 
 // Marks a trigger (or trigger-manager) execution in progress. Lua callbacks

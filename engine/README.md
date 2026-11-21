@@ -1150,14 +1150,51 @@ These are counted as implemented because they consume their operands and keep sc
 they are **not** verified reconstructions of the cited handlers. Treat their results as
 placeholders until each is checked against the v1.1.5.6 disassembly:
 
-- **Simplified helpers in `world_campaign_helpers.h` (no VA evidence yet):** `party_add_template`
-  adds the midpoint of each stack's min/max instead of a random count and ignores
-  `set_party_creation_random_limits` (1080); `troop_add_merchandise` fills free slots round-robin
-  and ignores faction, abundance weighting, and item probability; `troop_equip_items`,
-  `troop_sort_inventory`, `troop_ensure_inventory_space`, and the XP/upgrade helpers use simple
-  local rules.
 - **Simplified combat:** `agent_deliver_damage_to_agent` (1722) applies weapon damage times the
   deliverer's damage modifier with no armor, skill, or hit-location model.
+- **Campaign, inventory, equipment, and XP helpers (fixed against v1.1.5.6):**
+  - `set_party_creation_random_limits` (1080, `0x1401cd794`), `party_add_template` (1675,
+    `0x1401d30ac` → `mbGame::addTemplateToParty` `0x1400de710` /
+    `getScaledNumTroopsForStackTemplate` `0x1400de9c0`), and `spawn_around_party` (1100) now
+    scale each stack count between `[min_troops, max_troops]` using
+    `world.party_creation_min_random`/`party_creation_max_random` and `rglRand(15817)/15817.0f`
+    with retail half-down rounding (`floor(d) + (frac > 0.5f ? 1 : 0)`).
+  - `troop_ensure_inventory_space` (1510, `0x1401d04a0` → `mbGame::ensureTroopInventorySpace`
+    `0x1400e2420`) clears randomly picked non-`itp_unique` (`0x1000`) cargo items for up to `200`
+    attempts until the requested free slots exist, then runs `mbTroopInventory::compactSort`
+    (`0x140245430`, packing non-empty cargo forward and sorting descending by `item_no`,
+    tie-breaking by `item_modifiers[mod].price_multiplier` descending).
+  - `troop_sort_inventory` (1511, `0x1401d04ca` → `mbTroop::sortInventoryByValue` `0x140247900`)
+    runs `compactSort` (`0x140245430`) followed by `std::stable_sort` on modifier-adjusted item
+    value descending (tie-break `item_no` ascending; safety deviation: invalid `item_no` yields
+    value `0` and sorts after valid items). `load_module` (`module_bundle.h`) now copies
+    `Data/item_modifiers.txt` (`0x140093f80`) price/rarity multipliers into `WseWorldState::item_modifiers`.
+  - `troop_add_merchandise` (1512, `0x1401d04f7`) and `troop_add_merchandise_with_faction`
+    (1513, `0x1401d052e`, validating faction) → `mbGame::addMerchandiseToTroop` (`0x1400e2520`):
+    filter by type, `!itp_unique` (`bit 12`), `itp_merchandise` (`bit 16`), and faction
+    eligibility (`faction_no < 0` or empty `item.factions` or `faction_no ∈ item.factions`);
+    draw `count` items weighted by `abundance × probability × 0.01f` into
+    `getFirstFreeInventorySlot` (`0x1402468d0`); roll an optional modifier from `item.modifiers`
+    weighted by `rarity_multiplier` and `merchandise_modifier_quality`; and finish with
+    `compactSort` (`0x140245430`).
+  - `troop_equip_items` (1533, `0x1401d0a0c` → `mbTroop::equipItems` `0x140246a80`,
+    `unequipItem` `0x140246980`, `unequipItems` `0x140246a00`, `canEquipItem` `0x140245c60`,
+    `canEquipItemInSlot` `0x140245d00`, `mbItemKind::getRequirement` `0x14010fdc0`,
+    `findSuitableItem` `0x140247480`, `equipItemSlot` `0x1402473d0`): skips `tf_inactive`
+    (`0x20`), unequips slots `0..9` into cargo instead of discarding old gear, enforces hero
+    attribute/skill + modifier difficulty requirements, respects `tf_guarantee_*` bits
+    `20..27`, and pairs firearms/bows/crossbows with matching ammo (`18`/`5`/`6`) and 1h
+    weapons with shields (`7`).
+  - `add_xp_as_reward` (1064, `0x1400e6380`), `party_add_xp_to_stack` (1670, `0x1401c2d30`),
+    `party_add_xp` (1674, `0x1400e64e0`), and `party_upgrade_with_xp` (1673, `0x1400df0e0`):
+    `vm::troop_upgrade_xp` (`block_vm.h`) runs mapped script `game_get_upgrade_xp` (`0x2b`,
+    `mbGame::getUpgradeExperience` `0x1400e05f0`, `trigger_result` pre-seeded to `1000`) before
+    falling back to `troop_upgrade_xp_threshold`; `1064` stops at the first prisoner stack;
+    `1673` randomly chooses upgrade path `0`/`1` when `upgrade_path == 0`, applies `[0.75, 1.25)`
+    per-stack XP jitter, and carries wounded troops `max(0, upg - unwounded)` into upgraded stacks.
+  - **Safety deviations:** invalid `item_no` / `troop_no` / `party_no` / `faction_no` inputs are
+    bounds-checked rather than indexing unchecked; `item_modified_value` saturates `int32`
+    instead of overflowing; `troop_add_xp` saturates `xp` at `INT32_MAX`.
 - **Checked against v1.1.5.6 and correct as written:** `store_num_free_stacks` (2154,
   `0x1401dd77a`) stores the constant `10` in retail too; `troop_is_mounted` (152, `0x1401c704b`)
   tests equipment slot 8 (`mbTroopEquipment[8].isValid`), not a troop flag; `entering_town` (36,
