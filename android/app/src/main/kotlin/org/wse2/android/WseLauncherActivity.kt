@@ -1,11 +1,15 @@
 package org.wse2.android
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.view.Display
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -71,7 +75,10 @@ class WseLauncherActivity : ComponentActivity() {
     // whatever the answer (denied, the run still goes on in the background, silently).
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { viewModel.runR4Startup() }
+    ) {
+        viewModel.runR4Startup()
+        askToSkipBatteryOptimization()
+    }
 
     private fun runR4Startup() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -80,6 +87,22 @@ class WseLauncherActivity : ComponentActivity() {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             viewModel.runR4Startup()
+            askToSkipBatteryOptimization()
+        }
+    }
+
+    // Battery optimization (and vendor "app freezers" that follow it) can still stop the run in the
+    // background; Android's own dialog lets the user exempt the app. Asked only while not exempt.
+    @SuppressLint("BatteryLife")
+    private fun askToSkipBatteryOptimization() {
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+            )
+        } catch (_: Throwable) {
+            // No such screen on this device: the run goes on without the exemption.
         }
     }
 

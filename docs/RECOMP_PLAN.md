@@ -473,7 +473,12 @@ startup on the phone:
 - **Cache.** Batches in `filesDir/recomp/r4/so`, keyed like `r4_run`'s by the image, the options and
   the translator id (the size and an FNV-1a hash of `libwse_r0.so`, so a new APK retranslates);
   an interrupted translation resumes. `progress.txt` holds the current image and its batches done.
-- **Translation.** All cores but one, `-O2` (as verified in WSL).
+- **Translation.** Every core (changed from all but one by the user, 2026-11-21; the thread count is
+  not in the cache key), `-O2` (as verified in WSL). The worker's threads inherit the highest
+  priority Android lets the app set, and the worker is bound with `BIND_IMPORTANT |
+  BIND_ABOVE_CLIENT`, so it gets the launcher's priority. While the run goes on, the launcher keeps
+  the screen on (any tab), so it stays the top app (the big cores); the first run asks to exempt the
+  app from battery optimization (Android's own dialog).
 - **In the background (decided with the user, 2026-11-21).** The run goes on when the user leaves
   the app, turns the screen off, or swipes the app from Recents. `R4ForegroundService` (a
   `specialUse` foreground service in the launcher's own process, which holds the binding to

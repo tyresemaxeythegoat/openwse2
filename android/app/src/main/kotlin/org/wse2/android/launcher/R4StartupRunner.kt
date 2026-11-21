@@ -137,7 +137,9 @@ class R4StartupRunner private constructor(private val app: Application) {
             putString(R4StartupService.KEY_COPY_DIR, copy)
             putString(R4StartupService.KEY_WORK_DIR, workDir.absolutePath)
             putString(R4StartupService.KEY_MODULE, MODULE)
-            putInt(R4StartupService.KEY_JOBS, (Runtime.getRuntime().availableProcessors() - 1).coerceAtLeast(1))
+            // Every core (the user's choice, 2026-11-21): the phone does nothing else meanwhile. The
+            // thread count is not part of the batch cache key.
+            putInt(R4StartupService.KEY_JOBS, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
             putLong(R4StartupService.KEY_FRAMES, FRAME_LIMIT)
         }
         val replies = Messenger(object : Handler(Looper.getMainLooper()) {
@@ -169,7 +171,10 @@ class R4StartupRunner private constructor(private val app: Application) {
             override fun onBindingDied(name: ComponentName?) = finish(null)
         }
         connection = conn
-        if (!app.bindService(Intent(app, R4StartupService::class.java), conn, Context.BIND_AUTO_CREATE)) {
+        // BIND_IMPORTANT | BIND_ABOVE_CLIENT: the worker gets the launcher's priority (top app while
+        // it is on screen, foreground service otherwise) and is the last of the two to be killed.
+        val flags = Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT or Context.BIND_ABOVE_CLIENT
+        if (!app.bindService(Intent(app, R4StartupService::class.java), conn, flags)) {
             finish("R4 startup run: cannot start the :recomp service.")
             return
         }

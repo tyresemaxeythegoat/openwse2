@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -87,6 +89,14 @@ fun LauncherApp(
 
     val context = LocalContext.current
     var activeDialog by remember { mutableStateOf<LauncherDialogState?>(null) }
+
+    // While the R4 run goes on, the screen stays on (on every tab): the launcher stays the top app,
+    // which gets the big cores; it still goes on in the background (R4ForegroundService).
+    val view = LocalView.current
+    DisposableEffect(r4State.running) {
+        view.keepScreenOn = r4State.running
+        onDispose { view.keepScreenOn = false }
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->

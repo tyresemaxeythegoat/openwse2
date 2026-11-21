@@ -28,8 +28,13 @@ class R4StartupService : Service() {
             }
             val replyTo = msg.replyTo ?: return
             val args = Bundle(msg.data)
-            // Translation takes minutes and the run never returns: keep it off the main thread.
-            Thread({ reply(replyTo, run(args)) }, "wse-r4-startup").start()
+            // Translation takes minutes and the run never returns: keep it off the main thread. The
+            // translation workers and guest threads are created from this thread and inherit its
+            // priority, so raise it as far as Android lets an app.
+            Thread({
+                raisePriority()
+                reply(replyTo, run(args))
+            }, "wse-r4-startup").start()
         }
     })
 
@@ -40,6 +45,17 @@ class R4StartupService : Service() {
         stopSelf()
         Process.killProcess(Process.myPid())
         return false
+    }
+
+    private fun raisePriority() {
+        for (p in intArrayOf(Process.THREAD_PRIORITY_URGENT_DISPLAY, Process.THREAD_PRIORITY_DISPLAY, Process.THREAD_PRIORITY_FOREGROUND)) {
+            try {
+                Process.setThreadPriority(p)
+                return
+            } catch (_: Throwable) {
+                // Not allowed at this level: try the next one.
+            }
+        }
     }
 
     private fun run(args: Bundle): Int {
