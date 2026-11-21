@@ -102,13 +102,27 @@ class R4StartupRunner private constructor(private val app: Application) {
     // The report to save as a file (Advanced > "Save the game test report"), during a run too:
     // the finished report, else what the running test has written so far under its status.
     // Null when there is no report yet.
+    // What the last run's zip import did, for the saved report (one line, replaced each run).
+    private fun importNote(text: String) {
+        try {
+            File(r4Dir, IMPORT_NOTE).writeText(text + "\n")
+        } catch (_: Throwable) {
+        }
+    }
+
     fun reportToSave(): String? {
         val earlier = try {
             File(r4Dir, PREVIOUS_REPORT).takeIf { it.isFile }?.readText()
         } catch (_: Throwable) {
             null
         }
-        val tail = if (earlier.isNullOrBlank()) "" else "\n\nThe attempt before this one:\n$earlier"
+        val imported = try {
+            File(r4Dir, IMPORT_NOTE).takeIf { it.isFile }?.readText()?.trim()
+        } catch (_: Throwable) {
+            null
+        }
+        val tail = (if (imported.isNullOrEmpty()) "" else "\n\nPC zip: $imported") +
+            (if (earlier.isNullOrBlank()) "" else "\n\nThe attempt before this one:\n$earlier")
         state.report?.let { return it + tail }
         val file = File(r4Dir, "report.txt")
         val text = try {
@@ -228,7 +242,8 @@ class R4StartupRunner private constructor(private val app: Application) {
             // imported first; failing to read it only means translating here as before.
             val imported = try {
                 importPrepared(treeUri)
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
+                importNote("Importing the zip prepared on a PC failed: ${t.message ?: t.javaClass.simpleName}")
                 0
             }
             val error = if (!useCopy || stopRequested) {
@@ -282,8 +297,14 @@ class R4StartupRunner private constructor(private val app: Application) {
                 }
             }
         }
-        val (id, stamp) = found ?: return 0
-        if (prefs.getString(PREF_IMPORTED, null) == stamp) return 0
+        val (id, stamp) = found ?: run {
+            importNote("No wse2-prepared*.zip in the Warband folder's top level: nothing imported.")
+            return 0
+        }
+        if (prefs.getString(PREF_IMPORTED, null) == stamp) {
+            importNote("${stamp.substringBefore('/')} was already imported by an earlier run.")
+            return 0
+        }
         val soDir = File(r4Dir, "so").apply { mkdirs() }
         update(state.copy(status = "Importing the game files prepared on your PC…"))
         var parts = 0
@@ -340,8 +361,12 @@ class R4StartupRunner private constructor(private val app: Application) {
             } finally {
                 staged.values.forEach { it.delete() }  // a .so whose .key never came
             }
-        } ?: return 0
+        } ?: run {
+            importNote("${stamp.substringBefore('/')} could not be opened.")
+            return 0
+        }
         prefs.edit().putString(PREF_IMPORTED, stamp).apply()
+        importNote("Imported $parts parts from ${stamp.substringBefore('/')}.")
         return parts
     }
 
@@ -587,6 +612,7 @@ class R4StartupRunner private constructor(private val app: Application) {
         private const val PREF_USE_COPY = "use_copy"
         private const val PREF_JOBS = "jobs"
         private const val PREVIOUS_REPORT = "report.previous.txt"
+        private const val IMPORT_NOTE = "import.txt"
         private const val PREF_IMPORTED ="imported_zip"  // the last PC zip imported (name/size/time)
         private val PREPARED_ZIP = Regex("""(?i)wse2-prepared.*\.zip""")
         private val PREPARED_PART = Regex("""(exe|lua5164)_w\d+\.(so|key)""")

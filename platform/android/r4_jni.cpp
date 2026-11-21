@@ -23,12 +23,19 @@
 #include <string_view>
 #include <vector>
 
+#include <sys/auxv.h>
+
 #include "../../engine/src/recomp/r4_startup.h"
+#include "../../engine/src/recomp/recomp_llvm.h"
 #include "saf_jni_util.h"
 #include "wse/platform/saf_vfs.h"
 #include "wse/platform/vfs.h"
 
 namespace {
+
+// AArch64 Linux AT_HWCAP bits (asm/hwcap.h): LSE atomics and RCpc (LDAPR).
+constexpr unsigned long kHwcapAtomics = 1UL << 8;
+constexpr unsigned long kHwcapLrcpc = 1UL << 15;
 
 using wse::platform::android_jni::clear_if_exception;
 using wse::platform::android_jni::jstring_to_utf8;
@@ -245,5 +252,14 @@ extern "C" JNIEXPORT jint JNICALL Java_org_wse2_android_launcher_R4Native_native
     };
     report(std::to_string(o.jobs) + " translation threads, -O2, module " + o.module +
            ", stop after " + std::to_string(o.frame_limit) + " frames\n");
+    // The shared phone target (the one a PC prepares batches for) whenever this CPU has LSE and
+    // RCpc. Asked of the kernel here, because LLVM 18's host feature list never reports "rcpc"
+    // (it does not map /proc/cpuinfo's "lrcpc"), so `lifter_llvm.cpp`'s own check always fell back
+    // to the host CPU, and no PC-prepared batch matched (seen on the user's Cortex-A78 phone,
+    // 2026-11-22). Kept out of the lifter sources on purpose: they make the translator fingerprint.
+    const unsigned long hwcap = getauxval(AT_HWCAP);
+    if ((hwcap & kHwcapAtomics) != 0 && (hwcap & kHwcapLrcpc) != 0) {
+        wse::recomp::set_code_target(wse::recomp::portable_android_target());
+    }
     return wse::recomp::run_startup(o);  // returns only when nothing could be started
 }

@@ -540,7 +540,14 @@ their own machine for their own phone: nothing is bundled or shared, and the zip
   written last, so an import stopped part-way never leaves a key vouching for other code; a batch
   whose key is already there unchanged is skipped (review fix, 2026-11-21).
 - **Saving the report:** Advanced > "Save the game test report" writes the report (during a run:
-  what it has written so far, under its status) to a file the player picks.
+  what it has written so far, under its status) to a file the player picks, with a "PC zip:" line
+  saying what the last zip import did.
+- **Choosing the shared target on the phone (fix, 2026-11-22):** the phone's first run with a PC
+  zip translated everything again: its translator line read `cortex-a78 host`, because LLVM 18's
+  host feature list never reports `rcpc` (it does not map `/proc/cpuinfo`'s `lrcpc`), so the check
+  in `lifter_llvm.cpp` always fell back to the host CPU. `r4_jni.cpp` now asks the kernel
+  (`getauxval(AT_HWCAP)`: `HWCAP_ATOMICS`, `HWCAP_LRCPC`) and calls `set_code_target`; it is outside
+  the fingerprinted lifter sources, so batches already prepared on a PC still match.
   No USB debugging, adb or button is needed.
 
 ## R5 census (2026-11-21)
