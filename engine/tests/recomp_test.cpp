@@ -5426,7 +5426,30 @@ void test_r4_shim_edge_cases() {
         set_err();
         const bool sfp_neg = K("SetFilePointer", {hb, static_cast<std::uint64_t>(-5LL), 0, 0}) == 0xFFFFFFFFULL &&
                              get_err() == sh::kErrorNegativeSeek;
+        // Back to 4 bytes (the position) before closing, so the save writes 4 bytes, not 4 GiB.
+        const bool shrink = K("SetEndOfFile", {hb}) == 1 && K("GetFileSizeEx", {hb, va(&sz64)}) == 1 && sz64 == 4;
         (void)K("CloseHandle", {hb});
+        // A file grown by SetEndOfFile keeps that length once saved, reads zeros there, and maps
+        // at that length.
+        const std::uint64_t hg = K("CreateFileA", {va(p_disp), sh::kGenericRead | sh::kGenericWrite, 0, 0, sh::kOpenExisting, 0x80, 0});
+        const bool grow = K("SetFilePointerEx", {hg, 0x2000, va(&newpos), 0}) == 1 && K("SetEndOfFile", {hg}) == 1;
+        (void)K("CloseHandle", {hg});
+        const std::uint64_t hr = K("CreateFileA", {va(p_disp), sh::kGenericRead, 0, 0, sh::kOpenExisting, 0x80, 0});
+        alignas(4) std::uint8_t tail[4] = {1, 1, 1, 1};
+        alignas(4) std::uint32_t got = 0;
+        sz64 = 0;
+        const bool regrown = K("GetFileSizeEx", {hr, va(&sz64)}) == 1 && sz64 == 0x2000 &&
+                             K("SetFilePointer", {hr, 0x1FFC, 0, 0}) == 0x1FFC &&
+                             K("ReadFile", {hr, va(tail), 4, va(&got), 0}) == 1 && got == 4 &&
+                             tail[0] == 0 && tail[1] == 0 && tail[2] == 0 && tail[3] == 0;
+        const std::uint64_t hm = K("CreateFileMappingA", {hr, 0, 0x02 /* PAGE_READONLY */, 0, 0, 0});
+        const std::uint64_t view = hm != 0 ? K("MapViewOfFile", {hm, 0x4 /* FILE_MAP_READ */, 0, 0, 0}) : 0;
+        const bool mapped = view != 0;
+        if (view != 0) (void)K("UnmapViewOfFile", {view});
+        if (hm != 0) (void)K("CloseHandle", {hm});
+        (void)K("CloseHandle", {hr});
+        expect(shrink && grow && regrown && mapped,
+               "edge(files): SetEndOfFile growth is saved with its length and maps at that length");
         // GetFileAttributesEx and FindFirstFile split >4 GiB VFS file sizes into nFileSizeHigh/Low.
         alignas(4) std::uint8_t fad[36] = {};
         alignas(4) std::uint8_t fd[320] = {};

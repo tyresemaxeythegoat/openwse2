@@ -687,6 +687,9 @@ private:
         }
     }
     void write_back(OpenFile& f) {
+        // A SetEndOfFile past the written bytes only raised logical_size; the saved file has
+        // that length, the extension reading as zeros (as on Windows).
+        if (f.data.size() < f.logical_size) f.data.resize(static_cast<std::size_t>(f.logical_size));
         std::lock_guard<std::mutex> lock(m_);
         (void)write_whole(f.loc, f.data);
     }
@@ -1266,7 +1269,7 @@ private:
             std::shared_ptr<OpenFile> f = file_of(s, file);
             if (!f) return win64_return(s, 0);
             std::lock_guard<std::mutex> fl(f->m);
-            if (size == 0) size = f->data.size();
+            if (size == 0) size = static_cast<std::size_t>(file_size_of(*f));
             if (size == 0) {
                 teb::set_error(s, 1006);  // ERROR_FILE_INVALID: an empty file cannot be mapped
                 win64_return(s, 0);
