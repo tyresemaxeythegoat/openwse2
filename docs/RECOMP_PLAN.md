@@ -14,8 +14,8 @@ gives 1:1 behaviour and byte-compatible saves by construction. This document own
 | Compiler backend | **Embedded LLVM** (AArch64 target only) plus LLD as a library. x86-64 is lifted to LLVM IR and optimized, ARM64 is emitted, then linked into cached `.so` batches. |
 | Clean-room engine | **Hybrid.** Retail code runs the game. Our platform layer (SAF `Vfs`, Vulkan RHI, shader translation, `WseAudioMixer`, input and touch overlay, launcher) becomes the backend of the API shims. The reconstructed VM, loaders and savegame codecs become test oracles and fallbacks. |
 | API layers | **Native shims allowed** for exactly the system DLLs the exe imports. Still banned: Wine, Box64, Dynarmic, QEMU, translating code during play (JIT), and bundling or committing anything retail. Lifted code is generated on the device (or on the player's own PC for their own phone) and never distributed. |
-| Target devices & v1 bar | **Mid-range `arm64-v8a` Android 10+ phones with 6–8 GB RAM** (OPPO Reno 11 Mali-G68/PanVK, mid-range Adreno/Turnip, and System Vulkan); weaker/older phones (<6 GB RAM or pre-ARMv8.2-A) are out of scope. **v1 playable bar:** `Native` end-to-end (main menu, campaign map, scenes, battles, saves); heavy WSE2 mods follow in R9 (decided with the user, 2026-11-21). |
-| Sustained performance target | **Mid-range floor (OPPO Reno 11, 6–8 GB RAM):** 30 FPS sustained for 30+ minutes in 100-troop battles at ~720p / 85% render scale, and 60 FPS in menus/map. **High-end / flagship phones (12–16 GB RAM):** playable **1,000+ troop WSE2 battles** (sustained ≥ 30 FPS target, no OOM or buffer/descriptor cap failures; decided with the user, 2026-11-21). |
+| Target devices & v1 bar | **`arm64-v8a` Android 10+ phones with ARMv8.2-A (LSE + RCpc), Vulkan and at least 6 GB RAM, tiered by chip and GPU, not by RAM.** Reference phone: the user's **OPPO Reno 11, 12 GB RAM, Mali-G68** (a mid-range GPU; PanVK and System Vulkan); also mid-range Adreno/Turnip. Out of scope: pre-ARMv8.2-A CPUs or under 6 GB RAM. **v1 playable bar:** `Native` end-to-end (main menu, campaign map, scenes, battles, saves); heavy WSE2 mods follow in R9 (decided with the user, 2026-11-21). |
+| Sustained performance target | **Mid-range GPU tier (the reference phone, Mali-G68 class):** 30 FPS sustained for 30+ minutes in 100-troop battles at ~720p / 85% render scale, and 60 FPS in menus/map. **Flagship GPU tier (Snapdragon 8 Gen 2+ / Dimensity 9000+ class):** playable **1,000+ troop WSE2 battles** at ≥ 30 FPS sustained. **Every supported phone:** 1,000+ troop battles load and run with no OOM and no buffer/descriptor cap failures; on the reference phone their frame rate is measured and recorded, not gated (decided with the user, 2026-11-21; tiers by chip after the user's 12 GB Mali-G68 phone fit neither RAM tier). |
 | Audio (`fmodex64`) | **Shim the 54 delay-loaded FMOD Ex exports directly onto `WseAudioMixer` + SDL3 audio** (P6) rather than translating `fmodex64.dll` (decided with the user, 2026-11-21). |
 | Multiplayer | **Parked for post-v1** (offline stubs through R8/R9; Steam stays stubbed; direct-IP/LAN over BSD sockets revisited only after v1 ships; decided with the user, 2026-11-21). |
 | Distribution | **GitHub Releases** signed with a dedicated private release keystore (never `android/debug.keystore`), plus a standalone prebuilt Windows/Linux PC preparation CLI zip. Play Store and F-Droid are parked for post-v1 (decided with the user, 2026-11-21). |
@@ -72,7 +72,7 @@ there are no CRT DLLs to replace:
 | **R5 Graphics** | D3D9 subset + D3DX over Vulkan (`R5a` System Vulkan + P5 `GLShaders` → SPIR-V + base forward rendering; `R5b` cached ETC2/ASTC texture transcoding + `fx_2_0` SM2/3 → SPIR-V for custom mod effects; `R5c` PanVK/Turnip `AHardwareBuffer` + `ASurfaceControl` bridge); HDR/DOF/MSAA advertised unavailable until post-v1. |
 | **R6 Audio, input, touch** | 54 `fmodex64` exports shimmed onto P6 `WseAudioMixer` + SDL3 audio (`lua5164` already translated in R4); DInput/XInput from SDL; Vulkan touch overlay inside `Present()` with per-scene context switching (`ShowCursor` + PDB `g_gameScreen`), soft keyboard `WM_CHAR`, and gamepad auto-hide. |
 | **R7 WSL x86-64 bring-up & save oracle** | Whole exe translated for x86-64 running in **WSL Ubuntu** with our shims only (Vulkan via WSLg or Lavapipe frame-dump + scripted input): main menu, campaign map, scene, battle. Savegame oracle: retail Windows saves load, and our saves load in retail Windows Warband. |
-| **R8 Phone bring-up (v1 playable `Native`)** | On-phone translation fixed against OOM stalls (batch cap, worker RSS cap, cold `-O1` test) plus PC-zip import; permanent `filesDir/wse2/user/` writable layer + Launcher Save Manager (`docs/PLATFORM_PLAN.md` "P14"); `Native` playable end-to-end on OPPO Reno 11 (Mali-G68/PanVK + System Vulkan) hitting 30 FPS sustained for 30+ min in 100-troop battles (~720p / 85% scale) and 60 FPS in menus/map. |
+| **R8 Phone bring-up (v1 playable `Native`)** | On-phone translation proven against OOM stalls (the batch memory fix itself lands in the next native update, before R5; cold `-O1` test) plus PC-zip import; permanent `filesDir/wse2/user/` writable layer + Launcher Save Manager (`docs/PLATFORM_PLAN.md` "P14"); `Native` playable end-to-end on the reference phone (OPPO Reno 11, 12 GB, Mali-G68/PanVK + System Vulkan) hitting 30 FPS sustained for 30+ min in 100-troop battles (~720p / 85% scale) and 60 FPS in menus/map. |
 | **R9 Performance, hardening & PC-parity mods** | Phone profiling (big-core CPU tuning benchmarked against `portable_android_target()`, TSO relaxation on thread-local memory, cross-batch direct calls); crash reports listing missing targets/imports; `Native`, `Phantasy Calradia`, and `FiveDynastiesAndTenKingdoms` played end-to-end at PC mod parity (Module System, Lua, custom `.fxo` shaders, large texture packs). |
 | **R10 WSE2 updates & player distribution** | Automatic pruning of stale `.so` caches on exe/translator change; clear errors on missing PDB or new unshimmed WSE2 imports; GitHub Releases APK signed with a private release keystore (never `debug.keystore`) + standalone prebuilt Windows/Linux PC prep CLI zip (no WSL/compiler required). |
 
@@ -731,15 +731,19 @@ When the game runs (R5 onward), performance is part of "done" for every slice, m
 phone rather than deferred. Each optimization gets a before-and-after measurement.
 
 **Targets (decided with the user, 2026-11-21):**
-- **Device floor:** Mid-range `arm64-v8a` Android 10+ phones with 6–8 GB RAM (OPPO Reno 11
-  Mali-G68/PanVK, mid-range Adreno/Turnip, and System Vulkan). Weaker or older phones (<6 GB RAM or
-  pre-ARMv8.2-A without LSE/RCpc) are out of scope.
-- **Mid-range sustained target:** **30 FPS sustained for 30+ minutes** in 100-troop battles at ~720p
-  / 85% render scale, and **60 FPS** in menus and on the campaign map.
-- **High-end / flagship battle-scale target:** Playable **1,000+ troop WSE2 battles** (target ≥ 30
-  FPS sustained, zero OOM or fixed-size GPU buffer/descriptor overflows) on flagship `arm64-v8a`
-  phones (12–16 GB RAM, Snapdragon 8-series / Dimensity 9000-series). Designing for 1,000+ agents
-  from R5 onward avoids hard bottlenecks later:
+- **Tiers go by chip and GPU, not RAM.** The user's phone (OPPO Reno 11) has 12 GB RAM but a
+  mid-range Mali-G68: RAM alone put it in the flagship tier, its GPU in the mid-range one.
+- **Device floor:** `arm64-v8a` Android 10+ with ARMv8.2-A (LSE + RCpc), Vulkan and at least 6 GB RAM
+  (Mali-G68/PanVK, mid-range Adreno/Turnip, and System Vulkan). Out of scope: pre-ARMv8.2-A CPUs
+  (without LSE/RCpc) or under 6 GB RAM.
+- **Mid-range GPU tier (reference phone: OPPO Reno 11, 12 GB, Mali-G68):** **30 FPS sustained for
+  30+ minutes** in 100-troop battles at ~720p / 85% render scale, and **60 FPS** in menus and on the
+  campaign map.
+- **Flagship GPU tier (Snapdragon 8 Gen 2+ / Dimensity 9000+ class):** playable **1,000+ troop WSE2
+  battles** at ≥ 30 FPS sustained.
+- **Every supported phone:** 1,000+ troop battles load and run with zero OOM and zero fixed-size GPU
+  buffer/descriptor overflows; on the reference phone their frame rate is measured and recorded, not
+  gated. Designing for 1,000+ agents from R5 onward avoids hard bottlenecks later:
   - *GPU submission (R5):* growable ring-buffered dynamic vertex/index buffers (`D3DLOCK_DISCARD` /
     `D3DLOCK_NOOVERWRITE` without pipeline stalls), dynamic-offset uniform ring buffers sized for
     thousands of draws and bone-palette uploads per frame, hardware instancing (`SetStreamSourceFreq`),
@@ -890,7 +894,11 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
   translation, permanent save storage, and sustained performance.
 - **Design:**
   - **Fix on-phone translation reliability & speed:** R4 measured ~163 s/batch (~3.5–4+ h total) and
-    OOM-stalled at `77/80` on the 3 largest batches (each 3–3.5× average size). Split oversized
+    stalled at `77/80` on the 3 largest batches (each 3–3.5× average size), most likely out of memory:
+    a PC run in WSL (3.8 GB) hung on the same batches the same night. **Pulled forward (2026-11-21):**
+    the memory fix (largest batches first, split oversized batches, a per-thread memory budget) lands
+    in the next native update, before R5, because every native update until R8 retranslates on the
+    phone and on the PC. Split oversized
     batches by instruction/function cap (instead of fixed 64 KiB windows alone) so peak worker RSS
     stays bounded, enforce per-worker memory budgets, and benchmark `-O1` on cold batches (functions
     outside hot startup/battle paths) to cut first-time phone translation time without hurting battle
@@ -933,7 +941,7 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     import writes a shareable crash report (guest VA, PDB symbol name if present, batch/module,
     Android device + Vulkan driver info) shown in the launcher on next start.
   - **PC-parity mod support:** Full parity with PC WSE2 mods — Module System scripts, WSE2 Lua,
-    custom `.fxo` shaders (R5b), and multi-GB `.dds` texture packs kept within 6–8 GB RAM via
+    custom `.fxo` shaders (R5b), and multi-GB `.dds` texture packs kept within a 6 GB phone's RAM via
     on-demand textures, mip-cap, and cached ETC2/ASTC. If a mod attempts `LoadLibrary` on an extra
     third-party x64 Windows DLL, surface a clear diagnostic (or translate through `shim::Modules` if
     a supported mod requires it).
@@ -941,7 +949,7 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
 - **Done when:**
   - `Native`, `Phantasy Calradia`, and `FiveDynastiesAndTenKingdoms` run end-to-end on the phone
     (main menu, campaign map, battle, save/load, WSE2 Lua features, custom shaders) without OOM
-    kills on 6–8 GB RAM and within the v1 sustained FPS target on `Native` (with documented timings
+    kills on 6 GB phones and within the v1 sustained FPS target on `Native` (with documented timings
     for heavy mods).
   - **1,000+ troop stress benchmark:** a 1,000-troop WSE2 battle runs without GPU buffer/descriptor
     overflows, audio dropouts, or crashes, with CPU/GPU frame-time breakdown recorded on a high-end
@@ -973,7 +981,7 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
 - **Done when:**
   - Switching between two WSE2 builds or upgrading the APK cleanly prunes stale batches and
     retranslates only what changed.
-  - A fresh user on a non-developer Windows PC and an Android 10+ 6–8 GB phone can install the
+  - A fresh user on a non-developer Windows PC and an Android 10+ phone at the device floor can install the
     release APK from GitHub Releases, optionally run the standalone PC prep zip (no WSL), and play
     `Native` from start to battle.
 - **Risks:**
@@ -1008,7 +1016,7 @@ Explicitly out of scope for R5–R10 / v1 so single-player ships cleanly:
 | Risk | Plan |
 | --- | --- |
 | Android refuses to run generated code | Resolved in R0 (a): `memfd` (`android_dlopen_ext`) with our own ELF loader (`code_loader.h`) as fallback. |
-| On-phone translation OOM / 3.5–4 h runtime | Measured at 77/80 stall on the 3 largest batches; R8 splits oversized batches by instruction/function cap, bounds worker RSS, tests `-O1` on cold batches, and keeps standalone PC prep (R10) as a fast path. |
+| On-phone translation OOM / 3.5–4 h runtime | Stalled at 77/80 on the 3 largest batches (memory, most likely; WSL hung on the same batches); the next native update translates the largest batches first, splits oversized batches by instruction/function cap and bounds worker RSS; R8 tests `-O1` on cold batches, and keeps standalone PC prep (R10) as a fast path. |
 | C++ exceptions and SEH | Built in R3 and tested on x86/arm64 CI; R7 verifies live retail throw paths under WSL `gdb`. |
 | D3DX `fx_2_0` effect bytecode vs `GLShaders` | R5a bridges `ID3DXEffect` onto the verified P5 `GLShaders` → SPIR-V path first; R5b adds offline-tested `fx_2_0` SM2/3 → SPIR-V for custom mod effects. |
 | DXT1/3/5 VRAM & bandwidth on mobile GPUs | R5a uses native Vulkan `textureCompressionBC` where present (else temporary RGBA8 + mip cap); R5b caches one-time ETC2/ASTC transcodes on disk. |

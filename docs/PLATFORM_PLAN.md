@@ -345,8 +345,8 @@ yet):
 
 **Why.** Phase 5 runs the recompiled retail game (`docs/RECOMP_PLAN.md` R5–R10) rather than the P9
 clean-room UI shell. The launcher and in-game touch overlay therefore evolve from developer bring-up
-screens into the player-facing shell for real gameplay on mid-range `arm64-v8a` phones (Android 10+,
-6–8 GB RAM).
+screens into the player-facing shell for real gameplay on `arm64-v8a` phones (Android 10+, at least
+6 GB RAM; tiers by chip and GPU in `docs/RECOMP_PLAN.md` "Android performance").
 
 **Decisions (interview with the user, 2026-11-21):**
 - **Saves and user config:** Move the writable layer from `filesDir/recomp/r4/user/` to permanent
