@@ -148,6 +148,7 @@ are in [`docs/PLATFORM_PLAN.md`](docs/PLATFORM_PLAN.md); the `P` numbers below a
 - [x] **P11 In-game UI & touch controls on Android** *(host-verified; device run pending; the app does not draw the touch overlay yet)*: UI aspect modes, crisp text, drawn touch overlay and context buttons, touch-friendly menus, soft keyboard (`docs/PLATFORM_PLAN.md` "P11").
 - [x] **P12 Launcher redesign:** Jetpack Compose + Material 3, module art from the user's install (`main.bmp`), dynamic colour, motion (`docs/PLATFORM_PLAN.md` "P12"); the CI screenshot tests moved to P13.0 *(works on the user's phone, 2026-11-18)*.
 - [x] **P13 Launcher art direction** *(CI screenshots reviewed; phone check pending)*: modern medieval look: bundled OFL fonts, fixed iron-and-gold dark palette tinted by the module art, custom component kit, code-drawn backdrop, moderate motion, CI screenshots (`docs/PLATFORM_PLAN.md` "P13").
+- [ ] **P14 Phase 5 launcher, save manager, and touch QoL** *(planned)*: permanent `filesDir/wse2/user/` migration + Launcher Save Manager (SAF/Downloads export & import), Vulkan `Present()` per-scene context-gated touch controls & layout editor, soft-keyboard `WM_CHAR`, auto-pause on background, frame-time/thermal HUD, and translation/cache UX (`docs/PLATFORM_PLAN.md` "P14").
 
 ### Phase 5 — Gameplay by recompiling the retail code (on-device, LLVM)
 
@@ -158,11 +159,12 @@ Design: `docs/RECOMP_PLAN.md` (the decompilation plan `docs/GAMEPLAY_PLAN.md` is
 - [ ] **R2 Host differential rig:** translated vs original code on the PC CPU; CI on synthetic binaries and an arm64 runner (built: PC recorder + phone check of 1,623 retail functions, arm64 CI job green; first phone run pending).
 - [ ] **R3 Runtime core:** guest memory, TEB/TLS, threads, dispatch, ABI bridge, memory ordering, Win64 unwinding and C++ EH (memory ordering, import bridge, unwinder, SEH runtime, catch-continuation discovery, TEB/TLS, threads and sync, nested and collided exceptions, thread-pool timers and waits built and CI-green; phone check pending).
 - [ ] **R4 OS shims:** all 546 imports owned; startup reaches the main loop (both met in WSL 2026-11-20; the phone run is left) (plan in `docs/RECOMP_PLAN.md` "R4 design": WSL bring-up, multi-module runtime with `lua5164` translated, high-count families with tests, then startup-driven shims and stub D3D9/FMOD/network).
-- [ ] **R5 Graphics:** D3D9 subset + D3DX on the Vulkan RHI, fx_2_0 and SM2/3 → SPIR-V.
-- [ ] **R6 Audio, input, Lua:** translated `fmodex64` / `lua5164` over shims; DInput / XInput from SDL and the touch overlay.
-- [ ] **R7 PC bring-up:** whole exe translated for x86-64 running on Windows with our shims only; savegame oracle.
-- [ ] **R8 Phone bring-up:** translation service in the launcher; Native main menu to battle on Mali-G68.
-- [ ] **R9 Performance and hardening:** profiling, crash reports for missing targets, several mods end to end.
+- [ ] **R5 Graphics:** D3D9 subset + D3DX over Vulkan (`R5a` System Vulkan + P5 `GLShaders` → SPIR-V + base forward rendering; `R5b` cached ETC2/ASTC texture transcoding + `fx_2_0` SM2/3 → SPIR-V for custom mod effects; `R5c` PanVK/Turnip `AHardwareBuffer` + `ASurfaceControl` bridge; HDR/DOF/MSAA parked post-v1).
+- [ ] **R6 Audio, input, touch:** `fmodex64` exports shimmed onto P6 `WseAudioMixer` + SDL3 audio; DInput/XInput from SDL; Vulkan touch overlay inside `Present()` with per-scene context switching, soft keyboard, and gamepad auto-hide.
+- [ ] **R7 WSL x86-64 bring-up & save oracle:** whole exe translated for x86-64 running in WSL Ubuntu with our shims only (menu, campaign, scene, battle); byte-compatible savegame oracle against retail Windows Warband.
+- [ ] **R8 Phone bring-up (v1 playable `Native`):** reliable on-phone translation (split oversized batches, RSS cap, cold `-O1`) + PC-zip fast path, permanent user storage + Save Manager, and `Native` playable end-to-end on the reference phone meeting the sustained battle and menu/map targets (`docs/RECOMP_PLAN.md` "Android performance").
+- [ ] **R9 Performance, hardening & PC-parity mods:** phone profiling (big-core tuning benchmark, TSO relaxation, cross-batch linking), crash reports for missing targets/imports, and PC-parity end-to-end runs of `Native`, `Phantasy Calradia`, and `FiveDynastiesAndTenKingdoms`.
+- [ ] **R10 WSE2 updates & player distribution:** stale `.so` cache auto-pruning, plain missing-PDB / unshimmed-import diagnostics, signed GitHub Releases APK (private release keystore), and a standalone prebuilt Windows/Linux PC prep CLI zip (no WSL required).
 
 ## Engineering backlog (ordered)
 
@@ -186,6 +188,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-21 | — | Post-R4 plan refined with the user (`docs/RECOMP_PLAN.md` R5–R10 & Android performance targets, `docs/PLATFORM_PLAN.md` P14 save manager & context-gated touch QoL, `ROADMAP.md` checklists; docs only) |
 | 2026-11-21 | — | Phase 5 R4 shim edge-case audit & tests (`shim_time.h`, `shim_crt.h`, `shim_strings.h`, `shim_memory.h`, `shim_files.h`, `recomp_test.cpp` `test_r4_shim_edge_cases`): probed real Windows APIs and fixed `SetEnvironmentVariable`, `GetStringTypeW`, `LCMapString*`, `CompareString*`, `FormatMessage*`, `WideCharToMultiByte` flags, per-page `VirtualAlloc`/`VirtualFree`/`VirtualProtect`/`VirtualQuery`, `dwShareMode` sharing, trailing separators, >4 GiB file sizes, and `LastError` preservation |
 | 2026-11-21 | — | Phase 5 R5 census: 1,000-frame WSL startup D3D9/D3DX/DInput call, render-state, sampler-state, format, and resource inventory recorded in `docs/RECOMP_PLAN.md` (`0` missing COM methods; 100% `ID3DXEffect` + `DrawIndexedPrimitive` path) |
 | 2026-11-21 | — | Phase 2 Milestone 3 reconstruction: replaced the 12-handler campaign, inventory, equipment, and XP placeholder family (`1064`, `1080`, `1100`, `1510`–`1513`, `1533`, `1670`, `1673`–`1675`) in `world_campaign_helpers.h`/`native_campaign_ops.h`/`block_vm.h` with verified v1.1.5.6 behaviour (`item_modifiers`, `compactSort`, `itp_unique`/`itp_merchandise`/faction weighting, `canEquipItem`/`equipItems`, `game_get_upgrade_xp`, wounded carry-over) and host tests in `block_vm_test.cpp` |

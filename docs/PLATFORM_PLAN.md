@@ -13,7 +13,7 @@ order, and the risks decided up front. The checklist and its tick marks live in
 | Windowing, input, sensors, audio device | **SDL3** | Maintained line; Android lifecycle, gamepad, sensor, touch and audio-stream APIs |
 | Graphics API | **Vulkan only**, through our own small RHI | One backend to make correct; no GLES fallback |
 | GPU driver | User-selectable at runtime: system driver, **PanVK** on Mali, **Turnip** on Adreno | The stock Mali/Adreno drivers vary by vendor build; Mesa drivers are consistent |
-| Renderer shape | Clean-room `rglRenderer` reconstruction drawing through the RHI | Not D3D9 kept alive through a translation layer |
+| Renderer shape | **Superseded for gameplay by Phase 5 (`docs/RECOMP_PLAN.md`):** the recompiled retail renderer drives our D3D9-over-Vulkan shim on top of P4 `VulkanRhiDevice` and P5 `wse_shader` (decided with the user, 2026-11-18 / 2026-11-21) | Preserves 1:1 Warband rendering and mod compatibility while reusing our Vulkan RHI, shader compiler, audio mixer, input/touch overlay, and launcher as shim backends |
 | Assets and drivers | Bring-your-own, picked on device | `AGENTS.md` §1 and §3: no game files and no driver binaries in this repository |
 
 Driver packages the user has pointed at (to be imported at runtime, never committed):
@@ -73,7 +73,9 @@ Each slice is one milestone. "Done when" is the acceptance test, not a descripti
 | P9 *(parts 1 & 2 host verified)* | Convergence with Phase 2 | Part 1 landed: skeletal FK & CPU linear-blend skinning (`wse/asset/skeleton.h`, fixing `skeleton_anim` `(qx,qy,qz,qw)` read order in `wse/asset/brf.h`), `map.txt`/`.sco`/`skeleton_bodies.xml` loaders (`wse/game/scene_loaders.h`), and chunked terrain + multi-object/skinned `BrfSceneRenderer` over `RhiDevice` (`wse/platform/rhi_scene.h`, static IB + slot skin-data cache). Part 2 landed: shared XML DOM parser (`wse/io/xml.h`), `Data/font_data.xml` glyph loader & `<c=...>`/word-wrap text layout (`wse/asset/font.h`), `LanguageTable` / `GameVariablesTable` / `UiWidget` / `UiSession` initial+menu+notes+presentation controllers (`wse/game/ui_runtime.h`), and 2D UI RHI renderer (`wse/platform/rhi_ui.h`, Y-up `[0,1]x[0,0.75]` ortho & bottom-up V -> top-down DDS `1 - v` UV conversion) tested in `ui_test.cpp`. Lua 5.1 link (2F) and 2H headless runner integrated. Remaining: Bullet physics hookup and on-device `Native` run. | Scene/terrain/skeletal and `Native` main menu + menu/presentation RHI passes on host; `Native` main menu renders on device from a user-supplied install |
 | P10 *(host verified; device pending)* | Launcher UI/UX and performance on Android *(Phase 4)* | Launcher rebuilt as home / modules / settings / advanced pages with a dark theme, a first-run flow with a background scan and install check, grouped settings; asynchronous start with a loading screen, performance hub in module mode, texture budget, performance-core hints; details in "P10 — Launcher UI/UX and performance on Android" below | The device acceptance list in that section holds on the user's phone |
 | P11 *(planned)* | In-game UI and touch controls on Android *(Phase 4)* | UI aspect modes and crisp text, drawn touch overlay with context buttons and gestures, touch-friendly menus, soft keyboard; details in "P11 — In-game UI and touch controls on Android" below | The device acceptance list in that section holds on the user's phone |
-| P12 *(planned)* | Launcher redesign *(Phase 4)* | Jetpack Compose + Material 3 launcher with the install's own module art, dynamic colour, motion, and screenshot tests in CI; details in "P12 — Launcher redesign" below | The screenshot artifact and the user's phone check both look right |
+| P12 *(complete)* | Launcher redesign *(Phase 4)* | Jetpack Compose + Material 3 launcher with the install's own module art, dynamic colour, motion, and screenshot tests in CI; details in "P12 — Launcher redesign" below | The screenshot artifact and the user's phone check both look right |
+| P13 *(CI screenshots reviewed; phone check pending)* | Launcher art direction *(Phase 4)* | Bundled OFL fonts (Cinzel + Manrope), refined obsidian-and-brass palette, custom component kit, `rgl_config.txt` editor, Warband adaptive launcher icon, and CI Roborazzi screenshots; details in "P13 — Launcher art direction" below | Screenshots reviewed and phone check passes |
+| P14 *(planned)* | Phase 5 launcher, save manager, and touch QoL *(Phase 4 / Phase 5)* | Permanent `filesDir/wse2/user/` migration + Launcher Save Manager (SAF/Downloads export & import), clean-room per-scene context-gated touch controls & QoL drawn inside Vulkan `Present()`, frame-time/thermal HUD, and translation/cache management UX; details in "P14" below | Device acceptance list in "P14" passes on the user's phone during R6/R8 |
 
 **Order.** P0 → P1 → P2 are strict. P3 is host-only and can run beside P1/P2. P4 needs P1; P5
 needs P3 + P4. P6, P7, P8 need only P1 and can interleave. P9 needs Phase 2E and 2H progress.
@@ -339,16 +341,78 @@ yet):
   before the file was read applies to the file's contents, never to defaults. A file that cannot
   be read is moved to `rgl_config.txt.unreadable` before a write, never overwritten.
 
+## P14 — Phase 5 launcher, save manager, and in-game touch QoL (planned, 2026-11-21)
+
+**Why.** Phase 5 runs the recompiled retail game (`docs/RECOMP_PLAN.md` R5–R10) rather than the P9
+clean-room UI shell. The launcher and in-game touch overlay therefore evolve from developer bring-up
+screens into the player-facing shell for real gameplay on mid-range `arm64-v8a` phones (Android 10+,
+6–8 GB RAM).
+
+**Decisions (interview with the user, 2026-11-21):**
+- **Saves and user config:** Move the writable layer from `filesDir/recomp/r4/user/` to permanent
+  `filesDir/wse2/user/` (fast POSIX I/O, one-time migration of existing `rgl_config.txt` and saves),
+  and add a **Launcher Save Manager** so players can export/import `.sav` files to/from their SAF
+  Warband folder or `Downloads` (protects against uninstall and supports PC ↔ Android transfer).
+- **Touch overlay rendering & ergonomics:** Draw the P11/P14 touch overlay as a final Vulkan pass
+  inside `IDirect3DDevice9::Present()` (works identically on System Vulkan and PanVK/Turnip
+  `AHardwareBuffer` with exact touch coordinates). Design the per-scene QoL control set cleanly from
+  first principles (informed at the feature-concept level by the v4.2/v4.3 clean-room reference
+  study: text/config feature concepts only, no native libraries opened, no code, coordinates, or
+  assets copied).
+- **Per-scene context gating (buttons appear only where needed):**
+  - *Battle / Mission:* virtual movement stick, camera look area, directional attack pad (slide to
+    aim swing), defend/block, kick, jump, interact/use, zoom (plus opt-in gyro aim when aiming),
+    weapon/shield switch, weapon mode (couched lance / melee-thrown toggle), crouch, drop weapon,
+    1st/3rd-person camera toggle, leave area, pause menu, and an expandable tactical orders panel
+    (group select + order up/choose/down/back).
+  - *Campaign Map:* camera pan/look toggle, fast-travel (`Ctrl+Space` hold), center/follow camera,
+    stop/rest (`Space`), quick-save (`F12`), map menu, and two-finger pinch-to-zoom.
+  - *Trade / Inventory & Party:* sticky bulk-transfer helpers (`Ctrl` move stack / take all / give
+    all, `Shift` move 10) and Back/Cancel so touch users never fight PC modifier-click ergonomics.
+  - *Dialog / Conversation:* optional `Up / Select / Down` helper buttons alongside direct tap.
+  - *Mod extensibility:* 5 user-assignable spare buttons (`Spare 1..5`) bound to Warband or WSE2
+    custom keys (e.g. mod spellcasting/ability hotkeys).
+  - *Session QoL:* automatic pause when the app moves to the background (so bandits do not catch the
+    player on the campaign map while switching apps), in-game touch layout editor (drag, resize,
+    opacity, per-module saved profiles, safe-area notch clamping), soft-keyboard trigger
+    (`SDL_StartTextInput` → `USER32` `WM_CHAR`/`WM_KEYDOWN`) for character/save names, and automatic
+    hiding of the touch overlay whenever a physical gamepad or keyboard/mouse is active.
+  - *Context detection:* universal `ShowCursor` / pointer-capture fallback (cursor visible = UI,
+    captured = 3D) refined by reading `g_gameScreen` via the matching PDB when present, plus a small
+    corner manual override toggle if a mod uses a custom presentation.
+- **First-run translation & cache management UX:** Dedicated progress UI for on-phone translation
+  and PC-prepared zip import, automatic pruning of stale `.so` caches when the exe hash or
+  `translator_fingerprint()` changes, and plain-language diagnostics when a PDB is missing or a
+  newer WSE2 build hits an unshimmed import.
+- **Frame-time HUD:** Expand the optional FPS overlay to show per-frame CPU time, GPU time, and
+  Android thermal tier (`PowerManager`) so R5/R8/R9 sustained 30-minute targets can be measured on
+  device.
+
+| Unit | What | Depends on | Done when |
+| --- | --- | --- | --- |
+| P14.1 | Vulkan overlay pass inside `Present()` + per-scene context-gated touch controls (Battle, Map, Trade/Inventory, Party, Dialog, 5 spare mod buttons, Quick-Save, Auto-Pause, soft-keyboard `WM_CHAR`, gamepad auto-hide) | R5a, R6 | Host tests verify context visibility & modifier synthesis; on the phone every control appears only in its matching scene and hides on gamepad attach |
+| P14.2 | In-game Touch Layout Editor (move, resize, opacity, safe-area clamp, reset, per-module `Vfs` JSON profiles) | P14.1 | Edited layouts survive restart and stay inside display cutouts in landscape |
+| P14.3 | Permanent `filesDir/wse2/user/` migration (`rgl_config.txt` + saves) and Launcher Save Manager (list, export, import `.sav` to/from SAF or Downloads) | R7 / R8 | Exporting a `.sav` from the phone loads in retail PC Warband, and importing a PC `.sav` loads on the phone |
+| P14.4 | Launcher `Play` wired to `:recomp`, first-run translation progress + PC-zip import UX, stale `.so` cache auto-pruning, plain-language missing-PDB / unshimmed-import / crash-report dialogs, and per-frame CPU/GPU frame-time HUD | R8, R10 | First-time player reaches `Native` main menu via either on-phone translation or PC zip; stale caches prune automatically on exe/APK change |
+
+**Device acceptance (decided with the user, 2026-11-21):**
+- Battle, Map, Trade/Inventory, Party, and Dialog controls switch automatically without manual mode
+  toggling in `Native` (manual corner override available for custom mods).
+- Touch overlay hides automatically on gamepad or keyboard/mouse input and reappears on touch.
+- Backgrounding the app pauses the game cleanly; returning resumes audio and rendering without
+  desync.
+- Save Manager round-trips a `.sav` between the phone and retail Windows Warband without adb.
+
 ## Risks decided up front
 
 | Risk | Decision |
 | --- | --- |
-| SAF is slow for thousands of small files | Index the tree once, read through file descriptors, offer import to app storage |
+| SAF is slow for thousands of small files | Index the tree once, read through file descriptors, offer import to app storage; live saves and config stay in app-private `filesDir/wse2/user/` with SAF export/import (`P14.3`) |
 | Modules reference files in the wrong case and with `\` | The `Vfs` contract is case-insensitive and accepts both separators (already true of `MemoryVfs` and `HostVfs`) |
-| Custom driver loading depends on linker-namespace behaviour that varies by Android version and SoC | The system driver is always a working fallback; driver choice is a per-device setting |
+| Custom driver loading depends on linker-namespace behaviour that varies by Android version and SoC | The system driver is always a working fallback; driver choice is a per-device setting; R5 brings up System Vulkan first, then PanVK/Turnip (`R5c`) |
 | Loading a custom driver directly bypasses Android's `libvulkan.so`, which is what implements `VK_KHR_android_surface` and the swapchain (drivers only expose `VK_ANDROID_native_buffer`) | **Decided in P5 (`PresentationPath`):** `VulkanDriverLoader::probe_and_create_device` queries `vkEnumerateInstanceExtensionProperties`; System Vulkan (`!used_direct_icd && supports_android_surface_wsi`) selects `android_surface_wsi` (`VkSurfaceKHR`), whereas direct custom ICDs (`Turnip`/`PanVK` via `dlopen`) select `offscreen_hardware_buffer_bridge` (`AHardwareBuffer` + `ASurfaceControl`) |
 | Imported driver packages are executable code from the user | Staged under `noBackupFilesDir/gpu_drivers/<mode>/`, ELF-checked, patched, and marked read-only (Android 14 refuses writable dynamically loaded code); never bundled |
-| Modules may ship shader source, compiled effects, or both | **Decided in P5 (`wse/asset/{shader,shader_compiler}.h`):** Warband + WSE2 ship complete GLSL source/techniques in `GLShaders/*.xml` + `GLShadersOptimized/` alongside `wse2_shaders.ini`; resolve BRF shaders/materials against that catalog, synthesize the 5 WSE2 skinning variants when absent, lower GLSL 1.10/1.20 to `#version 450` via `lower_warband_glsl_to_vulkan450`, compile to Vulkan SPIR-V 1.0 via isolated Khronos `glslang 16.6.0` (`wse_shader`), and persist validated binaries in `SpirvShaderCache` |
-| Mobile GPUs may not sample the block-compressed formats in `.dds` | Query format support; transcode at import and cache on disk |
-| No device is attached to any build machine | P0–P3 are fully CI-verifiable; from P2/P4 on, device results come from running the CI APK and reading its self-test screen |
-| Third-party licences | Permissive libraries are linked statically; any LGPL component ships only as a separate shared library; no FMOD, no Steam |
+| Modules may ship shader source, compiled effects, or both | **Decided in P5 + R5 (2026-11-21):** R5a bridges `ID3DXEffect` onto P5's `GLShaders` → Vulkan SPIR-V 1.0 pipeline (`wse_shader` + `SpirvShaderCache`); R5b adds `fx_2_0` SM2/3 bytecode → SPIR-V for custom mod `.fxo` effects |
+| Mobile GPUs may not sample the block-compressed formats in `.dds` | **Decided in R5 (2026-11-21):** use native Vulkan `textureCompressionBC` when the driver exposes it (PanVK/Turnip), else transcode DXT1/3/5 once to cached ETC2/ASTC on disk (RGBA8 + mip-cap only as temporary R5a bring-up fallback) |
+| No device is attached to any build machine | P0–P3 are fully CI-verifiable; from P2/P4 on, device results come from running the CI APK and reading its self-test screen / frame-time HUD |
+| Third-party licences | Permissive libraries are linked statically; any LGPL component ships only as a separate shared library; `fmodex64` is shimmed onto `WseAudioMixer` (no FMOD binary bundled or translated) and `steam_api64` is stubbed |
