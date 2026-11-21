@@ -788,6 +788,37 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
 - **Measuring.** Extend the FPS overlay into a per-frame CPU/GPU frame-time and thermal-tier view
   (`docs/PLATFORM_PLAN.md` "P14").
 
+## v1 must-haves and stretch goals (decided with the user, 2026-11-22)
+
+v1 is split so the first playable build is not held back by extras. **Must-haves** gate the first
+playable `Native` build (R8 "done when"); **stretch goals** land as v1.x updates after it, each on its
+own, and none blocks another.
+
+| v1 must-haves | v1 stretch (v1.x) |
+| --- | --- |
+| On-phone translation that finishes without stalls (the batch memory fix), and the PC zip fast path | Cross-batch direct calls and unscalarized 128-bit SSE → NEON (R8 CPU wins) |
+| D3D9 → Vulkan rendering of `Native` at 1:1 with the PC, including the retail shadow pass when its setting is on | FSR 1.0 / CAS upscaling, FXAA and live dynamic resolution (R5b post-pass) |
+| Touch controls per scene, gamepad, soft keyboard, auto-pause on background (P14.1 core) | Desktop Mode (external display, pointer capture) and combat haptics (R6) |
+| Save Manager export/import, safe saves and automatic backups (below) | Auto-sync SAF save mirror, live quick-settings drawer, per-module profiles (P14.2/P14.3) |
+| The record-and-replay workload, crash reports and readable menus (below, P14.5) | `Phantasy Calradia` smoke boot (R8) |
+| Sustained targets on the reference phone: 30 FPS at minute 30 of a 100-troop battle, 60 FPS in menus and on the map | Branded pre-warm loading screen (P14.4) |
+
+**Added to v1 (must-haves, 2026-11-22):**
+- **Record and replay (R6/R7).** A recording mode stores one session's inputs and everything the
+  game asks the clock and the random sources (`QueryPerformanceCounter`, `GetTickCount`,
+  `timeGetTime`, `RtlGenRandom`) through the shims, and a replay mode feeds them back. One
+  campaign session plus one 100-troop battle becomes the fixed workload for every performance
+  before/after ("Android performance"), on the phone and in WSL; a replay reproduces a reported
+  crash; and the replayed main menu frames are the R5 rendering regression check.
+- **Crash reports from R5 (not R9).** A fault in translated code, an unknown indirect target or an
+  unshimmed import writes the guest address, the function named from the PDB, the batch, the last
+  imports called, and the device and driver into the saveable game report, shown in the launcher
+  on the next start. R9 extends it for modders (P15.3).
+- **Safe saves and backups (R6, file shims).** A file the game writes in its save folders goes to a
+  temporary file and replaces the old one only when complete (Android may end the app mid-write),
+  and the last three versions of each save are kept as automatic backups the Save Manager can
+  restore.
+
 ## Post-R4 slice designs (R5–R12, decided with the user, 2026-11-21 / 2026-11-22)
 
 ### R5 — Graphics (D3D9 + D3DX → Vulkan)
@@ -811,11 +842,18 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
   - **R5b (Cached ETC2/ASTC, `fx_2_0` SM2/3 → SPIR-V, shadows, FSR/CAS + FXAA & dynamic resolution):**
     Add one-time DXT1/3/5 → ETC2/ASTC transcoding cached on disk (replacing the temporary RGBA8
     fallback on drivers without native BC); add the `fx_2_0` (`.fxo`) parser + SM2/3 bytecode →
-    SPIR-V translator so custom mod `.fxo` effects run in v1; enable real-time shadow maps
-    (`R16F`/`R32F` depth render targets with PCF filtering); and add a Vulkan post-pass providing
+    SPIR-V translator so custom mod `.fxo` effects run in v1; support the retail renderer's own
+    shadow pass (it draws Warband's shadows itself: the `R16F`/`R32F` render targets and depth
+    textures the census shows it probing, sampled by its own shaders; no new shadow technique, so
+    rendering stays 1:1 with the PC); and add a Vulkan post-pass providing
     **FSR 1.0 / CAS spatial upscaling**, lightweight **FXAA**, and live **P8 thermal dynamic
     resolution scaling** so 75–85% render scale stays native-sharp while protecting sustained
-    thermals.
+    thermals. **UI sharpness:** Warband draws its UI and text into the same frame as the 3D scene, so
+    upscaling the whole frame would blur menus. The shim renders the 3D scene at the render scale and
+    switches to a full-resolution target when the game starts its 2D UI draws (detected from the
+    draw state: orthographic projection and the UI effect techniques), compositing the upscaled scene
+    beneath. Until that detection is proven per module, menus and screens without a 3D scene run at
+    100% scale and only battles and the map use the render scale.
   - **R5c (PanVK / Turnip custom-ICD presentation):** Wire the `offscreen_hardware_buffer_bridge`
     (`AHardwareBuffer` + `ASurfaceControl`, `docs/PLATFORM_PLAN.md`) so direct-loaded PanVK (Mali-G68)
     and Turnip (Adreno) present frames cleanly alongside System Vulkan, including clean swapchain
@@ -858,7 +896,10 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     Map, Trade/Inventory, Party, Dialog, Menu) via a hybrid detector: `ShowCursor` / pointer-capture
     as the universal menu-vs-3D fallback, refined by reading `g_gameScreen` (via matching PDB symbol
     lookup) when available, plus a small corner manual override button. Include opt-in subtle
-    **combat haptics** (`VibrationEffect` on shield block, hit impact, and lance couch) in v1. Full
+    **combat haptics** (`VibrationEffect` on shield block, hit impact, and lance couch). The game
+    raises no such events, so the FMOD shim triggers them: it sees every sound the game plays, and a
+    small per-module table maps sound names (shield hit, blow, couch) to a pulse, played only for
+    sounds near the player's own agent. Full
     touch QoL layout, live quick-settings drawer, soft-keyboard `WM_CHAR` injection, auto-pause on
     background, and layout editor specs live in `docs/PLATFORM_PLAN.md` ("P14").
   - **Note on `lua5164`:** Already translated and verified in R4; R6 verifies Lua scripts stay
@@ -938,13 +979,16 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     the user's phone with zero manual intervention and zero OOM stalls, AND importing a PC-prepared
     zip skips on-phone translation cleanly.
   - On OPPO Reno 11 (Mali-G68, PanVK and System Vulkan), `Native` is playable end-to-end: main menu,
-    character creation, campaign map, scenes, 100-troop battle with real-time shadows + FSR/CAS +
-    FXAA, saving/reloading, and auto-mirroring a `.sav` that loads in retail PC Warband.
-  - **Heavy-mod smoke check:** `Phantasy Calradia` boots cleanly to campaign map and a quick battle
-    in v1 (full multi-mod end-to-end hardening follows in R9).
+    character creation, campaign map, scenes, 100-troop battle (the retail shadow pass on),
+    saving/reloading, and exporting a `.sav` that loads in retail PC Warband; menus are readable
+    (P14.5); a save interrupted by Android ending the app leaves the previous save intact; the
+    replay workload runs end to end; a forced fault produces a crash report naming the function.
+  - **v1.x (stretch, after the first playable build):** FSR/CAS + FXAA and dynamic resolution, the
+    auto-sync save mirror, and the `Phantasy Calradia` smoke check (boots to the campaign map and a
+    quick battle; full multi-mod hardening follows in R9) each land as their own update.
   - **Measured sustained performance:** **≥ 30 FPS sustained at minute 30** of a 100-troop battle at
-    ~720p / 85% render scale with live dynamic resolution + FSR/CAS (frame-time HUD + thermal log
-    recorded), and **60 FPS** in menus and on the campaign map.
+    ~720p / 85% render scale, measured on the replay workload (frame-time HUD, battery and thermal
+    log recorded), and **60 FPS** in menus and on the campaign map.
 - **Risks:**
   - Thermal throttling past minute 15–20 on Mali-G68 (mitigated by R5b ETC2/ASTC texture cache,
     live dynamic resolution + FSR/CAS, ADPF hint sessions, and P8 hysteretic thermal scaling).
@@ -1043,9 +1087,11 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
   - **High-refresh-rate gameplay (90 Hz / 120 Hz):** Tune frame pacing (`ANativeWindow_setFrameRate*`,
     `FramePacer`, mailbox/FIFO present modes) to sustain 90 Hz / 120 Hz on flagship GPUs in menus,
     campaign map, and mid-size battles.
-  - **Android HDR10 / Wide-Color output:** When the display supports `VK_COLOR_SPACE_HDR10_ST2084_EXT`
-    (or `BT709`/DCI-P3 wide color) and HDR postFX is enabled, present directly to an HDR10 Vulkan
-    swapchain with proper PQ tone-mapping.
+  - **Android HDR10 / Wide-Color output (optional mode):** When the display supports
+    `VK_COLOR_SPACE_HDR10_ST2084_EXT` (or `BT709`/DCI-P3 wide color) and the player turns it on,
+    present to an HDR10 Vulkan swapchain with PQ tone-mapping. This replaces the game's own SDR
+    tone-mapping at the end of `postFX`, so it is off by default: the default SDR output stays 1:1
+    with the PC.
 - **Depends on:** R5b/R5c, R8, R9.
 - **Done when:**
   - On-device verification shows working HDR auto-exposure, DOF, water reflections, and SMAA with
