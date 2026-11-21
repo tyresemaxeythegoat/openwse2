@@ -97,7 +97,7 @@ Start here, then read `STATUS.md` (where things stand) and `ROADMAP.md` (what co
 | `tools/r0_pc_reference.cpp` | **active** (local only) | Phase 5 R0 (d) PC reference (Windows only, never run in CI; maps the user's v1.1.5.6 exe and runs retail code) |
 | `tools/r2_pc_record.cpp`, `tools/r1_discovery_report.cpp` | **active** (local only) | Phase 5 R2 PC recorder (runs the self-contained retail functions natively and writes `engine/src/recomp/r2_reference_v1156.inc`) and the R1 discovery report; Windows, never run in CI |
 | `tools/gen_com_vtables.py` | **active** | Generates `engine/include/wse/recomp/com_vtables.h` (COM method orders and IIDs for the R4 recording device) from the mingw-w64 headers in Zig |
-| `tools/r4_run.cpp` | **active** (local only) | Phase 5 R4 startup run in WSL: the front end of `engine/src/recomp/r4_startup.{h,cpp}` (shared with the APK's Advanced > "R4 startup run"); translates and runs the user's exe and `lua5164`, logging each import's first call; CI builds it, never runs it |
+| `tools/r4_run.cpp` | **active** (local only) | Phase 5 R4 startup run in WSL: the front end of `engine/src/recomp/r4_startup.{h,cpp}` (shared with the APK's Advanced > "Game test", formerly "R4 startup run"); translates and runs the user's exe and `lua5164`, logging each import's first call; CI builds it, never runs it |
 | `tools/wsl_gate.sh` | **active** (local only) | Phase 5 R4 slice 1: the recompiler gate and every CTest suite in WSL Ubuntu on the user's PC (`AGENTS.md` §5 "WSL") |
 | `tools/pe_catalog.py`, `check_panvk.py`, `patch_panvk.py` | legacy | Static-recompilation catalog and PanVK helpers |
 | `analysis/`, `proof/`, `runtime/` | legacy | Superseded static-recompilation dossier, lifter proofs, guest runtime, PanVK loader |

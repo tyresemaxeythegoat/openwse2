@@ -37,7 +37,10 @@ import java.util.concurrent.CopyOnWriteArraySet
 // half the threads (kept for later runs); finished batches are cached, so only the batches in
 // flight are lost. It gives up after MAX_STALLS deaths in a row that cached no new batch. When the
 // launcher process itself was killed mid-run, R4ForegroundService (sticky) or the next app start
-// calls `resumeIfInterrupted`, which starts the run again from the saved folder.
+// calls `resumeIfInterrupted`, which starts the run again from the saved folder and counts the
+// kill like a worker death (halving the threads, and giving up the same way), from preferences:
+// otherwise a few huge batches that run the phone out of memory on every core restart from zero
+// forever (seen on the phone at 77/80, 2026-11-21).
 class R4StartupRunner private constructor(private val app: Application) {
     private val main = Handler(Looper.getMainLooper())
     @Volatile
@@ -121,11 +124,11 @@ class R4StartupRunner private constructor(private val app: Application) {
     private fun start(treeUri: Uri?, resumed: Boolean) {
         if (state.running) return
         if (treeUri == null) {
-            update(state.copy(report = "R4 startup run: select the Warband folder first."))
+            update(state.copy(report = "Choose your Warband folder first."))
             return
         }
         R4Native.loadError?.let {
-            update(state.copy(report = "R4 startup run unavailable: libwse_r0.so did not load ($it)"))
+            update(state.copy(report = "The game test is not available: part of the app did not load.\n\n(libwse_r0.so: $it)"))
             return
         }
         r4Dir.mkdirs()
@@ -134,8 +137,16 @@ class R4StartupRunner private constructor(private val app: Application) {
         finished = false
         stopRequested = false
         runTree = treeUri
-        stalls = 0
-        if (!resumed) resumes = 0
+        if (resumed) {
+            // Android killed the whole app mid-run (the launcher too, not only the worker), which
+            // `workerEnded` never sees: count it the same way, from what the last bind recorded.
+            val before = prefs.getInt(PREF_SO_AT_BIND, -1)
+            stalls = if (before < 0 || cachedBatches() > before) 0 else prefs.getInt(PREF_STALLS, 0) + 1
+            resumes = prefs.getInt(PREF_RESUMES, 0) + 1
+        } else {
+            stalls = 0
+            resumes = 0
+        }
         val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
         // One thread per core, but no more than the free memory holds: on the PC (tools/r4_run, 2
         // threads, 2026-11-20) translating this exe took ~1.8 GB, ~0.9 GB a thread. More threads
@@ -144,10 +155,25 @@ class R4StartupRunner private constructor(private val app: Application) {
         (app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(memory)
         val fit = (memory.availMem / BYTES_PER_THREAD).toInt().coerceIn(1, cores)
         jobs = prefs.getInt(PREF_JOBS, fit).coerceIn(1, fit)
+        if (resumed) {
+            // As in `workerEnded`: half the threads, down to 1 once a death brought no new batch.
+            val floor = if (stalls > 0) 1 else 2
+            if (jobs > floor) jobs = (jobs / 2).coerceAtLeast(floor)
+        }
         prefs.edit().putBoolean(PREF_WANTED, true).putString(PREF_TREE, treeUri.toString())
-            .putBoolean(PREF_USE_COPY, state.useCopy).apply()
+            .putBoolean(PREF_USE_COPY, state.useCopy).putInt(PREF_STALLS, stalls)
+            .putInt(PREF_RESUMES, resumes).apply()
+        if (resumed) prefs.edit().putInt(PREF_JOBS, jobs).apply()
+        if (stalls > MAX_STALLS) {
+            finish(
+                "The phone kept running out of memory and closing the app, so the game test stopped " +
+                    "after $stalls tries in a row. Everything finished so far is saved: tap the test " +
+                    "again to continue."
+            )
+            return
+        }
         R4ForegroundService.clearResult(app)
-        update(state.copy(running = true, status = "Starting", report = null))
+        update(state.copy(running = true, status = "Getting ready…", report = null))
         try {
             R4ForegroundService.start(app)
         } catch (_: Throwable) {
@@ -170,7 +196,7 @@ class R4StartupRunner private constructor(private val app: Application) {
                 if (stopRequested) {
                     finish(STOPPED)
                 } else if (error != null) {
-                    finish("R4 startup run: copying the install failed: $error")
+                    finish("Could not copy the game folder: $error")
                 } else {
                     bind(treeUri, copyDir.absolutePath)
                 }
@@ -181,6 +207,7 @@ class R4StartupRunner private constructor(private val app: Application) {
     private fun bind(treeUri: Uri, copy: String) {
         runCopy = copy
         soAtBind = cachedBatches()
+        prefs.edit().putInt(PREF_SO_AT_BIND, soAtBind).apply()
         val args = Bundle().apply {
             putString(R4StartupService.KEY_TREE_URI, treeUri.toString())
             putString(R4StartupService.KEY_COPY_DIR, copy)
@@ -196,7 +223,7 @@ class R4StartupRunner private constructor(private val app: Application) {
             override fun handleMessage(msg: Message) {
                 if (msg.what == R4StartupService.MSG_RESULT) {
                     val code = msg.data.getInt(R4StartupService.KEY_RESULT)
-                    finish("R4 startup run did not start (code $code).")
+                    finish("The game test could not start (error code $code).")
                 } else {
                     super.handleMessage(msg)
                 }
@@ -211,7 +238,7 @@ class R4StartupRunner private constructor(private val app: Application) {
                 try {
                     Messenger(service).send(request)
                 } catch (_: RemoteException) {
-                    finish("R4 startup run: the :recomp process died before the request was sent.")
+                    finish("The game test could not start: its background process closed right away.")
                 }
             }
 
@@ -225,7 +252,7 @@ class R4StartupRunner private constructor(private val app: Application) {
         // it is on screen, foreground service otherwise) and is the last of the two to be killed.
         val flags = Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT or Context.BIND_ABOVE_CLIENT
         if (!app.bindService(Intent(app, R4StartupService::class.java), conn, flags)) {
-            finish("R4 startup run: cannot start the :recomp service.")
+            finish("The game test could not start its background process.")
             return
         }
         main.post(poll)
@@ -244,18 +271,19 @@ class R4StartupRunner private constructor(private val app: Application) {
         stalls = if (cached > soAtBind) 0 else stalls + 1
         if (stalls > MAX_STALLS) {
             finish(
-                "R4 startup run: the worker ended $stalls times in a row without a new translated batch " +
-                    "($jobs threads), so it was not restarted again. Translated batches are kept."
+                "The phone kept running out of memory, so the game test stopped after $stalls tries " +
+                    "in a row. Everything finished so far is saved: tap the test again to continue."
             )
             return
         }
         val floor = if (stalls > 0) 1 else 2
         if (jobs > floor) jobs = (jobs / 2).coerceAtLeast(floor)
-        prefs.edit().putInt(PREF_JOBS, jobs).apply()
         ++resumes
+        prefs.edit().putInt(PREF_JOBS, jobs).putInt(PREF_STALLS, stalls).putInt(PREF_RESUMES, resumes).apply()
         unbindQuietly()
         main.removeCallbacks(poll)
-        val status = "Android ended the translation; resuming on $jobs threads ($cached batches kept)"
+        val status = "The phone ran low on memory and paused the work. Continuing in a moment with " +
+            "fewer processor cores; nothing finished is lost."
         update(state.copy(status = status))
         R4ForegroundService.showProgress(app, status)
         main.postDelayed({ if (!finished && !stopRequested) bind(tree, runCopy) }, RESUME_DELAY_MS)
@@ -283,7 +311,8 @@ class R4StartupRunner private constructor(private val app: Application) {
     private fun finish(error: String?) {
         if (finished) return
         finished = true
-        prefs.edit().putBoolean(PREF_WANTED, false).apply()
+        prefs.edit().putBoolean(PREF_WANTED, false).remove(PREF_SO_AT_BIND).remove(PREF_STALLS)
+            .remove(PREF_RESUMES).apply()
         unbindQuietly()
         main.removeCallbacks(poll)
         val report = reportText(error)
@@ -301,11 +330,12 @@ class R4StartupRunner private constructor(private val app: Application) {
         val result = text.lineSequence().lastOrNull { it.startsWith("RESULT ") }?.removePrefix("RESULT ")
         val headline = when {
             error != null -> error
-            result == null -> "The :recomp process ended without a result line (killed, or a crash the run could not report)."
-            result.startsWith("pass") -> "PASS: $result"
-            else -> "Stopped: $result"
+            result == null -> "The game test ended unexpectedly (the phone may have closed it). " +
+                "Everything finished so far is saved."
+            result.startsWith("pass") -> "The game test passed."
+            else -> "The game test stopped with a problem. Please share this report."
         }
-        return "$headline\n\n$text"
+        return "$headline\n\nDetails for the developers:\n$text"
     }
 
     private fun statusLine(): String {
@@ -314,11 +344,8 @@ class R4StartupRunner private constructor(private val app: Application) {
         } catch (_: Throwable) {
             emptyList()
         }
-        val last = try {
-            File(r4Dir, "report.txt").readLines().lastOrNull { it.isNotBlank() }?.trim() ?: ""
-        } catch (_: Throwable) {
-            ""
-        }
+        // Plain words for the player (2026-11-21, the user's request): the report's raw lines stay in
+        // the final report, under "Details for the developers".
         // progress.txt counts this attempt's batches; the report's "<tag>: ...; N batches (...), T to
         // translate" line adds the cached ones, so the status counts the whole image.
         val translating = if (progress.size == 3 && progress[1] != progress[2]) {
@@ -332,12 +359,20 @@ class R4StartupRunner private constructor(private val app: Application) {
             }
             val total = summary?.let { BATCHES.find(it)?.groupValues?.get(1)?.toIntOrNull() } ?: todo
             val kept = (total - todo).coerceAtLeast(0)
-            "Translating ${progress[0]}: ${kept + done}/$total batches. "
+            val what = if (progress[0] == "exe") "the game" else "the game's script engine"
+            "Preparing $what for your phone: ${kept + done} of $total parts done. This is needed " +
+                "only once; finished parts are saved."
+        } else if (progress.size == 3) {
+            "Starting a short test of the game (nothing is shown on screen)…"
         } else {
-            ""
+            "Getting ready…"
         }
-        val again = if (resumes > 0) "Resumed $resumes× on $jobs threads. " else ""
-        return translating + again + last.take(160)
+        val again = when (resumes) {
+            0 -> ""
+            1 -> "\nRestarted once after the phone ran low on memory."
+            else -> "\nRestarted $resumes times after the phone ran low on memory."
+        }
+        return translating + again
     }
 
     // The copy thread and the main thread both update `state`.
@@ -392,23 +427,30 @@ class R4StartupRunner private constructor(private val app: Application) {
                 } ?: throw IllegalStateException("cannot open $name")
                 ++files
                 if (files % 50 == 0) {
-                    update(state.copy(status = "Copying the install: $files files, ${bytes / (1024 * 1024)} MB"))
+                    update(state.copy(status = "Copying the game folder: $files files, ${bytes / (1024 * 1024)} MB"))
                 }
             }
         }
         walk(DocumentsContract.getTreeDocumentId(treeUri), copyDir, 0)
-        update(state.copy(status = "Copied $files files (${bytes / (1024 * 1024)} MB); starting"))
+        update(state.copy(status = "Copied the game folder ($files files, ${bytes / (1024 * 1024)} MB). Starting…"))
     }
 
     companion object {
         const val MODULE = "Native"
         const val FRAME_LIMIT = 1000L
-        private const val STOPPED = "Stopped by you. Translated batches are kept: the next run resumes."
+        private const val STOPPED = "You stopped the game test. Everything finished so far is saved, and the next " +
+            "run continues from there."
         private const val PREFS = "r4_startup"
         private const val PREF_WANTED = "running"
         private const val PREF_TREE = "tree_uri"
         private const val PREF_USE_COPY = "use_copy"
         private const val PREF_JOBS = "jobs"
+        // Kept across launcher restarts, so a run Android keeps killing whole still slows down and
+        // gives up: the cached batch count when the worker was last bound, the deaths in a row
+        // without a new batch, and the resumes so far.
+        private const val PREF_SO_AT_BIND = "so_at_bind"
+        private const val PREF_STALLS = "stalls"
+        private const val PREF_RESUMES = "resumes"
         private const val MAX_STALLS = 3
         private const val RESUME_DELAY_MS = 3000L
         private const val BYTES_PER_THREAD = 1200L * 1024 * 1024

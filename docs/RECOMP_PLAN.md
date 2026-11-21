@@ -449,7 +449,9 @@ next thing to implement. Never run in CI.
    main loop for 1,000 frames on the stub device with no fault and no missing import, and the
    same build runs from the APK's Advanced screen on the phone.
 
-**Phone run (decided with the user, 2026-11-21).** Advanced > "R4 startup run" runs the same
+**Phone run (decided with the user, 2026-11-21).** Advanced > "Game test" (named "R4 startup
+run" until 2026-11-21, when its texts were put in plain words for players; "R0 spikes" became
+"Phone check" and the raw report lines moved under "Details for the developers") runs the same
 startup on the phone:
 
 - **One runner.** `engine/src/recomp/r4_startup.{h,cpp}` (`run_startup`, in `wse_recomp`) does what
@@ -494,7 +496,11 @@ startup on the phone:
   `R4StartupRunner` binds it again after 3 s with half the threads (at least 2, or 1 after a death
   that cached no new batch; kept in preferences for later runs) and gives up only after 3 deaths in
   a row with no new batch. A killed launcher process resumes the run through the sticky
-  `R4ForegroundService` restart or the next app start. The status counts the whole image (cached
+  `R4ForegroundService` restart or the next app start, and that counts as a worker death too (the
+  batch count at the last bind, the deaths in a row and the resumes are kept in preferences): on
+  the phone the run sat at 77/80 for 1.5 h, its last attempt starting "3 to translate on 4
+  threads" with no resume shown: most likely the whole app was killed again and again, each time
+  restarting the three largest batches (each 3-3.5x the average size) from zero. The status counts the whole image (cached
   plus this attempt's batches), read from the report's per-image summary line. The first attempt
   uses one thread per core but at most one per 1.2 GB of free memory (`ActivityManager` `availMem`):
   `tools/r4_run` took ~1.8 GB on 2 threads for this exe, and the phone run on every core stalled at

@@ -59,7 +59,7 @@ object R0Spikes {
 
     fun run(app: Application, treeUri: Uri?): String {
         val crashed = crashedRunReport(app)
-        loadError?.let { return "R0 spikes unavailable: libwse_r0.so did not load ($it)" }
+        loadError?.let { return "The phone check is not available: part of the app did not load.\n\n(libwse_r0.so: $it)" }
 
         var exe: ByteArray? = null
         var sha = ""

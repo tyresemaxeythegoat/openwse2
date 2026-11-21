@@ -27,7 +27,7 @@ class R4ForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = progressNotification(this, "Starting")
+        val notification = progressNotification(this, "Getting ready…")
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(PROGRESS_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -92,7 +92,7 @@ class R4ForegroundService : Service() {
             ensureChannels(context)
             val notification = Notification.Builder(context, CHANNEL_RESULT)
                 .setSmallIcon(android.R.drawable.stat_notify_more)
-                .setContentTitle("R4 startup run finished")
+                .setContentTitle("Game test finished")
                 .setContentText(headline.lineSequence().first())
                 .setStyle(Notification.BigTextStyle().bigText(headline))
                 .setContentIntent(openReport(context))
@@ -120,9 +120,9 @@ class R4ForegroundService : Service() {
             )
             return Notification.Builder(context, CHANNEL_PROGRESS)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
-                .setContentTitle("R4 startup run")
-                .setContentText(status.ifEmpty { "Running" })
-                .setStyle(Notification.BigTextStyle().bigText(status.ifEmpty { "Running" }))
+                .setContentTitle("Game test")
+                .setContentText(status.ifEmpty { "Working…" })
+                .setStyle(Notification.BigTextStyle().bigText(status.ifEmpty { "Working…" }))
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(open)
@@ -142,10 +142,10 @@ class R4ForegroundService : Service() {
         private fun ensureChannels(context: Context) {
             val nm = manager(context)
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_PROGRESS, "R4 startup run progress", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL_PROGRESS, "Game test progress", NotificationManager.IMPORTANCE_LOW)
             )
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_RESULT, "R4 startup run result", NotificationManager.IMPORTANCE_DEFAULT)
+                NotificationChannel(CHANNEL_RESULT, "Game test result", NotificationManager.IMPORTANCE_DEFAULT)
             )
         }
 
