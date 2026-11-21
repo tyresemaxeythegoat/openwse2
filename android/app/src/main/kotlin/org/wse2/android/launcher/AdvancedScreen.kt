@@ -37,7 +37,6 @@ import org.wse2.android.launcher.ui.WseDialog
 import org.wse2.android.launcher.ui.WseDialogAction
 import org.wse2.android.launcher.ui.WseListRow
 import org.wse2.android.launcher.ui.WseScreenHeader
-import org.wse2.android.launcher.ui.WseSecondaryButton
 
 @Composable
 fun AdvancedScreen(
@@ -85,11 +84,7 @@ fun AdvancedScreen(
                 ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            WseScreenHeader(
-                eyebrow = "Diagnostics & Tools",
-                title = "Advanced",
-                subtitle = "SAF storage inspection, custom Vulkan drivers, self-tests and Phase 5 tools."
-            )
+            WseScreenHeader(title = "Advanced")
 
             LauncherSectionHeader(title = "Warband Folder (SAF)")
             LauncherGroupedCard {
@@ -101,19 +96,24 @@ fun AdvancedScreen(
                     title = "SAF tree index",
                     supporting = state.scanState.indexStatsText
                 )
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    WseSecondaryButton(
-                        text = "Verify scripts.txt via SafVfs",
-                        onClick = onVerifyScripts,
-                        enabled = verifyEnabled,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                WseListRow(
+                    title = "Verify scripts.txt",
+                    supporting = "Checks module script mapping via SafVfs",
+                    trailing = {
+                        Text(
+                            text = "Run",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (verifyEnabled) {
+                                colors.primary
+                            } else {
+                                colors.onSurfaceVariant.copy(alpha = 0.45f)
+                            }
+                        )
+                    },
+                    enabled = verifyEnabled,
+                    showDivider = false,
+                    onClick = onVerifyScripts
+                )
             }
 
             LauncherSectionHeader(title = "GPU Driver")
@@ -128,18 +128,19 @@ fun AdvancedScreen(
                 )
                 LauncherSectionDivider()
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    WseSecondaryButton(
-                        text = "Import Driver Package (.zip)",
-                        onClick = onImportDriver,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                LauncherSectionDivider()
+                WseListRow(
+                    title = "Import driver package",
+                    supporting = "Load a custom Adrenotools .zip package",
+                    trailing = {
+                        Text(
+                            text = "Import",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = colors.primary
+                        )
+                    },
+                    showDivider = true,
+                    onClick = onImportDriver
+                )
 
                 SwitchListItem(
                     headline = "Allow mock ICD fallback",
@@ -150,29 +151,28 @@ fun AdvancedScreen(
                 )
                 LauncherSectionDivider()
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    WseSecondaryButton(
-                        text = "Probe Vulkan Driver",
-                        onClick = onProbeVulkan,
-                        enabled = !state.driverState.isProbeInProgress,
-                        leadingIcon = if (state.driverState.isProbeInProgress) {
-                            {
-                                CircularProgressIndicator(
-                                    color = colors.accent,
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            }
+                WseListRow(
+                    title = "Probe Vulkan driver",
+                    supporting = "Inspect physical devices and extensions",
+                    trailing = {
+                        if (state.driverState.isProbeInProgress) {
+                            CircularProgressIndicator(
+                                color = colors.accent,
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
                         } else {
-                            null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                            Text(
+                                text = "Probe",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = colors.primary
+                            )
+                        }
+                    },
+                    enabled = !state.driverState.isProbeInProgress,
+                    showDivider = false,
+                    onClick = onProbeVulkan
+                )
             }
 
             LauncherSectionHeader(title = "Runtime")
@@ -185,17 +185,19 @@ fun AdvancedScreen(
                 )
                 LauncherSectionDivider()
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    WseSecondaryButton(
-                        text = "Launch SDL3 Self-Test",
-                        onClick = onLaunchSelfTest,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                WseListRow(
+                    title = "SDL3 self-test",
+                    supporting = "Launch native surface and input check",
+                    trailing = {
+                        Text(
+                            text = "Launch",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = colors.primary
+                        )
+                    },
+                    showDivider = false,
+                    onClick = onLaunchSelfTest
+                )
             }
 
             LauncherSectionHeader(title = "Recompiler (Phase 5)")

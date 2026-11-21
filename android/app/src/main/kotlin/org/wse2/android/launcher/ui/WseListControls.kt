@@ -2,7 +2,6 @@ package org.wse2.android.launcher.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
@@ -23,23 +21,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
-import org.wse2.android.launcher.theme.WseShapes
 import org.wse2.android.launcher.theme.WseType
 import org.wse2.android.launcher.theme.wseBackdrop
 
 @Composable
 fun WseScreenHeader(
-    eyebrow: String,
+    eyebrow: String = "",
     title: String,
     subtitle: String? = null,
     trailing: (@Composable () -> Unit)? = null,
@@ -59,17 +55,19 @@ fun WseScreenHeader(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text(
-                    text = eyebrow.uppercase(),
-                    style = WseType.overline.copy(
-                        fontSize = 11.sp,
-                        lineHeight = 14.sp,
-                        letterSpacing = 1.6.sp
-                    ),
-                    color = colors.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (eyebrow.isNotBlank()) {
+                    Text(
+                        text = eyebrow.uppercase(),
+                        style = WseType.overline.copy(
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
+                            letterSpacing = 1.4.sp
+                        ),
+                        color = colors.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Text(
                     text = title,
                     style = MaterialTheme.typography.headlineMedium,
@@ -84,7 +82,7 @@ fun WseScreenHeader(
                 }
             }
         }
-        if (subtitle != null) {
+        if (!subtitle.isNullOrBlank()) {
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
@@ -102,31 +100,26 @@ fun WseSectionHeader(
 ) {
     val colors = LocalWseColors.current
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
             text = title.uppercase(),
-            style = WseType.overline,
-            color = colors.primary,
+            style = MaterialTheme.typography.labelMedium.copy(
+                letterSpacing = 1.1.sp,
+                fontWeight = FontWeight.SemiBold
+            ),
+            color = colors.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(1.dp)
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(colors.hairline, Color.Transparent)
-                    )
-                )
-        )
-        if (badge != null) {
+        if (!badge.isNullOrBlank()) {
             Text(
-                text = badge.uppercase(),
-                style = WseType.overline.copy(fontSize = 10.sp, lineHeight = 14.sp),
+                text = badge,
+                style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant,
                 maxLines = 1
             )
@@ -148,44 +141,37 @@ fun WseKeyValueGrid(
 ) {
     val colors = LocalWseColors.current
     val safeCols = columns.coerceAtLeast(1)
+    val rows = items.chunked(safeCols)
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items.chunked(safeCols).forEach { rowItems ->
+        rows.forEachIndexed { rowIdx, rowItems ->
+            if (rowIdx > 0) {
+                HorizontalDivider(thickness = 1.dp, color = colors.hairline)
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 rowItems.forEach { item ->
                     Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(WseShapes.small)
-                            .background(colors.surfaceContainer.copy(alpha = 0.7f))
-                            .border(
-                                width = 1.dp,
-                                color = colors.hairline.copy(alpha = 0.35f),
-                                shape = WseShapes.small
-                            )
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Text(
-                            text = item.label.uppercase(),
-                            style = WseType.overline.copy(
-                                fontSize = 10.sp,
-                                lineHeight = 13.sp,
-                                letterSpacing = 1.1.sp
-                            ),
+                            text = item.label,
+                            style = MaterialTheme.typography.bodySmall,
                             color = colors.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = item.value,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (item.accentValue) colors.primary else colors.onSurface,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = if (item.accentValue) colors.readyText else colors.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -254,7 +240,7 @@ fun WseListRow(
                 .fillMaxWidth()
                 .background(pressHighlight)
                 .then(clickModifier)
-                .heightIn(min = 60.dp)
+                .heightIn(min = 56.dp)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -273,7 +259,7 @@ fun WseListRow(
                     style = MaterialTheme.typography.titleMedium,
                     color = titleColor
                 )
-                if (supporting != null) {
+                if (!supporting.isNullOrBlank()) {
                     Text(
                         text = supporting,
                         style = MaterialTheme.typography.bodySmall,
@@ -291,7 +277,7 @@ fun WseListRow(
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 thickness = 1.dp,
-                color = colors.hairline.copy(alpha = 0.45f)
+                color = colors.hairline
             )
         }
     }
@@ -309,12 +295,8 @@ private fun PreviewWseListControls() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            WseScreenHeader(
-                eyebrow = "WSE2 Configuration",
-                title = "Settings",
-                subtitle = "Tune launcher performance and rgl_config.txt parameters."
-            )
-            WseSectionHeader(title = "Graphics", badge = "rgl_config.txt")
+            WseScreenHeader(title = "Settings")
+            WseSectionHeader(title = "Graphics")
             WseKeyValueGrid(
                 items = listOf(
                     WseMetricItem("Path", "Modules/Native"),
