@@ -186,6 +186,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-21 | — | Phase 5 R5 census: 1,000-frame WSL startup D3D9/D3DX/DInput call, render-state, sampler-state, format, and resource inventory recorded in `docs/RECOMP_PLAN.md` (`0` missing COM methods; 100% `ID3DXEffect` + `DrawIndexedPrimitive` path) |
 | 2026-11-21 | — | P13.3 follow-up: Modules stagger, animator-scale gating, hero alpha mask, `rgl_config.txt` editor in Settings (written only on a change; an unreadable file is kept) (CI green; Kotlin only) |
 | 2026-11-20 | — | Phase 5 R4: Native runs its main loop in WSL for 64,000+ frames on the recording device (HKEY sign extension, module seeding, `RtlGenRandom`, three LuaJIT discovery gaps) |
 | 2026-11-20 | — | Phase 5 R4: the retail exe reaches its main loop in WSL and presents 1,000+ frames on the recording D3D9 device (memmove jump tables, `lea`-taken entries, `RtlGetVersion`, real D3DCAPS9) |

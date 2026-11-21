@@ -504,6 +504,183 @@ startup on the phone:
   failed in R0 run 2. Guest images are mapped read-write only (translated code runs, guest bytes
   never execute).
 
+## R5 census (2026-11-21)
+
+Measured locally in WSL against the retail v1.1.5.6 `mb_warband_wse2_x64.exe` + `lua5164.dll`
+with `Native` selected, reusing the existing translated batch cache (`/root/wse/r4/so`, 0 batches
+retranslated), stopping at `1,000` presented frames (`321.8 s`, `0` faults, `458,394` import calls
+across `163` distinct imports). Findings only — no R5 code is added here.
+
+**Headline findings:**
+
+- **Missing COM methods:** **0**. Every D3D9, D3DX, and DirectInput COM method invoked across
+  startup and 1,000 frames is already implemented or recorded by `shim_d3d9.h`.
+- **Non-`S_OK` HRESULTs:** **1** (`IDirect3D9::CheckDeviceMultiSampleType`, `666` calls returning
+  `D3DERR_NOTAVAILABLE` / `0x8876086a`, expected because the stub advertises only
+  `D3DMULTISAMPLE_NONE`).
+- **100% shader-driven path:** `0` calls to `SetTransform`, `0` calls to `SetTextureStageState`,
+  `0` calls to `CreateQuery`, and `0` calls to `DrawPrimitive*UP`. Every draw goes through
+  `ID3DXEffect` + `IDirect3DStateBlock9` + `DrawIndexedPrimitive(D3DPT_TRIANGLELIST)` (`5` draws
+  per frame on the main-menu loop).
+
+### COM methods & graphics DLL imports (76 COM methods, 7 DLL imports)
+
+Top 10 most-called graphics/effect methods (COM + `d3dx9_43.dll`):
+
+| Rank | Method | Calls | Status |
+| ---: | --- | ---: | --- |
+| 1 | `IDirect3DStateBlock9::Apply` | 20,036 | recorded |
+| 2 | `ID3DXEffect::SetBool` | 17,000 | recorded |
+| 3 | `ID3DXEffect::SetMatrixTranspose` | 17,000 | recorded |
+| 4 | `ID3DXEffect::SetFloat` | 16,003 | recorded |
+| 5 | `IDirect3DDevice9::SetRenderState` | 13,074 | impl |
+| 6 | `d3dx9_43.dll!D3DXMatrixMultiply` | 11,000 | DLL import |
+| 7 | `ID3DXEffect::SetVector` | 10,001 | recorded |
+| 8 | `ID3DXEffect::SetTexture` | 6,000 | recorded |
+| 9 | `ID3DXEffect::CommitChanges` | 5,000 | recorded |
+| 10 | `IDirect3DDevice9::DrawIndexedPrimitive` | 5,000 | recorded |
+| 10 (tie) | `IDirect3DDevice9::SetStreamSource` | 5,000 | impl |
+
+Full breakdown by interface / DLL:
+
+| Interface / DLL | Method | Calls | Status |
+| --- | --- | ---: | --- |
+| `d3d9.dll` | `Direct3DCreate9` | 1 | DLL import |
+| `d3dx9_43.dll` | `D3DXMatrixMultiply` | 11,000 | DLL import |
+| `d3dx9_43.dll` | `D3DXMatrixOrthoOffCenterRH` | 1,000 | DLL import |
+| `d3dx9_43.dll` | `D3DXCreateTextureFromFileExA` | 705 | DLL import |
+| `d3dx9_43.dll` | `D3DXCreateEffectFromFileA` | 2 | DLL import |
+| `d3dx9_43.dll` | `D3DXFilterTexture` | 2 | DLL import |
+| `DINPUT8.dll` | `DirectInput8Create` | 1 | DLL import |
+| `IDirect3D9` | `CheckDeviceMultiSampleType` | 918 | impl (`666` × `D3DERR_NOTAVAILABLE`) |
+| `IDirect3D9` | `CheckDeviceFormat` | 225 | impl |
+| `IDirect3D9` | `CheckDepthStencilMatch` | 216 | impl |
+| `IDirect3D9` | `CheckDeviceType` | 36 | impl |
+| `IDirect3D9` | `EnumAdapterModes` | 8 | impl |
+| `IDirect3D9` | `GetAdapterModeCount` | 4 | impl |
+| `IDirect3D9` | `GetDeviceCaps` | 3 | impl |
+| `IDirect3D9` | `GetAdapterDisplayMode` | 2 | impl |
+| `IDirect3D9` | `GetAdapterIdentifier` | 2 | impl |
+| `IDirect3D9` | `GetAdapterCount` | 1 | impl |
+| `IDirect3D9` | `CreateDevice` | 1 | impl |
+| `IDirect3DDevice9` | `SetRenderState` | 13,074 | impl |
+| `IDirect3DDevice9` | `DrawIndexedPrimitive` | 5,000 | recorded (`D3DPT_TRIANGLELIST`) |
+| `IDirect3DDevice9` | `SetStreamSource` | 5,000 | impl |
+| `IDirect3DDevice9` | `SetIndices` | 2,000 | impl |
+| `IDirect3DDevice9` | `SetStreamSourceFreq` | 2,000 | recorded |
+| `IDirect3DDevice9` | `SetViewport` | 2,000 | impl |
+| `IDirect3DDevice9` | `Clear` | 1,001 | recorded (`D3DCLEAR_TARGET \| ZBUFFER`) |
+| `IDirect3DDevice9` | `BeginScene` / `EndScene` / `Present` | 1,000 each | recorded / recorded / impl |
+| `IDirect3DDevice9` | `SetVertexDeclaration` | 1,000 | impl |
+| `IDirect3DDevice9` | `SetSamplerState` | 296 | impl |
+| `IDirect3DDevice9` | `BeginStateBlock` / `EndStateBlock` | 64 each | recorded / impl |
+| `IDirect3DDevice9` | `CreateVertexDeclaration` | 7 | impl |
+| `IDirect3DDevice9` | `CreateTexture` | 5 | impl |
+| `IDirect3DDevice9` | `ShowCursor` | 4 | recorded |
+| `IDirect3DDevice9` | `GetDeviceCaps` | 3 | impl |
+| `IDirect3DDevice9` | `CreateVertexBuffer` / `CreateIndexBuffer` | 2 each | impl |
+| `IDirect3DDevice9` | `GetDepthStencilSurface` | 2 | impl |
+| `IDirect3DDevice9` | `GetAvailableTextureMem` / `GetBackBuffer` / `GetDisplayMode` / `GetRenderTarget` / `SetCursorProperties` | 1 each | impl (4) / recorded (1) |
+| `IDirect3DStateBlock9` | `Apply` / `Release` | 20,036 / 32 | recorded / impl |
+| `IDirect3DVertexBuffer9` | `Lock` / `Unlock` | 1,004 each | impl / recorded |
+| `IDirect3DIndexBuffer9` | `Lock` / `Unlock` | 4 each | impl / recorded |
+| `IDirect3DTexture9` | `LockRect` / `UnlockRect` | 5 each | impl / recorded |
+| `IDirect3DTexture9` | `GetLevelDesc` / `GetSurfaceLevel` | 1 each | impl |
+| `IDirect3DSurface9` | `Release` / `GetDesc` | 3 / 2 | impl |
+| `ID3DXEffect` | `SetBool` / `SetMatrixTranspose` | 17,000 each | recorded |
+| `ID3DXEffect` | `SetFloat` | 16,003 | recorded |
+| `ID3DXEffect` | `SetVector` | 10,001 | recorded |
+| `ID3DXEffect` | `SetTexture` | 6,000 | recorded |
+| `ID3DXEffect` | `CommitChanges` | 5,000 | recorded |
+| `ID3DXEffect` | `IsParameterUsed` | 2,880 | impl |
+| `ID3DXEffect` | `Begin` / `BeginPass` / `EndPass` / `End` / `SetInt` / `SetTechnique` | 2,000 each | impl (`Begin`) / recorded (5) |
+| `ID3DXEffect` | `SetValue` | 1,000 | recorded |
+| `ID3DXEffect` | `GetTechniqueByName` | 480 | impl (`480` distinct names) |
+| `ID3DXEffect` | `GetParameterByName` | 164 | impl (`164` distinct names) |
+| `ID3DXEffect` | `GetParameterDesc` | 2 | impl |
+| `ID3DXEffect` | `Release` / `SetStateManager` / `SetVectorArray` | 1 each | impl / recorded / recorded |
+| `IDirectInput8A` / `Device8A` | `GetDeviceState` / `GetDeviceData` / `CreateDevice` / `Acquire` / `SetCooperativeLevel` / `SetDataFormat` / `SetProperty` | 2,002 / 1,001 / 2 / 2 / 2 / 2 / 1 | impl (3) / recorded (4) |
+
+### Render states (`19` distinct `D3DRS_*`)
+
+| State | ID | Calls | Observed values (`value: count`) |
+| --- | ---: | ---: | --- |
+| `D3DRS_ALPHATESTENABLE` | 15 | 3,000 | `0 (FALSE): 2,000`, `1 (TRUE): 1,000` |
+| `D3DRS_ZENABLE` | 7 | 1,008 | `0 (FALSE): 4`, `1 (TRUE): 1,004` |
+| `D3DRS_CULLMODE` | 22 | 1,005 | `2 (D3DCULL_CW): 1,005` |
+| `D3DRS_ALPHAREF` | 24 | 1,000 | `8: 1,000` |
+| `D3DRS_ALPHAFUNC` | 25 | 1,000 | `5 (D3DCMP_GREATER): 1,000` |
+| `D3DRS_FOGENABLE` | 28 | 1,000 | `0 (FALSE): 1,000` |
+| `D3DRS_RANGEFOGENABLE` | 48 | 1,000 | `1 (TRUE): 1,000` |
+| `D3DRS_CLIPPLANEENABLE` | 152 | 1,000 | `0 (none): 1,000` |
+| `D3DRS_MULTISAMPLEANTIALIAS` | 161 | 1,000 | `0 (FALSE): 1,000` |
+| `D3DRS_SLOPESCALEDEPTHBIAS` | 175 | 1,000 | `0 (0.0f): 1,000` |
+| `D3DRS_DEPTHBIAS` | 195 | 1,000 | `0 (0.0f): 1,000` |
+| `D3DRS_SRCBLEND` | 19 | 10 | `1 (ZERO): 2`, `2 (ONE): 2`, `5 (SRCALPHA): 6` |
+| `D3DRS_DESTBLEND` | 20 | 10 | `2 (ONE): 6`, `3 (SRCCOLOR): 2`, `6 (INVSRCALPHA): 2` |
+| `D3DRS_ALPHABLENDENABLE` | 27 | 10 | `0 (FALSE): 2`, `1 (TRUE): 8` |
+| `D3DRS_BLENDOP` | 171 | 10 | `1 (D3DBLENDOP_ADD): 10` |
+| `D3DRS_ZWRITEENABLE` | 14 | 8 | `0 (FALSE): 4`, `1 (TRUE): 4` |
+| `D3DRS_ZFUNC` | 23 | 8 | `4 (D3DCMP_LESSEQUAL): 8` |
+| `D3DRS_FILLMODE` | 8 | 4 | `2 (WIREFRAME): 2`, `3 (SOLID): 2` |
+| `D3DRS_LIGHTING` | 137 | 1 | `0 (FALSE): 1` |
+
+### Sampler states (`8` distinct `D3DSAMP_*`)
+
+| Sampler state | ID | Calls | Stage mask | Observed values (`value: count`) |
+| --- | ---: | ---: | --- | --- |
+| `D3DSAMP_ADDRESSU` | 1 | 42 | `0xffff` (`0..15`) | `1 (WRAP): 14`, `3 (CLAMP): 26`, `4 (BORDER): 2` |
+| `D3DSAMP_ADDRESSV` | 2 | 42 | `0xffff` (`0..15`) | `1 (WRAP): 14`, `3 (CLAMP): 26`, `4 (BORDER): 2` |
+| `D3DSAMP_BORDERCOLOR` | 4 | 2 | `0x1000` (`12`) | `0: 2` |
+| `D3DSAMP_MAGFILTER` | 5 | 42 | `0xffff` (`0..15`) | `1 (POINT): 5`, `2 (LINEAR): 29`, `3 (ANISOTROPIC): 8` |
+| `D3DSAMP_MINFILTER` | 6 | 42 | `0xffff` (`0..15`) | `1 (POINT): 5`, `2 (LINEAR): 25`, `3 (ANISOTROPIC): 12` |
+| `D3DSAMP_MIPFILTER` | 7 | 42 | `0xffff` (`0..15`) | `0 (NONE): 6`, `1 (POINT): 2`, `2 (LINEAR): 34` |
+| `D3DSAMP_MIPMAPLODBIAS` | 8 | 42 | `0xffff` (`0..15`) | `0 (0.0f): 42` |
+| `D3DSAMP_MAXANISOTROPY` | 10 | 42 | `0xffff` (`0..15`) | `1: 30`, `4: 12` |
+
+### Resource creations & format probes
+
+Resources created during startup and 1,000 frames:
+
+| Creation call | Format | Pool | Usage | Calls |
+| --- | --- | --- | --- | ---: |
+| `D3DXCreateTextureFromFileExA` | `D3DFMT_DXT1` (`827611204`) | `D3DPOOL_MANAGED` (`1`) | `0` | 572 |
+| `D3DXCreateTextureFromFileExA` | `D3DFMT_DXT5` (`894720068`) | `D3DPOOL_MANAGED` (`1`) | `0` | 123 |
+| `D3DXCreateTextureFromFileExA` | `D3DFMT_DXT3` (`861165636`) | `D3DPOOL_MANAGED` (`1`) | `0` | 7 |
+| `D3DXCreateTextureFromFileExA` | `D3DFMT_A8R8G8B8` (`21`) | `D3DPOOL_MANAGED` (`1`) | `0` | 2 |
+| `D3DXCreateTextureFromFileExA` | `D3DFMT_R5G6B5` (`23`) | `D3DPOOL_MANAGED` (`1`) | `0` | 1 |
+| `CreateTexture` | `D3DFMT_A8R8G8B8` (`21`) | `D3DPOOL_DEFAULT` (`0`) | `D3DUSAGE_DYNAMIC` (`0x200`) | 3 |
+| `CreateTexture` | `D3DFMT_L8` (`50`) | `D3DPOOL_DEFAULT` (`0`) | `D3DUSAGE_DYNAMIC` (`0x200`) | 1 |
+| `CreateTexture` | `D3DFMT_A8L8` (`51`) | `D3DPOOL_DEFAULT` (`0`) | `D3DUSAGE_DYNAMIC` (`0x200`) | 1 |
+| `CreateVertexBuffer` | `D3DFMT_VERTEXDATA` (`100`) | `D3DPOOL_DEFAULT` (`0`) | `D3DUSAGE_WRITEONLY` (`0x8`) | 1 |
+| `CreateVertexBuffer` | `D3DFMT_VERTEXDATA` (`100`) | `D3DPOOL_DEFAULT` (`0`) | `D3DUSAGE_DYNAMIC \| WRITEONLY` (`0x208`) | 1 |
+| `CreateIndexBuffer` | `D3DFMT_INDEX16` (`101`) | `D3DPOOL_DEFAULT` (`0`) | `D3DUSAGE_DYNAMIC \| WRITEONLY` (`0x208`) | 2 |
+
+`IDirect3D9::CheckDeviceFormat` probes (`225` total calls):
+
+| Resource type | Usage | Format | Calls |
+| --- | --- | --- | ---: |
+| `D3DRTYPE_SURFACE` (`1`) | `D3DUSAGE_DEPTHSTENCIL` (`0x2`) | `D3DFMT_D32` (`71`), `D15S1` (`73`), `D24S8` (`75`), `D24X8` (`77`), `D24X4S4` (`79`), `D16` (`80`) | 36 each (`216`) |
+| `D3DRTYPE_TEXTURE` (`3`) | `D3DUSAGE_RENDERTARGET` (`0x1`) | `D3DFMT_R16F` (`111`), `D3DFMT_R32F` (`114`) | 2 each (`4`) |
+| `D3DRTYPE_TEXTURE` (`3`) | `D3DUSAGE_RENDERTARGET \| QUERY_POSTPIXELSHADER_BLENDING` (`0x80001`) | `D3DFMT_A16B16G16R16F` (`113`) | 2 |
+| `D3DRTYPE_TEXTURE` (`3`) | `D3DUSAGE_QUERY_FILTER` (`0x20000`) | `D3DFMT_R32F` (`114`) | 2 |
+| `D3DRTYPE_TEXTURE` (`3`) | `D3DUSAGE_DEPTHSTENCIL` (`0x2`) | `D3DFMT_D24S8` (`75`) | 1 |
+
+### Effect surface summary
+
+- **Effects loaded:** `2` (`D3DXCreateEffectFromFileA`: `mb_2a.fxo` / `postFX.fxo` or module effect).
+- **Techniques queried at startup:** `480` distinct technique names (`96` base techniques × `5`
+  variants: base, `_HDR`, `_PRESHADED`, `_SHDW`, `_SHDWNVIDIA`, plus instanced variants for
+  `diffuse_dynamic`, `envmap_specular_diffuse`, `flora`, and `standart_noskin_*`).
+- **Parameters queried at startup:** `164` distinct names (`65` bone-palette entries
+  `matWorldArray` + `matWorldArray[0..63]`, `12` texture samplers, `9` view/proj/shadow/water/motion
+  matrices, `16` feature booleans, `27` scalar/offset floats & flags, `3` ints, `32`
+  lighting/fog/weather/blood/water vectors).
+- **Per-frame render cadence (main-menu loop):** `1` `Clear(TARGET | ZBUFFER)`, `1` `BeginScene`,
+  `2` `SetViewport`, `2` `ID3DXEffect::Begin`/`End` passes, `5` `CommitChanges` +
+  `DrawIndexedPrimitive(D3DPT_TRIANGLELIST)` + `SetStreamSource`, `1` `VertexBuffer::Lock/Unlock`,
+  `1` `EndScene`, `1` `Present`, and `~20` `IDirect3DStateBlock9::Apply` calls.
+
 ## What carries over
 
 - P-slices: the launcher (P10/P12), SAF `Vfs`, the Vulkan RHI and GPU path (P4), shader
