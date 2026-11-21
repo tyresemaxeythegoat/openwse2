@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +34,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
@@ -39,8 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
-import org.wse2.android.launcher.theme.WseShapes
-import org.wse2.android.launcher.theme.WseType
 import org.wse2.android.launcher.theme.wseBackdrop
 
 data class WseNavItem(
@@ -60,15 +61,16 @@ fun WseNavigationBar(
 ) {
     val colors = LocalWseColors.current
     val animationsEnabled = rememberWseAnimationsEnabled()
-    val navLabelStyle = WseType.overline.copy(
+    val navLabelStyle = MaterialTheme.typography.labelSmall.copy(
         fontSize = 11.sp,
         lineHeight = 14.sp,
-        letterSpacing = 0.9.sp
+        letterSpacing = 0.2.sp,
+        fontWeight = FontWeight.SemiBold
     )
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.surface.copy(alpha = 0.92f))
+            .background(colors.surface.copy(alpha = 0.96f))
             .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
     ) {
         Box(
@@ -139,7 +141,7 @@ fun WseNavigationBar(
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = item.label.uppercase(),
+                                text = item.label,
                                 style = navLabelStyle,
                                 color = itemColor,
                                 maxLines = 1,
@@ -154,8 +156,8 @@ fun WseNavigationBar(
                         .align(Alignment.TopStart)
                         .offset { IntOffset(indicatorX.roundToPx(), 0) }
                         .width(indicatorWidth)
-                        .height(2.5.dp)
-                        .background(colors.accent, WseShapes.small)
+                        .height(2.dp)
+                        .background(colors.accent, CircleShape)
                 )
             }
         }
@@ -173,16 +175,17 @@ fun WseNavigationRail(
 ) {
     val colors = LocalWseColors.current
     val animationsEnabled = rememberWseAnimationsEnabled()
-    val navLabelStyle = WseType.overline.copy(
+    val navLabelStyle = MaterialTheme.typography.labelSmall.copy(
         fontSize = 10.sp,
         lineHeight = 13.sp,
-        letterSpacing = 0.8.sp
+        letterSpacing = 0.2.sp,
+        fontWeight = FontWeight.SemiBold
     )
     Row(
         modifier = modifier
             .fillMaxHeight()
             .width(88.dp)
-            .background(colors.surface.copy(alpha = 0.92f))
+            .background(colors.surface.copy(alpha = 0.96f))
             .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
     ) {
         Box(
@@ -248,7 +251,7 @@ fun WseNavigationRail(
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = item.label.uppercase(),
+                                    text = item.label,
                                     style = navLabelStyle,
                                     color = itemColor,
                                     maxLines = 1,
@@ -263,9 +266,9 @@ fun WseNavigationRail(
                             .align(Alignment.TopStart)
                             .offset { IntOffset(0, indicatorY.roundToPx()) }
                             .padding(start = 4.dp)
-                            .width(3.dp)
+                            .width(2.5.dp)
                             .height(indicatorHeight)
-                            .background(colors.accent, WseShapes.small)
+                            .background(colors.accent, CircleShape)
                     )
                 }
             }

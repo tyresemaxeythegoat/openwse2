@@ -1,7 +1,6 @@
 package org.wse2.android.launcher
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -30,7 +29,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -40,7 +38,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.WseShapes
-import org.wse2.android.launcher.theme.WseType
 import org.wse2.android.launcher.ui.WseListRow
 import org.wse2.android.launcher.ui.WseSectionHeader
 import org.wse2.android.launcher.ui.WseSegmented
@@ -71,20 +68,11 @@ internal fun LauncherGroupedCard(
     Surface(
         shape = WseShapes.large,
         color = colors.surfaceContainerLow,
-        border = BorderStroke(1.dp, colors.hairline.copy(alpha = 0.72f)),
+        border = BorderStroke(1.dp, colors.hairline),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            colors.surfaceContainer.copy(alpha = 0.52f),
-                            colors.surfaceContainerLow
-                        )
-                    )
-                ),
+            modifier = Modifier.fillMaxWidth(),
             content = content
         )
     }
@@ -95,7 +83,7 @@ internal fun LauncherSectionDivider() {
     HorizontalDivider(
         modifier = Modifier.padding(horizontal = 16.dp),
         thickness = 1.dp,
-        color = LocalWseColors.current.hairline.copy(alpha = 0.40f)
+        color = LocalWseColors.current.hairline
     )
 }
 
@@ -205,8 +193,8 @@ internal fun TileGridListItem(
             )
             if (valueReadout != null) {
                 Text(
-                    text = valueReadout.uppercase(),
-                    style = WseType.overline,
+                    text = valueReadout,
+                    style = MaterialTheme.typography.labelLarge,
                     color = if (enabled) {
                         colors.primary
                     } else {

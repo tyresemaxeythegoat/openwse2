@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,18 +30,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,7 +65,7 @@ fun WsePrimaryButton(
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (enabled && animationsEnabled && isPressed) 0.97f else 1.0f,
+        targetValue = if (enabled && animationsEnabled && isPressed) 0.98f else 1.0f,
         animationSpec = wseAnimationSpec(animationsEnabled = animationsEnabled, durationMillis = 120),
         label = "wse-primary-button-scale"
     )
@@ -90,7 +87,7 @@ fun WsePrimaryButton(
                     sheenProgress.snapTo(-0.6f)
                     sheenProgress.animateTo(
                         targetValue = 1.6f,
-                        animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)
+                        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing)
                     )
                     sheenActive = false
                 }
@@ -104,59 +101,19 @@ fun WsePrimaryButton(
         )
     } else {
         Brush.verticalGradient(
-            colors = listOf(Color(0xFF7D7669), Color(0xFF645E53))
+            colors = listOf(Color(0xFF5A5650), Color(0xFF47443F))
         )
     }
     val contentColor = if (enabled) colors.onPrimary else colors.onSurface
-    val glowColorState = rememberUpdatedState(colors.accent)
-    val enabledState = rememberUpdatedState(enabled)
 
     Box(
         modifier = modifier
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-                alpha = if (enabled) 1f else 0.45f
+                alpha = if (enabled) 1f else 0.48f
             }
-            .drawWithCache {
-                val cutPx = 10.dp.toPx()
-                val ringCount = 8
-                val layers = (1..ringCount).map { i ->
-                    val falloff = 1f - (i - 1).toFloat() / ringCount
-                    val spread = i.dp.toPx()
-                    val strokeW = 1.25.dp.toPx()
-                    val layerAlpha = 0.13f * falloff * falloff
-                    val path = Path().apply {
-                        val l = -spread
-                        val t = -spread
-                        val r = size.width + spread
-                        val b = size.height + spread
-                        val c = (cutPx + spread * 0.45f).coerceAtMost(minOf(r - l, b - t) * 0.5f)
-                        // Asymmetric button cut: top-start and bottom-end chamfered.
-                        moveTo(l + c, t)
-                        lineTo(r, t)
-                        lineTo(r, b - c)
-                        lineTo(r - c, b)
-                        lineTo(l, b)
-                        lineTo(l, t + c)
-                        close()
-                    }
-                    Triple(path, Stroke(width = strokeW), layerAlpha)
-                }
-                onDrawBehind {
-                    if (enabledState.value && size.width > 0f && size.height > 0f) {
-                        val glow = glowColorState.value
-                        for ((path, stroke, layerAlpha) in layers) {
-                            drawPath(
-                                path = path,
-                                color = glow.copy(alpha = layerAlpha),
-                                style = stroke
-                            )
-                        }
-                    }
-                }
-            }
-            .heightIn(min = 56.dp)
+            .heightIn(min = 52.dp)
             .clip(WseShapes.button)
             .background(brush = fillBrush)
             .clickable(
@@ -172,7 +129,7 @@ fun WsePrimaryButton(
                     val edgePx = 1.dp.toPx()
                     val halfEdge = edgePx * 0.5f
                     val cutPx = 10.dp.toPx().coerceAtMost(minOf(size.width, size.height) * 0.5f)
-                    val highlightColor = Color.White.copy(alpha = if (enabled) 0.36f else 0.14f)
+                    val highlightColor = Color.White.copy(alpha = if (enabled) 0.28f else 0.10f)
                     drawLine(
                         color = highlightColor,
                         start = Offset(0f, cutPx),
@@ -201,7 +158,7 @@ fun WsePrimaryButton(
                             brush = Brush.linearGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    Color.White.copy(alpha = 0.20f),
+                                    Color.White.copy(alpha = 0.18f),
                                     Color.Transparent
                                 ),
                                 start = Offset(center - bandHalf, 0f),
@@ -255,21 +212,21 @@ fun WseSecondaryButton(
     )
     val containerColor by animateColorAsState(
         targetValue = when {
-            !enabled -> colors.surfaceContainerLow.copy(alpha = 0.35f)
-            isPressed -> colors.surfaceContainerHigh.copy(alpha = 0.85f)
-            else -> colors.surfaceContainerLow.copy(alpha = 0.65f)
+            !enabled -> colors.surfaceContainerLow.copy(alpha = 0.45f)
+            isPressed -> colors.surfaceContainerHigh
+            else -> colors.surfaceContainer
         },
         animationSpec = wseAnimationSpec(animationsEnabled = animationsEnabled, durationMillis = 110),
         label = "wse-secondary-button-bg"
     )
     val contentColor = if (enabled) {
-        colors.primary
+        colors.onSurface
     } else {
         colors.onSurfaceVariant.copy(alpha = 0.45f)
     }
     val borderColor = when {
-        !enabled -> colors.outlineVariant.copy(alpha = 0.45f)
-        isPressed -> colors.accent
+        !enabled -> colors.outlineVariant.copy(alpha = 0.5f)
+        isPressed -> colors.outline
         else -> colors.hairline
     }
 
@@ -277,7 +234,7 @@ fun WseSecondaryButton(
         onClick = onClick,
         enabled = enabled,
         interactionSource = interactionSource,
-        shape = WseShapes.button,
+        shape = WseShapes.small,
         color = containerColor,
         contentColor = contentColor,
         border = BorderStroke(1.dp, borderColor),
@@ -286,10 +243,10 @@ fun WseSecondaryButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .heightIn(min = 48.dp)
+            .heightIn(min = 42.dp)
     ) {
         Box(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             contentAlignment = Alignment.Center
         ) {
             CompositionLocalProvider(LocalContentColor provides contentColor) {
@@ -302,8 +259,8 @@ fun WseSecondaryButton(
                         Spacer(Modifier.width(8.dp))
                     }
                     Text(
-                        text = text.uppercase(),
-                        style = WseType.overline,
+                        text = text,
+                        style = MaterialTheme.typography.labelLarge,
                         color = contentColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -327,7 +284,7 @@ fun WseTextButton(
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (enabled && animationsEnabled && isPressed) 0.97f else 1.0f,
+        targetValue = if (enabled && animationsEnabled && isPressed) 0.98f else 1.0f,
         animationSpec = wseAnimationSpec(animationsEnabled = animationsEnabled, durationMillis = 110),
         label = "wse-text-button-scale"
     )
@@ -341,8 +298,8 @@ fun WseTextButton(
         onClick = onClick,
         enabled = enabled,
         interactionSource = interactionSource,
-        shape = WseShapes.button,
-        color = if (enabled && isPressed) colors.surfaceContainerHigh.copy(alpha = 0.55f) else Color.Transparent,
+        shape = WseShapes.small,
+        color = if (enabled && isPressed) colors.surfaceContainerHigh.copy(alpha = 0.6f) else Color.Transparent,
         contentColor = contentColor,
         border = null,
         modifier = modifier
@@ -350,15 +307,15 @@ fun WseTextButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .heightIn(min = 48.dp)
+            .heightIn(min = 38.dp)
     ) {
         Box(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = text.uppercase(),
-                style = WseType.overline,
+                text = text,
+                style = MaterialTheme.typography.labelLarge,
                 color = contentColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis

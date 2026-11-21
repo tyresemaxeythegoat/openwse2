@@ -62,7 +62,7 @@ fun WseDialog(
                 )
                 HorizontalDivider(
                     thickness = 1.dp,
-                    color = colors.hairline.copy(alpha = 0.45f)
+                    color = colors.hairline
                 )
                 Box(
                     modifier = Modifier

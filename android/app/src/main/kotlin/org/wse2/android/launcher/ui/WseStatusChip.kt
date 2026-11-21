@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,13 +17,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
-import org.wse2.android.launcher.theme.WseShapes
-import org.wse2.android.launcher.theme.WseType
 import org.wse2.android.launcher.theme.wseBackdrop
 
 enum class WseStatusTone {
@@ -62,17 +63,17 @@ fun WseStatusChip(
         }
     }
 
-    val containerColor = baseColor.copy(alpha = 0.16f)
-    val borderStroke = BorderStroke(1.dp, baseColor.copy(alpha = 0.42f))
+    val containerColor = baseColor.copy(alpha = 0.12f)
+    val borderStroke = BorderStroke(1.dp, baseColor.copy(alpha = 0.28f))
     val visualModifier = modifier.graphicsLayer {
         alpha = if (enabled) 1f else 0.45f
     }
 
     val chipContent: @Composable () -> Unit = {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -80,8 +81,11 @@ fun WseStatusChip(
                     .background(color = baseColor, shape = CircleShape)
             )
             Text(
-                text = text.uppercase(),
-                style = WseType.overline,
+                text = text,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    letterSpacing = 0.2.sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
                 color = labelColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -93,7 +97,7 @@ fun WseStatusChip(
         Surface(
             onClick = onClick,
             enabled = enabled,
-            shape = WseShapes.small,
+            shape = CircleShape,
             color = containerColor,
             contentColor = labelColor,
             border = borderStroke,
@@ -102,12 +106,59 @@ fun WseStatusChip(
         )
     } else {
         Surface(
-            shape = WseShapes.small,
+            shape = CircleShape,
             color = containerColor,
             contentColor = labelColor,
             border = borderStroke,
             modifier = visualModifier,
             content = chipContent
+        )
+    }
+}
+
+@Composable
+fun WseStatusDot(
+    text: String,
+    tone: WseStatusTone,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalWseColors.current
+    val baseColor: Color
+    val labelColor: Color
+    when (tone) {
+        WseStatusTone.Ready -> {
+            baseColor = colors.ready
+            labelColor = colors.readyText
+        }
+        WseStatusTone.Warning -> {
+            baseColor = colors.warning
+            labelColor = colors.warningText
+        }
+        WseStatusTone.Error -> {
+            baseColor = colors.errorTone
+            labelColor = colors.errorToneText
+        }
+        WseStatusTone.Neutral -> {
+            baseColor = colors.neutral
+            labelColor = colors.neutralText
+        }
+    }
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .background(color = baseColor, shape = CircleShape)
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+            color = labelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -123,7 +174,7 @@ private fun PreviewWseStatusChips() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            WseStatusChip(text = "Ready", tone = WseStatusTone.Ready)
+            WseStatusDot(text = "Ready", tone = WseStatusTone.Ready)
             WseStatusChip(text = "Checking…", tone = WseStatusTone.Neutral)
             WseStatusChip(text = "Thermal limit", tone = WseStatusTone.Warning)
             WseStatusChip(text = "3 files missing", tone = WseStatusTone.Error, onClick = {})

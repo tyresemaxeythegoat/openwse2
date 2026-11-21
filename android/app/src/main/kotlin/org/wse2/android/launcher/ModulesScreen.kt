@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -42,9 +43,10 @@ import org.wse2.android.launcher.ui.WseMetricItem
 import org.wse2.android.launcher.ui.WsePrimaryButton
 import org.wse2.android.launcher.ui.WseScreenHeader
 import org.wse2.android.launcher.ui.WseSecondaryButton
-import org.wse2.android.launcher.ui.WseSectionHeader
 import org.wse2.android.launcher.ui.WseStatusChip
+import org.wse2.android.launcher.ui.WseStatusDot
 import org.wse2.android.launcher.ui.WseStatusTone
+import org.wse2.android.launcher.ui.WseTextButton
 import org.wse2.android.launcher.ui.rememberWseAnimationsEnabled
 import org.wse2.android.launcher.ui.wseStaggeredEntrance
 
@@ -97,18 +99,15 @@ fun ModulesScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 WseScreenHeader(
-                    eyebrow = "Module Library",
                     title = "Modules",
-                    subtitle = if (state.modules.isNotEmpty()) {
-                        "Select a module to load on launch or rescan your Warband folder."
-                    } else {
-                        "Choose your Warband install folder to discover modules."
-                    },
                     trailing = if (state.modules.isNotEmpty()) {
                         {
-                            WseStatusChip(
-                                text = "${state.modules.size} found",
-                                tone = WseStatusTone.Neutral
+                            Text(
+                                text = "${state.modules.size} installed",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                color = colors.onSurfaceVariant
                             )
                         }
                     } else {
@@ -120,32 +119,42 @@ fun ModulesScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        WseSectionHeader(title = "Warband folder")
-                        Text(
-                            text = folderLabel ?: "No Warband folder selected",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = colors.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            WseSecondaryButton(
-                                text = "Choose folder",
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(1.dp)
+                            ) {
+                                Text(
+                                    text = "Install folder",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSurfaceVariant
+                                )
+                                Text(
+                                    text = folderLabel ?: "No Warband folder selected",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.SemiBold
+                                    ),
+                                    color = colors.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            WseTextButton(
+                                text = "Change",
                                 onClick = onChooseFolder,
-                                enabled = !scanState.inProgress,
-                                modifier = Modifier.weight(1f)
+                                enabled = !scanState.inProgress
                             )
                             WseSecondaryButton(
                                 text = "Rescan",
                                 onClick = onRescan,
-                                enabled = hasFolder && !scanState.inProgress,
-                                modifier = Modifier.weight(1f)
+                                enabled = hasFolder && !scanState.inProgress
                             )
                         }
 
@@ -163,22 +172,21 @@ fun ModulesScreen(
                                 CircularProgressIndicator(
                                     color = colors.accent,
                                     trackColor = colors.surfaceContainerHigh,
-                                    modifier = Modifier.size(18.dp),
+                                    modifier = Modifier.size(16.dp),
                                     strokeWidth = 2.dp
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Text(
                                     text = "Scanning $label…",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = colors.onSurface,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSurfaceVariant,
                                     modifier = Modifier.weight(1f)
                                 )
+                                WseTextButton(
+                                    text = "Cancel",
+                                    onClick = onCancelScan
+                                )
                             }
-                            WseSecondaryButton(
-                                text = "Cancel",
-                                onClick = onCancelScan,
-                                modifier = Modifier.fillMaxWidth()
-                            )
                         }
                     }
                 }
@@ -295,40 +303,42 @@ fun ModulesScreen(
                             }
                         }
                     }
-                    LauncherGroupedCard(
+                    Column(
                         modifier = Modifier.wseStaggeredEntrance(
                             key = "modules-details",
                             order = (state.modules.size + 1).coerceAtMost(8),
                             revealedKeys = revealedKeys,
                             animationsEnabled = animationsEnabled
-                        )
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            WseSectionHeader(
-                                title = "Selected module details",
-                                badge = selectedMod.displayName.ifBlank { selectedMod.folderName }
-                            )
-                            WseKeyValueGrid(
-                                items = listOf(
-                                    WseMetricItem("Path", selectedMod.modulePath),
-                                    WseMetricItem(
-                                        "Install Check",
-                                        installLabel,
-                                        accentValue = installLabel == "Ready"
+                        LauncherSectionHeader(
+                            title = "Selected module",
+                            badge = selectedMod.displayName.ifBlank { selectedMod.folderName }
+                        )
+                        LauncherGroupedCard {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            ) {
+                                WseKeyValueGrid(
+                                    items = listOf(
+                                        WseMetricItem("Path", selectedMod.modulePath),
+                                        WseMetricItem(
+                                            "Install check",
+                                            installLabel,
+                                            accentValue = installLabel == "Ready"
+                                        ),
+                                        WseMetricItem("scripts.txt", scriptsLabel),
+                                        WseMetricItem(
+                                            "BRF resources",
+                                            "${selectedMod.loadResourceCount} common + ${selectedMod.loadModResourceCount} mod"
+                                        )
                                     ),
-                                    WseMetricItem("scripts.txt", scriptsLabel),
-                                    WseMetricItem(
-                                        "BRF Resources",
-                                        "${selectedMod.loadResourceCount} common + ${selectedMod.loadModResourceCount} mod"
-                                    )
-                                ),
-                                columns = 2
-                            )
+                                    columns = 2
+                                )
+                            }
                         }
                     }
                 }
@@ -349,27 +359,16 @@ private fun ModuleGridCard(
     modifier: Modifier = Modifier
 ) {
     val displayTitle = module.displayName.ifBlank { module.folderName }
-    val chipLabel: String
-    val chipTone: WseStatusTone
     val isMissing = status?.state == InstallCheckState.MISSING
-    when (status?.state) {
-        InstallCheckState.READY -> {
-            chipLabel = "Ready"
-            chipTone = WseStatusTone.Ready
+    val missingLabel = if (isMissing) {
+        val count = status?.missingFiles?.size ?: 0
+        when {
+            count == 1 -> "1 file missing"
+            count > 1 -> "$count files missing"
+            else -> "Files missing"
         }
-        InstallCheckState.MISSING -> {
-            val count = status.missingFiles.size
-            chipLabel = when {
-                count == 1 -> "1 file missing"
-                count > 1 -> "$count files missing"
-                else -> "Files missing"
-            }
-            chipTone = WseStatusTone.Error
-        }
-        null, InstallCheckState.CHECKING -> {
-            chipLabel = "Checking…"
-            chipTone = WseStatusTone.Neutral
-        }
+    } else {
+        null
     }
 
     WseBannerCard(
@@ -378,12 +377,23 @@ private fun ModuleGridCard(
         title = displayTitle,
         subtitle = module.folderName,
         chip = {
-            WseStatusChip(
-                text = chipLabel,
-                tone = chipTone,
-                enabled = true,
-                onClick = if (isMissing) onShowMissingFiles else null
-            )
+            if (isMissing && missingLabel != null) {
+                WseStatusChip(
+                    text = missingLabel,
+                    tone = WseStatusTone.Error,
+                    onClick = onShowMissingFiles
+                )
+            } else if (status?.state == InstallCheckState.READY) {
+                WseStatusDot(
+                    text = "Ready",
+                    tone = WseStatusTone.Ready
+                )
+            } else {
+                WseStatusDot(
+                    text = "Checking…",
+                    tone = WseStatusTone.Neutral
+                )
+            }
         },
         selected = selected,
         onClick = onClick,

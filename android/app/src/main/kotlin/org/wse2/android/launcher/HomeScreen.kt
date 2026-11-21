@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +46,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -70,12 +70,11 @@ import org.wse2.android.launcher.theme.CinzelFontFamily
 import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
 import org.wse2.android.launcher.theme.WseShapes
-import org.wse2.android.launcher.theme.WseType
 import org.wse2.android.launcher.theme.wseBackdrop
 import org.wse2.android.launcher.ui.WsePrimaryButton
 import org.wse2.android.launcher.ui.WseSecondaryButton
-import org.wse2.android.launcher.ui.WseSectionHeader
 import org.wse2.android.launcher.ui.WseStatusChip
+import org.wse2.android.launcher.ui.WseStatusDot
 import org.wse2.android.launcher.ui.WseStatusTone
 import org.wse2.android.launcher.ui.WseTextButton
 import org.wse2.android.launcher.ui.rememberWseAnimationsEnabled
@@ -123,8 +122,7 @@ fun HomeScreen(
         ?: "WSE2 Android"
     val folderDisplay = state.installFolder.displayName?.takeIf { it.isNotBlank() }
     val heroSubtitle = when {
-        selectedModule != null && folderDisplay != null ->
-            "${selectedModule.modulePath} · $folderDisplay"
+        selectedModule != null && folderDisplay != null -> folderDisplay
         selectedModule != null -> selectedModule.modulePath
         hasFolder && state.scanState.inProgress -> "Scanning folder for modules…"
         hasFolder -> "No Warband modules found in ${folderDisplay ?: "this folder"}"
@@ -164,18 +162,17 @@ fun HomeScreen(
                     art = state.heroArt,
                     heroTitle = heroTitle,
                     heroSubtitle = heroSubtitle,
-                    overline = if (selectedModule != null) "Selected module" else "Warband launcher",
                     fadeRightEdge = true,
                     topContentPadding = topContentPadding,
                     artModifier = artSharedModifier,
                     animationsEnabled = animationsEnabled,
                     modifier = Modifier
-                        .weight(0.58f)
+                        .weight(0.56f)
                         .fillMaxHeight()
                 )
                 Column(
                     modifier = Modifier
-                        .weight(0.42f)
+                        .weight(0.44f)
                         .fillMaxHeight()
                         .verticalScroll(rememberScrollState())
                         .padding(
@@ -184,19 +181,17 @@ fun HomeScreen(
                             top = topContentPadding + 16.dp,
                             bottom = 16.dp
                         ),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     HomeActionsPanel(
                         statusInfo = statusInfo,
+                        hasFolder = hasFolder,
                         isReady = isReady,
                         isMissing = isMissing,
                         scanInProgress = state.scanState.inProgress,
                         selectedModule = selectedModule,
                         installStatus = installStatus,
                         folderDisplay = folderDisplay,
-                        statusLog = state.statusLog,
-                        compactButtonsStacked = true,
-                        moduleSectionBeforeButtons = false,
                         revealedKeys = revealedKeys,
                         animationsEnabled = animationsEnabled,
                         moduleSection = if (showModules) {
@@ -206,21 +201,21 @@ fun HomeScreen(
                                     selectedIndex = selectedIndex,
                                     moduleArt = moduleArt,
                                     animationsEnabled = animationsEnabled,
-                                    onSelectModule = onSelectModule
+                                    onSelectModule = onSelectModule,
+                                    onViewAll = onChangeModule
                                 )
                             }
                         } else {
                             null
                         },
                         onChooseFolder = onChooseFolder,
-                        onChangeModule = onChangeModule,
                         onShowMissingFiles = onShowMissingFiles,
                         onPlay = onPlay
                     )
                 }
             }
         } else {
-            val heroHeight = (maxHeight * 0.54f).coerceAtLeast(296.dp) + topContentPadding
+            val heroHeight = (maxHeight * 0.50f).coerceAtLeast(280.dp) + topContentPadding
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -230,7 +225,6 @@ fun HomeScreen(
                     art = state.heroArt,
                     heroTitle = heroTitle,
                     heroSubtitle = heroSubtitle,
-                    overline = if (selectedModule != null) "Selected module" else "Warband launcher",
                     fadeRightEdge = false,
                     topContentPadding = topContentPadding,
                     artModifier = artSharedModifier,
@@ -242,20 +236,18 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                        .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     HomeActionsPanel(
                         statusInfo = statusInfo,
+                        hasFolder = hasFolder,
                         isReady = isReady,
                         isMissing = isMissing,
                         scanInProgress = state.scanState.inProgress,
                         selectedModule = selectedModule,
                         installStatus = installStatus,
                         folderDisplay = folderDisplay,
-                        statusLog = state.statusLog,
-                        compactButtonsStacked = false,
-                        moduleSectionBeforeButtons = true,
                         revealedKeys = revealedKeys,
                         animationsEnabled = animationsEnabled,
                         moduleSection = if (showModules) {
@@ -265,14 +257,14 @@ fun HomeScreen(
                                     selectedIndex = selectedIndex,
                                     moduleArt = moduleArt,
                                     animationsEnabled = animationsEnabled,
-                                    onSelectModule = onSelectModule
+                                    onSelectModule = onSelectModule,
+                                    onViewAll = onChangeModule
                                 )
                             }
                         } else {
                             null
                         },
                         onChooseFolder = onChooseFolder,
-                        onChangeModule = onChangeModule,
                         onShowMissingFiles = onShowMissingFiles,
                         onPlay = onPlay
                     )
@@ -312,7 +304,7 @@ private fun resolveHomeStatus(
             )
         }
         !hasFolder -> HomeStatusInfo(
-            chipLabel = "Choose folder",
+            chipLabel = "No folder selected",
             tone = HomeChipTone.PENDING,
             disabledReason = "Choose the Warband folder that contains Modules/ and CommonRes/."
         )
@@ -327,7 +319,7 @@ private fun resolveHomeStatus(
             disabledReason = "Checking required Warband files…"
         )
         installStatus.state == InstallCheckState.READY -> HomeStatusInfo(
-            chipLabel = "Ready",
+            chipLabel = "Ready to launch",
             tone = HomeChipTone.READY,
             disabledReason = null
         )
@@ -357,7 +349,6 @@ private fun HomeHeroBanner(
     art: ModuleArt?,
     heroTitle: String,
     heroSubtitle: String,
-    overline: String,
     fadeRightEdge: Boolean,
     topContentPadding: Dp,
     artModifier: Modifier,
@@ -366,23 +357,22 @@ private fun HomeHeroBanner(
 ) {
     val colors = LocalWseColors.current
     val readabilityScrim = Brush.verticalGradient(
-        0.0f to colors.background.copy(alpha = 0.42f),
-        0.08f to colors.background.copy(alpha = 0.28f),
-        0.36f to Color.Transparent,
-        0.68f to colors.background.copy(alpha = 0.56f),
-        1.0f to colors.background.copy(alpha = 0.88f)
+        0.0f to colors.background.copy(alpha = 0.25f),
+        0.35f to Color.Transparent,
+        0.70f to colors.background.copy(alpha = 0.58f),
+        1.0f to colors.background.copy(alpha = 0.92f)
     )
-    // Alpha masks dissolve the hero artwork seamlessly into the textured wseBackdrop behind it
+    // Alpha masks dissolve the hero artwork seamlessly into the backdrop behind it
     // without leaving a solid dark rectangle edge in portrait or landscape.
     val verticalFadeMask = Brush.verticalGradient(
         0.0f to Color.Black,
-        0.58f to Color.Black,
-        0.86f to Color.Black.copy(alpha = 0.35f),
+        0.62f to Color.Black,
+        0.88f to Color.Black.copy(alpha = 0.35f),
         1.0f to Color.Transparent
     )
     val horizontalFadeMask = Brush.horizontalGradient(
         0.0f to Color.Black,
-        0.72f to Color.Black,
+        0.74f to Color.Black,
         0.92f to Color.Black.copy(alpha = 0.25f),
         1.0f to Color.Transparent
     )
@@ -416,7 +406,7 @@ private fun HomeHeroBanner(
                 }
         ) {
             // Opaque dark base inside the masked offscreen layer so no sub-1.0 alpha at the
-            // blurred bitmap's top edge can leak the brighter wseBackdrop glow through y = 0.
+            // blurred bitmap's top edge can leak the brighter backdrop through y = 0.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -446,55 +436,16 @@ private fun HomeHeroBanner(
             )
         }
 
-        // Subtle WSE2 crest pill in the top-start corner of the hero canvas.
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(
-                    start = 20.dp,
-                    top = topContentPadding + 16.dp
-                )
-                .clip(WseShapes.small)
-                .background(colors.background.copy(alpha = 0.66f))
-                .border(1.dp, colors.hairline.copy(alpha = 0.72f), WseShapes.small)
-                .padding(horizontal = 10.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .rotate(45f)
-                    .background(colors.primary)
-            )
-            Text(
-                text = "WSE2 · ARM64",
-                style = WseType.overline.copy(
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
-                    letterSpacing = 1.4.sp
-                ),
-                color = colors.onSurface,
-                maxLines = 1
-            )
-        }
-
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(
                     start = 20.dp,
                     end = 20.dp,
-                    top = topContentPadding + 52.dp,
+                    top = topContentPadding + 24.dp,
                     bottom = 14.dp
                 )
         ) {
-            Text(
-                text = overline.uppercase(),
-                style = WseType.overline,
-                color = colors.primary
-            )
-            Spacer(Modifier.height(4.dp))
             Text(
                 text = heroTitle,
                 style = MaterialTheme.typography.displayMedium,
@@ -502,7 +453,7 @@ private fun HomeHeroBanner(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = heroSubtitle,
                 style = MaterialTheme.typography.bodyMedium,
@@ -517,179 +468,146 @@ private fun HomeHeroBanner(
 @Composable
 private fun HomeActionsPanel(
     statusInfo: HomeStatusInfo,
+    hasFolder: Boolean,
     isReady: Boolean,
     isMissing: Boolean,
     scanInProgress: Boolean,
     selectedModule: ModuleChoice?,
     installStatus: ModuleInstallStatus?,
     folderDisplay: String?,
-    statusLog: String,
-    compactButtonsStacked: Boolean,
-    moduleSectionBeforeButtons: Boolean,
     revealedKeys: MutableSet<Any>,
     animationsEnabled: Boolean,
     moduleSection: (@Composable () -> Unit)?,
     onChooseFolder: () -> Unit,
-    onChangeModule: () -> Unit,
     onShowMissingFiles: (ModuleChoice, List<String>) -> Unit,
     onPlay: () -> Unit
 ) {
     val colors = LocalWseColors.current
     val haptic = LocalHapticFeedback.current
-    val chipTone = when (statusInfo.tone) {
-        HomeChipTone.READY -> WseStatusTone.Ready
-        HomeChipTone.MISSING -> WseStatusTone.Error
-        HomeChipTone.PENDING -> WseStatusTone.Neutral
-    }
-    val chipClickable = isMissing && selectedModule != null
-    val resourceBadge = selectedModule?.let { mod ->
-        if (mod.loadModResourceCount > 0) {
-            "${mod.loadResourceCount} + ${mod.loadModResourceCount} BRFS"
-        } else {
-            "${mod.loadResourceCount} BRFS"
-        }
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(Modifier.wseStaggeredEntrance("chip", 0, revealedKeys, animationsEnabled)),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+
+    Column(
+        modifier = Modifier.wseStaggeredEntrance("cta", 0, revealedKeys, animationsEnabled),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        WseStatusChip(
-            text = statusInfo.chipLabel,
-            tone = chipTone,
-            enabled = true,
-            onClick = if (chipClickable) {
-                {
-                    if (selectedModule != null && installStatus != null) {
-                        onShowMissingFiles(selectedModule, installStatus.missingFiles)
-                    }
-                }
-            } else {
-                null
-            }
+        WsePrimaryButton(
+            text = "Play",
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onPlay()
+            },
+            enabled = isReady,
+            leadingIcon = {
+                Icon(
+                    imageVector = HomeIcons.Play,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
         )
-        if (resourceBadge != null) {
-            Text(
-                text = resourceBadge,
-                style = WseType.overline.copy(
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
-                    letterSpacing = 1.1.sp
-                ),
-                color = colors.onSurfaceVariant,
-                maxLines = 1
-            )
-        }
-    }
 
-    WsePrimaryButton(
-        text = "Play",
-        onClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            onPlay()
-        },
-        enabled = isReady,
-        leadingIcon = {
-            Icon(
-                imageVector = HomeIcons.Play,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
+        if (isReady) {
+            WseStatusDot(
+                text = statusInfo.chipLabel,
+                tone = WseStatusTone.Ready
             )
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(60.dp)
-            .then(Modifier.wseStaggeredEntrance("play", 1, revealedKeys, animationsEnabled))
-    )
-
-    if (statusInfo.disabledReason != null) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = statusInfo.disabledReason,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (isMissing) {
-                    colors.error
-                } else {
-                    colors.onSurfaceVariant
-                }
-            )
-            if (isMissing && selectedModule != null && installStatus != null) {
-                WseTextButton(
-                    text = "View missing files",
+        } else if (isMissing && selectedModule != null && installStatus != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                WseStatusChip(
+                    text = statusInfo.chipLabel,
+                    tone = WseStatusTone.Error,
                     onClick = { onShowMissingFiles(selectedModule, installStatus.missingFiles) }
+                )
+                WseTextButton(
+                    text = "View details",
+                    onClick = { onShowMissingFiles(selectedModule, installStatus.missingFiles) }
+                )
+            }
+        } else {
+            WseStatusDot(
+                text = statusInfo.disabledReason ?: statusInfo.chipLabel,
+                tone = WseStatusTone.Neutral
+            )
+            if (!hasFolder) {
+                WseSecondaryButton(
+                    text = "Choose Warband folder",
+                    onClick = onChooseFolder,
+                    enabled = !scanInProgress,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
     }
 
-    if (moduleSection != null && moduleSectionBeforeButtons) {
-        Box(modifier = Modifier.wseStaggeredEntrance("modules", 2, revealedKeys, animationsEnabled)) { moduleSection() }
+    if (moduleSection != null) {
+        Box(modifier = Modifier.wseStaggeredEntrance("modules", 1, revealedKeys, animationsEnabled)) {
+            moduleSection()
+        }
     }
 
-    if (compactButtonsStacked) {
-        Column(
-            modifier = Modifier.wseStaggeredEntrance("buttons", 2, revealedKeys, animationsEnabled),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            WseSecondaryButton(
-                text = "Change module",
-                onClick = onChangeModule,
-                modifier = Modifier.fillMaxWidth()
-            )
-            WseSecondaryButton(
-                text = "Choose folder",
-                onClick = onChooseFolder,
-                enabled = !scanInProgress,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    } else {
+    if (hasFolder) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(Modifier.wseStaggeredEntrance("buttons", 3, revealedKeys, animationsEnabled)),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .wseStaggeredEntrance("footer", 2, revealedKeys, animationsEnabled)
+                .padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            WseSecondaryButton(
-                text = "Choose folder",
+            Text(
+                text = folderDisplay ?: "Warband folder",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            WseTextButton(
+                text = "Change folder",
                 onClick = onChooseFolder,
-                enabled = !scanInProgress,
-                modifier = Modifier.weight(1f)
-            )
-            WseSecondaryButton(
-                text = "Modules",
-                onClick = onChangeModule,
-                modifier = Modifier.weight(1f)
+                enabled = !scanInProgress
             )
         }
     }
+}
 
-    if (moduleSection != null && !moduleSectionBeforeButtons) {
-        Box(modifier = Modifier.wseStaggeredEntrance("modules", 3, revealedKeys, animationsEnabled)) { moduleSection() }
+@Composable
+private fun HomeModuleSectionTitle(
+    onViewAll: () -> Unit
+) {
+    val colors = LocalWseColors.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = "MODULES",
+            style = MaterialTheme.typography.labelMedium.copy(
+                letterSpacing = 1.1.sp,
+                fontWeight = FontWeight.SemiBold
+            ),
+            color = colors.onSurfaceVariant
+        )
+        Text(
+            text = "All modules",
+            style = MaterialTheme.typography.labelMedium.copy(
+                letterSpacing = 0.2.sp,
+                fontWeight = FontWeight.SemiBold
+            ),
+            color = colors.primary,
+            modifier = Modifier
+                .clip(WseShapes.small)
+                .clickable(role = Role.Button, onClick = onViewAll)
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        )
     }
-
-    val footerText = buildString {
-        if (folderDisplay != null) {
-            append("Install: ").append(folderDisplay).append(" · ")
-        }
-        val singleLineStatus = statusLog
-            .lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .joinToString(" · ")
-            .ifEmpty { "Ready." }
-        append(singleLineStatus)
-    }
-    Text(
-        text = footerText,
-        style = MaterialTheme.typography.bodySmall,
-        color = colors.onSurfaceVariant,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.wseStaggeredEntrance("footer", 4, revealedKeys, animationsEnabled)
-    )
 }
 
 @Composable
@@ -698,10 +616,11 @@ private fun HomeModuleStrip(
     selectedIndex: Int,
     moduleArt: Map<String, ModuleArt>,
     animationsEnabled: Boolean,
-    onSelectModule: (Int) -> Unit
+    onSelectModule: (Int) -> Unit,
+    onViewAll: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        WseSectionHeader(title = "Your modules", badge = "${modules.size} installed")
+        HomeModuleSectionTitle(onViewAll = onViewAll)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(modules.size) { index ->
                 val module = modules[index]
@@ -724,11 +643,12 @@ private fun HomeModuleGrid(
     selectedIndex: Int,
     moduleArt: Map<String, ModuleArt>,
     animationsEnabled: Boolean,
-    onSelectModule: (Int) -> Unit
+    onSelectModule: (Int) -> Unit,
+    onViewAll: () -> Unit
 ) {
     // A plain two-column grid: it sits inside a scrolling column, so it must not be lazy.
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        WseSectionHeader(title = "Your modules", badge = "${modules.size}")
+        HomeModuleSectionTitle(onViewAll = onViewAll)
         modules.indices.chunked(2).forEach { rowIndices ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -782,7 +702,7 @@ private fun HomeModuleCard(
             .clip(WseShapes.medium)
             .border(
                 width = if (selected) 1.5.dp else 1.dp,
-                color = if (selected) colors.accent else colors.hairline.copy(alpha = 0.7f),
+                color = if (selected) colors.accent else colors.hairline,
                 shape = WseShapes.medium
             )
             .clickable(
@@ -803,8 +723,8 @@ private fun HomeModuleCard(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0.36f to Color.Transparent,
-                        1.0f to colors.background.copy(alpha = 0.92f)
+                        0.38f to Color.Transparent,
+                        1.0f to colors.background.copy(alpha = 0.90f)
                     )
                 )
         )
@@ -814,16 +734,16 @@ private fun HomeModuleCard(
                     .align(Alignment.TopEnd)
                     .padding(8.dp)
                     .size(8.dp)
-                    .rotate(45f)
+                    .clip(CircleShape)
                     .background(colors.accent)
-                    .border(1.dp, colors.background.copy(alpha = 0.7f))
+                    .border(1.5.dp, colors.background.copy(alpha = 0.75f), CircleShape)
             )
         }
         Text(
             text = name,
             style = MaterialTheme.typography.titleSmall.copy(
                 fontFamily = CinzelFontFamily,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.SemiBold
             ),
             color = colors.onSurface,
             maxLines = 1,

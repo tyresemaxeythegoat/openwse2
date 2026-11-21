@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Crossed sword tips (above shield) and hilts (below shield) -->
+    <path android:fillColor="#FFFFFF" android:pathData="M75.71,28.19L68.79,31.97L67.01,34.01L71.83,37.91L73.45,35.75Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M34.77,64.13L36.68,63.36L49.42,73.68L49.07,75.71L47.1,75.92L34.97,66.1Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M39.61,69.6L42.72,72.11L39.08,76.12L36.44,73.98Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M38.27,74.43L39.13,79.24L34.11,79.56L33.38,74.59Z" />
+
+    <path android:fillColor="#FFFFFF" android:pathData="M32.29,28.19L34.55,35.75L36.17,37.91L40.99,34.01L39.21,31.97Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M58.93,75.71L58.58,73.68L71.32,63.36L73.23,64.13L73.03,66.1L60.9,75.92Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M65.28,72.11L68.39,69.6L71.56,73.98L68.92,76.12Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M69.73,74.43L74.62,74.59L73.89,79.56L68.87,79.24Z" />
+
+    <!-- Shield rim + recessed interior + Knight's Great Helm with eye slits & vents -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M34,34Q54,31.2 74,34L74,50C74,63.2 64.6,73.2 54,79.5C43.4,73.2 34,63.2 34,50Z M37.3,36.9Q54,34.7 70.7,36.9L70.7,49.9C70.7,61.0 62.8,69.6 54,75.2C45.2,69.6 37.3,61.0 37.3,49.9Z M54,40.4L46.7,42.3L44.4,48.0L45.4,61.8L54,67.2L62.6,61.8L63.6,48.0L61.3,42.3Z M46.0,49.8L52.0,49.8L52.0,51.6L46.2,51.6Z M56.0,49.8L62.0,49.8L61.8,51.6L56.0,51.6Z M47.1,55.3L50.6,55.3L50.6,56.7L47.3,56.7Z M47.5,58.0L50.6,58.0L50.6,59.4L47.7,59.4Z M48.1,60.6L50.6,60.6L50.6,61.9L48.5,61.9Z M57.4,55.3L60.9,55.3L60.7,56.7L57.4,56.7Z M57.4,58.0L60.5,58.0L60.3,59.4L57.4,59.4Z M57.4,60.6L59.9,60.6L59.5,61.9L57.4,61.9Z" />
+</vector>
