@@ -449,7 +449,9 @@ next thing to implement. Never run in CI.
    main loop for 1,000 frames on the stub device with no fault and no missing import, and the
    same build runs from the APK's Advanced screen on the phone.
 
-**Phone run (decided with the user, 2026-11-21).** Advanced > "R4 startup run" runs the same
+**Phone run (decided with the user, 2026-11-21).** Advanced > "Game test" (named "R4 startup
+run" until 2026-11-21, when its texts were put in plain words for players; "R0 spikes" became
+"Phone check" and the raw report lines moved under "Details for the developers") runs the same
 startup on the phone:
 
 - **One runner.** `engine/src/recomp/r4_startup.{h,cpp}` (`run_startup`, in `wse_recomp`) does what

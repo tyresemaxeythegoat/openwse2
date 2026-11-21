@@ -198,15 +198,15 @@ fun AdvancedScreen(
                 }
             }
 
-            LauncherSectionHeader(title = "Recompiler (Phase 5)")
+            LauncherSectionHeader(title = "Running the game (experimental)")
             LauncherGroupedCard {
                 WseListRow(
-                    title = "R0 spikes",
+                    title = "Phone check",
                     supporting = if (r0State.running) {
-                        "Running: translating with the embedded LLVM. This can take a few minutes."
+                        "Checking. This can take a few minutes."
                     } else {
-                        "Checks that this phone can load generated code, map the game image " +
-                            "and translate mb_warband_wse2_x64.exe from the selected folder."
+                        "Checks that this phone can run game code translated from your " +
+                            "mb_warband_wse2_x64.exe. Takes a few minutes."
                     },
                     trailing = if (r0State.running) {
                         {
@@ -224,14 +224,15 @@ fun AdvancedScreen(
                     onClick = onRunR0Spikes
                 )
                 WseListRow(
-                    title = "R4 startup run",
+                    title = "Game test",
                     supporting = if (r4State.running) {
-                        r4State.status.ifEmpty { "Running" } +
-                            "\nYou can leave the app: it runs in the background (Stop is in the notification)."
+                        r4State.status.ifEmpty { "Working…" } +
+                            "\nYou can leave the app; it keeps working in the background. To stop it, " +
+                            "use the notification."
                     } else {
-                        "Translates mb_warband_wse2_x64.exe and lua5164.dll from the selected " +
-                            "folder (kept for later runs), starts Native on a recording device " +
-                            "that draws nothing, and stops after 1,000 frames or the first fault."
+                        "Prepares the game for your phone (needed only once; it takes a few hours " +
+                            "and progress is saved), then starts Native briefly to check that it " +
+                            "works. Nothing is shown on screen yet."
                     },
                     trailing = if (r4State.running) {
                         {
@@ -249,9 +250,9 @@ fun AdvancedScreen(
                     onClick = onRunR4Startup
                 )
                 SwitchListItem(
-                    headline = "R4: use a copy of the install",
-                    supporting = "Copies the folder (without other modules) into app storage " +
-                        "and reads it there; needs that much free space",
+                    headline = "Work from a copy of the game folder",
+                    supporting = "Copies the game folder (without other modules) into the app " +
+                        "first. Needs that much free space.",
                     checked = r4State.useCopy,
                     enabled = !r4State.running,
                     onCheckedChange = onR4UseCopyChange
@@ -287,21 +288,21 @@ fun AdvancedScreen(
     r0State.report?.let { report ->
         val context = LocalContext.current
         WseDialog(
-            title = "R0 spikes",
+            title = "Phone check",
             text = report,
             confirm = WseDialogAction("Copy") {
                 val clipboard =
                     context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                clipboard?.setPrimaryClip(ClipData.newPlainText("WSE2 R0 spikes", report))
+                clipboard?.setPrimaryClip(ClipData.newPlainText("WSE2 phone check", report))
                 onDismissR0Report()
             },
             dismiss = WseDialogAction("Share") {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "WSE2 R0 spikes")
+                    putExtra(Intent.EXTRA_SUBJECT, "WSE2 phone check")
                     putExtra(Intent.EXTRA_TEXT, report)
                 }
-                context.startActivity(Intent.createChooser(send, "Share R0 report"))
+                context.startActivity(Intent.createChooser(send, "Share the phone check report"))
                 onDismissR0Report()
             },
             onDismissRequest = onDismissR0Report
@@ -311,21 +312,21 @@ fun AdvancedScreen(
     r4State.report?.let { report ->
         val context = LocalContext.current
         WseDialog(
-            title = "R4 startup run",
+            title = "Game test",
             text = report,
             confirm = WseDialogAction("Copy") {
                 val clipboard =
                     context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                clipboard?.setPrimaryClip(ClipData.newPlainText("WSE2 R4 startup run", report))
+                clipboard?.setPrimaryClip(ClipData.newPlainText("WSE2 game test", report))
                 onDismissR4Report()
             },
             dismiss = WseDialogAction("Share") {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "WSE2 R4 startup run")
+                    putExtra(Intent.EXTRA_SUBJECT, "WSE2 game test")
                     putExtra(Intent.EXTRA_TEXT, report)
                 }
-                context.startActivity(Intent.createChooser(send, "Share R4 report"))
+                context.startActivity(Intent.createChooser(send, "Share the game test report"))
                 onDismissR4Report()
             },
             onDismissRequest = onDismissR4Report

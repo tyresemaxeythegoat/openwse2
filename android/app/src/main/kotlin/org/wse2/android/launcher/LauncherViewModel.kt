@@ -336,7 +336,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val report = try {
                 R0Spikes.run(app, treeUri)
             } catch (t: Throwable) {
-                "R0 spikes failed: ${t.message ?: t.javaClass.simpleName}"
+                "The phone check failed: ${t.message ?: t.javaClass.simpleName}"
             }
             mainHandler.post {
                 if (!isCleared.get()) {
