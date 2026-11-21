@@ -767,6 +767,37 @@ int main(int argc, char** argv) {
     expect(r.c_measured, "R0 (c): synthetic translation measured and matches the interpreter");
     expect(!r.d_matches, "R0 (d) is skipped without an exe");
 
+    // Last (it changes the process's target): a PC preparing a phone's batches
+    // (`tools/r4_run --for-phone`) translates for the shared phone target and links an AArch64
+    // shared object, whatever this host is.
+    {
+        const std::string before = translator_fingerprint();
+        set_code_target(portable_android_target());
+        const std::string fp = translator_fingerprint();
+        expect(fp != before && fp.find("aarch64-unknown-linux-android generic +v8.2a,+rcpc") != std::string::npos &&
+                   fp.find("lifter ") == 0 && fp.find("lifter unknown") == std::string::npos,
+               "for-phone: the fingerprint names the lifter sources and the shared phone target");
+        Translator tr;
+        std::string err;
+        const DecodedFunction sum = decode_function(kSumBytes.data(), kBase, kBase + kSumBytes.size());
+        std::vector<char> obj;
+        expect(tr.init_error().empty() && tr.triple() == "aarch64-unknown-linux-android" &&
+                   tr.add_function(sum, "t_sum", &err) && tr.emit_object(2, obj, nullptr, &err) && !obj.empty(),
+               "for-phone: a function translates for the phone target");
+        const std::string o = std::string(dir) + "/phone.o";
+        const std::string so = std::string(dir) + "/phone.so";
+        std::ofstream(o, std::ios::binary).write(obj.data(), static_cast<std::streamsize>(obj.size()));
+        std::string log;
+        const bool linked = link_shared_object({o}, so, &log);
+        std::ifstream in(so, std::ios::binary);
+        unsigned char hdr[20] = {};
+        in.read(reinterpret_cast<char*>(hdr), sizeof(hdr));
+        expect(linked && hdr[0] == 0x7F && hdr[1] == 'E' && hdr[4] == 2 /* ELFCLASS64 */ &&
+                   (hdr[18] | (hdr[19] << 8)) == 183 /* EM_AARCH64 */,
+               "for-phone: LLD links it into an AArch64 shared object");
+        if (!linked) std::printf("  lld: %s\n", log.c_str());
+    }
+
     if (g_failures == 0) {
         std::printf("recomp_llvm tests: PASS\n");
         return 0;

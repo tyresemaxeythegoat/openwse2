@@ -179,29 +179,97 @@ class R4StartupRunner private constructor(private val app: Application) {
         } catch (_: Throwable) {
             // A sticky restart is already the foreground service; elsewhere the run still goes on.
         }
-        if (!state.useCopy) {
-            bind(treeUri, "")
-            return
-        }
+        val useCopy = state.useCopy
         copying = true
         Thread({
-            val error = try {
-                copyInstall(treeUri)
+            // A zip prepared on the PC (tools/prepare_for_phone.ps1) in the Warband folder is
+            // imported first; failing to read it only means translating here as before.
+            val imported = try {
+                importPrepared(treeUri)
+            } catch (_: Throwable) {
+                0
+            }
+            val error = if (!useCopy || stopRequested) {
                 null
-            } catch (t: Throwable) {
-                t.message ?: t.javaClass.simpleName
+            } else {
+                try {
+                    copyInstall(treeUri)
+                    null
+                } catch (t: Throwable) {
+                    t.message ?: t.javaClass.simpleName
+                }
             }
             main.post {
                 copying = false
+                if (imported > 0) {
+                    update(state.copy(status = "Imported $imported prepared parts from your PC. Starting…"))
+                }
                 if (stopRequested) {
                     finish(STOPPED)
                 } else if (error != null) {
                     finish("Could not copy the game folder: $error")
                 } else {
-                    bind(treeUri, copyDir.absolutePath)
+                    bind(treeUri, if (useCopy) copyDir.absolutePath else "")
                 }
             }
         }, "wse-r4-copy").start()
+    }
+
+    // Imports the parts a PC prepared (tools/prepare_for_phone.ps1 writes
+    // `wse2-prepared-for-phone.zip`; the player puts it in the Warband folder): its `.so` and `.key`
+    // files go into the batch cache, where the run checks each one's key as it checks its own, so
+    // a zip from another app version or exe is translated again here rather than used. A zip is
+    // imported once (name, size and time remembered). Returns the number of parts imported.
+    private fun importPrepared(treeUri: Uri): Int {
+        val root = DocumentsContract.getTreeDocumentId(treeUri)
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, root)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED
+        )
+        var found: Pair<String, String>? = null
+        app.contentResolver.query(children, projection, null, null, null)?.use { c ->
+            while (c.moveToNext()) {
+                val name = c.getString(1) ?: continue
+                if (PREPARED_ZIP.matches(name)) {
+                    val stamp = "$name/${if (c.isNull(2)) -1 else c.getLong(2)}/${if (c.isNull(3)) -1 else c.getLong(3)}"
+                    found = c.getString(0) to stamp
+                    break
+                }
+            }
+        }
+        val (id, stamp) = found ?: return 0
+        if (prefs.getString(PREF_IMPORTED, null) == stamp) return 0
+        val soDir = File(r4Dir, "so").apply { mkdirs() }
+        update(state.copy(status = "Importing the game files prepared on your PC…"))
+        var parts = 0
+        val doc = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+        app.contentResolver.openInputStream(doc)?.use { input ->
+            java.util.zip.ZipInputStream(input.buffered(1 shl 16)).use { zip ->
+                while (true) {
+                    if (stopRequested) return parts
+                    val entry = zip.nextEntry ?: break
+                    val name = entry.name.substringAfterLast('/').substringAfterLast('\\')
+                    if (entry.isDirectory || !PREPARED_PART.matches(name)) continue
+                    val tmp = File(soDir, "$name.import")
+                    tmp.outputStream().use { zip.copyTo(it, 1 shl 16) }
+                    val dest = File(soDir, name)
+                    dest.delete()
+                    if (!tmp.renameTo(dest)) {
+                        tmp.delete()
+                        throw IllegalStateException("cannot write $name")
+                    }
+                    if (name.endsWith(".so")) {
+                        ++parts
+                        if (parts % 10 == 0) update(state.copy(status = "Importing the game files prepared on your PC: $parts parts"))
+                    }
+                }
+            }
+        } ?: return 0
+        prefs.edit().putString(PREF_IMPORTED, stamp).apply()
+        return parts
     }
 
     private fun bind(treeUri: Uri, copy: String) {
@@ -445,6 +513,9 @@ class R4StartupRunner private constructor(private val app: Application) {
         private const val PREF_TREE = "tree_uri"
         private const val PREF_USE_COPY = "use_copy"
         private const val PREF_JOBS = "jobs"
+        private const val PREF_IMPORTED = "imported_zip"  // the last PC zip imported (name/size/time)
+        private val PREPARED_ZIP = Regex("""(?i)wse2-prepared.*\.zip""")
+        private val PREPARED_PART = Regex("""(exe|lua5164)_w\d+\.(so|key)""")
         // Kept across launcher restarts, so a run Android keeps killing whole still slows down and
         // gives up: the cached batch count when the worker was last bound, the deaths in a row
         // without a new batch, and the resumes so far.

@@ -29,9 +29,11 @@ struct StartupOptions {
     wse::platform::Vfs* install = nullptr;  // the install (read-only), the game's working directory
     wse::platform::Vfs* user = nullptr;     // the writable layer (registry, profile, Documents)
     std::string so_dir;                     // translated batches; created if missing
-    // Part of every batch's cache key: identifies the translator build (a hash of the translator
-    // library on the phone; its size and time on the PC). A different id retranslates.
-    std::string translator_id;
+    // Every batch's cache key holds `translator_fingerprint()` (recomp_llvm.h): the lifter's
+    // sources, LLVM and the target, the same on the PC and the phone for one commit.
+    // Translate both images into `so_dir` and return 0 without running anything (the PC preparing
+    // a phone's batches: `tools/r4_run --for-phone`, after `set_code_target`).
+    bool translate_only = false;
     std::string module = "Native";  // seeded as last_module_warband, and passed as --module
     unsigned jobs = 2;               // translation worker threads
     int opt = 2;                     // LLVM optimization level

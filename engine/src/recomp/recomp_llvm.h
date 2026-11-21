@@ -55,6 +55,26 @@ private:
 // emits it as an object: the R0 (a) "generated in the app" shared object needs no guest code.
 bool emit_probe_object(const std::string& symbol, std::vector<char>& object, std::string* error);
 
+// The phone target the PC and the phone share (2026-11-21, so a PC can prepare a phone's batches):
+// AArch64 Android, CPU "generic" with Armv8.2-A (LSE atomics) and RCpc (LDAPR for acquire loads),
+// which every arm64 phone with 64-bit-only cores since ~2018 has. A phone without them keeps
+// translating for its own CPU, and its batches then have a different key.
+struct CodeTarget {
+    std::string triple;
+    std::string cpu;
+    std::string features;
+};
+CodeTarget portable_android_target();
+
+// Translates for `target` instead of this process's CPU (set before the first translation; one
+// target per process). `tools/r4_run --for-phone` uses it on the PC.
+void set_code_target(const CodeTarget& target);
+
+// What translated code depends on besides the guest bytes and the options: the lifter's sources
+// (`WSE_LIFTER_SOURCES_HASH`, hashed by CMake), the LLVM version and the target. The same on the PC
+// and the phone for the same commit; a shim-only change keeps it (and the cached batches).
+std::string translator_fingerprint();
+
 // Links ELF objects into a shared object with the embedded LLD (`ld.lld -shared`).
 bool link_shared_object(const std::vector<std::string>& objects, const std::string& output,
                         std::string* log);

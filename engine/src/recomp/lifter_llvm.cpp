@@ -18,6 +18,7 @@
 #include <string>
 
 #include <llvm/ADT/StringMap.h>
+#include <llvm/Config/llvm-config.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -69,10 +70,35 @@ void init_llvm_once() {
 
 using llvm_common::TargetSetup;
 
+std::mutex g_target_m;
+bool g_target_set = false;
+CodeTarget g_target;
+
+// The target this process translates for: the one `set_code_target` chose, else on an AArch64
+// device with LSE and RCpc the portable phone target, else the process's own CPU (below).
+bool chosen_target(CodeTarget& out) {
+    std::lock_guard<std::mutex> lock(g_target_m);
+    if (!g_target_set) {
+        g_target_set = true;
+        g_target = {};
+        const std::string process = llvm::sys::getProcessTriple();
+        if (process.rfind("aarch64", 0) == 0 && process.find("android") != std::string::npos) {
+            llvm::StringMap<bool> host;
+            if (llvm::sys::getHostCPUFeatures(host) && host.lookup("lse") && host.lookup("rcpc")) {
+                g_target = portable_android_target();
+            }
+        }
+    }
+    out = g_target;
+    return !g_target.triple.empty();
+}
+
 TargetSetup make_target_impl(int opt_level) {
     init_llvm_once();
     TargetSetup t;
-    t.triple = llvm::sys::getProcessTriple();
+    CodeTarget chosen;
+    const bool fixed = chosen_target(chosen);
+    t.triple = fixed ? chosen.triple : llvm::sys::getProcessTriple();
     std::string err;
     const llvm::Target* target = llvm::TargetRegistry::lookupTarget(t.triple, err);
     if (target == nullptr) {
@@ -97,7 +123,10 @@ TargetSetup make_target_impl(int opt_level) {
     const bool x86_host = t.triple.rfind("x86_64", 0) == 0;
     std::string cpu = x86_host ? "x86-64-v2" : "generic";
     std::string features;
-    if (t.triple.rfind("aarch64", 0) == 0) {
+    if (fixed) {
+        cpu = chosen.cpu;
+        features = chosen.features;
+    } else if (t.triple.rfind("aarch64", 0) == 0) {
         cpu = llvm::sys::getHostCPUName().str();
         llvm::StringMap<bool> host;
         if (llvm::sys::getHostCPUFeatures(host)) {
@@ -583,6 +612,32 @@ bool emit_probe_object(const std::string& symbol, std::vector<char>& object, std
     b.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", f));
     b.CreateRet(b.CreateAdd(b.CreateMul(f->getArg(0), f->getArg(1)), f->getArg(2)));
     return optimize_and_emit_impl(m, *t.tm, 2, object, nullptr, error);
+}
+
+CodeTarget portable_android_target() {
+    return {"aarch64-unknown-linux-android", "generic", "+v8.2a,+rcpc"};
+}
+
+void set_code_target(const CodeTarget& target) {
+    std::lock_guard<std::mutex> lock(g_target_m);
+    g_target_set = true;
+    g_target = target;
+}
+
+std::string translator_fingerprint() {
+    CodeTarget t;
+    if (!chosen_target(t)) {
+        // This process's own CPU: the same choice make_target_impl makes.
+        t.triple = llvm::sys::getProcessTriple();
+        t.cpu = t.triple.rfind("aarch64", 0) == 0 ? llvm::sys::getHostCPUName().str()
+                                                    : (t.triple.rfind("x86_64", 0) == 0 ? "x86-64-v2" : "generic");
+        t.features = "host";
+    }
+#ifndef WSE_LIFTER_SOURCES_HASH
+#define WSE_LIFTER_SOURCES_HASH "unknown"
+#endif
+    return std::string("lifter ") + WSE_LIFTER_SOURCES_HASH + " llvm " + LLVM_VERSION_STRING + " target " + t.triple +
+           " " + t.cpu + " " + t.features;
 }
 
 bool link_shared_object(const std::vector<std::string>& objects, const std::string& output,

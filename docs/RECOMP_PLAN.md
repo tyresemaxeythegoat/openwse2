@@ -510,6 +510,34 @@ startup on the phone:
   failed in R0 run 2. Guest images are mapped read-write only (translated code runs, guest bytes
   never execute).
 
+## Preparing on a PC (2026-11-21)
+
+Decided with the user after the phone's first full translation took most of a day (the PC is ~2.4x
+faster per batch, and does not get killed for memory). Still the user's own exe, translated on
+their own machine for their own phone: nothing is bundled or shared, and the zip says so.
+
+- **One target for both.** The phone translated for its own CPU (`getHostCPUName` and its
+  features), which a PC cannot know. Both now use `portable_android_target()`: triple
+  `aarch64-unknown-linux-android`, CPU `generic`, `+v8.2a,+rcpc` (LSE atomics for `lock`
+  instructions, LDAPR for acquire loads: the R3 choices). A phone without LSE or RCpc keeps its
+  own CPU, so its batches never match a PC's and are translated there.
+- **The key no longer hashes the library.** A batch's key held a hash of `libwse_r0.so` (phone) or
+  the size and time of `libwse_recomp.a` (PC), so the two never agreed and every shim change
+  retranslated. It now holds `translator_fingerprint()`: a SHA-256 of the lifter's sources
+  (`_wse_lifter_sources` in `CMakeLists.txt`, line endings removed so a Windows checkout and CI's
+  agree), the LLVM version and the target. Shims are not in it, so a shim-only update keeps the
+  phone's batches; a source that changes translation must be in that list.
+- **PC side:** `tools/r4_run --for-phone <dir>` translates both images for that target and runs
+  nothing; players use `tools/prepare_for_phone.bat` (it checks WSL, finds or asks for the
+  Warband folder, installs the build tools and builds `r4_run` once, translates with as many
+  threads as WSL's memory allows, and writes `Downloads\wse2-prepared-for-phone.zip`).
+- **Phone side:** the player copies the zip into the Warband folder they picked in the app. When
+  the game test starts, `R4StartupRunner.importPrepared` finds `wse2-prepared*.zip` in that
+  folder's root and copies its `.so` / `.key` files into the batch cache (once per zip: name, size
+  and time are remembered). Each imported batch is checked against its key like any cached one,
+  so a zip from another exe or translator version is translated again on the phone, not used.
+  No USB debugging, adb or button is needed.
+
 ## R5 census (2026-11-21)
 
 Measured locally in WSL against the retail v1.1.5.6 `mb_warband_wse2_x64.exe` + `lua5164.dll`

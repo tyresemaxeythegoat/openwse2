@@ -577,14 +577,35 @@ if(WSE_ENABLE_LLVM)
     endif()
     target_link_libraries(wse_recomp PUBLIC wse_engine PRIVATE wse_zydis lldELF lldCommon ${_wse_llvm_libs} ${CMAKE_DL_LIBS})
     wse_apply_strict_warnings(wse_recomp)
+    # The batch cache key's lifter part (`translator_fingerprint`): a hash of every source that
+    # decides what translated code looks like, with line endings removed so a Windows checkout
+    # (the PC preparing a phone's batches through WSL) and CI's Linux checkout (the APK) agree.
+    # Shims are not in it: a shim change keeps the cached batches. Editing one of these files
+    # reconfigures (CMAKE_CONFIGURE_DEPENDS).
+    set(_wse_lifter_sources
+        engine/src/recomp/lifter_llvm.cpp engine/src/recomp/discover.cpp engine/src/recomp/discover.h
+        engine/src/recomp/lift_r1.cpp engine/src/recomp/lift_r1.h engine/src/recomp/lift_r1_ctx.h
+        engine/src/recomp/lift_r1_int.cpp engine/src/recomp/lift_r1_sse.cpp engine/src/recomp/lift_r1_string.cpp
+        engine/src/recomp/llvm_common.h engine/src/recomp/recomp_llvm.h engine/src/recomp/r4_startup.cpp
+        engine/include/wse/recomp/cpu_state.h engine/include/wse/recomp/x86_decode.h
+        engine/include/wse/recomp/x86_interp.h engine/include/wse/recomp/pe_image.h
+        engine/include/wse/recomp/runtime.h engine/include/wse/recomp/seh.h)
+    set(_wse_lifter_text "")
+    foreach(_f IN LISTS _wse_lifter_sources)
+        file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${_f}" _wse_src)
+        string(REPLACE "\r" "" _wse_src "${_wse_src}")
+        string(APPEND _wse_lifter_text "${_f}\n${_wse_src}\n")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${_f}")
+    endforeach()
+    string(SHA256 _wse_lifter_hash "${_wse_lifter_text}")
+    string(SUBSTRING "${_wse_lifter_hash}" 0 16 _wse_lifter_hash)
+    target_compile_definitions(wse_recomp PRIVATE "WSE_LIFTER_SOURCES_HASH=\"${_wse_lifter_hash}\"")
 
     if(NOT ANDROID)
         # R4 bring-up run (`docs/RECOMP_PLAN.md` "R4 design"): local only, on the user's install;
         # CI builds it so it keeps compiling, and never runs it.
         add_executable(r4_run tools/r4_run.cpp)
         target_link_libraries(r4_run PRIVATE wse_recomp wse_zydis ${CMAKE_DL_LIBS})
-        # Translated batches are cached against the translator library, not r4_run itself.
-        target_compile_definitions(r4_run PRIVATE "WSE_RECOMP_LIB=\"$<TARGET_FILE:wse_recomp>\"")
         wse_apply_strict_warnings(r4_run)
     endif()
 

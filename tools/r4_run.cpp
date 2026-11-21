@@ -3,7 +3,7 @@
 // nothing it reads or writes is committed. Linux x86-64 (WSL, `tools/wsl_gate.sh` builds it).
 //
 //   r4_run <install dir> [--work <dir>] [--retranslate] [--batch <n>] [--opt <0-3>] [--jobs <n>]
-//          [--reuse] [--quiet] [--module <name>] [--frames <n>]
+//          [--reuse] [--quiet] [--module <name>] [--frames <n>] [--for-phone <dir>]
 //
 // The runner itself is `engine/src/recomp/r4_startup.{h,cpp}` (shared with the phone's Advanced >
 // "R4 startup run"); this tool reads the exe, `lua5164.dll` and the PDB from the install, mounts the
@@ -13,6 +13,12 @@
 // translator library changed. `--frames <n>` ends the run after n frames (exit code 0). A fault (a
 // missing import names its DLL and function: the next thing to implement) ends the run with the
 // fault and the last imports called.
+//
+// `--for-phone <dir>` (2026-11-21): translate for the phone instead (the portable AArch64 Android
+// target the app also uses, `portable_android_target`) into `<dir>`, run nothing, and exit 0. The
+// batches are the user's own exe translated on their own PC for their own phone: the app imports
+// them ("Import prepared game files") instead of translating for hours. Wrapped for players by
+// `tools/prepare_for_phone.ps1`.
 
 #include <sys/stat.h>
 
@@ -28,6 +34,7 @@
 #include <vector>
 
 #include "../engine/src/recomp/r4_startup.h"
+#include "../engine/src/recomp/recomp_llvm.h"
 #include "wse/platform/vfs.h"
 
 namespace fs = std::filesystem;
@@ -58,13 +65,14 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr,
                      "usage: %s <install dir> [--work <dir>] [--retranslate] [--batch <n>] [--opt <0-3>] [--jobs <n>] "
-                     "[--reuse] [--quiet] [--module <name>] [--frames <n>]\n",
+                     "[--reuse] [--quiet] [--module <name>] [--frames <n>] [--for-phone <dir>]\n",
                      argv[0]);
         return 2;
     }
     const fs::path install = argv[1];
     fs::path work = "/root/wse/r4";
     wse::recomp::StartupOptions o;
+    fs::path for_phone;
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--work" && i + 1 < argc) work = argv[++i];
@@ -76,6 +84,7 @@ int main(int argc, char** argv) {
         else if (a == "--quiet") o.quiet = true;
         else if (a == "--module" && i + 1 < argc) o.module = argv[++i];
         else if (a == "--frames" && i + 1 < argc) o.frame_limit = std::strtoull(argv[++i], nullptr, 10);
+        else if (a == "--for-phone" && i + 1 < argc) for_phone = argv[++i];
     }
     std::error_code ec;
     fs::create_directories(work / "user", ec);
@@ -85,13 +94,11 @@ int main(int argc, char** argv) {
     o.lua = read_file(find_ci(install, "lua5164.dll"));
     o.pdb = read_file(find_ci(install, "mb_warband_wse2_x64.pdb"));
     o.so_dir = (work / "so").string();
-    // The translator build: the translator library's size and time (`WSE_RECOMP_LIB`, its path at
-    // build time), so rebuilding r4_run for a shim change keeps the cache.
-    struct stat st {};
-#ifdef WSE_RECOMP_LIB
-    (void)stat(WSE_RECOMP_LIB, &st);
-#endif
-    o.translator_id = std::to_string(static_cast<long long>(st.st_size)) + "/" + std::to_string(static_cast<long long>(st.st_mtime));
+    if (!for_phone.empty()) {
+        wse::recomp::set_code_target(wse::recomp::portable_android_target());
+        o.translate_only = true;
+        o.so_dir = for_phone.string();
+    }
     static wse::platform::HostVfs install_vfs(install);
     static wse::platform::HostVfs user_vfs(work / "user");
     o.install = &install_vfs;

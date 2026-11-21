@@ -181,25 +181,6 @@ void report(const std::string& text) {
     __android_log_write(ANDROID_LOG_INFO, kTag, text.c_str());
 }
 
-// The translator build, for the batch cache: the size and a hash of this library (it holds the
-// translator), so an updated APK retranslates.
-std::string translator_id() {
-    Dl_info dl{};
-    if (dladdr(reinterpret_cast<void*>(&wse::recomp::run_startup), &dl) == 0 || dl.dli_fname == nullptr) return "unknown";
-    std::ifstream in(dl.dli_fname, std::ios::binary);
-    std::uint64_t h = 0xCBF29CE484222325ULL;
-    std::uint64_t n = 0;
-    char buf[1 << 16];
-    while (in.read(buf, sizeof(buf)) || in.gcount() > 0) {
-        const std::streamsize got = in.gcount();
-        for (std::streamsize i = 0; i < got; ++i) h = (h ^ static_cast<unsigned char>(buf[i])) * 0x100000001B3ULL;
-        n += static_cast<std::uint64_t>(got);
-    }
-    char id[64];
-    std::snprintf(id, sizeof(id), "%llu/%016llx", static_cast<unsigned long long>(n), static_cast<unsigned long long>(h));
-    return id;
-}
-
 }  // namespace
 
 extern "C" JNIEXPORT jint JNICALL Java_org_wse2_android_launcher_R4Native_nativeRun(JNIEnv* env, jclass, jobject bridge,
@@ -252,7 +233,6 @@ extern "C" JNIEXPORT jint JNICALL Java_org_wse2_android_launcher_R4Native_native
     o.install = install.get();
     o.user = &user;
     o.so_dir = (work / "so").string();
-    o.translator_id = translator_id();
     o.module = jstring_to_utf8(env, jmodule);
     if (o.module.empty()) o.module = "Native";
     o.jobs = static_cast<unsigned>(jobs < 1 ? 1 : jobs);
@@ -263,7 +243,7 @@ extern "C" JNIEXPORT jint JNICALL Java_org_wse2_android_launcher_R4Native_native
     o.progress = [](const std::string& image, std::size_t done, std::size_t total) {
         std::ofstream(g_progress_path) << image << " " << done << " " << total << "\n";
     };
-    report("translator " + o.translator_id + ", " + std::to_string(o.jobs) + " translation threads, -O2, module " + o.module +
+    report(std::to_string(o.jobs) + " translation threads, -O2, module " + o.module +
            ", stop after " + std::to_string(o.frame_limit) + " frames\n");
     return wse::recomp::run_startup(o);  // returns only when nothing could be started
 }

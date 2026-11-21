@@ -234,7 +234,7 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const StartupOpt
     const std::size_t batch = o.batch_kib;
     const auto [text_b, text_e] = text_range(m.img);
     ImageView view(m.mapped, m.img.image_base, m.img.size_of_image, text_b, text_e);
-    const std::string key = cache_key(*m.file, o.opt, batch, o.translator_id);
+    const std::string key = cache_key(*m.file, o.opt, batch, translator_fingerprint());
     const std::set<std::uint64_t> entries = entries_of(m, view, publics);
     const EhContinuations eh = find_eh_continuations(view, m.img, entries);
     std::vector<PeImport> imports;
@@ -377,6 +377,10 @@ bool translate(Image& m, const std::vector<PdbPublic>& publics, const StartupOpt
     for (unsigned j = 0; j < std::max(1U, o.jobs); ++j) pool.emplace_back(worker);
     for (std::thread& t : pool) t.join();
     if (failed) return false;
+    if (o.translate_only) {
+        out("%s: %zu batches ready in %s (%.0f s)\n", m.tag.c_str(), n_batches, so_dir.string().c_str(), ms_since(t0) / 1000.0);
+        return true;
+    }
     for (const fs::path& so : sos) {
         auto code = std::make_unique<LoadedCode>();
         std::string lerr;
@@ -489,8 +493,13 @@ int run_startup(const StartupOptions& o) {
     // Kept until the process ends: translated code and every shim object outlive the run.
     static Loaded lx;
     static Loaded ll;
+    out("translator: %s\n", translator_fingerprint().c_str());
     if (!translate(exe, publics, o, lx) || !translate(lua, {}, o, ll)) {
         return kStartupSetupError;
+    }
+    if (o.translate_only) {
+        out("RESULT translated\n");
+        return 0;
     }
 
     static Runtime rt;
