@@ -495,7 +495,10 @@ startup on the phone:
   that cached no new batch; kept in preferences for later runs) and gives up only after 3 deaths in
   a row with no new batch. A killed launcher process resumes the run through the sticky
   `R4ForegroundService` restart or the next app start. The status counts the whole image (cached
-  plus this attempt's batches), read from the report's per-image summary line.
+  plus this attempt's batches), read from the report's per-image summary line. The first attempt
+  uses one thread per core but at most one per 1.2 GB of free memory (`ActivityManager` `availMem`):
+  `tools/r4_run` took ~1.8 GB on 2 threads for this exe, and the phone run on every core stalled at
+  50/80, as swapping would explain.
 - **Loading.** Batches load from a `memfd` (`android_dlopen_ext`), else with our own ELF loader
   (`code_loader.h`, shared with the R0 spikes): on the phone `dlopen` of a read-only app-data file
   failed in R0 run 2. Guest images are mapped read-write only (translated code runs, guest bytes

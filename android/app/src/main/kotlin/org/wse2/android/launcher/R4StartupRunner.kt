@@ -137,7 +137,13 @@ class R4StartupRunner private constructor(private val app: Application) {
         stalls = 0
         if (!resumed) resumes = 0
         val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        jobs = prefs.getInt(PREF_JOBS, cores).coerceIn(1, cores)
+        // One thread per core, but no more than the free memory holds: on the PC (tools/r4_run, 2
+        // threads, 2026-11-20) translating this exe took ~1.8 GB, ~0.9 GB a thread. More threads
+        // than memory make Android swap until the run crawls, or kill the worker.
+        val memory = android.app.ActivityManager.MemoryInfo()
+        (app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(memory)
+        val fit = (memory.availMem / BYTES_PER_THREAD).toInt().coerceIn(1, cores)
+        jobs = prefs.getInt(PREF_JOBS, fit).coerceIn(1, fit)
         prefs.edit().putBoolean(PREF_WANTED, true).putString(PREF_TREE, treeUri.toString())
             .putBoolean(PREF_USE_COPY, state.useCopy).apply()
         R4ForegroundService.clearResult(app)
@@ -180,9 +186,9 @@ class R4StartupRunner private constructor(private val app: Application) {
             putString(R4StartupService.KEY_COPY_DIR, copy)
             putString(R4StartupService.KEY_WORK_DIR, workDir.absolutePath)
             putString(R4StartupService.KEY_MODULE, MODULE)
-            // Every core at first (the user's choice, 2026-11-21: the phone does nothing else
-            // meanwhile), halved each time Android ends the worker (`workerEnded`). The thread
-            // count is not part of the batch cache key.
+            // Every core the free memory holds (the user's choice, 2026-11-21: the phone does
+            // nothing else meanwhile; see `start`), halved each time Android ends the worker
+            // (`workerEnded`). The thread count is not part of the batch cache key.
             putInt(R4StartupService.KEY_JOBS, jobs)
             putLong(R4StartupService.KEY_FRAMES, FRAME_LIMIT)
         }
@@ -405,6 +411,7 @@ class R4StartupRunner private constructor(private val app: Application) {
         private const val PREF_JOBS = "jobs"
         private const val MAX_STALLS = 3
         private const val RESUME_DELAY_MS = 3000L
+        private const val BYTES_PER_THREAD = 1200L * 1024 * 1024
         private val BATCHES = Regex("""(\d+) batches \(""")
 
         @Volatile
