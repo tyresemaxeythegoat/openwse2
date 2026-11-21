@@ -681,6 +681,39 @@ Resources created during startup and 1,000 frames:
   `DrawIndexedPrimitive(D3DPT_TRIANGLELIST)` + `SetStreamSource`, `1` `VertexBuffer::Lock/Unlock`,
   `1` `EndScene`, `1` `Present`, and `~20` `IDirect3DStateBlock9::Apply` calls.
 
+## Android performance (requirement from the user, 2026-11-21)
+
+When the game runs (R5 onward), it must be as fast as Android allows: performance is part of
+"done" for every slice from R5 on, measured on the phone, not left for later. Each item below
+gets a measurement before and after; the design for each is agreed with the user first.
+
+Already true:
+- Translated code is built for the phone's own CPU (`lifter_llvm.cpp`: host CPU name and every
+  host feature, so LSE atomics and RCpc `LDAPR` are used) at `-O2`.
+
+To measure and do:
+- **Big and little cores.** LLVM names the host CPU from `/proc/cpuinfo`; on a big.LITTLE phone,
+  check that the name it picks tunes scheduling for the big cores the game thread runs on.
+- **Code quality.** Time hot functions (the R2 rig's cases, then the startup run's most-called
+  functions) at `-O2` vs `-O3`; per-function levels if it pays.
+- **Dispatch.** Count calls through the dispatcher (indirect calls, returns, calls across
+  batches) per frame; link known targets directly.
+- **Memory ordering (R3).** Measure the cost of x86 ordering on the hot paths; keep barriers off
+  memory only one thread touches.
+- **Graphics (R5), from the 1,000-frame "R5 census".** Every frame goes through `ID3DXEffect`
+  and state blocks (`IDirect3DStateBlock9::Apply` ~20 per frame, ~60 effect constant sets per
+  frame, 5 `DrawIndexedPrimitive`): batch constants into one buffer per draw, keep a persistent
+  `VkPipelineCache`, compile shaders ahead of time (at translation time, cached like the code),
+  allocate no descriptors per draw, and use tile-friendly render passes (clear / don't-care
+  load and store, no mid-frame readbacks) for Mali and Adreno.
+- **Textures.** Most Android GPUs lack BC/DXT: transcode once (to ASTC or ETC2) and cache, never
+  per load.
+- **Frame pacing and heat.** Android's performance hints (ADPF) for the game and render
+  threads, the game thread on big cores, paced presents, and a sustained run on the phone (frame
+  times after 30 minutes, not only the first minute).
+- **Measuring.** Per-frame CPU and GPU time on the phone (the FPS overlay grows into a frame-time
+  view), with targets set with the user.
+
 ## What carries over
 
 - P-slices: the launcher (P10/P12), SAF `Vfs`, the Vulkan RHI and GPU path (P4), shader
