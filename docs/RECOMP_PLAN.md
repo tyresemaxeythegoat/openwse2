@@ -494,7 +494,11 @@ startup on the phone:
   `R4StartupRunner` binds it again after 3 s with half the threads (at least 2, or 1 after a death
   that cached no new batch; kept in preferences for later runs) and gives up only after 3 deaths in
   a row with no new batch. A killed launcher process resumes the run through the sticky
-  `R4ForegroundService` restart or the next app start. The status counts the whole image (cached
+  `R4ForegroundService` restart or the next app start, and that counts as a worker death too (the
+  batch count at the last bind, the deaths in a row and the resumes are kept in preferences): on
+  the phone the run sat at 77/80 for 1.5 h, its last attempt starting "3 to translate on 4
+  threads" with no resume shown: most likely the whole app was killed again and again, each time
+  restarting the three largest batches (each 3-3.5x the average size) from zero. The status counts the whole image (cached
   plus this attempt's batches), read from the report's per-image summary line. The first attempt
   uses one thread per core but at most one per 1.2 GB of free memory (`ActivityManager` `availMem`):
   `tools/r4_run` took ~1.8 GB on 2 threads for this exe, and the phone run on every core stalled at

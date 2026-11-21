@@ -37,7 +37,10 @@ import java.util.concurrent.CopyOnWriteArraySet
 // half the threads (kept for later runs); finished batches are cached, so only the batches in
 // flight are lost. It gives up after MAX_STALLS deaths in a row that cached no new batch. When the
 // launcher process itself was killed mid-run, R4ForegroundService (sticky) or the next app start
-// calls `resumeIfInterrupted`, which starts the run again from the saved folder.
+// calls `resumeIfInterrupted`, which starts the run again from the saved folder and counts the
+// kill like a worker death (halving the threads, and giving up the same way), from preferences:
+// otherwise a few huge batches that run the phone out of memory on every core restart from zero
+// forever (seen on the phone at 77/80, 2026-11-21).
 class R4StartupRunner private constructor(private val app: Application) {
     private val main = Handler(Looper.getMainLooper())
     @Volatile
@@ -134,8 +137,16 @@ class R4StartupRunner private constructor(private val app: Application) {
         finished = false
         stopRequested = false
         runTree = treeUri
-        stalls = 0
-        if (!resumed) resumes = 0
+        if (resumed) {
+            // Android killed the whole app mid-run (the launcher too, not only the worker), which
+            // `workerEnded` never sees: count it the same way, from what the last bind recorded.
+            val before = prefs.getInt(PREF_SO_AT_BIND, -1)
+            stalls = if (before < 0 || cachedBatches() > before) 0 else prefs.getInt(PREF_STALLS, 0) + 1
+            resumes = prefs.getInt(PREF_RESUMES, 0) + 1
+        } else {
+            stalls = 0
+            resumes = 0
+        }
         val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
         // One thread per core, but no more than the free memory holds: on the PC (tools/r4_run, 2
         // threads, 2026-11-20) translating this exe took ~1.8 GB, ~0.9 GB a thread. More threads
@@ -144,8 +155,22 @@ class R4StartupRunner private constructor(private val app: Application) {
         (app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(memory)
         val fit = (memory.availMem / BYTES_PER_THREAD).toInt().coerceIn(1, cores)
         jobs = prefs.getInt(PREF_JOBS, fit).coerceIn(1, fit)
+        if (resumed) {
+            // As in `workerEnded`: half the threads, down to 1 once a death brought no new batch.
+            val floor = if (stalls > 0) 1 else 2
+            if (jobs > floor) jobs = (jobs / 2).coerceAtLeast(floor)
+        }
         prefs.edit().putBoolean(PREF_WANTED, true).putString(PREF_TREE, treeUri.toString())
-            .putBoolean(PREF_USE_COPY, state.useCopy).apply()
+            .putBoolean(PREF_USE_COPY, state.useCopy).putInt(PREF_STALLS, stalls)
+            .putInt(PREF_RESUMES, resumes).apply()
+        if (resumed) prefs.edit().putInt(PREF_JOBS, jobs).apply()
+        if (stalls > MAX_STALLS) {
+            finish(
+                "R4 startup run: Android ended the app $stalls times in a row without a new translated " +
+                    "batch ($jobs thread), so it was not restarted again. Translated batches are kept."
+            )
+            return
+        }
         R4ForegroundService.clearResult(app)
         update(state.copy(running = true, status = "Starting", report = null))
         try {
@@ -181,6 +206,7 @@ class R4StartupRunner private constructor(private val app: Application) {
     private fun bind(treeUri: Uri, copy: String) {
         runCopy = copy
         soAtBind = cachedBatches()
+        prefs.edit().putInt(PREF_SO_AT_BIND, soAtBind).apply()
         val args = Bundle().apply {
             putString(R4StartupService.KEY_TREE_URI, treeUri.toString())
             putString(R4StartupService.KEY_COPY_DIR, copy)
@@ -251,8 +277,8 @@ class R4StartupRunner private constructor(private val app: Application) {
         }
         val floor = if (stalls > 0) 1 else 2
         if (jobs > floor) jobs = (jobs / 2).coerceAtLeast(floor)
-        prefs.edit().putInt(PREF_JOBS, jobs).apply()
         ++resumes
+        prefs.edit().putInt(PREF_JOBS, jobs).putInt(PREF_STALLS, stalls).putInt(PREF_RESUMES, resumes).apply()
         unbindQuietly()
         main.removeCallbacks(poll)
         val status = "Android ended the translation; resuming on $jobs threads ($cached batches kept)"
@@ -283,7 +309,8 @@ class R4StartupRunner private constructor(private val app: Application) {
     private fun finish(error: String?) {
         if (finished) return
         finished = true
-        prefs.edit().putBoolean(PREF_WANTED, false).apply()
+        prefs.edit().putBoolean(PREF_WANTED, false).remove(PREF_SO_AT_BIND).remove(PREF_STALLS)
+            .remove(PREF_RESUMES).apply()
         unbindQuietly()
         main.removeCallbacks(poll)
         val report = reportText(error)
@@ -409,6 +436,12 @@ class R4StartupRunner private constructor(private val app: Application) {
         private const val PREF_TREE = "tree_uri"
         private const val PREF_USE_COPY = "use_copy"
         private const val PREF_JOBS = "jobs"
+        // Kept across launcher restarts, so a run Android keeps killing whole still slows down and
+        // gives up: the cached batch count when the worker was last bound, the deaths in a row
+        // without a new batch, and the resumes so far.
+        private const val PREF_SO_AT_BIND = "so_at_bind"
+        private const val PREF_STALLS = "stalls"
+        private const val PREF_RESUMES = "resumes"
         private const val MAX_STALLS = 3
         private const val RESUME_DELAY_MS = 3000L
         private const val BYTES_PER_THREAD = 1200L * 1024 * 1024
