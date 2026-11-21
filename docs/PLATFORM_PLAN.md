@@ -325,6 +325,21 @@ P13.3 landed (Claude, after agy's quota ran out), with the user's review on scre
 Open: a thin bright line along the hero's top edge, and no entrance animation on the
 Modules grid yet.
 
+P13.3 follow-up (agy, reviewed and fixed by Claude, 2026-11-21; CI screenshots, no phone check
+yet):
+- Modules: staggered entrance on the header, cards and details; the "ACTIVE" label is a badge
+  on the card art, so it no longer clips on missing-files cards.
+- Motion: tab fade-through, press scale and press sheen are off at animator scale 0 and in tests.
+- Home: the hero fades into the backdrop through an alpha mask (no seam), with a crest pill.
+- Settings and Advanced: editorial headers; three long Advanced button labels shortened.
+- Settings edits `rgl_config.txt` (`RglConfig.kt`): every key of a Warband config, grouped in six
+  categories, unknown keys kept as written, and the quality preset, frame-rate cap and present
+  mode mirrored into it. The file is the one the R4 run's exe reads (`filesDir/recomp/r4/user/
+  Documents/Mount&Blade Warband/`). Opening the app writes nothing: with no file the exe makes its
+  own, as on Windows, and the screen shows defaults. The first change writes it; a change made
+  before the file was read applies to the file's contents, never to defaults. A file that cannot
+  be read is moved to `rgl_config.txt.unreadable` before a write, never overwritten.
+
 ## Risks decided up front
 
 | Risk | Decision |

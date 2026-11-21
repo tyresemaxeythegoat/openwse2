@@ -65,6 +65,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val app: Application = application
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val settingsExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    // rgl_config.txt changes run on settingsExecutor against `rglOnDisk`, the state last read from
+    // or written to the file (executor thread only), so a change made before the file was read
+    // never writes defaults over it. The screen updates at once when the file is already read.
+    // Declared before `init`, which queues the file's first read.
+    private var rglOnDisk: RglConfigState? = null
+    @Volatile
+    private var rglLoaded = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val scanGeneration = AtomicLong(0L)
     private val isCleared = AtomicBoolean(false)
@@ -710,41 +717,49 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun updateRglConfig(transform: (RglConfigState) -> RglConfigState) {
-        val current = _settingsState.value
-        val updated = transform(current.rglConfig)
-        if (updated == current.rglConfig) {
-            return
+        if (rglLoaded) {
+            val current = _settingsState.value
+            _settingsState.value = current.copy(rglConfig = transform(current.rglConfig))
         }
-        _settingsState.value = current.copy(rglConfig = updated)
         val filesDir = app.filesDir
         settingsExecutor.execute {
-            val saved = RglConfigStore.save(filesDir, updated)
-            mainHandler.post {
-                if (isCleared.get()) return@post
-                if (!saved) {
-                    _events.trySend(LauncherEvent.ShowToast("Could not save rgl_config.txt."))
-                } else {
-                    _settingsState.value = _settingsState.value.copy(rglConfigReady = true)
-                }
-            }
+            val base = rglOnDisk ?: RglConfigStore.load(filesDir).first
+            val updated = transform(base)
+            if (updated == base) return@execute
+            writeRglConfig(filesDir, updated, okToast = null, failToast = "Could not save rgl_config.txt.")
         }
     }
 
     fun resetRglConfigToDefaults() {
-        val defaults = RglConfigState(extraEntries = _settingsState.value.rglConfig.extraEntries)
-        _settingsState.value = _settingsState.value.copy(rglConfig = defaults)
         val filesDir = app.filesDir
         settingsExecutor.execute {
-            val saved = RglConfigStore.save(filesDir, defaults)
-            mainHandler.post {
-                if (isCleared.get()) return@post
-                if (saved) {
-                    _settingsState.value = _settingsState.value.copy(rglConfigReady = true)
-                    _events.trySend(LauncherEvent.ShowToast("rgl_config.txt restored to defaults."))
-                } else {
-                    _events.trySend(LauncherEvent.ShowToast("Could not reset rgl_config.txt."))
-                }
+            val base = rglOnDisk ?: RglConfigStore.load(filesDir).first
+            writeRglConfig(
+                filesDir,
+                RglConfigState(extraEntries = base.extraEntries),
+                okToast = "rgl_config.txt restored to defaults.",
+                failToast = "Could not reset rgl_config.txt."
+            )
+        }
+    }
+
+    // Executor thread only.
+    private fun writeRglConfig(filesDir: File, next: RglConfigState, okToast: String?, failToast: String) {
+        val saved = RglConfigStore.save(filesDir, next)
+        if (saved) rglOnDisk = next
+        val shown = rglOnDisk ?: RglConfigState()
+        mainHandler.post {
+            if (isCleared.get()) return@post
+            val now = _settingsState.value
+            // A saved change is already on screen when the file had been read (a slider moved on
+            // meanwhile must not jump back); otherwise, or after a failure, show the file's state.
+            _settingsState.value = if (saved && rglLoaded) {
+                now.copy(rglConfigReady = true)
+            } else {
+                now.copy(rglConfig = shown, rglConfigReady = saved || now.rglConfigReady)
             }
+            val toast = if (saved) okToast else failToast
+            if (toast != null) _events.trySend(LauncherEvent.ShowToast(toast))
         }
     }
 
@@ -833,12 +848,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val filesDir = app.filesDir
         val path = RglConfigStore.configFile(filesDir).absolutePath
         settingsExecutor.execute {
-            val (cfg, ready) = RglConfigStore.loadOrInitialize(filesDir)
+            val (cfg, source) = RglConfigStore.load(filesDir)
+            // Defaults for a missing file are what the exe would write; an unreadable file is kept
+            // (save moves it aside) and is not taken as the state on disk.
+            if (source == RglConfigSource.LOADED) rglOnDisk = cfg
             mainHandler.post {
                 if (isCleared.get()) return@post
+                rglLoaded = true
                 _settingsState.value = _settingsState.value.copy(
                     rglConfig = cfg,
-                    rglConfigReady = ready,
+                    rglConfigReady = source == RglConfigSource.LOADED,
                     rglConfigPath = path
                 )
             }

@@ -549,43 +549,56 @@ object RglConfigCodec {
  * Reads and writes `rgl_config.txt` in the recompiled game's user profile Documents folder
  * (`filesDir/recomp/r4/user/Documents/Mount&Blade Warband/rgl_config.txt`).
  */
+// Where the R4 run's exe reads its config: the writable `user` layer maps C:\Users\Player, and
+// SHGetFolderPath(CSIDL_PERSONAL) returns its Documents (engine/include/wse/recomp/shim_files.h).
+//
+// The launcher never writes the file just because it opened: with no file, the exe makes its own
+// on first start, as on Windows, and the Settings screen shows the defaults it would pick. The
+// file is written only when the user changes a setting. A file that exists but cannot be read is
+// never overwritten: `save` first moves it to `rgl_config.txt.unreadable`, and refuses if it cannot.
+internal enum class RglConfigSource { MISSING, LOADED, UNREADABLE }
+
 internal object RglConfigStore {
     private const val RELATIVE_PATH = "recomp/r4/user/Documents/Mount&Blade Warband/rgl_config.txt"
+    private const val UNREADABLE_SUFFIX = ".unreadable"
 
     fun configFile(filesDir: File): File = File(filesDir, RELATIVE_PATH)
 
-    fun loadOrInitialize(filesDir: File): Pair<RglConfigState, Boolean> {
+    // Reads the file; writes nothing.
+    fun load(filesDir: File): Pair<RglConfigState, RglConfigSource> {
         val file = configFile(filesDir)
-        if (file.isFile) {
-            return try {
-                RglConfigCodec.parse(file.readText(Charsets.UTF_8)) to true
-            } catch (_: Throwable) {
-                RglConfigState() to false
-            }
+        if (!file.exists()) return RglConfigState() to RglConfigSource.MISSING
+        return try {
+            RglConfigCodec.parse(file.readText(Charsets.UTF_8)) to RglConfigSource.LOADED
+        } catch (_: Throwable) {
+            RglConfigState() to RglConfigSource.UNREADABLE
         }
-        val defaults = RglConfigState()
-        val saved = save(filesDir, defaults)
-        return defaults to saved
     }
 
     fun save(filesDir: File, state: RglConfigState): Boolean {
         return try {
             val file = configFile(filesDir)
             file.parentFile?.mkdirs()
+            if (file.exists() && !readable(file)) {
+                val kept = File(file.parentFile, file.name + UNREADABLE_SUFFIX)
+                if (kept.exists() && !kept.delete()) return false
+                if (!file.renameTo(kept)) return false
+            }
             val tmp = File(file.parentFile, "${file.name}.tmp")
             tmp.writeText(RglConfigCodec.serialize(state), Charsets.UTF_8)
-            if (file.exists() && !tmp.renameTo(file)) {
+            if (!tmp.renameTo(file)) {
                 tmp.copyTo(file, overwrite = true)
                 tmp.delete()
-            } else if (!file.exists()) {
-                if (!tmp.renameTo(file)) {
-                    tmp.copyTo(file, overwrite = true)
-                    tmp.delete()
-                }
             }
             true
         } catch (_: Throwable) {
             false
         }
+    }
+
+    private fun readable(file: File): Boolean = try {
+        file.isFile && file.readBytes().let { true }
+    } catch (_: Throwable) {
+        false
     }
 }

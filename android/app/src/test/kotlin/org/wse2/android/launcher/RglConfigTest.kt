@@ -7,6 +7,32 @@ import org.junit.Test
 
 class RglConfigTest {
 
+    private fun tempFilesDir(): java.io.File =
+        java.nio.file.Files.createTempDirectory("rgl_store").toFile().also { it.deleteOnExit() }
+
+    @Test
+    fun loadingAMissingFileWritesNothing() {
+        val dir = tempFilesDir()
+        val (state, source) = RglConfigStore.load(dir)
+        assertEquals(RglConfigSource.MISSING, source)
+        assertEquals(RglConfigState(), state)
+        assertFalse(RglConfigStore.configFile(dir).exists())
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun savingKeepsAnUnreadableFile() {
+        val dir = tempFilesDir()
+        val file = RglConfigStore.configFile(dir)
+        // A directory where the file should be stands in for a file that cannot be read.
+        java.io.File(file, "inner").mkdirs()
+        assertEquals(RglConfigSource.UNREADABLE, RglConfigStore.load(dir).second)
+        assertTrue(RglConfigStore.save(dir, RglConfigState(maxFramerate = 90)))
+        assertTrue(java.io.File(file.parentFile, file.name + ".unreadable").isDirectory)
+        assertEquals(90, RglConfigStore.load(dir).first.maxFramerate)
+        dir.deleteRecursively()
+    }
+
     @Test
     fun roundTripsAllKnownKeysAndPreservesExtras() {
         val sample = """
