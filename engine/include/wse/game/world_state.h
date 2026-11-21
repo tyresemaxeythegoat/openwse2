@@ -56,7 +56,12 @@ namespace wse::game {
 
 inline constexpr std::int32_t kMaxSkills = 42;            // 0x2a (0x1401e6547)
 inline constexpr std::int32_t kSkillInventoryManagement = 12; // 0x0c (0x140246810)
+inline constexpr std::int32_t kSkillRiding = 24;          // 0x18 (0x14010fdc0)
+inline constexpr std::int32_t kSkillShield = 26;          // 0x1a (0x14010fdc0)
+inline constexpr std::int32_t kSkillPowerDraw = 33;       // 0x21 (0x14010fdc0)
+inline constexpr std::int32_t kSkillPowerThrow = 34;      // 0x22 (0x14010fdc0)
 inline constexpr std::int32_t kSkillIronflesh = 36;       // 0x24 (0x1402462a5)
+inline constexpr std::int32_t kNumItemModifiers = 43;     // 0x2b (0x140093f80)
 inline constexpr std::int32_t kMaxAttributes = 4;         // 0x04 (0x1401ec086)
 inline constexpr std::int32_t kMaxProficiencies = 7;      // 0x07 (0x1401ec0ec)
 inline constexpr std::int32_t kMaxSlotIndex = 0xfffff;    // 0x1401e5763..0x1401e5a6b
@@ -84,6 +89,14 @@ struct WseSkill {
     std::string id{};
     std::int32_t max_level = 10;
     std::uint32_t flags = 0;
+};
+
+// Runtime subset of Data/item_modifiers.txt (43 entries, 0x140093f80) read by
+// mbTroop::sortInventoryByValue (0x140247900), mbTroopInventory::compactSort (0x140245430),
+// and mbGame::addMerchandiseToTroop (0x1400e2520).
+struct WseItemModifierStats {
+    float price_multiplier = 1.0f;
+    float rarity_multiplier = 1.0f;
 };
 
 struct WseInventorySlot {
@@ -1306,6 +1319,7 @@ struct WseWorldState {
     std::vector<WseInfoPage> info_pages{};
     std::vector<WseBattleEvent> battle_events{};
     std::vector<std::string> mesh_names{};
+    std::array<WseItemModifierStats, static_cast<std::size_t>(kNumItemModifiers)> item_modifiers{};
 
     // Whole-savegame framing + Phase 2C queued-window runtime fields (v1.1.5.6 PE/PDB).
     std::int32_t savegame_no = 0;                         // mbGame +0x0000
