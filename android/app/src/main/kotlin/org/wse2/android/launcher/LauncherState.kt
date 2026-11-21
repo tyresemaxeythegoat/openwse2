@@ -293,7 +293,10 @@ data class SettingsUiState(
     },
     val presentModeKeys: List<String> = LauncherDefaults.PRESENT_MODE_KEYS,
     val presentModeLabels: List<String> = LauncherDefaults.PRESENT_MODE_LABELS,
-    val hasPhoneGyro: Boolean = false
+    val hasPhoneGyro: Boolean = false,
+    val rglConfig: RglConfigState = RglConfigState(),
+    val rglConfigReady: Boolean = false,
+    val rglConfigPath: String = "Documents/Mount&Blade Warband/rgl_config.txt"
 )
 
 data class DriverUiState(

@@ -6,6 +6,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
@@ -53,6 +55,7 @@ import org.wse2.android.launcher.ui.WseDialogAction
 import org.wse2.android.launcher.ui.WseNavItem
 import org.wse2.android.launcher.ui.WseNavigationBar
 import org.wse2.android.launcher.ui.WseNavigationRail
+import org.wse2.android.launcher.ui.rememberWseAnimationsEnabled
 
 private sealed interface LauncherDialogState {
     data class ScanError(val reason: String) : LauncherDialogState
@@ -154,6 +157,8 @@ fun LauncherApp(
         onGyroAimChange = viewModel::setGyroAim,
         onPinchZoomChange = viewModel::setPinchZoom,
         onLanguageChange = viewModel::setLanguage,
+        onUpdateRglConfig = viewModel::updateRglConfig,
+        onResetRglConfig = viewModel::resetRglConfigToDefaults,
         onVerifyScripts = viewModel::verifySelectedModuleScripts,
         onSelectDriver = viewModel::selectDriver,
         onImportDriver = onImportDriver,
@@ -262,6 +267,8 @@ fun LauncherAppContent(
     onProbeVulkan: () -> Unit,
     onShowFpsOverlayChange: (Boolean) -> Unit,
     onLaunchSelfTest: () -> Unit,
+    onUpdateRglConfig: ((RglConfigState) -> RglConfigState) -> Unit = {},
+    onResetRglConfig: () -> Unit = {},
     r0State: R0UiState = R0UiState(),
     onRunR0Spikes: () -> Unit = {},
     onDismissR0Report: () -> Unit = {},
@@ -274,6 +281,7 @@ fun LauncherAppContent(
     val layoutDirection = LocalLayoutDirection.current
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val colors = LocalWseColors.current
+    val animationsEnabled = rememberWseAnimationsEnabled()
 
     BackHandler(enabled = selectedTab != LauncherTab.HOME) {
         onSelectTab(LauncherTab.HOME)
@@ -363,7 +371,9 @@ fun LauncherAppContent(
                 onGyroAimChange = onGyroAimChange,
                 onPinchZoomChange = onPinchZoomChange,
                 onLanguageChange = onLanguageChange,
-                topContentPadding = topPadding
+                topContentPadding = topPadding,
+                onUpdateRglConfig = onUpdateRglConfig,
+                onResetRglConfig = onResetRglConfig
             )
             LauncherTab.ADVANCED -> AdvancedScreen(
                 state = advancedState,
@@ -413,7 +423,7 @@ fun LauncherAppContent(
                 ) { innerPadding ->
                     AnimatedContent(
                         targetState = selectedTab,
-                        transitionSpec = { fadeThroughSpec() },
+                        transitionSpec = { fadeThroughSpec(animationsEnabled) },
                         label = "launcher-tab-landscape",
                         modifier = Modifier
                             .fillMaxSize()
@@ -451,7 +461,7 @@ fun LauncherAppContent(
             ) { innerPadding ->
                 AnimatedContent(
                     targetState = selectedTab,
-                    transitionSpec = { fadeThroughSpec() },
+                    transitionSpec = { fadeThroughSpec(animationsEnabled) },
                     label = "launcher-tab-portrait",
                     modifier = Modifier
                         .fillMaxSize()
@@ -475,12 +485,16 @@ fun LauncherAppContent(
     }
 }
 
-private fun fadeThroughSpec(): ContentTransform =
-    (fadeIn(animationSpec = tween(durationMillis = 210, delayMillis = 90)) +
-        scaleIn(
-            initialScale = 0.94f,
-            animationSpec = tween(durationMillis = 210, delayMillis = 90)
-        )) togetherWith fadeOut(animationSpec = tween(durationMillis = 90))
+private fun fadeThroughSpec(animationsEnabled: Boolean): ContentTransform =
+    if (animationsEnabled) {
+        (fadeIn(animationSpec = tween(durationMillis = 210, delayMillis = 90)) +
+            scaleIn(
+                initialScale = 0.94f,
+                animationSpec = tween(durationMillis = 210, delayMillis = 90)
+            )) togetherWith fadeOut(animationSpec = tween(durationMillis = 90))
+    } else {
+        EnterTransition.None togetherWith ExitTransition.None
+    }
 
 private fun navIconFor(tab: LauncherTab): ImageVector = when (tab) {
     LauncherTab.HOME -> NavIcons.Home

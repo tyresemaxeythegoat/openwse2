@@ -1,10 +1,10 @@
 package org.wse2.android.launcher.ui
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,7 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -60,7 +63,7 @@ private val BannerTitleStyle = TextStyle(
 
 private val BannerSubtitleStyle = TextStyle(
     fontFamily = ManropeFontFamily,
-    fontWeight = FontWeight.Normal,
+    fontWeight = FontWeight.Medium,
     fontSize = 12.sp,
     lineHeight = 16.sp,
     letterSpacing = 0.2.sp
@@ -80,12 +83,13 @@ fun WseBannerCard(
     artModifier: Modifier = Modifier
 ) {
     val colors = LocalWseColors.current
+    val animationsEnabled = rememberWseAnimationsEnabled()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (enabled && isPressed) 0.98f else 1.0f,
-        animationSpec = tween(durationMillis = 120),
+        targetValue = if (enabled && animationsEnabled && isPressed) 0.98f else 1.0f,
+        animationSpec = wseAnimationSpec(animationsEnabled = animationsEnabled, durationMillis = 120),
         label = "wse-banner-scale"
     )
 
@@ -203,6 +207,33 @@ fun WseBannerCard(
                             )
                     )
 
+                    if (selected) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .clip(WseShapes.small)
+                                .background(colors.background.copy(alpha = 0.82f))
+                                .border(1.dp, colors.accent.copy(alpha = 0.85f), WseShapes.small)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .rotate(45f)
+                                    .background(colors.accent)
+                            )
+                            Text(
+                                text = "ACTIVE",
+                                style = WseType.overline.copy(fontSize = 10.sp, lineHeight = 13.sp),
+                                color = colors.primary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
                     Column(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
@@ -227,22 +258,16 @@ fun WseBannerCard(
                     }
                 }
 
+                // Dedicated full-width footer row for the status chip so longer labels like
+                // "3 FILES MISSING" never collide with or clip the active badge.
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     chip()
-                    if (selected) {
-                        Text(
-                            text = "ACTIVE",
-                            style = WseType.overline,
-                            color = colors.primary,
-                            maxLines = 1
-                        )
-                    }
                 }
             }
         }
@@ -275,8 +300,8 @@ private fun PreviewWseBannerCard() {
                 fallbackSeed = "Prophesy of Pendor",
                 title = "Prophesy of Pendor",
                 subtitle = "Prophesy_of_Pendor",
-                chip = { WseStatusChip(text = "2 files missing", tone = WseStatusTone.Error, onClick = {}) },
-                selected = false,
+                chip = { WseStatusChip(text = "3 files missing", tone = WseStatusTone.Error, onClick = {}) },
+                selected = true,
                 onClick = {}
             )
         }

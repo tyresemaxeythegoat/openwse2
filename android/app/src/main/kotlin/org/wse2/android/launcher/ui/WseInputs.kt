@@ -1,19 +1,22 @@
 package org.wse2.android.launcher.ui
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,8 +25,13 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CutCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -40,12 +48,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
@@ -58,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
@@ -73,15 +86,16 @@ fun WseSwitch(
     enabled: Boolean = true
 ) {
     val colors = LocalWseColors.current
+    val animationsEnabled = rememberWseAnimationsEnabled()
     val shape = WseShapes.small
     val thumbOffset by animateDpAsState(
         targetValue = if (checked) 22.dp else 2.dp,
-        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        animationSpec = wseAnimationSpec(animationsEnabled = animationsEnabled, durationMillis = 150),
         label = "wse-switch-thumb"
     )
     val trackColor by animateColorAsState(
         targetValue = if (checked) colors.primary else colors.surfaceContainerHigh,
-        animationSpec = tween(durationMillis = 150),
+        animationSpec = wseAnimationSpec(animationsEnabled = animationsEnabled, durationMillis = 150),
         label = "wse-switch-track"
     )
     val toggleModifier = if (onCheckedChange != null) {
@@ -130,6 +144,7 @@ fun WseSlider(
     steps: Int = 0,
     enabled: Boolean = true,
     label: String? = null,
+    supporting: String? = null,
     onValueChangeFinished: (() -> Unit)? = null
 ) {
     val colors = LocalWseColors.current
@@ -159,6 +174,17 @@ fun WseSlider(
                 style = WseType.overline,
                 color = if (enabled) {
                     colors.primary
+                } else {
+                    colors.onSurfaceVariant.copy(alpha = 0.45f)
+                }
+            )
+        }
+        if (supporting != null) {
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (enabled) {
+                    colors.onSurfaceVariant
                 } else {
                     colors.onSurfaceVariant.copy(alpha = 0.45f)
                 }
@@ -288,6 +314,7 @@ fun WseSegmented(
     enabled: Boolean = true
 ) {
     val colors = LocalWseColors.current
+    val animationsEnabled = rememberWseAnimationsEnabled()
     val borderColor = if (enabled) {
         colors.hairline
     } else {
@@ -314,7 +341,10 @@ fun WseSegmented(
                 val segmentWidth = maxWidth / options.size
                 val indicatorOffset by animateDpAsState(
                     targetValue = segmentWidth * safeIdx,
-                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                    animationSpec = wseAnimationSpec(
+                        animationsEnabled = animationsEnabled,
+                        durationMillis = 220
+                    ),
                     label = "wse-segmented-offset"
                 )
                 val indicatorBrush = if (enabled) {
@@ -348,7 +378,10 @@ fun WseSegmented(
                                 isSelected -> colors.onPrimary
                                 else -> colors.onSurfaceVariant
                             },
-                            animationSpec = tween(durationMillis = 180),
+                            animationSpec = wseAnimationSpec(
+                                animationsEnabled = animationsEnabled,
+                                durationMillis = 180
+                            ),
                             label = "wse-segmented-label"
                         )
                         Box(
@@ -382,6 +415,227 @@ fun WseSegmented(
     }
 }
 
+/**
+ * Tactile multi-column grid of chamfered selector tiles. Active tiles wear a forged-gold gradient
+ * with an upper bevel edge; inactive tiles sit on dark iron with a thin gold hairline.
+ */
+@Composable
+fun WseTileGrid(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    columns: Int = 3,
+    enabled: Boolean = true
+) {
+    val colors = LocalWseColors.current
+    val animationsEnabled = rememberWseAnimationsEnabled()
+    val safeCols = columns.coerceAtLeast(1)
+    val safeIdx = if (options.isNotEmpty()) selectedIndex.coerceIn(0, options.lastIndex) else -1
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .selectableGroup(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        options.indices.chunked(safeCols).forEach { rowIndices ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                rowIndices.forEach { index ->
+                    val isSelected = index == safeIdx
+                    val interactionSource = remember { MutableInteractionSource() }
+                    val isPressed by interactionSource.collectIsPressedAsState()
+                    val scale by animateFloatAsState(
+                        targetValue = if (enabled && animationsEnabled && isPressed) 0.96f else 1f,
+                        animationSpec = wseAnimationSpec(
+                            animationsEnabled = animationsEnabled,
+                            durationMillis = 110
+                        ),
+                        label = "wse-tile-scale"
+                    )
+                    val textColor by animateColorAsState(
+                        targetValue = when {
+                            !enabled && isSelected -> colors.onSurface.copy(alpha = 0.55f)
+                            !enabled -> colors.onSurfaceVariant.copy(alpha = 0.45f)
+                            isSelected -> colors.onPrimary
+                            else -> colors.onSurface
+                        },
+                        animationSpec = wseAnimationSpec(
+                            animationsEnabled = animationsEnabled,
+                            durationMillis = 150
+                        ),
+                        label = "wse-tile-text"
+                    )
+                    val tileBrush = when {
+                        isSelected && enabled -> Brush.verticalGradient(
+                            colors = listOf(colors.primaryGradientTop, colors.primaryGradientBottom)
+                        )
+                        isSelected -> SolidColor(colors.outlineVariant.copy(alpha = 0.45f))
+                        isPressed && enabled -> SolidColor(colors.surfaceContainerHigh)
+                        else -> SolidColor(colors.surfaceContainer)
+                    }
+                    val tileBorder = when {
+                        !enabled -> colors.outlineVariant.copy(alpha = 0.4f)
+                        isSelected -> colors.primaryGradientTop
+                        else -> colors.hairline.copy(alpha = 0.65f)
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 44.dp)
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                alpha = if (enabled) 1f else 0.5f
+                            }
+                            .clip(WseShapes.small)
+                            .background(tileBrush)
+                            .border(width = 1.dp, color = tileBorder, shape = WseShapes.small)
+                            .drawWithContent {
+                                drawContent()
+                                if (isSelected && enabled && size.width > 0f) {
+                                    val edge = 1.dp.toPx()
+                                    drawLine(
+                                        color = Color.White.copy(alpha = 0.34f),
+                                        start = Offset(4.dp.toPx(), edge * 0.5f),
+                                        end = Offset(size.width - 4.dp.toPx(), edge * 0.5f),
+                                        strokeWidth = edge
+                                    )
+                                }
+                            }
+                            .selectable(
+                                selected = isSelected,
+                                enabled = enabled,
+                                interactionSource = interactionSource,
+                                indication = null,
+                                role = Role.RadioButton,
+                                onClick = { onSelected(index) }
+                            )
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = options[index].uppercase(),
+                            style = WseType.overline.copy(
+                                fontSize = 11.sp,
+                                lineHeight = 14.sp,
+                                letterSpacing = 0.8.sp
+                            ),
+                            color = textColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                repeat(safeCols - rowIndices.size) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+data class WseCategoryTab(
+    val label: String,
+    val icon: ImageVector? = null
+)
+
+@Composable
+fun WseCategoryStrip(
+    tabs: List<WseCategoryTab>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(0.dp)
+) {
+    val colors = LocalWseColors.current
+    val animationsEnabled = rememberWseAnimationsEnabled()
+    val safeIdx = if (tabs.isNotEmpty()) selectedIndex.coerceIn(0, tabs.lastIndex) else -1
+
+    LazyRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .selectableGroup(),
+        contentPadding = contentPadding,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        itemsIndexed(tabs) { index, tab ->
+            val isSelected = index == safeIdx
+            val interactionSource = remember { MutableInteractionSource() }
+            val isPressed by interactionSource.collectIsPressedAsState()
+            val scale by animateFloatAsState(
+                targetValue = if (animationsEnabled && isPressed) 0.96f else 1f,
+                animationSpec = wseAnimationSpec(
+                    animationsEnabled = animationsEnabled,
+                    durationMillis = 100
+                ),
+                label = "wse-category-scale"
+            )
+            val labelColor by animateColorAsState(
+                targetValue = if (isSelected) colors.onPrimary else colors.onSurfaceVariant,
+                animationSpec = wseAnimationSpec(
+                    animationsEnabled = animationsEnabled,
+                    durationMillis = 150
+                ),
+                label = "wse-category-color"
+            )
+            val fillBrush = if (isSelected) {
+                Brush.verticalGradient(
+                    colors = listOf(colors.primaryGradientTop, colors.primaryGradientBottom)
+                )
+            } else {
+                SolidColor(colors.surfaceContainerLow)
+            }
+            val borderColor = if (isSelected) colors.primaryGradientTop else colors.hairline.copy(alpha = 0.6f)
+
+            Row(
+                modifier = Modifier
+                    .heightIn(min = 40.dp)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .clip(WseShapes.small)
+                    .background(fillBrush)
+                    .border(1.dp, borderColor, WseShapes.small)
+                    .selectable(
+                        selected = isSelected,
+                        interactionSource = interactionSource,
+                        indication = null,
+                        role = Role.Tab,
+                        onClick = { onSelect(index) }
+                    )
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (tab.icon != null) {
+                    Icon(
+                        imageVector = tab.icon,
+                        contentDescription = null,
+                        tint = labelColor,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+                Text(
+                    text = tab.label.uppercase(),
+                    style = WseType.overline.copy(
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        letterSpacing = 0.9.sp
+                    ),
+                    color = labelColor,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
 @Preview(name = "WSE Inputs", showBackground = true, widthDp = 380)
 @Composable
 private fun PreviewWseInputs() {
@@ -390,6 +644,7 @@ private fun PreviewWseInputs() {
         var checked by remember { mutableStateOf(true) }
         var sliderVal by remember { mutableFloatStateOf(85f) }
         var segIdx by remember { mutableIntStateOf(1) }
+        var tileIdx by remember { mutableIntStateOf(1) }
 
         Column(
             modifier = Modifier
@@ -412,18 +667,19 @@ private fun PreviewWseInputs() {
                 valueRange = 50f..100f,
                 valueLabel = "${sliderVal.toInt()}%",
                 steps = 9,
-                label = "Render scale"
+                label = "Render scale",
+                supporting = "Scales the internal 3D viewport resolution"
             )
             WseSegmented(
                 options = listOf("Low", "Medium", "High", "Custom"),
                 selectedIndex = segIdx,
                 onSelected = { segIdx = it }
             )
-            WseSegmented(
-                options = listOf("4:3", "16:9", "Stretch"),
-                selectedIndex = 0,
-                onSelected = {},
-                enabled = false
+            WseTileGrid(
+                options = listOf("30", "60", "90", "120", "Uncapped"),
+                selectedIndex = tileIdx,
+                columns = 3,
+                onSelected = { tileIdx = it }
             )
         }
     }

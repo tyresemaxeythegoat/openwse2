@@ -152,6 +152,24 @@ class LauncherScreenshotTest {
 
     @Test
     @Config(sdk = [34], qualifiers = PORTRAIT_QUALIFIERS)
+    fun settings_rgl_graphics_portrait() {
+        captureSettings(
+            fileName = "settings_rgl_graphics_portrait.png",
+            category = SettingsCategory.GRAPHICS
+        )
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = PORTRAIT_QUALIFIERS)
+    fun settings_rgl_gameplay_portrait() {
+        captureSettings(
+            fileName = "settings_rgl_gameplay_portrait.png",
+            category = SettingsCategory.GAMEPLAY
+        )
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = PORTRAIT_QUALIFIERS)
     fun advanced_default_portrait() {
         captureAdvanced(fileName = "advanced_default_portrait.png")
     }
@@ -206,7 +224,10 @@ class LauncherScreenshotTest {
         }
     }
 
-    private fun captureSettings(fileName: String) {
+    private fun captureSettings(
+        fileName: String,
+        category: SettingsCategory = SettingsCategory.PERFORMANCE
+    ) {
         captureScreen(fileName = fileName) {
             SettingsScreen(
                 state = sampleSettingsState(),
@@ -222,7 +243,8 @@ class LauncherScreenshotTest {
                 onUiScaleChange = {},
                 onGyroAimChange = {},
                 onPinchZoomChange = {},
-                onLanguageChange = {}
+                onLanguageChange = {},
+                initialCategory = category
             )
         }
     }
@@ -411,7 +433,9 @@ class LauncherScreenshotTest {
         ),
         isLoaded = true,
         languageOptions = listOf("en", "de", "fr", "pl"),
-        hasPhoneGyro = true
+        hasPhoneGyro = true,
+        rglConfig = RglConfigState(),
+        rglConfigReady = true
     )
 
     private fun sampleAdvancedState(): AdvancedUiState = AdvancedUiState(

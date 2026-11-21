@@ -1,9 +1,7 @@
 package org.wse2.android.launcher.ui
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
 import org.wse2.android.launcher.theme.WseShapes
@@ -60,10 +59,16 @@ fun WseNavigationBar(
     enabled: Boolean = true
 ) {
     val colors = LocalWseColors.current
+    val animationsEnabled = rememberWseAnimationsEnabled()
+    val navLabelStyle = WseType.overline.copy(
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 0.9.sp
+    )
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.surface.copy(alpha = 0.85f))
+            .background(colors.surface.copy(alpha = 0.92f))
             .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
     ) {
         Box(
@@ -81,10 +86,13 @@ fun WseNavigationBar(
             if (items.isNotEmpty()) {
                 val safeIdx = selectedIndex.coerceIn(0, items.lastIndex)
                 val slotWidth = maxWidth / items.size
-                val indicatorWidth = 28.dp.coerceAtMost(slotWidth)
+                val indicatorWidth = 32.dp.coerceAtMost(slotWidth)
                 val indicatorX by animateDpAsState(
                     targetValue = slotWidth * safeIdx + (slotWidth - indicatorWidth) / 2f,
-                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                    animationSpec = wseAnimationSpec(
+                        animationsEnabled = animationsEnabled,
+                        durationMillis = 220
+                    ),
                     label = "wse-nav-bar-indicator"
                 )
 
@@ -103,7 +111,10 @@ fun WseNavigationBar(
                                 isSelected -> colors.primary
                                 else -> colors.onSurfaceVariant
                             },
-                            animationSpec = tween(durationMillis = 180),
+                            animationSpec = wseAnimationSpec(
+                                animationsEnabled = animationsEnabled,
+                                durationMillis = 180
+                            ),
                             label = "wse-nav-bar-item-color"
                         )
                         Column(
@@ -129,7 +140,7 @@ fun WseNavigationBar(
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 text = item.label.uppercase(),
-                                style = WseType.overline,
+                                style = navLabelStyle,
                                 color = itemColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -140,9 +151,8 @@ fun WseNavigationBar(
 
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
+                        .align(Alignment.TopStart)
                         .offset { IntOffset(indicatorX.roundToPx(), 0) }
-                        .padding(bottom = 4.dp)
                         .width(indicatorWidth)
                         .height(2.5.dp)
                         .background(colors.accent, WseShapes.small)
@@ -162,11 +172,17 @@ fun WseNavigationRail(
     enabled: Boolean = true
 ) {
     val colors = LocalWseColors.current
+    val animationsEnabled = rememberWseAnimationsEnabled()
+    val navLabelStyle = WseType.overline.copy(
+        fontSize = 10.sp,
+        lineHeight = 13.sp,
+        letterSpacing = 0.8.sp
+    )
     Row(
         modifier = modifier
             .fillMaxHeight()
             .width(88.dp)
-            .background(colors.surface.copy(alpha = 0.85f))
+            .background(colors.surface.copy(alpha = 0.92f))
             .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
     ) {
         Box(
@@ -178,11 +194,14 @@ fun WseNavigationRail(
         ) {
             if (items.isNotEmpty()) {
                 val itemHeight = 68.dp
-                val indicatorHeight = 28.dp
+                val indicatorHeight = 30.dp
                 val safeIdx = selectedIndex.coerceIn(0, items.lastIndex)
                 val indicatorY by animateDpAsState(
                     targetValue = itemHeight * safeIdx + (itemHeight - indicatorHeight) / 2f,
-                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                    animationSpec = wseAnimationSpec(
+                        animationsEnabled = animationsEnabled,
+                        durationMillis = 220
+                    ),
                     label = "wse-nav-rail-indicator"
                 )
 
@@ -201,7 +220,10 @@ fun WseNavigationRail(
                                     isSelected -> colors.primary
                                     else -> colors.onSurfaceVariant
                                 },
-                                animationSpec = tween(durationMillis = 180),
+                                animationSpec = wseAnimationSpec(
+                                    animationsEnabled = animationsEnabled,
+                                    durationMillis = 180
+                                ),
                                 label = "wse-nav-rail-item-color"
                             )
                             Column(
@@ -227,7 +249,7 @@ fun WseNavigationRail(
                                 Spacer(Modifier.height(4.dp))
                                 Text(
                                     text = item.label.uppercase(),
-                                    style = WseType.overline,
+                                    style = navLabelStyle,
                                     color = itemColor,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis

@@ -5,7 +5,6 @@ package org.wse2.android.launcher
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,9 +23,9 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,14 +35,18 @@ import androidx.compose.ui.unit.dp
 import org.wse2.android.launcher.art.ModuleArt
 import org.wse2.android.launcher.theme.LocalWseColors
 import org.wse2.android.launcher.theme.Wse2Theme
-import org.wse2.android.launcher.theme.WseShapes
 import org.wse2.android.launcher.theme.wseBackdrop
 import org.wse2.android.launcher.ui.WseBannerCard
+import org.wse2.android.launcher.ui.WseKeyValueGrid
+import org.wse2.android.launcher.ui.WseMetricItem
 import org.wse2.android.launcher.ui.WsePrimaryButton
+import org.wse2.android.launcher.ui.WseScreenHeader
 import org.wse2.android.launcher.ui.WseSecondaryButton
 import org.wse2.android.launcher.ui.WseSectionHeader
 import org.wse2.android.launcher.ui.WseStatusChip
 import org.wse2.android.launcher.ui.WseStatusTone
+import org.wse2.android.launcher.ui.rememberWseAnimationsEnabled
+import org.wse2.android.launcher.ui.wseStaggeredEntrance
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -67,6 +70,10 @@ fun ModulesScreen(
         !installFolder.displayName.isNullOrBlank()
     val folderLabel = installFolder.displayName?.takeIf { it.isNotBlank() }
 
+    // Reveals the Modules grid cards once per screen entry (staggered), matching HomeScreen.
+    val revealedKeys = remember { mutableSetOf<Any>() }
+    val animationsEnabled = rememberWseAnimationsEnabled()
+
     LazyVerticalGrid(
         columns = GridCells.Adaptive(180.dp),
         modifier = modifier.fillMaxSize(),
@@ -74,25 +81,42 @@ fun ModulesScreen(
             start = 16.dp,
             end = 16.dp,
             top = topContentPadding + 16.dp,
-            bottom = 20.dp
+            bottom = 24.dp
         ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item(key = "modules-header", span = { GridItemSpan(maxLineSpan) }) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "Modules",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = colors.onSurface
+            Column(
+                modifier = Modifier.wseStaggeredEntrance(
+                    key = "modules-header",
+                    order = 0,
+                    revealedKeys = revealedKeys,
+                    animationsEnabled = animationsEnabled
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                WseScreenHeader(
+                    eyebrow = "Module Library",
+                    title = "Modules",
+                    subtitle = if (state.modules.isNotEmpty()) {
+                        "Select a module to load on launch or rescan your Warband folder."
+                    } else {
+                        "Choose your Warband install folder to discover modules."
+                    },
+                    trailing = if (state.modules.isNotEmpty()) {
+                        {
+                            WseStatusChip(
+                                text = "${state.modules.size} found",
+                                tone = WseStatusTone.Neutral
+                            )
+                        }
+                    } else {
+                        null
+                    }
                 )
 
-                Surface(
-                    shape = WseShapes.large,
-                    color = colors.surfaceContainerLow,
-                    border = BorderStroke(1.dp, colors.hairline),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                LauncherGroupedCard {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -109,7 +133,7 @@ fun ModulesScreen(
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             WseSecondaryButton(
                                 text = "Choose folder",
@@ -164,11 +188,13 @@ fun ModulesScreen(
         if (scanState.inProgress) {
             item(key = "modules-scanning", span = { GridItemSpan(maxLineSpan) }) {
                 val label = scanState.folderLabel?.takeIf { it.isNotBlank() } ?: "folder"
-                Surface(
-                    shape = WseShapes.large,
-                    color = colors.surfaceContainerLow,
-                    border = BorderStroke(1.dp, colors.hairline),
-                    modifier = Modifier.fillMaxWidth()
+                LauncherGroupedCard(
+                    modifier = Modifier.wseStaggeredEntrance(
+                        key = "modules-scanning",
+                        order = 1,
+                        revealedKeys = revealedKeys,
+                        animationsEnabled = animationsEnabled
+                    )
                 ) {
                     Text(
                         text = "Scanning $label for Modules/*/module.ini…",
@@ -180,11 +206,13 @@ fun ModulesScreen(
             }
         } else if (state.modules.isEmpty()) {
             item(key = "modules-empty", span = { GridItemSpan(maxLineSpan) }) {
-                Surface(
-                    shape = WseShapes.large,
-                    color = colors.surfaceContainerLow,
-                    border = BorderStroke(1.dp, colors.hairline),
-                    modifier = Modifier.fillMaxWidth()
+                LauncherGroupedCard(
+                    modifier = Modifier.wseStaggeredEntrance(
+                        key = "modules-empty",
+                        order = 1,
+                        revealedKeys = revealedKeys,
+                        animationsEnabled = animationsEnabled
+                    )
                 ) {
                     Column(
                         modifier = Modifier
@@ -241,18 +269,20 @@ fun ModulesScreen(
                         if (status?.state == InstallCheckState.MISSING) {
                             onShowMissingFiles(mod, status.missingFiles)
                         }
-                    }
+                    },
+                    modifier = Modifier.wseStaggeredEntrance(
+                        key = "mod-${mod.modulePath}|$index",
+                        order = index + 1,
+                        revealedKeys = revealedKeys,
+                        animationsEnabled = animationsEnabled
+                    )
                 )
             }
 
             val selectedMod = state.selectedModule
             if (selectedMod != null) {
                 item(key = "modules-details", span = { GridItemSpan(maxLineSpan) }) {
-                    val scriptsLabel = if (selectedMod.hasScriptsTxt) {
-                        "scripts.txt present"
-                    } else {
-                        "scripts.txt missing"
-                    }
+                    val scriptsLabel = if (selectedMod.hasScriptsTxt) "Present" else "Missing"
                     val installLabel = when (val st = state.installStatuses[selectedMod.modulePath]) {
                         null -> "Checking…"
                         else -> when (st.state) {
@@ -261,29 +291,43 @@ fun ModulesScreen(
                             InstallCheckState.MISSING -> if (st.missingFiles.isNotEmpty()) {
                                 "${st.missingFiles.size} file(s) missing"
                             } else {
-                                "Install check failed"
+                                "Check failed"
                             }
                         }
                     }
-                    Surface(
-                        shape = WseShapes.large,
-                        color = colors.surfaceContainerLow,
-                        border = BorderStroke(1.dp, colors.hairline),
-                        modifier = Modifier.fillMaxWidth()
+                    LauncherGroupedCard(
+                        modifier = Modifier.wseStaggeredEntrance(
+                            key = "modules-details",
+                            order = (state.modules.size + 1).coerceAtMost(8),
+                            revealedKeys = revealedKeys,
+                            animationsEnabled = animationsEnabled
+                        )
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            WseSectionHeader(title = "Selected module details")
-                            Text(
-                                text = "${selectedMod.modulePath} · $scriptsLabel · BRFs: " +
-                                    "${selectedMod.loadResourceCount} common + " +
-                                    "${selectedMod.loadModResourceCount} mod · $installLabel",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.onSurfaceVariant
+                            WseSectionHeader(
+                                title = "Selected module details",
+                                badge = selectedMod.displayName.ifBlank { selectedMod.folderName }
+                            )
+                            WseKeyValueGrid(
+                                items = listOf(
+                                    WseMetricItem("Path", selectedMod.modulePath),
+                                    WseMetricItem(
+                                        "Install Check",
+                                        installLabel,
+                                        accentValue = installLabel == "Ready"
+                                    ),
+                                    WseMetricItem("scripts.txt", scriptsLabel),
+                                    WseMetricItem(
+                                        "BRF Resources",
+                                        "${selectedMod.loadResourceCount} common + ${selectedMod.loadModResourceCount} mod"
+                                    )
+                                ),
+                                columns = 2
                             )
                         }
                     }
@@ -301,7 +345,8 @@ private fun ModuleGridCard(
     selected: Boolean,
     artModifier: Modifier,
     onClick: () -> Unit,
-    onShowMissingFiles: () -> Unit
+    onShowMissingFiles: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val displayTitle = module.displayName.ifBlank { module.folderName }
     val chipLabel: String
@@ -342,6 +387,7 @@ private fun ModuleGridCard(
         },
         selected = selected,
         onClick = onClick,
+        modifier = modifier,
         artModifier = artModifier
     )
 }
@@ -391,26 +437,6 @@ private fun previewModulesState(): ModulesUiState {
 @Composable
 private fun PreviewModulesDark() {
     Wse2Theme(darkTheme = true, dynamicColor = false) {
-        Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
-            ModulesScreen(
-                state = previewModulesState(),
-                installFolder = InstallFolderState(displayName = "Mount & Blade - Warband"),
-                scanState = ScanState(),
-                moduleArt = emptyMap(),
-                onChooseFolder = {},
-                onRescan = {},
-                onCancelScan = {},
-                onSelectModule = {},
-                onShowMissingFiles = { _, _ -> }
-            )
-        }
-    }
-}
-
-@Preview(name = "Modules Light", showBackground = true, widthDp = 412, heightDp = 844)
-@Composable
-private fun PreviewModulesLight() {
-    Wse2Theme(darkTheme = false, dynamicColor = false) {
         Box(modifier = Modifier.wseBackdrop(LocalWseColors.current.accent)) {
             ModulesScreen(
                 state = previewModulesState(),

@@ -2,7 +2,10 @@ package org.wse2.android.launcher.ui
 
 import android.provider.Settings
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +36,17 @@ internal fun rememberWseAnimationsEnabled(): Boolean {
         }
         scale > 0f
     }
+}
+
+internal fun <T> wseAnimationSpec(
+    animationsEnabled: Boolean,
+    durationMillis: Int = 180,
+    delayMillis: Int = 0,
+    easing: Easing = FastOutSlowInEasing
+): AnimationSpec<T> = if (animationsEnabled) {
+    tween(durationMillis = durationMillis, delayMillis = delayMillis, easing = easing)
+} else {
+    snap()
 }
 
 @Composable

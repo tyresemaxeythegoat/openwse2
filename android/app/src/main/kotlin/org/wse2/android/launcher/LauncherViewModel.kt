@@ -535,6 +535,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             choicesJson = JSONObject().put("quality_preset", presetKey).toString(),
             refreshGraphics = presetKey != QUALITY_PRESET_CUSTOM
         )
+        if (presetKey != QUALITY_PRESET_CUSTOM) {
+            updateRglConfig { it.withQualityPreset(presetKey) }
+        }
     }
 
     fun setFrameRateCap(capHz: Int) {
@@ -552,6 +555,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             .put("quality_preset", QUALITY_PRESET_CUSTOM)
             .toString()
         commitSettingsChange(next, json, refreshGraphics = false)
+        val mirroredFps = if (capHz <= 0) 240 else capHz.coerceIn(30, 240)
+        updateRglConfig { it.copy(maxFramerate = mirroredFps) }
     }
 
     fun setPresentMode(presentModeKey: String) {
@@ -568,6 +573,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             .put("quality_preset", QUALITY_PRESET_CUSTOM)
             .toString()
         commitSettingsChange(next, json, refreshGraphics = false)
+        val vsync = presentModeKey == "fifo" || presentModeKey == "fifo_relaxed"
+        updateRglConfig { it.copy(forceVsync = vsync) }
     }
 
     fun setRenderScalePercent(percent: Int) {
@@ -702,6 +709,45 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         commitSettingsChange(next, json, refreshGraphics = false)
     }
 
+    fun updateRglConfig(transform: (RglConfigState) -> RglConfigState) {
+        val current = _settingsState.value
+        val updated = transform(current.rglConfig)
+        if (updated == current.rglConfig) {
+            return
+        }
+        _settingsState.value = current.copy(rglConfig = updated)
+        val filesDir = app.filesDir
+        settingsExecutor.execute {
+            val saved = RglConfigStore.save(filesDir, updated)
+            mainHandler.post {
+                if (isCleared.get()) return@post
+                if (!saved) {
+                    _events.trySend(LauncherEvent.ShowToast("Could not save rgl_config.txt."))
+                } else {
+                    _settingsState.value = _settingsState.value.copy(rglConfigReady = true)
+                }
+            }
+        }
+    }
+
+    fun resetRglConfigToDefaults() {
+        val defaults = RglConfigState(extraEntries = _settingsState.value.rglConfig.extraEntries)
+        _settingsState.value = _settingsState.value.copy(rglConfig = defaults)
+        val filesDir = app.filesDir
+        settingsExecutor.execute {
+            val saved = RglConfigStore.save(filesDir, defaults)
+            mainHandler.post {
+                if (isCleared.get()) return@post
+                if (saved) {
+                    _settingsState.value = _settingsState.value.copy(rglConfigReady = true)
+                    _events.trySend(LauncherEvent.ShowToast("rgl_config.txt restored to defaults."))
+                } else {
+                    _events.trySend(LauncherEvent.ShowToast("Could not reset rgl_config.txt."))
+                }
+            }
+        }
+    }
+
     private fun restorePreferences() {
         val prefs = prefs()
         _showFpsOverlay.value = prefs.getBoolean(KEY_SHOW_FPS_OVERLAY, false)
@@ -718,6 +764,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         )
 
         restorePerformanceSettings()
+        restoreRglConfig()
 
         val savedTree = prefs.getString(KEY_TREE_URI, null)
         if (!savedTree.isNullOrEmpty()) {
@@ -778,6 +825,22 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     return@post
                 }
                 applyFullSettingsState(loaded)
+            }
+        }
+    }
+
+    private fun restoreRglConfig() {
+        val filesDir = app.filesDir
+        val path = RglConfigStore.configFile(filesDir).absolutePath
+        settingsExecutor.execute {
+            val (cfg, ready) = RglConfigStore.loadOrInitialize(filesDir)
+            mainHandler.post {
+                if (isCleared.get()) return@post
+                _settingsState.value = _settingsState.value.copy(
+                    rglConfig = cfg,
+                    rglConfigReady = ready,
+                    rglConfigPath = path
+                )
             }
         }
     }

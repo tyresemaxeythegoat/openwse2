@@ -36,6 +36,7 @@ import org.wse2.android.launcher.theme.wseBackdrop
 import org.wse2.android.launcher.ui.WseDialog
 import org.wse2.android.launcher.ui.WseDialogAction
 import org.wse2.android.launcher.ui.WseListRow
+import org.wse2.android.launcher.ui.WseScreenHeader
 import org.wse2.android.launcher.ui.WseSecondaryButton
 
 @Composable
@@ -84,10 +85,10 @@ fun AdvancedScreen(
                 ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "Advanced",
-                style = MaterialTheme.typography.headlineMedium,
-                color = colors.onSurface
+            WseScreenHeader(
+                eyebrow = "Diagnostics & Tools",
+                title = "Advanced",
+                subtitle = "SAF storage inspection, custom Vulkan drivers, self-tests and Phase 5 tools."
             )
 
             LauncherSectionHeader(title = "Warband Folder (SAF)")
@@ -133,7 +134,7 @@ fun AdvancedScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     WseSecondaryButton(
-                        text = "Import Turnip / PanVK Driver Package (.zip)",
+                        text = "Import Driver Package (.zip)",
                         onClick = onImportDriver,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -155,7 +156,7 @@ fun AdvancedScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     WseSecondaryButton(
-                        text = "Probe Vulkan Driver (CPU reference frame)",
+                        text = "Probe Vulkan Driver",
                         onClick = onProbeVulkan,
                         enabled = !state.driverState.isProbeInProgress,
                         leadingIcon = if (state.driverState.isProbeInProgress) {
@@ -190,7 +191,7 @@ fun AdvancedScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     WseSecondaryButton(
-                        text = "Launch WSE2 SDL3 Self-Test (WseActivity)",
+                        text = "Launch SDL3 Self-Test",
                         onClick = onLaunchSelfTest,
                         modifier = Modifier.fillMaxWidth()
                     )

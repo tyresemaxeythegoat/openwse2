@@ -44,8 +44,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -59,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.wse2.android.launcher.art.ModuleArt
 import org.wse2.android.launcher.art.ModuleArtGraphic
 import org.wse2.android.launcher.theme.CinzelFontFamily
@@ -74,6 +79,7 @@ import org.wse2.android.launcher.ui.WseStatusChip
 import org.wse2.android.launcher.ui.WseStatusTone
 import org.wse2.android.launcher.ui.WseTextButton
 import org.wse2.android.launcher.ui.rememberWseAnimationsEnabled
+import org.wse2.android.launcher.ui.wseAnimationSpec
 import org.wse2.android.launcher.ui.wseStaggeredEntrance
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -199,6 +205,7 @@ fun HomeScreen(
                                     modules = modules,
                                     selectedIndex = selectedIndex,
                                     moduleArt = moduleArt,
+                                    animationsEnabled = animationsEnabled,
                                     onSelectModule = onSelectModule
                                 )
                             }
@@ -213,7 +220,7 @@ fun HomeScreen(
                 }
             }
         } else {
-            val heroHeight = (maxHeight * 0.55f).coerceAtLeast(300.dp) + topContentPadding
+            val heroHeight = (maxHeight * 0.54f).coerceAtLeast(296.dp) + topContentPadding
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -235,7 +242,7 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp),
+                        .padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     HomeActionsPanel(
@@ -257,6 +264,7 @@ fun HomeScreen(
                                     modules = modules,
                                     selectedIndex = selectedIndex,
                                     moduleArt = moduleArt,
+                                    animationsEnabled = animationsEnabled,
                                     onSelectModule = onSelectModule
                                 )
                             }
@@ -357,13 +365,25 @@ private fun HomeHeroBanner(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalWseColors.current
-    val fadeTarget = colors.background
-    // Ends fully opaque so the art never shows through as a band at the bottom edge.
-    val verticalScrim = Brush.verticalGradient(
-        0.0f to fadeTarget.copy(alpha = 0.30f),
-        0.35f to fadeTarget.copy(alpha = 0.10f),
-        0.70f to fadeTarget.copy(alpha = 0.70f),
-        1.0f to fadeTarget.copy(alpha = 1.0f)
+    val readabilityScrim = Brush.verticalGradient(
+        0.0f to colors.background.copy(alpha = 0.32f),
+        0.35f to Color.Transparent,
+        0.68f to colors.background.copy(alpha = 0.56f),
+        1.0f to colors.background.copy(alpha = 0.88f)
+    )
+    // Alpha masks dissolve the hero artwork seamlessly into the textured wseBackdrop behind it
+    // without leaving a solid dark rectangle edge in portrait or landscape.
+    val verticalFadeMask = Brush.verticalGradient(
+        0.0f to Color.Black,
+        0.58f to Color.Black,
+        0.86f to Color.Black.copy(alpha = 0.35f),
+        1.0f to Color.Transparent
+    )
+    val horizontalFadeMask = Brush.horizontalGradient(
+        0.0f to Color.Black,
+        0.72f to Color.Black,
+        0.92f to Color.Black.copy(alpha = 0.25f),
+        1.0f to Color.Transparent
     )
     // Slow Ken Burns drift (18 s each way); read in the draw phase only, so it never
     // recomposes. Off when the system animator scale is 0 and in screenshot tests.
@@ -382,49 +402,84 @@ private fun HomeHeroBanner(
         null
     }
     Box(modifier = modifier) {
-        ModuleArtGraphic(
-            art = art,
-            fallbackTitle = heroTitle,
-            contentDescription = heroTitle,
-            blurRadius = 3.dp,
-            modifier = artModifier.fillMaxSize(),
-            imageModifier = Modifier.graphicsLayer {
-                val t = kenBurns?.value ?: 0f
-                // 5 % overscan even at rest: crops the art's outermost pixels, so a light
-                // border in a module's main.bmp (or the blur's clamped edge) never shows as
-                // a line along the hero's top edge.
-                val s = 1.05f + 0.08f * t
-                scaleX = s
-                scaleY = s
-                translationX = -size.width * 0.03f * t
-                translationY = -size.height * 0.015f * t
-            }
-        )
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(verticalScrim)
-        )
-        if (fadeRightEdge) {
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                    drawContent()
+                    drawRect(brush = verticalFadeMask, blendMode = BlendMode.DstIn)
+                    if (fadeRightEdge) {
+                        drawRect(brush = horizontalFadeMask, blendMode = BlendMode.DstIn)
+                    }
+                }
+        ) {
+            ModuleArtGraphic(
+                art = art,
+                fallbackTitle = heroTitle,
+                contentDescription = heroTitle,
+                blurRadius = 3.dp,
+                modifier = artModifier.fillMaxSize(),
+                imageModifier = Modifier.graphicsLayer {
+                    val t = kenBurns?.value ?: 0f
+                    // 5 % overscan even at rest: crops the art's outermost pixels, so a light
+                    // border in a module's main.bmp (or the blur's clamped edge) never shows as
+                    // a line along the hero's top edge.
+                    val s = 1.05f + 0.08f * t
+                    scaleX = s
+                    scaleY = s
+                    translationX = -size.width * 0.03f * t
+                    translationY = -size.height * 0.015f * t
+                }
+            )
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.horizontalGradient(
-                            0.70f to Color.Transparent,
-                            1.0f to fadeTarget
-                        )
-                    )
+                    .background(readabilityScrim)
             )
         }
+
+        // Subtle WSE2 crest pill in the top-start corner of the hero canvas.
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(
+                    start = 20.dp,
+                    top = topContentPadding + 16.dp
+                )
+                .clip(WseShapes.small)
+                .background(colors.background.copy(alpha = 0.66f))
+                .border(1.dp, colors.hairline.copy(alpha = 0.72f), WseShapes.small)
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .rotate(45f)
+                    .background(colors.primary)
+            )
+            Text(
+                text = "WSE2 · ARM64",
+                style = WseType.overline.copy(
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    letterSpacing = 1.4.sp
+                ),
+                color = colors.onSurface,
+                maxLines = 1
+            )
+        }
+
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(
                     start = 20.dp,
                     end = 20.dp,
-                    top = topContentPadding + 16.dp,
-                    bottom = 12.dp
+                    top = topContentPadding + 52.dp,
+                    bottom = 14.dp
                 )
         ) {
             Text(
@@ -480,7 +535,20 @@ private fun HomeActionsPanel(
         HomeChipTone.PENDING -> WseStatusTone.Neutral
     }
     val chipClickable = isMissing && selectedModule != null
-    Box(modifier = Modifier.wseStaggeredEntrance("chip", 0, revealedKeys, animationsEnabled)) {
+    val resourceBadge = selectedModule?.let { mod ->
+        if (mod.loadModResourceCount > 0) {
+            "${mod.loadResourceCount} + ${mod.loadModResourceCount} BRFS"
+        } else {
+            "${mod.loadResourceCount} BRFS"
+        }
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(Modifier.wseStaggeredEntrance("chip", 0, revealedKeys, animationsEnabled)),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
         WseStatusChip(
             text = statusInfo.chipLabel,
             tone = chipTone,
@@ -495,6 +563,18 @@ private fun HomeActionsPanel(
                 null
             }
         )
+        if (resourceBadge != null) {
+            Text(
+                text = resourceBadge,
+                style = WseType.overline.copy(
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    letterSpacing = 1.1.sp
+                ),
+                color = colors.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
     }
 
     WsePrimaryButton(
@@ -610,10 +690,11 @@ private fun HomeModuleStrip(
     modules: List<ModuleChoice>,
     selectedIndex: Int,
     moduleArt: Map<String, ModuleArt>,
+    animationsEnabled: Boolean,
     onSelectModule: (Int) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        WseSectionHeader(title = "Your modules")
+        WseSectionHeader(title = "Your modules", badge = "${modules.size} installed")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(modules.size) { index ->
                 val module = modules[index]
@@ -621,8 +702,9 @@ private fun HomeModuleStrip(
                     module = module,
                     art = moduleArt[module.modulePath],
                     selected = index == selectedIndex,
+                    animationsEnabled = animationsEnabled,
                     onClick = { onSelectModule(index) },
-                    modifier = Modifier.size(width = 140.dp, height = 92.dp)
+                    modifier = Modifier.size(width = 148.dp, height = 94.dp)
                 )
             }
         }
@@ -634,11 +716,12 @@ private fun HomeModuleGrid(
     modules: List<ModuleChoice>,
     selectedIndex: Int,
     moduleArt: Map<String, ModuleArt>,
+    animationsEnabled: Boolean,
     onSelectModule: (Int) -> Unit
 ) {
     // A plain two-column grid: it sits inside a scrolling column, so it must not be lazy.
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        WseSectionHeader(title = "Your modules")
+        WseSectionHeader(title = "Your modules", badge = "${modules.size}")
         modules.indices.chunked(2).forEach { rowIndices ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -650,10 +733,11 @@ private fun HomeModuleGrid(
                         module = module,
                         art = moduleArt[module.modulePath],
                         selected = index == selectedIndex,
+                        animationsEnabled = animationsEnabled,
                         onClick = { onSelectModule(index) },
                         modifier = Modifier
                             .weight(1f)
-                            .aspectRatio(140f / 92f)
+                            .aspectRatio(148f / 94f)
                     )
                 }
                 if (rowIndices.size == 1) {
@@ -669,6 +753,7 @@ private fun HomeModuleCard(
     module: ModuleChoice,
     art: ModuleArt?,
     selected: Boolean,
+    animationsEnabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -677,8 +762,8 @@ private fun HomeModuleCard(
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.97f else 1f,
-        animationSpec = tween(durationMillis = 120),
+        targetValue = if (animationsEnabled && pressed) 0.97f else 1f,
+        animationSpec = wseAnimationSpec(animationsEnabled = animationsEnabled, durationMillis = 120),
         label = "home-module-card-scale"
     )
     Box(
@@ -690,7 +775,7 @@ private fun HomeModuleCard(
             .clip(WseShapes.medium)
             .border(
                 width = if (selected) 1.5.dp else 1.dp,
-                color = if (selected) colors.accent else colors.hairline,
+                color = if (selected) colors.accent else colors.hairline.copy(alpha = 0.7f),
                 shape = WseShapes.medium
             )
             .clickable(
@@ -711,11 +796,22 @@ private fun HomeModuleCard(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0.40f to Color.Transparent,
-                        1.0f to colors.background.copy(alpha = 0.90f)
+                        0.36f to Color.Transparent,
+                        1.0f to colors.background.copy(alpha = 0.92f)
                     )
                 )
         )
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .size(8.dp)
+                    .rotate(45f)
+                    .background(colors.accent)
+                    .border(1.dp, colors.background.copy(alpha = 0.7f))
+            )
+        }
         Text(
             text = name,
             style = MaterialTheme.typography.titleSmall.copy(
