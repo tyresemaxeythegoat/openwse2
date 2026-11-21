@@ -23,6 +23,7 @@ import org.wse2.android.launcher.LauncherApp
 import org.wse2.android.launcher.LauncherEvent
 import org.wse2.android.launcher.LauncherTab
 import org.wse2.android.launcher.LauncherViewModel
+import org.wse2.android.launcher.R4StartupRunner
 import org.wse2.android.launcher.theme.Wse2Theme
 
 class WseLauncherActivity : ComponentActivity() {
@@ -133,6 +134,8 @@ class WseLauncherActivity : ComponentActivity() {
         }
         viewModel.updateMaxDisplayRefreshHz(maxDisplayRefreshHz())
         if (savedInstanceState == null) showR4ReportIfAsked(intent)
+        // A run the system ended with the whole app goes on by itself.
+        R4StartupRunner.get(application).resumeIfInterrupted()
 
         setContent {
             val seedColor by viewModel.seedColorArgb.collectAsStateWithLifecycle()

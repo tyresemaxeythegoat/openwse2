@@ -489,6 +489,13 @@ startup on the phone:
   so it always posts a result notification ("PASS: …" / "Stopped: …"), which opens Advanced with
   the report, read again from `report.txt` if the launcher process was restarted. Android 13+ asks
   for the notification permission when the run starts; denied, the run still goes on, silently.
+- **Resuming by itself (2026-11-21, after the user saw the run vanish at 38/80).** When the worker
+  ends without a `RESULT` line (Android ending it, in practice for memory on every core),
+  `R4StartupRunner` binds it again after 3 s with half the threads (at least 2, or 1 after a death
+  that cached no new batch; kept in preferences for later runs) and gives up only after 3 deaths in
+  a row with no new batch. A killed launcher process resumes the run through the sticky
+  `R4ForegroundService` restart or the next app start. The status counts the whole image (cached
+  plus this attempt's batches), read from the report's per-image summary line.
 - **Loading.** Batches load from a `memfd` (`android_dlopen_ext`), else with our own ELF loader
   (`code_loader.h`, shared with the R0 spikes): on the phone `dlopen` of a read-only app-data file
   failed in R0 run 2. Guest images are mapped read-write only (translated code runs, guest bytes

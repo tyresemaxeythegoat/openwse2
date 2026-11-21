@@ -31,6 +31,13 @@ import java.util.concurrent.CopyOnWriteArraySet
 // notification shows the status and has Stop). Screens subscribe with `addListener`. Every ending
 // of the worker (frame limit, fault, crash, being killed) reaches this process as the binding
 // dying, so the result notification is always posted here.
+//
+// Resuming by itself: when Android ends the worker before the run has a RESULT line (in practice
+// for memory while translating on every core), the runner binds it again a few seconds later with
+// half the threads (kept for later runs); finished batches are cached, so only the batches in
+// flight are lost. It gives up after MAX_STALLS deaths in a row that cached no new batch. When the
+// launcher process itself was killed mid-run, R4ForegroundService (sticky) or the next app start
+// calls `resumeIfInterrupted`, which starts the run again from the saved folder.
 class R4StartupRunner private constructor(private val app: Application) {
     private val main = Handler(Looper.getMainLooper())
     @Volatile
@@ -40,6 +47,15 @@ class R4StartupRunner private constructor(private val app: Application) {
     private var finished = false
     @Volatile
     private var stopRequested = false
+    private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private var runTree: Uri? = null
+    private var runCopy = ""
+    private var jobs = 1
+    private var soAtBind = 0
+    private var stalls = 0
+    private var resumes = 0
+    @Volatile
+    private var copying = false
 
     fun addListener(listener: (R4UiState) -> Unit) {
         listeners.add(listener)
@@ -53,12 +69,22 @@ class R4StartupRunner private constructor(private val app: Application) {
 
     fun isRunning(): Boolean = state.running
 
+    // The launcher process was killed while a run was going on: start it again (cached batches are
+    // reused). Called by R4ForegroundService's sticky restart and when the launcher opens.
+    fun resumeIfInterrupted() {
+        if (state.running || !prefs.getBoolean(PREF_WANTED, false)) return
+        val uri = prefs.getString(PREF_TREE, null) ?: return
+        update(state.copy(useCopy = prefs.getBoolean(PREF_USE_COPY, state.useCopy)))
+        start(Uri.parse(uri), resumed = true)
+    }
+
     // The notification's Stop: ends the worker process (translated batches stay cached).
     fun stop() {
         if (!state.running || stopRequested) return
         stopRequested = true
-        // While copying, the copy thread sees the flag and finishes; otherwise end the worker now.
-        if (connection != null) main.post { finish(STOPPED) }
+        // While copying, the copy thread sees the flag and finishes; otherwise end the worker now
+        // (or the resume waiting to bind it again).
+        if (!copying) main.post { finish(STOPPED) }
     }
 
     // The result notification was tapped: show the last report, even if this process was
@@ -90,7 +116,9 @@ class R4StartupRunner private constructor(private val app: Application) {
 
     fun dismissReport() = update(state.copy(report = null))
 
-    fun start(treeUri: Uri?) {
+    fun start(treeUri: Uri?) = start(treeUri, resumed = false)
+
+    private fun start(treeUri: Uri?, resumed: Boolean) {
         if (state.running) return
         if (treeUri == null) {
             update(state.copy(report = "R4 startup run: select the Warband folder first."))
@@ -105,13 +133,25 @@ class R4StartupRunner private constructor(private val app: Application) {
         File(r4Dir, "progress.txt").delete()
         finished = false
         stopRequested = false
+        runTree = treeUri
+        stalls = 0
+        if (!resumed) resumes = 0
+        val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        jobs = prefs.getInt(PREF_JOBS, cores).coerceIn(1, cores)
+        prefs.edit().putBoolean(PREF_WANTED, true).putString(PREF_TREE, treeUri.toString())
+            .putBoolean(PREF_USE_COPY, state.useCopy).apply()
         R4ForegroundService.clearResult(app)
         update(state.copy(running = true, status = "Starting", report = null))
-        R4ForegroundService.start(app)
+        try {
+            R4ForegroundService.start(app)
+        } catch (_: Throwable) {
+            // A sticky restart is already the foreground service; elsewhere the run still goes on.
+        }
         if (!state.useCopy) {
             bind(treeUri, "")
             return
         }
+        copying = true
         Thread({
             val error = try {
                 copyInstall(treeUri)
@@ -120,6 +160,7 @@ class R4StartupRunner private constructor(private val app: Application) {
                 t.message ?: t.javaClass.simpleName
             }
             main.post {
+                copying = false
                 if (stopRequested) {
                     finish(STOPPED)
                 } else if (error != null) {
@@ -132,14 +173,17 @@ class R4StartupRunner private constructor(private val app: Application) {
     }
 
     private fun bind(treeUri: Uri, copy: String) {
+        runCopy = copy
+        soAtBind = cachedBatches()
         val args = Bundle().apply {
             putString(R4StartupService.KEY_TREE_URI, treeUri.toString())
             putString(R4StartupService.KEY_COPY_DIR, copy)
             putString(R4StartupService.KEY_WORK_DIR, workDir.absolutePath)
             putString(R4StartupService.KEY_MODULE, MODULE)
-            // Every core (the user's choice, 2026-11-21): the phone does nothing else meanwhile. The
-            // thread count is not part of the batch cache key.
-            putInt(R4StartupService.KEY_JOBS, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
+            // Every core at first (the user's choice, 2026-11-21: the phone does nothing else
+            // meanwhile), halved each time Android ends the worker (`workerEnded`). The thread
+            // count is not part of the batch cache key.
+            putInt(R4StartupService.KEY_JOBS, jobs)
             putLong(R4StartupService.KEY_FRAMES, FRAME_LIMIT)
         }
         val replies = Messenger(object : Handler(Looper.getMainLooper()) {
@@ -166,9 +210,9 @@ class R4StartupRunner private constructor(private val app: Application) {
             }
 
             // The run ends its process: frame limit, fault, or a crash in translated code.
-            override fun onServiceDisconnected(name: ComponentName?) = finish(null)
+            override fun onServiceDisconnected(name: ComponentName?) = workerEnded()
 
-            override fun onBindingDied(name: ComponentName?) = finish(null)
+            override fun onBindingDied(name: ComponentName?) = workerEnded()
         }
         connection = conn
         // BIND_IMPORTANT | BIND_ABOVE_CLIENT: the worker gets the launcher's priority (top app while
@@ -181,9 +225,37 @@ class R4StartupRunner private constructor(private val app: Application) {
         main.post(poll)
     }
 
-    private fun finish(error: String?) {
-        if (finished) return
-        finished = true
+    // The worker process ended. With a RESULT line the run is over; without one Android ended it
+    // (or it crashed): bind again with half the threads unless it keeps dying without progress.
+    private fun workerEnded() {
+        if (finished || connection == null) return
+        val tree = runTree
+        if (stopRequested || tree == null || resultLine() != null) {
+            finish(null)
+            return
+        }
+        val cached = cachedBatches()
+        stalls = if (cached > soAtBind) 0 else stalls + 1
+        if (stalls > MAX_STALLS) {
+            finish(
+                "R4 startup run: the worker ended $stalls times in a row without a new translated batch " +
+                    "($jobs threads), so it was not restarted again. Translated batches are kept."
+            )
+            return
+        }
+        val floor = if (stalls > 0) 1 else 2
+        if (jobs > floor) jobs = (jobs / 2).coerceAtLeast(floor)
+        prefs.edit().putInt(PREF_JOBS, jobs).apply()
+        ++resumes
+        unbindQuietly()
+        main.removeCallbacks(poll)
+        val status = "Android ended the translation; resuming on $jobs threads ($cached batches kept)"
+        update(state.copy(status = status))
+        R4ForegroundService.showProgress(app, status)
+        main.postDelayed({ if (!finished && !stopRequested) bind(tree, runCopy) }, RESUME_DELAY_MS)
+    }
+
+    private fun unbindQuietly() {
         connection?.let {
             try {
                 app.unbindService(it)
@@ -191,6 +263,22 @@ class R4StartupRunner private constructor(private val app: Application) {
             }
         }
         connection = null
+    }
+
+    private fun cachedBatches(): Int =
+        File(r4Dir, "so").listFiles { f -> f.name.endsWith(".so") }?.size ?: 0
+
+    private fun resultLine(): String? = try {
+        File(r4Dir, "report.txt").readLines().lastOrNull { it.startsWith("RESULT ") }
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun finish(error: String?) {
+        if (finished) return
+        finished = true
+        prefs.edit().putBoolean(PREF_WANTED, false).apply()
+        unbindQuietly()
         main.removeCallbacks(poll)
         val report = reportText(error)
         update(state.copy(running = false, status = "", report = report))
@@ -225,12 +313,25 @@ class R4StartupRunner private constructor(private val app: Application) {
         } catch (_: Throwable) {
             ""
         }
+        // progress.txt counts this attempt's batches; the report's "<tag>: ...; N batches (...), T to
+        // translate" line adds the cached ones, so the status counts the whole image.
         val translating = if (progress.size == 3 && progress[1] != progress[2]) {
-            "Translating ${progress[0]}: ${progress[1]}/${progress[2]} batches. "
+            val done = progress[1].toIntOrNull() ?: 0
+            val todo = progress[2].toIntOrNull() ?: 0
+            val summary = try {
+                File(r4Dir, "report.txt").readLines()
+                    .lastOrNull { it.startsWith(progress[0] + ": ") && it.contains(" to translate") }
+            } catch (_: Throwable) {
+                null
+            }
+            val total = summary?.let { BATCHES.find(it)?.groupValues?.get(1)?.toIntOrNull() } ?: todo
+            val kept = (total - todo).coerceAtLeast(0)
+            "Translating ${progress[0]}: ${kept + done}/$total batches. "
         } else {
             ""
         }
-        return translating + last.take(160)
+        val again = if (resumes > 0) "Resumed $resumes× on $jobs threads. " else ""
+        return translating + again + last.take(160)
     }
 
     // The copy thread and the main thread both update `state`.
@@ -297,6 +398,14 @@ class R4StartupRunner private constructor(private val app: Application) {
         const val MODULE = "Native"
         const val FRAME_LIMIT = 1000L
         private const val STOPPED = "Stopped by you. Translated batches are kept: the next run resumes."
+        private const val PREFS = "r4_startup"
+        private const val PREF_WANTED = "running"
+        private const val PREF_TREE = "tree_uri"
+        private const val PREF_USE_COPY = "use_copy"
+        private const val PREF_JOBS = "jobs"
+        private const val MAX_STALLS = 3
+        private const val RESUME_DELAY_MS = 3000L
+        private val BATCHES = Regex("""(\d+) batches \(""")
 
         @Volatile
         private var instance: R4StartupRunner? = null

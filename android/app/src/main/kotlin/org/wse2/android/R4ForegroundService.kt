@@ -18,7 +18,8 @@ import org.wse2.android.launcher.R4StartupRunner
 // own process, where R4StartupRunner holds the binding to the ":recomp" worker: a foreground
 // service keeps this process (and, through the binding, the worker) alive, and a partial wake lock
 // keeps the CPU running. The ongoing notification shows the progress and has a Stop button; when
-// the run ends, R4StartupRunner posts the result notification, which opens the report.
+// the run ends, R4StartupRunner posts the result notification, which opens the report. It is sticky
+// while a run goes on, so a killed launcher process comes back and resumes the run.
 class R4ForegroundService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -27,13 +28,21 @@ class R4ForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = progressNotification(this, "Starting")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(PROGRESS_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(PROGRESS_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(PROGRESS_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(PROGRESS_ID, notification)
+            }
+        } catch (_: Exception) {
+            // Android 12+ may refuse a sticky restart from the background; the next app start resumes.
+            stopSelf()
+            return START_NOT_STICKY
         }
         val runner = R4StartupRunner.get(application)
         if (intent?.action == ACTION_STOP) runner.stop()
+        // A sticky restart after Android killed this process mid-run: start the run again.
+        if (intent == null) runner.resumeIfInterrupted()
         // Stopped, or the run ended before the service started (a setup error, a stale Stop).
         if (!runner.isRunning()) {
             stopSelf()
@@ -46,7 +55,8 @@ class R4ForegroundService : Service() {
                 acquire(WAKE_LOCK_LIMIT_MS)
             }
         }
-        return START_NOT_STICKY
+        // Sticky: if Android kills this process mid-run it recreates the service, which resumes.
+        return START_STICKY
     }
 
     override fun onDestroy() {
