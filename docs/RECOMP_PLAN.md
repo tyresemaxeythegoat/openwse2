@@ -17,7 +17,7 @@ gives 1:1 behaviour and byte-compatible saves by construction. This document own
 | Target devices & v1 bar | **`arm64-v8a` Android 10+ phones with ARMv8.2-A (LSE + RCpc), Vulkan and at least 6 GB RAM, tiered by chip and GPU, not by RAM.** Reference phone: the user's **OPPO Reno 11, 12 GB RAM, Mali-G68** (a mid-range GPU; PanVK and System Vulkan); also mid-range Adreno/Turnip. Out of scope: pre-ARMv8.2-A CPUs or under 6 GB RAM. **v1 playable bar:** `Native` end-to-end (main menu, campaign map, scenes, battles with shadows + FSR/CAS + FXAA, saves + auto-sync mirror, Desktop Mode, combat haptics, live quick-settings, per-module profiles) plus a `Phantasy Calradia` heavy-mod smoke check; full multi-mod hardening follows in R9 (decided with the user, 2026-11-21 / 2026-11-22). |
 | Sustained performance target | **Mid-range GPU tier (the reference phone, Mali-G68 class):** 30 FPS sustained for 30+ minutes in 100-troop battles at ~720p / 85% render scale, and 60 FPS in menus/map. **Flagship GPU tier (Snapdragon 8 Gen 2+ / Dimensity 9000+ class):** playable **1,000+ troop WSE2 battles** at ≥ 30 FPS sustained. **Every supported phone:** 1,000+ troop battles load and run with no OOM and no buffer/descriptor cap failures; on the reference phone their frame rate is measured and recorded, not gated (decided with the user, 2026-11-21; tiers by chip after the user's 12 GB Mali-G68 phone fit neither RAM tier). |
 | Audio (`fmodex64`) | **Shim the 54 delay-loaded FMOD Ex exports directly onto `WseAudioMixer` + SDL3 audio** (P6) rather than translating `fmodex64.dll` (decided with the user, 2026-11-21). |
-| Multiplayer | **Planned for R12 (post-v1):** offline stubs through R8–R11 so single-player ships cleanly; R12 implements real `WS2_32` BSD sockets and Android TLS `WINHTTP`/`WININET` for Wi-Fi LAN, direct-IP hosts, and non-Steam WSE2 community servers (`steam_api64` stays stubbed, no DRM bypass; decided with the user, 2026-11-22). |
+| Multiplayer | **An R12 idea (post-v1, not designed yet):** offline stubs through R8–R11 so single-player ships cleanly; R12 implements real `WS2_32` BSD sockets and Android TLS `WINHTTP`/`WININET` for Wi-Fi LAN, direct-IP hosts, and non-Steam WSE2 community servers (`steam_api64` stays stubbed, no DRM bypass; decided with the user, 2026-11-22). |
 | Distribution | **GitHub Releases only** (no Google Play Store): signed release APKs with a dedicated private release keystore (never `android/debug.keystore`), plus a standalone prebuilt Windows/Linux PC preparation CLI zip (decided with the user, 2026-11-21 / 2026-11-22). |
 
 ## The target
@@ -75,8 +75,8 @@ there are no CRT DLLs to replace:
 | **R8 Phone bring-up (ambitious v1: `Native` + heavy-mod smoke)** | On-phone translation proven against OOM stalls (the batch memory fix itself lands in the next native update, before R5; cold `-O1` test) + PC-zip import; cross-batch direct call linking + unscalarized 128-bit SSE→NEON; permanent `filesDir/wse2/user/` + Save Manager with auto-sync SAF mirror, live quick-settings drawer, per-module profiles, and branded cache pre-warm loading screen (`docs/PLATFORM_PLAN.md` "P14"); `Native` playable end-to-end on the reference phone (OPPO Reno 11, 12 GB, Mali-G68/PanVK + System Vulkan) hitting 30 FPS sustained for 30+ min in 100-troop battles (~720p/85% + FSR/CAS) and 60 FPS in menus/map, plus `Phantasy Calradia` booting to campaign/battle. |
 | **R9 Performance, hardening & PC-parity mods** | Deep compiler & GPU acceleration for 1,000+ troop battles: register-passing ARM64 ABI + cross-batch inlining/ThinLTO, on-device PGO (hot ~5% at `-O3` + big-core tuning, cold ~95% at `-O1`), selective TSO relaxation, and indirect/instanced draw batching in D3D9→Vulkan; PDB-symbolized crash reports; `Native`, `Phantasy Calradia`, and `FiveDynastiesAndTenKingdoms` played end-to-end at PC mod parity. |
 | **R10 WSE2 updates & player distribution** | Automatic pruning of stale `.so` caches on exe/translator change; plain missing-PDB / unshimmed-import diagnostics; GitHub Releases APK signed with a private release keystore (never `debug.keystore`; no Google Play) + standalone prebuilt Windows/Linux PC prep CLI zip (no WSL/compiler required). |
-| **R11 Extended PC visuals, HDR10 & high refresh rate** | HDR tone-mapping + auto-exposure (`A16B16G16R16F`), Depth of Field, planar water reflections, and SMAA; 90 Hz / 120 Hz sustained gameplay on flagship GPUs; Android HDR10 / Wide-Color swapchain output. |
-| **R12 Native multiplayer (LAN, direct-IP & WSE2 servers)** | Real `WS2_32` POSIX/BSD non-blocking UDP/TCP sockets and Android TLS `WINHTTP`/`WININET` for Wi-Fi LAN, direct-IP hosts, and non-Steam WSE2 community servers (`steam_api64` remains stubbed). |
+| **R11 Extended PC visuals, HDR10 & high refresh rate** *(ideas, not designed yet)* | HDR tone-mapping + auto-exposure (`A16B16G16R16F`), Depth of Field, planar water reflections, and SMAA; 90 Hz / 120 Hz sustained gameplay on flagship GPUs; Android HDR10 / Wide-Color swapchain output. |
+| **R12 Native multiplayer (LAN, direct-IP & WSE2 servers)** *(ideas, not designed yet)* | Real `WS2_32` POSIX/BSD non-blocking UDP/TCP sockets and Android TLS `WINHTTP`/`WININET` for Wi-Fi LAN, direct-IP hosts, and non-Steam WSE2 community servers (`steam_api64` remains stubbed). |
 
 ## R0 implementation (2026-11-18)
 
@@ -743,7 +743,7 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
   campaign map.
 - **Flagship GPU tier (Snapdragon 8 Gen 2+ / Dimensity 9000+ class):** playable **1,000+ troop WSE2
   battles** at ≥ 30 FPS sustained (R9), and **90 Hz / 120 Hz sustained** in menus, campaign map, and
-  mid-size battles (R11; decided with the user, 2026-11-22).
+  mid-size battles (an R11 idea, not designed yet; recorded with the user, 2026-11-22).
 - **Every supported phone:** 1,000+ troop battles load and run with zero OOM and zero fixed-size GPU
   buffer/descriptor overflows; on the reference phone their frame rate is measured and recorded, not
   gated. Designing for 1,000+ agents from R5 onward avoids hard bottlenecks later:
@@ -1076,7 +1076,9 @@ own, and none blocks another.
   - Future WSE2 releases adding new Windows/D3D9 imports (mitigated by clear import-name diagnostics
     and `translator_fingerprint()` keeping shim-only APK updates from forcing retranslation).
 
-### R11 — Extended PC Visuals, HDR10 & High Refresh Rate (decided with the user, 2026-11-22)
+### R11 — Extended PC Visuals, HDR10 & High Refresh Rate (ideas, not designed yet; recorded with the user, 2026-11-22)
+
+*Ideas, not designed yet:* the items below are a direction recorded with the user, not a design. Each needs its own interview, design and measurements before any work starts.
 
 - **Goal:** Complete the high-end visual passes beyond v1's R5b shadows/FSR/FXAA — adding full HDR
   post-processing, DOF, water reflections, SMAA, HDR10 display output, and 90–120 Hz flagship pacing.
@@ -1106,7 +1108,9 @@ own, and none blocks another.
     gating HDR10 output on runtime swapchain/dataspace capability probes, falling back cleanly to
     SDR).
 
-### R12 — Native Multiplayer: LAN, Direct-IP & WSE2 Community Servers (decided with the user, 2026-11-22)
+### R12 — Native Multiplayer: LAN, Direct-IP & WSE2 Community Servers (ideas, not designed yet; recorded with the user, 2026-11-22)
+
+*Ideas, not designed yet:* the items below are a direction recorded with the user, not a design. Each needs its own interview, design and measurements before any work starts.
 
 - **Goal:** Bring Warband & WSE2 multiplayer to Android over Wi-Fi LAN, direct-IP connections, and
   non-Steam WSE2 community servers while remaining 100% BYOA and clean-room.

@@ -76,7 +76,7 @@ Each slice is one milestone. "Done when" is the acceptance test, not a descripti
 | P12 *(complete)* | Launcher redesign *(Phase 4)* | Jetpack Compose + Material 3 launcher with the install's own module art, dynamic colour, motion, and screenshot tests in CI; details in "P12 — Launcher redesign" below | The screenshot artifact and the user's phone check both look right |
 | P13 *(CI screenshots reviewed; phone check pending)* | Launcher art direction *(Phase 4)* | Bundled OFL fonts (Cinzel + Manrope), refined obsidian-and-brass palette, custom component kit, `rgl_config.txt` editor, Warband adaptive launcher icon, and CI Roborazzi screenshots; details in "P13 — Launcher art direction" below | Screenshots reviewed and phone check passes |
 | P14 *(planned, v1)* | Phase 5 launcher, save sync, touch QoL & Desktop Mode *(Phase 4 / Phase 5)* | Permanent `filesDir/wse2/user/` migration + Save Manager with optional auto-sync SAF mirror, per-module complete profiles, Vulkan `Present()` per-scene touch controls + combat haptics + Desktop Mode raw pointer capture, live in-game quick-settings drawer, branded cache pre-warm loading screen, and frame-time/thermal HUD; details in "P14" below | Device acceptance list in "P14" passes on the user's phone during R6/R8 |
-| P15 *(planned, post-v1)* | Mod importer, Voice Orders & modder diagnostics *(Phase 4 / Phase 5)* | One-tap `.zip`/`.7z` mod archive importer with background SPIR-V & ETC2/ASTC pre-warming, opt-in offline on-device Voice Battle Orders (`SpeechRecognizer` → `F1–F9`), and in-app modder & diagnostics console (live logs, PDB-symbolized crash traces, CPU/GPU profiler graphs); details in "P15" below | Device acceptance list in "P15" passes on the phone |
+| P15 *(ideas, not designed yet; post-v1)* | Mod importer, Voice Orders & modder diagnostics *(Phase 4 / Phase 5)* | One-tap `.zip`/`.7z` mod archive importer with background SPIR-V & ETC2/ASTC pre-warming, opt-in offline on-device Voice Battle Orders (`SpeechRecognizer` → `F1–F9`), and in-app modder & diagnostics console (live logs, PDB-symbolized crash traces, CPU/GPU profiler graphs); details in "P15" below | Device acceptance list in "P15" passes on the phone |
 
 **Order.** P0 → P1 → P2 are strict. P3 is host-only and can run beside P1/P2. P4 needs P1; P5
 needs P3 + P4. P6, P7, P8 need only P1 and can interleave. P9 needs Phase 2E and 2H progress.
@@ -413,7 +413,9 @@ screens into the player-facing shell for real gameplay on `arm64-v8a` phones (An
 - Save Manager and optional auto-sync SAF mirror round-trip `.sav` files between the phone and retail
   Windows Warband without adb; per-module profiles keep `Native` and mod settings isolated.
 
-## P15 — Mod importer, Voice Orders & modder diagnostics (planned, post-v1; decided with the user, 2026-11-22)
+## P15 — Mod importer, Voice Orders & modder diagnostics (ideas, not designed yet; post-v1; recorded with the user, 2026-11-22)
+
+*Ideas, not designed yet:* the items below are a direction recorded with the user, not a design. Each needs its own interview, design and measurements before any work starts.
 
 **Why.** Builds the post-v1 modder and power-user ecosystem on top of v1's `P14` shell.
 
