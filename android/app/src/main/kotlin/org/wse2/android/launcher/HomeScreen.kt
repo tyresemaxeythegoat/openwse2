@@ -366,8 +366,9 @@ private fun HomeHeroBanner(
 ) {
     val colors = LocalWseColors.current
     val readabilityScrim = Brush.verticalGradient(
-        0.0f to colors.background.copy(alpha = 0.32f),
-        0.35f to Color.Transparent,
+        0.0f to colors.background.copy(alpha = 0.42f),
+        0.08f to colors.background.copy(alpha = 0.28f),
+        0.36f to Color.Transparent,
         0.68f to colors.background.copy(alpha = 0.56f),
         1.0f to colors.background.copy(alpha = 0.88f)
     )
@@ -414,6 +415,13 @@ private fun HomeHeroBanner(
                     }
                 }
         ) {
+            // Opaque dark base inside the masked offscreen layer so no sub-1.0 alpha at the
+            // blurred bitmap's top edge can leak the brighter wseBackdrop glow through y = 0.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colors.background)
+            )
             ModuleArtGraphic(
                 art = art,
                 fallbackTitle = heroTitle,
@@ -422,10 +430,9 @@ private fun HomeHeroBanner(
                 modifier = artModifier.fillMaxSize(),
                 imageModifier = Modifier.graphicsLayer {
                     val t = kenBurns?.value ?: 0f
-                    // 5 % overscan even at rest: crops the art's outermost pixels, so a light
-                    // border in a module's main.bmp (or the blur's clamped edge) never shows as
-                    // a line along the hero's top edge.
-                    val s = 1.05f + 0.08f * t
+                    // 6 % overscan even at rest: crops the art's outermost pixels and any blur
+                    // fringe so a light border in main.bmp never shows along the hero's top edge.
+                    val s = 1.06f + 0.08f * t
                     scaleX = s
                     scaleY = s
                     translationX = -size.width * 0.03f * t

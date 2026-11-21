@@ -88,8 +88,10 @@ fun ModuleArtGraphic(
 ) {
     val bitmap = art?.bitmap
     if (bitmap != null) {
+        // Unbounded blur avoids RenderEffect's clamped 1-2 px edge brightening at the top
+        // boundary; the outer clipToBounds() + hero overscan crops the soft outer fringe cleanly.
         val blurModifier = if (blurRadius > 0.dp && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Modifier.blur(radius = blurRadius, edgeTreatment = BlurredEdgeTreatment.Rectangle)
+            Modifier.blur(radius = blurRadius, edgeTreatment = BlurredEdgeTreatment.Unbounded)
         } else {
             Modifier
         }
