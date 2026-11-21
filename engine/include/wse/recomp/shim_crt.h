@@ -225,12 +225,14 @@ public:
             win64_return(s, ok ? 1 : 0);
         });
         bind("SetEnvironmentVariableA", [this](CpuState& s) {
+            const std::uint64_t name = win64_arg(s, 0);
             const std::uint64_t value = win64_arg(s, 1);
-            set_env(s, crt_detail::guest_string(win64_arg(s, 0)), value != 0, crt_detail::guest_string(value));
+            set_env(s, name != 0, crt_detail::guest_string(name), value != 0, crt_detail::guest_string(value));
         });
         bind("SetEnvironmentVariableW", [this](CpuState& s) {
+            const std::uint64_t name = win64_arg(s, 0);
             const std::uint64_t value = win64_arg(s, 1);
-            set_env(s, crt_detail::utf8(crt_detail::guest_wstring(win64_arg(s, 0))), value != 0,
+            set_env(s, name != 0, crt_detail::utf8(crt_detail::guest_wstring(name)), value != 0,
                     crt_detail::utf8(crt_detail::guest_wstring(value)));
         });
         bind("ExitProcess", [this](CpuState& s) { exit(s, static_cast<std::uint32_t>(win64_arg(s, 0))); });
@@ -460,7 +462,14 @@ private:
         return va;
     }
 
-    void set_env(CpuState& s, const std::string& name, bool set, const std::string& value) {
+    // Checked on Windows: NULL or empty lpName fails with ERROR_INVALID_PARAMETER (87); deleting
+    // a variable that does not exist (lpValue == NULL) returns TRUE and leaves LastError untouched.
+    void set_env(CpuState& s, bool has_name, const std::string& name, bool set, const std::string& value) {
+        if (!has_name || name.empty()) {
+            teb::set_error(s, teb::kErrorInvalidParameter);
+            win64_return(s, 0);
+            return;
+        }
         std::lock_guard<std::mutex> lock(m_);
         auto same = [&](const std::string& k) {
             if (k.size() != name.size()) return false;
@@ -475,12 +484,9 @@ private:
         for (; it != config_.environment.end() && !same(it->first); ++it) {
         }
         if (!set) {
-            if (it == config_.environment.end()) {
-                teb::set_error(s, kErrorEnvvarNotFound);
-                win64_return(s, 0);
-                return;
+            if (it != config_.environment.end()) {
+                config_.environment.erase(it);
             }
-            config_.environment.erase(it);
         } else if (it != config_.environment.end()) {
             it->second = value;
         } else {

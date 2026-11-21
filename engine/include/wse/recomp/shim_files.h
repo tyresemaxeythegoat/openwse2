@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -56,9 +57,10 @@
 namespace wse::recomp::shim {
 
 inline constexpr std::uint32_t kErrorFileNotFound = 2, kErrorPathNotFound = 3, kErrorAccessDenied = 5,
-                               kErrorNoMoreFiles = 18, kErrorHandleEof = 38, kErrorFileExists = 80,
-                               kErrorInvalidName = 123, kErrorNegativeSeek = 131, kErrorDirNotEmpty = 145,
-                               kErrorAlreadyExistsFiles = 183;
+                               kErrorNoMoreFiles = 18, kErrorSharingViolation = 32, kErrorHandleEof = 38,
+                               kErrorFileExists = 80, kErrorInvalidName = 123, kErrorNegativeSeek = 131,
+                               kErrorDirNotEmpty = 145, kErrorAlreadyExistsFiles = 183, kErrorDirectory = 267;
+inline constexpr std::uint32_t kFileShareRead = 1, kFileShareWrite = 2, kFileShareDelete = 4;
 inline constexpr std::uint32_t kGenericRead = 0x80000000U, kGenericWrite = 0x40000000U;
 inline constexpr std::uint32_t kCreateNew = 1, kCreateAlways = 2, kOpenExisting = 3, kOpenAlways = 4,
                                kTruncateExisting = 5;
@@ -169,13 +171,17 @@ public:
     Files(const Files&) = delete;
     Files& operator=(const Files&) = delete;
     ~Files() {
-        std::lock_guard<std::mutex> lock(opened_m_);
-        for (const std::weak_ptr<OpenFile>& w : opened_) {
-            if (std::shared_ptr<OpenFile> f = w.lock()) {
-                std::lock_guard<std::mutex> fl(f->m);
-                flush_locked(*f);
-                f->owner = nullptr;  // a handle that outlives this object no longer writes back
+        std::vector<std::shared_ptr<OpenFile>> live;
+        {
+            std::lock_guard<std::mutex> lock(opened_m_);
+            for (const std::weak_ptr<OpenFile>& w : opened_) {
+                if (std::shared_ptr<OpenFile> f = w.lock()) live.push_back(std::move(f));
             }
+        }
+        for (const std::shared_ptr<OpenFile>& f : live) {
+            std::lock_guard<std::mutex> fl(f->m);
+            flush_locked(*f);
+            f->owner = nullptr;  // a handle that outlives this object no longer writes back
         }
     }
 
@@ -254,16 +260,18 @@ public:
                 return;
             }
             std::lock_guard<std::mutex> fl(f->m);
-            const std::uint64_t size = f->data.size();
+            const std::uint64_t size = file_size_of(*f);
             if (const std::uint64_t hi = win64_arg(s, 1)) files_detail::put<std::uint32_t>(hi, static_cast<std::uint32_t>(size >> 32));
-            teb::set_error(s, 0);
+            // Checked on Windows: LastError is only cleared to NO_ERROR when the returned low DWORD
+            // is INVALID_FILE_SIZE (0xFFFFFFFF); otherwise LastError is preserved.
+            if (static_cast<std::uint32_t>(size) == 0xFFFFFFFFU) teb::set_error(s, 0);
             win64_return(s, static_cast<std::uint32_t>(size));
         });
         bind("GetFileSizeEx", [this](CpuState& s) {
             std::shared_ptr<OpenFile> f = file_of(s, win64_arg(s, 0));
             if (!f) return win64_return(s, 0);
             std::lock_guard<std::mutex> fl(f->m);
-            files_detail::put<std::uint64_t>(win64_arg(s, 1), f->data.size());
+            files_detail::put<std::uint64_t>(win64_arg(s, 1), file_size_of(*f));
             win64_return(s, 1);
         });
         bind("GetFileType", [this](CpuState& s) {
@@ -420,10 +428,14 @@ private:
     struct OpenFile {
         Files* owner = nullptr;
         Location loc;
+        std::string guest_upper;
         std::vector<std::uint8_t> data;
+        std::uint64_t logical_size = 0;  // >= data.size(); trailing bytes beyond data.size() read as 0
         std::uint64_t pos = 0;
+        std::uint32_t share_mode = 0;
         bool readable = false;
         bool writable = false;
+        bool deletable = false;
         bool dirty = false;
         bool console = false;
         std::mutex m;
@@ -433,6 +445,58 @@ private:
             }
         }
     };
+    static std::uint64_t file_size_of(const OpenFile& f) noexcept {
+        return std::max<std::uint64_t>(f.data.size(), f.logical_size);
+    }
+    // True when `path` ends with a separator other than a bare root (`\`, `/`, `C:\`, `C:/`).
+    static bool has_trailing_sep(const std::string& path) noexcept {
+        if (path.empty() || (path.back() != '\\' && path.back() != '/')) return false;
+        if (path.size() == 1) return false;
+        if (path.size() == 3 && path[1] == ':') return false;
+        return true;
+    }
+    bool sharing_conflict(const std::string& guest_upper, bool want_r, bool want_w, bool want_d,
+                          std::uint32_t want_share) {
+        std::lock_guard<std::mutex> lock(opened_m_);
+        bool conflict = false;
+        auto it = opened_.begin();
+        while (it != opened_.end()) {
+            std::shared_ptr<OpenFile> e = it->lock();
+            if (!e) {
+                it = opened_.erase(it);
+                continue;
+            }
+            if (!e->console && e->guest_upper == guest_upper) {
+                if ((want_r && (e->share_mode & kFileShareRead) == 0) ||
+                    (want_w && (e->share_mode & kFileShareWrite) == 0) ||
+                    (want_d && (e->share_mode & kFileShareDelete) == 0) ||
+                    (e->readable && (want_share & kFileShareRead) == 0) ||
+                    (e->writable && (want_share & kFileShareWrite) == 0) ||
+                    (e->deletable && (want_share & kFileShareDelete) == 0)) {
+                    conflict = true;
+                }
+            }
+            ++it;
+        }
+        return conflict;
+    }
+    bool delete_sharing_conflict(const std::string& guest_upper) {
+        std::lock_guard<std::mutex> lock(opened_m_);
+        bool conflict = false;
+        auto it = opened_.begin();
+        while (it != opened_.end()) {
+            std::shared_ptr<OpenFile> e = it->lock();
+            if (!e) {
+                it = opened_.erase(it);
+                continue;
+            }
+            if (!e->console && e->guest_upper == guest_upper && (e->share_mode & kFileShareDelete) == 0) {
+                conflict = true;
+            }
+            ++it;
+        }
+        return conflict;
+    }
     struct Mapping {
         std::shared_ptr<OpenFile> file;  // null for memory backed by the page file
         std::uint8_t* mem = nullptr;
@@ -628,9 +692,15 @@ private:
     }
 
     // CreateFile(name, access, share, security, disposition, flags, template).
+    // Checked on Windows: trailing separator on a file path fails with ERROR_INVALID_NAME (123);
+    // incompatible access/dwShareMode against an open handle fails with ERROR_SHARING_VIOLATION (32).
     void create_file(CpuState& s, const std::string& path) {
         const auto access = static_cast<std::uint32_t>(win64_arg(s, 1));
+        const auto share = static_cast<std::uint32_t>(win64_arg(s, 2));
         const auto disposition = static_cast<std::uint32_t>(win64_arg(s, 4));
+        if (has_trailing_sep(path)) {
+            return fail_handle(s, kErrorInvalidName);
+        }
         Location l;
         std::uint32_t error = 0;
         std::unique_lock<std::mutex> lock(m_);
@@ -647,12 +717,22 @@ private:
             return fail_handle(s, kErrorPathNotFound);
         }
         const bool exists = is_file(l);
+        const bool read = (access & (kGenericRead | 0x1U | 0x10000000U)) != 0;
         const bool write = (access & (kGenericWrite | 0x2U /* FILE_WRITE_DATA */ | 0x10000000U /* GENERIC_ALL */)) != 0;
+        const bool del = (access & 0x10000U /* DELETE */) != 0;
+        const std::string guest_upper = files_detail::upper_utf8(l.guest);
+        if (sharing_conflict(guest_upper, read, write, del, share)) {
+            lock.unlock();
+            return fail_handle(s, kErrorSharingViolation);
+        }
         auto f = std::make_shared<OpenFile>();
         f->owner = this;
         f->loc = l;
-        f->readable = (access & (kGenericRead | 0x1U | 0x10000000U)) != 0;
+        f->guest_upper = guest_upper;
+        f->share_mode = share;
+        f->readable = read;
         f->writable = write;
+        f->deletable = del;
         std::uint32_t success_error = 0;
         switch (disposition) {
         case kCreateNew:
@@ -672,11 +752,13 @@ private:
                 return fail_handle(s, kErrorFileNotFound);
             }
             (void)read_whole(l, f->data);
+            f->logical_size = f->data.size();
             break;
         case kOpenAlways:
             if (exists) {
                 success_error = kErrorAlreadyExistsFiles;
                 (void)read_whole(l, f->data);
+                f->logical_size = f->data.size();
             } else {
                 f->dirty = true;
             }
@@ -724,10 +806,14 @@ private:
             win64_return(s, 0);
             return;
         }
-        const std::uint64_t avail = f->pos < f->data.size() ? f->data.size() - f->pos : 0;
+        const std::uint64_t sz = file_size_of(*f);
+        const std::uint64_t avail = f->pos < sz ? sz - f->pos : 0;
         const std::uint32_t got = static_cast<std::uint32_t>(std::min<std::uint64_t>(avail, n));
         if (got != 0) {
-            std::memcpy(reinterpret_cast<void*>(static_cast<std::uintptr_t>(buf)), f->data.data() + f->pos, got);
+            auto* dst = reinterpret_cast<std::uint8_t*>(static_cast<std::uintptr_t>(buf));
+            const std::uint64_t in_data = f->pos < f->data.size() ? std::min<std::uint64_t>(got, f->data.size() - f->pos) : 0;
+            if (in_data != 0) std::memcpy(dst, f->data.data() + f->pos, static_cast<std::size_t>(in_data));
+            if (got > in_data) std::memset(dst + in_data, 0, static_cast<std::size_t>(got - in_data));
         }
         f->pos += got;
         if (out != 0) files_detail::put<std::uint32_t>(out, got);
@@ -755,6 +841,7 @@ private:
             if (f->data.size() < f->pos + n) f->data.resize(static_cast<std::size_t>(f->pos + n));
             std::memcpy(f->data.data() + f->pos, reinterpret_cast<const void*>(static_cast<std::uintptr_t>(buf)), n);
             f->pos += n;
+            if (f->logical_size < f->pos) f->logical_size = f->pos;
             f->dirty = true;
         }
         if (out != 0) files_detail::put<std::uint32_t>(out, n);
@@ -763,9 +850,11 @@ private:
 
     // The new position for a move of `distance` from `method` (FILE_BEGIN / CURRENT / END).
     static bool seek(OpenFile& f, std::int64_t distance, std::uint32_t method, std::uint64_t& to) {
-        const std::int64_t base = method == 0 ? 0 : (method == 1 ? static_cast<std::int64_t>(f.pos)
-                                                                   : static_cast<std::int64_t>(f.data.size()));
         if (method > 2) return false;
+        const std::int64_t base = method == 0 ? 0 : (method == 1 ? static_cast<std::int64_t>(f.pos)
+                                                                   : static_cast<std::int64_t>(file_size_of(f)));
+        if ((distance > 0 && base > std::numeric_limits<std::int64_t>::max() - distance) ||
+            (distance < 0 && distance < -base)) return false;
         const std::int64_t r = base + distance;
         if (r < 0) return false;
         to = static_cast<std::uint64_t>(r);
@@ -773,10 +862,13 @@ private:
     }
 
     // SetFilePointer(handle, distanceLow, *distanceHigh, method) -> new low DWORD.
+    // Checked on Windows: LastError is only cleared to NO_ERROR when the returned low DWORD is
+    // INVALID_SET_FILE_POINTER (0xFFFFFFFF); otherwise LastError is preserved.
     void set_file_pointer(CpuState& s) {
         std::shared_ptr<OpenFile> f = file_of(s, win64_arg(s, 0));
         if (!f) return win64_return(s, 0xFFFFFFFFU);
         const std::uint64_t hi_ptr = win64_arg(s, 2);
+        const auto method = static_cast<std::uint32_t>(win64_arg(s, 3));
         std::int64_t distance = static_cast<std::int32_t>(win64_arg(s, 1));
         if (hi_ptr != 0) {
             distance = static_cast<std::int64_t>((static_cast<std::uint64_t>(files_detail::get<std::uint32_t>(hi_ptr)) << 32) |
@@ -784,14 +876,14 @@ private:
         }
         std::lock_guard<std::mutex> fl(f->m);
         std::uint64_t to = 0;
-        if (!seek(*f, distance, static_cast<std::uint32_t>(win64_arg(s, 3)), to)) {
-            teb::set_error(s, kErrorNegativeSeek);
+        if (!seek(*f, distance, method, to)) {
+            teb::set_error(s, method > 2 ? teb::kErrorInvalidParameter : kErrorNegativeSeek);
             win64_return(s, 0xFFFFFFFFU);  // INVALID_SET_FILE_POINTER
             return;
         }
         f->pos = to;
         if (hi_ptr != 0) files_detail::put<std::uint32_t>(hi_ptr, static_cast<std::uint32_t>(to >> 32));
-        teb::set_error(s, 0);
+        if (static_cast<std::uint32_t>(to) == 0xFFFFFFFFU) teb::set_error(s, 0);
         win64_return(s, static_cast<std::uint32_t>(to));
     }
 
@@ -799,10 +891,11 @@ private:
     void set_file_pointer_ex(CpuState& s) {
         std::shared_ptr<OpenFile> f = file_of(s, win64_arg(s, 0));
         if (!f) return win64_return(s, 0);
+        const auto method = static_cast<std::uint32_t>(win64_arg(s, 3));
         std::lock_guard<std::mutex> fl(f->m);
         std::uint64_t to = 0;
-        if (!seek(*f, static_cast<std::int64_t>(win64_arg(s, 1)), static_cast<std::uint32_t>(win64_arg(s, 3)), to)) {
-            teb::set_error(s, kErrorNegativeSeek);
+        if (!seek(*f, static_cast<std::int64_t>(win64_arg(s, 1)), method, to)) {
+            teb::set_error(s, method > 2 ? teb::kErrorInvalidParameter : kErrorNegativeSeek);
             win64_return(s, 0);
             return;
         }
@@ -820,7 +913,9 @@ private:
             win64_return(s, 0);
             return;
         }
-        f->data.resize(static_cast<std::size_t>(f->pos));
+        // Extending past data.size() records logical_size without allocating sparse zeroes in RAM.
+        if (f->pos < f->data.size()) f->data.resize(static_cast<std::size_t>(f->pos));
+        f->logical_size = f->pos;
         f->dirty = true;
         win64_return(s, 1);
     }
@@ -845,6 +940,9 @@ private:
     }
 
     void find_first(CpuState& s, const std::string& spec, std::uint64_t data, bool wide) {
+        if (spec.empty()) {
+            return fail_handle(s, kErrorPathNotFound);
+        }
         std::string norm = spec;
         for (char& c : norm) {
             if (c == '/') c = '\\';
@@ -855,9 +953,17 @@ private:
         Location l;
         std::uint32_t error = 0;
         std::unique_lock<std::mutex> lock(m_);
-        if (pattern.empty() || !locate(dir.size() == 2 && dir[1] == ':' ? dir + "\\" : dir, l, error) || !is_dir(l)) {
+        const bool located = locate(dir.size() == 2 && dir[1] == ':' ? dir + "\\" : dir, l, error);
+        if (pattern.empty()) {
+            // Checked on Windows: "file\" fails with ERROR_DIRECTORY (267); "dir\" fails with
+            // ERROR_FILE_NOT_FOUND (2).
+            const bool file_with_slash = located && is_file(l);
             lock.unlock();
-            return fail_handle(s, pattern.empty() ? kErrorFileNotFound : (error != 0 ? error : kErrorPathNotFound));
+            return fail_handle(s, file_with_slash ? kErrorDirectory : kErrorFileNotFound);
+        }
+        if (!located || !is_dir(l)) {
+            lock.unlock();
+            return fail_handle(s, error != 0 ? error : kErrorPathNotFound);
         }
         Find f;
         f.wide = wide;
@@ -949,16 +1055,19 @@ private:
     }
 
     void delete_file(CpuState& s, const std::string& path) {
+        if (has_trailing_sep(path)) return fail_bool(s, kErrorInvalidName);
         Location l;
         std::uint32_t error = 0;
         std::lock_guard<std::mutex> lock(m_);
         if (!locate(path, l, error)) return fail_bool(s, error);
         if (!is_file(l)) return fail_bool(s, is_dir(l) ? kErrorAccessDenied : (parent_is_dir(l) ? kErrorFileNotFound : kErrorPathNotFound));
+        if (delete_sharing_conflict(files_detail::upper_utf8(l.guest))) return fail_bool(s, kErrorSharingViolation);
         if (!remove(l)) return fail_bool(s, kErrorAccessDenied);
         win64_return(s, 1);
     }
 
     void copy_file(CpuState& s, const std::string& from, const std::string& to, bool fail_if_exists) {
+        if (has_trailing_sep(from) || has_trailing_sep(to)) return fail_bool(s, kErrorInvalidName);
         Location a;
         Location b;
         std::uint32_t error = 0;
@@ -975,6 +1084,7 @@ private:
 
     // MoveFileEx(from, to, flags): MOVEFILE_REPLACE_EXISTING (1); a move is a copy and a delete.
     void move_file(CpuState& s, const std::string& from, const std::string& to, std::uint32_t flags) {
+        if (has_trailing_sep(from) || has_trailing_sep(to)) return fail_bool(s, kErrorInvalidName);
         Location a;
         Location b;
         std::uint32_t error = 0;
@@ -982,6 +1092,7 @@ private:
         if (!locate(from, a, error) || !locate(to, b, error)) return fail_bool(s, error);
         std::vector<std::uint8_t> bytes;
         if (!is_file(a) || !read_whole(a, bytes)) return fail_bool(s, kErrorFileNotFound);
+        if (delete_sharing_conflict(files_detail::upper_utf8(a.guest))) return fail_bool(s, kErrorSharingViolation);
         if (is_file(b) && (flags & 1) == 0) return fail_bool(s, kErrorAlreadyExistsFiles);
         if (b.virtual_dir || is_dir(b)) return fail_bool(s, kErrorAccessDenied);
         if (!parent_is_dir(b)) return fail_bool(s, kErrorPathNotFound);
@@ -998,6 +1109,10 @@ private:
             return kInvalidFileAttributes;
         }
         if (is_dir(l)) return kFileAttributeDirectory | (l.virtual_dir ? kFileAttributeReadonly : 0);
+        if (has_trailing_sep(path)) {
+            teb::set_error(s, kErrorInvalidName);
+            return kInvalidFileAttributes;
+        }
         if (is_file(l)) return kFileAttributeArchive;
         teb::set_error(s, parent_is_dir(l) ? kErrorFileNotFound : kErrorPathNotFound);
         return kInvalidFileAttributes;
@@ -1005,6 +1120,9 @@ private:
 
     // GetFileAttributesEx(name, GetFileExInfoStandard, *WIN32_FILE_ATTRIBUTE_DATA (36 bytes)).
     void attributes_ex(CpuState& s, const std::string& path) {
+        if (win64_arg(s, 1) != 0) {
+            return fail_bool(s, teb::kErrorInvalidParameter);
+        }
         const std::uint32_t attr = attributes(s, path);
         if (attr == kInvalidFileAttributes) {
             win64_return(s, 0);
@@ -1030,12 +1148,12 @@ private:
     static std::uint64_t write_path(std::uint64_t buf, std::uint32_t cap, const std::string& text, bool wide) {
         if (wide) {
             const std::u16string w = crt_detail::utf16(text);
-            if (cap < w.size() + 1) return w.size() + 1;
+            if (cap < w.size() + 1 || buf == 0) return w.size() + 1;
             std::memcpy(reinterpret_cast<void*>(static_cast<std::uintptr_t>(buf)), w.c_str(), 2 * (w.size() + 1));
             return w.size();
         }
         const std::string a = files_detail::utf8_to_ansi(text);
-        if (cap < a.size() + 1) return a.size() + 1;
+        if (cap < a.size() + 1 || buf == 0) return a.size() + 1;
         std::memcpy(reinterpret_cast<void*>(static_cast<std::uintptr_t>(buf)), a.c_str(), a.size() + 1);
         return a.size();
     }
@@ -1058,7 +1176,7 @@ private:
         const auto cap = static_cast<std::uint32_t>(win64_arg(s, 1));
         const std::uint64_t r = write_path(buf, cap, text, wide);
         const std::uint64_t part = win64_arg(s, 3);
-        if (part != 0 && r < cap) {  // it fit
+        if (part != 0 && buf != 0 && r < cap) {  // it fit
             const std::size_t cut = text.rfind('\\');
             const std::string head = text.substr(0, cut + 1);
             const std::size_t chars = wide ? crt_detail::utf16(head).size() : files_detail::utf8_to_ansi(head).size();

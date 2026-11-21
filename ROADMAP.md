@@ -186,6 +186,7 @@ Newest first. One line per landed milestone; details belong in the commit and in
 
 | Date | Commit | Milestone |
 | --- | --- | --- |
+| 2026-11-21 | — | Phase 5 R4 shim edge-case audit & tests (`shim_time.h`, `shim_crt.h`, `shim_strings.h`, `shim_memory.h`, `shim_files.h`, `recomp_test.cpp` `test_r4_shim_edge_cases`): probed real Windows APIs and fixed `SetEnvironmentVariable`, `GetStringTypeW`, `LCMapString*`, `CompareString*`, `FormatMessage*`, `WideCharToMultiByte` flags, per-page `VirtualAlloc`/`VirtualFree`/`VirtualProtect`/`VirtualQuery`, `dwShareMode` sharing, trailing separators, >4 GiB file sizes, and `LastError` preservation |
 | 2026-11-20 | — | Phase 5 R4: Native runs its main loop in WSL for 64,000+ frames on the recording device (HKEY sign extension, module seeding, `RtlGenRandom`, three LuaJIT discovery gaps) |
 | 2026-11-20 | — | Phase 5 R4: the retail exe reaches its main loop in WSL and presents 1,000+ frames on the recording D3D9 device (memmove jump tables, `lea`-taken entries, `RtlGetVersion`, real D3DCAPS9) |
 | 2026-11-20 | — | Phase 5 R4: silent FMOD Ex and Steam-not-running stubs: all 546 imports of v1.1.5.6 have a shim; LuaJIT handler discovery, guaranteed tail calls, JIT off |
