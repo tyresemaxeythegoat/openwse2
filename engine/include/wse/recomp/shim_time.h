@@ -236,15 +236,24 @@ public:
             win64_return(s, 1);
         });
         // SystemTimeToTzSpecificLocalTime(timeZone, *utc, *local): a null zone is the current one.
+        // Checked on Windows: 1601-01-01 with a positive Bias (local < 1601) and overflows past
+        // 0x7FFFFFFFFFFFFFFF fail with ERROR_INVALID_PARAMETER; valid conversions leave LastError
+        // untouched.
         bind("KERNEL32.dll", "SystemTimeToTzSpecificLocalTime", [this](CpuState& s) {
             const std::uint64_t tz = win64_arg(s, 0);
             const std::int32_t offset = tz != 0 ? -time_detail::get<std::int32_t>(tz) : utc_offset_minutes;
             std::uint64_t ft = 0;
             SystemTime st;
-            if (!systemtime_to_filetime(read_systemtime(win64_arg(s, 1)), ft) ||
-                !filetime_to_systemtime(static_cast<std::uint64_t>(static_cast<std::int64_t>(ft) +
-                                                                   std::int64_t{offset} * 600000000LL),
-                                        st)) {
+            if (!systemtime_to_filetime(read_systemtime(win64_arg(s, 1)), ft)) {
+                teb::set_error(s, teb::kErrorInvalidParameter);
+                win64_return(s, 0);
+                return;
+            }
+            const std::int64_t delta = std::int64_t{offset} * 600000000LL;
+            const bool out_of_range =
+                (delta < 0 && ft < static_cast<std::uint64_t>(-delta)) ||
+                (delta > 0 && ft > 0x7FFFFFFFFFFFFFFFULL - static_cast<std::uint64_t>(delta));
+            if (out_of_range || !filetime_to_systemtime(ft + static_cast<std::uint64_t>(delta), st)) {
                 teb::set_error(s, teb::kErrorInvalidParameter);
                 win64_return(s, 0);
                 return;
@@ -257,7 +266,7 @@ public:
 
 private:
     [[nodiscard]] std::uint64_t to_local(std::uint64_t ft) const noexcept {
-        return static_cast<std::uint64_t>(static_cast<std::int64_t>(ft) + std::int64_t{utc_offset_minutes} * 600000000LL);
+        return ft + static_cast<std::uint64_t>(std::int64_t{utc_offset_minutes} * 600000000LL);
     }
 
     Runtime& rt_;

@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -23,6 +24,7 @@
 #include <map>
 #include <mutex>
 #include <set>
+#include <vector>
 
 #include "wse/recomp/cpu_state.h"
 #include "wse/recomp/runtime.h"
@@ -286,22 +288,31 @@ private:
 
     struct Region {
         std::size_t size = 0;
-        std::uint32_t protect = 0x04;
-        std::uint32_t state = kMemCommit;
+        std::uint32_t alloc_protect = 0x04;
+        std::vector<std::uint32_t> page_state;    // per 4 KiB page: kMemReserve or kMemCommit
+        std::vector<std::uint32_t> page_protect;  // per 4 KiB page: protect if committed, else 0
     };
     static constexpr std::uint32_t kErrorInvalidHandle = 6;
 
-    // The region holding [va, va + n), or null.
+    // The region holding [va, va + n), or end().
     std::map<std::uint64_t, Region>::iterator region_of(std::uint64_t va, std::uint64_t n) {
         auto it = regions_.upper_bound(va);
         if (it == regions_.begin()) {
             return regions_.end();
         }
         --it;
-        return va - it->first + n <= it->second.size ? it : regions_.end();
+        if (n > it->second.size || va - it->first > it->second.size - n) {
+            return regions_.end();
+        }
+        return it;
     }
 
-    // VirtualAlloc(address, size, type, protect).
+    // VirtualAlloc(address, size, type, protect). Checked on Windows:
+    // - lpAddress == NULL reserves 64 KiB-aligned regions; MEM_RESERVE alone leaves pages with
+    //   State = MEM_RESERVE and Protect = 0 (AllocationProtect keeps the requested protect).
+    // - Re-reserving an already-reserved address fails with ERROR_INVALID_ADDRESS (487).
+    // - MEM_COMMIT on an existing region rounds start down and (start + size) up to 4 KiB pages
+    //   and updates only those pages.
     void virtual_alloc(CpuState& s) {
         const std::uint64_t want = win64_arg(s, 0);
         const std::uint64_t size = win64_arg(s, 1);
@@ -314,18 +325,31 @@ private:
             return;
         }
         if (want != 0) {
-            // Committing (part of) a region reserved earlier: already read-write and zero.
-            const auto it = region_of(want & ~std::uint64_t{0xFFF}, size);
+            if ((type & kMemReserve) != 0) {
+                teb::set_error(s, kErrorInvalidAddress);
+                win64_return(s, 0);
+                return;
+            }
+            const std::uint64_t start = want & ~std::uint64_t{0xFFF};
+            if (size > ~std::uint64_t{0} - want || want + size > ~std::uint64_t{0} - 0xFFFULL) {
+                teb::set_error(s, kErrorInvalidAddress);
+                win64_return(s, 0);
+                return;
+            }
+            const std::uint64_t end = (want + size + 0xFFFULL) & ~std::uint64_t{0xFFF};
+            const auto it = region_of(start, end - start);
             if (it == regions_.end()) {
                 teb::set_error(s, kErrorInvalidAddress);
                 win64_return(s, 0);
                 return;
             }
-            if ((type & kMemCommit) != 0) {
-                it->second.state = kMemCommit;
-                it->second.protect = protect;
+            const std::size_t p0 = static_cast<std::size_t>((start - it->first) >> 12);
+            const std::size_t p1 = static_cast<std::size_t>((end - it->first) >> 12);
+            for (std::size_t p = p0; p < p1; ++p) {
+                it->second.page_state[p] = kMemCommit;
+                it->second.page_protect[p] = protect;
             }
-            win64_return(s, want & ~std::uint64_t{0xFFF});
+            win64_return(s, start);
             return;
         }
         const std::size_t n = static_cast<std::size_t>((size + kVirtualGranularity - 1) & ~(kVirtualGranularity - 1));
@@ -335,26 +359,38 @@ private:
             win64_return(s, 0);
             return;
         }
+        const bool committed = (type & kMemCommit) != 0;
+        const std::size_t pages = n >> 12;
         Region r;
         r.size = n;
-        r.protect = protect;
-        r.state = (type & kMemCommit) != 0 ? kMemCommit : kMemReserve;
+        r.alloc_protect = protect;
+        r.page_state.assign(pages, committed ? kMemCommit : kMemReserve);
+        r.page_protect.assign(pages, committed ? protect : 0);
         const auto va = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p));
-        regions_[va] = r;
+        regions_[va] = std::move(r);
         win64_return(s, va);
     }
 
-    // VirtualFree(address, size, type): MEM_RELEASE frees the whole region (size 0), MEM_DECOMMIT
-    // zeroes the range.
+    // VirtualFree(address, size, type). Checked on Windows:
+    // - MEM_RELEASE requires size == 0 (else ERROR_INVALID_PARAMETER) and address == AllocationBase
+    //   (else ERROR_INVALID_ADDRESS).
+    // - MEM_DECOMMIT with size == 0 requires address == AllocationBase (else ERROR_INVALID_ADDRESS);
+    //   otherwise rounds [va, va + size) to 4 KiB pages, zeroes them, and sets State = MEM_RESERVE,
+    //   Protect = 0.
     void virtual_free(CpuState& s) {
         const std::uint64_t va = win64_arg(s, 0);
         const std::uint64_t size = win64_arg(s, 1);
         const auto type = static_cast<std::uint32_t>(win64_arg(s, 2));
         std::lock_guard<std::mutex> lock(m_);
-        const auto it = regions_.find(va);
         if (type == kMemRelease) {
-            if (it == regions_.end() || size != 0) {
+            if (size != 0) {
                 teb::set_error(s, teb::kErrorInvalidParameter);
+                win64_return(s, 0);
+                return;
+            }
+            const auto it = regions_.find(va);
+            if (va == 0 || it == regions_.end()) {
+                teb::set_error(s, kErrorInvalidAddress);
                 win64_return(s, 0);
                 return;
             }
@@ -363,35 +399,82 @@ private:
             win64_return(s, 1);
             return;
         }
-        const auto r = region_of(va, size == 0 ? 1 : size);
-        if (type != kMemDecommit || r == regions_.end()) {
+        if (type != kMemDecommit) {
             teb::set_error(s, teb::kErrorInvalidParameter);
             win64_return(s, 0);
             return;
         }
-        const std::uint64_t n = size == 0 ? r->second.size - (va - r->first) : size;
-        std::memset(reinterpret_cast<void*>(static_cast<std::uintptr_t>(va)), 0, static_cast<std::size_t>(n));
+        if (size == 0) {
+            const auto it = regions_.find(va);
+            if (va == 0 || it == regions_.end()) {
+                teb::set_error(s, kErrorInvalidAddress);
+                win64_return(s, 0);
+                return;
+            }
+            std::memset(reinterpret_cast<void*>(static_cast<std::uintptr_t>(va)), 0, it->second.size);
+            std::fill(it->second.page_state.begin(), it->second.page_state.end(), kMemReserve);
+            std::fill(it->second.page_protect.begin(), it->second.page_protect.end(), 0);
+            win64_return(s, 1);
+            return;
+        }
+        const std::uint64_t start = va & ~std::uint64_t{0xFFF};
+        if (size > ~std::uint64_t{0} - va || va + size > ~std::uint64_t{0} - 0xFFFULL) {
+            teb::set_error(s, kErrorInvalidAddress);
+            win64_return(s, 0);
+            return;
+        }
+        const std::uint64_t end = (va + size + 0xFFFULL) & ~std::uint64_t{0xFFF};
+        const auto r = region_of(start, end - start);
+        if (r == regions_.end()) {
+            teb::set_error(s, kErrorInvalidAddress);
+            win64_return(s, 0);
+            return;
+        }
+        std::memset(reinterpret_cast<void*>(static_cast<std::uintptr_t>(start)), 0, static_cast<std::size_t>(end - start));
+        const std::size_t p0 = static_cast<std::size_t>((start - r->first) >> 12);
+        const std::size_t p1 = static_cast<std::size_t>((end - r->first) >> 12);
+        for (std::size_t p = p0; p < p1; ++p) {
+            r->second.page_state[p] = kMemReserve;
+            r->second.page_protect[p] = 0;
+        }
         win64_return(s, 1);
     }
 
-    // VirtualProtect(address, size, newProtect, *oldProtect).
+    // VirtualProtect(address, size, newProtect, *oldProtect). Checked on Windows:
+    // - NULL oldProtect fails with ERROR_NOACCESS (998) without changing protection.
+    // - Reserved (uncommitted) pages fail with ERROR_INVALID_ADDRESS (487).
     void virtual_protect(CpuState& s) {
         const std::uint64_t va = win64_arg(s, 0);
         const std::uint64_t size = win64_arg(s, 1);
+        const auto new_prot = static_cast<std::uint32_t>(win64_arg(s, 2));
         const std::uint64_t old = win64_arg(s, 3);
-        std::lock_guard<std::mutex> lock(m_);
-        const auto r = region_of(va, size == 0 ? 1 : size);
-        std::uint32_t before = 0x04;
-        if (r != regions_.end()) {
-            before = r->second.protect;
-            r->second.protect = static_cast<std::uint32_t>(win64_arg(s, 2));
-        } else {
-            before = 0x40;  // image or heap memory: PAGE_EXECUTE_READWRITE (nothing is enforced)
-        }
         if (old == 0) {
             teb::set_error(s, 998);  // ERROR_NOACCESS: Windows requires the out pointer
             win64_return(s, 0);
             return;
+        }
+        std::lock_guard<std::mutex> lock(m_);
+        const std::uint64_t eff = size == 0 ? 1 : size;
+        const std::uint64_t start = va & ~std::uint64_t{0xFFF};
+        const std::uint64_t end = (va + eff + 0xFFFULL) & ~std::uint64_t{0xFFF};
+        const auto r = region_of(start, end - start);
+        std::uint32_t before = 0x04;
+        if (r != regions_.end()) {
+            const std::size_t p0 = static_cast<std::size_t>((start - r->first) >> 12);
+            const std::size_t p1 = static_cast<std::size_t>((end - r->first) >> 12);
+            for (std::size_t p = p0; p < p1; ++p) {
+                if (r->second.page_state[p] != kMemCommit) {
+                    teb::set_error(s, kErrorInvalidAddress);
+                    win64_return(s, 0);
+                    return;
+                }
+            }
+            before = r->second.page_protect[p0];
+            for (std::size_t p = p0; p < p1; ++p) {
+                r->second.page_protect[p] = new_prot;
+            }
+        } else {
+            before = 0x40;  // image or heap memory: PAGE_EXECUTE_READWRITE (nothing is enforced)
         }
         mem_detail::put<std::uint32_t>(old, before);
         win64_return(s, 1);
@@ -411,13 +494,21 @@ private:
         const auto r = region_of(va, 1);
         const std::uint64_t page = va & ~std::uint64_t{0xFFF};
         if (r != regions_.end()) {
-            mem_detail::put<std::uint64_t>(mbi + 0, page);                      // BaseAddress
-            mem_detail::put<std::uint64_t>(mbi + 8, r->first);                  // AllocationBase
-            mem_detail::put<std::uint32_t>(mbi + 16, r->second.protect);        // AllocationProtect
-            mem_detail::put<std::uint64_t>(mbi + 24, r->first + r->second.size - page);  // RegionSize
-            mem_detail::put<std::uint32_t>(mbi + 32, r->second.state);          // State
-            mem_detail::put<std::uint32_t>(mbi + 36, r->second.protect);        // Protect
-            mem_detail::put<std::uint32_t>(mbi + 40, kMemPrivate);              // Type
+            const std::size_t idx = static_cast<std::size_t>((page - r->first) >> 12);
+            const std::uint32_t st = r->second.page_state[idx];
+            const std::uint32_t pr = r->second.page_protect[idx];
+            std::size_t end_idx = idx + 1;
+            while (end_idx < r->second.page_state.size() && r->second.page_state[end_idx] == st &&
+                   r->second.page_protect[end_idx] == pr) {
+                ++end_idx;
+            }
+            mem_detail::put<std::uint64_t>(mbi + 0, page);                                       // BaseAddress
+            mem_detail::put<std::uint64_t>(mbi + 8, r->first);                                   // AllocationBase
+            mem_detail::put<std::uint32_t>(mbi + 16, r->second.alloc_protect);                   // AllocationProtect
+            mem_detail::put<std::uint64_t>(mbi + 24, static_cast<std::uint64_t>(end_idx - idx) << 12);  // RegionSize
+            mem_detail::put<std::uint32_t>(mbi + 32, st);                                        // State
+            mem_detail::put<std::uint32_t>(mbi + 36, pr);                                        // Protect
+            mem_detail::put<std::uint32_t>(mbi + 40, kMemPrivate);                               // Type
         } else {
             // Memory this object did not allocate (the image, heaps, stacks): committed read-write.
             mem_detail::put<std::uint64_t>(mbi + 0, page);

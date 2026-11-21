@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -38,8 +39,10 @@ inline constexpr std::uint32_t kErrorNoUnicodeTranslation = 1113;
 inline constexpr std::uint32_t kErrorInvalidFlags = 1004;
 inline constexpr std::uint32_t kErrorMrMidNotFound = 317;
 inline constexpr std::uint32_t kMbErrInvalidChars = 0x8, kWcErrInvalidChars = 0x80;
-inline constexpr std::uint32_t kLcmapLowercase = 0x100, kLcmapUppercase = 0x200, kLcmapSortkey = 0x400;
-inline constexpr std::uint32_t kNormIgnoreCase = 0x1, kLinguisticIgnoreCase = 0x10;
+inline constexpr std::uint32_t kLcmapLowercase = 0x100, kLcmapUppercase = 0x200, kLcmapTitlecase = 0x300,
+                               kLcmapSortkey = 0x400;
+inline constexpr std::uint32_t kNormIgnoreCase = 0x1, kNormIgnoreSymbols = 0x4, kSortDigitsAsNumbers = 0x8,
+                               kLinguisticIgnoreCase = 0x10, kSortStringSort = 0x1000;
 inline constexpr std::uint32_t kLocaleReturnNumber = 0x20000000, kLocaleNoUserOverride = 0x80000000;
 inline constexpr std::uint32_t kLcidEnUs = 0x409;
 
@@ -371,12 +374,21 @@ public:
         bind("GetLocaleInfoW", [](CpuState& s) { locale_info(s); });
         bind("GetUserDefaultLocaleName", [](CpuState& s) {
             const std::u16string name = u"en-US";
-            if (static_cast<std::int32_t>(win64_arg(s, 1)) < static_cast<std::int32_t>(name.size() + 1)) {
+            const std::uint64_t buf = win64_arg(s, 0);
+            const auto cap = static_cast<std::int32_t>(win64_arg(s, 1));
+            // Safety deviation: Windows AVs on (NULL, cap>0) and returns 266 on Win11 for small
+            // buffers; MSDN documents ERROR_INSUFFICIENT_BUFFER (122) for too-small buffers.
+            if (cap > 0 && buf == 0) {
+                teb::set_error(s, teb::kErrorInvalidParameter);
+                win64_return(s, 0);
+                return;
+            }
+            if (cap < static_cast<std::int32_t>(name.size() + 1)) {
                 teb::set_error(s, kErrorInsufficientBuffer);
                 win64_return(s, 0);
                 return;
             }
-            copy_w(win64_arg(s, 0), name);
+            copy_w(buf, name);
             win64_return(s, name.size() + 1);
         });
         bind("GetUserDefaultLCID", [](CpuState& s) { win64_return(s, kLcidEnUs); });
@@ -519,6 +531,11 @@ private:
     }
 
     static void finish_w(CpuState& s, const std::u16string& out, std::uint64_t dst, std::int32_t cap) {
+        if (cap < 0 || (cap > 0 && dst == 0)) {
+            teb::set_error(s, teb::kErrorInvalidParameter);
+            win64_return(s, 0);
+            return;
+        }
         if (cap == 0) {
             win64_return(s, out.size());
             return;
@@ -545,6 +562,13 @@ private:
         if (!str_detail::valid_cp(cp) || src == 0 || len == 0 || cap < 0 || (cap > 0 && dst == 0) ||
             (cp == kCpUtf8 && (def != 0 || used != 0))) {
             teb::set_error(s, teb::kErrorInvalidParameter);
+            win64_return(s, 0);
+            return;
+        }
+        // Checked on Windows: WC_ERR_INVALID_CHARS is only valid for UTF-8 (and GB18030); single-byte
+        // code pages fail with ERROR_INVALID_FLAGS (1004).
+        if (cp != kCpUtf8 && (flags & kWcErrInvalidChars) != 0) {
+            teb::set_error(s, kErrorInvalidFlags);
             win64_return(s, 0);
             return;
         }
@@ -586,27 +610,50 @@ private:
         win64_return(s, out.size());
     }
 
-    // GetStringTypeW(infoType, src, len, *charType): CT_CTYPE1 only.
+    // GetStringTypeW(infoType, src, len, *charType): CT_CTYPE1 only. Checked on Windows: NULL
+    // src/out or len == 0 fails with ERROR_INVALID_PARAMETER (87); len < 0 includes the trailing NUL.
     static void string_type(CpuState& s) {
         const auto type = static_cast<std::uint32_t>(win64_arg(s, 0));
-        const std::u16string in = str_detail::wstr(win64_arg(s, 1), static_cast<std::int32_t>(win64_arg(s, 2)));
+        const std::uint64_t src = win64_arg(s, 1);
+        const auto len = static_cast<std::int32_t>(win64_arg(s, 2));
         const std::uint64_t out = win64_arg(s, 3);
-        if (type != 1 || out == 0) {
-            teb::set_error(s, type != 1 ? kErrorInvalidFlags : teb::kErrorInvalidParameter);
+        if (type != 1) {
+            teb::set_error(s, kErrorInvalidFlags);
             win64_return(s, 0);
             return;
         }
+        if (src == 0 || len == 0 || out == 0) {
+            teb::set_error(s, teb::kErrorInvalidParameter);
+            win64_return(s, 0);
+            return;
+        }
+        std::u16string in = str_detail::wstr(src, len < 0 ? -1 : len);
+        if (len < 0) in.push_back(0);
         for (std::size_t i = 0; i < in.size(); ++i) str_detail::put<std::uint16_t>(out + 2 * i, str_detail::ctype1(in[i]));
         win64_return(s, 1);
     }
 
     // LCMapStringEx(locale, flags, src, srcLen, dst, dstLen, ...) / LCMapStringW(lcid, ...).
+    // Checked on Windows: NULL src, len == 0, cap < 0, or (cap > 0 && dst == NULL) fail with
+    // ERROR_INVALID_PARAMETER (87); flags == 0 or SORTKEY combined with case-mapping flags fail
+    // with ERROR_INVALID_FLAGS (1004); 0x300 (LCMAP_UPPERCASE | LCMAP_LOWERCASE) is LCMAP_TITLECASE.
     static void lcmap(CpuState& s, int first) {
         const auto flags = static_cast<std::uint32_t>(win64_arg(s, first));
+        const std::uint64_t src = win64_arg(s, first + 1);
         const auto len = static_cast<std::int32_t>(win64_arg(s, first + 2));
-        const std::u16string in = str_detail::wstr(win64_arg(s, first + 1), len < 0 ? -1 : len);
         const std::uint64_t dst = win64_arg(s, first + 3);
         const auto cap = static_cast<std::int32_t>(win64_arg(s, first + 4));
+        if (src == 0 || len == 0 || cap < 0 || (cap > 0 && dst == 0)) {
+            teb::set_error(s, teb::kErrorInvalidParameter);
+            win64_return(s, 0);
+            return;
+        }
+        if (flags == 0 || ((flags & kLcmapSortkey) != 0 && (flags & kLcmapTitlecase) != 0)) {
+            teb::set_error(s, kErrorInvalidFlags);
+            win64_return(s, 0);
+            return;
+        }
+        const std::u16string in = str_detail::wstr(src, len < 0 ? -1 : len);
         std::u16string out = in;
         if (len < 0) out.push_back(0);
         if ((flags & kLcmapSortkey) != 0) {
@@ -631,31 +678,78 @@ private:
             win64_return(s, key.size());
             return;
         }
-        for (char16_t& c : out) {
-            if ((flags & kLcmapUppercase) != 0) c = str_detail::to_upper(c);
-            if ((flags & kLcmapLowercase) != 0) c = str_detail::to_lower(c);
+        if ((flags & kLcmapTitlecase) == kLcmapTitlecase) {
+            bool word_start = true;
+            for (char16_t& c : out) {
+                const bool is_alpha = (str_detail::ctype1(c) & 0x100) != 0;
+                if (is_alpha) {
+                    c = word_start ? str_detail::to_upper(c) : str_detail::to_lower(c);
+                    word_start = false;
+                } else {
+                    word_start = true;
+                }
+            }
+        } else {
+            for (char16_t& c : out) {
+                if ((flags & kLcmapUppercase) != 0) c = str_detail::to_upper(c);
+                if ((flags & kLcmapLowercase) != 0) c = str_detail::to_lower(c);
+            }
         }
         finish_w(s, out, dst, cap);
     }
 
     // CompareStringEx(locale, flags, s1, n1, s2, n2, ...) / CompareStringW(lcid, flags, ...).
+    // Checked on Windows: NULL s1 or s2 fails with ERROR_INVALID_PARAMETER (87) even when length is 0.
     static void compare(CpuState& s) {
         const auto flags = static_cast<std::uint32_t>(win64_arg(s, 1));
-        const std::u16string a = str_detail::wstr(win64_arg(s, 2), static_cast<std::int32_t>(win64_arg(s, 3)));
-        const std::u16string b = str_detail::wstr(win64_arg(s, 4), static_cast<std::int32_t>(win64_arg(s, 5)));
+        const std::uint64_t p1 = win64_arg(s, 2);
+        const auto n1 = static_cast<std::int32_t>(win64_arg(s, 3));
+        const std::uint64_t p2 = win64_arg(s, 4);
+        const auto n2 = static_cast<std::int32_t>(win64_arg(s, 5));
+        if (p1 == 0 || p2 == 0) {
+            teb::set_error(s, teb::kErrorInvalidParameter);
+            win64_return(s, 0);
+            return;
+        }
+        const std::u16string a = str_detail::wstr(p1, n1);
+        const std::u16string b = str_detail::wstr(p2, n2);
         win64_return(s, static_cast<std::uint64_t>(compare_strings(a, b, flags)));
     }
 
 public:
-    // CSTR_LESS_THAN (1) / CSTR_EQUAL (2) / CSTR_GREATER_THAN (3), as Windows' word sort orders
-    // them: punctuation and symbols before digits before letters, letters case-folded, '-' and
-    // '\'' ignored; then (when case matters) a lowercase letter before its uppercase one; then
-    // the text without the ignored marks first.
+    // CSTR_LESS_THAN (1) / CSTR_EQUAL (2) / CSTR_GREATER_THAN (3), as Windows orders them:
+    // punctuation and symbols before digits before letters, letters case-folded; word sort skips
+    // '-' and '\'' until the tie-break unless SORT_STRINGSORT is set; NORM_IGNORESYMBOLS ignores
+    // non-alphanumeric marks; SORT_DIGITSASNUMBERS compares ASCII digit runs by numeric value;
+    // when case matters, a lowercase letter sorts before its uppercase one.
     static int compare_strings(const std::u16string& a, const std::u16string& b, std::uint32_t flags) {
-        auto primary = [](const std::u16string& s) {
+        const bool string_sort = (flags & kSortStringSort) != 0;
+        const bool ignore_symbols = (flags & kNormIgnoreSymbols) != 0;
+        const bool digits_as_num = (flags & kSortDigitsAsNumbers) != 0;
+        auto is_ignored = [&](char16_t c) {
+            if (ignore_symbols) {
+                const std::uint16_t t = str_detail::ctype1(c);
+                return (t & (0x100 | 0x4)) == 0;  // neither letter nor digit
+            }
+            return !string_sort && (c == u'-' || c == u'\'');
+        };
+        auto primary = [&](const std::u16string& s) {
             std::u32string k;
-            for (const char16_t c : s) {
-                if (c == u'-' || c == u'\'') continue;
+            for (std::size_t i = 0; i < s.size(); ++i) {
+                const char16_t c = s[i];
+                if (is_ignored(c)) continue;
+                if (digits_as_num && c >= u'0' && c <= u'9') {
+                    std::size_t j = i;
+                    while (j < s.size() && s[j] >= u'0' && s[j] <= u'9') ++j;
+                    std::size_t nz = i;
+                    while (nz < j && s[nz] == u'0') ++nz;
+                    const std::size_t sig = j - nz;
+                    // Prefix the run with a digit-run marker + significant length, then the digits.
+                    k.push_back(static_cast<char32_t>(0x20000 + 0x100 + std::min<std::size_t>(sig, 0xFFFF)));
+                    for (std::size_t d = nz; d < j; ++d) k.push_back(static_cast<char32_t>(0x20000 + s[d]));
+                    i = j - 1;
+                    continue;
+                }
                 const std::uint16_t t = str_detail::ctype1(c);
                 const char32_t base = (t & 0x100) != 0 ? 0x30000 : ((t & 0x4) != 0 ? 0x20000 : 0x10000);
                 k.push_back(static_cast<char32_t>(static_cast<std::uint32_t>(base) + str_detail::to_upper(c)));
@@ -668,13 +762,15 @@ public:
         if ((flags & (kNormIgnoreCase | kLinguisticIgnoreCase)) == 0) {
             std::u16string la;
             std::u16string lb;
-            for (const char16_t c : a) if (c != u'-' && c != u'\'') la.push_back(c);
-            for (const char16_t c : b) if (c != u'-' && c != u'\'') lb.push_back(c);
+            for (const char16_t c : a) if (!is_ignored(c)) la.push_back(c);
+            for (const char16_t c : b) if (!is_ignored(c)) lb.push_back(c);
             for (std::size_t i = 0; i < la.size() && i < lb.size(); ++i) {
                 if (la[i] != lb[i]) return str_detail::to_upper(la[i]) != la[i] ? 1 : 3;
             }
         }
-        if (a.size() != b.size()) return a.size() < b.size() ? 1 : 3;  // the one without '-' / '\'' first
+        if (!ignore_symbols && !string_sort && a.size() != b.size()) {
+            return a.size() < b.size() ? 1 : 3;  // word sort: the one without '-' / '\'' first
+        }
         return 2;
     }
 
@@ -697,6 +793,11 @@ private:
             for (const char16_t c : v) {
                 if (c < u'0' || c > u'9') break;
                 num = num * 10 + static_cast<std::uint32_t>(c - u'0');
+            }
+            if (cap < 0 || (cap > 0 && buf == 0)) {
+                teb::set_error(s, teb::kErrorInvalidParameter);
+                win64_return(s, 0);
+                return;
             }
             if (cap == 0) {
                 win64_return(s, 2);  // in WCHARs
@@ -819,6 +920,11 @@ private:
                                 kArgumentArray = 0x2000;
         std::u16string text;
         if ((flags & kFromString) != 0) {
+            if (source == 0) {
+                teb::set_error(s, teb::kErrorInvalidParameter);
+                win64_return(s, 0);
+                return;
+            }
             text = wide ? str_detail::wstr(source, -1)
                         : str_detail::widen(reinterpret_cast<const char*>(static_cast<std::uintptr_t>(source)));
         } else if ((flags & kFromSystem) != 0) {
@@ -877,6 +983,11 @@ private:
         const std::size_t bytes = (chars + 1) * (wide ? 2 : 1);
         std::uint64_t dst = buffer;
         if ((flags & kAllocate) != 0) {
+            if (buffer == 0) {
+                teb::set_error(s, teb::kErrorInvalidParameter);
+                win64_return(s, 0);
+                return;
+            }
             dst = mem_.alloc(Memory::kProcessHeap, bytes < 2 ? 2 : bytes, false);
             if (dst == 0) {
                 teb::set_error(s, kErrorNotEnoughMemory);
@@ -886,6 +997,10 @@ private:
             str_detail::put<std::uint64_t>(buffer, dst);
         } else if (chars + 1 > size) {
             teb::set_error(s, kErrorInsufficientBuffer);
+            win64_return(s, 0);
+            return;
+        } else if (buffer == 0) {
+            teb::set_error(s, teb::kErrorInvalidParameter);
             win64_return(s, 0);
             return;
         }

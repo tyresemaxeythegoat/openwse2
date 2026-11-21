@@ -4962,6 +4962,528 @@ void test_fmod_steam() {
     expect(faults.empty(), "fmod/steam: no faults");
 }
 
+// --- R4 shim edge cases (checked against real Windows) -------------------------------------------
+void test_r4_shim_edge_cases() {
+    namespace tb = wse::recomp::teb;
+    namespace sh = wse::recomp::shim;
+    std::vector<std::uint8_t> img(0x1000, 0);
+    img[0x3C] = 0x80;
+    PeImage pe;
+    pe.image_base = 0x150000000ULL;
+    pe.size_of_image = static_cast<std::uint32_t>(img.size());
+    Runtime rt;
+    std::vector<Fault> faults;
+    rt.on_fault = [&](const Fault& f) { faults.push_back(f); };
+    std::string err;
+    tb::Process proc(rt, pe, img.data());
+    wse::recomp::kernel::Kernel kern(rt);
+    sh::Time tm(rt);
+    sh::ProcessConfig pcfg;
+    pcfg.processors = 4;
+    sh::Crt crt(rt, pcfg);
+    sh::Memory mem(rt);
+    sh::Strings str(rt, mem);
+    // Custom VFS wrapper so one virtual file can report a >4 GiB size without allocating 4 GiB.
+    struct LargeSizeVfs final : wse::platform::Vfs {
+        wse::platform::MemoryVfs inner;
+        std::string large_rel = "huge.bin";
+        std::uint64_t large_size = 0x100001234ULL;
+        bool read_file(std::string_view p, std::vector<std::uint8_t>& o) override { return inner.read_file(p, o); }
+        bool write_file(std::string_view p, std::span<const std::uint8_t> d) override { return inner.write_file(p, d); }
+        bool remove_file(std::string_view p) override { return inner.remove_file(p); }
+        bool list_dir(std::string_view p, std::vector<wse::platform::VfsEntry>& o) override { return inner.list_dir(p, o); }
+        bool is_file(std::string_view p) override { return inner.is_file(p); }
+        bool is_dir(std::string_view p) override { return inner.is_dir(p); }
+        bool make_dir(std::string_view p) override { return inner.make_dir(p); }
+        bool remove_dir(std::string_view p) override { return inner.remove_dir(p); }
+        bool file_size(std::string_view rel, std::uint64_t& out) override {
+            if (rel == large_rel) {
+                out = large_size;
+                return true;
+            }
+            return inner.file_size(rel, out);
+        }
+    };
+    LargeSizeVfs install;
+    wse::platform::MemoryVfs user;
+    (void)install.write_text("huge.bin", "stub");
+    (void)user.make_dir("install");
+    (void)user.make_dir("install/sub");
+    sh::FilesConfig fcfg;
+    fcfg.install = &install;
+    fcfg.user = &user;
+    sh::Files files(rt, kern, fcfg);
+    expect(proc.init(&err), "edge: process init");
+    (void)proc.install();
+    (void)kern.install();
+    (void)tm.install();
+    (void)crt.install();
+    (void)mem.install();
+    (void)str.install();
+    (void)files.install();
+
+    GuestStack stack(256 * 1024);
+    CpuState s;
+    stack.prepare(s);
+    rt.attach(s);
+    tb::GuestThread& t = proc.create_thread(0, 0);
+    tb::Process::attach(s, t);
+    auto va = [](const void* p) { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); };
+    auto K = [&](const char* name, std::initializer_list<std::uint64_t> args) -> std::uint64_t {
+        const Runtime::ImportShim* shim = rt.named_shim("KERNEL32.dll", name);
+        if (shim == nullptr) return 0xBADBADBADULL;
+        constexpr std::uint64_t kRet = 0x140031000ULL;
+        const std::uint64_t rsp0 = s.gpr[4];
+        s.gpr[4] = (rsp0 - 0x80) & ~std::uint64_t{15};
+        static constexpr int kArgReg[4] = {1, 2, 8, 9};
+        std::size_t i = 0;
+        for (const std::uint64_t a : args) {
+            if (i < 4) s.gpr[kArgReg[i]] = a;
+            else std::memcpy(reinterpret_cast<void*>(s.gpr[4] + 0x20 + 8 * (i - 4)), &a, 8);
+            ++i;
+        }
+        s.gpr[4] -= 8;
+        std::memcpy(reinterpret_cast<void*>(s.gpr[4]), &kRet, 8);
+        s.gpr[0] = 0xBADBADBADULL;
+        (*shim)(s);
+        s.gpr[4] = rsp0;
+        return s.gpr[0];
+    };
+    constexpr std::uint32_t kSentinel = 12345;
+    auto set_err = [&](std::uint32_t e = kSentinel) { (void)K("SetLastError", {e}); };
+    auto get_err = [&]() { return static_cast<std::uint32_t>(K("GetLastError", {})); };
+
+    // 1. Time: FILETIME/SYSTEMTIME boundaries, leap years, TZ underflow/overflow, LastError.
+    {
+        alignas(8) std::uint64_t ft = 0;
+        alignas(8) std::uint16_t st[8] = {};
+        set_err();
+        const bool ft0_ok = K("FileTimeToSystemTime", {va(&ft), va(st)}) == 1 && get_err() == kSentinel &&
+                            st[0] == 1601 && st[1] == 1 && st[2] == 1 && st[3] == 1 && st[4] == 0 && st[5] == 0 &&
+                            st[6] == 0 && st[7] == 0;
+        ft = 0x7FFFFFFFFFFFFFFFULL;
+        set_err();
+        const bool ftmax_ok = K("FileTimeToSystemTime", {va(&ft), va(st)}) == 1 && get_err() == kSentinel &&
+                              st[0] == 30828 && st[1] == 9 && st[2] == 4 && st[3] == 14 && st[4] == 2 &&
+                              st[5] == 48 && st[6] == 5 && st[7] == 477;
+        // Windows rejects year 30828 in SystemTimeToFileTime (max year is 30827).
+        set_err();
+        alignas(8) std::uint64_t out_ft = 0;
+        const bool y30828_fail = K("SystemTimeToFileTime", {va(st), va(&out_ft)}) == 0 && get_err() == 87;
+        alignas(8) std::uint16_t max_valid[8] = {30827, 12, 0, 31, 23, 59, 59, 999};
+        set_err();
+        const bool y30827_ok = K("SystemTimeToFileTime", {va(max_valid), va(&out_ft)}) == 1 &&
+                               out_ft == 0x7FFF35F4F06C58F0ULL && get_err() == kSentinel;
+        ft = 0x8000000000000000ULL;
+        set_err();
+        const bool ft_neg_fail = K("FileTimeToSystemTime", {va(&ft), va(st)}) == 0 && get_err() == 87;
+        set_err();
+        const bool ft2local_hi = K("FileTimeToLocalFileTime", {va(&ft), va(&out_ft)}) == 1 && get_err() == kSentinel;
+        // Invalid calendar dates and leap-year rules.
+        const std::uint16_t bad_dates[][8] = {
+            {1600, 12, 0, 31, 0, 0, 0, 0}, {1900, 2, 0, 29, 0, 0, 0, 0}, {2023, 2, 0, 29, 0, 0, 0, 0},
+            {2024, 13, 0, 1, 0, 0, 0, 0},  {2024, 1, 0, 1, 24, 0, 0, 0}, {2024, 1, 0, 1, 0, 0, 0, 1000}};
+        bool bad_ok = true;
+        for (const auto& d : bad_dates) {
+            set_err();
+            bad_ok = bad_ok && K("SystemTimeToFileTime", {va(d), va(&out_ft)}) == 0 && get_err() == 87;
+        }
+        alignas(8) std::uint16_t leap2024[8] = {2024, 2, 0, 29, 0, 0, 0, 0};
+        set_err();
+        const bool leap_ok = K("SystemTimeToFileTime", {va(leap2024), va(&out_ft)}) == 1 && get_err() == kSentinel;
+        // TZ conversion underflow before 1601-01-01.
+        alignas(8) std::uint8_t tz[172] = {};
+        const std::int32_t plus60 = 60;
+        std::memcpy(tz, &plus60, 4);
+        alignas(8) std::uint16_t epoch[8] = {1601, 1, 1, 1, 0, 0, 0, 0};
+        set_err();
+        const bool tz_under = K("SystemTimeToTzSpecificLocalTime", {va(tz), va(epoch), va(st)}) == 0 && get_err() == 87;
+        expect(ft0_ok && ftmax_ok && y30828_fail && y30827_ok && ft_neg_fail && ft2local_hi && bad_ok && leap_ok &&
+                   tz_under,
+               "edge(time): FILETIME/SYSTEMTIME limits, leap years, TZ underflow, LastError preservation");
+    }
+
+    // 2. CRT / sysinfo: NULL/empty/bad-size buffers, SetEnvironmentVariableA/W edge cases.
+    {
+        alignas(4) std::uint32_t len = 0;
+        set_err();
+        const bool lpi_null_buf = K("GetLogicalProcessorInformation", {0, va(&len)}) == 0 && get_err() == 122 && len == 128;
+        set_err();
+        const bool lpi_null_len = K("GetLogicalProcessorInformation", {0, 0}) == 0 && get_err() == 87;
+        alignas(8) std::uint8_t ms[64] = {16};
+        set_err();
+        const bool gms_bad = K("GlobalMemoryStatusEx", {va(ms)}) == 0 && get_err() == 87;
+        alignas(8) std::uint8_t ver[276] = {16};
+        set_err();
+        const bool ver_bad = K("GetVersionExW", {va(ver)}) == 0 && get_err() == 122;
+        set_err();
+        const bool env_del_missing = K("SetEnvironmentVariableA", {va("WSE_NO_SUCH_VAR"), 0}) == 1 && get_err() == kSentinel;
+        set_err();
+        const bool env_empty = K("SetEnvironmentVariableA", {va(""), va("x")}) == 0 && get_err() == 87;
+        set_err();
+        const bool env_null = K("SetEnvironmentVariableA", {0, va("x")}) == 0 && get_err() == 87;
+        const char16_t wempty[] = u"";
+        set_err();
+        const bool env_wempty = K("SetEnvironmentVariableW", {va(wempty), 0}) == 0 && get_err() == 87;
+        expect(lpi_null_buf && lpi_null_len && gms_bad && ver_bad && env_del_missing && env_empty && env_null &&
+                   env_wempty,
+               "edge(crt): bad sizes, NULL pointers, empty/NULL/missing SetEnvironmentVariable");
+    }
+
+    // 3. Strings: empty/NULL/too-small buffers, invalid UTF-8, code-page round trips, CompareString/LCMapString flags.
+    {
+        alignas(4) char16_t wbuf[16] = {};
+        set_err();
+        const bool mb_empty = K("MultiByteToWideChar", {65001, 0, va(""), ~0ULL, va(wbuf), 16}) == 1 &&
+                              wbuf[0] == 0 && get_err() == kSentinel;
+        set_err();
+        const bool mb_size_query = K("MultiByteToWideChar", {65001, 0, va(""), ~0ULL, 0, 0}) == 1 && get_err() == kSentinel;
+        set_err();
+        const bool mb_small = K("MultiByteToWideChar", {65001, 0, va("hello"), ~0ULL, va(wbuf), 3}) == 0 && get_err() == 122;
+        set_err();
+        const bool mb_null = K("MultiByteToWideChar", {65001, 0, 0, ~0ULL, va(wbuf), 16}) == 0 && get_err() == 87;
+        set_err();
+        const bool mb_len0 = K("MultiByteToWideChar", {65001, 0, va("a"), 0, va(wbuf), 16}) == 0 && get_err() == 87;
+        set_err();
+        const bool mb_nulldst = K("MultiByteToWideChar", {65001, 0, va("a"), 1, 0, 4}) == 0 && get_err() == 87;
+
+        // Invalid UTF-8 sequences: exact U+FFFD counts without MB_ERR_INVALID_CHARS; 1113 with it.
+        struct BadUtf8 {
+            const std::uint8_t bytes[5];
+            std::size_t len;
+            std::uint64_t fffd_count;
+        };
+        const BadUtf8 cases[] = {
+            {{0x80}, 1, 1},                     // lone continuation
+            {{0xC0, 0xAF}, 2, 2},               // 2-byte overlong
+            {{0xE0, 0x80, 0xAF}, 3, 2},         // 3-byte overlong
+            {{0xED, 0xA0, 0x80}, 3, 2},         // UTF-16 surrogate
+            {{0xF4, 0x90, 0x80, 0x80}, 4, 3},   // > U+10FFFF
+            {{0xE2, 0x82}, 2, 1},               // truncated 3-byte
+            {{0xF5, 0x80, 0x80, 0x80}, 4, 4},   // invalid lead 0xF5
+        };
+        bool utf8_bad_ok = true;
+        for (const auto& c : cases) {
+            set_err();
+            const std::uint64_t n = K("MultiByteToWideChar", {65001, 0, va(c.bytes), c.len, va(wbuf), 16});
+            bool all_fffd = n == c.fffd_count && get_err() == kSentinel;
+            for (std::uint64_t i = 0; i < n && all_fffd; ++i) all_fffd = wbuf[i] == 0xFFFD;
+            set_err();
+            const bool rejected = K("MultiByteToWideChar", {65001, sh::kMbErrInvalidChars, va(c.bytes), c.len, va(wbuf), 16}) == 0 &&
+                                  get_err() == sh::kErrorNoUnicodeTranslation;
+            utf8_bad_ok = utf8_bad_ok && all_fffd && rejected;
+        }
+        // Unpaired surrogate in WC2MB UTF-8, and WC_ERR_INVALID_CHARS rejected on CP1252.
+        const char16_t lone_surr[2] = {0xD800, 0};
+        char mbuf[16] = {};
+        set_err();
+        const bool surr_repl = K("WideCharToMultiByte", {65001, 0, va(lone_surr), ~0ULL, va(mbuf), 16, 0, 0}) == 4 &&
+                               static_cast<std::uint8_t>(mbuf[0]) == 0xEF && static_cast<std::uint8_t>(mbuf[1]) == 0xBF &&
+                               static_cast<std::uint8_t>(mbuf[2]) == 0xBD && mbuf[3] == 0 && get_err() == kSentinel;
+        set_err();
+        const bool surr_err = K("WideCharToMultiByte", {65001, sh::kWcErrInvalidChars, va(lone_surr), ~0ULL, va(mbuf), 16, 0, 0}) == 0 &&
+                              get_err() == sh::kErrorNoUnicodeTranslation;
+        set_err();
+        const bool cp1252_wc_err = K("WideCharToMultiByte", {1252, sh::kWcErrInvalidChars, va(u"a"), 1, va(mbuf), 16, 0, 0}) == 0 &&
+                                   get_err() == sh::kErrorInvalidFlags;
+        // Unmappable character on CP1252 uses defaultChar and sets usedDefaultChar.
+        const char16_t snow[1] = {0x2603};
+        const char defch[2] = "#";
+        alignas(4) std::int32_t used = 0;
+        set_err();
+        const bool snow_ok = K("WideCharToMultiByte", {1252, 0, va(snow), 1, va(mbuf), 16, va(defch), va(&used)}) == 1 &&
+                             mbuf[0] == '#' && used == 1 && get_err() == kSentinel;
+
+        // Full 256-byte code-page round-trips for CP1252 and CP437.
+        bool cp_roundtrip = true;
+        for (const std::uint32_t cp : {1252U, 437U}) {
+            std::uint8_t all[256];
+            for (int i = 0; i < 256; ++i) all[i] = static_cast<std::uint8_t>(i);
+            alignas(4) char16_t wide[256] = {};
+            std::uint8_t back[256] = {};
+            used = 99;
+            const bool to_w = K("MultiByteToWideChar", {cp, 0, va(all), 256, va(wide), 256}) == 256;
+            const bool to_b = K("WideCharToMultiByte", {cp, 0, va(wide), 256, va(back), 256, 0, va(&used)}) == 256;
+            cp_roundtrip = cp_roundtrip && to_w && to_b && used == 0 && std::memcmp(all, back, 256) == 0;
+            if (cp == 1252U) cp_roundtrip = cp_roundtrip && wide[0x80] == 0x20AC && wide[0x81] == 0x0081 && wide[0x9F] == 0x0178;
+            if (cp == 437U) cp_roundtrip = cp_roundtrip && wide[0x80] == 0x00C7 && wide[0xE9] == 0x0398 && wide[0xFF] == 0x00A0;
+        }
+        expect(mb_empty && mb_size_query && mb_small && mb_null && mb_len0 && mb_nulldst && utf8_bad_ok && surr_repl &&
+                   surr_err && cp1252_wc_err && snow_ok && cp_roundtrip,
+               "edge(strings): MB2WC/WC2MB empty/NULL/small buffers, invalid UTF-8, CP1252/CP437 round-trips");
+
+        // CompareStringW/Ex flags & NULL/empty checks.
+        const char16_t s_ab[] = u"ab", s_ahb[] = u"a-b", s_aeb[] = u"a!b", s_a2[] = u"a2", s_a10[] = u"a10",
+                       s_lo[] = u"a", s_hi[] = u"A", s_empty[] = u"";
+        set_err();
+        const bool cmp_null = K("CompareStringW", {0x0409, 0, 0, ~0ULL, va(s_ab), ~0ULL}) == 0 && get_err() == 87;
+        set_err();
+        const bool cmp_null0 = K("CompareStringW", {0x0409, 0, 0, 0, va(s_ab), ~0ULL}) == 0 && get_err() == 87;
+        const bool cmp_flags =
+            K("CompareStringW", {0x0409, 0, va(s_empty), ~0ULL, va(s_empty), ~0ULL}) == 2 &&
+            K("CompareStringW", {0x0409, 0, va(s_lo), ~0ULL, va(s_empty), ~0ULL}) == 3 &&
+            K("CompareStringW", {0x0409, 0, va(s_ahb), ~0ULL, va(s_ab), ~0ULL}) == 3 &&
+            K("CompareStringW", {0x0409, sh::kSortStringSort, va(s_ahb), ~0ULL, va(s_ab), ~0ULL}) == 1 &&
+            K("CompareStringW", {0x0409, sh::kNormIgnoreSymbols, va(s_aeb), ~0ULL, va(s_ab), ~0ULL}) == 2 &&
+            K("CompareStringW", {0x0409, sh::kNormIgnoreSymbols, va(s_ahb), ~0ULL, va(s_ab), ~0ULL}) == 2 &&
+            K("CompareStringW", {0x0409, 0, va(s_a2), ~0ULL, va(s_a10), ~0ULL}) == 3 &&
+            K("CompareStringW", {0x0409, sh::kSortDigitsAsNumbers, va(s_a2), ~0ULL, va(s_a10), ~0ULL}) == 1 &&
+            K("CompareStringW", {0x0409, 0, va(s_lo), ~0ULL, va(s_hi), ~0ULL}) == 1 &&
+            K("CompareStringW", {0x0409, sh::kNormIgnoreCase, va(s_lo), ~0ULL, va(s_hi), ~0ULL}) == 2;
+
+        // LCMapStringW/Ex flags & buffer checks (including LCMAP_TITLECASE = 0x300).
+        const char16_t mixed[] = u"hELLO wORLD";
+        alignas(4) char16_t mapped[32] = {};
+        set_err();
+        const bool lc_title = K("LCMapStringW", {0x0409, sh::kLcmapTitlecase, va(mixed), ~0ULL, va(mapped), 32}) == 12 &&
+                              std::u16string(mapped) == u"Hello World" && get_err() == kSentinel;
+        set_err();
+        const bool lc_fl0 = K("LCMapStringW", {0x0409, 0, va(mixed), ~0ULL, va(mapped), 32}) == 0 && get_err() == 1004;
+        set_err();
+        const bool lc_up_sk = K("LCMapStringW", {0x0409, sh::kLcmapUppercase | sh::kLcmapSortkey, va(mixed), ~0ULL, va(mapped), 32}) == 0 &&
+                              get_err() == 1004;
+        set_err();
+        const bool lc_null = K("LCMapStringW", {0x0409, sh::kLcmapUppercase, 0, ~0ULL, va(mapped), 32}) == 0 && get_err() == 87;
+        set_err();
+        const bool lc_len0 = K("LCMapStringW", {0x0409, sh::kLcmapUppercase, va(mixed), 0, va(mapped), 32}) == 0 && get_err() == 87;
+        set_err();
+        const bool lc_nulldst = K("LCMapStringW", {0x0409, sh::kLcmapUppercase, va(mixed), ~0ULL, 0, 4}) == 0 && get_err() == 87;
+        set_err();
+        const bool lc_small = K("LCMapStringW", {0x0409, sh::kLcmapUppercase, va(mixed), ~0ULL, va(mapped), 2}) == 0 && get_err() == 122;
+        set_err();
+        const bool lc_query = K("LCMapStringW", {0x0409, sh::kLcmapUppercase, va(mixed), ~0ULL, 0, 0}) == 12 && get_err() == kSentinel;
+
+        // GetStringTypeW: len=-1 includes NUL; NULL/len=0 fail with 87.
+        alignas(4) std::uint16_t ct[4] = {0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA};
+        set_err();
+        const bool st_ok = K("GetStringTypeW", {1, va(u"A"), ~0ULL, va(ct)}) == 1 &&
+                           ct[0] == 0x0381 && ct[1] == 0x0220 && ct[2] == 0xAAAA && get_err() == kSentinel;
+        set_err();
+        const bool st_err = K("GetStringTypeW", {1, va(u"A"), 0, va(ct)}) == 0 && get_err() == 87 &&
+                            K("GetStringTypeW", {1, 0, ~0ULL, va(ct)}) == 0 && get_err() == 87 &&
+                            K("GetStringTypeW", {1, va(u"A"), 1, 0}) == 0 && get_err() == 87;
+
+        // GetLocaleInfoW, GetDateFormatW, GetTimeFormatW, GetUserDefaultLocaleName, FormatMessageA small/NULL.
+        set_err();
+        const bool loc_ok = K("GetLocaleInfoW", {0x0409, 0x59, 0, 0}) == 3 && get_err() == kSentinel &&
+                            K("GetLocaleInfoW", {0x0409, 0x59, va(wbuf), 2}) == 0 && get_err() == 122 &&
+                            K("GetLocaleInfoW", {0x0409, 0x59, 0, 4}) == 0 && get_err() == 87;
+        set_err();
+        const bool dt_ok = K("GetDateFormatW", {0x0409, 0, 0, 0, 0, 0}) > 0 &&
+                           K("GetDateFormatW", {0x0409, 0, 0, 0, va(wbuf), 2}) == 0 && get_err() == 122 &&
+                           K("GetTimeFormatW", {0x0409, 0, 0, 0, va(wbuf), 2}) == 0 && get_err() == 122;
+        set_err();
+        const bool uln_ok = K("GetUserDefaultLocaleName", {va(wbuf), 2}) == 0 && get_err() == 122 &&
+                            K("GetUserDefaultLocaleName", {0, 6}) == 0 && get_err() == 87 &&
+                            K("GetUserDefaultLocaleName", {va(wbuf), 6}) == 6 && std::u16string(wbuf) == u"en-US";
+        set_err();
+        const bool fm_ok = K("FormatMessageA", {0x400 | 0x200, va("hello"), 0, 0, va(mbuf), 3, 0}) == 0 && get_err() == 122 &&
+                           K("FormatMessageA", {0x400 | 0x200, va("hello"), 0, 0, 0, 0, 0}) == 0 && get_err() == 122 &&
+                           K("FormatMessageA", {0x400 | 0x200, 0, 0, 0, va(mbuf), 16, 0}) == 0 && get_err() == 87 &&
+                           K("FormatMessageA", {0x400 | 0x200, va("hello"), 0, 0, 0, 16, 0}) == 0 && get_err() == 87;
+        expect(cmp_null && cmp_null0 && cmp_flags && lc_title && lc_fl0 && lc_up_sk && lc_null && lc_len0 &&
+                   lc_nulldst && lc_small && lc_query && st_ok && st_err && loc_ok && dt_ok && uln_ok && fm_ok,
+               "edge(strings): CompareString/LCMapString flags, GetStringTypeW NUL, locale/date/FormatMessage bounds");
+    }
+
+    // 4. Memory: VirtualAlloc 64 KiB alignment, reserve vs commit, VirtualProtect, VirtualFree, VirtualQuery.
+    {
+        auto u32 = [](const std::uint8_t* p, std::size_t off) {
+            std::uint32_t v = 0;
+            std::memcpy(&v, p + off, 4);
+            return v;
+        };
+        auto u64 = [](const std::uint8_t* p, std::size_t off) {
+            std::uint64_t v = 0;
+            std::memcpy(&v, p + off, 8);
+            return v;
+        };
+        set_err();
+        const bool va_bad = K("VirtualAlloc", {0, 0, sh::kMemCommit | sh::kMemReserve, 0x04}) == 0 && get_err() == 87 &&
+                            K("VirtualAlloc", {0, 4096, 0, 0x04}) == 0 && get_err() == 87;
+        set_err();
+        const std::uint64_t base = K("VirtualAlloc", {0, 2 * 65536, sh::kMemReserve, 0x01 /* PAGE_NOACCESS */});
+        alignas(8) std::uint8_t mbi[48] = {};
+        const bool res_ok = base != 0 && (base & 0xFFFF) == 0 && get_err() == kSentinel &&
+                            K("VirtualQuery", {base, va(mbi), 48}) == 48 &&
+                            u32(mbi, 16) == 0x01 && u64(mbi, 24) == 2 * 65536 && u32(mbi, 32) == sh::kMemReserve &&
+                            u32(mbi, 36) == 0;
+        // Re-reserving an already-reserved base fails with ERROR_INVALID_ADDRESS (487).
+        set_err();
+        const bool reres_fail = K("VirtualAlloc", {base, 65536, sh::kMemReserve, 0x01}) == 0 && get_err() == 487;
+        // VirtualProtect on reserved (uncommitted) page fails with 487; NULL oldProtect fails with 998.
+        alignas(4) std::uint32_t oldp = 99;
+        set_err();
+        const bool vp_res = K("VirtualProtect", {base, 4096, 0x04, va(&oldp)}) == 0 && get_err() == 487;
+        // Commit at unaligned base+4096+123 for 4096 bytes -> commits 2 pages (base+4096 .. base+12288).
+        set_err();
+        const std::uint64_t c = K("VirtualAlloc", {base + 4096 + 123, 4096, sh::kMemCommit, 0x04});
+        const bool commit_ok = c == base + 4096 && get_err() == kSentinel &&
+                               K("VirtualQuery", {base, va(mbi), 48}) == 48 &&
+                               u32(mbi, 32) == sh::kMemReserve && u32(mbi, 36) == 0 && u64(mbi, 24) == 0x1000 &&
+                               K("VirtualQuery", {base + 4096, va(mbi), 48}) == 48 &&
+                               u32(mbi, 32) == sh::kMemCommit && u32(mbi, 36) == 0x04 && u64(mbi, 24) == 0x2000;
+        // VirtualProtect NULL oldProtect does not mutate page protection; valid call updates it.
+        set_err();
+        const bool vp_null = K("VirtualProtect", {c, 4096, 0x02, 0}) == 0 && get_err() == 998 &&
+                             K("VirtualQuery", {c, va(mbi), 48}) == 48 && u32(mbi, 36) == 0x04;
+        set_err();
+        const bool vp_ok = K("VirtualProtect", {c, 4096, 0x02, va(&oldp)}) == 1 && oldp == 0x04 &&
+                           get_err() == kSentinel && K("VirtualQuery", {c, va(mbi), 48}) == 48 && u32(mbi, 36) == 0x02;
+        // Decommit page 1: zeroes bytes and restores MEM_RESERVE / Protect=0. Non-base size=0 decommit fails 487.
+        *reinterpret_cast<std::uint8_t*>(static_cast<std::uintptr_t>(c)) = 0x5A;
+        set_err();
+        const bool vf_decommit_nonbase0 = K("VirtualFree", {base + 4096, 0, sh::kMemDecommit}) == 0 && get_err() == 487;
+        set_err();
+        const bool vf_decommit_p1 = K("VirtualFree", {c, 4096, sh::kMemDecommit}) == 1 && get_err() == kSentinel &&
+                                    *reinterpret_cast<std::uint8_t*>(static_cast<std::uintptr_t>(c)) == 0 &&
+                                    K("VirtualQuery", {c, va(mbi), 48}) == 48 &&
+                                    u32(mbi, 32) == sh::kMemReserve && u32(mbi, 36) == 0;
+        // Release error codes and VirtualQuery short buffer.
+        set_err();
+        const bool vf_errs = K("VirtualFree", {base, 4096, sh::kMemRelease}) == 0 && get_err() == 87 &&
+                             K("VirtualFree", {base + 4096, 0, sh::kMemRelease}) == 0 && get_err() == 487 &&
+                             K("VirtualFree", {0, 0, sh::kMemRelease}) == 0 && get_err() == 487 &&
+                             K("VirtualQuery", {base, va(mbi), 16}) == 0 && get_err() == 24 &&
+                             K("VirtualFree", {base, 0, sh::kMemRelease}) == 1;
+        // Commit on released address fails with 487.
+        set_err();
+        const bool commit_free = K("VirtualAlloc", {base, 4096, sh::kMemCommit, 0x04}) == 0 && get_err() == 487;
+        expect(va_bad && res_ok && reres_fail && vp_res && commit_ok && vp_null && vp_ok && vf_decommit_nonbase0 &&
+                   vf_decommit_p1 && vf_errs && commit_free,
+               "edge(memory): VirtualAlloc alignment, reserve/commit per page, VirtualProtect, VirtualFree, VirtualQuery");
+    }
+
+    // 5. Files: sharing violations, >4 GiB sizes & seeks, .. and trailing separator, LastError.
+    {
+        const char p_sh[] = "C:\\WSE2\\share.bin";
+        set_err();
+        const std::uint64_t h1 = K("CreateFileA", {va(p_sh), sh::kGenericRead | sh::kGenericWrite, 0, 0, sh::kCreateAlways, 0x80, 0});
+        const bool cf_new = h1 != sh::kInvalidHandleValue && get_err() == 0;
+        set_err();
+        const bool sh_block_r = K("CreateFileA", {va(p_sh), sh::kGenericRead, sh::kFileShareRead | sh::kFileShareWrite, 0, sh::kOpenExisting, 0x80, 0}) ==
+                                    sh::kInvalidHandleValue &&
+                                get_err() == sh::kErrorSharingViolation;
+        set_err();
+        const bool sh_block_del = K("DeleteFileA", {va(p_sh)}) == 0 && get_err() == sh::kErrorSharingViolation;
+        (void)K("CloseHandle", {h1});
+
+        // FILE_SHARE_READ allows 2nd reader with FILE_SHARE_READ, rejects writer or non-sharing reader.
+        const std::uint64_t hr1 = K("CreateFileA", {va(p_sh), sh::kGenericRead, sh::kFileShareRead, 0, sh::kOpenExisting, 0x80, 0});
+        const std::uint64_t hr2 = K("CreateFileA", {va(p_sh), sh::kGenericRead, sh::kFileShareRead, 0, sh::kOpenExisting, 0x80, 0});
+        set_err();
+        const bool sh_block_w = K("CreateFileA", {va(p_sh), sh::kGenericWrite, sh::kFileShareRead, 0, sh::kOpenExisting, 0x80, 0}) ==
+                                    sh::kInvalidHandleValue &&
+                                get_err() == sh::kErrorSharingViolation;
+        set_err();
+        const bool sh_block_nosh = K("CreateFileA", {va(p_sh), sh::kGenericRead, 0, 0, sh::kOpenExisting, 0x80, 0}) ==
+                                       sh::kInvalidHandleValue &&
+                                   get_err() == sh::kErrorSharingViolation;
+        (void)K("CloseHandle", {hr2});
+        (void)K("CloseHandle", {hr1});
+
+        // FILE_SHARE_DELETE permits DeleteFile while open.
+        const std::uint64_t hd = K("CreateFileA", {va(p_sh), sh::kGenericRead, sh::kFileShareDelete, 0, sh::kOpenExisting, 0x80, 0});
+        set_err();
+        const bool sh_allow_del = hd != sh::kInvalidHandleValue && K("DeleteFileA", {va(p_sh)}) == 1 && get_err() == kSentinel;
+        (void)K("CloseHandle", {hd});
+
+        // Dispositions & LastError: CREATE_ALWAYS/OPEN_ALWAYS existing -> 183; CREATE_NEW existing -> 80.
+        const char p_disp[] = "C:\\WSE2\\disp.bin";
+        set_err();
+        const std::uint64_t d1 = K("CreateFileA", {va(p_disp), sh::kGenericRead | sh::kGenericWrite, 0, 0, sh::kOpenAlways, 0x80, 0});
+        const bool oa_new = d1 != sh::kInvalidHandleValue && get_err() == 0;
+        (void)K("CloseHandle", {d1});
+        set_err();
+        const std::uint64_t d2 = K("CreateFileA", {va(p_disp), sh::kGenericRead | sh::kGenericWrite, 0, 0, sh::kOpenAlways, 0x80, 0});
+        const bool oa_ex = d2 != sh::kInvalidHandleValue && get_err() == 183;
+        (void)K("CloseHandle", {d2});
+        set_err();
+        const bool cn_ex = K("CreateFileA", {va(p_disp), sh::kGenericWrite, 0, 0, sh::kCreateNew, 0x80, 0}) == sh::kInvalidHandleValue &&
+                           get_err() == 80;
+        expect(cf_new && sh_block_r && sh_block_del && hr1 != sh::kInvalidHandleValue && hr2 != sh::kInvalidHandleValue &&
+                   sh_block_w && sh_block_nosh && sh_allow_del && oa_new && oa_ex && cn_ex,
+               "edge(files): dwShareMode sharing violations, FILE_SHARE_DELETE, dispositions & LastError");
+
+        // Sizes over 4 GiB: SetFilePointerEx + SetEndOfFile + GetFileSize/Ex + SetFilePointer 0x1FFFFFFFF.
+        const std::uint64_t hb = K("CreateFileA", {va(p_disp), sh::kGenericRead | sh::kGenericWrite, 0, 0, sh::kOpenExisting, 0x80, 0});
+        alignas(8) std::uint64_t newpos = 0, sz64 = 0;
+        alignas(4) std::uint32_t hi = 0;
+        set_err();
+        const bool seek_big = K("SetFilePointerEx", {hb, 0x100001234ULL, va(&newpos), 0}) == 1 &&
+                              newpos == 0x100001234ULL && get_err() == kSentinel &&
+                              K("SetEndOfFile", {hb}) == 1;
+        set_err();
+        const std::uint64_t lo = K("GetFileSize", {hb, va(&hi)});
+        const bool gfs_big = lo == 0x1234 && hi == 1 && get_err() == kSentinel &&
+                             K("GetFileSizeEx", {hb, va(&sz64)}) == 1 && sz64 == 0x100001234ULL;
+        // Seeking to 0x1FFFFFFFF clears LastError to 0; seeking to 4 preserves LastError; negative seek fails 131.
+        hi = 1;
+        set_err();
+        const bool sfp_ffff = K("SetFilePointer", {hb, 0xFFFFFFFFULL, va(&hi), 0}) == 0xFFFFFFFFULL && hi == 1 && get_err() == 0;
+        set_err();
+        const bool sfp_small = K("SetFilePointer", {hb, 4, 0, 0}) == 4 && get_err() == kSentinel;
+        set_err();
+        const bool sfp_neg = K("SetFilePointer", {hb, static_cast<std::uint64_t>(-5LL), 0, 0}) == 0xFFFFFFFFULL &&
+                             get_err() == sh::kErrorNegativeSeek;
+        (void)K("CloseHandle", {hb});
+        // GetFileAttributesEx and FindFirstFile split >4 GiB VFS file sizes into nFileSizeHigh/Low.
+        alignas(4) std::uint8_t fad[36] = {};
+        alignas(4) std::uint8_t fd[320] = {};
+        const char p_huge[] = "C:\\WSE2\\huge.bin";
+        set_err();
+        std::uint32_t fhi = 0, flo = 0, dhi = 0, dlo = 0;
+        const bool gfae_big = K("GetFileAttributesExA", {va(p_huge), 0, va(fad)}) == 1 && get_err() == kSentinel;
+        std::memcpy(&fhi, fad + 28, 4);
+        std::memcpy(&flo, fad + 32, 4);
+        const std::uint64_t fh = K("FindFirstFileA", {va(p_huge), va(fd)});
+        if (fh != sh::kInvalidHandleValue) {
+            std::memcpy(&dhi, fd + 28, 4);
+            std::memcpy(&dlo, fd + 32, 4);
+            (void)K("FindClose", {fh});
+        }
+        expect(seek_big && gfs_big && sfp_ffff && sfp_small && sfp_neg && gfae_big && fhi == 1 && flo == 0x1234 &&
+                   fh != sh::kInvalidHandleValue && dhi == 1 && dlo == 0x1234,
+               "edge(files): >4 GiB SetEndOfFile/GetFileSize/SetFilePointer/GetFileAttributesEx/FindFirstFile");
+
+        // Paths with .. and trailing separator, plus buffer-size queries.
+        const char p_fslash[] = "C:\\WSE2\\disp.bin\\";
+        const char p_dslash[] = "C:\\WSE2\\sub\\";
+        set_err();
+        const bool trail_cf = K("CreateFileA", {va(p_fslash), sh::kGenericRead, 0, 0, sh::kOpenExisting, 0x80, 0}) == sh::kInvalidHandleValue &&
+                              get_err() == sh::kErrorInvalidName;
+        set_err();
+        const bool trail_attr = K("GetFileAttributesA", {va(p_fslash)}) == sh::kInvalidFileAttributes && get_err() == sh::kErrorInvalidName &&
+                                K("GetFileAttributesA", {va(p_dslash)}) == sh::kFileAttributeDirectory &&
+                                K("GetFileAttributesExA", {va(p_fslash), 0, va(fad)}) == 0 && get_err() == sh::kErrorInvalidName &&
+                                K("GetFileAttributesExA", {va(p_disp), 99, va(fad)}) == 0 && get_err() == 87 &&
+                                K("DeleteFileA", {va(p_fslash)}) == 0 && get_err() == sh::kErrorInvalidName;
+        set_err();
+        const bool trail_find = K("FindFirstFileA", {va(""), va(fd)}) == sh::kInvalidHandleValue && get_err() == 3 &&
+                                K("FindFirstFileA", {va(p_fslash), va(fd)}) == sh::kInvalidHandleValue && get_err() == 267 &&
+                                K("FindFirstFileA", {va(p_dslash), va(fd)}) == sh::kInvalidHandleValue && get_err() == 2;
+        char pbuf[128] = {};
+        alignas(8) std::uint64_t part = 0;
+        set_err();
+        const std::uint64_t fp1 = K("GetFullPathNameA", {va("sub\\..\\disp.bin"), 128, va(pbuf), va(&part)});
+        const bool dotdot = fp1 == 16 && std::string(pbuf) == "C:\\WSE2\\disp.bin" &&
+                            part == va(pbuf) + 8 && get_err() == kSentinel;
+        part = 0xDEAD;
+        const std::uint64_t fp2 = K("GetFullPathNameA", {va("sub\\..\\"), 128, va(pbuf), va(&part)});
+        const bool dotdot_slash = fp2 == 8 && std::string(pbuf) == "C:\\WSE2\\" && part == 0;
+        set_err();
+        const bool path_bounds = K("GetFullPathNameA", {va("disp.bin"), 4, va(pbuf), 0}) == 17 && get_err() == kSentinel &&
+                                 K("GetFullPathNameA", {va(""), 128, va(pbuf), 0}) == 0 && get_err() == 123 &&
+                                 K("GetCurrentDirectoryA", {2, va(pbuf)}) == 8 && get_err() == 123 &&
+                                 K("GetTempPathA", {2, va(pbuf)}) == 36 &&
+                                 K("SetCurrentDirectoryA", {va(p_disp)}) == 0 && get_err() == 267;
+        expect(trail_cf && trail_attr && trail_find && dotdot && dotdot_slash && path_bounds,
+               "edge(files): trailing separator errors, .. normalization, GetFullPathName/CWD/TempPath buffer sizing");
+    }
+
+    expect(faults.empty(), "edge: no faults");
+}
+
 }  // namespace
 
 namespace wse::selftest {
@@ -5005,6 +5527,7 @@ int run_recomp_suite(const char* fixture_path) {
     test_d3dx_math();
     test_d3d9();
     test_fmod_steam();
+    test_r4_shim_edge_cases();
     test_unwinder();
     if (g_failures == 0) {
         std::printf("recomp tests: PASS\n");

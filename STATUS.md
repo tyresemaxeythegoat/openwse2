@@ -117,7 +117,7 @@ All **20/20** native categories are 100% covered in `scripts.txt`.
 | `input_test.cpp` | 8 |
 | `scene_test.cpp` | 6 |
 | `ui_test.cpp` | 17 |
-| `recomp_test.cpp` | 21 |
+| `recomp_test.cpp` | 38 |
 | `recomp_llvm_test.cpp` *(with `-DWSE_ENABLE_LLVM=ON`)* | 2 (synthetic functions; R1 differential corpus) |
 | `selftest_host_test.cpp` *(aggregate runner over the 24 suites)* | 24 suites |
 | **Total (24 standalone suites + aggregate runner)** | **210** *(236 `test_*` functions measured across `*_test.cpp` on 2026-11-19)* |
