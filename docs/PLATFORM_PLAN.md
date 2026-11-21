@@ -384,9 +384,11 @@ screens into the player-facing shell for real gameplay on mid-range `arm64-v8a` 
   and PC-prepared zip import, automatic pruning of stale `.so` caches when the exe hash or
   `translator_fingerprint()` changes, and plain-language diagnostics when a PDB is missing or a
   newer WSE2 build hits an unshimmed import.
-- **Frame-time HUD:** Expand the optional FPS overlay to show per-frame CPU time, GPU time, and
-  Android thermal tier (`PowerManager`) so R5/R8/R9 sustained 30-minute targets can be measured on
-  device.
+- **Frame-time HUD & WSE2 battle-size limits:** Expand the optional FPS overlay to show per-frame
+  CPU time, GPU time, and Android thermal tier (`PowerManager`) so R5/R8/R9 sustained targets can be
+  measured on device. Update the Settings `rgl_config.txt` / WSE2 battle-size editor so high-end
+  devices can configure WSE2's 1,000+ troop battle limits instead of clamping to vanilla's 150-troop
+  cap (`0.0..1.0`).
 
 | Unit | What | Depends on | Done when |
 | --- | --- | --- | --- |

@@ -15,7 +15,7 @@ gives 1:1 behaviour and byte-compatible saves by construction. This document own
 | Clean-room engine | **Hybrid.** Retail code runs the game. Our platform layer (SAF `Vfs`, Vulkan RHI, shader translation, `WseAudioMixer`, input and touch overlay, launcher) becomes the backend of the API shims. The reconstructed VM, loaders and savegame codecs become test oracles and fallbacks. |
 | API layers | **Native shims allowed** for exactly the system DLLs the exe imports. Still banned: Wine, Box64, Dynarmic, QEMU, translating code during play (JIT), and bundling or committing anything retail. Lifted code is generated on the device (or on the player's own PC for their own phone) and never distributed. |
 | Target devices & v1 bar | **Mid-range `arm64-v8a` Android 10+ phones with 6–8 GB RAM** (OPPO Reno 11 Mali-G68/PanVK, mid-range Adreno/Turnip, and System Vulkan); weaker/older phones (<6 GB RAM or pre-ARMv8.2-A) are out of scope. **v1 playable bar:** `Native` end-to-end (main menu, campaign map, scenes, battles, saves); heavy WSE2 mods follow in R9 (decided with the user, 2026-11-21). |
-| Sustained performance target | **30 FPS sustained for 30+ minutes** in 100-troop battles at ~720p / 85% render scale, and **60 FPS** in menus and on the campaign map, measured on the reference phone (decided with the user, 2026-11-21). |
+| Sustained performance target | **Mid-range floor (OPPO Reno 11, 6–8 GB RAM):** 30 FPS sustained for 30+ minutes in 100-troop battles at ~720p / 85% render scale, and 60 FPS in menus/map. **High-end / flagship phones (12–16 GB RAM):** playable **1,000+ troop WSE2 battles** (sustained ≥ 30 FPS target, no OOM or buffer/descriptor cap failures; decided with the user, 2026-11-21). |
 | Audio (`fmodex64`) | **Shim the 54 delay-loaded FMOD Ex exports directly onto `WseAudioMixer` + SDL3 audio** (P6) rather than translating `fmodex64.dll` (decided with the user, 2026-11-21). |
 | Multiplayer | **Parked for post-v1** (offline stubs through R8/R9; Steam stays stubbed; direct-IP/LAN over BSD sockets revisited only after v1 ships; decided with the user, 2026-11-21). |
 | Distribution | **GitHub Releases** signed with a dedicated private release keystore (never `android/debug.keystore`), plus a standalone prebuilt Windows/Linux PC preparation CLI zip. Play Store and F-Droid are parked for post-v1 (decided with the user, 2026-11-21). |
@@ -734,8 +734,22 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
 - **Device floor:** Mid-range `arm64-v8a` Android 10+ phones with 6–8 GB RAM (OPPO Reno 11
   Mali-G68/PanVK, mid-range Adreno/Turnip, and System Vulkan). Weaker or older phones (<6 GB RAM or
   pre-ARMv8.2-A without LSE/RCpc) are out of scope.
-- **Frame rate & heat:** **30 FPS sustained for 30+ minutes** in 100-troop battles at ~720p / 85%
-  render scale, and **60 FPS** in menus and on the campaign map.
+- **Mid-range sustained target:** **30 FPS sustained for 30+ minutes** in 100-troop battles at ~720p
+  / 85% render scale, and **60 FPS** in menus and on the campaign map.
+- **High-end / flagship battle-scale target:** Playable **1,000+ troop WSE2 battles** (target ≥ 30
+  FPS sustained, zero OOM or fixed-size GPU buffer/descriptor overflows) on flagship `arm64-v8a`
+  phones (12–16 GB RAM, Snapdragon 8-series / Dimensity 9000-series). Designing for 1,000+ agents
+  from R5 onward avoids hard bottlenecks later:
+  - *GPU submission (R5):* growable ring-buffered dynamic vertex/index buffers (`D3DLOCK_DISCARD` /
+    `D3DLOCK_NOOVERWRITE` without pipeline stalls), dynamic-offset uniform ring buffers sized for
+    thousands of draws and bone-palette uploads per frame, hardware instancing (`SetStreamSourceFreq`),
+    and zero per-draw descriptor allocations.
+  - *Audio voice contention (R6):* strict voice caps and priority eviction in `WseAudioMixer` so
+    hundreds of simultaneous melee/voice triggers never stall the game thread.
+  - *CPU simulation throughput (R9):* Bullet physics, agent AI, pathfinding, and bone evaluation
+    dominate at 1,000+ troops — making R3 TSO relaxation on thread-local paths, direct cross-batch
+    call linking, and `-O3` / big-core tuning benchmarks first-class requirements rather than optional
+    polish.
 
 **Codegen target (resolves the `Preparing on a PC` vs host-CPU split, decided with the user, 2026-11-21):**
 - Both PC-prepared builds and on-phone builds keep `portable_android_target()` (`generic`,
@@ -777,13 +791,15 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
 - **Sub-slices:**
   - **R5a (System Vulkan + P5 shader bridge + base draws):** Wire `shim_d3d9.h` onto `VulkanRhiDevice`
     using System Vulkan (`VK_KHR_android_surface` swapchain) first to minimize variables. Implement
-    `IDirect3DStateBlock9` capture/apply, batched effect constant buffers, persistent
-    `VkPipelineCache`, and map `ID3DXEffect` technique/parameter names (`480` queried techniques,
-    `164` parameters in the R5 census) onto the existing P5 `GLShaders` → SPIR-V compiler (`wse_shader`
-    + `SpirvShaderCache`). Decode DXT textures via `dds.h` with native BC when `textureCompressionBC`
-    is present, or temporary RGBA8 + P10.7 mip-budget capping during R5a bring-up. Advertise HDR
-    (`A16B16G16R16F`), DOF, and MSAA (`CheckDeviceMultiSampleType`, `666` probes) as unavailable via
-    `CheckDeviceFormat`/`CheckDeviceMultiSampleType` until post-v1.
+    `IDirect3DStateBlock9` capture/apply, growable dynamic vertex/index and effect constant ring
+    buffers (`D3DLOCK_DISCARD`/`NOOVERWRITE`, sized to scale to 1,000+ troop draw/bone-palette
+    counts without pipeline stalls or per-draw descriptor allocations), `SetStreamSourceFreq`
+    instancing, persistent `VkPipelineCache`, and map `ID3DXEffect` technique/parameter names (`480`
+    queried techniques, `164` parameters in the R5 census) onto the existing P5 `GLShaders` → SPIR-V
+    compiler (`wse_shader` + `SpirvShaderCache`). Decode DXT textures via `dds.h` with native BC
+    when `textureCompressionBC` is present, or temporary RGBA8 + P10.7 mip-budget capping during R5a
+    bring-up. Advertise HDR (`A16B16G16R16F`), DOF, and MSAA (`CheckDeviceMultiSampleType`, `666`
+    probes) as unavailable via `CheckDeviceFormat`/`CheckDeviceMultiSampleType` until post-v1.
   - **R5b (Cached ETC2/ASTC transcoding + `fx_2_0` SM2/3 → SPIR-V):** Add one-time DXT1/3/5 →
     ETC2/ASTC transcoding cached on disk (replacing the temporary RGBA8 fallback on drivers without
     native BC) and add a `fx_2_0` (`.fxo`) parser + SM2/3 shader-bytecode → SPIR-V translator so
@@ -927,6 +943,9 @@ phone rather than deferred. Each optimization gets a before-and-after measuremen
     (main menu, campaign map, battle, save/load, WSE2 Lua features, custom shaders) without OOM
     kills on 6–8 GB RAM and within the v1 sustained FPS target on `Native` (with documented timings
     for heavy mods).
+  - **1,000+ troop stress benchmark:** a 1,000-troop WSE2 battle runs without GPU buffer/descriptor
+    overflows, audio dropouts, or crashes, with CPU/GPU frame-time breakdown recorded on a high-end
+    `arm64-v8a` phone (target ≥ 30 FPS sustained) and profiling gaps documented.
   - Before/after phone frame-time logs are recorded in `STATUS.md` for every R9 optimization kept.
 - **Risks:**
   - Large mod texture packs exhausting storage or RAM during ETC2/ASTC transcoding (mitigated by
