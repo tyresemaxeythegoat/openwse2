@@ -103,20 +103,26 @@ class R4StartupRunner private constructor(private val app: Application) {
     // the finished report, else what the running test has written so far under its status.
     // Null when there is no report yet.
     fun reportToSave(): String? {
-        state.report?.let { return it }
-        val file = File(r4Dir, "report.txt")
-        if (!file.isFile) return null
-        val text = try {
-            file.readText()
+        val earlier = try {
+            File(r4Dir, PREVIOUS_REPORT).takeIf { it.isFile }?.readText()
         } catch (_: Throwable) {
-            return null
+            null
         }
+        val tail = if (earlier.isNullOrBlank()) "" else "\n\nThe attempt before this one:\n$earlier"
+        state.report?.let { return it + tail }
+        val file = File(r4Dir, "report.txt")
+        val text = try {
+            file.takeIf { it.isFile }?.readText()
+        } catch (_: Throwable) {
+            null
+        }
+        if (text == null) return if (tail.isEmpty()) null else tail.trimStart()
         val headline = if (state.running) {
             "The game test is still running. " + state.status.ifEmpty { "Working…" }
         } else {
             reportText(null).substringBefore("\n\n")
         }
-        return "$headline\n\nDetails for the developers:\n$text"
+        return "$headline\n\nDetails for the developers:\n$text$tail"
     }
 
     // Writes `text` to the document the player picked (ACTION_CREATE_DOCUMENT). False on failure.
@@ -159,7 +165,16 @@ class R4StartupRunner private constructor(private val app: Application) {
             return
         }
         r4Dir.mkdirs()
-        File(r4Dir, "report.txt").delete()
+        // The last attempt's report is kept (one back) so it can still be saved: a resume after
+        // an app update or a kill starts a new report before the player could save the old one.
+        val previous = File(r4Dir, "report.txt")
+        if (previous.isFile && previous.length() > 0) {
+            val kept = File(r4Dir, PREVIOUS_REPORT)
+            kept.delete()
+            if (!previous.renameTo(kept)) previous.delete()
+        } else {
+            previous.delete()
+        }
         File(r4Dir, "progress.txt").delete()
         finished = false
         stopRequested = false
@@ -571,7 +586,8 @@ class R4StartupRunner private constructor(private val app: Application) {
         private const val PREF_TREE = "tree_uri"
         private const val PREF_USE_COPY = "use_copy"
         private const val PREF_JOBS = "jobs"
-        private const val PREF_IMPORTED = "imported_zip"  // the last PC zip imported (name/size/time)
+        private const val PREVIOUS_REPORT = "report.previous.txt"
+        private const val PREF_IMPORTED ="imported_zip"  // the last PC zip imported (name/size/time)
         private val PREPARED_ZIP = Regex("""(?i)wse2-prepared.*\.zip""")
         private val PREPARED_PART = Regex("""(exe|lua5164)_w\d+\.(so|key)""")
         // Kept across launcher restarts, so a run Android keeps killing whole still slows down and
