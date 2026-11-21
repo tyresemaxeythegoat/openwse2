@@ -1209,8 +1209,11 @@ inline void party_add_xp(WseWorldState& world,
 // Mirrors mbGame::upgradeParty (0x1400df0e0): upgrade_path_choice 0 picks random path 0 or 1
 // (rglRand & 1), 1 selects path 0, 2 selects path 1 (falling back to path 0 when slot 1 is
 // absent); distributes XP with per-stack jitter [0.75, 1.25) (0.75f + 0.5f * rglRand(15817) /
-// 15817.0f) and player-troop weight 10 vs companion hero 3; then upgrades all upgradeable
-// regular stacks, carrying wounded counts over.
+// 15817.0f) and hero weight 10 vs 3; then upgrades all upgradeable regular stacks, carrying
+// wounded counts over. The two hero weights differ on purpose, as in retail: the total counts
+// 10 for the player troop (0x1400df232, `cmp ebx, [game+0x42c]`), the shares give 10 to stack 0
+// (0x1400df366, `test ebx, ebx`). In a party the player does not lead, the shares do not add up
+// to `total_xp`. (party_add_xp, 0x1400e64e0, uses stack 0 in both.)
 template <typename RngFn, typename UpgradeXpFn>
 inline void party_upgrade_with_xp(WseWorldState& world,
                                   std::int32_t party_no,
